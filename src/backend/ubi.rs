@@ -53,6 +53,7 @@ impl Backend for UbiBackend {
                 None => match forge {
                     ForgeType::GitHub => github::API_URL,
                     ForgeType::GitLab => gitlab::API_URL,
+                    _ => bail!("Unsupported forge type {:?}", forge),
                 },
             };
             let tag_regex = OnceLock::new();
@@ -67,6 +68,7 @@ impl Backend for UbiBackend {
                     .into_iter()
                     .map(|r| r.tag_name)
                     .collect::<Vec<String>>(),
+                _ => bail!("Unsupported forge type {:?}", forge),
             };
             if versions.is_empty() {
                 match forge {
@@ -82,6 +84,7 @@ impl Backend for UbiBackend {
                             .into_iter()
                             .collect();
                     }
+                    _ => bail!("Unsupported forge type {:?}", forge),
                 }
             }
 
@@ -311,6 +314,7 @@ fn set_token<'a>(mut builder: UbiBuilder<'a>, forge: &ForgeType) -> UbiBuilder<'
             }
             builder
         }
+        _ => builder,
     }
 }
 
@@ -328,6 +332,7 @@ fn set_enterprise_token<'a>(mut builder: UbiBuilder<'a>, forge: &ForgeType) -> U
             }
             builder
         }
+        _ => builder,
     }
 }
 
