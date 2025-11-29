@@ -4513,10 +4513,7 @@ description = "A tool to help creating Talos kubernetes cluster"
 aliases = ["talos"]
 backends = ["aqua:siderolabs/talos", "ubi:siderolabs/talos[exe=talosctl]"]
 description = "Talos is a modern OS for Kubernetes. talosctl is a CLI for out-of-band management of Kubernetes nodes created by Talos"
-test = [
-  "talosctl version --client --short",
-  "Talos v{{version}}",
-]
+test = ["talosctl version --client --short", "Talos v{{version}}"]
 
 [tools.tanka]
 backends = ["aqua:grafana/tanka", "asdf:trotttrotttrott/asdf-tanka"]
