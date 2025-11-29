@@ -323,7 +323,6 @@ impl Backend for CondaBackend {
                 Ok(PlatformInfo {
                     url: Some(download_url),
                     checksum: pkg_file.sha256.as_ref().map(|s| format!("sha256:{}", s)),
-                    name: None,
                     size: None,
                     url_api: None,
                 })
@@ -333,7 +332,6 @@ impl Backend for CondaBackend {
                 Ok(PlatformInfo {
                     url: None,
                     checksum: None,
-                    name: None,
                     size: None,
                     url_api: None,
                 })

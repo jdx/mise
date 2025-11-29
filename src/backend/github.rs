@@ -101,9 +101,7 @@ impl Backend for UnifiedGitBackend {
                 existing_platform.url.clone().unwrap_or_default()
             );
             ReleaseAsset {
-                name: existing_platform.name.clone().unwrap_or_else(|| {
-                    get_filename_from_url(existing_platform.url.as_deref().unwrap_or(""))
-                }),
+                name: get_filename_from_url(existing_platform.url.as_deref().unwrap_or("")),
                 url: existing_platform.url.clone().unwrap_or_default(),
                 url_api: existing_platform.url_api.clone().unwrap_or_default(),
                 digest: None, // Don't use old digest from lockfile, will be fetched fresh if needed
@@ -170,7 +168,6 @@ impl Backend for UnifiedGitBackend {
             Ok(asset) => Ok(PlatformInfo {
                 url: Some(asset.url),
                 url_api: Some(asset.url_api),
-                name: Some(asset.name),
                 checksum: asset.digest,
                 size: None,
             }),
@@ -265,7 +262,6 @@ impl UnifiedGitBackend {
         // Store the asset URL and digest (if available) in the tool version
         let platform_key = self.get_platform_key();
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-        platform_info.name = Some(asset.name.clone());
         platform_info.url = Some(asset.url.clone());
         platform_info.url_api = Some(asset.url_api.clone());
         if let Some(digest) = &asset.digest {

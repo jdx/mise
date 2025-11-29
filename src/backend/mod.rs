@@ -1001,7 +1001,6 @@ pub trait Backend: Debug + Send + Sync {
         // 3. Handle any URL-specific logic
         Ok(PlatformInfo {
             checksum: None, // TODO: Implement checksum fetching
-            name: None,     // TODO: Implement name extraction from URL if needed
             size: None,     // TODO: Implement size fetching via HEAD request
             url: Some(tarball_url.to_string()),
             url_api: None,
@@ -1035,7 +1034,6 @@ pub trait Backend: Debug + Send + Sync {
 
         Ok(PlatformInfo {
             checksum: None, // TODO: Implement checksum fetching from releases
-            name: None,     // TODO: Implement asset name fetching from releases
             size: None,     // TODO: Implement size fetching from GitHub API
             url: asset_url,
             url_api: None,
@@ -1054,7 +1052,6 @@ pub trait Backend: Debug + Send + Sync {
         Ok(PlatformInfo {
             checksum: None,
             size: None,
-            name: None,
             url: None,
             url_api: None,
         })

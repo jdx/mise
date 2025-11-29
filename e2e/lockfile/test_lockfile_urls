@@ -38,7 +38,7 @@ touch mise.lock
 
 mise use ripgrep@14.1.1
 
-assert_contains "cat mise.lock" "[tools.ripgrep.platforms.$PLATFORM]"
+assert_contains "cat mise.lock" "\"platforms.$PLATFORM\""
 assert_contains "cat mise.lock" "url = \"$URL\""
 
 echo "Lockfile content:"
