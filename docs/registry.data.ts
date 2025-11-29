@@ -43,8 +43,7 @@ export default {
       },
       asdf: (slug) =>
         slug.startsWith("http") ? slug : `https://github.com/${slug}`,
-      conda: (slug, options) =>
-        `https://anaconda.org/channels/${options.channel ?? "conda-forge"}/packages/${slug}/overview`,
+      conda: (slug, options) => `https://anaconda.org/${options.channel ?? "conda-forge"}/${slug}`,
       cargo: (slug) => `https://crates.io/crates/${slug}`,
       core: (slug) => `https://mise.jdx.dev/lang/${slug}.html`,
       dotnet: (slug) => `https://www.nuget.org/packages/${slug}`,
@@ -57,7 +56,7 @@ export default {
       spm: (slug, options) =>
         slug.startsWith("http")
           ? slug
-          : `https://${options.proider == "gitlab" ? "gitlab.com" : "github.com"}/${slug}`,
+          : `https://${options.provider == "gitlab" ? "gitlab.com" : "github.com"}/${slug}`,
       http: () => "",
       ubi: (slug, options) => {
         const repoName = slug.split("/").slice(0, 2).join("/");
