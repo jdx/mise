@@ -51,35 +51,6 @@ url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-da
 name = "age-v1.2.1-windows-amd64.zip"
 url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-windows-amd64.zip"
 
-[[tools."aqua:jqlang/jq"]]
-version = "1.7.1"
-backend = "aqua:jqlang/jq"
-
-[tools."aqua:jqlang/jq".platforms.linux-arm64]
-checksum = "sha256:4dd2d8a0661df0b22f1bb9a1f9830f06b6f3b8f7d91211a1ef5d7c4f06a8b4a5"
-name = "jq-linux-arm64"
-url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-arm64"
-
-[tools."aqua:jqlang/jq".platforms.linux-x64]
-checksum = "sha256:5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5"
-name = "jq-linux-amd64"
-url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64"
-
-[tools."aqua:jqlang/jq".platforms.macos-arm64]
-checksum = "sha256:0bbe619e663e0de2c550be2fe0d240d076799d6f8a652b70fa04aea8a8362e8a"
-name = "jq-macos-arm64"
-url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-arm64"
-
-[tools."aqua:jqlang/jq".platforms.macos-x64]
-checksum = "sha256:4155822bbf5ea90f5c79cf254665975eb4274d426d0709770c21774de5407443"
-name = "jq-macos-amd64"
-url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-amd64"
-
-[tools."aqua:jqlang/jq".platforms.windows-x64]
-checksum = "sha256:7451fbbf37feffb9bf262bd97c54f0da558c63f0748e64152dd87b0a07b6d6ab"
-name = "jq-windows-amd64.exe"
-url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-windows-amd64.exe"
-
 [[tools.bun]]
 version = "1.3.3"
 backend = "core:bun"
@@ -253,82 +224,6 @@ url = "https://nodejs.org/dist/v24.11.1/node-v24.11.1-darwin-x64.tar.gz"
 [tools.node.platforms.windows-x64]
 url = "https://nodejs.org/dist/v24.11.1/node-v24.11.1-win-x64.zip"
 
-[[tools.node]]
-version = "24.6.0"
-backend = "core:node"
-
-[tools.node.platforms.linux-arm64]
-url = "https://nodejs.org/dist/v24.6.0/node-v24.6.0-linux-arm64.tar.gz"
-
-[tools.node.platforms.linux-x64]
-url = "https://nodejs.org/dist/v24.6.0/node-v24.6.0-linux-x64.tar.gz"
-
-[tools.node.platforms.macos-arm64]
-url = "https://nodejs.org/dist/v24.6.0/node-v24.6.0-darwin-arm64.tar.gz"
-
-[tools.node.platforms.macos-x64]
-url = "https://nodejs.org/dist/v24.6.0/node-v24.6.0-darwin-x64.tar.gz"
-
-[tools.node.platforms.windows-x64]
-url = "https://nodejs.org/dist/v24.6.0/node-v24.6.0-win-x64.zip"
-
-[[tools.node]]
-version = "24.9.0"
-backend = "core:node"
-
-[tools.node.platforms.linux-arm64]
-url = "https://nodejs.org/dist/v24.9.0/node-v24.9.0-linux-arm64.tar.gz"
-
-[tools.node.platforms.linux-x64]
-url = "https://nodejs.org/dist/v24.9.0/node-v24.9.0-linux-x64.tar.gz"
-
-[tools.node.platforms.macos-arm64]
-url = "https://nodejs.org/dist/v24.9.0/node-v24.9.0-darwin-arm64.tar.gz"
-
-[tools.node.platforms.macos-x64]
-url = "https://nodejs.org/dist/v24.9.0/node-v24.9.0-darwin-x64.tar.gz"
-
-[tools.node.platforms.windows-x64]
-url = "https://nodejs.org/dist/v24.9.0/node-v24.9.0-win-x64.zip"
-
-[[tools.node]]
-version = "24.10.0"
-backend = "core:node"
-
-[tools.node.platforms.linux-arm64]
-url = "https://nodejs.org/dist/v24.10.0/node-v24.10.0-linux-arm64.tar.gz"
-
-[tools.node.platforms.linux-x64]
-url = "https://nodejs.org/dist/v24.10.0/node-v24.10.0-linux-x64.tar.gz"
-
-[tools.node.platforms.macos-arm64]
-url = "https://nodejs.org/dist/v24.10.0/node-v24.10.0-darwin-arm64.tar.gz"
-
-[tools.node.platforms.macos-x64]
-url = "https://nodejs.org/dist/v24.10.0/node-v24.10.0-darwin-x64.tar.gz"
-
-[tools.node.platforms.windows-x64]
-url = "https://nodejs.org/dist/v24.10.0/node-v24.10.0-win-x64.zip"
-
-[[tools.node]]
-version = "24.11.0"
-backend = "core:node"
-
-[tools.node.platforms.linux-arm64]
-url = "https://nodejs.org/dist/v24.11.0/node-v24.11.0-linux-arm64.tar.gz"
-
-[tools.node.platforms.linux-x64]
-url = "https://nodejs.org/dist/v24.11.0/node-v24.11.0-linux-x64.tar.gz"
-
-[tools.node.platforms.macos-arm64]
-url = "https://nodejs.org/dist/v24.11.0/node-v24.11.0-darwin-arm64.tar.gz"
-
-[tools.node.platforms.macos-x64]
-url = "https://nodejs.org/dist/v24.11.0/node-v24.11.0-darwin-x64.tar.gz"
-
-[tools.node.platforms.windows-x64]
-url = "https://nodejs.org/dist/v24.11.0/node-v24.11.0-win-x64.zip"
-
 [[tools."npm:ajv-cli"]]
 version = "5.0.0"
 backend = "npm:ajv-cli"
@@ -340,35 +235,6 @@ backend = "npm:markdownlint-cli"
 [[tools."npm:prettier"]]
 version = "3.7.1"
 backend = "npm:prettier"
-
-[[tools.opentofu]]
-version = "1.10.7"
-backend = "aqua:opentofu/opentofu"
-
-[tools.opentofu.platforms.linux-arm64]
-checksum = "sha256:cfde76d660cbaa7b7b1ad1dab02fe99085f2fc7a2d2e7f9fd2ff4167358d52c0"
-name = "tofu_1.10.7_linux_arm64.tar.gz"
-url = "https://github.com/opentofu/opentofu/releases/download/v1.10.7/tofu_1.10.7_linux_arm64.tar.gz"
-
-[tools.opentofu.platforms.linux-x64]
-checksum = "sha256:765a7374aeafcad15fe8da5359de76ce11ba0fd3cb6c2dc85d3b390e6362cae5"
-name = "tofu_1.10.7_linux_amd64.tar.gz"
-url = "https://github.com/opentofu/opentofu/releases/download/v1.10.7/tofu_1.10.7_linux_amd64.tar.gz"
-
-[tools.opentofu.platforms.macos-arm64]
-checksum = "sha256:e5cdc6d0bdd85b0cf699f00e2cd547c3b3d0892c7b5ecb22bd02c72d9d1ff8bc"
-name = "tofu_1.10.7_darwin_arm64.tar.gz"
-url = "https://github.com/opentofu/opentofu/releases/download/v1.10.7/tofu_1.10.7_darwin_arm64.tar.gz"
-
-[tools.opentofu.platforms.macos-x64]
-checksum = "sha256:ec063e3920fab7cc80299f66d2fda3ec752f774b88caf3c207122336674843a3"
-name = "tofu_1.10.7_darwin_amd64.tar.gz"
-url = "https://github.com/opentofu/opentofu/releases/download/v1.10.7/tofu_1.10.7_darwin_amd64.tar.gz"
-
-[tools.opentofu.platforms.windows-x64]
-checksum = "sha256:58e9f247c57c7c1faef3b20fd735dcad272154e93bd02246eeff36cb756b03df"
-name = "tofu_1.10.7_windows_amd64.tar.gz"
-url = "https://github.com/opentofu/opentofu/releases/download/v1.10.7/tofu_1.10.7_windows_amd64.tar.gz"
 
 [[tools.pkl]]
 version = "0.30.0"
@@ -548,35 +414,6 @@ url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-x8
 name = "taplo-windows-x86_64.zip"
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x86_64.zip"
 
-[[tools.terraform]]
-version = "1.14.0"
-backend = "aqua:hashicorp/terraform"
-
-[tools.terraform.platforms.linux-arm64]
-checksum = "sha256:23d5e9b3f4014f18f85e242a5a8bbaf6d31b058a31d93580e5fe5da644bf8013"
-name = "terraform_1.14.0_linux_arm64.zip"
-url = "https://releases.hashicorp.com/terraform/1.14.0/terraform_1.14.0_linux_arm64.zip"
-
-[tools.terraform.platforms.linux-x64]
-checksum = "sha256:33ac217458ba8b44ce2813553083bc132c9a07e41a79c2e3627977682d283093"
-name = "terraform_1.14.0_linux_amd64.zip"
-url = "https://releases.hashicorp.com/terraform/1.14.0/terraform_1.14.0_linux_amd64.zip"
-
-[tools.terraform.platforms.macos-arm64]
-checksum = "sha256:57fde1cc2534a7e8c48aaae2ad2954084502852c25d731fc957e4b831f75e16e"
-name = "terraform_1.14.0_darwin_arm64.zip"
-url = "https://releases.hashicorp.com/terraform/1.14.0/terraform_1.14.0_darwin_arm64.zip"
-
-[tools.terraform.platforms.macos-x64]
-checksum = "sha256:bcb92ac63ab038ed633fe99a86553a9f4595d078dd607ad0b0145d7e65d153d1"
-name = "terraform_1.14.0_darwin_amd64.zip"
-url = "https://releases.hashicorp.com/terraform/1.14.0/terraform_1.14.0_darwin_amd64.zip"
-
-[tools.terraform.platforms.windows-x64]
-checksum = "sha256:6fb3806d0bb4682d8226997b24a1cfdfdc864113013342fcb22f681cdaaea4b2"
-name = "terraform_1.14.0_windows_amd64.zip"
-url = "https://releases.hashicorp.com/terraform/1.14.0/terraform_1.14.0_windows_amd64.zip"
-
 [[tools.wait-for-gh-rate-limit]]
 version = "1.0.0"
 backend = "ubi:jdx/wait-for-gh-rate-limit"
@@ -586,32 +423,3 @@ checksum = "blake3:2123971d2eea236d17fb0475c94bef89adf9239df4a8da53261d2eaf8551c
 
 [tools.wait-for-gh-rate-limit.platforms.macos-arm64-wait-for-gh-rate-limit]
 checksum = "blake3:8feb249767c436b69fd9bcb56901fdc56713c09247e9f6c1ce67f55b613bc082"
-
-[[tools.watchexec]]
-version = "2.3.2"
-backend = "aqua:watchexec/watchexec"
-
-[tools.watchexec.platforms.linux-arm64]
-checksum = "sha512:ddbd811740b3ce144b5c7cef1ef817bd497631466c4df48aafd473ec24b10ff85d8f31c2d4a4825ac10165bfa529df806ee3f53519493ae9c62fcbe44a316bfc"
-name = "watchexec-2.3.2-aarch64-unknown-linux-gnu.tar.xz"
-url = "https://github.com/watchexec/watchexec/releases/download/v2.3.2/watchexec-2.3.2-aarch64-unknown-linux-gnu.tar.xz"
-
-[tools.watchexec.platforms.linux-x64]
-checksum = "sha512:ec2dadefbbfad9ba738a6f27ead78214e90db4d5bbf7eb2f4d8dac3cf18f468f900fe51d4ba107b3f2c0733c412c28e8c977f158968515c8b7f03f3c8391982a"
-name = "watchexec-2.3.2-x86_64-unknown-linux-gnu.tar.xz"
-url = "https://github.com/watchexec/watchexec/releases/download/v2.3.2/watchexec-2.3.2-x86_64-unknown-linux-gnu.tar.xz"
-
-[tools.watchexec.platforms.macos-arm64]
-checksum = "sha512:88ea43af48597f7dbfceb1783e131d53aabe920c2b253a1538cc4efeee686f01c1282821ddca5dd56cb490fc7105e4e1be2d55e523f873a980b9a19ea157d523"
-name = "watchexec-2.3.2-aarch64-apple-darwin.tar.xz"
-url = "https://github.com/watchexec/watchexec/releases/download/v2.3.2/watchexec-2.3.2-aarch64-apple-darwin.tar.xz"
-
-[tools.watchexec.platforms.macos-x64]
-checksum = "sha512:80899b26b9a8cf0fd751368d38ba33e79e2fddddf0208e73ddc207f5a199466667113a62d495359e366b0ae90e3e7733cb238ad0450d5ac4653f281cb377b21d"
-name = "watchexec-2.3.2-x86_64-apple-darwin.tar.xz"
-url = "https://github.com/watchexec/watchexec/releases/download/v2.3.2/watchexec-2.3.2-x86_64-apple-darwin.tar.xz"
-
-[tools.watchexec.platforms.windows-x64]
-checksum = "sha512:427b96192a49614ef4a70c298ad3f0ba601578f35352823cbeb62519823fcd40b4734d6651163c6cf9b34e481fbb53305ceb20795dc27b4062c51340a5c79351"
-name = "watchexec-2.3.2-x86_64-pc-windows-msvc.zip"
-url = "https://github.com/watchexec/watchexec/releases/download/v2.3.2/watchexec-2.3.2-x86_64-pc-windows-msvc.zip"
