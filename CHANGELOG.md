@@ -1,5 +1,11 @@
 # Changelog
 
+## [2025.11.12](https://github.com/jdx/mise/compare/v2025.11.11..v2025.11.12) - 2025-11-30
+
+### 📦 Registry
+
+- remove duplicated ubi and github backends from gping by @risu729 in [#7144](https://github.com/jdx/mise/pull/7144)
+
 ## [2025.11.11](https://github.com/jdx/mise/compare/v2025.11.10..v2025.11.11) - 2025-11-30
 
 ### 🚀 Features
