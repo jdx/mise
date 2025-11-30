@@ -10,10 +10,9 @@ use crate::task::task_source_checker::{save_checksum, sources_are_fresh, task_cw
 use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
 use crate::ui::{style, time};
 use duct::IntoExecutablePath;
-use eyre::{Result, ensure, eyre};
+use eyre::{Result, Report, ensure, eyre};
 use itertools::Itertools;
 use std::collections::BTreeMap;
-use std::io::Write;
 use std::iter::once;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -462,12 +461,10 @@ impl TaskExecutor {
         if script.starts_with("#!") {
             let dir = tempfile::tempdir()?;
             let file = dir.path().join("script");
-            let mut tmp = std::fs::File::create(&file)?;
-            tmp.write_all(script.as_bytes())?;
-            tmp.flush()?;
-            drop(tmp);
+            tokio::fs::write(&file, script.as_bytes()).await?;
             file::make_executable(&file)?;
-            self.exec(&file, args, task, env, prefix).await
+            self.exec_with_text_file_busy_retry(&file, args, task, env, prefix)
+                .await
         } else {
             let (program, args) = self.get_cmd_program_and_args(script, task, args)?;
             self.exec_program(&program, &args, task, env, prefix).await
@@ -575,6 +572,36 @@ impl TaskExecutor {
     ) -> Result<()> {
         let (program, args) = self.get_file_program_and_args(file, task, args)?;
         self.exec_program(&program, &args, task, env, prefix).await
+    }
+
+    async fn exec_with_text_file_busy_retry(
+        &self,
+        file: &Path,
+        args: &[String],
+        task: &Task,
+        env: &BTreeMap<String, String>,
+        prefix: &str,
+    ) -> Result<()> {
+        const ETXTBUSY_RETRIES: usize = 3;
+        const ETXTBUSY_SLEEP_MS: u64 = 50;
+
+        let mut attempt = 0;
+        loop {
+            match self.exec(file, args, task, env, prefix).await {
+                Ok(()) => break Ok(()),
+                Err(err) if Self::is_text_file_busy(&err) && attempt < ETXTBUSY_RETRIES => {
+                    attempt += 1;
+                    trace!(
+                        "retrying execution of {} after ETXTBUSY (attempt {}/{})",
+                        display_path(&file),
+                        attempt,
+                        ETXTBUSY_RETRIES
+                    );
+                    tokio::time::sleep(Duration::from_millis(ETXTBUSY_SLEEP_MS)).await;
+                }
+                Err(err) => break Err(err),
+            }
+        }
     }
 
     async fn exec_program(
@@ -732,6 +759,16 @@ impl TaskExecutor {
         cmd.execute()?;
         trace!("{prefix} exited successfully");
         Ok(())
+    }
+
+    fn is_text_file_busy(err: &Report) -> bool {
+        if let Some(io_err) = err.downcast_ref::<std::io::Error>() {
+            if let Some(code) = io_err.raw_os_error() {
+                // ETXTBUSY (Text file busy)
+                return code == 26;
+            }
+        }
+        false
     }
 
     async fn parse_usage_spec_and_init_env(
