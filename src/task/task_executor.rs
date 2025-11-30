@@ -10,8 +10,10 @@ use crate::task::task_source_checker::{save_checksum, sources_are_fresh, task_cw
 use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
 use crate::ui::{style, time};
 use duct::IntoExecutablePath;
-use eyre::{Result, Report, ensure, eyre};
+use eyre::{Report, Result, ensure, eyre};
 use itertools::Itertools;
+#[cfg(unix)]
+use nix::errno::Errno;
 use std::collections::BTreeMap;
 use std::iter::once;
 use std::ops::Deref;
@@ -19,8 +21,6 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, SystemTime};
-#[cfg(unix)]
-use nix::errno::Errno;
 use tokio::sync::Mutex;
 use tokio::sync::{mpsc, oneshot};
 use xx::file;
@@ -595,7 +595,7 @@ impl TaskExecutor {
                     attempt += 1;
                     trace!(
                         "retrying execution of {} after ETXTBUSY (attempt {}/{})",
-                        display_path(&file),
+                        display_path(file),
                         attempt,
                         ETXTBUSY_RETRIES
                     );
@@ -767,12 +767,11 @@ impl TaskExecutor {
 
     #[cfg(unix)]
     fn is_text_file_busy(err: &Report) -> bool {
-        if let Some(io_err) = err.downcast_ref::<std::io::Error>() {
-            if let Some(code) = io_err.raw_os_error() {
+        if let Some(io_err) = err.downcast_ref::<std::io::Error>()
+            && let Some(code) = io_err.raw_os_error() {
                 // ETXTBUSY (Text file busy) on Unix
                 return code == Errno::ETXTBSY as i32;
             }
-        }
         false
     }
 
