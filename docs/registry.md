@@ -31,7 +31,9 @@ In addition to built-in [core tools](/core-tools.html), `mise` supports a variet
 In general, the preferred [backend](/dev-tools/backends/) to use for new tools is the following:
 
 - [aqua](./dev-tools/backends/aqua.html) - offers the most features and security while not requiring plugins
-- [ubi](./dev-tools/backends/ubi.html) - Universal Binary Installer, offers a simple way to install tools from any GitHub/GitLab repo
+- [github](./dev-tools/backends/github.html) - for tools that are not available in the aqua registry, but are available on GitHub
+- [gitlab](./dev-tools/backends/gitlab.html) - for tools that are not available in the aqua registry, but are available on GitLab
+- [ubi](./dev-tools/backends/ubi.html) - Universal Binary Installer, for tools that are available on GitHub or GitLab, but GitHub/GitLab backends don't work for some reason
 - [pipx](./dev-tools/backends/pipx.html) - only for python tools, requires python to be installed but this generally would always be the case for python tools
 - [npm](./dev-tools/backends/npm.html) - only for node tools, requires node to be installed but this generally would always be the case for node tools
 - [vfox](./dev-tools/backends/vfox.html) - only for tools that have unique installation requirements or need to modify env vars
