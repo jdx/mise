@@ -597,7 +597,9 @@ impl TaskExecutor {
                         attempt,
                         ETXTBUSY_RETRIES
                     );
-                    tokio::time::sleep(Duration::from_millis(ETXTBUSY_SLEEP_MS)).await;
+                    // Exponential backoff: 50ms, 100ms, 200ms
+                    let sleep_ms = ETXTBUSY_SLEEP_MS * (1 << (attempt - 1));
+                    tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
                 }
                 Err(err) => break Err(err),
             }
