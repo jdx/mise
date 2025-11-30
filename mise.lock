@@ -39,7 +39,7 @@ version = "0.13.8"
 backend = "cargo:cargo-edit"
 
 [[tools."cargo:cargo-insta"]]
-version = "1.44.2"
+version = "1.44.3"
 backend = "cargo:cargo-insta"
 
 [[tools."cargo:cargo-release"]]
@@ -102,7 +102,7 @@ version = "0.46.0"
 backend = "npm:markdownlint-cli"
 
 [[tools."npm:prettier"]]
-version = "3.7.1"
+version = "3.7.3"
 backend = "npm:prettier"
 
 [[tools.pkl]]
