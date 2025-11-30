@@ -4,7 +4,6 @@ use crate::env;
 use crate::file;
 use crate::file::display_path;
 use crate::path::PathExt;
-use crate::registry::{REGISTRY, tool_enabled};
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset};
 use eyre::{Report, Result, bail};
 use itertools::Itertools;
@@ -292,9 +291,6 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         return Ok(());
     }
 
-    // Collect all tool names for retention logic
-    let mut all_tool_names = HashSet::new();
-
     // Collect tools by source (config file)
     let mut tools_by_source: HashMap<ToolSource, HashMap<String, ToolVersionList>> = HashMap::new();
     for (source, group) in &ts.versions.iter().chunk_by(|(_, tvl)| &tvl.source) {
@@ -303,7 +299,6 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
                 .entry(source.clone())
                 .or_default()
                 .insert(ba.short.to_string(), tvl.clone());
-            all_tool_names.insert(ba.short.to_string());
         }
     }
 
@@ -359,21 +354,6 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
 
         let mut existing_lockfile = Lockfile::read(&lockfile_path)
             .unwrap_or_else(|err| handle_missing_lockfile(err, &lockfile_path));
-
-        // Retain tools that should stay even if not in current toolset
-        existing_lockfile.tools.retain(|k, tools| {
-            all_tool_names.contains(k)
-                || !tool_enabled(
-                    &Settings::get().enable_tools(),
-                    &Settings::get().disable_tools(),
-                    k,
-                )
-                || REGISTRY
-                    .get(&k.as_str())
-                    .is_some_and(|rt| !rt.is_supported_os())
-                // Preserve tools that have env-specific entries (from unloaded env configs)
-                || tools.iter().any(|t| t.env.is_some())
-        });
 
         // Collect all tools from all contributing configs with their env context
         // Key: tool short name, Value: list of (LockfileTool, env)
