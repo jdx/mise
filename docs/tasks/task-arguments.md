@@ -40,6 +40,39 @@ $ mise run deploy staging --verbose --region us-west-2
 # $usage_region = "us-west-2"
 ```
 
+In addition to environment variables, **usage values are available inside Tera
+templates in task run scripts** via a `usage` map:
+
+```mise-toml [mise.toml]
+[tasks.deploy]
+description = "Deploy application"
+usage = '''
+arg "<environment>" help="Target environment"
+flag "-v --verbose" help="Enable verbose output"
+flag "--region <region>" help="AWS region" default="us-east-1"
+'''
+run = '''
+echo "Deploying to {{ usage.environment }} in {{ usage.region }}"
+{% if usage.verbose %}
+  echo "Verbose mode enabled"
+{% endif %}
+'''
+```
+
+The `usage` map uses argument/flag names as keys. For names with `-`, use
+bracket access, e.g. <span v-pre>`{{ usage["dry-run"] }}`</span>. Variadic
+arguments/flags are exposed as arrays and can be used with Tera's `for` loops
+and filters like `length`. The `usage` map is **separate from** the deprecated
+Tera template functions (`arg()`, `option()`, `flag()`) described later on this
+page—you should not mix the two approaches in the same task.
+
+When `task.disable_spec_from_run_scripts` is `false` (the default), mise does
+an early Tera pass over run scripts to collect deprecated args; that pass does
+_not_ see the `usage` map and will error if templates reference it. To avoid
+this and only use the `usage` field for specs, set
+`task.disable_spec_from_run_scripts = true` (or
+`MISE_TASK_DISABLE_SPEC_FROM_RUN_SCRIPTS=1`).
+
 **Help output example:**
 
 ```shellsession
