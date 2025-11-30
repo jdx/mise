@@ -44,7 +44,10 @@ impl Backend for GemBackend {
         .full_env(&env)
         .read()?;
 
-        parse_gem_versions(&output)
+        let mut versions = parse_gem_versions(&output)?;
+        // gem info returns versions newest-first, but mise expects oldest-first
+        versions.reverse();
+        Ok(versions)
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
