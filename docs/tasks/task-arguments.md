@@ -59,12 +59,14 @@ echo "Deploying to {{ usage.environment }} in {{ usage.region }}"
 '''
 ```
 
-The `usage` map uses argument/flag names as keys. For names with `-`, use
-bracket access, e.g. <span v-pre>`{{ usage["dry-run"] }}`</span>. Variadic
-arguments/flags are exposed as arrays and can be used with Tera's `for` loops
-and filters like `length`. The `usage` map is **separate from** the deprecated
-Tera template functions (`arg()`, `option()`, `flag()`) described later on this
-page—you should not mix the two approaches in the same task.
+The `usage` map uses **snake_case argument/flag names as keys** (just like the
+`usage_` environment variables). Names with `-` are converted to `_`, so a flag
+like `--dry-run` becomes available as <span v-pre>`{{ usage.dry_run }}`</span>
+and `$usage_dry_run`. Variadic arguments/flags are exposed as arrays and can be
+used with Tera's `for` loops and filters like `length`. The `usage` map is 
+**separate from** the deprecated Tera template functions (`arg()`, `option()`,
+`flag()`) described later on this page—you should not mix the two approaches in
+the same task.
 
 When `task.disable_spec_from_run_scripts` is `false` (the default), mise does
 an early Tera pass over run scripts to collect deprecated args; that pass does
