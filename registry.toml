@@ -4515,8 +4515,9 @@ backends = ["aqua:grafana/tanka", "asdf:trotttrotttrott/asdf-tanka"]
 description = "Flexible, reusable and concise configuration for Kubernetes"
 
 [tools.tanzu]
-backends = ["asdf:mise-plugins/tanzu-plug-in-for-asdf"]
+backends = ["github:vmware-tanzu/tanzu-cli[rename_exe=tanzu]"]
 description = "The Tanzu Core CLI project provides the core functionality of the Tanzu CLI. The CLI is based on a plugin architecture where CLI command functionality can be delivered through independently developed plugin binaries"
+test = ["tanzu version", "version: v{{version}}"]
 
 [tools.taplo]
 backends = ["aqua:tamasfe/taplo", "ubi:tamasfe/taplo", "cargo:taplo-cli"]
