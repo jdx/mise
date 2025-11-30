@@ -768,10 +768,11 @@ impl TaskExecutor {
     #[cfg(unix)]
     fn is_text_file_busy(err: &Report) -> bool {
         if let Some(io_err) = err.downcast_ref::<std::io::Error>()
-            && let Some(code) = io_err.raw_os_error() {
-                // ETXTBUSY (Text file busy) on Unix
-                return code == Errno::ETXTBSY as i32;
-            }
+            && let Some(code) = io_err.raw_os_error()
+        {
+            // ETXTBUSY (Text file busy) on Unix
+            return code == Errno::ETXTBSY as i32;
+        }
         false
     }
 
