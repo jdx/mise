@@ -19,6 +19,8 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, SystemTime};
+#[cfg(unix)]
+use nix::errno::Errno;
 use tokio::sync::Mutex;
 use tokio::sync::{mpsc, oneshot};
 use xx::file;
@@ -763,13 +765,20 @@ impl TaskExecutor {
         Ok(())
     }
 
+    #[cfg(unix)]
     fn is_text_file_busy(err: &Report) -> bool {
         if let Some(io_err) = err.downcast_ref::<std::io::Error>() {
             if let Some(code) = io_err.raw_os_error() {
-                // ETXTBUSY (Text file busy)
-                return code == 26;
+                // ETXTBUSY (Text file busy) on Unix
+                return code == Errno::ETXTBSY as i32;
             }
         }
+        false
+    }
+
+    #[cfg(not(unix))]
+    #[allow(unused_variables)]
+    fn is_text_file_busy(err: &Report) -> bool {
         false
     }
 
