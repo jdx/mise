@@ -371,7 +371,6 @@ impl Backend for AquaBackend {
         Ok(PlatformInfo {
             url,
             checksum,
-            name,
             size: None,
             url_api: None,
         })

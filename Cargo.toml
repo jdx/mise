@@ -3,7 +3,7 @@ members = ["crates/vfox", "crates/aqua-registry"]
 
 [package]
 name = "mise"
-version = "2025.11.10"
+version = "2025.11.11"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -53,6 +53,7 @@ opt-level = 3
 
 [dependencies]
 age = { version = "0.11", features = ["ssh"] }
+anyhow = "1.0.100"
 async-backtrace = "0.2"
 async-trait = "0.1"
 aws-lc-rs = { version = "1", optional = true, features = [
@@ -154,7 +155,7 @@ tokio = { version = "1", features = ["full"] }
 tokio-retry = "0.3"
 toml = { version = "0.8", features = ["parse"] }
 toml_edit = { version = "0.22", features = ["parse"] }
-ubi = { version = "0.7.3", default-features = false }
+ubi = { version = "0.8", default-features = false }
 url = "2"
 urlencoding = "2.1.3"
 usage-lib = { version = "2", features = ["clap", "docs"] }

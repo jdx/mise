@@ -4,7 +4,6 @@ use crate::env;
 use crate::file;
 use crate::file::display_path;
 use crate::path::PathExt;
-use crate::registry::{REGISTRY, tool_enabled};
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset};
 use eyre::{Report, Result, bail};
 use itertools::Itertools;
@@ -42,9 +41,8 @@ pub struct LockfileTool {
 pub struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // TODO: Add size back if we find a good way to generate it with `mise lock`
+    #[serde(skip_serializing, default)]
     pub size: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
@@ -58,24 +56,12 @@ impl TryFrom<toml::Value> for PlatformInfo {
         match value {
             toml::Value::String(checksum) => Ok(PlatformInfo {
                 checksum: Some(checksum),
-                name: None,
                 size: None,
-                url: None,
-                url_api: None,
-            }),
-            toml::Value::Integer(size) => Ok(PlatformInfo {
-                checksum: None,
-                name: None,
-                size: Some(size.try_into()?),
                 url: None,
                 url_api: None,
             }),
             toml::Value::Table(mut t) => {
                 let checksum = match t.remove("checksum") {
-                    Some(toml::Value::String(s)) => Some(s),
-                    _ => None,
-                };
-                let name = match t.remove("name") {
                     Some(toml::Value::String(s)) => Some(s),
                     _ => None,
                 };
@@ -94,7 +80,6 @@ impl TryFrom<toml::Value> for PlatformInfo {
                 };
                 Ok(PlatformInfo {
                     checksum,
-                    name,
                     size,
                     url,
                     url_api,
@@ -110,12 +95,6 @@ impl From<PlatformInfo> for toml::Value {
         let mut table = toml::Table::new();
         if let Some(checksum) = platform_info.checksum {
             table.insert("checksum".to_string(), checksum.into());
-        }
-        if let Some(name) = platform_info.name {
-            table.insert("name".to_string(), name.into());
-        }
-        if let Some(size) = platform_info.size {
-            table.insert("size".to_string(), (size as i64).into());
         }
         if let Some(url) = platform_info.url {
             table.insert("url".to_string(), url.into());
@@ -312,9 +291,6 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         return Ok(());
     }
 
-    // Collect all tool names for retention logic
-    let mut all_tool_names = HashSet::new();
-
     // Collect tools by source (config file)
     let mut tools_by_source: HashMap<ToolSource, HashMap<String, ToolVersionList>> = HashMap::new();
     for (source, group) in &ts.versions.iter().chunk_by(|(_, tvl)| &tvl.source) {
@@ -323,7 +299,6 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
                 .entry(source.clone())
                 .or_default()
                 .insert(ba.short.to_string(), tvl.clone());
-            all_tool_names.insert(ba.short.to_string());
         }
     }
 
@@ -379,21 +354,6 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
 
         let mut existing_lockfile = Lockfile::read(&lockfile_path)
             .unwrap_or_else(|err| handle_missing_lockfile(err, &lockfile_path));
-
-        // Retain tools that should stay even if not in current toolset
-        existing_lockfile.tools.retain(|k, tools| {
-            all_tool_names.contains(k)
-                || !tool_enabled(
-                    &Settings::get().enable_tools(),
-                    &Settings::get().disable_tools(),
-                    k,
-                )
-                || REGISTRY
-                    .get(&k.as_str())
-                    .is_some_and(|rt| !rt.is_supported_os())
-                // Preserve tools that have env-specific entries (from unloaded env configs)
-                || tools.iter().any(|t| t.env.is_some())
-        });
 
         // Collect all tools from all contributing configs with their env context
         // Key: tool short name, Value: list of (LockfileTool, env)
@@ -753,10 +713,23 @@ impl TryFrom<toml::Value> for LockfileTool {
             },
             toml::Value::Table(mut t) => {
                 let mut platforms = BTreeMap::new();
+                // Handle nested platforms table format: [tools.X.platforms.linux-x64]
                 if let Some(platforms_table) = t.remove("platforms") {
                     let platforms_table: toml::Table = platforms_table.try_into()?;
                     for (platform, platform_info) in platforms_table {
                         platforms.insert(platform, platform_info.try_into()?);
+                    }
+                }
+                // Handle inline table format: "platforms.linux-x64" = { ... }
+                let platform_keys: Vec<_> = t
+                    .keys()
+                    .filter(|k| k.starts_with("platforms."))
+                    .cloned()
+                    .collect();
+                for key in platform_keys {
+                    if let Some(platform_info) = t.remove(&key) {
+                        let platform_name = key.strip_prefix("platforms.").unwrap().to_string();
+                        platforms.insert(platform_name, platform_info.try_into()?);
                     }
                 }
                 let mut options = BTreeMap::new();
@@ -843,7 +816,6 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
                         platform.clone(),
                         PlatformInfo {
                             checksum: platform_info.checksum.clone(),
-                            name: platform_info.name.clone(),
                             size: platform_info.size,
                             url: platform_info.url.clone(),
                             url_api: platform_info.url_api.clone(),
@@ -880,11 +852,26 @@ fn format(mut doc: DocumentMut) -> String {
                         if a == "version" {
                             return std::cmp::Ordering::Less;
                         }
+                        if b == "version" {
+                            return std::cmp::Ordering::Greater;
+                        }
                         a.to_string().cmp(&b.to_string())
                     });
-                    // Sort platforms section within each tool
-                    if let Some(toml_edit::Item::Table(platforms_table)) = t.get_mut("platforms") {
-                        platforms_table.sort_values();
+                    // Convert platforms to inline tables with dotted keys
+                    if let Some(toml_edit::Item::Table(platforms_table)) = t.remove("platforms") {
+                        for (platform_key, platform_value) in platforms_table.iter() {
+                            if let toml_edit::Item::Table(platform_info) = platform_value {
+                                let mut inline = toml_edit::InlineTable::new();
+                                for (k, v) in platform_info.iter() {
+                                    if let toml_edit::Item::Value(val) = v {
+                                        inline.insert(k, val.clone());
+                                    }
+                                }
+                                inline.sort_values();
+                                let dotted_key = format!("platforms.{}", platform_key);
+                                t.insert(&dotted_key, toml_edit::Item::Value(inline.into()));
+                            }
+                        }
                     }
                 }
             }
@@ -953,7 +940,6 @@ backend = "core:python"
             "macos-arm64".to_string(),
             PlatformInfo {
                 checksum: Some("sha256:abc123".to_string()),
-                name: Some("node.tar.gz".to_string()),
                 size: Some(12345678),
                 url: Some("https://example.com/node.tar.gz".to_string()),
                 url_api: Some("https://api.github.com.com/repos/test/1234".to_string()),

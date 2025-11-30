@@ -415,7 +415,7 @@ type = "Duration"
 
 [fetch_remote_versions_timeout]
 aliases = ["fetch_remote_version_timeout"]
-default = "10s"
+default = "20s"
 description = "Timeout in seconds for HTTP requests to fetch new tool versions in mise."
 env = "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT"
 type = "Duration"
