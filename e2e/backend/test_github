@@ -30,6 +30,7 @@ cat <<EOF >mise.toml
 "github:jdx/mise-test-fixtures" = { version = "1.0.0", asset_pattern = "hello-world", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world" }
 EOF
 
+mise uninstall github:jdx/mise-test-fixtures
 mise install
 assert_contains "mise x -- hello-world" "hello world"
 
