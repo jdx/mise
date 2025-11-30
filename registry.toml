@@ -3686,12 +3686,7 @@ description = "A cli tool to help discover deprecated apiVersions in Kubernetes"
 test = ["pluto version", "Version:{{version}}"]
 
 [tools.pnpm]
-backends = [
-  "aqua:pnpm/pnpm",
-  "ubi:pnpm/pnpm",
-  "npm:pnpm",
-  "asdf:jonathanmorley/asdf-pnpm",
-]
+backends = ["aqua:pnpm/pnpm", "ubi:pnpm/pnpm", "npm:pnpm"]
 description = "Fast, disk space efficient package manager"
 test = ["pnpm --version", "{{version}}"]
 
