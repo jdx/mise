@@ -3459,6 +3459,11 @@ backends = ["aqua:pivotal-cf/om", "asdf:mise-plugins/tanzu-plug-in-for-asdf"]
 description = "General command line utility for working with VMware Tanzu Operations Manager"
 test = ["om version", "{{version}}"]
 
+[tools.omnictl]
+backends = ["aqua:siderolabs/omni/omnictl", "ubi:siderolabs/omni[exe=omnictl]"]
+description = "CLI for Omni - SideroLabs' Kubernetes management platform for bare metal deployments"
+test = ["omnictl --version", "omnictl version v{{version}}"]
+
 [tools.onyx]
 backends = ["github:onyx-lang/onyx", "asdf:jtakakura/asdf-onyx"]
 description = "The compiler and developer toolchain for Onyx"
@@ -4508,10 +4513,7 @@ description = "A tool to help creating Talos kubernetes cluster"
 aliases = ["talos"]
 backends = ["aqua:siderolabs/talos", "ubi:siderolabs/talos[exe=talosctl]"]
 description = "Talos is a modern OS for Kubernetes. talosctl is a CLI for out-of-band management of Kubernetes nodes created by Talos"
-test = [
-  "talosctl version --client --short | grep 'Talos'",
-  "Talos v{{version}}",
-]
+test = ["talosctl version --client --short", "Talos v{{version}}"]
 
 [tools.tanka]
 backends = ["aqua:grafana/tanka", "asdf:trotttrotttrott/asdf-tanka"]
