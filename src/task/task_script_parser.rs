@@ -6,6 +6,7 @@ use crate::shell::ShellType;
 use crate::task::Task;
 use crate::tera::get_tera;
 use eyre::{Context, Result};
+use heck::ToSnakeCase;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::iter::once;
@@ -767,15 +768,15 @@ impl TaskScriptParser {
             }
         };
 
-        // The names are as-is. Hyphens are not converted to underscores.
-        // Use {{ usage["arg-name"] }} to access such args/flags.
+        // The names are converted to snake_case (hyphens become underscores).
+        // For example, a flag like "--dry-run" becomes accessible as {{ usage.dry_run }}.
         for (arg, val) in &usage.args {
             let tera_val = to_tera_value(val);
-            usage_ctx.insert(arg.name.clone(), tera_val);
+            usage_ctx.insert(arg.name.to_snake_case(), tera_val);
         }
         for (flag, val) in &usage.flags {
             let tera_val = to_tera_value(val);
-            usage_ctx.insert(flag.name.clone(), tera_val);
+            usage_ctx.insert(flag.name.to_snake_case(), tera_val);
         }
         usage_ctx
     }
