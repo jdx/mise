@@ -84,6 +84,38 @@ I think in most situations this is probably fine, though worth keeping in mind.
 
 :::
 
+## OS-specific hooks
+
+Hooks can be restricted to specific operating systems using the `os` field. This is useful for cross-platform projects where different commands are needed on different platforms. The `os` field accepts Rust OS names: `linux`, `macos`, `windows`.
+
+```toml
+[[hooks.enter]]
+os = "windows"
+script = "echo 'Windows hook'"
+
+[[hooks.enter]]
+os = "linux"
+script = "echo 'Linux hook'"
+
+[[hooks.enter]]
+os = "macos"
+script = "echo 'macOS hook'"
+```
+
+You can combine `os` with `shell` for platform and shell-specific hooks:
+
+```toml
+[[hooks.enter]]
+os = "windows"
+shell = "powershell"
+script = "Write-Host 'Windows PowerShell hook'"
+
+[[hooks.enter]]
+os = "linux"
+shell = "bash"
+script = "echo 'Linux bash hook'"
+```
+
 ## Multiple hooks syntax
 
 You can use arrays to define multiple hooks in the same file:
