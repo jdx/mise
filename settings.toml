@@ -668,6 +668,40 @@ env = "MISE_LOG_LEVEL"
 hide = true
 type = "String"
 
+[netrc]
+default = true
+description = "Use a netrc file for HTTP Basic authentication."
+docs = """
+When enabled, mise will read credentials from the netrc file and apply
+HTTP Basic authentication for matching hosts. This is useful for accessing
+private artifact repositories like Artifactory or Nexus.
+
+On Unix/macOS, the default path is `~/.netrc`.
+On Windows, mise looks for `%USERPROFILE%\\_netrc` first, then falls back to `%USERPROFILE%\\.netrc`.
+
+The netrc file format is:
+
+```
+machine artifactory.example.com
+  login myuser
+  password mytoken
+```
+
+You can also specify a custom netrc file path using the `netrc_file` setting.
+"""
+env = "MISE_NETRC"
+type = "Bool"
+
+[netrc_file]
+description = "Path to the netrc file to use for HTTP Basic authentication."
+docs = """
+Override the default netrc file path. This is useful if you want to use a
+different netrc file for mise or if your netrc file is in a non-standard location.
+"""
+env = "MISE_NETRC_FILE"
+optional = true
+type = "Path"
+
 [node.compile]
 description = "Compile node from source."
 env = "MISE_NODE_COMPILE"
@@ -699,8 +733,8 @@ docs = """
 Set to false to disable the "command not found" handler to autoinstall missing tool versions.
 Disable this if experiencing strange behavior in your shell when a command is not found.
 
-**Important limitation**: This handler only installs missing versions of tools that already have 
-at least one version installed. mise cannot determine which tool provides a binary without having 
+**Important limitation**: This handler only installs missing versions of tools that already have
+at least one version installed. mise cannot determine which tool provides a binary without having
 the tool installed first, so it cannot auto-install completely new tools.
 
 This also runs in shims if the terminal is interactive.

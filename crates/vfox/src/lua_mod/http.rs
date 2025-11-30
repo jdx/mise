@@ -1,7 +1,7 @@
 use mlua::{BorrowedStr, ExternalResult, Lua, MultiValue, Result, Table};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
-use crate::http::CLIENT;
+use crate::http::{CLIENT, netrc_headers};
 
 pub fn mod_http(lua: &Lua) -> Result<()> {
     let package: Table = lua.globals().get("package")?;
@@ -43,12 +43,21 @@ fn into_headers(table: &Table) -> Result<HeaderMap> {
     Ok(map)
 }
 
+/// Merge netrc headers with user-provided headers
+/// User-provided headers take precedence
+fn merge_with_netrc_headers(url: &str, user_headers: HeaderMap) -> HeaderMap {
+    let mut headers = netrc_headers(url);
+    headers.extend(user_headers);
+    headers
+}
+
 async fn get(lua: &Lua, input: Table) -> Result<Table> {
     let url: String = input.get("url").into_lua_err()?;
-    let headers = match input.get::<Option<Table>>("headers").into_lua_err()? {
+    let user_headers = match input.get::<Option<Table>>("headers").into_lua_err()? {
         Some(tbl) => into_headers(&tbl)?,
         None => HeaderMap::default(),
     };
+    let headers = merge_with_netrc_headers(&url, user_headers);
     let resp = CLIENT
         .get(&url)
         .headers(headers)
@@ -65,10 +74,11 @@ async fn get(lua: &Lua, input: Table) -> Result<Table> {
 async fn download_file(_lua: &Lua, input: MultiValue) -> Result<()> {
     let t: &Table = input.iter().next().unwrap().as_table().unwrap();
     let url: String = t.get("url").into_lua_err()?;
-    let headers = match t.get::<Option<Table>>("headers").into_lua_err()? {
+    let user_headers = match t.get::<Option<Table>>("headers").into_lua_err()? {
         Some(tbl) => into_headers(&tbl)?,
         None => HeaderMap::default(),
     };
+    let headers = merge_with_netrc_headers(&url, user_headers);
     let path: String = input.iter().nth(1).unwrap().to_string()?;
     let resp = CLIENT
         .get(&url)
@@ -87,10 +97,11 @@ async fn download_file(_lua: &Lua, input: MultiValue) -> Result<()> {
 
 async fn head(lua: &Lua, input: Table) -> Result<Table> {
     let url: String = input.get("url").into_lua_err()?;
-    let headers = match input.get::<Option<Table>>("headers").into_lua_err()? {
+    let user_headers = match input.get::<Option<Table>>("headers").into_lua_err()? {
         Some(tbl) => into_headers(&tbl)?,
         None => HeaderMap::default(),
     };
+    let headers = merge_with_netrc_headers(&url, user_headers);
     let resp = CLIENT
         .head(&url)
         .headers(headers)

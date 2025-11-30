@@ -284,7 +284,8 @@ impl Vfox {
             .download_dir
             .join(format!("{sdk}-{version}"))
             .join(filename);
-        let resp = CLIENT.get(url.clone()).send().await?;
+        let headers = crate::http::netrc_headers(url.as_str());
+        let resp = CLIENT.get(url.clone()).headers(headers).send().await?;
         resp.error_for_status_ref()?;
         file::mkdirp(path.parent().unwrap())?;
         let mut file = tokio::fs::File::create(&path).await?;

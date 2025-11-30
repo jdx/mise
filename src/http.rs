@@ -2,6 +2,8 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use eyre::{Report, Result, bail, ensure};
 use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -14,6 +16,7 @@ use url::Url;
 use crate::cli::version;
 use crate::config::Settings;
 use crate::file::display_path;
+use crate::netrc;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::time::format_duration;
 use crate::{env, file};
@@ -266,8 +269,16 @@ impl Client {
     ) -> Result<Response> {
         apply_url_replacements(&mut url);
         debug!("{} {}", verb_label, &url);
+
+        // Apply netrc credentials after URL replacement
+        let mut final_headers = headers.clone();
+        let netrc = netrc_headers(&url);
+        if !netrc.is_empty() {
+            final_headers.extend(netrc);
+        }
+
         let mut req = self.reqwest.request(method, url.clone());
-        req = req.headers(headers.clone());
+        req = req.headers(final_headers);
         let resp = match req.send().await {
             Ok(resp) => resp,
             Err(err) => {
@@ -335,6 +346,20 @@ fn github_headers(url: &Url) -> HeaderMap {
             "x-github-api-version",
             HeaderValue::from_static("2022-11-28"),
         );
+    }
+    headers
+}
+
+/// Get HTTP Basic authentication headers from netrc file for the given URL
+fn netrc_headers(url: &Url) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    if let Some(host) = url.host_str()
+        && let Some((login, password)) = netrc::get_credentials(host)
+    {
+        let credentials = BASE64_STANDARD.encode(format!("{login}:{password}"));
+        if let Ok(value) = HeaderValue::from_str(&format!("Basic {credentials}")) {
+            headers.insert("authorization", value);
+        }
     }
     headers
 }
