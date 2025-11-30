@@ -53,6 +53,7 @@ impl Backend for UbiBackend {
                 None => match forge {
                     ForgeType::GitHub => github::API_URL,
                     ForgeType::GitLab => gitlab::API_URL,
+                    _ => bail!("Unsupported forge type {:?}", forge),
                 },
             };
             let tag_regex = OnceLock::new();
@@ -67,6 +68,7 @@ impl Backend for UbiBackend {
                     .into_iter()
                     .map(|r| r.tag_name)
                     .collect::<Vec<String>>(),
+                _ => bail!("Unsupported forge type {:?}", forge),
             };
             if versions.is_empty() {
                 match forge {
@@ -82,6 +84,7 @@ impl Backend for UbiBackend {
                             .into_iter()
                             .collect();
                     }
+                    _ => bail!("Unsupported forge type {:?}", forge),
                 }
             }
 
@@ -128,9 +131,13 @@ impl Backend for UbiBackend {
 
         // Use lockfile URL if available, otherwise fall back to standard resolution
         if let Some(url) = &lockfile_url {
-            install(url, &v, &bin_dir, extract_all, &opts).await?;
+            install(url, &v, &bin_dir, extract_all, &opts)
+                .await
+                .map_err(|e| eyre::eyre!(e))?;
         } else if name_is_url(&self.tool_name()) {
-            install(&self.tool_name(), &v, &bin_dir, extract_all, &opts).await?;
+            install(&self.tool_name(), &v, &bin_dir, extract_all, &opts)
+                .await
+                .map_err(|e| eyre::eyre!(e))?;
         } else {
             try_with_v_prefix(&v, None, |candidate| {
                 let opts = opts.clone();
@@ -311,6 +318,7 @@ fn set_token<'a>(mut builder: UbiBuilder<'a>, forge: &ForgeType) -> UbiBuilder<'
             }
             builder
         }
+        _ => builder,
     }
 }
 
@@ -328,6 +336,7 @@ fn set_enterprise_token<'a>(mut builder: UbiBuilder<'a>, forge: &ForgeType) -> U
             }
             builder
         }
+        _ => builder,
     }
 }
 
@@ -337,7 +346,7 @@ async fn install(
     bin_dir: &Path,
     extract_all: bool,
     opts: &ToolVersionOptions,
-) -> eyre::Result<()> {
+) -> anyhow::Result<()> {
     let mut builder = UbiBuilder::new().install_dir(bin_dir);
 
     if name_is_url(name) {
@@ -379,7 +388,7 @@ async fn install(
         builder = set_enterprise_token(builder, &forge);
     }
 
-    let mut ubi = builder.build().map_err(|e| eyre::eyre!(e))?;
+    let mut ubi = builder.build()?;
 
     // TODO: hacky but does not compile without it
     tokio::task::block_in_place(|| {
@@ -389,11 +398,6 @@ async fn install(
                 .build()
                 .unwrap()
         });
-        RT.block_on(async {
-            match ubi.install_binary().await {
-                Ok(_) => Ok(()),
-                Err(e) => Err(eyre::eyre!(e)),
-            }
-        })
+        RT.block_on(async { ubi.install_binary().await })
     })
 }

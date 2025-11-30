@@ -4356,9 +4356,9 @@ dependencies = [
 
 [[package]]
 name = "lzma-rust2"
-version = "0.6.1"
+version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26175dd096dfaab9f4fbf577a668842ebc48374d4d06b154bffb49918e242261"
+checksum = "96d43a6fec3e2f1176fd435ff6f0e337dab57361918f0f51bbc75995151e2ca0"
 
 [[package]]
 name = "lzma-sys"
@@ -4501,6 +4501,7 @@ name = "mise"
 version = "2025.11.10"
 dependencies = [
  "age",
+ "anyhow",
  "aqua-registry",
  "async-backtrace",
  "async-trait",
@@ -6723,11 +6724,10 @@ dependencies = [
 
 [[package]]
 name = "sevenz-rust2"
-version = "0.17.1"
+version = "0.19.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98644326f9145490e4c194dd775a9a2ed7e84f8254415eb709a7924f52fcd7a1"
+checksum = "414256b6bb303a2a38ad800096664c3b332295c17b7ef0674bf0acf44284036c"
 dependencies = [
- "byteorder",
  "crc32fast",
  "js-sys",
  "lzma-rust2",
@@ -7763,9 +7763,9 @@ checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 
 [[package]]
 name = "ubi"
-version = "0.7.4"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cdc5e6b6f36ff6bf3c9c98794396fc4bd337ada397b88d2456b015f82c1f868"
+checksum = "78f4c4ae20814754faab516f44cf1da14e11c510541ceb8555695cf03aadafb1"
 dependencies = [
  "anyhow",
  "async-trait",
