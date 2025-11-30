@@ -71,6 +71,7 @@ packages:
           - goos: windows
             format: zip
       - version_constraint: "true"
+        version_prefix: gping-
         asset: gping-{{.OS}}-gnu-{{.Arch}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true

@@ -1,5 +1,92 @@
 # Changelog
 
+## [2025.11.11](https://github.com/jdx/mise/compare/v2025.11.10..v2025.11.11) - 2025-11-30
+
+### 🚀 Features
+
+- **(backend)** add filter_bins option to github/gitlab backends by @risu729 in [#7105](https://github.com/jdx/mise/pull/7105)
+- **(ci)** auto-close PRs from non-maintainers by @jdx in [#7108](https://github.com/jdx/mise/pull/7108)
+- **(conda)** add conda backend for installing packages from conda-forge by @jdx in [#7139](https://github.com/jdx/mise/pull/7139)
+- **(github)** add rename_exe option and switch elm, opam, yt-dlp from ubi by @jdx in [#7140](https://github.com/jdx/mise/pull/7140)
+- **(install)** add --locked flag for strict lockfile mode by @jdx in [#7098](https://github.com/jdx/mise/pull/7098)
+- **(lock)** implement cross-platform lockfile generation by @jdx in [#7091](https://github.com/jdx/mise/pull/7091)
+- **(lockfile)** add options field for tool artifact identity by @jdx in [#7092](https://github.com/jdx/mise/pull/7092)
+- **(lockfile)** add env field and local lockfile support by @jdx in [#7099](https://github.com/jdx/mise/pull/7099)
+- **(lockfile)** add URL support for deno, go, and zig backends by @jdx in [#7112](https://github.com/jdx/mise/pull/7112)
+- **(lockfile)** add URL support for vfox backend by @jdx in [#7114](https://github.com/jdx/mise/pull/7114)
+- **(lockfile)** add multi-platform checksums without downloading tarballs by @jdx in [#7113](https://github.com/jdx/mise/pull/7113)
+
+### 🐛 Bug Fixes
+
+- **(backend)** allow platform-specific strip_components by @risu729 in [#7106](https://github.com/jdx/mise/pull/7106)
+- **(backend)** prefer path root for bin path if it contains an executable by @risu729 in [#7151](https://github.com/jdx/mise/pull/7151)
+- **(bash)** avoid deactivate error on (no)unset PROMPT_COMMAND by @scop in [#7096](https://github.com/jdx/mise/pull/7096)
+- **(ci)** use updatedAt instead of createdAt for stale PR detection by @jdx in [#7109](https://github.com/jdx/mise/pull/7109)
+- **(config)** increase fetch_remote_versions_timeout default to 20s by @jdx in [#7157](https://github.com/jdx/mise/pull/7157)
+- **(github)** search subdirectories for executables in discover_bin_paths by @jdx in [#7138](https://github.com/jdx/mise/pull/7138)
+- **(lockfile)** combine api_url with asset_pattern for GitHub release URLs by @jdx in [#7111](https://github.com/jdx/mise/pull/7111)
+
+### 🚜 Refactor
+
+- **(lock)** simplify lockfile to always use array format by @jdx in [#7093](https://github.com/jdx/mise/pull/7093)
+- **(lockfile)** use compact inline table format by @jdx in [#7141](https://github.com/jdx/mise/pull/7141)
+
+### 📚 Documentation
+
+- **(gitlab)** document rename_exe option also for gitlab backend by @risu729 in [#7149](https://github.com/jdx/mise/pull/7149)
+- **(lockfile)** update documentation for recent lockfile changes by @jdx in [#7107](https://github.com/jdx/mise/pull/7107)
+- **(node)** use config_root in _.path for pnpm example by @risu729 in [#7146](https://github.com/jdx/mise/pull/7146)
+- **(registry)** add github/gitlab backends to the preferred backends list by @risu729 in [#7148](https://github.com/jdx/mise/pull/7148)
+- **(registry)** add url mappings for all backends by @risu729 in [#7147](https://github.com/jdx/mise/pull/7147)
+
+### 📦️ Dependency Updates
+
+- update docker/metadata-action digest to c299e40 by @renovate[bot] in [#7101](https://github.com/jdx/mise/pull/7101)
+- update ghcr.io/jdx/mise:alpine docker digest to 693c5f6 by @renovate[bot] in [#7102](https://github.com/jdx/mise/pull/7102)
+- update ghcr.io/jdx/mise:deb docker digest to 9985cab by @renovate[bot] in [#7104](https://github.com/jdx/mise/pull/7104)
+- update ghcr.io/jdx/mise:copr docker digest to 564d8e1 by @renovate[bot] in [#7103](https://github.com/jdx/mise/pull/7103)
+- update rust crate ubi to 0.8.4 by @risu729 in [#7154](https://github.com/jdx/mise/pull/7154)
+
+### 📦 Registry
+
+- add aqua backend as primary for e1s by @jdx in [#7115](https://github.com/jdx/mise/pull/7115)
+- add gem backend for bashly by @jdx in [6af6607](https://github.com/jdx/mise/commit/6af6607393a198feb1078e3ec3bc06146e82a23d)
+- switch 1password from asdf to vfox backend by @jdx in [#7116](https://github.com/jdx/mise/pull/7116)
+- add vfox backend for bfs by @jdx in [#7126](https://github.com/jdx/mise/pull/7126)
+- add github backend for btrace by @jdx in [#7129](https://github.com/jdx/mise/pull/7129)
+- add github backend for cf by @jdx in [#7131](https://github.com/jdx/mise/pull/7131)
+- add vfox backend for bpkg by @jdx in [#7130](https://github.com/jdx/mise/pull/7130)
+- switch apollo-ios from asdf to github backend by @jdx in [#7118](https://github.com/jdx/mise/pull/7118)
+- add vfox backend for chromedriver by @jdx in [#7134](https://github.com/jdx/mise/pull/7134)
+- switch superhtml, vespa-cli, xcsift from ubi to github backend by @jdx in [#7137](https://github.com/jdx/mise/pull/7137)
+- add vfox backend for clickhouse by @jdx in [#7136](https://github.com/jdx/mise/pull/7136)
+- switch chicken to vfox plugin by @jdx in [#7135](https://github.com/jdx/mise/pull/7135)
+- switch chezscheme from asdf to vfox backend by @jdx in [#7132](https://github.com/jdx/mise/pull/7132)
+- add vfox backend for carthage by @jdx in [#7133](https://github.com/jdx/mise/pull/7133)
+- switch azure-functions-core-tools from asdf to vfox backend by @jdx in [#7128](https://github.com/jdx/mise/pull/7128)
+- switch aapt2 to vfox backend by @jdx in [#7117](https://github.com/jdx/mise/pull/7117)
+- switch ant to vfox backend by @jdx in [#7119](https://github.com/jdx/mise/pull/7119)
+- switch asciidoctorj from asdf to vfox backend by @jdx in [#7121](https://github.com/jdx/mise/pull/7121)
+- switch awscli-local to pipx backend by @jdx in [#7120](https://github.com/jdx/mise/pull/7120)
+- add omnictl by @risu729 in [#7145](https://github.com/jdx/mise/pull/7145)
+- remove pnpm asdf plugin from fallback by @risu729 in [#7143](https://github.com/jdx/mise/pull/7143)
+- switch tanzu to github backend by @jdx in [#7124](https://github.com/jdx/mise/pull/7124)
+- switch android-sdk to vfox plugin by @jdx in [#7127](https://github.com/jdx/mise/pull/7127)
+- add vfox backend for ag (The Silver Searcher) by @jdx in [#7122](https://github.com/jdx/mise/pull/7122)
+- add gem backend for bashly by @jdx in [#7125](https://github.com/jdx/mise/pull/7125)
+
+### Chore
+
+- **(registry)** ignore deleted tools in test-tool workflow by @risu729 in [#7081](https://github.com/jdx/mise/pull/7081)
+- **(release)** show registry section last in changelog by @jdx in [#7156](https://github.com/jdx/mise/pull/7156)
+- update mise.lock with checksums by @jdx in [71e9123](https://github.com/jdx/mise/commit/71e9123efac62924b5804e1f56e61400adf22470)
+- disable cancel-in-progress for test workflow on main branch by @risu729 in [#7152](https://github.com/jdx/mise/pull/7152)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (1)
+
+- [`orf/gping`](https://github.com/orf/gping)
 ## [2025.11.10](https://github.com/jdx/mise/compare/v2025.11.9..v2025.11.10) - 2025-11-27
 
 ### 📦 Registry
