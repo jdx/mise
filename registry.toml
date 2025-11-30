@@ -133,9 +133,10 @@ description = "An agentic coding tool built by Sourcegraph"
 test = ["amp --version", "{{version}}"]
 
 [tools.android-sdk]
-backends = ["asdf:mise-plugins/mise-android-sdk"]
-depends = ["java", "yq"]
+backends = ["vfox:mise-plugins/vfox-android-sdk"]
+depends = ["java"]
 description = "Android Command-line tools"
+test = ["sdkmanager --version", ".0"]
 
 [tools.ansible]
 backends = ["pipx:ansible[uvx=false,pipx_args=--include-deps]"]
