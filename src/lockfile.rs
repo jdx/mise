@@ -852,6 +852,9 @@ fn format(mut doc: DocumentMut) -> String {
                         if a == "version" {
                             return std::cmp::Ordering::Less;
                         }
+                        if b == "version" {
+                            return std::cmp::Ordering::Greater;
+                        }
                         a.to_string().cmp(&b.to_string())
                     });
                     // Convert platforms to inline tables with dotted keys
