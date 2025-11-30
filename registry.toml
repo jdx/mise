@@ -53,8 +53,9 @@ description = "Command-line tools for working with Architecture Decision Records
 test = ["adr help", "adr help"]
 
 [tools.ag]
-backends = ["asdf:mise-plugins/mise-ag"]
+backends = ["vfox:mise-plugins/vfox-ag", "asdf:mise-plugins/mise-ag"]
 description = "The Silver Searcher: A code searching tool similar to ack, with a focus on speed"
+# test = ["ag --version", "ag version {{version}}"] # requires libpcre
 
 [tools.age]
 backends = ["aqua:FiloSottile/age", "asdf:threkk/asdf-age"]
