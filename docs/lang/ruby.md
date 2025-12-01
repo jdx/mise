@@ -74,6 +74,26 @@ mise cache clean
 mise ls-remote ruby
 ```
 
+## Build Configuration
+
+### Source
+
+The core ruby plugin can use eather git repo or zip url to build ruby
+
+- A Git URL
+
+```toml
+[ruby]
+MISE_RUBY_BUILD_REPO = "https://github.com/rbenv/ruby-build.git"
+```
+
+- A Zip URL
+```toml
+[ruby]
+MISE_RUBY_INSTALL = true
+MISE_RUBY_INSTALL_REPO = "https://github.com/postmodern/ruby-install/archive/refs/heads/master.zip"
+```
+
 ## Settings
 
 `ruby-build` already has a

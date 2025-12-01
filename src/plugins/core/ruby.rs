@@ -14,6 +14,7 @@ use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
+use crate::plugins::PluginSource;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, file, plugins, timeout};
@@ -76,20 +77,15 @@ impl RubyPlugin {
         }
     }
 
-    fn install_ruby_build(&self, pr: Option<&dyn SingleReport>) -> Result<()> {
+    async fn install_ruby_build(&self, pr: Option<&dyn SingleReport>) -> Result<()> {
         debug!(
             "Installing ruby-build to {}",
             self.ruby_build_path().display()
         );
-        let tmp = temp_dir().join("mise-ruby-build");
-        file::remove_all(&tmp)?;
-        file::create_dir_all(tmp.parent().unwrap())?;
-        let git = Git::new(tmp.clone());
-        let mut clone_options = CloneOptions::default();
-        if let Some(pr) = pr {
-            clone_options = clone_options.pr(pr);
-        }
-        git.clone(&Settings::get().ruby.ruby_build_repo, clone_options)?;
+        let settings = Settings::get();
+        let tmp = self
+            .prepare_source_in_tmp(&settings.ruby.ruby_install_repo, pr, "mise-ruby-install")
+            .await?;
 
         cmd!("sh", "install.sh")
             .env("PREFIX", self.ruby_build_path())
@@ -117,26 +113,19 @@ impl RubyPlugin {
             self.ruby_build_path().display()
         );
         file::remove_all(self.ruby_build_path())?;
-        self.install_ruby_build(pr)?;
+        self.install_ruby_build(pr).await?;
         Ok(())
     }
 
-    fn install_ruby_install(&self, pr: Option<&dyn SingleReport>) -> Result<()> {
-        let settings = Settings::get();
+    async fn install_ruby_install(&self, pr: Option<&dyn SingleReport>) -> Result<()> {
         debug!(
             "Installing ruby-install to {}",
             self.ruby_install_path().display()
         );
-        let tmp = temp_dir().join("mise-ruby-install");
-        file::remove_all(&tmp)?;
-        file::create_dir_all(tmp.parent().unwrap())?;
-        let git = Git::new(tmp.clone());
-        let mut clone_options = CloneOptions::default();
-        if let Some(pr) = pr {
-            clone_options = clone_options.pr(pr);
-        }
-        git.clone(&settings.ruby.ruby_install_repo, clone_options)?;
-
+        let settings = Settings::get();
+        let tmp = self
+            .prepare_source_in_tmp(&settings.ruby.ruby_install_repo, pr, "mise-ruby-install")
+            .await?;
         cmd!("make", "install")
             .env("PREFIX", self.ruby_install_path())
             .dir(&tmp)
@@ -149,7 +138,7 @@ impl RubyPlugin {
         let _lock = self.lock_build_tool();
         let ruby_install_path = self.ruby_install_path();
         if !ruby_install_path.exists() {
-            self.install_ruby_install(pr)?;
+            self.install_ruby_install(pr).await?;
         }
         if self.ruby_install_recently_updated()? {
             return Ok(());
@@ -168,6 +157,51 @@ impl RubyPlugin {
     fn ruby_install_recently_updated(&self) -> Result<bool> {
         let updated_at = file::modified_duration(&self.ruby_install_path())?;
         Ok(updated_at < DAILY)
+    }
+
+    async fn prepare_source_in_tmp(
+        &self,
+        repo: &str,
+        pr: Option<&dyn SingleReport>,
+        tmp_dir_name: &str,
+    ) -> Result<PathBuf> {
+        let tmp = temp_dir().join(tmp_dir_name);
+        file::remove_all(&tmp)?;
+        file::create_dir_all(tmp.parent().unwrap())?;
+        let source = PluginSource::parse(repo);
+        match source {
+            PluginSource::Zip { url } => {
+                let temp_archive = tmp.join("ruby.zip");
+                HTTP.download_file(url, &temp_archive, pr).await?;
+
+                if let Some(pr) = pr {
+                    pr.set_message("extracting zip file".to_string());
+                }
+
+                let strip_components =
+                    file::should_strip_components(&temp_archive, file::TarFormat::Zip)?;
+
+                file::unzip(
+                    &temp_archive,
+                    &tmp,
+                    &file::ZipOptions {
+                        strip_components: if strip_components { 1 } else { 0 },
+                    },
+                )?;
+            }
+            PluginSource::Git {
+                url: repo_url,
+                git_ref: _,
+            } => {
+                let git = Git::new(tmp.clone());
+                let mut clone_options = CloneOptions::default();
+                if let Some(pr) = pr {
+                    clone_options = clone_options.pr(pr);
+                }
+                git.clone(&repo_url, clone_options)?;
+            }
+        }
+        Ok(tmp)
     }
 
     fn gem_path(&self, tv: &ToolVersion) -> PathBuf {
