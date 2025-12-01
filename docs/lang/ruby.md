@@ -88,6 +88,7 @@ MISE_RUBY_BUILD_REPO = "https://github.com/rbenv/ruby-build.git"
 ```
 
 - A Zip URL
+
 ```toml
 [ruby]
 MISE_RUBY_INSTALL = true
