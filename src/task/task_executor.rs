@@ -767,13 +767,15 @@ impl TaskExecutor {
 
     #[cfg(unix)]
     fn is_text_file_busy(err: &Report) -> bool {
-        if let Some(io_err) = err.downcast_ref::<std::io::Error>()
-            && let Some(code) = io_err.raw_os_error()
-        {
-            // ETXTBUSY (Text file busy) on Unix
-            return code == Errno::ETXTBSY as i32;
-        }
-        false
+        err.chain().any(|cause| {
+            if let Some(io_err) = cause.downcast_ref::<std::io::Error>()
+                && let Some(code) = io_err.raw_os_error()
+            {
+                // ETXTBUSY (Text file busy) on Unix
+                return code == Errno::ETXTBSY as i32;
+            }
+            false
+        })
     }
 
     #[cfg(not(unix))]
