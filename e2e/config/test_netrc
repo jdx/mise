@@ -1,0 +1,292 @@
+#!/usr/bin/env bash
+
+# Test netrc file support for HTTP authentication
+
+# Create a netrc file in the test home
+cat >"$HOME/.netrc" <<'EOF'
+machine example.com
+  login testuser
+  password testpassword
+
+default
+  login anonymous
+  password anon@example.com
+EOF
+
+chmod 600 "$HOME/.netrc"
+
+# Test 1: Verify netrc setting is enabled by default
+assert "mise settings get netrc" "true"
+
+# Test 2: Verify netrc_file setting can be configured
+cat >mise.toml <<EOF
+[settings]
+netrc_file = "$HOME/.custom-netrc"
+EOF
+
+# Create custom netrc
+cat >"$HOME/.custom-netrc" <<'EOF'
+machine custom.example.com
+  login customuser
+  password custompass
+EOF
+chmod 600 "$HOME/.custom-netrc"
+
+assert_contains "mise settings get netrc_file" ".custom-netrc"
+
+# Test 3: Verify netrc can be disabled
+cat >mise.toml <<EOF
+[settings]
+netrc = false
+EOF
+
+assert "mise settings get netrc" "false"
+
+# Test 4: Verify netrc can be disabled via environment variable
+rm mise.toml
+MISE_NETRC=false assert "mise settings get netrc" "false"
+MISE_NETRC=0 assert "mise settings get netrc" "false"
+
+# Test 5: Verify netrc is enabled by default when not explicitly set
+assert "mise settings get netrc" "true"
+
+# Test 6: Verify MISE_NETRC_FILE environment variable works
+MISE_NETRC_FILE="$HOME/.env-netrc" assert_contains "mise settings get netrc_file" ".env-netrc"
+
+# Test 7: Verify netrc file permission warning (Unix only)
+if [[ "$(uname -s)" == "Linux" || "$(uname -s)" == "Darwin" ]]; then
+	# Create netrc with insecure permissions
+	cat >"$HOME/.netrc" <<'EOF'
+machine secure.example.com
+  login secureuser
+  password securepass
+EOF
+	chmod 644 "$HOME/.netrc" # World-readable - insecure!
+
+	# Create a simple mise.toml that would trigger an HTTP request (and thus load netrc)
+	cat >mise.toml <<'EOF'
+[tools]
+"http:perm-test" = { version = "1.0.0", url = "http://secure.example.com/tool.tar.gz" }
+EOF
+
+	# Run mise install which will attempt to load netrc and show warning
+	# We redirect to capture stderr where warnings go
+	output=$(mise install 2>&1 || true)
+
+	if echo "$output" | grep -qi "insecure permissions"; then
+		echo "PASS: Warning shown for insecure netrc permissions"
+	else
+		echo "FAIL: No warning for insecure netrc permissions (mode 644)"
+		echo "Output: $output"
+		exit 1
+	fi
+
+	# Fix permissions and verify no warning
+	chmod 600 "$HOME/.netrc"
+	output=$(mise install 2>&1 || true)
+
+	if echo "$output" | grep -qi "insecure permissions"; then
+		echo "FAIL: Warning shown even with secure permissions (600)"
+		echo "Output: $output"
+		exit 1
+	else
+		echo "PASS: No warning with secure netrc permissions"
+	fi
+
+	# Cleanup
+	rm -f mise.toml
+	mise uninstall --all >/dev/null 2>&1 || true
+else
+	echo "SKIP: Permission check test (non-Unix OS)"
+fi
+
+# Find available port
+find_available_port() {
+	python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()"
+}
+
+# Start local HTTP test server with header logging
+HEADERS_LOG_DIR=$(mktemp -d)
+SERVER_PORT=$(find_available_port)
+python3 "${TEST_ROOT}/helpers/scripts/http_test_server.py" "$SERVER_PORT" "$HEADERS_LOG_DIR" &
+SERVER_PID=$!
+sleep 1
+
+# Ensure cleanup on exit
+cleanup() {
+	kill "$SERVER_PID" 2>/dev/null || true
+	rm -rf "$HEADERS_LOG_DIR"
+	rm -f /tmp/mise_http_test_port
+}
+trap cleanup EXIT
+
+# Test 8: Verify Authorization header is sent when netrc has matching credentials
+cat >"$HOME/.netrc" <<EOF
+machine 127.0.0.1
+  login testuser
+  password testpass123
+EOF
+chmod 600 "$HOME/.netrc"
+
+rm -f mise.toml
+rm -f "$HEADERS_LOG_DIR"/request_*.json
+
+cat >mise.toml <<EOF
+[tools]
+"http:auth-test" = { version = "1.0.0", url = "http://127.0.0.1:$SERVER_PORT/tool.tar.gz" }
+EOF
+
+# Trigger HTTP request with mise install (will fail to extract but will make the request)
+mise install >/dev/null 2>&1 || true
+
+# Check headers log for Authorization
+if grep -qi '"authorization"' "$HEADERS_LOG_DIR"/request_*.json 2>/dev/null; then
+	echo "PASS: Authorization header was sent"
+else
+	echo "FAIL: Authorization header was not sent"
+	cat "$HEADERS_LOG_DIR"/request_*.json 2>/dev/null || echo "No request logs found"
+	exit 1
+fi
+
+rm -f mise.toml
+mise uninstall --all >/dev/null 2>&1 || true
+
+# Test 9: Verify NO Authorization header when netrc is disabled
+cat >"$HOME/.netrc" <<EOF
+machine 127.0.0.1
+  login testuser
+  password testpass123
+EOF
+chmod 600 "$HOME/.netrc"
+
+rm -f "$HEADERS_LOG_DIR"/request_*.json
+
+cat >mise.toml <<EOF
+[settings]
+netrc = false
+
+[tools]
+"http:no-auth-test" = { version = "1.0.0", url = "http://127.0.0.1:$SERVER_PORT/tool.tar.gz" }
+EOF
+
+mise install >/dev/null 2>&1 || true
+
+# Check headers log - should NOT have Authorization
+if grep -qi '"authorization"' "$HEADERS_LOG_DIR"/request_*.json 2>/dev/null; then
+	echo "FAIL: Authorization header was sent when netrc was disabled"
+	cat "$HEADERS_LOG_DIR"/request_*.json
+	exit 1
+else
+	echo "PASS: No Authorization header when netrc disabled"
+fi
+
+rm -f mise.toml
+mise uninstall --all >/dev/null 2>&1 || true
+
+# Test 10: Verify netrc credentials are used with URL replacements
+# The netrc lookup happens AFTER URL replacement, so use the replaced host
+cat >"$HOME/.netrc" <<EOF
+machine 127.0.0.1
+  login urlrepl-user
+  password urlrepl-pass
+EOF
+chmod 600 "$HOME/.netrc"
+
+rm -f "$HEADERS_LOG_DIR"/request_*.json
+
+cat >mise.toml <<EOF
+[settings]
+url_replacements = { "http://fake.example.com" = "http://127.0.0.1:$SERVER_PORT" }
+
+[tools]
+"http:urlrepl-test" = { version = "1.0.0", url = "http://fake.example.com/tool.tar.gz" }
+EOF
+
+mise install >/dev/null 2>&1 || true
+
+# Check headers log for Authorization
+if grep -qi '"authorization"' "$HEADERS_LOG_DIR"/request_*.json 2>/dev/null; then
+	echo "PASS: Authorization header sent with URL replacement"
+else
+	echo "FAIL: Authorization header was not sent after URL replacement"
+	cat "$HEADERS_LOG_DIR"/request_*.json 2>/dev/null || echo "No request logs found"
+	exit 1
+fi
+
+rm -f mise.toml
+mise uninstall --all >/dev/null 2>&1 || true
+
+# Test 11: Verify netrc credentials override GitHub token when URL is replaced
+# The netrc lookup happens AFTER URL replacement, netrc takes precedence over GitHub token
+cat >"$HOME/.netrc" <<EOF
+machine 127.0.0.1
+  login override-user
+  password override-pass
+EOF
+chmod 600 "$HOME/.netrc"
+
+rm -f "$HEADERS_LOG_DIR"/request_*.json
+
+cat >mise.toml <<EOF
+[settings]
+url_replacements = { "https://api.github.com" = "http://127.0.0.1:$SERVER_PORT" }
+
+[tools]
+"http:github-override-test" = { version = "1.0.0", url = "https://api.github.com/tool.tar.gz" }
+EOF
+
+# Set a GitHub token - this should be OVERRIDDEN by netrc credentials for 127.0.0.1
+GITHUB_TOKEN="test-github-token-12345" mise install >/dev/null 2>&1 || true
+
+# Check that authorization header exists and contains Basic auth (from netrc), not the GitHub token
+if grep -q '"authorization": "Basic' "$HEADERS_LOG_DIR"/request_*.json 2>/dev/null; then
+	echo "PASS: Netrc credentials override GitHub token after URL replacement"
+else
+	echo "FAIL: Expected netrc Basic auth to override GitHub token"
+	cat "$HEADERS_LOG_DIR"/request_*.json 2>/dev/null || echo "No request logs found"
+	exit 1
+fi
+
+rm -f mise.toml
+mise uninstall --all >/dev/null 2>&1 || true
+
+# Test 12: Verify mise uses custom netrc file location with actual HTTP request
+# Remove default netrc if it exists
+rm -f "$HOME/.netrc"
+
+# Create custom netrc in a non-default location
+CUSTOM_NETRC_PATH="$HOME/.config/custom-netrc-file"
+mkdir -p "$(dirname "$CUSTOM_NETRC_PATH")"
+cat >"$CUSTOM_NETRC_PATH" <<EOF
+machine 127.0.0.1
+  login custom-location-user
+  password custom-location-pass
+EOF
+chmod 600 "$CUSTOM_NETRC_PATH"
+
+rm -f "$HEADERS_LOG_DIR"/request_*.json
+
+cat >mise.toml <<EOF
+[settings]
+netrc_file = "$CUSTOM_NETRC_PATH"
+
+[tools]
+"http:custom-netrc-test" = { version = "1.0.0", url = "http://127.0.0.1:$SERVER_PORT/tool.tar.gz" }
+EOF
+
+mise install >/dev/null 2>&1 || true
+
+# Check that authorization header exists (proving custom netrc was used)
+if grep -qi '"authorization"' "$HEADERS_LOG_DIR"/request_*.json 2>/dev/null; then
+	echo "PASS: Custom netrc file location was used"
+else
+	echo "FAIL: No Authorization header found when using custom netrc location"
+	cat "$HEADERS_LOG_DIR"/request_*.json 2>/dev/null || echo "No request logs found"
+	exit 1
+fi
+
+rm -f mise.toml
+rm -f "$CUSTOM_NETRC_PATH"
+mise uninstall --all >/dev/null 2>&1 || true
+
+echo "All netrc tests passed!"

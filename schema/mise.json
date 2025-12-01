@@ -745,6 +745,15 @@
           "type": "string",
           "enum": ["trace", "debug", "info", "warn", "error"]
         },
+        "netrc": {
+          "default": true,
+          "description": "Use a netrc file for HTTP Basic authentication.",
+          "type": "boolean"
+        },
+        "netrc_file": {
+          "description": "Path to the netrc file to use for HTTP Basic authentication.",
+          "type": "string"
+        },
         "node": {
           "type": "object",
           "additionalProperties": false,
