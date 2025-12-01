@@ -18,6 +18,22 @@ static NETRC: LazyLock<Option<Netrc>> = LazyLock::new(|| {
         return None;
     }
 
+    // Check file permissions on Unix systems
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = std::fs::metadata(&path) {
+            let mode = metadata.permissions().mode();
+            if mode & 0o077 != 0 {
+                warn!(
+                    "netrc file {} has insecure permissions (mode: {:o}). Should be 0600 or 0400",
+                    path.display(),
+                    mode & 0o777
+                );
+            }
+        }
+    }
+
     match std::fs::read_to_string(&path) {
         Ok(content) => match Netrc::parse(content, false) {
             Ok(netrc) => {

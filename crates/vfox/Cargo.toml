@@ -18,7 +18,6 @@ name = "vfox-cli"
 path = "src/bin.rs"
 
 [dependencies]
-base64 = "0.22"
 homedir = "0.3"
 indexmap = "2"
 itertools = "0.14"
@@ -30,7 +29,6 @@ mlua = { version = "0.11", features = [
   "serialize",
   "send",
 ] }
-netrc-rs = "0.1"
 once_cell = "1"
 reqwest = { version = "0.12", default-features = false, features = [
   "json",

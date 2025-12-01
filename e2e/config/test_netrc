@@ -53,6 +53,53 @@ assert "mise settings get netrc" "true"
 # Test 6: Verify MISE_NETRC_FILE environment variable works
 MISE_NETRC_FILE="$HOME/.env-netrc" assert_contains "mise settings get netrc_file" ".env-netrc"
 
+# Test 7: Verify netrc file permission warning (Unix only)
+if [[ "$(uname -s)" == "Linux" || "$(uname -s)" == "Darwin" ]]; then
+	# Create netrc with insecure permissions
+	cat >"$HOME/.netrc" <<'EOF'
+machine secure.example.com
+  login secureuser
+  password securepass
+EOF
+	chmod 644 "$HOME/.netrc" # World-readable - insecure!
+
+	# Create a simple mise.toml that would trigger an HTTP request (and thus load netrc)
+	cat >mise.toml <<'EOF'
+[tools]
+"http:perm-test" = { version = "1.0.0", url = "http://secure.example.com/tool.tar.gz" }
+EOF
+
+	# Run mise install which will attempt to load netrc and show warning
+	# We redirect to capture stderr where warnings go
+	output=$(mise install 2>&1 || true)
+
+	if echo "$output" | grep -qi "insecure permissions"; then
+		echo "PASS: Warning shown for insecure netrc permissions"
+	else
+		echo "FAIL: No warning for insecure netrc permissions (mode 644)"
+		echo "Output: $output"
+		exit 1
+	fi
+
+	# Fix permissions and verify no warning
+	chmod 600 "$HOME/.netrc"
+	output=$(mise install 2>&1 || true)
+
+	if echo "$output" | grep -qi "insecure permissions"; then
+		echo "FAIL: Warning shown even with secure permissions (600)"
+		echo "Output: $output"
+		exit 1
+	else
+		echo "PASS: No warning with secure netrc permissions"
+	fi
+
+	# Cleanup
+	rm -f mise.toml
+	mise uninstall --all >/dev/null 2>&1 || true
+else
+	echo "SKIP: Permission check test (non-Unix OS)"
+fi
+
 # Find available port
 find_available_port() {
 	python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()"
@@ -73,7 +120,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Test 7: Verify Authorization header is sent when netrc has matching credentials
+# Test 8: Verify Authorization header is sent when netrc has matching credentials
 cat >"$HOME/.netrc" <<EOF
 machine 127.0.0.1
   login testuser
@@ -104,7 +151,7 @@ fi
 rm -f mise.toml
 mise uninstall --all >/dev/null 2>&1 || true
 
-# Test 8: Verify NO Authorization header when netrc is disabled
+# Test 9: Verify NO Authorization header when netrc is disabled
 cat >"$HOME/.netrc" <<EOF
 machine 127.0.0.1
   login testuser
@@ -136,7 +183,7 @@ fi
 rm -f mise.toml
 mise uninstall --all >/dev/null 2>&1 || true
 
-# Test 9: Verify netrc credentials are used with URL replacements
+# Test 10: Verify netrc credentials are used with URL replacements
 # The netrc lookup happens AFTER URL replacement, so use the replaced host
 cat >"$HOME/.netrc" <<EOF
 machine 127.0.0.1
@@ -169,8 +216,8 @@ fi
 rm -f mise.toml
 mise uninstall --all >/dev/null 2>&1 || true
 
-# Test 10: Verify netrc credentials override GitHub token when URL is replaced
-# The netrc lookup happens AFTER URL replacement and OVERRIDES any existing auth headers
+# Test 11: Verify netrc credentials override GitHub token when URL is replaced
+# The netrc lookup happens AFTER URL replacement, netrc takes precedence over GitHub token
 cat >"$HOME/.netrc" <<EOF
 machine 127.0.0.1
   login override-user
@@ -203,7 +250,7 @@ fi
 rm -f mise.toml
 mise uninstall --all >/dev/null 2>&1 || true
 
-# Test 11: Verify mise uses custom netrc file location with actual HTTP request
+# Test 12: Verify mise uses custom netrc file location with actual HTTP request
 # Remove default netrc if it exists
 rm -f "$HOME/.netrc"
 

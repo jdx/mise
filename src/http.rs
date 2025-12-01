@@ -272,10 +272,7 @@ impl Client {
 
         // Apply netrc credentials after URL replacement
         let mut final_headers = headers.clone();
-        let netrc = netrc_headers(&url);
-        if !netrc.is_empty() {
-            final_headers.extend(netrc);
-        }
+        final_headers.extend(netrc_headers(&url));
 
         let mut req = self.reqwest.request(method, url.clone());
         req = req.headers(final_headers);

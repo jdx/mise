@@ -8024,7 +8024,6 @@ dependencies = [
 name = "vfox"
 version = "2025.9.11"
 dependencies = [
- "base64 0.22.1",
  "clap",
  "env_logger",
  "homedir",
@@ -8033,7 +8032,6 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "mlua",
- "netrc-rs",
  "once_cell",
  "reqwest",
  "serde",
