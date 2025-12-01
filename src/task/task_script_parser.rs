@@ -616,6 +616,14 @@ impl TaskScriptParser {
         let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
         let mut tera_ctx = task.tera_ctx(config).await?;
         tera_ctx.insert("env", &env);
+        // First render the usage field to collect the spec and build a default
+        // usage map, so that `{{ usage.* }}` references in run scripts do not
+        // fail during this initial parsing phase (e.g. for inline tasks).
+        let rendered_usage = Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?;
+        let spec_from_field: usage::Spec = rendered_usage.parse()?;
+        let usage_ctx = Self::make_usage_ctx_from_spec_defaults(&spec_from_field);
+        tera_ctx.insert("usage", &usage_ctx);
+
         let scripts = scripts
             .iter()
             .map(|s| Self::render_script_with_context(&mut tera, s, &tera_ctx))
@@ -642,8 +650,7 @@ impl TaskScriptParser {
             cmd,
             ..Default::default()
         };
-        let rendered_usage = Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?;
-        spec.merge(rendered_usage.parse()?);
+        spec.merge(spec_from_field);
 
         Ok((scripts, spec))
     }
