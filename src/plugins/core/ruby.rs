@@ -84,7 +84,7 @@ impl RubyPlugin {
         );
         let settings = Settings::get();
         let tmp = self
-            .prepare_source_in_tmp(&settings.ruby.ruby_install_repo, pr, "mise-ruby-install")
+            .prepare_source_in_tmp(&settings.ruby.ruby_build_repo, pr, "mise-ruby-build")
             .await?;
 
         cmd!("sh", "install.sh")
