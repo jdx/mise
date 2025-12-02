@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+
+# Test the `usage` map inside Tera run scripts for inline tasks
+
+# Basic args + flags with defaults
+cat <<'EOF' >mise.toml
+[tasks.usage-tera]
+description = "Test usage map in tera run scripts"
+usage = '''
+arg "<environment>" help="Target environment"
+flag "-v --verbose" help="Enable verbose output"
+flag "--region <region>" help="AWS region" default="us-east-1"
+'''
+run = '''
+echo "Deploying to {{ usage.environment }} in {{ usage.region }}"
+{% if usage.verbose %}
+echo "Verbose mode enabled"
+{% endif %}
+'''
+EOF
+
+assert "mise run usage-tera staging" "Deploying to staging in us-east-1"
+assert "mise run usage-tera staging --region us-west-2" "Deploying to staging in us-west-2"
+assert "mise run usage-tera staging --verbose" "\
+Deploying to staging in us-east-1
+Verbose mode enabled"
+assert "mise run usage-tera staging --region eu-central-1 --verbose" "\
+Deploying to staging in eu-central-1
+Verbose mode enabled"
+
+# Variadic args exposed as arrays in the usage map
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-tags]
+description = "Test variadic args in usage map"
+usage = '''
+arg "<environment>" help="Target environment"
+arg "[tags]" var=#true
+'''
+run = '''
+echo "env={{ usage.environment }}"
+echo "tag_count={{ usage.tags | length }}"
+{% for tag in usage.tags %}
+echo "tag={{ tag }}"
+{% endfor %}
+'''
+EOF
+
+assert "mise run usage-tera-tags prod foo bar" "\
+env=prod
+tag_count=2
+tag=foo
+tag=bar"
+
+# Hyphenated flag names become snake_case keys on the usage map (e.g. --foo-bar -> usage.foo_bar)
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-hyphen]
+description = "Test hyphenated flag name mapping to snake_case"
+usage = '''
+flag "--foo-bar <foo-bar>" help="Hyphenated flag"
+'''
+run = '''
+echo "foo_bar={{ usage.foo_bar }}"
+'''
+EOF
+
+assert "mise run usage-tera-hyphen --foo-bar value" "foo_bar=value"
+
+
