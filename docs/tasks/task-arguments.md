@@ -40,6 +40,34 @@ $ mise run deploy staging --verbose --region us-west-2
 # $usage_region = "us-west-2"
 ```
 
+In addition to environment variables, **usage values are available inside Tera
+templates in task run scripts** via a `usage` map:
+
+```mise-toml [mise.toml]
+[tasks.deploy]
+description = "Deploy application"
+usage = '''
+arg "<environment>" help="Target environment"
+flag "-v --verbose" help="Enable verbose output"
+flag "--region <region>" help="AWS region" default="us-east-1"
+'''
+run = '''
+echo "Deploying to {{ usage.environment }} in {{ usage.region }}"
+{% if usage.verbose %}
+  echo "Verbose mode enabled"
+{% endif %}
+'''
+```
+
+The `usage` map uses **snake_case argument/flag names as keys** (just like the
+`usage_` environment variables). Names with `-` are converted to `_`, so a flag
+like `--dry-run` becomes available as <span v-pre>`{{ usage.dry_run }}`</span>
+and `$usage_dry_run`. Variadic arguments/flags are exposed as arrays and can be
+used with Tera's `for` loops and filters like `length`. The `usage` map is
+**separate from** the deprecated Tera template functions (`arg()`, `option()`,
+`flag()`) described later on this page—you should not mix the two approaches in
+the same task.
+
 **Help output example:**
 
 ```shellsession

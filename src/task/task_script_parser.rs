@@ -6,6 +6,7 @@ use crate::shell::ShellType;
 use crate::task::Task;
 use crate::tera::get_tera;
 use eyre::{Context, Result};
+use heck::ToSnakeCase;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::iter::once;
@@ -561,9 +562,19 @@ impl TaskScriptParser {
         scripts: &[String],
     ) -> Result<usage::Spec> {
         let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
-        let tera_ctx = task.tera_ctx(config).await?;
+        let mut tera_ctx = task.tera_ctx(config).await?;
+        // First render the usage field to collect the spec
+        let rendered_usage = Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?;
+        let spec_from_field: usage::Spec = rendered_usage.parse()?;
+
+        // Make the arg/flag names available as snake_case in the template context, using
+        // default values from the spec (or sensible fallbacks when no default is provided).
+        let usage_ctx = Self::make_usage_ctx_from_spec_defaults(&spec_from_field);
+        tera_ctx.insert("usage", &usage_ctx);
+
         // Don't insert env for spec-only parsing to avoid expensive environment rendering
-        // Render scripts to trigger spec collection via Tera template functions (arg/option/flag), but discard the results
+        // Render scripts to trigger spec collection via Tera template functions
+        // (arg/option/flag), but discard the results
         for script in scripts {
             Self::render_script_with_context(&mut tera, script, &tera_ctx)?;
         }
@@ -590,8 +601,7 @@ impl TaskScriptParser {
             cmd,
             ..Default::default()
         };
-        let rendered_usage = Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?;
-        spec.merge(rendered_usage.parse()?);
+        spec.merge(spec_from_field);
 
         Ok(spec)
     }
@@ -606,6 +616,14 @@ impl TaskScriptParser {
         let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
         let mut tera_ctx = task.tera_ctx(config).await?;
         tera_ctx.insert("env", &env);
+        // First render the usage field to collect the spec and build a default
+        // usage map, so that `{{ usage.* }}` references in run scripts do not
+        // fail during this initial parsing phase (e.g. for inline tasks).
+        let rendered_usage = Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?;
+        let spec_from_field: usage::Spec = rendered_usage.parse()?;
+        let usage_ctx = Self::make_usage_ctx_from_spec_defaults(&spec_from_field);
+        tera_ctx.insert("usage", &usage_ctx);
+
         let scripts = scripts
             .iter()
             .map(|s| Self::render_script_with_context(&mut tera, s, &tera_ctx))
@@ -628,13 +646,11 @@ impl TaskScriptParser {
 
         // Check for deprecated Tera template args usage
         Self::check_tera_args_deprecation(&task.name, &cmd.args, &cmd.flags);
-
         let mut spec = usage::Spec {
             cmd,
             ..Default::default()
         };
-        let rendered_usage = Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?;
-        spec.merge(rendered_usage.parse()?);
+        spec.merge(spec_from_field);
 
         Ok((scripts, spec))
     }
@@ -733,11 +749,94 @@ impl TaskScriptParser {
             tera.register_function("flag", flag_func(false.to_string()));
             let mut tera_ctx = task.tera_ctx(config).await?;
             tera_ctx.insert("env", &env);
+            tera_ctx.insert("usage", &Self::make_usage_ctx(&m));
             out.push(Self::render_script_with_context(
                 &mut tera, script, &tera_ctx,
             )?);
         }
         Ok(out)
+    }
+
+    fn make_usage_ctx(usage: &usage::parse::ParseOutput) -> HashMap<String, tera::Value> {
+        let mut usage_ctx: HashMap<String, tera::Value> = HashMap::new();
+
+        // These values are not escaped or shell-quoted.
+        let to_tera_value = |val: &usage::parse::ParseValue| -> tera::Value {
+            use tera::Value;
+            use usage::parse::ParseValue::*;
+            match val {
+                MultiBool(v) => Value::Array(v.iter().map(|b| Value::Bool(*b)).collect()),
+                MultiString(v) => {
+                    Value::Array(v.iter().map(|s| Value::String(s.clone())).collect())
+                }
+                Bool(v) => Value::Bool(*v),
+                String(v) => Value::String(v.clone()),
+            }
+        };
+
+        // The names are converted to snake_case (hyphens become underscores).
+        // For example, a flag like "--dry-run" becomes accessible as {{ usage.dry_run }}.
+        for (arg, val) in &usage.args {
+            let tera_val = to_tera_value(val);
+            usage_ctx.insert(arg.name.to_snake_case(), tera_val);
+        }
+        for (flag, val) in &usage.flags {
+            let tera_val = to_tera_value(val);
+            usage_ctx.insert(flag.name.to_snake_case(), tera_val);
+        }
+        usage_ctx
+    }
+
+    /// Build a usage context hashmap from a `usage::Spec`, using default values
+    /// defined in the spec or sensible fallbacks when no defaults are provided.
+    /// Only needed for deprecated parsing of run scripts for collecting the spec.
+    ///
+    /// - Args:
+    ///   - Non-var args use an empty string.
+    ///   - Var args use an empty array.
+    /// - Flags:
+    ///   - Value flags (`var = true`) use an empty array.
+    ///   - Count flags (`count = true`) use a `Vec<bool>` whose length is
+    ///     derived from the default (parsed as a usize) or an empty array.
+    ///   - Simple flags use `false`.
+    fn make_usage_ctx_from_spec_defaults(spec: &usage::Spec) -> HashMap<String, tera::Value> {
+        let mut usage_ctx: HashMap<String, tera::Value> = HashMap::new();
+
+        // Args
+        for arg in &spec.cmd.args {
+            let name = arg.name.to_snake_case();
+            let value = if arg.var {
+                tera::Value::Array(Vec::new())
+            } else {
+                tera::Value::String(String::new())
+            };
+            usage_ctx.insert(name, value);
+        }
+
+        // Flags
+        for flag in &spec.cmd.flags {
+            let name = flag.name.to_snake_case();
+            let value = if flag.var {
+                // FIXME: This part is a bug in usage-lib.
+                // It should be an empty array, but usage treats it as a string.
+                // Should be: `tera::Value::Array(Vec::new())`
+                tera::Value::String(String::new())
+            } else if flag.count {
+                // Count flags: represent as an array of bools
+                tera::Value::Array(Vec::new())
+            } else if let Some(default) = &flag.default {
+                // if it is not parseable as a boolean, treat it as a string
+                default.parse::<bool>().map_or_else(
+                    |_| tera::Value::String(String::new()),
+                    |_| tera::Value::Bool(false),
+                )
+            } else {
+                tera::Value::Bool(false)
+            };
+            usage_ctx.insert(name, value);
+        }
+
+        usage_ctx
     }
 }
 
@@ -1094,5 +1193,154 @@ mod tests {
 
             assert_eq!(parsed, vec![expected]);
         }
+    }
+
+    #[tokio::test]
+    async fn test_task_usage_hashmap() {
+        let task = Task::default();
+        let parser = TaskScriptParser::new(None);
+
+        // Manually construct a spec with one arg ("foo") and one flag ("bar")
+        // so this test does not rely on run-script parsing.
+        let mut cmd = usage::SpecCommand::default();
+        cmd.args.push(usage::SpecArg {
+            name: "foo".to_string(),
+            ..Default::default()
+        });
+        cmd.flags.push(usage::SpecFlag {
+            name: "bar".to_string(),
+            // Ensure the flag is recognized as `--bar` by the usage parser
+            long: vec!["bar".to_string()],
+            ..Default::default()
+        });
+        let spec = usage::Spec {
+            cmd,
+            ..Default::default()
+        };
+
+        let config = Config::get().await.unwrap();
+
+        // Now test that the usage hashmap is accessible in templates when values are provided
+        let scripts_with_usage = vec!["echo arg:{{ usage.foo }} flag:{{ usage.bar }}".to_string()];
+
+        let parsed_scripts = parser
+            .parse_run_scripts_with_args(
+                &config,
+                &task,
+                &scripts_with_usage,
+                &Default::default(),
+                &["test_value".to_string(), "--bar".to_string()],
+                &spec,
+            )
+            .await
+            .unwrap();
+
+        // The usage hashmap should contain the parsed values
+        // For a string arg, it should be "test_value"
+        // For a bool flag, it should be "true"
+        assert_eq!(parsed_scripts, vec!["echo arg:test_value flag:true"]);
+
+        // Test without the flag – usage.foo should still be available, but usage.bar
+        // should be undefined (accessing it in the template would error), so we only
+        // reference usage.foo here.
+        let scripts_with_usage_arg_only = vec!["echo arg:{{ usage.foo }}".to_string()];
+        let parsed_scripts = parser
+            .parse_run_scripts_with_args(
+                &config,
+                &task,
+                &scripts_with_usage_arg_only,
+                &Default::default(),
+                &["test_value2".to_string()],
+                &spec,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(parsed_scripts, vec!["echo arg:test_value2"]);
+
+        // Negative case: referencing an undefined usage flag should cause rendering to fail
+        let scripts_with_missing_flag = vec!["echo flag:{{ usage.bar }}".to_string()];
+        let result = parser
+            .parse_run_scripts_with_args(
+                &config,
+                &task,
+                &scripts_with_missing_flag,
+                &Default::default(),
+                &["only_arg_value".to_string()], // no --bar flag provided
+                &spec,
+            )
+            .await;
+        assert!(
+            result.is_err(),
+            "expected parsing to fail when template references usage.bar but flag was not provided"
+        );
+        // Need to explicitly set default value for flags to avoid errors when accessing undefined usage flags
+        // If a default value is set in the usage spec, referencing the flag in the script should not error,
+        // and the value should be the default when the flag is not provided.
+        let mut spec_with_default_flag = spec.clone();
+        if let Some(bar_flag) = spec_with_default_flag
+            .cmd
+            .flags
+            .iter_mut()
+            .find(|f| f.name == "bar")
+        {
+            bar_flag.default = Some("false".to_string());
+        }
+        // Now referencing usage.bar should render successfully, resolving to the default
+        let parsed_scripts = parser
+            .parse_run_scripts_with_args(
+                &config,
+                &task,
+                &scripts_with_missing_flag,
+                &Default::default(),
+                &["only_arg_value".to_string()],
+                &spec_with_default_flag,
+            )
+            .await
+            .unwrap();
+        assert_eq!(parsed_scripts, vec!["echo flag:false"]);
+    }
+
+    #[tokio::test]
+    async fn test_task_usage_multistring() {
+        let task = Task::default();
+        let parser = TaskScriptParser::new(None);
+
+        // Manually construct a spec with a var=true arg so usage-lib will produce a MultiString value
+        let mut cmd = usage::SpecCommand::default();
+        cmd.args.push(usage::SpecArg {
+            name: "tags".to_string(),
+            var: true,
+            ..Default::default()
+        });
+        let spec = usage::Spec {
+            cmd,
+            ..Default::default()
+        };
+
+        let config = Config::get().await.unwrap();
+
+        // The script only uses the usage map, it does not rely on run-script parsing to build the spec
+        let scripts_with_usage = vec![
+            "echo count={{ usage.tags | length }} first={{ usage.tags[0] }} second={{ usage.tags[1] }}"
+                .to_string(),
+        ];
+        let parsed_scripts = parser
+            .parse_run_scripts_with_args(
+                &config,
+                &task,
+                &scripts_with_usage,
+                &Default::default(),
+                &["one".to_string(), "two".to_string()],
+                &spec,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            parsed_scripts,
+            vec!["echo count=2 first=one second=two"],
+            "expected MultiString arg to be exposed as an array in the usage map"
+        );
     }
 }
