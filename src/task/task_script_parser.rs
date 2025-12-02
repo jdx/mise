@@ -824,16 +824,14 @@ impl TaskScriptParser {
             } else if flag.count {
                 // Count flags: represent as an array of bools
                 tera::Value::Array(Vec::new())
+            } else if let Some(default) = &flag.default {
+                // if it is not parseable as a boolean, treat it as a string
+                default.parse::<bool>().map_or_else(
+                    |_| tera::Value::String(String::new()),
+                    |_| tera::Value::Bool(false),
+                )
             } else {
-                if let Some(default) = &flag.default {
-                    // if it is not parseable as a boolean, treat it as a string
-                    default.parse::<bool>().map_or_else(
-                        |_| tera::Value::String(String::new()),
-                        |_| tera::Value::Bool(false),
-                    )
-                } else {
-                    tera::Value::Bool(false)
-                }
+                tera::Value::Bool(false)
             };
             usage_ctx.insert(name, value);
         }
