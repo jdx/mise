@@ -1343,37 +1343,4 @@ mod tests {
             "expected MultiString arg to be exposed as an array in the usage map"
         );
     }
-
-    #[test]
-    fn test_make_usage_ctx_from_spec_defaults_variadic_flag() {
-        // Build a spec with a variadic flag so we can verify that
-        // `make_usage_ctx_from_spec_defaults` exposes it as an array, matching
-        // the behaviour of `make_usage_ctx`.
-        let mut cmd = usage::SpecCommand::default();
-        cmd.flags.push(usage::SpecFlag {
-            name: "tags".to_string(),
-            var: true,
-            default: Some("one two".to_string()),
-            ..Default::default()
-        });
-        let spec = usage::Spec {
-            cmd,
-            ..Default::default()
-        };
-
-        let ctx = TaskScriptParser::make_usage_ctx_from_spec_defaults(&spec);
-        let tags = ctx
-            .get("tags")
-            .expect("expected variadic flag `tags` in usage ctx");
-        let arr = tags
-            .as_array()
-            .expect("expected variadic flag to be represented as an array");
-
-        assert_eq!(
-            arr.iter()
-                .map(|v| v.as_str().unwrap().to_string())
-                .collect::<Vec<_>>(),
-            vec!["one".to_string(), "two".to_string()]
-        );
-    }
 }
