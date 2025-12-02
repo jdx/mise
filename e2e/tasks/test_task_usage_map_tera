@@ -64,3 +64,53 @@ echo "foo_bar={{ usage.foo_bar }}"
 EOF
 
 assert "mise run usage-tera-hyphen --foo-bar value" "foo_bar=value"
+
+# Variadic flags exposed as arrays in the usage map
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-var-flag]
+description = "Test variadic flags in usage map"
+usage = '''
+flag "--tag <tag>" help="Tag" var=#true
+'''
+run = '''
+echo "tag_count={{ usage.tag | length }}"
+{% for tag in usage.tag %}
+echo "tag={{ tag }}"
+{% endfor %}
+'''
+EOF
+
+assert "mise run usage-tera-var-flag --tag foo --tag bar" "\
+tag_count=2
+tag=foo
+tag=bar"
+
+# Variadic flags are definitely exposed as arrays in the usage map
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-var-flag-join]
+description = "Test variadic flags joined with a separator"
+usage = '''
+flag "--tag <tag>" help="Tag" var=#true
+'''
+run = '''
+echo "tags={{ usage.tag | join(sep='::') }}"
+'''
+EOF
+
+assert "mise run usage-tera-var-flag-join --tag foo --tag bar" "tags=foo::bar"
+
+# Variadic flags with defaults SHOULD be exposed as arrays in the usage map
+# but this is a bug in usage-lib.
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-var-flag-default]
+description = "Test variadic flags with default in usage map"
+usage = '''
+flag "--tag <tag>" help="Tag" var=#true default="foo bar"
+'''
+run = '''
+echo "tags={{ usage.tag | join(sep='::') }}"
+'''
+EOF
+# DISABLED: this is a bug in usage-lib.
+# Today, it treats the default as a string, not an array.
+# assert "mise run usage-tera-var-flag-default" "tags=foo::bar"

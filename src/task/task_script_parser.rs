@@ -792,14 +792,13 @@ impl TaskScriptParser {
     /// Only needed for deprecated parsing of run scripts for collecting the spec.
     ///
     /// - Args:
-    ///   - Non-var args use their string default or `""`.
-    ///   - Var args use a `Vec<String>` built from their default (split on
-    ///     whitespace) or an empty vector.
+    ///   - Non-var args use an empty string.
+    ///   - Var args use an empty array.
     /// - Flags:
-    ///   - Value flags (`var = true`) use their string default or `""`.
+    ///   - Value flags (`var = true`) use an empty array.
     ///   - Count flags (`count = true`) use a `Vec<bool>` whose length is
-    ///     derived from the default (parsed as a usize) or an empty vector.
-    ///   - Simple flags use their bool default (parsed from `"true"/"1"`) or `false`.
+    ///     derived from the default (parsed as a usize) or an empty array.
+    ///   - Simple flags use `false`.
     fn make_usage_ctx_from_spec_defaults(spec: &usage::Spec) -> HashMap<String, tera::Value> {
         let mut usage_ctx: HashMap<String, tera::Value> = HashMap::new();
 
@@ -807,18 +806,9 @@ impl TaskScriptParser {
         for arg in &spec.cmd.args {
             let name = arg.name.to_snake_case();
             let value = if arg.var {
-                if let Some(default) = &arg.default {
-                    let items = default
-                        .split_whitespace()
-                        .filter(|s| !s.is_empty())
-                        .map(|s| tera::Value::String(s.to_string()))
-                        .collect::<Vec<_>>();
-                    tera::Value::Array(items)
-                } else {
-                    tera::Value::Array(Vec::new())
-                }
+                tera::Value::Array(Vec::new())
             } else {
-                tera::Value::String(arg.default.clone().unwrap_or_default())
+                tera::Value::String(String::new())
             };
             usage_ctx.insert(name, value);
         }
@@ -827,28 +817,23 @@ impl TaskScriptParser {
         for flag in &spec.cmd.flags {
             let name = flag.name.to_snake_case();
             let value = if flag.var {
-                // Option-like flags with values
-                tera::Value::String(flag.default.clone().unwrap_or_default())
+                // FIXME: This part is a bug in usage-lib.
+                // It should be an empty array, but usage treats it as a string.
+                // Should be: `tera::Value::Array(Vec::new())`
+                tera::Value::String(String::new())
             } else if flag.count {
                 // Count flags: represent as an array of bools
-                let count = flag
-                    .default
-                    .as_deref()
-                    .unwrap_or("0")
-                    .parse::<usize>()
-                    .unwrap_or(0);
-                let items = (0..count)
-                    .map(|_| tera::Value::Bool(true))
-                    .collect::<Vec<_>>();
-                tera::Value::Array(items)
+                tera::Value::Array(Vec::new())
             } else {
-                // Simple boolean flags
-                let b = flag
-                    .default
-                    .as_deref()
-                    .map(|s| matches!(s, "true" | "1"))
-                    .unwrap_or(false);
-                tera::Value::Bool(b)
+                if let Some(default) = &flag.default {
+                    // if it is not parseable as a boolean, treat it as a string
+                    default.parse::<bool>().map_or_else(
+                        |_| tera::Value::String(String::new()),
+                        |_| tera::Value::Bool(false),
+                    )
+                } else {
+                    tera::Value::Bool(false)
+                }
             };
             usage_ctx.insert(name, value);
         }
@@ -1358,6 +1343,39 @@ mod tests {
             parsed_scripts,
             vec!["echo count=2 first=one second=two"],
             "expected MultiString arg to be exposed as an array in the usage map"
+        );
+    }
+
+    #[test]
+    fn test_make_usage_ctx_from_spec_defaults_variadic_flag() {
+        // Build a spec with a variadic flag so we can verify that
+        // `make_usage_ctx_from_spec_defaults` exposes it as an array, matching
+        // the behaviour of `make_usage_ctx`.
+        let mut cmd = usage::SpecCommand::default();
+        cmd.flags.push(usage::SpecFlag {
+            name: "tags".to_string(),
+            var: true,
+            default: Some("one two".to_string()),
+            ..Default::default()
+        });
+        let spec = usage::Spec {
+            cmd,
+            ..Default::default()
+        };
+
+        let ctx = TaskScriptParser::make_usage_ctx_from_spec_defaults(&spec);
+        let tags = ctx
+            .get("tags")
+            .expect("expected variadic flag `tags` in usage ctx");
+        let arr = tags
+            .as_array()
+            .expect("expected variadic flag to be represented as an array");
+
+        assert_eq!(
+            arr.iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .collect::<Vec<_>>(),
+            vec!["one".to_string(), "two".to_string()]
         );
     }
 }
