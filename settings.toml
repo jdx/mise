@@ -1029,7 +1029,7 @@ type = "String"
 
 [ruby.ruby_build_repo]
 default = "https://github.com/rbenv/ruby-build.git"
-description = "URL to fetch ruby-build from."
+description = "The URL used to fetch ruby-build. This accepts either a Git repository or a ZIP archive."
 env = "MISE_RUBY_BUILD_REPO"
 type = "String"
 
@@ -1046,7 +1046,7 @@ type = "String"
 
 [ruby.ruby_install_repo]
 default = "https://github.com/postmodern/ruby-install.git"
-description = "URL to fetch ruby-install from."
+description = "The URL used to fetch ruby-install. This accepts either a Git repository or a ZIP archive."
 env = "MISE_RUBY_INSTALL_REPO"
 type = "String"
 
