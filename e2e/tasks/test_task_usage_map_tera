@@ -64,5 +64,3 @@ echo "foo_bar={{ usage.foo_bar }}"
 EOF
 
 assert "mise run usage-tera-hyphen --foo-bar value" "foo_bar=value"
-
-
