@@ -152,6 +152,28 @@ impl TaskScriptParser {
         value.map(|v| Self::expect_array(v, param_name)).transpose()
     }
 
+    fn expect_opt_string_or_array(
+        value: Option<&tera::Value>,
+        param_name: &str,
+    ) -> tera::Result<Option<Vec<String>>> {
+        value
+            .map(|v| Self::expect_string_or_array(v, param_name))
+            .transpose()
+    }
+    fn expect_string_or_array(value: &tera::Value, param_name: &str) -> tera::Result<Vec<String>> {
+        match value {
+            tera::Value::String(s) => Ok(vec![s.clone()]),
+            tera::Value::Array(array) => Ok(array
+                .iter()
+                .map(|v| Self::expect_string(v, param_name))
+                .collect::<Result<Vec<String>, tera::Error>>()?),
+            _ => Err(tera::Error::msg(format!(
+                "expected string or array for '{}', got {:?}",
+                param_name, value
+            ))),
+        }
+    }
+
     fn lock_error(e: impl std::fmt::Display) -> tera::Error {
         tera::Error::msg(format!("failed to lock: {}", e))
     }
@@ -207,7 +229,8 @@ impl TaskScriptParser {
 
                 let hide = Self::expect_opt_bool(args.get("hide"), "hide")?.unwrap_or(false);
 
-                let default = Self::expect_opt_string(args.get("default"), "default")?;
+                let default = Self::expect_opt_string_or_array(args.get("default"), "default")?
+                    .unwrap_or_default();
 
                 let choices = Self::expect_opt_array(args.get("choices"), "choices")?
                     .map(|array| {
@@ -278,7 +301,8 @@ impl TaskScriptParser {
                     None => vec![name.clone()],
                 };
 
-                let default = Self::expect_opt_string(args.get("default"), "default")?;
+                let default = Self::expect_opt_string_or_array(args.get("default"), "default")?
+                    .unwrap_or_default();
 
                 let var = Self::expect_opt_bool(args.get("var"), "var")?.unwrap_or(false);
 
@@ -384,7 +408,8 @@ impl TaskScriptParser {
                     None => vec![name.clone()],
                 };
 
-                let default = Self::expect_opt_string(args.get("default"), "default")?;
+                let default = Self::expect_opt_string_or_array(args.get("default"), "default")?
+                    .unwrap_or_default();
 
                 let var = Self::expect_opt_bool(args.get("var"), "var")?.unwrap_or(false);
 
@@ -817,19 +842,17 @@ impl TaskScriptParser {
         for flag in &spec.cmd.flags {
             let name = flag.name.to_snake_case();
             let value = if flag.var {
-                // FIXME: This part is a bug in usage-lib.
-                // It should be an empty array, but usage treats it as a string.
-                // Should be: `tera::Value::Array(Vec::new())`
-                tera::Value::String(String::new())
+                tera::Value::Array(Vec::new())
             } else if flag.count {
                 // Count flags: represent as an array of bools
                 tera::Value::Array(Vec::new())
-            } else if let Some(default) = &flag.default {
+            } else if !flag.default.is_empty() {
                 // if it is not parseable as a boolean, treat it as a string
-                default.parse::<bool>().map_or_else(
-                    |_| tera::Value::String(String::new()),
-                    |_| tera::Value::Bool(false),
-                )
+                if flag.default.iter().all(|s| s.parse::<bool>().is_ok()) {
+                    tera::Value::Bool(false)
+                } else {
+                    tera::Value::String(String::new())
+                }
             } else {
                 tera::Value::Bool(false)
             };
@@ -1284,7 +1307,7 @@ mod tests {
             .iter_mut()
             .find(|f| f.name == "bar")
         {
-            bar_flag.default = Some("false".to_string());
+            bar_flag.default = vec!["false".to_string()];
         }
         // Now referencing usage.bar should render successfully, resolving to the default
         let parsed_scripts = parser

@@ -101,14 +101,30 @@ echo "tags={{ usage.tag | join(sep='::') }}"
 '''
 EOF
 
-# DISABLED: this is a bug in usage-lib.
-# Today, it treats the default as a string, not an array.
-# assert "mise run usage-tera-var-flag-join --tag foo --tag bar" "tags=foo::bar"
+assert "mise run usage-tera-var-flag-join --tag foo --tag bar" "tags=foo::bar"
 
-# Variadic flags with defaults SHOULD be exposed as arrays in the usage map
-# but this is a bug in usage-lib.
+# Variadic flags with defaults should be exposed as arrays in the usage map
 cat <<'EOF' >mise.toml
 [tasks.usage-tera-var-flag-default]
+description = "Test variadic flags with default in usage map"
+usage = '''
+flag "--tag <tag>" help="Tag" var=#true {
+    default {
+        "foo"
+        "bar"
+    }
+}
+'''
+run = '''
+echo "tags={{ usage.tag | join(sep='::') }}"
+'''
+EOF
+
+assert "mise run usage-tera-var-flag-default" "tags=foo::bar"
+
+# Variadic flags with defaults should be exposed as arrays in the usage map, even if the default is a string
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-var-flag-default-string]
 description = "Test variadic flags with default in usage map"
 usage = '''
 flag "--tag <tag>" help="Tag" var=#true default="foo bar"
@@ -117,6 +133,5 @@ run = '''
 echo "tags={{ usage.tag | join(sep='::') }}"
 '''
 EOF
-# DISABLED: this is a bug in usage-lib.
-# Today, it treats the default as a string, not an array.
-# assert "mise run usage-tera-var-flag-default" "tags=foo::bar"
+
+assert "mise run usage-tera-var-flag-default-string" "tags=foo bar"
