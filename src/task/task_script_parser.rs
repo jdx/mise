@@ -207,7 +207,9 @@ impl TaskScriptParser {
 
                 let hide = Self::expect_opt_bool(args.get("hide"), "hide")?.unwrap_or(false);
 
-                let default = Self::expect_opt_string(args.get("default"), "default")?;
+                let default = Self::expect_opt_string(args.get("default"), "default")?
+                    .map(|s| vec![s])
+                    .unwrap_or_default();
 
                 let choices = Self::expect_opt_array(args.get("choices"), "choices")?
                     .map(|array| {
@@ -278,7 +280,9 @@ impl TaskScriptParser {
                     None => vec![name.clone()],
                 };
 
-                let default = Self::expect_opt_string(args.get("default"), "default")?;
+                let default = Self::expect_opt_string(args.get("default"), "default")?
+                    .map(|s| vec![s])
+                    .unwrap_or_default();
 
                 let var = Self::expect_opt_bool(args.get("var"), "var")?.unwrap_or(false);
 
@@ -384,7 +388,9 @@ impl TaskScriptParser {
                     None => vec![name.clone()],
                 };
 
-                let default = Self::expect_opt_string(args.get("default"), "default")?;
+                let default = Self::expect_opt_string(args.get("default"), "default")?
+                    .map(|s| vec![s])
+                    .unwrap_or_default();
 
                 let var = Self::expect_opt_bool(args.get("var"), "var")?.unwrap_or(false);
 
@@ -824,7 +830,7 @@ impl TaskScriptParser {
             } else if flag.count {
                 // Count flags: represent as an array of bools
                 tera::Value::Array(Vec::new())
-            } else if let Some(default) = &flag.default {
+            } else if let Some(default) = flag.default.first() {
                 // if it is not parseable as a boolean, treat it as a string
                 default.parse::<bool>().map_or_else(
                     |_| tera::Value::String(String::new()),
