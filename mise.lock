@@ -12,7 +12,7 @@ version = "1.2.1"
 backend = "aqua:FiloSottile/age"
 "platforms.linux-arm64" = { url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-arm64.tar.gz"}
 "platforms.linux-x64" = { checksum = "blake3:8441277927f75428a6d22897a5cc05e8cdc03562d7a203b2bb9a7c6cd1d0c3bd", url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-amd64.tar.gz"}
-"platforms.macos-arm64" = { url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-darwin-arm64.tar.gz"}
+"platforms.macos-arm64" = { checksum = "blake3:5c7e92baa305e64738b31e6ed9725d6cecdb8915af6e1b6c59bb4d7890efaaca", url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-darwin-arm64.tar.gz"}
 "platforms.macos-x64" = { url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-darwin-amd64.tar.gz"}
 "platforms.windows-x64" = { url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-windows-amd64.zip"}
 
@@ -21,7 +21,7 @@ version = "1.3.3"
 backend = "core:bun"
 "platforms.linux-arm64" = { url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-linux-aarch64.zip"}
 "platforms.linux-x64" = { checksum = "blake3:21d78fbc47b9175cc18a79bc228c6b3aa92d102c3f9c006934101c6b588cc900", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-linux-x64.zip"}
-"platforms.macos-arm64" = { url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-darwin-aarch64.zip"}
+"platforms.macos-arm64" = { checksum = "blake3:2b8fa453577fa737c9eaf42730791360c8a133397db28684c93e49f9dd5d501a", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-darwin-aarch64.zip"}
 "platforms.macos-x64" = { url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-darwin-x64.zip"}
 "platforms.windows-x64" = { url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-windows-x64.zip"}
 
@@ -58,6 +58,11 @@ backend = "cargo:toml-cli"
 version = "2.8.0"
 backend = "cargo:usage-cli"
 
+[[tools.fd]]
+version = "10.3.0"
+backend = "aqua:sharkdp/fd"
+"platforms.macos-arm64" = { checksum = "sha256:0570263812089120bc2a5d84f9e65cd0c25e4a4d724c80075c357239c74ae904", url = "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-aarch64-apple-darwin.tar.gz"}
+
 [[tools.gh]]
 version = "2.83.1"
 backend = "aqua:cli/cli"
@@ -89,7 +94,7 @@ version = "24.11.1"
 backend = "core:node"
 "platforms.linux-arm64" = { url = "https://nodejs.org/dist/v24.11.1/node-v24.11.1-linux-arm64.tar.gz"}
 "platforms.linux-x64" = { checksum = "sha256:58a5ff5cc8f2200e458bea22e329d5c1994aa1b111d499ca46ec2411d58239ca", url = "https://nodejs.org/dist/v24.11.1/node-v24.11.1-linux-x64.tar.gz"}
-"platforms.macos-arm64" = { url = "https://nodejs.org/dist/v24.11.1/node-v24.11.1-darwin-arm64.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:b05aa3a66efe680023f930bd5af3fdbbd542794da5644ca2ad711d68cbd4dc35", url = "https://nodejs.org/dist/v24.11.1/node-v24.11.1-darwin-arm64.tar.gz"}
 "platforms.macos-x64" = { url = "https://nodejs.org/dist/v24.11.1/node-v24.11.1-darwin-x64.tar.gz"}
 "platforms.windows-x64" = { url = "https://nodejs.org/dist/v24.11.1/node-v24.11.1-win-x64.zip"}
 
@@ -136,6 +141,7 @@ backend = "aqua:BurntSushi/ripgrep"
 version = "0.11.0"
 backend = "aqua:koalaman/shellcheck"
 "platforms.linux-x64" = { checksum = "blake3:0ad9524f3f16ad030f8350e7b970c62c24aeff3d813f2565665aecc5a8b79644", url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"}
+"platforms.macos-arm64" = { checksum = "sha256:56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79", url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.aarch64.tar.xz"}
 
 [[tools.shfmt]]
 version = "3.12.0"
@@ -160,7 +166,7 @@ version = "0.10.0"
 backend = "aqua:tamasfe/taplo"
 "platforms.linux-arm64" = { url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-aarch64.gz"}
 "platforms.linux-x64" = { checksum = "blake3:4871fab0e60275a1eb46e7190726e144f56c9a9527f59b0d1da5a042baead8e2", url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz"}
-"platforms.macos-arm64" = { url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-aarch64.gz"}
+"platforms.macos-arm64" = { checksum = "blake3:353ecb1ed7d279dec5e2fd388d292ef97db08a651405fa664ffec1b2896c05f0", url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-aarch64.gz"}
 "platforms.macos-x64" = { url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-x86_64.gz"}
 "platforms.windows-x64" = { url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x86_64.zip"}
 
