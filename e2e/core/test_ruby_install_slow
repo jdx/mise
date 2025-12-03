@@ -5,3 +5,7 @@
 #export MISE_RUBY_INSTALL=1
 #latest=$(mise latest ruby)
 #assert_contains "mise x ruby@$latest -- ruby --version" "ruby $latest"
+#mise uninstall ruby
+#export MISE_RUBY_INSTALL_REPO="https://github.com/postmodern/ruby-install/archive/refs/heads/master.zip"
+#latest=$(mise latest ruby)
+#assert_contains "mise x ruby@$latest -- ruby --version" "ruby $latest"
