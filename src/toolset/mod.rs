@@ -688,26 +688,49 @@ impl Toolset {
         Ok(env)
     }
     pub async fn env_from_tools(&self, config: &Arc<Config>) -> Vec<(String, String, String)> {
-        let mut envs = vec![];
-        for (b, tv) in self.list_current_installed_versions(config).into_iter() {
-            if matches!(tv.request, ToolRequest::System { .. }) {
-                continue;
-            }
+        let versions: Vec<_> = self
+            .list_current_installed_versions(config)
+            .into_iter()
+            .filter(|(_, tv)| !matches!(tv.request, ToolRequest::System { .. }))
+            .collect();
+
+        // Track results with indices to preserve original ordering
+        let mut jset: JoinSet<(usize, Vec<(String, String, String)>)> = JoinSet::new();
+
+        for (idx, (b, tv)) in versions.into_iter().enumerate() {
             let this = Arc::new(self.clone());
             let config = config.clone();
-            envs.push(match b.exec_env(&config, &this, &tv).await {
-                Ok(env) => env
-                    .into_iter()
-                    .map(|(k, v)| (k, v, b.id().to_string()))
-                    .collect(),
-                Err(e) => {
-                    warn!("Error running exec-env: {:#}", e);
-                    Vec::new()
-                }
+            let backend_id = b.id().to_string();
+
+            jset.spawn(async move {
+                let result = match b.exec_env(&config, &this, &tv).await {
+                    Ok(env) => env
+                        .into_iter()
+                        .map(|(k, v)| (k, v, backend_id.clone()))
+                        .collect(),
+                    Err(e) => {
+                        warn!("Error running exec-env: {:#}", e);
+                        Vec::new()
+                    }
+                };
+                (idx, result)
             });
         }
-        envs.into_iter()
-            .flatten()
+
+        let mut indexed_results: Vec<(usize, Vec<(String, String, String)>)> = vec![];
+        while let Some(result) = jset.join_next().await {
+            match result {
+                Ok(indexed_env) => indexed_results.push(indexed_env),
+                Err(e) => warn!("Error joining exec-env task: {:#}", e),
+            }
+        }
+
+        // Sort by original index to maintain deterministic ordering
+        indexed_results.sort_by_key(|(idx, _)| *idx);
+
+        indexed_results
+            .into_iter()
+            .flat_map(|(_, envs)| envs)
             .filter(|(k, _, _)| k.to_uppercase() != "PATH")
             .collect()
     }
