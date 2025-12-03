@@ -812,7 +812,15 @@ impl TaskScriptParser {
         for arg in &spec.cmd.args {
             let name = arg.name.to_snake_case();
             let value = if arg.var {
-                tera::Value::Array(Vec::new())
+                // Variadic args are arrays (possibly with defaults)
+                let defaults: Vec<tera::Value> = arg
+                    .default
+                    .iter()
+                    .map(|s| tera::Value::String(s.clone()))
+                    .collect();
+                tera::Value::Array(defaults)
+            } else if let Some(default) = arg.default.first() {
+                tera::Value::String(default.clone())
             } else {
                 tera::Value::String(String::new())
             };
