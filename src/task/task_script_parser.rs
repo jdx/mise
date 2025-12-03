@@ -1292,7 +1292,7 @@ mod tests {
             .iter_mut()
             .find(|f| f.name == "bar")
         {
-            bar_flag.default = Some("false".to_string());
+            bar_flag.default = vec!["false".to_string()];
         }
         // Now referencing usage.bar should render successfully, resolving to the default
         let parsed_scripts = parser
