@@ -140,22 +140,20 @@ impl MultiProgressReport {
         }
 
         let version = &*VERSION_PLAIN;
-        // Footer text without the dash, will be shown inside the progress bar
-        let footer_text = format!(
-            "{} {}",
-            style::emagenta("mise").bold(),
-            style::edim(format!("{version} by @jdx")),
-        );
+        let version_text = format!("{version} by @jdx");
         *footer = Some(match &self.mp {
             _ if self.quiet => return,
             Some(mp) if !dry_run => {
+                // Footer text with "mise" prefix for progress bar overlay
+                let footer_text = format!(
+                    "{} {}",
+                    style::emagenta("mise").bold(),
+                    style::edim(&version_text),
+                );
                 // Footer length is total_count * 1,000,000 to show progress with high granularity
                 let footer_length = (total_count * 1_000_000) as u64;
-                let mut footer_bar = ProgressReport::new_footer(
-                    footer_text.clone(),
-                    footer_length,
-                    message.to_string(),
-                );
+                let mut footer_bar =
+                    ProgressReport::new_footer(footer_text, footer_length, message.to_string());
                 // Add footer to the end (it will be the last bar initially)
                 footer_bar.pb = mp.add(footer_bar.pb);
                 // Store reference to footer bar for inserting other bars before it
@@ -165,7 +163,8 @@ impl MultiProgressReport {
                 Box::new(footer_bar)
             }
             _ => {
-                let verbose = VerboseReport::new(footer_text);
+                // Don't include "mise" prefix for VerboseReport since logger already adds it
+                let verbose = VerboseReport::new(version_text);
                 verbose.set_message(message.to_string());
                 Box::new(verbose)
             }
