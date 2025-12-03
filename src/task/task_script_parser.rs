@@ -823,19 +823,21 @@ impl TaskScriptParser {
         for flag in &spec.cmd.flags {
             let name = flag.name.to_snake_case();
             let value = if flag.var {
-                // FIXME: This part is a bug in usage-lib.
-                // It should be an empty array, but usage treats it as a string.
-                // Should be: `tera::Value::Array(Vec::new())`
-                tera::Value::String(String::new())
+                // Variadic flags are arrays (possibly with defaults)
+                let defaults: Vec<tera::Value> = flag
+                    .default
+                    .iter()
+                    .map(|s| tera::Value::String(s.clone()))
+                    .collect();
+                tera::Value::Array(defaults)
             } else if flag.count {
                 // Count flags: represent as an array of bools
                 tera::Value::Array(Vec::new())
             } else if let Some(default) = flag.default.first() {
                 // if it is not parseable as a boolean, treat it as a string
-                default.parse::<bool>().map_or_else(
-                    |_| tera::Value::String(String::new()),
-                    |_| tera::Value::Bool(false),
-                )
+                default
+                    .parse::<bool>()
+                    .map_or_else(|_| tera::Value::String(default.clone()), tera::Value::Bool)
             } else {
                 tera::Value::Bool(false)
             };
