@@ -20,6 +20,8 @@ For more advanced pre-commit functionality, see mise's sister project: <https://
 
 The task to run when the pre-commit hook is triggered
 
+**Default:** `pre-commit`
+
 ### `-w --write`
 
 write to .git/hooks/pre-commit and make it executable
@@ -27,6 +29,8 @@ write to .git/hooks/pre-commit and make it executable
 ### `--hook <HOOK>`
 
 Which hook to generate (saves to .git/hooks/$hook)
+
+**Default:** `pre-commit`
 
 Examples:
 

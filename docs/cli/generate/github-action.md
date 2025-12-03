@@ -15,6 +15,8 @@ when you push changes to your repository.
 
 The task to run when the workflow is triggered
 
+**Default:** `ci`
+
 ### `-w --write`
 
 write to .github/workflows/$name.yml
@@ -22,6 +24,8 @@ write to .github/workflows/$name.yml
 ### `--name <NAME>`
 
 the name of the workflow to generate
+
+**Default:** `ci`
 
 Examples:
 

@@ -39,6 +39,8 @@ root directory to search for tasks
 - `simple`
 - `detailed`
 
+**Default:** `simple`
+
 Examples:
 
 ```

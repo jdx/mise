@@ -86,6 +86,8 @@ The signal can be specified with the '--signal' option.
 - `restart`
 - `signal`
 
+**Default:** `do-nothing`
+
 ### `-r --restart`
 
 Restart the process if it's still running
@@ -126,6 +128,8 @@ The default is 10 seconds. Set to 0 to immediately force-kill the command.
 
 This has no practical effect on Windows as the command is always forcefully terminated; see '--stop-signal' for why.
 
+**Default:** `10s`
+
 ### `--map-signal… <SIGNAL:SIGNAL>`
 
 Translate signals from the OS to signals to send to the command
@@ -149,6 +153,8 @@ An alternative use is to set a high value (like "30min" or longer), to save powe
 Takes a unit-less value in milliseconds, or a time span value such as "5sec 20ms". Providing a unit-less value is deprecated and will warn; it will be an error in the future.
 
 The default is 50 milliseconds. Setting to 0 is highly discouraged.
+
+**Default:** `50ms`
 
 ### `--stdin-quit`
 
@@ -408,6 +414,8 @@ multiple confused queries that have landed in my inbox over the years.
 - `json-file`
 - `none`
 
+**Default:** `none`
+
 ### `--only-emit-events`
 
 Only emit events to stdout, run no commands.
@@ -440,6 +448,8 @@ Use 'group' to use a process group, 'session' to use a process session, and 'non
 - `session`
 - `none`
 
+**Default:** `group`
+
 ### `-N --notify`
 
 Alert when commands start and end
@@ -457,6 +467,8 @@ Setting the environment variable `NO_COLOR` to any value is equivalent to `--col
 - `auto`
 - `always`
 - `never`
+
+**Default:** `auto`
 
 ### `--timings`
 
@@ -588,6 +600,8 @@ This may apply filtering at the kernel level when possible, which can be more ef
 - `rename`
 - `modify`
 - `metadata`
+
+**Default:** `create,remove,rename,modify,metadata`
 
 ### `--no-meta`
 

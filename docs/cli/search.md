@@ -33,6 +33,8 @@ Match type: equal, contains, or fuzzy
 - `contains`
 - `fuzzy`
 
+**Default:** `fuzzy`
+
 ### `--no-header`
 
 Don't display headers

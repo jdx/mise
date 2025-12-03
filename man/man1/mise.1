@@ -775,6 +775,9 @@ The path to the mise.toml file to edit
 If not provided, the nearest mise.toml file will be used
 .TP
 \fB\-t, \-\-type\fR \fI<TYPE>\fR
+.RS
+\fIDefault: \fRinfer
+.RE
 \fBArguments:\fR
 .PP
 .TP
@@ -933,6 +936,9 @@ instead of outputting the script to stdout, write to a file and make it executab
 .TP
 \fB\-\-localized\-dir\fR \fI<LOCALIZED_DIR>\fR
 Directory to put localized data into
+.RS
+\fIDefault: \fR.mise
+.RE
 .SH "MISE GENERATE CONFIG"
 [experimental] Generate a mise.toml file
 .PP
@@ -982,12 +988,18 @@ For more advanced pre\-commit functionality, see mise's sister project: https://
 .TP
 \fB\-t, \-\-task\fR \fI<TASK>\fR
 The task to run when the pre\-commit hook is triggered
+.RS
+\fIDefault: \fRpre\-commit
+.RE
 .TP
 \fB\-w, \-\-write\fR
 write to .git/hooks/pre\-commit and make it executable
 .TP
 \fB\-\-hook\fR \fI<HOOK>\fR
 Which hook to generate (saves to .git/hooks/$hook)
+.RS
+\fIDefault: \fRpre\-commit
+.RE
 .SH "MISE GENERATE GITHUB-ACTION"
 Generate a GitHub Action workflow file
 
@@ -1001,12 +1013,18 @@ when you push changes to your repository.
 .TP
 \fB\-t, \-\-task\fR \fI<TASK>\fR
 The task to run when the workflow is triggered
+.RS
+\fIDefault: \fRci
+.RE
 .TP
 \fB\-w, \-\-write\fR
 write to .github/workflows/$name.yml
 .TP
 \fB\-\-name\fR \fI<NAME>\fR
 the name of the workflow to generate
+.RS
+\fIDefault: \fRci
+.RE
 .SH "MISE GENERATE TASK-DOCS"
 Generate documentation for tasks in a project
 .PP
@@ -1035,6 +1053,9 @@ writes the generated docs to a file/directory
 root directory to search for tasks
 .TP
 \fB\-s, \-\-style\fR \fI<STYLE>\fR
+.RS
+\fIDefault: \fRsimple
+.RE
 .SH "MISE GENERATE TASK-STUBS"
 Generates shims to run mise tasks
 
@@ -1048,11 +1069,17 @@ so contributors to a project can execute mise tasks without installing mise into
 .TP
 \fB\-d, \-\-dir\fR \fI<DIR>\fR
 Directory to create task stubs inside of
+.RS
+\fIDefault: \fRbin
+.RE
 .TP
 \fB\-m, \-\-mise\-bin\fR \fI<MISE_BIN>\fR
 Path to a mise bin to use when running the task stub.
 
 Use `\-\-mise\-bin=./bin/mise` to use a mise bin generated from `mise generate bootstrap`
+.RS
+\fIDefault: \fRmise
+.RE
 .SH "MISE GENERATE TOOL-STUB"
 Generate a tool stub for HTTP\-based tools
 
@@ -1086,6 +1113,9 @@ This reads an existing stub file and fills in any missing checksum/size fields b
 .TP
 \fB\-\-http\fR \fI<HTTP>\fR
 HTTP backend type to use
+.RS
+\fIDefault: \fRhttp
+.RE
 .TP
 \fB\-\-platform\-bin\fR \fI<PLATFORM_BIN>\fR
 Platform\-specific binary paths in the format platform:path
@@ -1106,6 +1136,9 @@ Skip downloading for checksum and binary path detection (faster but less informa
 .TP
 \fB\-\-version\fR \fI<VERSION>\fR
 Version of the tool
+.RS
+\fIDefault: \fRlatest
+.RE
 \fBArguments:\fR
 .PP
 .TP
@@ -1739,6 +1772,9 @@ Show interactive search
 .TP
 \fB\-m, \-\-match\-type\fR \fI<MATCH_TYPE>\fR
 Match type: equal, contains, or fuzzy
+.RS
+\fIDefault: \fRfuzzy
+.RE
 .TP
 \fB\-\-no\-header\fR
 Don't display headers
@@ -2796,6 +2832,9 @@ What to do when receiving events while the command is running
 Default is to 'do\-nothing', which ignores events while the command is running, so that changes that occur due to the command are ignored, like compilation outputs. You can also use 'queue' which will run the command once again when the current run has finished if any events occur while it's running, or 'restart', which terminates the running command and starts a new one. Finally, there's 'signal', which only sends a signal; this can be useful with programs that can reload their configuration without a full restart.
 
 The signal can be specified with the '\-\-signal' option.
+.RS
+\fIDefault: \fRdo\-nothing
+.RE
 .TP
 \fB\-r, \-\-restart\fR
 Restart the process if it's still running
@@ -2832,6 +2871,9 @@ Takes a unit\-less value in seconds, or a time span value such as "5min 20s". Pr
 The default is 10 seconds. Set to 0 to immediately force\-kill the command.
 
 This has no practical effect on Windows as the command is always forcefully terminated; see '\-\-stop\-signal' for why.
+.RS
+\fIDefault: \fR10s
+.RE
 .TP
 \fB\-\-map\-signal\fR \fI<SIGNAL:SIGNAL>\fR
 Translate signals from the OS to signals to send to the command
@@ -2854,6 +2896,9 @@ An alternative use is to set a high value (like "30min" or longer), to save powe
 Takes a unit\-less value in milliseconds, or a time span value such as "5sec 20ms". Providing a unit\-less value is deprecated and will warn; it will be an error in the future.
 
 The default is 50 milliseconds. Setting to 0 is highly discouraged.
+.RS
+\fIDefault: \fR50ms
+.RE
 .TP
 \fB\-\-stdin\-quit\fR
 Exit when stdin closes
@@ -3086,6 +3131,9 @@ is a very restricted space, while also limited in what it can usefully represent
 numbers of files will either cause the environment to be truncated, or may error or crash
 the process entirely. The $WATCHEXEC_COMMON_PATH is also unintuitive, as demonstrated by the
 multiple confused queries that have landed in my inbox over the years.
+.RS
+\fIDefault: \fRnone
+.RE
 .TP
 \fB\-\-only\-emit\-events\fR
 Only emit events to stdout, run no commands.
@@ -3109,6 +3157,9 @@ By default, Watchexec will run the command in a process group in Unix, and in a 
 Some Unix programs prefer running in a session, while others do not work in a process group.
 
 Use 'group' to use a process group, 'session' to use a process session, and 'none' to run the command directly. On Windows, either of 'group' or 'session' will use a Job Object.
+.RS
+\fIDefault: \fRgroup
+.RE
 .TP
 \fB\-N, \-\-notify\fR
 Alert when commands start and end
@@ -3119,6 +3170,9 @@ With this, Watchexec will emit a desktop notification when a command starts and 
 When to use terminal colours
 
 Setting the environment variable `NO_COLOR` to any value is equivalent to `\-\-color=never`.
+.RS
+\fIDefault: \fRauto
+.RE
 .TP
 \fB\-\-timings\fR
 Print how long the command took to run
@@ -3229,6 +3283,9 @@ Filesystem events to filter to
 This is a quick filter to only emit events for the given types of filesystem changes. Choose from 'access', 'create', 'remove', 'rename', 'modify', 'metadata'. Multiple types can be given by repeating the option or by separating them with commas. By default, this is all types except for 'access'.
 
 This may apply filtering at the kernel level when possible, which can be more efficient, but may be more confusing when reading the logs.
+.RS
+\fIDefault: \fRcreate,remove,rename,modify,metadata
+.RE
 .TP
 \fB\-\-no\-meta\fR
 Don't emit fs events for metadata changes
