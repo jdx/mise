@@ -1,5 +1,53 @@
 # Changelog
 
+## [2025.12.0](https://github.com/jdx/mise/compare/v2025.11.11..v2025.12.0) - 2025-12-04
+
+### 🚀 Features
+
+- **(config)** add support for netrc by @RobotSupervisor in [#7164](https://github.com/jdx/mise/pull/7164)
+- **(lock)** add resolve_lock_info to core backends for checksum fetching by @jdx in [#7180](https://github.com/jdx/mise/pull/7180)
+- **(ruby)** Install ruby from a zip file over HTTPS by @KaanYT in [#7167](https://github.com/jdx/mise/pull/7167)
+- **(tasks)** add `usage` args to Tera context in run scripts by @iamkroot in [#7041](https://github.com/jdx/mise/pull/7041)
+
+### 🐛 Bug Fixes
+
+- **(lock)** validate platform qualifiers when reading from lockfile by @jdx in [#7181](https://github.com/jdx/mise/pull/7181)
+- **(task)** retry shebang scripts on ETXTBUSY by @iamkroot in [#7162](https://github.com/jdx/mise/pull/7162)
+- **(ui)** remove duplicate 'mise' prefix in verbose footer output by @jdx in [#7174](https://github.com/jdx/mise/pull/7174)
+
+### 📦️ Dependency Updates
+
+- bump usage-lib to 2.9.0 by @jdx in [#7177](https://github.com/jdx/mise/pull/7177)
+
+### 📦 Registry
+
+- remove duplicated ubi and github backends from gping by @risu729 in [#7144](https://github.com/jdx/mise/pull/7144)
+- disable bashly test (not working in CI) by @jdx in [#7173](https://github.com/jdx/mise/pull/7173)
+- disable cfn-lint test (failing in CI) by @jdx in [#7176](https://github.com/jdx/mise/pull/7176)
+
+### Chore
+
+- add fd to mise.toml by @blampe in [#7178](https://github.com/jdx/mise/pull/7178)
+
+### New Contributors
+
+- @RobotSupervisor made their first contribution in [#7164](https://github.com/jdx/mise/pull/7164)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`Kitware/CMake`](https://github.com/Kitware/CMake)
+- [`quarto-dev/quarto-cli`](https://github.com/quarto-dev/quarto-cli)
+
+#### Updated Packages (6)
+
+- [`apache/jena`](https://github.com/apache/jena)
+- [`apache/spark`](https://github.com/apache/spark)
+- [`danielfoehrKn/kubeswitch`](https://github.com/danielfoehrKn/kubeswitch)
+- [`danielfoehrKn/kubeswitch/switch-sh`](https://github.com/danielfoehrKn/kubeswitch/switch-sh)
+- [`evilmartians/lefthook`](https://github.com/evilmartians/lefthook)
+- [`updatecli/updatecli`](https://github.com/updatecli/updatecli)
 ## [2025.11.11](https://github.com/jdx/mise/compare/v2025.11.10..v2025.11.11) - 2025-11-30
 
 ### 🚀 Features

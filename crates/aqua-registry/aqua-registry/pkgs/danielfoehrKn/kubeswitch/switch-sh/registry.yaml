@@ -8,7 +8,7 @@ packages:
     format: raw
     description: The kubectx for operators
     supported_envs:
-      - linux/amd64
+      - linux
       - darwin
     files:
       - name: kubeswitch.sh

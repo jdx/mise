@@ -63,7 +63,7 @@ packages:
         overrides:
           - goos: windows
             format: zip
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.110.3")
         asset: updatecli_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         replacements:
@@ -85,6 +85,30 @@ packages:
               - https://token.actions.githubusercontent.com
               - --signature
               - https://github.com/updatecli/updatecli/releases/download/{{.Version}}/checksums.txt.sig
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: updatecli_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sig
+            opts:
+              - --certificate-identity
+              - "https://github.com/updatecli/updatecli/.github/workflows/release.yaml@refs/tags/{{.Version}}"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
         overrides:
           - goos: windows
             format: zip
