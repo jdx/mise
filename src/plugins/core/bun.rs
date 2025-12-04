@@ -208,6 +208,12 @@ impl Backend for BunPlugin {
         // - macos-arm64: aarch64
         // - windows-x64: x64, x64-baseline
 
+        // If the platform already has a qualifier, it's already a specific variant
+        // Don't expand it to avoid duplicates
+        if platform.qualifier.is_some() {
+            return vec![platform.clone()];
+        }
+
         let mut variants = vec![platform.clone()];
 
         match (platform.os.as_str(), platform.arch.as_str()) {
