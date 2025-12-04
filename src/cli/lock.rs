@@ -163,11 +163,14 @@ impl Lock {
         let mut platforms: BTreeSet<Platform> = Platform::common_platforms().into_iter().collect();
         platforms.insert(Platform::current());
 
-        // Add any existing platforms from lockfile
+        // Add any existing platforms from lockfile (only valid ones)
         if let Ok(lockfile) = Lockfile::read(lockfile_path) {
             for platform_key in lockfile.all_platform_keys() {
                 if let Ok(p) = Platform::parse(&platform_key) {
-                    platforms.insert(p);
+                    // Skip invalid platforms (e.g., tool-specific qualifiers like "wait-for-gh-rate-limit")
+                    if p.validate().is_ok() {
+                        platforms.insert(p);
+                    }
                 }
             }
         }
