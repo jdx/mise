@@ -66,9 +66,9 @@ impl Platform {
         // Validate qualifier if present
         if let Some(qualifier) = &self.qualifier {
             match qualifier.as_str() {
-                "gnu" | "musl" | "msvc" => {}
+                "gnu" | "musl" | "msvc" | "baseline" | "musl-baseline" => {}
                 _ => bail!(
-                    "Unsupported qualifier '{}'. Supported: gnu, musl, msvc",
+                    "Unsupported qualifier '{}'. Supported: gnu, musl, msvc, baseline, musl-baseline",
                     qualifier
                 ),
             }

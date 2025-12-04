@@ -19,7 +19,8 @@ use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{
     backend::{Backend, GitHubReleaseInfo, ReleaseType, platform_target::PlatformTarget},
-    config::Config,
+    config::{Config, Settings},
+    platform::Platform,
 };
 use crate::{file, github, plugins};
 
@@ -91,6 +92,23 @@ impl BunPlugin {
 impl Backend for BunPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
+    }
+
+    /// Override get_platform_key to include bun's compile-time variant (baseline, musl, etc.)
+    /// This ensures lockfile lookups use the correct platform key that matches the variant
+    fn get_platform_key(&self) -> String {
+        let settings = Settings::get();
+        let os = settings.os();
+        let arch = settings.arch();
+
+        // Get the variant suffix based on compile-time features
+        let variant = Self::get_platform_variant();
+
+        if let Some(v) = variant {
+            format!("{os}-{arch}-{v}")
+        } else {
+            format!("{os}-{arch}")
+        }
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
@@ -176,6 +194,63 @@ impl Backend for BunPlugin {
             url_api: None,
         })
     }
+
+    fn platform_variants(&self, platform: &Platform) -> Vec<Platform> {
+        // Bun has compile-time variants that affect the download URL and checksum:
+        // - baseline: for CPUs without AVX2 support
+        // - musl: for musl libc (Alpine Linux, etc.)
+        // - musl-baseline: musl + no AVX2
+        //
+        // Available variants by platform:
+        // - linux-x64: x64, x64-baseline, x64-musl, x64-musl-baseline
+        // - linux-arm64: aarch64, aarch64-musl
+        // - macos-x64: x64, x64-baseline
+        // - macos-arm64: aarch64
+        // - windows-x64: x64, x64-baseline
+
+        let mut variants = vec![platform.clone()];
+
+        match (platform.os.as_str(), platform.arch.as_str()) {
+            ("linux", "x64") => {
+                // Linux x64 has all variants
+                variants.push(Platform {
+                    os: platform.os.clone(),
+                    arch: platform.arch.clone(),
+                    qualifier: Some("baseline".to_string()),
+                });
+                variants.push(Platform {
+                    os: platform.os.clone(),
+                    arch: platform.arch.clone(),
+                    qualifier: Some("musl".to_string()),
+                });
+                variants.push(Platform {
+                    os: platform.os.clone(),
+                    arch: platform.arch.clone(),
+                    qualifier: Some("musl-baseline".to_string()),
+                });
+            }
+            ("linux", "arm64") => {
+                // Linux arm64 has musl variant
+                variants.push(Platform {
+                    os: platform.os.clone(),
+                    arch: platform.arch.clone(),
+                    qualifier: Some("musl".to_string()),
+                });
+            }
+            ("macos", "x64") | ("windows", "x64") => {
+                // macOS x64 and Windows x64 have baseline variant
+                variants.push(Platform {
+                    os: platform.os.clone(),
+                    arch: platform.arch.clone(),
+                    qualifier: Some("baseline".to_string()),
+                });
+            }
+            // macos-arm64 has no variants (just aarch64)
+            _ => {}
+        }
+
+        variants
+    }
 }
 
 impl BunPlugin {
@@ -214,6 +289,32 @@ impl BunPlugin {
             }
         } else {
             base_arch.to_string()
+        }
+    }
+
+    /// Get the platform variant suffix for the current build
+    /// Returns Some("baseline"), Some("musl"), Some("musl-baseline"), or None
+    fn get_platform_variant() -> Option<&'static str> {
+        if cfg!(target_arch = "x86_64") {
+            if cfg!(target_env = "musl") {
+                if cfg!(target_feature = "avx2") {
+                    Some("musl")
+                } else {
+                    Some("musl-baseline")
+                }
+            } else if cfg!(target_feature = "avx2") {
+                None // Standard x64, no variant suffix
+            } else {
+                Some("baseline")
+            }
+        } else if cfg!(target_arch = "aarch64") {
+            if cfg!(target_env = "musl") {
+                Some("musl")
+            } else {
+                None // Standard aarch64, no variant suffix
+            }
+        } else {
+            None
         }
     }
 

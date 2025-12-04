@@ -298,52 +298,69 @@ impl Lock {
         let mut results = Vec::new();
 
         let mpr = MultiProgressReport::get();
-        let total_tasks = tools.len() * platforms.len();
+
+        // Collect all platform variants for each tool/platform combination
+        let mut all_tasks: Vec<(
+            crate::cli::args::BackendArg,
+            crate::toolset::ToolVersion,
+            Platform,
+        )> = Vec::new();
+        for (ba, tv) in tools {
+            let backend = crate::backend::get(ba);
+            for platform in platforms {
+                // Get all variants for this platform from the backend
+                let variants = if let Some(ref backend) = backend {
+                    backend.platform_variants(platform)
+                } else {
+                    vec![platform.clone()]
+                };
+                for variant in variants {
+                    all_tasks.push((ba.clone(), tv.clone(), variant));
+                }
+            }
+        }
+
+        let total_tasks = all_tasks.len();
         let pr = mpr.add("lock");
         pr.set_length(total_tasks as u64);
 
-        // Spawn tasks for each tool/platform combination
-        for (ba, tv) in tools {
-            for platform in platforms {
-                let ba = ba.clone();
-                let tv = tv.clone();
-                let platform = platform.clone();
-                let semaphore = semaphore.clone();
+        // Spawn tasks for each tool/platform variant combination
+        for (ba, tv, platform) in all_tasks {
+            let semaphore = semaphore.clone();
 
-                jset.spawn(async move {
-                    let _permit = semaphore.acquire().await;
-                    let target = PlatformTarget::new(platform.clone());
-                    let backend = crate::backend::get(&ba);
+            jset.spawn(async move {
+                let _permit = semaphore.acquire().await;
+                let target = PlatformTarget::new(platform.clone());
+                let backend = crate::backend::get(&ba);
 
-                    let (info, options) = if let Some(backend) = backend {
-                        let options = backend.resolve_lockfile_options(&tv.request, &target);
-                        match backend.resolve_lock_info(&tv, &target).await {
-                            Ok(info) => (Some(info), options),
-                            Err(e) => {
-                                warn!(
-                                    "Failed to resolve {} for {}: {}",
-                                    ba.short,
-                                    platform.to_key(),
-                                    e
-                                );
-                                (None, options)
-                            }
+                let (info, options) = if let Some(backend) = backend {
+                    let options = backend.resolve_lockfile_options(&tv.request, &target);
+                    match backend.resolve_lock_info(&tv, &target).await {
+                        Ok(info) => (Some(info), options),
+                        Err(e) => {
+                            warn!(
+                                "Failed to resolve {} for {}: {}",
+                                ba.short,
+                                platform.to_key(),
+                                e
+                            );
+                            (None, options)
                         }
-                    } else {
-                        warn!("Backend not found for {}", ba.short);
-                        (None, BTreeMap::new())
-                    };
+                    }
+                } else {
+                    warn!("Backend not found for {}", ba.short);
+                    (None, BTreeMap::new())
+                };
 
-                    (
-                        ba.short.clone(),
-                        tv.version.clone(),
-                        ba.full(),
-                        platform,
-                        info,
-                        options,
-                    )
-                });
-            }
+                (
+                    ba.short.clone(),
+                    tv.version.clone(),
+                    ba.full(),
+                    platform,
+                    info,
+                    options,
+                )
+            });
         }
 
         // Collect all results
