@@ -1519,6 +1519,14 @@ backends = ["github:elm/compiler[bin=elm]", "asdf:asdf-community/asdf-elm"]
 description = "Compiler for Elm, a functional language for reliable webapps"
 test = ["elm --version", "{{version}}"]
 
+[tools.elp]
+backends = ["vfox:belltoy/mise-elp"]
+description = "Erlang Language Platform. LSP server and CLI."
+test = [
+  "elp version | awk -F'build-' '{print $2}'",
+  "{{version | split(pat='-') | slice(start=-3) | join(sep='-') }}",
+]
+
 [tools.emsdk]
 backends = ["asdf:mise-plugins/mise-emsdk"]
 description = "Emscripten is a complete compiler toolchain to WebAssembly, using LLVM, with a special focus on speed, size, and the Web platform"
