@@ -13,6 +13,7 @@ use crate::duration::DAILY;
 use crate::file::TarOptions;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{file, minisign, plugins};
@@ -172,6 +173,39 @@ impl ZigPlugin {
         Ok(zig_tarball_url.to_string())
     }
 
+    /// Get full download info (tarball URL, shasum, size) from JSON index
+    /// Uses cached request since same index is fetched for all platforms
+    async fn get_download_info_from_json(
+        &self,
+        json_url: &str,
+        version: &str,
+        arch: &str,
+        os: &str,
+    ) -> Result<(String, Option<String>, Option<u64>)> {
+        let version_json: serde_json::Value = HTTP_FETCH.json_cached(json_url).await?;
+        let platform_info = version_json
+            .pointer(&format!("/{version}/{arch}-{os}"))
+            .ok_or_else(|| eyre::eyre!("Failed to get zig platform info from {:?}", json_url))?;
+
+        let tarball_url = platform_info
+            .get("tarball")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| eyre::eyre!("Failed to get zig tarball url from {:?}", json_url))?
+            .to_string();
+
+        let shasum = platform_info
+            .get("shasum")
+            .and_then(|v| v.as_str())
+            .map(|s| format!("sha256:{s}"));
+
+        let size = platform_info
+            .get("size")
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse::<u64>().ok());
+
+        Ok((tarball_url, shasum, size))
+    }
+
     async fn get_community_mirrors(&self) -> Option<Vec<String>> {
         let cache_path = self.ba.cache_path.join(MIRRORS_FILENAME);
         let recent_cache =
@@ -307,6 +341,64 @@ impl Backend for ZigPlugin {
                 )))
             }
             Err(_) => Ok(None),
+        }
+    }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        let indexes = HashMap::from([
+            ("zig", "https://ziglang.org/download/index.json"),
+            ("mach", "https://machengine.org/zig/index.json"),
+        ]);
+
+        let arch = match target.arch_name() {
+            "x64" => "x86_64",
+            "arm64" => "aarch64",
+            "arm" => "armv7a",
+            "riscv64" => "riscv64",
+            other => other,
+        };
+        let os = match target.os_name() {
+            "macos" => "macos",
+            "linux" => "linux",
+            "freebsd" => "freebsd",
+            "windows" => "windows",
+            _ => "linux",
+        };
+
+        let (json_url, version) = if regex!(r"^mach-|-mach$").is_match(&tv.version) {
+            (indexes["mach"], tv.version.as_str())
+        } else {
+            (indexes["zig"], tv.version.as_str())
+        };
+
+        // Try to get full info from JSON (includes checksum and size)
+        match self
+            .get_download_info_from_json(json_url, version, arch, os)
+            .await
+        {
+            Ok((url, checksum, size)) => Ok(PlatformInfo {
+                url: Some(url),
+                checksum,
+                size,
+                url_api: None,
+            }),
+            Err(_) if regex!(r"^\d+\.\d+\.\d+$").is_match(&tv.version) => {
+                // Fallback: construct URL directly for numbered versions (no checksum available)
+                Ok(PlatformInfo {
+                    url: Some(format!(
+                        "https://ziglang.org/download/{}/zig-{}-{}-{}.tar.xz",
+                        tv.version, os, arch, tv.version
+                    )),
+                    checksum: None,
+                    size: None,
+                    url_api: None,
+                })
+            }
+            Err(_) => Ok(PlatformInfo::default()),
         }
     }
 }

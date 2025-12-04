@@ -8,11 +8,13 @@ use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
 
+use crate::backend::static_helpers::fetch_checksum_from_shasums;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{
@@ -143,6 +145,36 @@ impl Backend for BunPlugin {
             )),
             release_type: ReleaseType::GitHub,
         }))
+    }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        let version = &tv.version;
+
+        // Build platform-specific filename
+        let os_name = Self::map_os_to_bun(target.os_name());
+        let arch_name = Self::get_bun_arch_for_target(target);
+        let filename = format!("bun-{os_name}-{arch_name}.zip");
+
+        // Build download URL
+        let url =
+            format!("https://github.com/oven-sh/bun/releases/download/bun-v{version}/{filename}");
+
+        // Fetch SHASUMS256.txt to get checksum without downloading the zip
+        let shasums_url = format!(
+            "https://github.com/oven-sh/bun/releases/download/bun-v{version}/SHASUMS256.txt"
+        );
+        let checksum = fetch_checksum_from_shasums(&shasums_url, &filename).await;
+
+        Ok(PlatformInfo {
+            url: Some(url),
+            checksum,
+            size: None,
+            url_api: None,
+        })
     }
 }
 

@@ -50,6 +50,13 @@ pub struct PlatformInfo {
     pub url_api: Option<String>,
 }
 
+impl PlatformInfo {
+    /// Returns true if this PlatformInfo has no meaningful data (for serde skip)
+    pub fn is_empty(&self) -> bool {
+        self.checksum.is_none() && self.url.is_none() && self.url_api.is_none()
+    }
+}
+
 impl TryFrom<toml::Value> for PlatformInfo {
     type Error = Report;
     fn try_from(value: toml::Value) -> Result<Self> {
@@ -182,6 +189,7 @@ impl Lockfile {
     }
 
     /// Update or add platform info for a tool version
+    /// Merges with existing info, preserving fields we don't have new values for
     pub fn set_platform_info(
         &mut self,
         short: &str,
@@ -197,11 +205,27 @@ impl Lockfile {
             .iter_mut()
             .find(|t| t.version == version && &t.options == options)
         {
-            tool.platforms
-                .insert(platform_key.to_string(), platform_info);
+            // Merge with existing platform info, preferring new values when present
+            let merged = if let Some(existing) = tool.platforms.get(platform_key) {
+                PlatformInfo {
+                    checksum: platform_info.checksum.or_else(|| existing.checksum.clone()),
+                    size: platform_info.size.or(existing.size),
+                    url: platform_info.url.or_else(|| existing.url.clone()),
+                    url_api: platform_info.url_api.or_else(|| existing.url_api.clone()),
+                }
+            } else {
+                platform_info
+            };
+            // Only insert non-empty platform info to avoid `"platforms.linux-x64" = {}`
+            if !merged.is_empty() {
+                tool.platforms.insert(platform_key.to_string(), merged);
+            }
         } else {
             let mut platforms = BTreeMap::new();
-            platforms.insert(platform_key.to_string(), platform_info);
+            // Only insert non-empty platform info
+            if !platform_info.is_empty() {
+                platforms.insert(platform_key.to_string(), platform_info);
+            }
             tools.push(LockfileTool {
                 version: version.to_string(),
                 backend: backend.map(|s| s.to_string()),

@@ -180,21 +180,39 @@ impl Lock {
         config: &Config,
         ts: &Toolset,
     ) -> Vec<(crate::cli::args::BackendArg, crate::toolset::ToolVersion)> {
-        // Collect tools from ALL config files (not just resolved current versions)
-        // This ensures base config tools are included even when overridden by env configs
+        // Calculate target config_root (same logic as get_lockfile_path)
+        let target_root = config
+            .config_files
+            .keys()
+            .next()
+            .map(|p| config_root::config_root(p))
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+        // Collect tools from config files in the target config_root only
         let mut all_tools: Vec<_> = Vec::new();
         let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
 
         // First, get all tools from the resolved toolset (these are the "current" versions)
+        // but only if they come from a config file in the target config_root
         for (backend, tv) in ts.list_current_versions() {
+            // Check if this tool's source is in the target config_root
+            if let Some(source_path) = tv.request.source().path() {
+                if config_root::config_root(source_path) != target_root {
+                    continue;
+                }
+            }
             let key = (backend.ba().short.clone(), tv.version.clone());
             if seen.insert(key) {
                 all_tools.push((backend.ba().as_ref().clone(), tv));
             }
         }
 
-        // Then, iterate ALL config files to find tools that may have been overridden
-        for (_path, cf) in config.config_files.iter() {
+        // Then, iterate config files in the target config_root to find tools that may have been overridden
+        for (path, cf) in config.config_files.iter() {
+            // Skip config files not in the target config_root
+            if config_root::config_root(path) != target_root {
+                continue;
+            }
             if let Ok(trs) = cf.to_tool_request_set() {
                 for (ba, requests, _source) in trs.iter() {
                     for request in requests {
@@ -211,10 +229,9 @@ impl Lock {
                                     }
                                 }
                             }
-                            // Also check installed versions that match this request
-                            let installed = backend.list_installed_versions();
+                            // For "latest" requests, find the highest installed version
                             if request.version() == "latest" {
-                                // For "latest", find the highest installed version
+                                let installed = backend.list_installed_versions();
                                 if let Some(latest_version) = installed.iter().max_by(|a, b| {
                                     versions::Versioning::new(a).cmp(&versions::Versioning::new(b))
                                 }) {
@@ -223,21 +240,6 @@ impl Lock {
                                         let tv = crate::toolset::ToolVersion::new(
                                             request.clone(),
                                             latest_version.clone(),
-                                        );
-                                        all_tools.push((ba.as_ref().clone(), tv));
-                                    }
-                                }
-                            } else {
-                                // For prefix requests, find matching versions using proper fuzzy matching
-                                // (ensures "1" matches "1.0.0" but not "10.0.0")
-                                for version in
-                                    backend.list_installed_versions_matching(&request.version())
-                                {
-                                    let key = (ba.short.clone(), version.clone());
-                                    if seen.insert(key.clone()) {
-                                        let tv = crate::toolset::ToolVersion::new(
-                                            request.clone(),
-                                            version,
                                         );
                                         all_tools.push((ba.as_ref().clone(), tv));
                                     }
@@ -316,11 +318,7 @@ impl Lock {
                     let (info, options) = if let Some(backend) = backend {
                         let options = backend.resolve_lockfile_options(&tv.request, &target);
                         match backend.resolve_lock_info(&tv, &target).await {
-                            Ok(info) if info.url.is_some() => (Some(info), options),
-                            Ok(_) => {
-                                debug!("No URL found for {} on {}", ba.short, platform.to_key());
-                                (None, options)
-                            }
+                            Ok(info) => (Some(info), options),
                             Err(e) => {
                                 warn!(
                                     "Failed to resolve {} for {}: {}",

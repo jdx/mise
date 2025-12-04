@@ -19,11 +19,11 @@ backend = "aqua:FiloSottile/age"
 [[tools.bun]]
 version = "1.3.3"
 backend = "core:bun"
-"platforms.linux-arm64" = { url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-linux-aarch64.zip"}
-"platforms.linux-x64" = { checksum = "blake3:21d78fbc47b9175cc18a79bc228c6b3aa92d102c3f9c006934101c6b588cc900", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-linux-x64.zip"}
-"platforms.macos-arm64" = { checksum = "blake3:2b8fa453577fa737c9eaf42730791360c8a133397db28684c93e49f9dd5d501a", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-darwin-aarch64.zip"}
-"platforms.macos-x64" = { url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-darwin-x64.zip"}
-"platforms.windows-x64" = { url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-windows-x64.zip"}
+"platforms.linux-arm64" = { checksum = "sha256:41b9f4f25256db897c2c135320e4f96c373e20ae6f06d8015187dac83591efc8", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-linux-aarch64.zip"}
+"platforms.linux-x64" = { checksum = "sha256:f5c546736f955141459de231167b6fdf7b01418e8be3609f2cde9dfe46a93a3d", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-linux-x64.zip"}
+"platforms.macos-arm64" = { checksum = "sha256:f50f5cc767c3882c46675fbe07e0b7b1df71a73ce544aadb537ad9261af00bb1", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-darwin-aarch64.zip"}
+"platforms.macos-x64" = { checksum = "sha256:fdaf5e3c91de2f2a8c83e80a125c5111d476e5f7575b2747d71bc51d2c920bd4", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-darwin-x64.zip"}
+"platforms.windows-x64" = { checksum = "sha256:53e239b058c13f0bb70949b222c4d40c5ab7d6cad22268b2ace2187fcfd7a247", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-windows-x64.zip"}
 
 [[tools.cargo-binstall]]
 version = "1.16.2"
@@ -61,7 +61,11 @@ backend = "cargo:usage-cli"
 [[tools.fd]]
 version = "10.3.0"
 backend = "aqua:sharkdp/fd"
+"platforms.linux-arm64" = { checksum = "sha256:996b9b1366433b211cb3bbedba91c9dbce2431842144d925428ead0adf32020b", url = "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-aarch64-unknown-linux-musl.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:2b6bfaae8c48f12050813c2ffe1884c61ea26e750d803df9c9114550a314cd14", url = "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-x86_64-unknown-linux-musl.tar.gz"}
 "platforms.macos-arm64" = { checksum = "sha256:0570263812089120bc2a5d84f9e65cd0c25e4a4d724c80075c357239c74ae904", url = "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-aarch64-apple-darwin.tar.gz"}
+"platforms.macos-x64" = { checksum = "sha256:50d30f13fe3d5914b14c4fff5abcbd4d0cdab4b855970a6956f4f006c17117a3", url = "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-x86_64-apple-darwin.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:318aa2a6fa664325933e81fda60d523fff29444129e91ebf0726b5b3bcd8b059", url = "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-x86_64-pc-windows-msvc.zip"}
 
 [[tools.gh]]
 version = "2.83.1"
@@ -92,11 +96,11 @@ backend = "aqua:jqlang/jq"
 [[tools.node]]
 version = "24.11.1"
 backend = "core:node"
-"platforms.linux-arm64" = { url = "https://nodejs.org/dist/v24.11.1/node-v24.11.1-linux-arm64.tar.gz"}
+"platforms.linux-arm64" = { checksum = "sha256:0dc93ec5c798b0d347f068db6d205d03dea9a71765e6a53922b682b91265d71f", url = "https://nodejs.org/dist/v24.11.1/node-v24.11.1-linux-arm64.tar.gz"}
 "platforms.linux-x64" = { checksum = "sha256:58a5ff5cc8f2200e458bea22e329d5c1994aa1b111d499ca46ec2411d58239ca", url = "https://nodejs.org/dist/v24.11.1/node-v24.11.1-linux-x64.tar.gz"}
 "platforms.macos-arm64" = { checksum = "sha256:b05aa3a66efe680023f930bd5af3fdbbd542794da5644ca2ad711d68cbd4dc35", url = "https://nodejs.org/dist/v24.11.1/node-v24.11.1-darwin-arm64.tar.gz"}
-"platforms.macos-x64" = { url = "https://nodejs.org/dist/v24.11.1/node-v24.11.1-darwin-x64.tar.gz"}
-"platforms.windows-x64" = { url = "https://nodejs.org/dist/v24.11.1/node-v24.11.1-win-x64.zip"}
+"platforms.macos-x64" = { checksum = "sha256:096081b6d6fcdd3f5ba0f5f1d44a47e83037ad2e78eada26671c252fe64dd111", url = "https://nodejs.org/dist/v24.11.1/node-v24.11.1-darwin-x64.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:5355ae6d7c49eddcfde7d34ac3486820600a831bf81dc3bdca5c8db6a9bb0e76", url = "https://nodejs.org/dist/v24.11.1/node-v24.11.1-win-x64.zip"}
 
 [[tools."npm:ajv-cli"]]
 version = "5.0.0"
