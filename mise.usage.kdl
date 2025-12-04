@@ -203,7 +203,7 @@ cmd config help="Manage config files" {
             long_help "The path to the mise.toml file to edit\n\nIf not provided, the nearest mise.toml file will be used"
             arg <FILE>
         }
-        flag "-t --type" {
+        flag "-t --type" default=infer {
             arg <TYPE> {
                 choices infer string integer float bool list set
             }
@@ -301,7 +301,7 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
         flag "-w --write" help="instead of outputting the script to stdout, write to a file and make it executable" {
             arg <WRITE>
         }
-        flag --localized-dir help="Directory to put localized data into" {
+        flag --localized-dir help="Directory to put localized data into" default=.mise {
             arg <LOCALIZED_DIR>
         }
     }
@@ -330,22 +330,22 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
         alias pre-commit
         long_help "Generate a git pre-commit hook\n\nThis command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`\nwhen you commit changes to your repository.\n\nStaged files are passed to the task as `STAGED`.\n\nFor more advanced pre-commit functionality, see mise's sister project: https://hk.jdx.dev/"
         after_long_help "Examples:\n\n    $ mise generate git-pre-commit --write --task=pre-commit\n    $ git commit -m \"feat: add new feature\" # runs `mise run pre-commit`\n"
-        flag "-t --task" help="The task to run when the pre-commit hook is triggered" {
+        flag "-t --task" help="The task to run when the pre-commit hook is triggered" default=pre-commit {
             arg <TASK>
         }
         flag "-w --write" help="write to .git/hooks/pre-commit and make it executable"
-        flag --hook help="Which hook to generate (saves to .git/hooks/$hook)" {
+        flag --hook help="Which hook to generate (saves to .git/hooks/$hook)" default=pre-commit {
             arg <HOOK>
         }
     }
     cmd github-action help="Generate a GitHub Action workflow file" {
         long_help "Generate a GitHub Action workflow file\n\nThis command generates a GitHub Action workflow file that runs a mise task like `mise run ci`\nwhen you push changes to your repository."
         after_long_help "Examples:\n\n    $ mise generate github-action --write --task=ci\n    $ git commit -m \"feat: add new feature\"\n    $ git push # runs `mise run ci` on GitHub\n"
-        flag "-t --task" help="The task to run when the workflow is triggered" {
+        flag "-t --task" help="The task to run when the workflow is triggered" default=ci {
             arg <TASK>
         }
         flag "-w --write" help="write to .github/workflows/$name.yml"
-        flag --name help="the name of the workflow to generate" {
+        flag --name help="the name of the workflow to generate" default=ci {
             arg <NAME>
         }
     }
@@ -362,7 +362,7 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
         flag "-r --root" help="root directory to search for tasks" {
             arg <ROOT>
         }
-        flag "-s --style" {
+        flag "-s --style" default=simple {
             arg <STYLE> {
                 choices simple detailed
             }
@@ -371,10 +371,10 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
     cmd task-stubs help="Generates shims to run mise tasks" {
         long_help "Generates shims to run mise tasks\n\nBy default, this will build shims like ./bin/<task>. These can be paired with `mise generate bootstrap`\nso contributors to a project can execute mise tasks without installing mise into their system."
         after_long_help "Examples:\n\n    $ mise task add test -- echo 'running tests'\n    $ mise generate task-stubs\n    $ ./bin/test\n    running tests\n"
-        flag "-d --dir" help="Directory to create task stubs inside of" {
+        flag "-d --dir" help="Directory to create task stubs inside of" default=bin {
             arg <DIR>
         }
-        flag "-m --mise-bin" help="Path to a mise bin to use when running the task stub." {
+        flag "-m --mise-bin" help="Path to a mise bin to use when running the task stub." default=mise {
             long_help "Path to a mise bin to use when running the task stub.\n\nUse `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate bootstrap`"
             arg <MISE_BIN>
         }
@@ -393,7 +393,7 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
         flag --fetch help="Fetch checksums and sizes for an existing tool stub file" {
             long_help "Fetch checksums and sizes for an existing tool stub file\n\nThis reads an existing stub file and fills in any missing checksum/size fields by downloading the files. URLs must already be present in the stub."
         }
-        flag --http help="HTTP backend type to use" {
+        flag --http help="HTTP backend type to use" default=http {
             arg <HTTP>
         }
         flag --platform-bin help="Platform-specific binary paths in the format platform:path" var=#true {
@@ -405,7 +405,7 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
             arg <PLATFORM_URL>
         }
         flag --skip-download help="Skip downloading for checksum and binary path detection (faster but less informative)"
-        flag --version help="Version of the tool" {
+        flag --version help="Version of the tool" default=latest {
             arg <VERSION>
         }
         arg <OUTPUT> help="Output file path for the tool stub"
@@ -695,7 +695,7 @@ cmd search help="Search for tools in the registry" {
     long_help "Search for tools in the registry\n\nThis command searches a tool in the registry.\n\nBy default, it will show all tools that fuzzy match the search term. For\nnon-fuzzy matches, use the `--match-type` flag."
     after_long_help "Examples:\n\n    $ mise search jq\n    Tool  Description\n    jq    Command-line JSON processor. https://github.com/jqlang/jq\n    jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp\n    jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq\n    gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq\n\n    $ mise search --interactive\n    Tool\n    Search a tool\n    ❯ jq    Command-line JSON processor. https://github.com/jqlang/jq\n      jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp\n      jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq\n      gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq\n    /jq \n    esc clear filter • enter confirm\n"
     flag "-i --interactive" help="Show interactive search"
-    flag "-m --match-type" help="Match type: equal, contains, or fuzzy" {
+    flag "-m --match-type" help="Match type: equal, contains, or fuzzy" default=fuzzy {
         arg <MATCH_TYPE> {
             choices equal contains fuzzy
         }
@@ -1131,7 +1131,7 @@ cmd watch help="Run task(s) and watch for changes to rerun it" {
             choices clear reset
         }
     }
-    flag "-o --on-busy-update" help="What to do when receiving events while the command is running" {
+    flag "-o --on-busy-update" help="What to do when receiving events while the command is running" default=do-nothing {
         long_help "What to do when receiving events while the command is running\n\nDefault is to 'do-nothing', which ignores events while the command is running, so that changes that occur due to the command are ignored, like compilation outputs. You can also use 'queue' which will run the command once again when the current run has finished if any events occur while it's running, or 'restart', which terminates the running command and starts a new one. Finally, there's 'signal', which only sends a signal; this can be useful with programs that can reload their configuration without a full restart.\n\nThe signal can be specified with the '--signal' option."
         arg <MODE> {
             choices queue do-nothing restart signal
@@ -1148,7 +1148,7 @@ cmd watch help="Run task(s) and watch for changes to rerun it" {
         long_help "Signal to send to stop the command\n\nThis is used by 'restart' and 'signal' modes of '--on-busy-update' (unless '--signal' is provided). The restart behaviour is to send the signal, wait for the command to exit, and if it hasn't exited after some time (see '--timeout-stop'), forcefully terminate it.\n\nThe default on unix is \"SIGTERM\".\n\nInput is parsed as a full signal name (like \"SIGTERM\"), a short signal name (like \"TERM\"), or a signal number (like \"15\"). All input is case-insensitive.\n\nOn Windows this option is technically supported but only supports the \"KILL\" event, as Watchexec cannot yet deliver other events. Windows doesn't have signals as such; instead it has termination (here called \"KILL\" or \"STOP\") and \"CTRL+C\", \"CTRL+BREAK\", and \"CTRL+CLOSE\" events. For portability the unix signals \"SIGKILL\", \"SIGINT\", \"SIGTERM\", and \"SIGHUP\" are respectively mapped to these."
         arg <SIGNAL>
     }
-    flag --stop-timeout help="Time to wait for the command to exit gracefully" {
+    flag --stop-timeout help="Time to wait for the command to exit gracefully" default="10s" {
         long_help "Time to wait for the command to exit gracefully\n\nThis is used by the 'restart' mode of '--on-busy-update'. After the graceful stop signal is sent, Watchexec will wait for the command to exit. If it hasn't exited after this time, it is forcefully terminated.\n\nTakes a unit-less value in seconds, or a time span value such as \"5min 20s\". Providing a unit-less value is deprecated and will warn; it will be an error in the future.\n\nThe default is 10 seconds. Set to 0 to immediately force-kill the command.\n\nThis has no practical effect on Windows as the command is always forcefully terminated; see '--stop-signal' for why."
         arg <TIMEOUT>
     }
@@ -1156,7 +1156,7 @@ cmd watch help="Run task(s) and watch for changes to rerun it" {
         long_help "Translate signals from the OS to signals to send to the command\n\nTakes a pair of signal names, separated by a colon, such as \"TERM:INT\" to map SIGTERM to SIGINT. The first signal is the one received by watchexec, and the second is the one sent to the command. The second can be omitted to discard the first signal, such as \"TERM:\" to not do anything on SIGTERM.\n\nIf SIGINT or SIGTERM are mapped, then they no longer quit Watchexec. Besides making it hard to quit Watchexec itself, this is useful to send pass a Ctrl-C to the command without also terminating Watchexec and the underlying program with it, e.g. with \"INT:INT\".\n\nThis option can be specified multiple times to map multiple signals.\n\nSignal syntax is case-insensitive for short names (like \"TERM\", \"USR2\") and long names (like \"SIGKILL\", \"SIGHUP\"). Signal numbers are also supported (like \"15\", \"31\"). On Windows, the forms \"STOP\", \"CTRL+C\", and \"CTRL+BREAK\" are also supported to receive, but Watchexec cannot yet deliver other \"signals\" than a STOP."
         arg <SIGNAL:SIGNAL>
     }
-    flag "-d --debounce" help="Time to wait for new events before taking action" {
+    flag "-d --debounce" help="Time to wait for new events before taking action" default="50ms" {
         long_help "Time to wait for new events before taking action\n\nWhen an event is received, Watchexec will wait for up to this amount of time before handling it (such as running the command). This is essential as what you might perceive as a single change may actually emit many events, and without this behaviour, Watchexec would run much too often. Additionally, it's not infrequent that file writes are not atomic, and each write may emit an event, so this is a good way to avoid running a command while a file is partially written.\n\nAn alternative use is to set a high value (like \"30min\" or longer), to save power or bandwidth on intensive tasks, like an ad-hoc backup script. In those use cases, note that every accumulated event will build up in memory.\n\nTakes a unit-less value in milliseconds, or a time span value such as \"5sec 20ms\". Providing a unit-less value is deprecated and will warn; it will be an error in the future.\n\nThe default is 50 milliseconds. Setting to 0 is highly discouraged."
         arg <TIMEOUT>
     }
@@ -1197,7 +1197,7 @@ cmd watch help="Run task(s) and watch for changes to rerun it" {
         arg <SHELL>
     }
     flag -n help="Shorthand for '--shell=none'"
-    flag --emit-events-to help="Configure event emission" {
+    flag --emit-events-to help="Configure event emission" default=none {
         long_help "Configure event emission\n\nWatchexec can emit event information when running a command, which can be used by the child\nprocess to target specific changed files.\n\nOne thing to take care with is assuming inherent behaviour where there is only chance.\nNotably, it could appear as if the `RENAMED` variable contains both the original and the new\npath being renamed. In previous versions, it would even appear on some platforms as if the\noriginal always came before the new. However, none of this was true. It's impossible to\nreliably and portably know which changed path is the old or new, \"half\" renames may appear\n(only the original, only the new), \"unknown\" renames may appear (change was a rename, but\nwhether it was the old or new isn't known), rename events might split across two debouncing\nboundaries, and so on.\n\nThis option controls where that information is emitted. It defaults to 'none', which doesn't\nemit event information at all. The other options are 'environment' (deprecated), 'stdio',\n'file', 'json-stdio', and 'json-file'.\n\nThe 'stdio' and 'file' modes are text-based: 'stdio' writes absolute paths to the stdin of\nthe command, one per line, each prefixed with `create:`, `remove:`, `rename:`, `modify:`,\nor `other:`, then closes the handle; 'file' writes the same thing to a temporary file, and\nits path is given with the $WATCHEXEC_EVENTS_FILE environment variable.\n\nThere are also two JSON modes, which are based on JSON objects and can represent the full\nset of events Watchexec handles. Here's an example of a folder being created on Linux:\n\n```json\n  {\n    \"tags\": [\n      {\n        \"kind\": \"path\",\n        \"absolute\": \"/home/user/your/new-folder\",\n        \"filetype\": \"dir\"\n      },\n      {\n        \"kind\": \"fs\",\n        \"simple\": \"create\",\n        \"full\": \"Create(Folder)\"\n      },\n      {\n        \"kind\": \"source\",\n        \"source\": \"filesystem\",\n      }\n    ],\n    \"metadata\": {\n      \"notify-backend\": \"inotify\"\n    }\n  }\n```\n\nThe fields are as follows:\n\n  - `tags`, structured event data.\n  - `tags[].kind`, which can be:\n    * 'path', along with:\n      + `absolute`, an absolute path.\n      + `filetype`, a file type if known ('dir', 'file', 'symlink', 'other').\n    * 'fs':\n      + `simple`, the \"simple\" event type ('access', 'create', 'modify', 'remove', or 'other').\n      + `full`, the \"full\" event type, which is too complex to fully describe here, but looks like 'General(Precise(Specific))'.\n    * 'source', along with:\n      + `source`, the source of the event ('filesystem', 'keyboard', 'mouse', 'os', 'time', 'internal').\n    * 'keyboard', along with:\n      + `keycode`. Currently only the value 'eof' is supported.\n    * 'process', for events caused by processes:\n      + `pid`, the process ID.\n    * 'signal', for signals sent to Watchexec:\n      + `signal`, the normalised signal name ('hangup', 'interrupt', 'quit', 'terminate', 'user1', 'user2').\n    * 'completion', for when a command ends:\n      + `disposition`, the exit disposition ('success', 'error', 'signal', 'stop', 'exception', 'continued').\n      + `code`, the exit, signal, stop, or exception code.\n  - `metadata`, additional information about the event.\n\nThe 'json-stdio' mode will emit JSON events to the standard input of the command, one per\nline, then close stdin. The 'json-file' mode will create a temporary file, write the\nevents to it, and provide the path to the file with the $WATCHEXEC_EVENTS_FILE\nenvironment variable.\n\nFinally, the 'environment' mode was the default until 2.0. It sets environment variables\nwith the paths of the affected files, for filesystem events:\n\n$WATCHEXEC_COMMON_PATH is set to the longest common path of all of the below variables,\nand so should be prepended to each path to obtain the full/real path. Then:\n\n  - $WATCHEXEC_CREATED_PATH is set when files/folders were created\n  - $WATCHEXEC_REMOVED_PATH is set when files/folders were removed\n  - $WATCHEXEC_RENAMED_PATH is set when files/folders were renamed\n  - $WATCHEXEC_WRITTEN_PATH is set when files/folders were modified\n  - $WATCHEXEC_META_CHANGED_PATH is set when files/folders' metadata were modified\n  - $WATCHEXEC_OTHERWISE_CHANGED_PATH is set for every other kind of pathed event\n\nMultiple paths are separated by the system path separator, ';' on Windows and ':' on unix.\nWithin each variable, paths are deduplicated and sorted in binary order (i.e. neither\nUnicode nor locale aware).\n\nThis is the legacy mode, is deprecated, and will be removed in the future. The environment\nis a very restricted space, while also limited in what it can usefully represent. Large\nnumbers of files will either cause the environment to be truncated, or may error or crash\nthe process entirely. The $WATCHEXEC_COMMON_PATH is also unintuitive, as demonstrated by the\nmultiple confused queries that have landed in my inbox over the years."
         arg <MODE> {
             choices environment stdio file json-stdio json-file none
@@ -1210,7 +1210,7 @@ cmd watch help="Run task(s) and watch for changes to rerun it" {
         long_help "Add env vars to the command\n\nThis is a convenience option for setting environment variables for the command, without setting them for the Watchexec process itself.\n\nUse key=value syntax. Multiple variables can be set by repeating the option."
         arg "<KEY=VALUE>"
     }
-    flag --wrap-process help="Configure how the process is wrapped" {
+    flag --wrap-process help="Configure how the process is wrapped" default=group {
         long_help "Configure how the process is wrapped\n\nBy default, Watchexec will run the command in a process group in Unix, and in a Job Object in Windows.\n\nSome Unix programs prefer running in a session, while others do not work in a process group.\n\nUse 'group' to use a process group, 'session' to use a process session, and 'none' to run the command directly. On Windows, either of 'group' or 'session' will use a Job Object."
         arg <MODE> {
             choices group session none
@@ -1219,7 +1219,7 @@ cmd watch help="Run task(s) and watch for changes to rerun it" {
     flag "-N --notify" help="Alert when commands start and end" {
         long_help "Alert when commands start and end\n\nWith this, Watchexec will emit a desktop notification when a command starts and ends, on supported platforms. On unsupported platforms, it may silently do nothing, or log a warning."
     }
-    flag --color help="When to use terminal colours" {
+    flag --color help="When to use terminal colours" default=auto {
         long_help "When to use terminal colours\n\nSetting the environment variable `NO_COLOR` to any value is equivalent to `--color=never`."
         arg <MODE> {
             choices auto always never
@@ -1264,7 +1264,7 @@ cmd watch help="Run task(s) and watch for changes to rerun it" {
         long_help "Files to load ignores from\n\nProvide a path to a file containing ignores, one per line. Empty lines and lines starting with '#' are ignored. Uses the same pattern format as the '--ignore' option.\n\nThis can also be used via the $WATCHEXEC_IGNORE_FILES environment variable."
         arg <PATH>
     }
-    flag --fs-events help="Filesystem events to filter to" var=#true {
+    flag --fs-events help="Filesystem events to filter to" var=#true default=create,remove,rename,modify,metadata {
         long_help "Filesystem events to filter to\n\nThis is a quick filter to only emit events for the given types of filesystem changes. Choose from 'access', 'create', 'remove', 'rename', 'modify', 'metadata'. Multiple types can be given by repeating the option or by separating them with commas. By default, this is all types except for 'access'.\n\nThis may apply filtering at the kernel level when possible, which can be more efficient, but may be more confusing when reading the logs."
         arg <EVENTS> {
             choices access create remove rename modify metadata

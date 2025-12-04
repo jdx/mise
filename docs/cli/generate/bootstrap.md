@@ -28,6 +28,8 @@ instead of outputting the script to stdout, write to a file and make it executab
 
 Directory to put localized data into
 
+**Default:** `.mise`
+
 Examples:
 
 ```

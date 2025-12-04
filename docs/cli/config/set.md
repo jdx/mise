@@ -36,6 +36,8 @@ If not provided, the nearest mise.toml file will be used
 - `list`
 - `set`
 
+**Default:** `infer`
+
 Examples:
 
 ```

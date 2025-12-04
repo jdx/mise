@@ -207,7 +207,9 @@ impl TaskScriptParser {
 
                 let hide = Self::expect_opt_bool(args.get("hide"), "hide")?.unwrap_or(false);
 
-                let default = Self::expect_opt_string(args.get("default"), "default")?;
+                let default = Self::expect_opt_string(args.get("default"), "default")?
+                    .map(|s| vec![s])
+                    .unwrap_or_default();
 
                 let choices = Self::expect_opt_array(args.get("choices"), "choices")?
                     .map(|array| {
@@ -278,7 +280,9 @@ impl TaskScriptParser {
                     None => vec![name.clone()],
                 };
 
-                let default = Self::expect_opt_string(args.get("default"), "default")?;
+                let default = Self::expect_opt_string(args.get("default"), "default")?
+                    .map(|s| vec![s])
+                    .unwrap_or_default();
 
                 let var = Self::expect_opt_bool(args.get("var"), "var")?.unwrap_or(false);
 
@@ -384,7 +388,9 @@ impl TaskScriptParser {
                     None => vec![name.clone()],
                 };
 
-                let default = Self::expect_opt_string(args.get("default"), "default")?;
+                let default = Self::expect_opt_string(args.get("default"), "default")?
+                    .map(|s| vec![s])
+                    .unwrap_or_default();
 
                 let var = Self::expect_opt_bool(args.get("var"), "var")?.unwrap_or(false);
 
@@ -806,7 +812,15 @@ impl TaskScriptParser {
         for arg in &spec.cmd.args {
             let name = arg.name.to_snake_case();
             let value = if arg.var {
-                tera::Value::Array(Vec::new())
+                // Variadic args are arrays (possibly with defaults)
+                let defaults: Vec<tera::Value> = arg
+                    .default
+                    .iter()
+                    .map(|s| tera::Value::String(s.clone()))
+                    .collect();
+                tera::Value::Array(defaults)
+            } else if let Some(default) = arg.default.first() {
+                tera::Value::String(default.clone())
             } else {
                 tera::Value::String(String::new())
             };
@@ -817,19 +831,21 @@ impl TaskScriptParser {
         for flag in &spec.cmd.flags {
             let name = flag.name.to_snake_case();
             let value = if flag.var {
-                // FIXME: This part is a bug in usage-lib.
-                // It should be an empty array, but usage treats it as a string.
-                // Should be: `tera::Value::Array(Vec::new())`
-                tera::Value::String(String::new())
+                // Variadic flags are arrays (possibly with defaults)
+                let defaults: Vec<tera::Value> = flag
+                    .default
+                    .iter()
+                    .map(|s| tera::Value::String(s.clone()))
+                    .collect();
+                tera::Value::Array(defaults)
             } else if flag.count {
                 // Count flags: represent as an array of bools
                 tera::Value::Array(Vec::new())
-            } else if let Some(default) = &flag.default {
+            } else if let Some(default) = flag.default.first() {
                 // if it is not parseable as a boolean, treat it as a string
-                default.parse::<bool>().map_or_else(
-                    |_| tera::Value::String(String::new()),
-                    |_| tera::Value::Bool(false),
-                )
+                default
+                    .parse::<bool>()
+                    .map_or_else(|_| tera::Value::String(default.clone()), tera::Value::Bool)
             } else {
                 tera::Value::Bool(false)
             };
@@ -1284,7 +1300,7 @@ mod tests {
             .iter_mut()
             .find(|f| f.name == "bar")
         {
-            bar_flag.default = Some("false".to_string());
+            bar_flag.default = vec!["false".to_string()];
         }
         // Now referencing usage.bar should render successfully, resolving to the default
         let parsed_scripts = parser

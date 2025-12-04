@@ -89,7 +89,7 @@ assert "mise run usage-tera-var-flag --tag foo" "\
 tag_count=1
 tag=foo"
 
-# Variadic flags are definitely exposed as arrays in the usage map
+# Variadic flags are exposed as arrays and can be joined
 cat <<'EOF' >mise.toml
 [tasks.usage-tera-var-flag-join]
 description = "Test variadic flags joined with a separator"
@@ -101,15 +101,31 @@ echo "tags={{ usage.tag | join(sep='::') }}"
 '''
 EOF
 
-# DISABLED: this is a bug in usage-lib.
-# Today, it treats the default as a string, not an array.
-# assert "mise run usage-tera-var-flag-join --tag foo --tag bar" "tags=foo::bar"
+assert "mise run usage-tera-var-flag-join --tag foo --tag bar" "tags=foo::bar"
 
-# Variadic flags with defaults SHOULD be exposed as arrays in the usage map
-# but this is a bug in usage-lib.
+# Variadic flags with multiple defaults are exposed as arrays in the usage map
 cat <<'EOF' >mise.toml
 [tasks.usage-tera-var-flag-default]
 description = "Test variadic flags with default in usage map"
+usage = '''
+flag "--tag <tag>" help="Tag" var=#true {
+    default {
+        "foo"
+        "bar"
+    }
+}
+'''
+run = '''
+echo "tags={{ usage.tag | join(sep='::') }}"
+'''
+EOF
+
+assert "mise run usage-tera-var-flag-default" "tags=foo::bar"
+
+# Variadic flags with string defaults stay as single element (not split)
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-var-flag-default-string]
+description = "Test variadic flags with string default in usage map"
 usage = '''
 flag "--tag <tag>" help="Tag" var=#true default="foo bar"
 '''
@@ -117,6 +133,40 @@ run = '''
 echo "tags={{ usage.tag | join(sep='::') }}"
 '''
 EOF
-# DISABLED: this is a bug in usage-lib.
-# Today, it treats the default as a string, not an array.
-# assert "mise run usage-tera-var-flag-default" "tags=foo::bar"
+
+assert "mise run usage-tera-var-flag-default-string" "tags=foo bar"
+
+# Args with defaults
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-arg-default]
+description = "Test arg with default in usage map"
+usage = '''
+arg "<name>" default="world"
+'''
+run = '''
+echo "Hello, {{ usage.name }}!"
+'''
+EOF
+
+assert "mise run usage-tera-arg-default" "Hello, world!"
+assert "mise run usage-tera-arg-default -- Alice" "Hello, Alice!"
+
+# Variadic args with multiple defaults
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-var-arg-default]
+description = "Test variadic arg with defaults in usage map"
+usage = '''
+arg "[names]" var=#true {
+    default {
+        "alice"
+        "bob"
+    }
+}
+'''
+run = '''
+echo "Hello, {{ usage.names | join(sep=' and ') }}!"
+'''
+EOF
+
+assert "mise run usage-tera-var-arg-default" "Hello, alice and bob!"
+assert "mise run usage-tera-var-arg-default -- charlie" "Hello, charlie!"
