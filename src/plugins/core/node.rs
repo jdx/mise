@@ -672,11 +672,14 @@ impl NodePlugin {
         let os = Self::map_os(target.os_name());
         let arch = Self::map_arch(target.arch_name());
 
-        if let Some(flavor) = &settings.node.flavor {
-            format!("node-v{version}-{os}-{arch}-{flavor}")
-        } else {
-            format!("node-v{version}-{os}-{arch}")
+        // Flavor (like "glibc") only applies to Linux platforms
+        // Don't apply it to macOS, Windows, or other platforms
+        if target.os_name() == "linux" {
+            if let Some(flavor) = &settings.node.flavor {
+                return format!("node-v{version}-{os}-{arch}-{flavor}");
+            }
         }
+        format!("node-v{version}-{os}-{arch}")
     }
 }
 
