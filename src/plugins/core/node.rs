@@ -1,3 +1,4 @@
+use crate::backend::static_helpers::fetch_checksum_from_shasums;
 use crate::backend::{Backend, VersionCacheManager, platform_target::PlatformTarget};
 use crate::build_time::built_info;
 use crate::cache::CacheManagerBuilder;
@@ -7,6 +8,7 @@ use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::progress_report::SingleReport;
 use crate::{env, file, gpg, hash, http, plugins};
@@ -597,6 +599,44 @@ impl Backend for NodePlugin {
 
         opts
     }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        let version = &tv.version;
+        let settings = Settings::get();
+
+        // Build platform-specific filename
+        let slug = self.build_platform_slug(version, target);
+        let filename = if target.os_name() == "windows" {
+            format!("{slug}.zip")
+        } else {
+            format!("{slug}.tar.gz")
+        };
+
+        // Build download URL
+        let url = settings
+            .node
+            .mirror_url()
+            .join(&format!("v{version}/{filename}"))
+            .map_err(|e| eyre::eyre!("Failed to construct Node.js download URL: {e}"))?;
+
+        // Fetch SHASUMS256.txt to get checksum without downloading the tarball
+        let shasums_url = settings
+            .node
+            .mirror_url()
+            .join(&format!("v{version}/SHASUMS256.txt"))?;
+        let checksum = fetch_checksum_from_shasums(shasums_url.as_str(), &filename).await;
+
+        Ok(PlatformInfo {
+            url: Some(url.to_string()),
+            checksum,
+            size: None,
+            url_api: None,
+        })
+    }
 }
 
 impl NodePlugin {
@@ -632,11 +672,15 @@ impl NodePlugin {
         let os = Self::map_os(target.os_name());
         let arch = Self::map_arch(target.arch_name());
 
-        if let Some(flavor) = &settings.node.flavor {
-            format!("node-v{version}-{os}-{arch}-{flavor}")
-        } else {
-            format!("node-v{version}-{os}-{arch}")
+        // Flavor (like "glibc") only applies to the current Linux platform
+        // Don't apply it to non-current platforms during cross-platform locking
+        if target.is_current()
+            && target.os_name() == "linux"
+            && let Some(flavor) = &settings.node.flavor
+        {
+            return format!("node-v{version}-{os}-{arch}-{flavor}");
         }
+        format!("node-v{version}-{os}-{arch}")
     }
 }
 

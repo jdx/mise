@@ -4,12 +4,14 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::Result;
 use crate::backend::Backend;
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::static_helpers::fetch_checksum_from_file;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, env, file, plugins};
@@ -292,5 +294,34 @@ impl Backend for GoPlugin {
             "{}/go{}.{}-{}.{}",
             &settings.go_download_mirror, tv.version, platform, arch, ext
         )))
+    }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        let settings = Settings::get();
+
+        // Build tarball URL
+        let url = self
+            .get_tarball_url(tv, target)
+            .await?
+            .ok_or_else(|| eyre::eyre!("Failed to get go tarball URL"))?;
+
+        // Go provides .sha256 files alongside each tarball
+        let checksum = if !settings.go_skip_checksum {
+            let checksum_url = format!("{}.sha256", &url);
+            fetch_checksum_from_file(&checksum_url, "sha256").await
+        } else {
+            None
+        };
+
+        Ok(PlatformInfo {
+            url: Some(url),
+            checksum,
+            size: None,
+            url_api: None,
+        })
     }
 }

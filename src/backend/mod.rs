@@ -14,6 +14,7 @@ use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
+use crate::platform::Platform;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{PluginType, VERSION_REGEX};
 use crate::registry::{REGISTRY, tool_enabled};
@@ -230,6 +231,24 @@ pub trait Backend: Debug + Send + Sync {
         _target: &PlatformTarget,
     ) -> BTreeMap<String, String> {
         BTreeMap::new() // Default: no options affect artifact identity
+    }
+
+    /// Returns all platform variants that should be locked for a given base platform.
+    ///
+    /// Some tools have compile-time variants (e.g., bun has baseline/musl variants)
+    /// that result in different download URLs and checksums. This method allows
+    /// backends to declare all variants so `mise lock` can fetch checksums for each.
+    ///
+    /// Default returns just the base platform. Backends should override this to
+    /// return additional variants when applicable.
+    ///
+    /// Example: For bun on linux-x64, this might return:
+    /// - linux-x64 (default, AVX2)
+    /// - linux-x64-baseline (no AVX2)
+    /// - linux-x64-musl (musl libc)
+    /// - linux-x64-musl-baseline (musl + no AVX2)
+    fn platform_variants(&self, platform: &Platform) -> Vec<Platform> {
+        vec![platform.clone()] // Default: just the base platform
     }
 
     async fn description(&self) -> Option<String> {

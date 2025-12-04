@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use base64::Engine;
@@ -9,6 +11,7 @@ use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{ClientBuilder, IntoUrl, Method, Response};
 use std::sync::LazyLock as Lazy;
+use tokio::sync::OnceCell;
 use tokio_retry::Retry;
 use tokio_retry::strategy::{ExponentialBackoff, jitter};
 use url::Url;
@@ -35,6 +38,14 @@ pub static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
     )
     .unwrap()
 });
+
+/// In-memory cache for HTTP text responses, useful for requests that are repeated
+/// during a single operation (e.g., fetching SHASUMS256.txt for multiple platforms).
+/// Each URL gets its own OnceCell to ensure concurrent requests for the same URL
+/// wait for the first fetch to complete rather than all fetching simultaneously.
+type CachedResult = Arc<OnceCell<Result<String, String>>>;
+static HTTP_CACHE: Lazy<Mutex<HashMap<String, CachedResult>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Debug)]
 pub struct Client {
@@ -133,6 +144,39 @@ impl Client {
         Ok(text)
     }
 
+    /// Like get_text but caches results in memory for the duration of the process.
+    /// Useful when the same URL will be requested multiple times (e.g., SHASUMS256.txt
+    /// when locking multiple platforms). Concurrent requests for the same URL will
+    /// wait for the first fetch to complete.
+    pub async fn get_text_cached<U: IntoUrl>(&self, url: U) -> Result<String> {
+        let url = url.into_url().unwrap();
+        let key = url.to_string();
+
+        // Get or create the OnceCell for this URL
+        let cell = {
+            let mut cache = HTTP_CACHE.lock().unwrap();
+            cache.entry(key).or_default().clone()
+        };
+
+        // Initialize the cell if needed - concurrent callers will wait
+        let result = cell
+            .get_or_init(|| {
+                let url = url.clone();
+                async move {
+                    match self.get_text(url).await {
+                        Ok(text) => Ok(text),
+                        Err(err) => Err(err.to_string()),
+                    }
+                }
+            })
+            .await;
+
+        match result {
+            Ok(text) => Ok(text.clone()),
+            Err(err) => bail!("{}", err),
+        }
+    }
+
     pub async fn get_html<U: IntoUrl>(&self, url: U) -> Result<String> {
         let url = url.into_url().unwrap();
         let resp = self.get_async(url.clone()).await?;
@@ -174,6 +218,18 @@ impl Client {
         T: serde::de::DeserializeOwned,
     {
         self.json_headers(url).await.map(|(json, _)| json)
+    }
+
+    /// Like json but caches raw JSON text in memory for the duration of the process.
+    /// Useful when the same URL will be requested multiple times (e.g., zig index.json
+    /// when locking multiple platforms). Concurrent requests for the same URL will
+    /// wait for the first fetch to complete.
+    pub async fn json_cached<T, U: IntoUrl>(&self, url: U) -> Result<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let text = self.get_text_cached(url).await?;
+        Ok(serde_json::from_str(&text)?)
     }
 
     pub async fn json_with_headers<T, U: IntoUrl>(&self, url: U, headers: &HeaderMap) -> Result<T>

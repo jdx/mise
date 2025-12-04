@@ -8,16 +8,19 @@ use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
 
+use crate::backend::static_helpers::fetch_checksum_from_shasums;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{
     backend::{Backend, GitHubReleaseInfo, ReleaseType, platform_target::PlatformTarget},
-    config::Config,
+    config::{Config, Settings},
+    platform::Platform,
 };
 use crate::{file, github, plugins};
 
@@ -91,6 +94,23 @@ impl Backend for BunPlugin {
         &self.ba
     }
 
+    /// Override get_platform_key to include bun's compile-time variant (baseline, musl, etc.)
+    /// This ensures lockfile lookups use the correct platform key that matches the variant
+    fn get_platform_key(&self) -> String {
+        let settings = Settings::get();
+        let os = settings.os();
+        let arch = settings.arch();
+
+        // Get the variant suffix based on compile-time features
+        let variant = Self::get_platform_variant();
+
+        if let Some(v) = variant {
+            format!("{os}-{arch}-{v}")
+        } else {
+            format!("{os}-{arch}")
+        }
+    }
+
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         let versions = github::list_releases("oven-sh/bun")
             .await?
@@ -144,6 +164,99 @@ impl Backend for BunPlugin {
             release_type: ReleaseType::GitHub,
         }))
     }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        let version = &tv.version;
+
+        // Build platform-specific filename
+        let os_name = Self::map_os_to_bun(target.os_name());
+        let arch_name = Self::get_bun_arch_for_target(target);
+        let filename = format!("bun-{os_name}-{arch_name}.zip");
+
+        // Build download URL
+        let url =
+            format!("https://github.com/oven-sh/bun/releases/download/bun-v{version}/{filename}");
+
+        // Fetch SHASUMS256.txt to get checksum without downloading the zip
+        let shasums_url = format!(
+            "https://github.com/oven-sh/bun/releases/download/bun-v{version}/SHASUMS256.txt"
+        );
+        let checksum = fetch_checksum_from_shasums(&shasums_url, &filename).await;
+
+        Ok(PlatformInfo {
+            url: Some(url),
+            checksum,
+            size: None,
+            url_api: None,
+        })
+    }
+
+    fn platform_variants(&self, platform: &Platform) -> Vec<Platform> {
+        // Bun has compile-time variants that affect the download URL and checksum:
+        // - baseline: for CPUs without AVX2 support
+        // - musl: for musl libc (Alpine Linux, etc.)
+        // - musl-baseline: musl + no AVX2
+        //
+        // Available variants by platform:
+        // - linux-x64: x64, x64-baseline, x64-musl, x64-musl-baseline
+        // - linux-arm64: aarch64, aarch64-musl
+        // - macos-x64: x64, x64-baseline
+        // - macos-arm64: aarch64
+        // - windows-x64: x64, x64-baseline
+
+        // If the platform already has a qualifier, it's already a specific variant
+        // Don't expand it to avoid duplicates
+        if platform.qualifier.is_some() {
+            return vec![platform.clone()];
+        }
+
+        let mut variants = vec![platform.clone()];
+
+        match (platform.os.as_str(), platform.arch.as_str()) {
+            ("linux", "x64") => {
+                // Linux x64 has all variants
+                variants.push(Platform {
+                    os: platform.os.clone(),
+                    arch: platform.arch.clone(),
+                    qualifier: Some("baseline".to_string()),
+                });
+                variants.push(Platform {
+                    os: platform.os.clone(),
+                    arch: platform.arch.clone(),
+                    qualifier: Some("musl".to_string()),
+                });
+                variants.push(Platform {
+                    os: platform.os.clone(),
+                    arch: platform.arch.clone(),
+                    qualifier: Some("musl-baseline".to_string()),
+                });
+            }
+            ("linux", "arm64") => {
+                // Linux arm64 has musl variant
+                variants.push(Platform {
+                    os: platform.os.clone(),
+                    arch: platform.arch.clone(),
+                    qualifier: Some("musl".to_string()),
+                });
+            }
+            ("macos", "x64") | ("windows", "x64") => {
+                // macOS x64 and Windows x64 have baseline variant
+                variants.push(Platform {
+                    os: platform.os.clone(),
+                    arch: platform.arch.clone(),
+                    qualifier: Some("baseline".to_string()),
+                });
+            }
+            // macos-arm64 has no variants (just aarch64)
+            _ => {}
+        }
+
+        variants
+    }
 }
 
 impl BunPlugin {
@@ -185,22 +298,68 @@ impl BunPlugin {
         }
     }
 
+    /// Check if the current system has AVX2 support (runtime detection)
+    #[cfg(target_arch = "x86_64")]
+    fn has_avx2() -> bool {
+        std::arch::is_x86_feature_detected!("avx2")
+    }
+
+    #[cfg(not(target_arch = "x86_64"))]
+    fn has_avx2() -> bool {
+        false
+    }
+
+    /// Check if we're running on a musl-based system
+    /// This is determined by the binary's compile-time target, since mixing
+    /// glibc and musl binaries on the same system doesn't work anyway
+    fn is_musl() -> bool {
+        cfg!(target_env = "musl")
+    }
+
+    /// Get the platform variant suffix for the current system
+    /// Returns Some("baseline"), Some("musl"), Some("musl-baseline"), or None
+    /// Uses runtime detection for AVX2 capability
+    fn get_platform_variant() -> Option<&'static str> {
+        if cfg!(target_arch = "x86_64") {
+            if Self::is_musl() {
+                if Self::has_avx2() {
+                    Some("musl")
+                } else {
+                    Some("musl-baseline")
+                }
+            } else if Self::has_avx2() {
+                None // Standard x64 with AVX2, no variant suffix
+            } else {
+                Some("baseline")
+            }
+        } else if cfg!(target_arch = "aarch64") {
+            if Self::is_musl() {
+                Some("musl")
+            } else {
+                None // Standard aarch64, no variant suffix
+            }
+        } else {
+            None
+        }
+    }
+
     /// Get the full Bun arch string with variants (musl, baseline, etc.)
+    /// Uses runtime detection for AVX2 capability
     fn get_bun_arch_with_variants() -> &'static str {
         if cfg!(target_arch = "x86_64") {
-            if cfg!(target_env = "musl") {
-                if cfg!(target_feature = "avx2") {
+            if Self::is_musl() {
+                if Self::has_avx2() {
                     "x64-musl"
                 } else {
                     "x64-musl-baseline"
                 }
-            } else if cfg!(target_feature = "avx2") {
+            } else if Self::has_avx2() {
                 "x64"
             } else {
                 "x64-baseline"
             }
         } else if cfg!(target_arch = "aarch64") {
-            if cfg!(target_env = "musl") {
+            if Self::is_musl() {
                 "aarch64-musl"
             } else if cfg!(windows) {
                 "x64"

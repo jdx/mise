@@ -14,6 +14,7 @@ use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
+use crate::lockfile::PlatformInfo;
 use crate::plugins::PluginSource;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
@@ -22,6 +23,8 @@ use async_trait::async_trait;
 use eyre::{Result, WrapErr};
 use itertools::Itertools;
 use xx::regex;
+
+const RUBY_INDEX_URL: &str = "https://cache.ruby-lang.org/pub/ruby/index.txt";
 
 #[derive(Debug)]
 pub struct RubyPlugin {
@@ -344,6 +347,38 @@ impl RubyPlugin {
         }
         Ok(patches.join("\n"))
     }
+
+    /// Fetch Ruby source tarball info from cache.ruby-lang.org index
+    /// Returns (url, sha256) for the given version
+    async fn get_ruby_download_info(&self, version: &str) -> Result<Option<(String, String)>> {
+        // Only standard MRI Ruby versions are in the index (e.g., "3.3.0", not "jruby-9.4.0")
+        if !version.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+            return Ok(None);
+        }
+
+        let index_text: String = HTTP_FETCH.get_text(RUBY_INDEX_URL).await?;
+
+        // Format: name\turl\tsha1\tsha256\tsha512
+        // Example: ruby-3.3.0\thttps://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.0.tar.gz\t...\t<sha256>\t...
+        let target_name = format!("ruby-{version}");
+        for line in index_text.lines().skip(1) {
+            // skip header
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 4 {
+                let name = parts[0];
+                // Match exact version with .tar.gz (prefer over .tar.xz for compatibility)
+                if name == target_name {
+                    let url = parts[1];
+                    let sha256 = parts[3];
+                    if url.ends_with(".tar.gz") && !sha256.is_empty() {
+                        return Ok(Some((url.to_string(), format!("sha256:{sha256}"))));
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
 }
 
 #[async_trait]
@@ -444,6 +479,26 @@ impl Backend for RubyPlugin {
         }
 
         opts
+    }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        // Ruby is source code that compiles on any platform, so same tarball for all platforms
+        match self.get_ruby_download_info(&tv.version).await? {
+            Some((url, checksum)) => Ok(PlatformInfo {
+                url: Some(url),
+                checksum: Some(checksum),
+                size: None,
+                url_api: None,
+            }),
+            None => {
+                // Non-MRI Ruby (jruby, truffleruby, etc.) - no lock info available
+                Ok(PlatformInfo::default())
+            }
+        }
     }
 }
 

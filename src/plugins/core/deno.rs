@@ -12,11 +12,13 @@ use versions::Versioning;
 
 use crate::backend::Backend;
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::static_helpers::fetch_checksum_from_file;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, plugins};
@@ -170,6 +172,28 @@ impl Backend for DenoPlugin {
             "https://dl.deno.land/release/v{}/deno-{}-{}.zip",
             tv.version, arch, os
         )))
+    }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        let url = self
+            .get_tarball_url(tv, target)
+            .await?
+            .ok_or_else(|| eyre::eyre!("Failed to get deno tarball URL"))?;
+
+        // Deno provides .sha256sum files alongside each zip
+        let checksum_url = format!("{}.sha256sum", &url);
+        let checksum = fetch_checksum_from_file(&checksum_url, "sha256").await;
+
+        Ok(PlatformInfo {
+            url: Some(url),
+            checksum,
+            size: None,
+            url_api: None,
+        })
     }
 }
 

@@ -2,12 +2,66 @@
 use crate::backend::platform_target::PlatformTarget;
 use crate::file;
 use crate::hash;
+use crate::http::HTTP;
 use crate::toolset::ToolVersion;
 use crate::toolset::ToolVersionOptions;
 use crate::ui::progress_report::SingleReport;
 use eyre::{Result, bail};
 use indexmap::IndexSet;
 use std::path::Path;
+
+// ========== Checksum Fetching Helpers ==========
+
+/// Fetches a checksum for a specific file from a SHASUMS256.txt-style file.
+/// Uses cached HTTP requests since the same SHASUMS file is fetched for all platforms.
+///
+/// # Arguments
+/// * `shasums_url` - URL to the SHASUMS256.txt file
+/// * `filename` - The filename to look up in the SHASUMS file
+///
+/// # Returns
+/// * `Some("sha256:<hash>")` if found
+/// * `None` if the SHASUMS file couldn't be fetched or filename not found
+pub async fn fetch_checksum_from_shasums(shasums_url: &str, filename: &str) -> Option<String> {
+    match HTTP.get_text_cached(shasums_url).await {
+        Ok(shasums_content) => {
+            let shasums = hash::parse_shasums(&shasums_content);
+            shasums.get(filename).map(|h| format!("sha256:{h}"))
+        }
+        Err(e) => {
+            debug!("Failed to fetch SHASUMS from {}: {e}", shasums_url);
+            None
+        }
+    }
+}
+
+/// Fetches a checksum from an individual checksum file (e.g., file.tar.gz.sha256).
+/// The checksum file should contain just the hash, optionally followed by filename.
+///
+/// # Arguments
+/// * `checksum_url` - URL to the checksum file (e.g., `https://example.com/file.tar.gz.sha256`)
+/// * `algo` - The algorithm name to prefix (e.g., "sha256")
+///
+/// # Returns
+/// * `Some("<algo>:<hash>")` if found
+/// * `None` if the checksum file couldn't be fetched
+pub async fn fetch_checksum_from_file(checksum_url: &str, algo: &str) -> Option<String> {
+    match HTTP.get_text(checksum_url).await {
+        Ok(content) => {
+            // Format is typically "<hash>  <filename>" or just "<hash>"
+            content
+                .split_whitespace()
+                .next()
+                .map(|h| format!("{algo}:{}", h.trim()))
+        }
+        Err(e) => {
+            debug!("Failed to fetch checksum from {}: {e}", checksum_url);
+            None
+        }
+    }
+}
+
+// ========== Platform Patterns ==========
 
 // Shared OS/arch patterns used across helpers
 const OS_PATTERNS: &[&str] = &[
