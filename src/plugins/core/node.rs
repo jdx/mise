@@ -675,9 +675,10 @@ impl NodePlugin {
         // Flavor (like "glibc") only applies to Linux platforms
         // Don't apply it to macOS, Windows, or other platforms
         if target.os_name() == "linux"
-            && let Some(flavor) = &settings.node.flavor {
-                return format!("node-v{version}-{os}-{arch}-{flavor}");
-            }
+            && let Some(flavor) = &settings.node.flavor
+        {
+            return format!("node-v{version}-{os}-{arch}-{flavor}");
+        }
         format!("node-v{version}-{os}-{arch}")
     }
 }

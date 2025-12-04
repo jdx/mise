@@ -197,9 +197,10 @@ impl Lock {
         for (backend, tv) in ts.list_current_versions() {
             // Check if this tool's source is in the target config_root
             if let Some(source_path) = tv.request.source().path()
-                && config_root::config_root(source_path) != target_root {
-                    continue;
-                }
+                && config_root::config_root(source_path) != target_root
+            {
+                continue;
+            }
             let key = (backend.ba().short.clone(), tv.version.clone());
             if seen.insert(key) {
                 all_tools.push((backend.ba().as_ref().clone(), tv));
