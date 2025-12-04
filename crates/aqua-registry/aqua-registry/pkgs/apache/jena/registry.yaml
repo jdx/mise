@@ -6,6 +6,7 @@ packages:
     description: A free and open source Java framework for building Semantic Web and Linked Data applications (CLI tools)
     version_source: github_tag
     version_prefix: jena-
+    version_filter: Version matches "^jena-\\d+"
     files:
       - name: arq
         src: apache-jena-{{.SemVer}}/bin/arq
