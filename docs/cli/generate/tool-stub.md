@@ -44,6 +44,8 @@ This reads an existing stub file and fills in any missing checksum/size fields b
 
 HTTP backend type to use
 
+**Default:** `http`
+
 ### `--platform-bin… <PLATFORM_BIN>`
 
 Platform-specific binary paths in the format platform:path
@@ -67,6 +69,8 @@ Skip downloading for checksum and binary path detection (faster but less informa
 ### `--version <VERSION>`
 
 Version of the tool
+
+**Default:** `latest`
 
 Examples:
 

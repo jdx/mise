@@ -15,11 +15,15 @@ so contributors to a project can execute mise tasks without installing mise into
 
 Directory to create task stubs inside of
 
+**Default:** `bin`
+
 ### `-m --mise-bin <MISE_BIN>`
 
 Path to a mise bin to use when running the task stub.
 
 Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate bootstrap`
+
+**Default:** `mise`
 
 Examples:
 
