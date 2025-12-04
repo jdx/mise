@@ -362,7 +362,7 @@ impl BunPlugin {
             if Self::is_musl() {
                 "aarch64-musl"
             } else if cfg!(windows) {
-                "x64"
+                "x64-baseline"
             } else {
                 "aarch64"
             }
