@@ -292,23 +292,42 @@ impl BunPlugin {
         }
     }
 
-    /// Get the platform variant suffix for the current build
+    /// Check if the current system has AVX2 support (runtime detection)
+    #[cfg(target_arch = "x86_64")]
+    fn has_avx2() -> bool {
+        std::arch::is_x86_feature_detected!("avx2")
+    }
+
+    #[cfg(not(target_arch = "x86_64"))]
+    fn has_avx2() -> bool {
+        false
+    }
+
+    /// Check if we're running on a musl-based system
+    /// This is determined by the binary's compile-time target, since mixing
+    /// glibc and musl binaries on the same system doesn't work anyway
+    fn is_musl() -> bool {
+        cfg!(target_env = "musl")
+    }
+
+    /// Get the platform variant suffix for the current system
     /// Returns Some("baseline"), Some("musl"), Some("musl-baseline"), or None
+    /// Uses runtime detection for AVX2 capability
     fn get_platform_variant() -> Option<&'static str> {
         if cfg!(target_arch = "x86_64") {
-            if cfg!(target_env = "musl") {
-                if cfg!(target_feature = "avx2") {
+            if Self::is_musl() {
+                if Self::has_avx2() {
                     Some("musl")
                 } else {
                     Some("musl-baseline")
                 }
-            } else if cfg!(target_feature = "avx2") {
-                None // Standard x64, no variant suffix
+            } else if Self::has_avx2() {
+                None // Standard x64 with AVX2, no variant suffix
             } else {
                 Some("baseline")
             }
         } else if cfg!(target_arch = "aarch64") {
-            if cfg!(target_env = "musl") {
+            if Self::is_musl() {
                 Some("musl")
             } else {
                 None // Standard aarch64, no variant suffix
@@ -319,21 +338,22 @@ impl BunPlugin {
     }
 
     /// Get the full Bun arch string with variants (musl, baseline, etc.)
+    /// Uses runtime detection for AVX2 capability
     fn get_bun_arch_with_variants() -> &'static str {
         if cfg!(target_arch = "x86_64") {
-            if cfg!(target_env = "musl") {
-                if cfg!(target_feature = "avx2") {
+            if Self::is_musl() {
+                if Self::has_avx2() {
                     "x64-musl"
                 } else {
                     "x64-musl-baseline"
                 }
-            } else if cfg!(target_feature = "avx2") {
+            } else if Self::has_avx2() {
                 "x64"
             } else {
                 "x64-baseline"
             }
         } else if cfg!(target_arch = "aarch64") {
-            if cfg!(target_env = "musl") {
+            if Self::is_musl() {
                 "aarch64-musl"
             } else if cfg!(windows) {
                 "x64"

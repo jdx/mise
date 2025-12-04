@@ -12,24 +12,29 @@ pub struct Platform {
 
 impl Platform {
     /// Parse a platform string in the format "os-arch" or "os-arch-qualifier"
+    /// Qualifier may contain hyphens (e.g., "musl-baseline")
     pub fn parse(platform_str: &str) -> Result<Self> {
         let parts: Vec<&str> = platform_str.split('-').collect();
 
         match parts.len() {
+            0 | 1 => bail!(
+                "Invalid platform format '{}'. Expected 'os-arch' or 'os-arch-qualifier'",
+                platform_str
+            ),
             2 => Ok(Platform {
                 os: parts[0].to_string(),
                 arch: parts[1].to_string(),
                 qualifier: None,
             }),
-            3 => Ok(Platform {
-                os: parts[0].to_string(),
-                arch: parts[1].to_string(),
-                qualifier: Some(parts[2].to_string()),
-            }),
-            _ => bail!(
-                "Invalid platform format '{}'. Expected 'os-arch' or 'os-arch-qualifier'",
-                platform_str
-            ),
+            _ => {
+                // Join remaining parts as qualifier (handles compound qualifiers like "musl-baseline")
+                let qualifier = parts[2..].join("-");
+                Ok(Platform {
+                    os: parts[0].to_string(),
+                    arch: parts[1].to_string(),
+                    qualifier: Some(qualifier),
+                })
+            }
         }
     }
 
@@ -190,9 +195,22 @@ mod tests {
     }
 
     #[test]
+    fn test_platform_parse_with_compound_qualifier() {
+        // Compound qualifiers like "musl-baseline" should parse correctly
+        let platform = Platform::parse("linux-x64-musl-baseline").unwrap();
+        assert_eq!(platform.os, "linux");
+        assert_eq!(platform.arch, "x64");
+        assert_eq!(platform.qualifier, Some("musl-baseline".to_string()));
+
+        // Verify round-trip: parse -> to_key -> parse
+        assert_eq!(platform.to_key(), "linux-x64-musl-baseline");
+        let reparsed = Platform::parse(&platform.to_key()).unwrap();
+        assert_eq!(reparsed.qualifier, Some("musl-baseline".to_string()));
+    }
+
+    #[test]
     fn test_platform_parse_invalid() {
         assert!(Platform::parse("linux").is_err());
-        assert!(Platform::parse("linux-x64-gnu-extra").is_err());
         assert!(Platform::parse("").is_err());
     }
 
