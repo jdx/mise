@@ -272,14 +272,23 @@ impl Lock {
     ) -> Result<()> {
         miseprintln!("{} Dry run - would update:", style("→").yellow());
         for (ba, tv) in tools {
+            let backend = crate::backend::get(ba);
             for platform in platforms {
-                miseprintln!(
-                    "  {} {}@{} for {}",
-                    style("✓").green(),
-                    style(&ba.short).bold(),
-                    tv.version,
-                    style(platform.to_key()).blue()
-                );
+                // Expand platform variants just like process_tools does
+                let variants = if let Some(ref backend) = backend {
+                    backend.platform_variants(platform)
+                } else {
+                    vec![platform.clone()]
+                };
+                for variant in variants {
+                    miseprintln!(
+                        "  {} {}@{} for {}",
+                        style("✓").green(),
+                        style(&ba.short).bold(),
+                        tv.version,
+                        style(variant.to_key()).blue()
+                    );
+                }
             }
         }
         Ok(())
