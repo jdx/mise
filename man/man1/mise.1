@@ -1139,6 +1139,11 @@ Version of the tool
 .RS
 \fIDefault: \fRlatest
 .RE
+.TP
+\fB\-\-bootstrap\fR
+Wrap stub in a bootstrap script that installs mise if not already present
+
+When enabled, generates a bash script that: 1. Checks if mise is installed at the expected path 2. If not, downloads and installs mise using the embedded installer 3. Executes the tool stub using mise
 \fBArguments:\fR
 .PP
 .TP
