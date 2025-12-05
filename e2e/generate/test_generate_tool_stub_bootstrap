@@ -1,40 +1,68 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Test that --bootstrap flag generates a wrapper script with embedded installer
+# Test that --bootstrap flag generates a working wrapper script
 
-mise generate tool-stub test-bootstrap \
-	--url "https://example.com/tool.tar.gz" \
+# Generate a bootstrap stub for jq (a real tool we can test)
+mise generate tool-stub test-jq \
+	--platform-url "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64" \
+	--platform-url "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-arm64" \
 	--skip-download \
 	--bootstrap
 
-# Check shebang is bash, not mise tool-stub
-if ! head -1 test-bootstrap | grep -q '#!/usr/bin/env bash'; then
+# Basic structure checks
+if ! head -1 test-jq | grep -q '#!/usr/bin/env bash'; then
 	echo "FAIL: Expected bash shebang"
 	exit 1
 fi
 
-# Check it contains the embedded install function
-if ! grep -q '__mise_tool_stub_bootstrap' test-bootstrap; then
+if ! grep -q '__mise_tool_stub_bootstrap' test-jq; then
 	echo "FAIL: Missing bootstrap function"
 	exit 1
 fi
 
-# Check it contains MISE_INSTALL_PATH
-if ! grep -q 'MISE_INSTALL_PATH' test-bootstrap; then
-	echo "FAIL: Missing MISE_INSTALL_PATH"
+if ! grep -q 'command -v mise' test-jq; then
+	echo "FAIL: Missing PATH check for mise"
 	exit 1
 fi
 
-# Check it contains the heredoc
-if ! grep -q "MISE_TOOL_STUB" test-bootstrap; then
-	echo "FAIL: Missing heredoc marker"
+# Check that we use a temp file approach, not stdin (so tools can read stdin)
+if ! grep -q 'mktemp' test-jq; then
+	echo "FAIL: Expected mktemp for temp file approach"
 	exit 1
 fi
 
-# Check it contains the TOML content (url should be present)
-if ! grep -q 'url = "https://example.com/tool.tar.gz"' test-bootstrap; then
-	echo "FAIL: Missing URL in TOML content"
+# Test appending a platform to existing bootstrap stub
+mise generate tool-stub test-jq \
+	--platform-url "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-amd64" \
+	--skip-download \
+	--bootstrap
+
+# Should still be a bootstrap stub
+if ! grep -q '__mise_tool_stub_bootstrap' test-jq; then
+	echo "FAIL: Lost bootstrap wrapper after append"
+	exit 1
+fi
+
+# Should have all three platforms now
+if ! grep -q 'linux-x64' test-jq; then
+	echo "FAIL: Missing linux-x64 platform after append"
+	exit 1
+fi
+if ! grep -q 'macos-arm64' test-jq; then
+	echo "FAIL: Missing macos-arm64 platform after append"
+	exit 1
+fi
+if ! grep -q 'macos-x64' test-jq; then
+	echo "FAIL: Missing macos-x64 platform after append"
+	exit 1
+fi
+
+# Actually execute the stub - it should find mise on PATH (since we're running under mise)
+# and run jq --version successfully
+OUTPUT=$(./test-jq --version 2>&1)
+if ! echo "$OUTPUT" | grep -q "jq-"; then
+	echo "FAIL: Expected jq version output, got: $OUTPUT"
 	exit 1
 fi
 
