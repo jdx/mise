@@ -3,6 +3,8 @@ use crate::backend::asset_detector::detect_platform_from_url;
 use crate::backend::static_helpers::get_filename_from_url;
 use crate::file::{self, TarFormat, TarOptions};
 use crate::http::HTTP;
+use crate::minisign;
+use crate::ui::info;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use clap::ValueHint;
@@ -12,6 +14,7 @@ use indexmap::IndexMap;
 use std::path::PathBuf;
 use toml_edit::DocumentMut;
 use xx::file::display_path;
+use xx::regex;
 
 /// Generate a tool stub for HTTP-based tools
 ///
@@ -79,6 +82,15 @@ pub struct ToolStub {
     /// Version of the tool
     #[clap(long, default_value = "latest")]
     pub version: String,
+
+    /// Wrap stub in a bootstrap script that installs mise if not already present
+    ///
+    /// When enabled, generates a bash script that:
+    /// 1. Checks if mise is installed at the expected path
+    /// 2. If not, downloads and installs mise using the embedded installer
+    /// 3. Executes the tool stub using mise
+    #[clap(long)]
+    pub bootstrap: bool,
 }
 
 impl ToolStub {
@@ -294,14 +306,57 @@ impl ToolStub {
 
         let toml_content = doc.to_string();
 
-        let mut content = vec![
-            "#!/usr/bin/env -S mise tool-stub".to_string(),
-            "".to_string(),
-        ];
+        if self.bootstrap {
+            self.wrap_with_bootstrap(&toml_content).await
+        } else {
+            let mut content = vec![
+                "#!/usr/bin/env -S mise tool-stub".to_string(),
+                "".to_string(),
+            ];
 
-        content.push(toml_content);
+            content.push(toml_content);
 
-        Ok(content.join("\n"))
+            Ok(content.join("\n"))
+        }
+    }
+
+    async fn wrap_with_bootstrap(&self, toml_content: &str) -> Result<String> {
+        // Fetch and verify install.sh (same approach as bootstrap.rs)
+        let url = "https://mise.jdx.dev/install.sh";
+        let install = HTTP.get_text(url).await?;
+        let install_sig = HTTP.get_text(format!("{url}.minisig")).await?;
+        minisign::verify(&minisign::MISE_PUB_KEY, install.as_bytes(), &install_sig)?;
+        let install = info::indent_by(install, "        ");
+
+        // Extract version from install script
+        let version = regex!(r#"version="\$\{MISE_VERSION:-v([0-9.]+)\}""#)
+            .captures(&install)
+            .and_then(|c| c.get(1))
+            .map(|m| m.as_str())
+            .unwrap_or("latest");
+
+        Ok(format!(
+            r#"#!/usr/bin/env bash
+set -eu
+
+__mise_tool_stub_bootstrap() {{
+    local cache_home="${{XDG_CACHE_HOME:-$HOME/.cache}}/mise"
+    export MISE_INSTALL_PATH="$cache_home/mise-{version}"
+    install() {{
+        local initial_working_dir="$PWD"
+{install}
+        cd -- "$initial_working_dir"
+    }}
+    local MISE_INSTALL_HELP=0
+    test -f "$MISE_INSTALL_PATH" || install
+}}
+__mise_tool_stub_bootstrap
+
+exec "$MISE_INSTALL_PATH" tool-stub - "$@" <<'MISE_TOOL_STUB'
+{toml_content}
+MISE_TOOL_STUB
+"#
+        ))
     }
 
     fn parse_platform_spec(&self, spec: &str) -> Result<(String, String)> {
@@ -686,5 +741,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     Fetch checksums for an existing stub:
     $ <bold>mise generate tool-stub ./bin/jq --fetch</bold>
     # This will read the existing stub and download files to fill in any missing checksums/sizes
+
+    Generate a bootstrap stub that installs mise if needed:
+    $ <bold>mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --bootstrap</bold>
+    # The stub will check for mise and install it automatically before running the tool
 "#
 );

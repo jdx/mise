@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Test that --bootstrap flag generates a wrapper script with embedded installer
+
+mise generate tool-stub test-bootstrap \
+	--url "https://example.com/tool.tar.gz" \
+	--skip-download \
+	--bootstrap
+
+# Check shebang is bash, not mise tool-stub
+if ! head -1 test-bootstrap | grep -q '#!/usr/bin/env bash'; then
+	echo "FAIL: Expected bash shebang"
+	exit 1
+fi
+
+# Check it contains the embedded install function
+if ! grep -q '__mise_tool_stub_bootstrap' test-bootstrap; then
+	echo "FAIL: Missing bootstrap function"
+	exit 1
+fi
+
+# Check it contains MISE_INSTALL_PATH
+if ! grep -q 'MISE_INSTALL_PATH' test-bootstrap; then
+	echo "FAIL: Missing MISE_INSTALL_PATH"
+	exit 1
+fi
+
+# Check it contains the heredoc
+if ! grep -q "MISE_TOOL_STUB" test-bootstrap; then
+	echo "FAIL: Missing heredoc marker"
+	exit 1
+fi
+
+# Check it contains the TOML content (url should be present)
+if ! grep -q 'url = "https://example.com/tool.tar.gz"' test-bootstrap; then
+	echo "FAIL: Missing URL in TOML content"
+	exit 1
+fi
+
+echo "Test passed!"
