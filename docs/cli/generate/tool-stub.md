@@ -72,6 +72,12 @@ Version of the tool
 
 **Default:** `latest`
 
+### `--bootstrap`
+
+Wrap stub in a bootstrap script that installs mise if not already present
+
+When enabled, generates a bash script that: 1. Checks if mise is installed at the expected path 2. If not, downloads and installs mise using the embedded installer 3. Executes the tool stub using mise
+
 Examples:
 
 ```
@@ -107,4 +113,8 @@ $ mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --s
 Fetch checksums for an existing stub:
 $ mise generate tool-stub ./bin/jq --fetch
 # This will read the existing stub and download files to fill in any missing checksums/sizes
+
+Generate a bootstrap stub that installs mise if needed:
+$ mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --bootstrap
+# The stub will check for mise and install it automatically before running the tool
 ```
