@@ -5,6 +5,7 @@ Tasks can be defined in `mise.toml` files in different ways. Trivial tasks can b
 ## Trivial task examples
 
 ```mise-toml [mise.toml]
+[tasks]
 build = "cargo build"
 test = "cargo test"
 lint = "cargo clippy"
