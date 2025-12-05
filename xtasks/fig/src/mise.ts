@@ -1318,6 +1318,20 @@ const completionSpec: Fig.Spec = {
                 name: "version",
               },
             },
+            {
+              name: "--bootstrap",
+              description:
+                "Wrap stub in a bootstrap script that installs mise if not already present",
+              isRepeatable: false,
+            },
+            {
+              name: "--bootstrap-version",
+              description: "Specify mise version for the bootstrap script",
+              isRepeatable: false,
+              args: {
+                name: "bootstrap_version",
+              },
+            },
           ],
           args: {
             name: "output",
