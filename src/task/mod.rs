@@ -585,6 +585,7 @@ impl Task {
     fn populate_spec_metadata(&self, spec: &mut usage::Spec) {
         spec.name = self.display_name.clone();
         spec.bin = self.display_name.clone();
+        spec.about = Some(self.description.clone());
         if spec.cmd.help.is_none() {
             spec.cmd.help = Some(self.description.clone());
         }
