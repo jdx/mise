@@ -4443,7 +4443,7 @@ description = "ui, a next-generation smart contract platform with high throughpu
 [tools.supabase]
 backends = ["aqua:supabase/cli"]
 description = "Supabase CLI. Manage postgres migrations, run Supabase locally, deploy edge functions. Postgres backups. Generating types from your database schema"
-test = ["supabase --version", "supabase version v{{version}}"]
+test = ["supabase --version", "{{version}}"]
 
 [tools.superfile]
 backends = ["aqua:yorukot/superfile"]
