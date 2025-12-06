@@ -4,6 +4,7 @@ packages:
     repo_owner: ninja-build
     repo_name: ninja
     description: a small build system with a focus on speed
+    version_filter: not (Version startsWith "release-")
     version_constraint: "false"
     version_overrides:
       - version_constraint: semver("<= 1.3.4")
