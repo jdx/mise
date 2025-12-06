@@ -1,5 +1,35 @@
 # Changelog
 
+## [2025.12.1](https://github.com/jdx/mise/compare/v2025.12.0..v2025.12.1) - 2025-12-06
+
+### 🐛 Bug Fixes
+
+- **(alpine)** increase alpine release timeout to 60 minutes by @jdx in [#7188](https://github.com/jdx/mise/pull/7188)
+- **(bun)** use x64-baseline for aarch64 on Windows by @roele in [#7190](https://github.com/jdx/mise/pull/7190)
+- add cfg(feature = "self_update") to statics only used by that feature by @jdx in [#7185](https://github.com/jdx/mise/pull/7185)
+
+### 📚 Documentation
+
+- Update registry.md by @jdx in [ad11ad1](https://github.com/jdx/mise/commit/ad11ad14705b2adac5c874f15fef4cc74652e26f)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:alpine docker digest to 2909cce by @renovate[bot] in [#7196](https://github.com/jdx/mise/pull/7196)
+- update fedora:43 docker digest to 6cd815d by @renovate[bot] in [#7195](https://github.com/jdx/mise/pull/7195)
+- update ghcr.io/jdx/mise:deb docker digest to 1893530 by @renovate[bot] in [#7198](https://github.com/jdx/mise/pull/7198)
+- update ghcr.io/jdx/mise:copr docker digest to 0447a85 by @renovate[bot] in [#7197](https://github.com/jdx/mise/pull/7197)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`skanehira/ghost`](https://github.com/skanehira/ghost)
+- [`square/certigo`](https://github.com/square/certigo)
+- [`steveyegge/beads`](https://github.com/steveyegge/beads)
+
+#### Updated Packages (1)
+
+- [`ninja-build/ninja`](https://github.com/ninja-build/ninja)
 ## [2025.12.0](https://github.com/jdx/mise/compare/v2025.11.11..v2025.12.0) - 2025-12-04
 
 ### 🚀 Features
