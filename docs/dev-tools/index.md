@@ -22,6 +22,9 @@ It's also compatible
 with asdf `.tool-versions` files as well as [idiomatic version files](/configuration#idiomatic-version-files) like `.node-version` and
 `.ruby-version`. See [configuration](/configuration) for more details.
 
+When specifying tool versions, you can also refer to environment variables defined in the same file, but note
+that environment variables from referenced files are not resolved here.
+
 ::: info
 mise is inspired by [asdf](https://asdf-vm.com) and can leverage asdf's
 vast [plugin ecosystem](https://github.com/mise-plugins/registry)

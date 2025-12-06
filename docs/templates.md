@@ -20,8 +20,12 @@ Here is an example of a `mise.toml` file that uses templates:
 ```toml
 [env]
 PROJECT_NAME = "{{ cwd | basename }}"
+TERRAFORM_VERSION = "1.0.0"
 
 [tools]
+# refers to env variable defined in this file
+terraform = "{{ env.TERRAFORM_VERSION }}"
+# refers to external env variable
 node = "{{ get_env(name='NODE_VERSION', default='20') }}"
 ```
 

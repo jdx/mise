@@ -22,7 +22,7 @@ use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{AgeFormat, EnvDirective, EnvDirectiveOptions, RequiredValue};
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap, Config};
-use crate::file;
+use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
 use crate::hooks::{Hook, Hooks};
 use crate::redactions::Redactions;
@@ -31,6 +31,7 @@ use crate::task::Task;
 use crate::tera::{BASE_CONTEXT, get_tera};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
 use crate::watch_files::WatchFile;
+use crate::{env, file};
 
 use super::{ConfigFileType, min_version::MinVersionSpec};
 
@@ -137,11 +138,13 @@ impl MiseToml {
             "config_root",
             config_root::config_root(path).to_str().unwrap(),
         );
-        Self {
+        let mut rf = Self {
             path: path.to_path_buf(),
             context,
             ..Default::default()
-        }
+        };
+        rf.update_context_env(env::PRISTINE_ENV.clone());
+        rf
     }
 
     pub fn from_file(path: &Path) -> eyre::Result<Self> {
@@ -166,6 +169,7 @@ impl MiseToml {
         rf.context = BASE_CONTEXT.clone();
         rf.context
             .insert("config_root", path.parent().unwrap().to_str().unwrap());
+        rf.update_context_env(env::PRISTINE_ENV.clone());
         rf.path = path.to_path_buf();
         let project_root = rf.project_root().map(|p| p.to_path_buf());
         for task in rf.tasks.0.values_mut() {
@@ -354,6 +358,23 @@ impl MiseToml {
             .unwrap();
         env_tbl.remove(key);
         Ok(())
+    }
+
+    // Merge base OS env vars with env sections from this file,
+    // so they are available for templating.
+    // Note this only merges regular key-value variables; referenced files are not resolved.
+    fn update_context_env(&mut self, mut base_env: EnvMap) {
+        let env_vars = self
+            .env
+            .0
+            .iter()
+            .filter_map(|e| match e {
+                EnvDirective::Val(key, value, _) => Some((key.clone(), value.clone())),
+                _ => None,
+            })
+            .collect::<IndexMap<_, _>>();
+        base_env.extend(env_vars);
+        self.context.insert("env", &base_env);
     }
 
     fn parse_template(&self, input: &str) -> eyre::Result<String> {
@@ -1729,6 +1750,30 @@ mod tests {
             assert_snapshot!(cf);
             assert_debug_snapshot!(cf);
         });
+    }
+
+    #[tokio::test]
+    async fn test_env_var_in_tool() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [env]
+        TERRAFORM_VERSION = '1.0.0'
+        JQ_PREFIX = '1.6'
+
+        [tools]
+        terraform = "{{env.TERRAFORM_VERSION}}"
+        jq = { prefix = "{{ env.JQ_PREFIX }}" }
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        assert_snapshot!(replace_path(&format!(
+            "{:#?}",
+            cf.to_tool_request_set().unwrap().tools
+        )));
     }
 
     #[tokio::test]
