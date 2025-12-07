@@ -916,7 +916,7 @@ description = "Home for Cluster API, a subproject of sig-cluster-lifecycle"
 test = ["clusterctl version", "{{version}}"]
 
 [tools.cmake]
-backends = ["aqua:Kitware/CMake"]
+backends = ["aqua:Kitware/CMake", "asdf:mise-plugins/mise-cmake", "vfox:mise-plugins/vfox-cmake"]
 description = "CMake is a tool to manage building of source code. Originally, CMake was designed as a generator for various dialects of Makefile, today CMake generates modern buildsystems such as Ninja as well as project files for IDEs such as Visual Studio and Xcode"
 
 [tools.cmctl]
