@@ -4444,6 +4444,11 @@ test = ["stylua --version", "stylua {{version}}"]
 backends = ["github:MystenLabs/sui", "asdf:placeholder-soft/asdf-sui"]
 description = "ui, a next-generation smart contract platform with high throughput, low latency, and an asset-oriented programming model powered by the Move programming language"
 
+[tools.supabase]
+backends = ["aqua:supabase/cli"]
+description = "Supabase CLI. Manage postgres migrations, run Supabase locally, deploy edge functions. Postgres backups. Generating types from your database schema"
+test = ["supabase --version", "{{version}}"]
+
 [tools.superfile]
 backends = ["aqua:yorukot/superfile"]
 description = "Pretty fancy and modern terminal file manager"

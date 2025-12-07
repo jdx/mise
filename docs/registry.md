@@ -22,7 +22,7 @@ instead of
 mise use aqua:aws/aws-cli
 ```
 
-If a tool is not available in the registry, you can install it by its full name. [ubi](./dev-tools/backends/ubi.html) and [aqua](./dev-tools/backends/aqua.html) give you for example access to almost all programs available on GitHub.
+If a tool is not available in the registry, you can install it by its full name. [github](./dev-tools/backends/github.html) and [aqua](./dev-tools/backends/aqua.html) give you for example access to almost all programs available on GitHub.
 
 ## Backends
 
@@ -36,11 +36,11 @@ In general, the preferred [backend](/dev-tools/backends/) to use for new tools i
 - [ubi](./dev-tools/backends/ubi.html) - Universal Binary Installer, for tools that are available on GitHub or GitLab, but GitHub/GitLab backends don't work for some reason
 - [pipx](./dev-tools/backends/pipx.html) - only for python tools, requires python to be installed but this generally would always be the case for python tools
 - [npm](./dev-tools/backends/npm.html) - only for node tools, requires node to be installed but this generally would always be the case for node tools
-- [vfox](./dev-tools/backends/vfox.html) - only for tools that have unique installation requirements or need to modify env vars
-- [asdf](./dev-tools/backends/asdf.html) - only for tools that have unique installation requirements or need to modify env vars, doesn't support windows
-- [go](./dev-tools/backends/go.html) - only for go tools, requires go to be installed to compile. Because go tools can be distributed as a single binary, aqua/ubi are definitely preferred.
-- [cargo](./dev-tools/backends/cargo.html) - only for rust tools, requires rust to be installed to compile. Because rust tools can be distributed as a single binary, aqua/ubi are definitely preferred.
-- [dotnet](./dev-tools/backends/dotnet.html) - only for dotnet tools, requires dotnet to be installed to compile. Because dotnet tools can be distributed as a single binary, aqua/ubi are definitely preferred.
+- [go](./dev-tools/backends/go.html) - only for go tools, requires go to be installed to compile. Because go tools can be distributed as a single binary, aqua/github are definitely preferred.
+- [cargo](./dev-tools/backends/cargo.html) - only for rust tools, requires rust to be installed to compile. Because rust tools can be distributed as a single binary, aqua/github are definitely preferred.
+- [dotnet](./dev-tools/backends/dotnet.html) - only for dotnet tools, requires dotnet to be installed to compile. Because dotnet tools can be distributed as a single binary, aqua/github are definitely preferred.
+
+New vfox and asdf tools are almost never accepted for supply-chain security reasons.
 
 ### Backends Priority
 
