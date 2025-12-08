@@ -387,10 +387,10 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
             arg <BIN>
         }
         flag --bootstrap help="Wrap stub in a bootstrap script that installs mise if not already present" {
-            long_help "Wrap stub in a bootstrap script that installs mise if not already present\n\nWhen enabled, generates a bash script that: 1. Checks if mise is installed at the expected path 2. If not, downloads and installs mise using the embedded installer 3. Executes the tool stub using mise"
+            long_help "Wrap stub in a bootstrap script that installs mise if not already present\n\nWhen enabled, generates a bash script that:\n1. Checks if mise is installed at the expected path\n2. If not, downloads and installs mise using the embedded installer\n3. Executes the tool stub using mise"
         }
         flag --bootstrap-version help="Specify mise version for the bootstrap script" {
-            long_help "Specify mise version for the bootstrap script\n\nBy default, uses the latest version from the install script. Use this to pin to a specific version (e.g., \"2025.1.0\")."
+            long_help "Specify mise version for the bootstrap script\n\nBy default, uses the latest version from the install script.\nUse this to pin to a specific version (e.g., \"2025.1.0\")."
             arg <BOOTSTRAP_VERSION>
         }
         flag --fetch help="Fetch checksums and sizes for an existing tool stub file" {

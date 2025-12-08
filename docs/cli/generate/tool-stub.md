@@ -32,13 +32,17 @@ If not specified and the archive is downloaded, will auto-detect the most likely
 
 Wrap stub in a bootstrap script that installs mise if not already present
 
-When enabled, generates a bash script that: 1. Checks if mise is installed at the expected path 2. If not, downloads and installs mise using the embedded installer 3. Executes the tool stub using mise
+When enabled, generates a bash script that:
+1. Checks if mise is installed at the expected path
+2. If not, downloads and installs mise using the embedded installer
+3. Executes the tool stub using mise
 
 ### `--bootstrap-version <BOOTSTRAP_VERSION>`
 
 Specify mise version for the bootstrap script
 
-By default, uses the latest version from the install script. Use this to pin to a specific version (e.g., "2025.1.0").
+By default, uses the latest version from the install script.
+Use this to pin to a specific version (e.g., "2025.1.0").
 
 ### `--fetch`
 

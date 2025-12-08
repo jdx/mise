@@ -43,14 +43,14 @@ pub struct ToolStub {
     /// 1. Checks if mise is installed at the expected path
     /// 2. If not, downloads and installs mise using the embedded installer
     /// 3. Executes the tool stub using mise
-    #[clap(long)]
+    #[clap(long, verbatim_doc_comment)]
     pub bootstrap: bool,
 
     /// Specify mise version for the bootstrap script
     ///
     /// By default, uses the latest version from the install script.
     /// Use this to pin to a specific version (e.g., "2025.1.0").
-    #[clap(long, requires = "bootstrap")]
+    #[clap(long, verbatim_doc_comment, requires = "bootstrap")]
     pub bootstrap_version: Option<String>,
 
     /// Fetch checksums and sizes for an existing tool stub file
