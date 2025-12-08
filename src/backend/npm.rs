@@ -114,7 +114,7 @@ impl Backend for NPMBackend {
                 let bin_dir = tv.install_path().join("bin");
                 crate::file::create_dir_all(&bin_dir)?;
                 CmdLineRunner::new("pnpm")
-                    .arg("install")
+                    .arg("add")
                     .arg("--global")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
                     .arg("--global-dir")
