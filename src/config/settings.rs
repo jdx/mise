@@ -255,6 +255,9 @@ impl Settings {
         if let Some(python_venv_auto_create) = self.python_venv_auto_create {
             self.python.venv_auto_create = python_venv_auto_create;
         }
+        if self.npm.bun {
+            self.npm.package_manager = "bun".to_string();
+        }
     }
 
     pub fn add_cli_matches(cli: &Cli) {

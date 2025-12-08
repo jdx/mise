@@ -743,6 +743,7 @@ env = "MISE_NOT_FOUND_AUTO_INSTALL"
 type = "Bool"
 
 [npm.bun]
+deprecated = "Use npm.package_manager instead."
 description = "Use bun instead of npm if bun is installed and on PATH."
 docs = """
 If true, mise will use `bun` instead of `npm` if
@@ -756,7 +757,21 @@ mise use -g bun
 ```
 """
 env = "MISE_NPM_BUN"
+hide = true
 type = "Bool"
+
+[npm.package_manager]
+default = "npm"
+description = "Package manager to use for installing npm packages."
+docs = """
+Package manager to use for installing npm packages.
+Can be one of:
+- `npm` (default)
+- `bun`
+- `pnpm`
+"""
+env = "MISE_NPM_PACKAGE_MANAGER"
+type = "String"
 
 [os]
 default_docs = '"linux" | "macos" | "windows"'

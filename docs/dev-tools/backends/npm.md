@@ -7,11 +7,21 @@ The code for this is inside of the mise repository at [`./src/backend/npm.rs`](h
 
 ## Dependencies
 
-This relies on having `npm` installed. You can install it with or without mise.
+This relies on having `npm` installed for resolving package versions.
+If you use `bun` or `pnpm` as the package manager, they must also be installed.
+
 Here is how to install `npm` with mise:
 
 ```sh
 mise use -g node
+```
+
+To install `bun` or `pnpm`:
+
+```sh
+mise use -g bun
+# or
+mise use -g pnpm
 ```
 
 ## Usage
