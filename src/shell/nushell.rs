@@ -42,6 +42,11 @@ impl Nushell {
             })
             .join("")
     }
+
+    fn build_deactivation_script(&self) -> String {
+        let deactivation_ops = shell::build_deactivation_script(self);
+        deactivation_ops.trim_end_matches('\n').to_owned()
+    }
 }
 
 impl Shell for Nushell {
@@ -72,13 +77,12 @@ impl Shell for Nushell {
           }}
         "#});
 
-        let deactivation_script = shell::build_deactivation_script(self);
-        let deactivation_ops_csv = deactivation_script.trim_end();
+        let deactivation_ops_csv = self.build_deactivation_script();
         let inline_prelude = self.format_activate_prelude_inline(&opts.prelude);
         out.push_str(&formatdoc! {r#"
           export-env {{
             {inline_prelude}
-            '''{deactivation_ops_csv}''' | parse vars | update-env
+            '{deactivation_ops_csv}' | parse vars | update-env
             $env.MISE_SHELL = "nu"
             let mise_hook = {{
               condition: {{ "MISE_SHELL" in $env }}
