@@ -91,17 +91,49 @@ fn has_http_backend_config(opts: &indexmap::IndexMap<String, String>) -> bool {
     false
 }
 
+/// Extract TOML content from a bootstrap script's comment block
+/// Looks for content between `# MISE_TOOL_STUB:` and `# :MISE_TOOL_STUB` markers
+fn extract_toml_from_bootstrap(content: &str) -> Option<String> {
+    let start_marker = "# MISE_TOOL_STUB:";
+    let end_marker = "# :MISE_TOOL_STUB";
+
+    let start_pos = content.find(start_marker)?;
+    let end_pos = content.find(end_marker)?;
+
+    if start_pos >= end_pos {
+        return None;
+    }
+
+    // Extract content between markers (skip the start marker line)
+    let between = &content[start_pos + start_marker.len()..end_pos];
+
+    // Remove leading `# ` from each line to get the original TOML
+    let toml = between
+        .lines()
+        .map(|line| line.strip_prefix("# ").unwrap_or(line))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    Some(toml.trim().to_string())
+}
+
 impl ToolStubFile {
     pub fn from_file(path: &Path) -> Result<Self> {
         let content = file::read_to_string(path)?;
-        let mut stub: ToolStubFile = toml::from_str(&content)?;
-
-        // Extract stub name from file name
         let stub_name = path
             .file_name()
             .and_then(|name| name.to_str())
             .ok_or_else(|| eyre!("Invalid stub file name"))?
             .to_string();
+
+        // Check if this is a bootstrap script with embedded TOML
+        let toml_content = if let Some(toml) = extract_toml_from_bootstrap(&content) {
+            toml
+        } else {
+            content
+        };
+
+        let mut stub: ToolStubFile = toml::from_str(&toml_content)?;
 
         // Determine tool name from tool field or derive from stub name
         // If no tool is specified, default to HTTP backend if HTTP config is present
@@ -113,13 +145,13 @@ impl ToolStubFile {
                 if has_http_backend_config(&stub.opts) {
                     format!("http:{stub_name}")
                 } else {
-                    stub_name.clone()
+                    stub_name.to_string()
                 }
             });
 
         // Set bin to filename if not specified
         if stub.bin.is_none() {
-            stub.bin = Some(stub_name.clone());
+            stub.bin = Some(stub_name.to_string());
         }
 
         stub.tool_name = tool_name;
@@ -583,6 +615,7 @@ impl ToolStub {
 
         let stub = ToolStubFile::from_file(&self.file)?;
         let mut config = Config::get().await?;
+
         return execute_with_tool_request(&stub, &mut config, args, &self.file).await;
     }
 }
