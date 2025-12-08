@@ -99,19 +99,8 @@ impl ToolStubFile {
             .and_then(|name| name.to_str())
             .ok_or_else(|| eyre!("Invalid stub file name"))?
             .to_string();
-        Self::from_content(&content, &stub_name)
-    }
 
-    pub fn from_stdin() -> Result<Self> {
-        use std::io::Read;
-        let mut content = String::new();
-        std::io::stdin().read_to_string(&mut content)?;
-        // Use "tool-stub" as default name when reading from stdin
-        Self::from_content(&content, "tool-stub")
-    }
-
-    fn from_content(content: &str, stub_name: &str) -> Result<Self> {
-        let mut stub: ToolStubFile = toml::from_str(content)?;
+        let mut stub: ToolStubFile = toml::from_str(&content)?;
 
         // Determine tool name from tool field or derive from stub name
         // If no tool is specified, default to HTTP backend if HTTP config is present
@@ -591,24 +580,10 @@ impl ToolStub {
             }
         }; // Drop the lock before await
 
-        // Handle stdin input (when file is "-")
-        let is_stdin = self.file == Path::new("-");
-        let stub = if is_stdin {
-            ToolStubFile::from_stdin()?
-        } else {
-            ToolStubFile::from_file(&self.file)?
-        };
-
+        let stub = ToolStubFile::from_file(&self.file)?;
         let mut config = Config::get().await?;
 
-        // For stdin, use a placeholder path (caching won't work but that's fine)
-        let stub_path = if is_stdin {
-            PathBuf::from("-")
-        } else {
-            self.file.clone()
-        };
-
-        return execute_with_tool_request(&stub, &mut config, args, &stub_path).await;
+        return execute_with_tool_request(&stub, &mut config, args, &self.file).await;
     }
 }
 
