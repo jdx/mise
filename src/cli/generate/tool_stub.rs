@@ -343,11 +343,20 @@ impl ToolStub {
         minisign::verify(&minisign::MISE_PUB_KEY, install.as_bytes(), &install_sig)?;
         let install = info::indent_by(install, "        ");
 
-        // We write the TOML to a temp file and pass it as an argument, rather than
-        // using stdin, because the tool itself may need stdin for user input.
+        // Store TOML in a comment block - mise tool-stub will parse this from the script
+        let commented_toml = toml_content
+            .lines()
+            .map(|line| format!("# {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
         Ok(format!(
-            r#"#!/usr/bin/env bash
+            r##"#!/usr/bin/env bash
 set -eu
+
+# MISE_TOOL_STUB:
+{commented_toml}
+# :MISE_TOOL_STUB
 
 __mise_tool_stub_bootstrap() {{
     # Check if mise is on PATH first
@@ -373,15 +382,8 @@ __mise_tool_stub_bootstrap() {{
 }}
 __mise_tool_stub_bootstrap
 
-# Write TOML config to temp file (can't use stdin as tool may need it)
-__mise_stub_config=$(mktemp)
-trap 'rm -f "$__mise_stub_config"' EXIT
-cat > "$__mise_stub_config" <<'MISE_TOOL_STUB'
-{toml_content}
-MISE_TOOL_STUB
-
-exec "$MISE_BIN" tool-stub "$__mise_stub_config" "$@"
-"#
+exec "$MISE_BIN" tool-stub "$0" "$@"
+"##
         ))
     }
 
@@ -728,7 +730,7 @@ exec "$MISE_BIN" tool-stub "$__mise_stub_config" "$@"
 
 /// Check if content is a bootstrap stub
 fn is_bootstrap_stub(content: &str) -> bool {
-    content.contains("<<'MISE_TOOL_STUB'") && content.contains("__mise_tool_stub_bootstrap")
+    content.contains("# MISE_TOOL_STUB:") && content.contains("# :MISE_TOOL_STUB")
 }
 
 fn format_size_comment(bytes: u64) -> String {
@@ -737,26 +739,27 @@ fn format_size_comment(bytes: u64) -> String {
 
 /// Extract TOML content from a stub file (handles both regular and bootstrap stubs)
 fn extract_toml_from_stub(content: &str) -> String {
-    // Check if this is a bootstrap stub by looking for the heredoc marker
-    if content.contains("<<'MISE_TOOL_STUB'") {
-        // Bootstrap stub: extract TOML between heredoc markers
-        let mut in_toml = false;
-        let mut toml_lines = Vec::new();
+    // Check if this is a bootstrap stub by looking for comment markers
+    if is_bootstrap_stub(content) {
+        // Bootstrap stub: extract TOML between comment markers
+        let start_marker = "# MISE_TOOL_STUB:";
+        let end_marker = "# :MISE_TOOL_STUB";
 
-        for line in content.lines() {
-            if line.contains("<<'MISE_TOOL_STUB'") {
-                in_toml = true;
-                continue;
-            }
-            if in_toml {
-                if line == "MISE_TOOL_STUB" {
-                    break;
-                }
-                toml_lines.push(line);
+        if let (Some(start_pos), Some(end_pos)) =
+            (content.find(start_marker), content.find(end_marker))
+        {
+            if start_pos < end_pos {
+                let between = &content[start_pos + start_marker.len()..end_pos];
+                return between
+                    .lines()
+                    .map(|line| line.strip_prefix("# ").unwrap_or(line))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    .trim()
+                    .to_string();
             }
         }
-
-        toml_lines.join("\n")
+        String::new()
     } else {
         // Regular stub: skip shebang and comments at the start
         content

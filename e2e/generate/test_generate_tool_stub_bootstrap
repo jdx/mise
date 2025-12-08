@@ -26,9 +26,13 @@ if ! grep -q 'command -v mise' test-jq; then
 	exit 1
 fi
 
-# Check that we use a temp file approach, not stdin (so tools can read stdin)
-if ! grep -q 'mktemp' test-jq; then
-	echo "FAIL: Expected mktemp for temp file approach"
+# Check that TOML is stored in a comment block
+if ! grep -q '# MISE_TOOL_STUB:' test-jq; then
+	echo "FAIL: Missing MISE_TOOL_STUB start marker"
+	exit 1
+fi
+if ! grep -q '# :MISE_TOOL_STUB' test-jq; then
+	echo "FAIL: Missing MISE_TOOL_STUB end marker"
 	exit 1
 fi
 
