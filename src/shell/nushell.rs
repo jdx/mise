@@ -77,7 +77,7 @@ impl Shell for Nushell {
         out.push_str(&formatdoc! {r#"
           export-env {{
             {inline_prelude}
-            "{deactivation_ops_csv}" | parse vars | update-env
+            '''{deactivation_ops_csv}''' | parse vars | update-env
             $env.MISE_SHELL = "nu"
             let mise_hook = {{
               condition: {{ "MISE_SHELL" in $env }}
