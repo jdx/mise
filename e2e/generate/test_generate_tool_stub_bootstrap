@@ -36,11 +36,11 @@ if ! grep -q '# :MISE_TOOL_STUB' test-jq; then
 	exit 1
 fi
 
-# Test appending a platform to existing bootstrap stub
+# Test appending a platform to existing bootstrap stub (without --bootstrap flag)
+# Should preserve bootstrap format automatically
 mise generate tool-stub test-jq \
 	--platform-url "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-amd64" \
-	--skip-download \
-	--bootstrap
+	--skip-download
 
 # Should still be a bootstrap stub
 if ! grep -q '__mise_tool_stub_bootstrap' test-jq; then
