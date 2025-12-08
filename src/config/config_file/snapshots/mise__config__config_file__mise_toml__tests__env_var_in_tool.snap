@@ -1,0 +1,34 @@
+---
+source: src/config/config_file/mise_toml.rs
+expression: "replace_path(&format!(\"{:#?}\", cf.to_tool_request_set().unwrap().tools))"
+---
+{
+    BackendArg(terraform): [
+        Version {
+            backend: BackendArg(terraform),
+            version: "1.0.0",
+            options: ToolVersionOptions {
+                os: None,
+                install_env: {},
+                opts: {},
+            },
+            source: MiseToml(
+                "~/cwd/.test.mise.toml",
+            ),
+        },
+    ],
+    BackendArg(jq): [
+        Prefix {
+            backend: BackendArg(jq),
+            prefix: "1.6",
+            options: ToolVersionOptions {
+                os: None,
+                install_env: {},
+                opts: {},
+            },
+            source: MiseToml(
+                "~/cwd/.test.mise.toml",
+            ),
+        },
+    ],
+}
