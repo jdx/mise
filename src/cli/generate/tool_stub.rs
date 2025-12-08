@@ -37,11 +37,21 @@ pub struct ToolStub {
     #[clap(long, short)]
     pub bin: Option<String>,
 
-    /// URL for downloading the tool
+    /// Wrap stub in a bootstrap script that installs mise if not already present
     ///
-    /// Example: https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.tar.gz
-    #[clap(long, short)]
-    pub url: Option<String>,
+    /// When enabled, generates a bash script that:
+    /// 1. Checks if mise is installed at the expected path
+    /// 2. If not, downloads and installs mise using the embedded installer
+    /// 3. Executes the tool stub using mise
+    #[clap(long)]
+    pub bootstrap: bool,
+
+    /// Specify mise version for the bootstrap script
+    ///
+    /// By default, uses the latest version from the install script.
+    /// Use this to pin to a specific version (e.g., "2025.1.0").
+    #[clap(long, requires = "bootstrap")]
+    pub bootstrap_version: Option<String>,
 
     /// Fetch checksums and sizes for an existing tool stub file
     ///
@@ -78,25 +88,15 @@ pub struct ToolStub {
     #[clap(long)]
     pub skip_download: bool,
 
+    /// URL for downloading the tool
+    ///
+    /// Example: https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.tar.gz
+    #[clap(long, short)]
+    pub url: Option<String>,
+
     /// Version of the tool
     #[clap(long, default_value = "latest")]
     pub version: String,
-
-    /// Wrap stub in a bootstrap script that installs mise if not already present
-    ///
-    /// When enabled, generates a bash script that:
-    /// 1. Checks if mise is installed at the expected path
-    /// 2. If not, downloads and installs mise using the embedded installer
-    /// 3. Executes the tool stub using mise
-    #[clap(long)]
-    pub bootstrap: bool,
-
-    /// Specify mise version for the bootstrap script
-    ///
-    /// By default, uses the latest version from the install script.
-    /// Use this to pin to a specific version (e.g., "2025.1.0").
-    #[clap(long, requires = "bootstrap")]
-    pub bootstrap_version: Option<String>,
 }
 
 impl ToolStub {
