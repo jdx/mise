@@ -199,7 +199,6 @@ impl NPMBackend {
 
     /// Check dependencies for package installation (npm or bun based on settings)
     async fn check_install_deps(&self, config: &Arc<Config>) {
-
         match Settings::get().npm.package_manager.as_str() {
             "bun" => {
                 self.warn_if_dependency_missing(

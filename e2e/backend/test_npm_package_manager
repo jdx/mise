@@ -18,9 +18,9 @@ fi
 
 # Ensure pnpm is available
 if ! command -v pnpm >/dev/null 2>&1; then
-    echo "pnpm not available in test environment, installing..."
-    # Install pnpm using corepack or npm if needed, or just use mise
-    assert_succeed "mise use pnpm@latest"
+	echo "pnpm not available in test environment, installing..."
+	# Install pnpm using corepack or npm if needed, or just use mise
+	assert_succeed "mise use pnpm@latest"
 fi
 
 # Test 1: Default behavior (npm) - checks npm.package_manager="npm" implicitly
@@ -38,7 +38,6 @@ assert_succeed "mise install npm:tiny@latest >/dev/null 2>&1"
 echo "✓ npm backend successfully installs package using npm (default)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
-
 # Test 2: npm.package_manager = "bun"
 echo "Testing npm.package_manager=bun..."
 export MISE_NPM_PACKAGE_MANAGER=bun
@@ -47,19 +46,17 @@ assert_succeed "mise install npm:tiny@latest >/dev/null 2>&1"
 echo "✓ npm backend successfully installs package using bun (package_manager=bun)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
-
 # Test 3: npm.package_manager = "pnpm"
 echo "Testing npm.package_manager=pnpm..."
 export MISE_NPM_PACKAGE_MANAGER=pnpm
 
-if ! mise install npm:tiny@latest > /tmp/pnpm_debug.log 2>&1; then
-    echo "Command failed. Output:"
-    cat /tmp/pnpm_debug.log
-    exit 1
+if ! mise install npm:tiny@latest >/tmp/pnpm_debug.log 2>&1; then
+	echo "Command failed. Output:"
+	cat /tmp/pnpm_debug.log
+	exit 1
 fi
 echo "✓ npm backend successfully installs package using pnpm (package_manager=pnpm)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
-
 
 # Test 4: Legacy npm.bun = true (should override package_manager=npm default)
 echo "Testing legacy npm.bun=true..."
@@ -71,7 +68,6 @@ echo "✓ npm backend successfully installs package using bun (legacy npm.bun=tr
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
 unset MISE_NPM_BUN
-
 
 # Test 5: npm.bun = true overrides package_manager="npm"
 echo "Testing npm.bun=true overrides npm.package_manager=npm..."
