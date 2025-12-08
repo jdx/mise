@@ -72,7 +72,8 @@ impl Shell for Nushell {
           }}
         "#});
 
-        let deactivation_ops_csv = shell::build_deactivation_script(self).trim_end();
+        let deactivation_script = shell::build_deactivation_script(self);
+        let deactivation_ops_csv = deactivation_script.trim_end();
         let inline_prelude = self.format_activate_prelude_inline(&opts.prelude);
         out.push_str(&formatdoc! {r#"
           export-env {{
