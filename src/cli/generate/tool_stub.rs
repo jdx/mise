@@ -747,8 +747,7 @@ fn extract_toml_from_stub(content: &str) -> String {
 
         if let (Some(start_pos), Some(end_pos)) =
             (content.find(start_marker), content.find(end_marker))
-        {
-            if start_pos < end_pos {
+            && start_pos < end_pos {
                 let between = &content[start_pos + start_marker.len()..end_pos];
                 return between
                     .lines()
@@ -758,7 +757,6 @@ fn extract_toml_from_stub(content: &str) -> String {
                     .trim()
                     .to_string();
             }
-        }
         String::new()
     } else {
         // Regular stub: skip shebang and comments at the start
