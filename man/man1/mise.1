@@ -1101,10 +1101,15 @@ Binary path within the extracted archive
 
 If not specified and the archive is downloaded, will auto\-detect the most likely binary
 .TP
-\fB\-u, \-\-url\fR \fI<URL>\fR
-URL for downloading the tool
+\fB\-\-bootstrap\fR
+Wrap stub in a bootstrap script that installs mise if not already present
 
-Example: https://github.com/owner/repo/releases/download/v2.0.0/tool\-linux\-x64.tar.gz
+When enabled, generates a bash script that: 1. Checks if mise is installed at the expected path 2. If not, downloads and installs mise using the embedded installer 3. Executes the tool stub using mise
+.TP
+\fB\-\-bootstrap\-version\fR \fI<BOOTSTRAP_VERSION>\fR
+Specify mise version for the bootstrap script
+
+By default, uses the latest version from the install script. Use this to pin to a specific version (e.g., "2025.1.0").
 .TP
 \fB\-\-fetch\fR
 Fetch checksums and sizes for an existing tool stub file
@@ -1134,21 +1139,16 @@ Examples: \-\-platform\-url linux\-x64:https://... \-\-platform\-url https://nod
 \fB\-\-skip\-download\fR
 Skip downloading for checksum and binary path detection (faster but less informative)
 .TP
+\fB\-u, \-\-url\fR \fI<URL>\fR
+URL for downloading the tool
+
+Example: https://github.com/owner/repo/releases/download/v2.0.0/tool\-linux\-x64.tar.gz
+.TP
 \fB\-\-version\fR \fI<VERSION>\fR
 Version of the tool
 .RS
 \fIDefault: \fRlatest
 .RE
-.TP
-\fB\-\-bootstrap\fR
-Wrap stub in a bootstrap script that installs mise if not already present
-
-When enabled, generates a bash script that: 1. Checks if mise is installed at the expected path 2. If not, downloads and installs mise using the embedded installer 3. Executes the tool stub using mise
-.TP
-\fB\-\-bootstrap\-version\fR \fI<BOOTSTRAP_VERSION>\fR
-Specify mise version for the bootstrap script
-
-By default, uses the latest version from the install script. Use this to pin to a specific version (e.g., "2025.1.0").
 \fBArguments:\fR
 .PP
 .TP

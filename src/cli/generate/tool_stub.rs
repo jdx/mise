@@ -307,7 +307,16 @@ impl ToolStub {
 
         let toml_content = doc.to_string();
 
-        if self.bootstrap {
+        // Check if we should use bootstrap format:
+        // 1. If --bootstrap flag is explicitly set
+        // 2. If existing file was a bootstrap stub (preserve format when appending)
+        let use_bootstrap = self.bootstrap
+            || existing_content
+                .as_ref()
+                .map(|c| is_bootstrap_stub(c))
+                .unwrap_or(false);
+
+        if use_bootstrap {
             self.wrap_with_bootstrap(&toml_content).await
         } else {
             let mut content = vec![

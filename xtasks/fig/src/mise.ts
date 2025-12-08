@@ -1265,11 +1265,17 @@ const completionSpec: Fig.Spec = {
               },
             },
             {
-              name: ["-u", "--url"],
-              description: "URL for downloading the tool",
+              name: "--bootstrap",
+              description:
+                "Wrap stub in a bootstrap script that installs mise if not already present",
+              isRepeatable: false,
+            },
+            {
+              name: "--bootstrap-version",
+              description: "Specify mise version for the bootstrap script",
               isRepeatable: false,
               args: {
-                name: "url",
+                name: "bootstrap_version",
               },
             },
             {
@@ -1311,25 +1317,19 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
+              name: ["-u", "--url"],
+              description: "URL for downloading the tool",
+              isRepeatable: false,
+              args: {
+                name: "url",
+              },
+            },
+            {
               name: "--version",
               description: "Version of the tool",
               isRepeatable: false,
               args: {
                 name: "version",
-              },
-            },
-            {
-              name: "--bootstrap",
-              description:
-                "Wrap stub in a bootstrap script that installs mise if not already present",
-              isRepeatable: false,
-            },
-            {
-              name: "--bootstrap-version",
-              description: "Specify mise version for the bootstrap script",
-              isRepeatable: false,
-              args: {
-                name: "bootstrap_version",
               },
             },
           ],

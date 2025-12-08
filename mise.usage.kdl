@@ -386,9 +386,12 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
             long_help "Binary path within the extracted archive\n\nIf not specified and the archive is downloaded, will auto-detect the most likely binary"
             arg <BIN>
         }
-        flag "-u --url" help="URL for downloading the tool" {
-            long_help "URL for downloading the tool\n\nExample: https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.tar.gz"
-            arg <URL>
+        flag --bootstrap help="Wrap stub in a bootstrap script that installs mise if not already present" {
+            long_help "Wrap stub in a bootstrap script that installs mise if not already present\n\nWhen enabled, generates a bash script that: 1. Checks if mise is installed at the expected path 2. If not, downloads and installs mise using the embedded installer 3. Executes the tool stub using mise"
+        }
+        flag --bootstrap-version help="Specify mise version for the bootstrap script" {
+            long_help "Specify mise version for the bootstrap script\n\nBy default, uses the latest version from the install script. Use this to pin to a specific version (e.g., \"2025.1.0\")."
+            arg <BOOTSTRAP_VERSION>
         }
         flag --fetch help="Fetch checksums and sizes for an existing tool stub file" {
             long_help "Fetch checksums and sizes for an existing tool stub file\n\nThis reads an existing stub file and fills in any missing checksum/size fields by downloading the files. URLs must already be present in the stub."
@@ -405,15 +408,12 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
             arg <PLATFORM_URL>
         }
         flag --skip-download help="Skip downloading for checksum and binary path detection (faster but less informative)"
+        flag "-u --url" help="URL for downloading the tool" {
+            long_help "URL for downloading the tool\n\nExample: https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.tar.gz"
+            arg <URL>
+        }
         flag --version help="Version of the tool" default=latest {
             arg <VERSION>
-        }
-        flag --bootstrap help="Wrap stub in a bootstrap script that installs mise if not already present" {
-            long_help "Wrap stub in a bootstrap script that installs mise if not already present\n\nWhen enabled, generates a bash script that: 1. Checks if mise is installed at the expected path 2. If not, downloads and installs mise using the embedded installer 3. Executes the tool stub using mise"
-        }
-        flag --bootstrap-version help="Specify mise version for the bootstrap script" {
-            long_help "Specify mise version for the bootstrap script\n\nBy default, uses the latest version from the install script. Use this to pin to a specific version (e.g., \"2025.1.0\")."
-            arg <BOOTSTRAP_VERSION>
         }
         arg <OUTPUT> help="Output file path for the tool stub"
     }
