@@ -17,28 +17,28 @@ backend = "aqua:FiloSottile/age"
 "platforms.windows-x64" = { url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-windows-amd64.zip"}
 
 [[tools.bun]]
-version = "1.3.3"
+version = "1.3.4"
 backend = "core:bun"
-"platforms.linux-arm64" = { checksum = "sha256:41b9f4f25256db897c2c135320e4f96c373e20ae6f06d8015187dac83591efc8", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-linux-aarch64.zip"}
-"platforms.linux-arm64-musl" = { checksum = "sha256:00794caaff87cedb3224fb5a52dda918eaeac6585a4bc0f5f0fedacd28602f9f", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-linux-aarch64-musl.zip"}
-"platforms.linux-x64" = { checksum = "sha256:f5c546736f955141459de231167b6fdf7b01418e8be3609f2cde9dfe46a93a3d", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-linux-x64.zip"}
-"platforms.linux-x64-baseline" = { checksum = "sha256:281e6cbad969eb2f5ef5724c6cba01da40cd5fead6f8292c50ed60bd4dba78ae", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-linux-x64-baseline.zip"}
-"platforms.linux-x64-musl" = { checksum = "sha256:9ff19c2843b699c570817ad7adb8c742c1962d199205b298f4c28f74aceb55f5", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-linux-x64-musl.zip"}
-"platforms.linux-x64-musl-baseline" = { checksum = "sha256:94c4f72575b8672ea85839bfcfb1e4c3dc26be563509b403175391543a6c2c04", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-linux-x64-musl-baseline.zip"}
-"platforms.macos-arm64" = { checksum = "sha256:f50f5cc767c3882c46675fbe07e0b7b1df71a73ce544aadb537ad9261af00bb1", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-darwin-aarch64.zip"}
-"platforms.macos-x64" = { checksum = "sha256:fdaf5e3c91de2f2a8c83e80a125c5111d476e5f7575b2747d71bc51d2c920bd4", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-darwin-x64.zip"}
-"platforms.macos-x64-baseline" = { checksum = "sha256:a0034403bffd18ba66b35cab2f79ee53ed9098d7e46e28e08e7fb64d82f9f24e", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-darwin-x64-baseline.zip"}
-"platforms.windows-x64" = { checksum = "sha256:53e239b058c13f0bb70949b222c4d40c5ab7d6cad22268b2ace2187fcfd7a247", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-windows-x64.zip"}
-"platforms.windows-x64-baseline" = { checksum = "sha256:d4def94b1f9dba0249ac6ebbff982ce8b96f5163f2880af48dca65649e0d689d", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-windows-x64-baseline.zip"}
+"platforms.linux-arm64" = { checksum = "sha256:c46e841fed85347521915b1b3904d6d175d8e2fd915e18e01c111318219115a4", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-linux-aarch64.zip"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:c3dac29912b144789a2a4ee2108e595e6527f0f6c1b0f6e803bb319dc742e1de", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-linux-aarch64-musl.zip"}
+"platforms.linux-x64" = { checksum = "sha256:33c6996049e8d37e8b815959b14b05e5b6f496121352bf11bae7d047193c28bf", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-linux-x64.zip"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:3d5129e19742a348fef112357be70becee596c4d32bc4dfb756cee6134e2e925", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-linux-x64-baseline.zip"}
+"platforms.linux-x64-musl" = { checksum = "sha256:9f1e0dd2c88b65f902a1fb101373704a67063bb7efa14b9c753f2fbd276100a3", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-linux-x64-musl.zip"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:8322c8b43b88ee626f7bf0a3ef66f1bda17900461606d273132c42b9115aabcb", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-linux-x64-musl-baseline.zip"}
+"platforms.macos-arm64" = { checksum = "sha256:8803774e4c6c55c8a517464c508f02821e6db57f94ca1bb5cc2a39f4d2326a51", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-darwin-aarch64.zip"}
+"platforms.macos-x64" = { checksum = "sha256:3390f9e6a82a9c718e187513b1c56405d0de9ed3f6b092222b15b4d4ba6e304d", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-darwin-x64.zip"}
+"platforms.macos-x64-baseline" = { checksum = "sha256:0f7956d51afed414c825a3a4f8ecc9bc613ff64e489016775e8514db5137b35f", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-darwin-x64-baseline.zip"}
+"platforms.windows-x64" = { checksum = "sha256:2a9c0a9e6ad77d0c31fd8fb1f596b61afa7f2f2f580baad597f17e7a0dbad960", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-windows-x64.zip"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:4e1d253078173b84aea2b1501ef7e1d4b9eb5a44d86e62eb9ee6219a95e0d210", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-windows-x64-baseline.zip"}
 
 [[tools.cargo-binstall]]
-version = "1.16.2"
+version = "1.16.3"
 backend = "aqua:cargo-bins/cargo-binstall"
-"platforms.linux-arm64" = { checksum = "sha256:a31113a645e0a96d5123a52ece88ee9723305939c4b1c7683aa3ddf6ca4c49ba", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.2/cargo-binstall-aarch64-unknown-linux-musl.tgz"}
-"platforms.linux-x64" = { checksum = "sha256:3be2695803f7b9a86b9976f2bdb8568ed6e8df026bacfc39c8546d3c6ea34808", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.2/cargo-binstall-x86_64-unknown-linux-musl.tgz"}
-"platforms.macos-arm64" = { checksum = "sha256:d51b7d2487a10abc395ccec7a2c9c79c83e44aac4b830e1694f8c8e10cad5e88", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.2/cargo-binstall-aarch64-apple-darwin.zip"}
-"platforms.macos-x64" = { checksum = "sha256:a039819a14009dd72d32c24ce97d2c16be12959e601ae516574e2f2a770db59d", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.2/cargo-binstall-x86_64-apple-darwin.zip"}
-"platforms.windows-x64" = { checksum = "sha256:970882c90c512f53d5ce446cf0b68dc70c35e75cc52dbb264606bcf72edfc02b", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.2/cargo-binstall-x86_64-pc-windows-msvc.zip"}
+"platforms.linux-arm64" = { checksum = "sha256:5e36157edecaa41be235259a1d2ee5d08ba401aaf7b5b04ca15e69a31e8ca5c1", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.3/cargo-binstall-aarch64-unknown-linux-musl.tgz"}
+"platforms.linux-x64" = { checksum = "sha256:dcd7d1d03d73fcd6825e981955263d4df08b81d73ce92eed1998dbda003a328a", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.3/cargo-binstall-x86_64-unknown-linux-musl.tgz"}
+"platforms.macos-arm64" = { checksum = "sha256:ec5f87ce4f9120bf45820da743e3be6f92dea86058505b7ac6000f8ac6a4bfda", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.3/cargo-binstall-aarch64-apple-darwin.zip"}
+"platforms.macos-x64" = { checksum = "sha256:eb8d55ddf27761f625266a9dfc75142a96d22fbafec48eb2982c3e45bc119d95", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.3/cargo-binstall-x86_64-apple-darwin.zip"}
+"platforms.windows-x64" = { checksum = "sha256:8b93d53a6313e6c4e23326dc2a0f89044932768b1cc3b3592ec77a31ddb6a1a2", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.3/cargo-binstall-x86_64-pc-windows-msvc.zip"}
 
 [[tools."cargo:cargo-edit"]]
 version = "0.13.8"
@@ -83,12 +83,12 @@ backend = "aqua:cli/cli"
 "platforms.windows-x64" = { checksum = "sha256:1324871424cb8cb3793914565026a8da53b1a633fa05760597abef54b57ff12e", url = "https://github.com/cli/cli/releases/download/v2.83.1/gh_2.83.1_windows_amd64.zip"}
 
 [[tools.hk]]
-version = "1.25.0"
+version = "1.26.0"
 backend = "aqua:jdx/hk"
-"platforms.linux-arm64" = { checksum = "sha256:757c17defdd4f395f609b8e32bc364831d8b03ca44bbd927f726a7556d0bdff8", url = "https://github.com/jdx/hk/releases/download/v1.25.0/hk-aarch64-unknown-linux-gnu.tar.gz"}
-"platforms.linux-x64" = { checksum = "sha256:7021d44c38e34ca2ee46f3536f906de59e5e89d67439d3400e1bd707235ebb4f", url = "https://github.com/jdx/hk/releases/download/v1.25.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
-"platforms.macos-arm64" = { checksum = "sha256:3fa6f149e20443042d2812e3682c8080168d55d737903849c76cb7e651023b1b", url = "https://github.com/jdx/hk/releases/download/v1.25.0/hk-aarch64-apple-darwin.tar.gz"}
-"platforms.windows-x64" = { checksum = "sha256:2415aebbffbc55d5fabee84b653389a2d48bca489299aee35effff5c318bd54c", url = "https://github.com/jdx/hk/releases/download/v1.25.0/hk-x86_64-pc-windows-msvc.zip"}
+"platforms.linux-arm64" = { checksum = "sha256:7e235dabf4fe5a6445a89dff8f7cdb0fe7543ec6cef3201a9d3a5338d4d8066b", url = "https://github.com/jdx/hk/releases/download/v1.26.0/hk-aarch64-unknown-linux-gnu.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:65c5508b13b6e3c2b3401e0e07205e413d35b5432aec4854e66fed500c635226", url = "https://github.com/jdx/hk/releases/download/v1.26.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:923763567753e9dc26ea13a052bf8252664539c8a19521b09482c404e4f187e8", url = "https://github.com/jdx/hk/releases/download/v1.26.0/hk-aarch64-apple-darwin.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:4aa59cd5746b9dc82762ed8fdb0ae24d4d15bf09f634af590a2f39de2a157d9f", url = "https://github.com/jdx/hk/releases/download/v1.26.0/hk-x86_64-pc-windows-msvc.zip"}
 
 [[tools.jq]]
 version = "1.8.1"
