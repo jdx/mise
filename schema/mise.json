@@ -787,7 +787,13 @@
           "properties": {
             "bun": {
               "description": "Use bun instead of npm if bun is installed and on PATH.",
-              "type": "boolean"
+              "type": "boolean",
+              "deprecated": true
+            },
+            "package_manager": {
+              "default": "npm",
+              "description": "Package manager to use for installing npm packages.",
+              "type": "string"
             }
           }
         },
