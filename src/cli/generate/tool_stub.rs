@@ -747,16 +747,17 @@ fn extract_toml_from_stub(content: &str) -> String {
 
         if let (Some(start_pos), Some(end_pos)) =
             (content.find(start_marker), content.find(end_marker))
-            && start_pos < end_pos {
-                let between = &content[start_pos + start_marker.len()..end_pos];
-                return between
-                    .lines()
-                    .map(|line| line.strip_prefix("# ").unwrap_or(line))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-                    .trim()
-                    .to_string();
-            }
+            && start_pos < end_pos
+        {
+            let between = &content[start_pos + start_marker.len()..end_pos];
+            return between
+                .lines()
+                .map(|line| line.strip_prefix("# ").unwrap_or(line))
+                .collect::<Vec<_>>()
+                .join("\n")
+                .trim()
+                .to_string();
+        }
         String::new()
     } else {
         // Regular stub: skip shebang and comments at the start
