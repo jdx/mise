@@ -38,9 +38,9 @@
 ## Demo
 
 The following demo shows how to install and use `mise` to manage multiple versions of `node` on the same system.
-Note that calling `which node` gives us a real path to node, not a shim.
+Note that calling `which node` gives us a real path to Node, not a shim.
 
-It also shows that you can use `mise` to install and many other tools such as `jq`, `terraform`, or `go`.
+It also shows that you can use `mise` to install and many other tools, such as `jq`, `terraform`, or `go`.
 
 [![demo](./docs/tapes/demo.gif)](https://mise.jdx.dev/demo.html)
 
@@ -123,7 +123,7 @@ See [tasks](https://mise.jdx.dev/tasks/) for more information.
 
 ### Example mise project
 
-Here is a combined example to give you an idea of how you can use mise to manage your a project's tools, environment, and tasks.
+Here is a combined example to give you an idea of how you can use mise to manage your project's tools, environment, and tasks.
 
 ```toml
 # mise.toml
@@ -173,8 +173,8 @@ See [mise.jdx.dev](https://mise.jdx.dev)
 ## GitHub Issues & Discussions
 
 Due to the volume of issue submissions mise received, using GitHub Issues became unsustainable for
-the project. Instead, mise uses GitHub Discussions which provide a more community-centric platform
-for communication and require less management on the part of the maintainers.
+the project. Instead, mise uses GitHub Discussions, which provides a more community-centric platform
+for communication and requires less management on the part of the maintainers.
 
 Please note the following discussion categories, which match how issues are often used:
 
