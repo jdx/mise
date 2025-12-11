@@ -10,8 +10,16 @@ mkdir -p src/assets/gpg
 
 # Download each key file from nodejs/release-keys repository
 NODE_KEYS_URL="https://raw.githubusercontent.com/nodejs/release-keys/main/keys"
+NODE_KEYS_LIST_URL="https://raw.githubusercontent.com/nodejs/release-keys/main/keys.list"
+
+echo "Fetching Node.js release keys list..."
+if ! keys_list=$(curl -fsSL "$NODE_KEYS_LIST_URL"); then
+	echo "ERROR: Failed to download keys.list from nodejs/release-keys" >&2
+	exit 1
+fi
+
 key_count=0
-for fingerprint in $(curl -fsSL "https://raw.githubusercontent.com/nodejs/release-keys/main/keys.list"); do
+for fingerprint in $keys_list; do
 	echo "Fetching key: $fingerprint"
 	if ! curl -fLSs "${NODE_KEYS_URL}/${fingerprint}.asc" >>"src/assets/gpg/node.asc"; then
 		echo "ERROR: Failed to download key $fingerprint" >&2
@@ -20,6 +28,18 @@ for fingerprint in $(curl -fsSL "https://raw.githubusercontent.com/nodejs/releas
 	key_count=$((key_count + 1))
 done
 echo "Successfully fetched $key_count Node.js release keys"
-curl -fLSs "https://swift.org/keys/automatic-signing-key-4.asc" >>src/assets/gpg/swift.asc
-curl -fLSs "https://swift.org/keys/release-key-swift-5.x.asc" >>src/assets/gpg/swift.asc
-curl -fLSs "https://swift.org/keys/release-key-swift-6.x.asc" >>src/assets/gpg/swift.asc
+
+# Swift release keys
+SWIFT_KEYS=(
+	"https://swift.org/keys/automatic-signing-key-4.asc"
+	"https://swift.org/keys/release-key-swift-5.x.asc"
+	"https://swift.org/keys/release-key-swift-6.x.asc"
+)
+for url in "${SWIFT_KEYS[@]}"; do
+	echo "Fetching Swift key: $url"
+	if ! curl -fLSs "$url" >>src/assets/gpg/swift.asc; then
+		echo "ERROR: Failed to download $url" >&2
+		exit 1
+	fi
+done
+echo "Successfully fetched ${#SWIFT_KEYS[@]} Swift release keys"
