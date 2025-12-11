@@ -10,9 +10,16 @@ mkdir -p src/assets/gpg
 
 # Download each key file from nodejs/release-keys repository
 NODE_KEYS_URL="https://raw.githubusercontent.com/nodejs/release-keys/main/keys"
+key_count=0
 for fingerprint in $(curl -fsSL "https://raw.githubusercontent.com/nodejs/release-keys/main/keys.list"); do
-	curl -fLSs "${NODE_KEYS_URL}/${fingerprint}.asc" >>"src/assets/gpg/node.asc"
+	echo "Fetching key: $fingerprint"
+	if ! curl -fLSs "${NODE_KEYS_URL}/${fingerprint}.asc" >>"src/assets/gpg/node.asc"; then
+		echo "ERROR: Failed to download key $fingerprint" >&2
+		exit 1
+	fi
+	key_count=$((key_count + 1))
 done
+echo "Successfully fetched $key_count Node.js release keys"
 curl -fLSs "https://swift.org/keys/automatic-signing-key-4.asc" >>src/assets/gpg/swift.asc
 curl -fLSs "https://swift.org/keys/release-key-swift-5.x.asc" >>src/assets/gpg/swift.asc
 curl -fLSs "https://swift.org/keys/release-key-swift-6.x.asc" >>src/assets/gpg/swift.asc
