@@ -104,7 +104,10 @@ EOF
 	echo "Updated star count to $stars_formatted"
 fi
 
-mise run render ::: lint-fix ::: fetch-gpg-keys
+# fetch-gpg-keys must run before render (which includes build) since it
+# recreates src/assets/gpg/ which is read at compile time via include_str!
+mise run fetch-gpg-keys
+mise run render ::: lint-fix
 
 # Capture current aqua-registry package list before updating
 OLD_AQUA_PKGS=""
