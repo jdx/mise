@@ -3,11 +3,19 @@ packages:
   - type: github_release
     repo_owner: apple
     repo_name: container
-    description: A tool for creating and running Linux containers using lightweight virtual machines on a Mac. It's written in Swift, and optimized for Apple silicon
+    description: A tool for creating and running Linux containers using lightweight virtual machines on a Mac. It is written in Swift, and optimized for Apple silicon
     version_constraint: "false"
     version_overrides:
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.6.0")
         asset: container-{{.Version}}-installer-signed.{{.Format}}
+        format: pkg
+        files:
+          - name: container
+            src: Payload/bin/container
+        supported_envs:
+          - darwin
+      - version_constraint: "true"
+        asset: container-installer-signed.{{.Format}}
         format: pkg
         files:
           - name: container

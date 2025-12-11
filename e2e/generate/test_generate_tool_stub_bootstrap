@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Test that --bootstrap flag generates a working wrapper script
+
+# Generate a bootstrap stub for jq (a real tool we can test)
+mise generate tool-stub test-jq \
+	--platform-url "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64" \
+	--platform-url "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-arm64" \
+	--skip-download \
+	--bootstrap
+
+# Basic structure checks
+if ! head -1 test-jq | grep -q '#!/usr/bin/env bash'; then
+	echo "FAIL: Expected bash shebang"
+	exit 1
+fi
+
+if ! grep -q '__mise_tool_stub_bootstrap' test-jq; then
+	echo "FAIL: Missing bootstrap function"
+	exit 1
+fi
+
+if ! grep -q 'command -v mise' test-jq; then
+	echo "FAIL: Missing PATH check for mise"
+	exit 1
+fi
+
+# Check that TOML is stored in a comment block
+if ! grep -q '# MISE_TOOL_STUB:' test-jq; then
+	echo "FAIL: Missing MISE_TOOL_STUB start marker"
+	exit 1
+fi
+if ! grep -q '# :MISE_TOOL_STUB' test-jq; then
+	echo "FAIL: Missing MISE_TOOL_STUB end marker"
+	exit 1
+fi
+
+# Test appending a platform to existing bootstrap stub (without --bootstrap flag)
+# Should preserve bootstrap format automatically
+mise generate tool-stub test-jq \
+	--platform-url "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-amd64" \
+	--skip-download
+
+# Should still be a bootstrap stub
+if ! grep -q '__mise_tool_stub_bootstrap' test-jq; then
+	echo "FAIL: Lost bootstrap wrapper after append"
+	exit 1
+fi
+
+# Should have all three platforms now
+if ! grep -q 'linux-x64' test-jq; then
+	echo "FAIL: Missing linux-x64 platform after append"
+	exit 1
+fi
+if ! grep -q 'macos-arm64' test-jq; then
+	echo "FAIL: Missing macos-arm64 platform after append"
+	exit 1
+fi
+if ! grep -q 'macos-x64' test-jq; then
+	echo "FAIL: Missing macos-x64 platform after append"
+	exit 1
+fi
+
+# Actually execute the stub - it should find mise on PATH (since we're running under mise)
+# and run jq --version successfully
+OUTPUT=$(./test-jq --version 2>&1)
+if ! echo "$OUTPUT" | grep -q "jq-"; then
+	echo "FAIL: Expected jq version output, got: $OUTPUT"
+	exit 1
+fi
+
+echo "Test passed!"

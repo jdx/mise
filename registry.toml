@@ -5106,6 +5106,11 @@ backends = [
 ]
 description = "Command-line client for WebSockets, like netcat (or curl) for ws:// with advanced socat-like functions"
 
+[tools.werf]
+backends = ["aqua:werf/werf"]
+description = "A solution for implementing efficient and consistent software delivery to Kubernetes facilitating best practices"
+test = ["werf version", "v{{version}}"]
+
 [tools.wren]
 aliases = ["wren-cli"]
 backends = [

@@ -3,6 +3,8 @@ use crate::backend::asset_detector::detect_platform_from_url;
 use crate::backend::static_helpers::get_filename_from_url;
 use crate::file::{self, TarFormat, TarOptions};
 use crate::http::HTTP;
+use crate::minisign;
+use crate::ui::info;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use clap::ValueHint;
@@ -35,11 +37,21 @@ pub struct ToolStub {
     #[clap(long, short)]
     pub bin: Option<String>,
 
-    /// URL for downloading the tool
+    /// Wrap stub in a bootstrap script that installs mise if not already present
     ///
-    /// Example: https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.tar.gz
-    #[clap(long, short)]
-    pub url: Option<String>,
+    /// When enabled, generates a bash script that:
+    /// 1. Checks if mise is installed at the expected path
+    /// 2. If not, downloads and installs mise using the embedded installer
+    /// 3. Executes the tool stub using mise
+    #[clap(long, verbatim_doc_comment)]
+    pub bootstrap: bool,
+
+    /// Specify mise version for the bootstrap script
+    ///
+    /// By default, uses the latest version from the install script.
+    /// Use this to pin to a specific version (e.g., "2025.1.0").
+    #[clap(long, verbatim_doc_comment, requires = "bootstrap")]
+    pub bootstrap_version: Option<String>,
 
     /// Fetch checksums and sizes for an existing tool stub file
     ///
@@ -75,6 +87,12 @@ pub struct ToolStub {
     /// Skip downloading for checksum and binary path detection (faster but less informative)
     #[clap(long)]
     pub skip_download: bool,
+
+    /// URL for downloading the tool
+    ///
+    /// Example: https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.tar.gz
+    #[clap(long, short)]
+    pub url: Option<String>,
 
     /// Version of the tool
     #[clap(long, default_value = "latest")]
@@ -121,12 +139,7 @@ impl ToolStub {
         // Read existing file if it exists
         let (existing_content, mut doc) = if self.output.exists() {
             let content = file::read_to_string(&self.output)?;
-            // Extract TOML content from the stub file (skip shebang and comments)
-            let toml_content = content
-                .lines()
-                .skip_while(|line| line.starts_with('#') || line.trim().is_empty())
-                .collect::<Vec<_>>()
-                .join("\n");
+            let toml_content = extract_toml_from_stub(&content);
 
             let document = toml_content.parse::<DocumentMut>()?;
             (Some(content), document)
@@ -294,14 +307,84 @@ impl ToolStub {
 
         let toml_content = doc.to_string();
 
-        let mut content = vec![
-            "#!/usr/bin/env -S mise tool-stub".to_string(),
-            "".to_string(),
-        ];
+        // Check if we should use bootstrap format:
+        // 1. If --bootstrap flag is explicitly set
+        // 2. If existing file was a bootstrap stub (preserve format when appending)
+        let use_bootstrap = self.bootstrap
+            || existing_content
+                .as_ref()
+                .map(|c| is_bootstrap_stub(c))
+                .unwrap_or(false);
 
-        content.push(toml_content);
+        if use_bootstrap {
+            self.wrap_with_bootstrap(&toml_content).await
+        } else {
+            let mut content = vec![
+                "#!/usr/bin/env -S mise tool-stub".to_string(),
+                "".to_string(),
+            ];
 
-        Ok(content.join("\n"))
+            content.push(toml_content);
+
+            Ok(content.join("\n"))
+        }
+    }
+
+    async fn wrap_with_bootstrap(&self, toml_content: &str) -> Result<String> {
+        // Fetch and verify install.sh (same approach as bootstrap.rs)
+        // Use versioned URL if a specific version is requested
+        let url = if let Some(v) = &self.bootstrap_version {
+            format!("https://mise.jdx.dev/v{v}/install.sh")
+        } else {
+            "https://mise.jdx.dev/install.sh".to_string()
+        };
+        let install = HTTP.get_text(&url).await?;
+        let install_sig = HTTP.get_text(format!("{url}.minisig")).await?;
+        minisign::verify(&minisign::MISE_PUB_KEY, install.as_bytes(), &install_sig)?;
+        let install = info::indent_by(install, "        ");
+
+        // Store TOML in a comment block - mise tool-stub will parse this from the script
+        let commented_toml = toml_content
+            .lines()
+            .map(|line| format!("# {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        Ok(format!(
+            r##"#!/usr/bin/env bash
+set -eu
+
+# MISE_TOOL_STUB:
+{commented_toml}
+# :MISE_TOOL_STUB
+
+__mise_tool_stub_bootstrap() {{
+    # Check if mise is on PATH first
+    if command -v mise &>/dev/null; then
+        MISE_BIN="$(command -v mise)"
+        return
+    fi
+
+    # Fall back to ~/.local/bin/mise
+    MISE_BIN="$HOME/.local/bin/mise"
+    if [ -f "$MISE_BIN" ]; then
+        return
+    fi
+
+    # Install mise to ~/.local/bin
+    install() {{
+        local initial_working_dir="$PWD"
+{install}
+        cd -- "$initial_working_dir"
+    }}
+    local MISE_INSTALL_HELP=0
+    install
+}}
+__mise_tool_stub_bootstrap
+
+exec "$MISE_BIN" tool-stub "$0" "$@"
+"##
+        ))
     }
 
     fn parse_platform_spec(&self, spec: &str) -> Result<(String, String)> {
@@ -574,14 +657,7 @@ impl ToolStub {
         }
 
         let content = file::read_to_string(&self.output)?;
-
-        // Extract TOML content from the stub file (skip shebang)
-        let toml_content = content
-            .lines()
-            .skip_while(|line| line.starts_with('#') || line.trim().is_empty())
-            .collect::<Vec<_>>()
-            .join("\n");
-
+        let toml_content = extract_toml_from_stub(&content);
         let mut doc = toml_content.parse::<DocumentMut>()?;
         let mpr = MultiProgressReport::get();
 
@@ -636,19 +712,61 @@ impl ToolStub {
 
         let toml_content = doc.to_string();
 
-        let mut content = vec![
-            "#!/usr/bin/env -S mise tool-stub".to_string(),
-            "".to_string(),
-        ];
+        // Check if original was a bootstrap stub and preserve that format
+        if is_bootstrap_stub(&content) {
+            self.wrap_with_bootstrap(&toml_content).await
+        } else {
+            let mut output = vec![
+                "#!/usr/bin/env -S mise tool-stub".to_string(),
+                "".to_string(),
+            ];
 
-        content.push(toml_content);
+            output.push(toml_content);
 
-        Ok(content.join("\n"))
+            Ok(output.join("\n"))
+        }
     }
+}
+
+/// Check if content is a bootstrap stub
+fn is_bootstrap_stub(content: &str) -> bool {
+    content.contains("# MISE_TOOL_STUB:") && content.contains("# :MISE_TOOL_STUB")
 }
 
 fn format_size_comment(bytes: u64) -> String {
     format!(" # {}", format_size(bytes, BINARY))
+}
+
+/// Extract TOML content from a stub file (handles both regular and bootstrap stubs)
+fn extract_toml_from_stub(content: &str) -> String {
+    // Check if this is a bootstrap stub by looking for comment markers
+    if is_bootstrap_stub(content) {
+        // Bootstrap stub: extract TOML between comment markers
+        let start_marker = "# MISE_TOOL_STUB:";
+        let end_marker = "# :MISE_TOOL_STUB";
+
+        if let (Some(start_pos), Some(end_pos)) =
+            (content.find(start_marker), content.find(end_marker))
+            && start_pos < end_pos
+        {
+            let between = &content[start_pos + start_marker.len()..end_pos];
+            return between
+                .lines()
+                .map(|line| line.strip_prefix("# ").unwrap_or(line))
+                .collect::<Vec<_>>()
+                .join("\n")
+                .trim()
+                .to_string();
+        }
+        String::new()
+    } else {
+        // Regular stub: skip shebang and comments at the start
+        content
+            .lines()
+            .skip_while(|line| line.starts_with('#') || line.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
@@ -686,5 +804,12 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     Fetch checksums for an existing stub:
     $ <bold>mise generate tool-stub ./bin/jq --fetch</bold>
     # This will read the existing stub and download files to fill in any missing checksums/sizes
+
+    Generate a bootstrap stub that installs mise if needed:
+    $ <bold>mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --bootstrap</bold>
+    # The stub will check for mise and install it automatically before running the tool
+
+    Generate a bootstrap stub with a pinned mise version:
+    $ <bold>mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --bootstrap --bootstrap-version 2025.1.0</bold>
 "#
 );

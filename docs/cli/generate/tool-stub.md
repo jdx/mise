@@ -28,11 +28,21 @@ Binary path within the extracted archive
 
 If not specified and the archive is downloaded, will auto-detect the most likely binary
 
-### `-u --url <URL>`
+### `--bootstrap`
 
-URL for downloading the tool
+Wrap stub in a bootstrap script that installs mise if not already present
 
-Example: <https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.tar.gz>
+When enabled, generates a bash script that:
+1. Checks if mise is installed at the expected path
+2. If not, downloads and installs mise using the embedded installer
+3. Executes the tool stub using mise
+
+### `--bootstrap-version <BOOTSTRAP_VERSION>`
+
+Specify mise version for the bootstrap script
+
+By default, uses the latest version from the install script.
+Use this to pin to a specific version (e.g., "2025.1.0").
 
 ### `--fetch`
 
@@ -65,6 +75,12 @@ Examples: --platform-url linux-x64:https://... --platform-url <https://nodejs.or
 ### `--skip-download`
 
 Skip downloading for checksum and binary path detection (faster but less informative)
+
+### `-u --url <URL>`
+
+URL for downloading the tool
+
+Example: <https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.tar.gz>
 
 ### `--version <VERSION>`
 
@@ -107,4 +123,11 @@ $ mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --s
 Fetch checksums for an existing stub:
 $ mise generate tool-stub ./bin/jq --fetch
 # This will read the existing stub and download files to fill in any missing checksums/sizes
+
+Generate a bootstrap stub that installs mise if needed:
+$ mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --bootstrap
+# The stub will check for mise and install it automatically before running the tool
+
+Generate a bootstrap stub with a pinned mise version:
+$ mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --bootstrap --bootstrap-version 2025.1.0
 ```
