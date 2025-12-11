@@ -104,7 +104,7 @@ EOF
 	echo "Updated star count to $stars_formatted"
 fi
 
-mise run render ::: lint-fix
+mise run render ::: lint-fix ::: fetch-gpg-keys
 
 # Capture current aqua-registry package list before updating
 OLD_AQUA_PKGS=""
@@ -172,7 +172,8 @@ git add \
 	mise.usage.kdl \
 	completions \
 	mise.lock \
-	man/
+	man/ \
+	src/assets/gpg/
 git clean -df
 git checkout -B release
 git commit -m "chore: release $version"
