@@ -108,8 +108,7 @@ jobs:
       - run: mise -v
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise i
-      - name: Test tools
-        id: test-tools
+      - id: test-tools
         shell: bash # -eo pipefail for grep
         env:
           TEST_TRANCHE: ${{ matrix.tranche }}
@@ -118,7 +117,5 @@ jobs:
           mise test-tool ${{ needs.list-changed-tools.outputs.tools == '' && '--all' || needs.list-changed-tools.outputs.tools }} || true
           failed_tools=$(grep "Failed Tools:" "$GITHUB_STEP_SUMMARY" | sed 's/\*\*Failed Tools\*\*: //' | tr ',' ' ')
           echo "failed_tools=$failed_tools" >> "$GITHUB_OUTPUT"
-
-      - name: Rerun failed tools
-        if: steps.test-tools.outputs.failed_tools != ''
+      - if: steps.test-tools.outputs.failed_tools != ''
         run: mise test-tool ${{ steps.test-tools.outputs.failed_tools }}
