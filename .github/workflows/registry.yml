@@ -109,7 +109,6 @@ jobs:
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise i
       - id: test-tools
-        shell: bash # -eo pipefail for grep
         env:
           TEST_TRANCHE: ${{ matrix.tranche }}
           TEST_TRANCHE_COUNT: ${{ needs.list-changed-tools.outputs.tools == '' && 8 || 1 }}
