@@ -8,7 +8,7 @@
 aliases = ["1password-cli", "op"]
 backends = ["vfox:mise-plugins/vfox-1password", "aqua:1password/cli"]
 description = "Password manager developed by AgileBits Inc"
-test = ["op --version", "version"]
+test = ["op --version", "{{version}}"]
 
 [tools.aapt2]
 backends = ["vfox:mise-plugins/vfox-aapt2"]
