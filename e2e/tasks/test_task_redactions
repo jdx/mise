@@ -49,3 +49,12 @@ _.file = {path = ".env.json", redact = true}
 run = 'echo secret: \$SECRET'
 EOF
 assert "mise run a" "secret: [redacted]"
+
+cat <<'TOML' >mise.toml
+[env]
+EMPTY_SECRET = { value = "", redact = true }
+
+[tasks.empty_redaction]
+run = 'echo "Hello $EMPTY_SECRET"'
+TOML
+assert "mise run empty_redaction" "Hello "
