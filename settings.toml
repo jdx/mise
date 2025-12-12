@@ -249,12 +249,12 @@ type = "Bool"
 
 [color_theme]
 default = "default"
-description = "Theme for interactive prompts (default, base16, catppuccin, dracula)"
+description = "Theme for interactive prompts (default/charm, base16, catppuccin, dracula)"
 docs = """
 Sets the color theme for interactive prompts like `mise run` task selection.
 Available themes:
 
-- `default` - Default theme, works well on dark terminals
+- `default` or `charm` - Default theme, works well on dark terminals
 - `base16` - Base16 theme, works well on light terminals
 - `catppuccin` - Catppuccin theme
 - `dracula` - Dracula theme
@@ -262,6 +262,7 @@ Available themes:
 If you're using a light terminal and the default theme is hard to read,
 try setting this to `base16`.
 """
+enum = [["default"], ["charm"], ["base16"], ["catppuccin"], ["dracula"]]
 env = "MISE_COLOR_THEME"
 type = "String"
 

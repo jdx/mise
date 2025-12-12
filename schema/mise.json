@@ -501,8 +501,9 @@
         },
         "color_theme": {
           "default": "default",
-          "description": "Theme for interactive prompts (default, base16, catppuccin, dracula)",
-          "type": "string"
+          "description": "Theme for interactive prompts (default/charm, base16, catppuccin, dracula)",
+          "type": "string",
+          "enum": ["default", "charm", "base16", "catppuccin", "dracula"]
         },
         "debug": {
           "description": "Sets log level to debug",
