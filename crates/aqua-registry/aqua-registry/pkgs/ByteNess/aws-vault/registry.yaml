@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ByteNess
+    repo_name: aws-vault
+    description: A vault for securely storing and accessing AWS credentials in development environments
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v7.3.5"
+        asset: aws-vault-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: aws-vault_sha256_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 7.3.4")
+        asset: aws-vault_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: aws-vault_{{trimV .Version}}_sha256_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: aws-vault_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: aws-vault-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: aws-vault_sha256_checksums.txt
+          algorithm: sha256

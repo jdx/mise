@@ -104,6 +104,9 @@ EOF
 	echo "Updated star count to $stars_formatted"
 fi
 
+# fetch-gpg-keys must run before render (which includes build) since it
+# recreates src/assets/gpg/ which is read at compile time via include_str!
+mise run fetch-gpg-keys
 mise run render ::: lint-fix
 
 # Capture current aqua-registry package list before updating
@@ -172,7 +175,8 @@ git add \
 	mise.usage.kdl \
 	completions \
 	mise.lock \
-	man/
+	man/ \
+	src/assets/gpg/
 git clean -df
 git checkout -B release
 git commit -m "chore: release $version"
