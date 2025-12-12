@@ -110,6 +110,7 @@ jobs:
       - run: mise i
       - name: Test tools
         id: test-tools
+        shell: bash # -eo pipefail for grep
         env:
           TEST_TRANCHE: ${{ matrix.tranche }}
           TEST_TRANCHE_COUNT: ${{ needs.list-changed-tools.outputs.tools == '' && 8 || 1 }}
