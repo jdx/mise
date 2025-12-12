@@ -166,10 +166,12 @@ async fn prompt_for_task() -> Result<Task> {
         .filtering(true)
         .filterable(true);
     for t in tasks.values().filter(|t| !t.hide) {
+        // Truncate description to first line only, like tasks ls does
+        let desc = t.description.lines().next().unwrap_or_default();
         s = s.option(
             DemandOption::new(&t.name)
                 .label(&t.display_name)
-                .description(&t.description),
+                .description(desc),
         );
     }
     ctrlc::show_cursor_after_ctrl_c();
