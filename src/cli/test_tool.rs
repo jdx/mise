@@ -85,6 +85,13 @@ impl TestTool {
                 }
             };
         }
+        if let Ok(github_summary) = env::var("GITHUB_STEP_SUMMARY") {
+            let mut content: String = "\n".into();
+            if !errored.is_empty() {
+                content.push_str(&format!("**Failed Tools**: {}\n", errored.join(", ")));
+            }
+            file::append(github_summary, content)?;
+        }
         if !errored.is_empty() {
             bail!("tools failed: {}", errored.join(", "));
         }

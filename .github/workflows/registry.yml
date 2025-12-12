@@ -109,12 +109,15 @@ jobs:
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise i
       - name: Test tools
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
-        with:
-          timeout_minutes: 30
-          retry_wait_seconds: 30
-          max_attempts: 2
-          command: mise test-tool ${{ needs.list-changed-tools.outputs.tools == '' && '--all' || needs.list-changed-tools.outputs.tools }}
+        id: test-tools
         env:
           TEST_TRANCHE: ${{ matrix.tranche }}
           TEST_TRANCHE_COUNT: ${{ needs.list-changed-tools.outputs.tools == '' && 8 || 1 }}
+        run: |
+          mise test-tool ${{ needs.list-changed-tools.outputs.tools == '' && '--all' || needs.list-changed-tools.outputs.tools }} || true
+          failed_tools=$(grep "Failed Tools:" "$GITHUB_STEP_SUMMARY" | sed 's/\*\*Failed Tools\*\*: //' | tr ',' ' ')
+          echo "failed_tools=$failed_tools" >> "$GITHUB_OUTPUT"
+
+      - name: Rerun failed tools
+        if: steps.test-tools.outputs.failed_tools != ''
+        run: mise test-tool ${{ steps.test-tools.outputs.failed_tools }}
