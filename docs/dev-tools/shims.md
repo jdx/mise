@@ -92,8 +92,8 @@ echo 'eval "$(mise activate zsh)"' >> ~/.zshrc    # this sets up interactive ses
 ```
 
 ```sh [fish]
-echo 'mise activate fish --shims | source' >> ~/.config/fish/config.fish
-echo 'mise activate fish | source' >> ~/.config/fish/fish.config
+echo 'if status is-login; mise activate fish --shims | source; end' >> ~/.config/fish/config.fish
+echo 'if status is-interactive; mise activate fish | source; end' >> ~/.config/fish/config.fish
 ```
 
 :::

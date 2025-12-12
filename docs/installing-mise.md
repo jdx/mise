@@ -311,8 +311,20 @@ See [about_Profiles](https://learn.microsoft.com/en-us/powershell/module/microso
 You will need to first create the parent directory if it does not exist.
 :::
 
+::: warning
+See [about_Execution_Policies](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies) docs to find your actual execution policy.
+You will need to use a policy more permissive than `Restricted` to run your profile.
+:::
+
 ```powershell
-echo 'mise activate pwsh | Out-String | Invoke-Expression' >> $HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1
+# Allow PoserShell Script Profile to be loaded
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+
+# Init a Profile if needed
+if (-not (Test-Path $Profile)) { New-Item $Profile -Force }
+
+# Add the activation line to the profile
+echo 'mise activate pwsh | Out-String | Invoke-Expression' >> $Profile
 ```
 
 ### Nushell

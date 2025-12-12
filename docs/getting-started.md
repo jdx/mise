@@ -148,14 +148,17 @@ Here is how you can activate `mise` depending on your shell and the installation
 
 ```sh [bash]
 echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc
+echo 'eval "$(~/.local/bin/mise activate bash --shims)"' >> ~/.bash_profile
 ```
 
 ```sh [zsh]
 echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
+echo 'eval "$(~/.local/bin/mise activate zsh --shims)"' >> ~/.zprofile
 ```
 
 ```sh [fish]
-echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
+echo 'if status is-interactive; ~/.local/bin/mise activate fish | source; end' >> ~/.config/fish/config.fish
+echo 'if status is-login; ~/.local/bin/mise activate fish --shims | source; end' >> ~/.config/fish/config.fish
 ```
 
 == Brew
@@ -178,6 +181,13 @@ echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
 == Windows
 
 ```powershell
+# create profile if it doesn't already exist
+if (-not (Test-Path $Profile)) { New-Item $Profile -Force }
+echo 'mise activate pwsh | Out-String | Invoke-Expression' >> $Profile
+
+# Allow PoserShell Script Profile to be loaded
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+
 $shimPath = "$env:USERPROFILE\AppData\Local\mise\shims"
 $currentPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 $newPath = $currentPath + ";" + $shimPath
