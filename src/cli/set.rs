@@ -141,11 +141,13 @@ impl Set {
         if let Some(mut env_vars) = self.env_vars.take() {
             // Prompt for values if requested
             if self.prompt {
+                let theme = crate::ui::theme::get_theme();
                 for ev in &mut env_vars {
                     if ev.value.is_none() {
                         let prompt_msg = format!("Enter value for {}", ev.key);
                         let value = Input::new(&prompt_msg)
                             .password(self.age_encrypt) // Mask input if encrypting
+                            .theme(&theme)
                             .run()?;
                         ev.value = Some(value);
                     }

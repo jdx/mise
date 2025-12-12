@@ -161,10 +161,12 @@ async fn prompt_for_task() -> Result<Task> {
         "no tasks defined. see {url}",
         url = style::eunderline("https://mise.jdx.dev/tasks/")
     );
+    let theme = crate::ui::theme::get_theme();
     let mut s = Select::new("Tasks")
         .description("Select a task to run")
         .filtering(true)
-        .filterable(true);
+        .filterable(true)
+        .theme(&theme);
     for t in tasks.values().filter(|t| !t.hide) {
         // Truncate description to first line only, like tasks ls does
         let desc = t.description.lines().next().unwrap_or_default();

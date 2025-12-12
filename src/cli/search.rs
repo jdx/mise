@@ -65,10 +65,12 @@ impl Search {
 
     fn interactive(&self) -> Result<()> {
         let tools = self.get_tools();
+        let theme = crate::ui::theme::get_theme();
         let mut s = Select::new("Tool")
             .description("Search a tool")
             .filtering(true)
-            .filterable(true);
+            .filterable(true)
+            .theme(&theme);
         for t in tools.iter() {
             let short = t.0.as_str();
             let description = get_description(t.1);

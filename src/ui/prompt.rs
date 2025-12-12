@@ -4,6 +4,7 @@ use demand::{Confirm, Dialog, DialogButton};
 
 use crate::env;
 use crate::ui::ctrlc;
+use crate::ui::theme::get_theme;
 
 static MUTEX: Mutex<()> = Mutex::new(());
 
@@ -16,7 +17,11 @@ pub fn confirm<S: Into<String>>(message: S) -> eyre::Result<bool> {
     if !console::user_attended_stderr() || env::__USAGE.is_some() {
         return Ok(false);
     }
-    let result = Confirm::new(message).clear_screen(true).run()?;
+    let theme = get_theme();
+    let result = Confirm::new(message)
+        .clear_screen(true)
+        .theme(&theme)
+        .run()?;
     Ok(result)
 }
 
@@ -33,6 +38,7 @@ pub fn confirm_with_all<S: Into<String>>(message: S) -> eyre::Result<bool> {
         return Ok(true);
     }
 
+    let theme = get_theme();
     let answer = Dialog::new(message)
         .buttons(vec![
             DialogButton::new("Yes"),
@@ -41,6 +47,7 @@ pub fn confirm_with_all<S: Into<String>>(message: S) -> eyre::Result<bool> {
         ])
         .selected_button(1)
         .clear_screen(true)
+        .theme(&theme)
         .run()?;
 
     let result = match answer.as_str() {

@@ -499,6 +499,12 @@
           "description": "Use color in mise terminal output",
           "type": "boolean"
         },
+        "color_theme": {
+          "default": "default",
+          "description": "Theme for interactive prompts (default/charm, base16, catppuccin, dracula)",
+          "type": "string",
+          "enum": ["default", "charm", "base16", "catppuccin", "dracula"]
+        },
         "debug": {
           "description": "Sets log level to debug",
           "type": "boolean"

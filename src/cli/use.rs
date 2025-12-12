@@ -306,10 +306,12 @@ impl Use {
         if !console::user_attended_stderr() {
             bail!("No tool specified and not running interactively");
         }
+        let theme = crate::ui::theme::get_theme();
         let mut s = demand::Select::new("Tools")
             .description("Select a tool to install")
             .filtering(true)
-            .filterable(true);
+            .filterable(true)
+            .theme(&theme);
         for rt in REGISTRY.values().unique_by(|r| r.short) {
             if let Some(backend) = rt.backends().first() {
                 // TODO: populate registry with descriptions from aqua and other sources

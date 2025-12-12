@@ -239,9 +239,11 @@ impl Upgrade {
 
     fn get_interactive_tool_set(&self, outdated: &Vec<OutdatedInfo>) -> Result<Vec<OutdatedInfo>> {
         ui::ctrlc::show_cursor_after_ctrl_c();
+        let theme = crate::ui::theme::get_theme();
         let mut ms = demand::MultiSelect::new("mise upgrade")
             .description("Select tools to upgrade")
-            .filterable(true);
+            .filterable(true)
+            .theme(&theme);
         for out in outdated {
             ms = ms.option(DemandOption::new(out.clone()));
         }
