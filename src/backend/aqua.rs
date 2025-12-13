@@ -128,31 +128,53 @@ impl Backend for AquaBackend {
             });
         }
         validate(&pkg)?;
+
+        // Check if URL already exists in lockfile platforms first
+        let platform_key = self.get_platform_key();
+        let existing_platform = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|asset| asset.url.clone());
+
+        // Validate existing lockfile URL if present
+        let validated_existing = if let Some(ref url) = existing_platform {
+            match HTTP.head(url).await {
+                Ok(_) => Some(url.clone()),
+                Err(_) => {
+                    debug!("lockfile URL failed validation, will regenerate: {}", url);
+                    // Clear stale platform info since URL is invalid
+                    tv.lock_platforms.remove(&platform_key);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         let (url, v, filename, api_digest) =
-            if let Some(existing_platform) = existing_platform.clone() {
-                let url = existing_platform;
-                let filename = get_filename_from_url(&url);
+            if let Some(ref existing_url) = validated_existing {
+                let filename = get_filename_from_url(&existing_url);
                 // Determine which version variant was used based on the URL or filename
                 // Check for version_prefix (e.g., "jq-" for jq), "v" prefix, or raw version
                 let v = if let Some(prefix) = &pkg.version_prefix {
                     let prefixed_version = format!("{prefix}{}", tv.version);
-                    if url.contains(&prefixed_version) || filename.contains(&prefixed_version) {
+                    if existing_url.contains(&prefixed_version) || filename.contains(&prefixed_version) {
                         prefixed_version
-                    } else if url.contains(&format!("v{}", tv.version))
+                    } else if existing_url.contains(&format!("v{}", tv.version))
                         || filename.contains(&format!("v{}", tv.version))
                     {
                         format!("v{}", tv.version)
                     } else {
                         tv.version.clone()
                     }
-                } else if url.contains(&format!("v{}", tv.version))
+                } else if existing_url.contains(&format!("v{}", tv.version))
                     || filename.contains(&format!("v{}", tv.version))
                 {
                     format!("v{}", tv.version)
                 } else {
                     tv.version.clone()
                 };
-                (url, v, filename, None)
+                (existing_url.clone(), v, filename, None)
             } else {
                 let (url, v, digest) = if let Some(v_prefixed) = v_prefixed {
                     // Try v-prefixed version first because most aqua packages use v-prefixed versions
@@ -189,8 +211,8 @@ impl Backend for AquaBackend {
 
         self.download(ctx, &tv, &url, &filename).await?;
 
-        if existing_platform.is_none() {
-            // Store the asset URL and digest (if available) in the tool version
+        // Store URL if it was newly generated or regenerated (lockfile URL failed validation)
+        if validated_existing.is_none() {
             let platform_info = tv.lock_platforms.entry(platform_key).or_default();
             platform_info.url = Some(url.clone());
             if let Some(digest) = api_digest {
