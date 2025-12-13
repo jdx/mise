@@ -410,16 +410,17 @@ impl HttpBackend {
 
         // Handle raw files with bin_path specially for deduplication
         if let ExtractionType::RawFile { filename } = extraction_type
-            && let Some(bin_path_template) = get_opt(opts, "bin_path") {
-                let bin_path = template_string(&bin_path_template, tv);
-                let dest_dir = install_path.join(&bin_path);
-                file::create_dir_all(&dest_dir)?;
+            && let Some(bin_path_template) = get_opt(opts, "bin_path")
+        {
+            let bin_path = template_string(&bin_path_template, tv);
+            let dest_dir = install_path.join(&bin_path);
+            file::create_dir_all(&dest_dir)?;
 
-                let cached_file = cache_path.join(filename);
-                let install_file = dest_dir.join(filename);
-                file::make_symlink(&cached_file, &install_file)?;
-                return Ok(());
-            }
+            let cached_file = cache_path.join(filename);
+            let install_file = dest_dir.join(filename);
+            file::make_symlink(&cached_file, &install_file)?;
+            return Ok(());
+        }
 
         // Default: symlink entire install path to cache
         file::make_symlink(&cache_path, &install_path)?;
