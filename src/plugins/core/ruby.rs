@@ -598,8 +598,8 @@ impl Backend for RubyPlugin {
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         // Try precompiled if experimental mode is enabled and compile is not explicitly true
-        if self.should_try_precompiled() {
-            if let Some(installed_tv) = self.install_precompiled(ctx, &tv).await? {
+        if self.should_try_precompiled()
+            && let Some(installed_tv) = self.install_precompiled(ctx, &tv).await? {
                 hint!(
                     "ruby_precompiled",
                     "installing precompiled ruby from jdx/ruby\n\
@@ -616,7 +616,6 @@ impl Backend for RubyPlugin {
                 return Ok(installed_tv);
             }
             // No precompiled available, fall through to compile from source
-        }
 
         // Compile from source
         if let Err(err) = self.update_build_tool(Some(ctx)).await {

@@ -993,7 +993,7 @@
               "type": "string"
             },
             "compile": {
-              "description": "[experimental] If true or unset, compile ruby from source. If false, use precompiled binaries.",
+              "description": "[experimental] Set to true to always compile ruby from source.",
               "type": "boolean"
             },
             "default_packages_file": {
