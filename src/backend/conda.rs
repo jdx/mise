@@ -452,7 +452,7 @@ impl Backend for CondaBackend {
         file::create_dir_all(&install_path)?;
 
         // Extract dependencies first (sequential to avoid conflicts)
-        for (name, _pkg) in &resolved {
+        for name in resolved.keys() {
             let tarball_path = &path_map[name];
             ctx.pr.set_message(format!("extract {name}"));
             self.extract_conda_package(ctx, tarball_path, &install_path)?;
