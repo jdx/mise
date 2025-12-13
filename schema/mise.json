@@ -992,9 +992,26 @@
               "description": "A list of patch files or URLs to apply to ruby source.",
               "type": "string"
             },
+            "compile": {
+              "description": "[experimental] Set to true to always compile ruby from source.",
+              "type": "boolean"
+            },
             "default_packages_file": {
               "default": "~/.default-gems",
               "description": "Path to a file containing default ruby gems to install when installing ruby.",
+              "type": "string"
+            },
+            "precompiled_arch": {
+              "description": "[experimental] Override architecture identifier for precompiled Ruby binaries.",
+              "type": "string"
+            },
+            "precompiled_os": {
+              "description": "[experimental] Override OS identifier for precompiled Ruby binaries.",
+              "type": "string"
+            },
+            "precompiled_url": {
+              "default": "jdx/ruby",
+              "description": "[experimental] URL template or GitHub repo for precompiled Ruby binaries.",
               "type": "string"
             },
             "ruby_build_opts": {

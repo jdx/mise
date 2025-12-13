@@ -24,6 +24,9 @@ use eyre::{Result, WrapErr};
 use itertools::Itertools;
 use xx::regex;
 
+use crate::github;
+use crate::hash;
+
 const RUBY_INDEX_URL: &str = "https://cache.ruby-lang.org/pub/ruby/index.txt";
 
 #[derive(Debug)]
@@ -379,6 +382,169 @@ impl RubyPlugin {
 
         Ok(None)
     }
+
+    // ===== Precompiled Ruby support =====
+
+    /// Check if precompiled binaries should be tried
+    /// Requires experimental=true and compile not explicitly set to true
+    fn should_try_precompiled(&self) -> bool {
+        let settings = Settings::get();
+        settings.experimental && settings.ruby.compile != Some(true)
+    }
+
+    /// Get platform identifier for precompiled binaries
+    /// Returns platform in jdx/ruby format: "macos", "arm64_linux", or "x86_64_linux"
+    fn precompiled_platform(&self) -> Option<String> {
+        let settings = Settings::get();
+
+        // Check for user overrides first
+        if let (Some(arch), Some(os)) = (
+            settings.ruby.precompiled_arch.as_deref(),
+            settings.ruby.precompiled_os.as_deref(),
+        ) {
+            return Some(format!("{}_{}", arch, os));
+        }
+
+        // Auto-detect platform
+        if cfg!(target_os = "macos") {
+            // macOS only supports arm64 and uses "macos" without arch prefix
+            match settings.arch() {
+                "arm64" | "aarch64" => Some("macos".to_string()),
+                _ => None,
+            }
+        } else if cfg!(target_os = "linux") {
+            // Linux uses arch_linux format
+            let arch = match settings.arch() {
+                "arm64" | "aarch64" => "arm64",
+                "x64" | "x86_64" => "x86_64",
+                _ => return None,
+            };
+            Some(format!("{}_linux", arch))
+        } else {
+            None
+        }
+    }
+
+    /// Get platform identifier for a specific target (used for lockfiles)
+    /// Returns platform in jdx/ruby format: "macos", "arm64_linux", or "x86_64_linux"
+    fn precompiled_platform_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        match target.os_name() {
+            "macos" => {
+                // macOS only supports arm64 and uses "macos" without arch prefix
+                match target.arch_name() {
+                    "arm64" | "aarch64" => Some("macos".to_string()),
+                    _ => None,
+                }
+            }
+            "linux" => {
+                // Linux uses arch_linux format
+                let arch = match target.arch_name() {
+                    "arm64" | "aarch64" => "arm64",
+                    "x64" | "x86_64" => "x86_64",
+                    _ => return None,
+                };
+                Some(format!("{}_linux", arch))
+            }
+            _ => None,
+        }
+    }
+
+    /// Render URL template with version and platform variables
+    fn render_precompiled_url(&self, template: &str, version: &str, platform: &str) -> String {
+        let (arch, os) = platform.split_once('_').unwrap_or((platform, ""));
+        template
+            .replace("{version}", version)
+            .replace("{platform}", platform)
+            .replace("{os}", os)
+            .replace("{arch}", arch)
+    }
+
+    /// Find precompiled asset from a GitHub repo's releases
+    async fn find_precompiled_asset_in_repo(
+        &self,
+        repo: &str,
+        version: &str,
+        platform: &str,
+    ) -> Result<Option<(String, Option<String>)>> {
+        let releases = github::list_releases(repo).await?;
+        let expected_name = format!("ruby-{}.{}.tar.gz", version, platform);
+
+        for release in releases {
+            for asset in release.assets {
+                if asset.name == expected_name {
+                    return Ok(Some((asset.browser_download_url, asset.digest)));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// Resolve precompiled binary URL and checksum for a given version and platform
+    async fn resolve_precompiled_url(
+        &self,
+        version: &str,
+        platform: &str,
+    ) -> Result<Option<(String, Option<String>)>> {
+        let settings = Settings::get();
+        let source = &settings.ruby.precompiled_url;
+
+        if source.contains("://") {
+            // Full URL template - no checksum available
+            Ok(Some((
+                self.render_precompiled_url(source, version, platform),
+                None,
+            )))
+        } else {
+            // GitHub repo shorthand (default: "jdx/ruby")
+            self.find_precompiled_asset_in_repo(source, version, platform)
+                .await
+        }
+    }
+
+    /// Try to install from precompiled binary
+    /// Returns Ok(None) if no precompiled version is available for this version/platform
+    async fn install_precompiled(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+    ) -> Result<Option<ToolVersion>> {
+        let Some(platform) = self.precompiled_platform() else {
+            return Ok(None);
+        };
+
+        let Some((url, checksum)) = self.resolve_precompiled_url(&tv.version, &platform).await?
+        else {
+            return Ok(None);
+        };
+
+        let filename = format!("ruby-{}.{}.tar.gz", tv.version, platform);
+        let tarball_path = tv.download_path().join(&filename);
+
+        ctx.pr.set_message(format!("download {}", filename));
+        HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
+            .await?;
+
+        if let Some(hash_str) = checksum.as_ref().and_then(|c| c.strip_prefix("sha256:")) {
+            ctx.pr.set_message(format!("checksum {}", filename));
+            hash::ensure_checksum(&tarball_path, hash_str, Some(ctx.pr.as_ref()), "sha256")?;
+        }
+
+        ctx.pr.set_message(format!("extract {}", filename));
+        let install_path = tv.install_path();
+        file::create_dir_all(&install_path)?;
+        file::untar(
+            &tarball_path,
+            &install_path,
+            &file::TarOptions {
+                format: file::TarFormat::TarGz,
+                strip_components: 1,
+                pr: Some(ctx.pr.as_ref()),
+                ..Default::default()
+            },
+        )?;
+
+        Ok(Some(tv.clone()))
+    }
 }
 
 #[async_trait]
@@ -429,6 +595,28 @@ impl Backend for RubyPlugin {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        // Try precompiled if experimental mode is enabled and compile is not explicitly true
+        if self.should_try_precompiled()
+            && let Some(installed_tv) = self.install_precompiled(ctx, &tv).await?
+        {
+            hint!(
+                "ruby_precompiled",
+                "installing precompiled ruby from jdx/ruby\n\
+                    if you experience issues, switch to ruby-build by running",
+                "mise settings ruby.compile=1"
+            );
+            self.install_rubygems_hook(&installed_tv)?;
+            if let Err(err) = self
+                .install_default_gems(&ctx.config, &installed_tv, ctx.pr.as_ref())
+                .await
+            {
+                warn!("failed to install default ruby gems {err:#}");
+            }
+            return Ok(installed_tv);
+        }
+        // No precompiled available, fall through to compile from source
+
+        // Compile from source
         if let Err(err) = self.update_build_tool(Some(ctx)).await {
             warn!("ruby build tool update error: {err:#}");
         }
@@ -484,9 +672,23 @@ impl Backend for RubyPlugin {
     async fn resolve_lock_info(
         &self,
         tv: &ToolVersion,
-        _target: &PlatformTarget,
+        target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
-        // Ruby is source code that compiles on any platform, so same tarball for all platforms
+        // Precompiled binary info if enabled
+        if self.should_try_precompiled()
+            && let Some(platform) = self.precompiled_platform_for_target(target)
+            && let Some((url, checksum)) =
+                self.resolve_precompiled_url(&tv.version, &platform).await?
+        {
+            return Ok(PlatformInfo {
+                url: Some(url),
+                checksum,
+                size: None,
+                url_api: None,
+            });
+        }
+
+        // Default: source tarball
         match self.get_ruby_download_info(&tv.version).await? {
             Some((url, checksum)) => Ok(PlatformInfo {
                 url: Some(url),
@@ -494,10 +696,7 @@ impl Backend for RubyPlugin {
                 size: None,
                 url_api: None,
             }),
-            None => {
-                // Non-MRI Ruby (jruby, truffleruby, etc.) - no lock info available
-                Ok(PlatformInfo::default())
-            }
+            None => Ok(PlatformInfo::default()),
         }
     }
 }
