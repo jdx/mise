@@ -386,11 +386,11 @@ impl RubyPlugin {
 
     // ===== Precompiled Ruby support =====
 
-    /// Check if precompiled binaries should be used
-    /// Requires BOTH: experimental=true AND compile=false
-    fn should_use_precompiled(&self) -> bool {
+    /// Check if precompiled binaries should be tried
+    /// Requires experimental=true and compile not explicitly set to true
+    fn should_try_precompiled(&self) -> bool {
         let settings = Settings::get();
-        settings.experimental && settings.ruby.compile == Some(false)
+        settings.experimental && settings.ruby.compile != Some(true)
     }
 
     /// Get platform identifier for precompiled binaries
@@ -503,20 +503,21 @@ impl RubyPlugin {
         }
     }
 
-    /// Install from precompiled binary
+    /// Try to install from precompiled binary
+    /// Returns Ok(None) if no precompiled version is available for this version/platform
     async fn install_precompiled(
         &self,
         ctx: &InstallContext,
         tv: &ToolVersion,
-    ) -> Result<ToolVersion> {
-        let platform = self
-            .precompiled_platform()
-            .ok_or_else(|| eyre::eyre!("No precompiled Ruby available for this platform"))?;
+    ) -> Result<Option<ToolVersion>> {
+        let Some(platform) = self.precompiled_platform() else {
+            return Ok(None);
+        };
 
-        let (url, checksum) = self
-            .resolve_precompiled_url(&tv.version, &platform)
-            .await?
-            .ok_or_else(|| eyre::eyre!("No precompiled Ruby {} for {}", tv.version, platform))?;
+        let Some((url, checksum)) = self.resolve_precompiled_url(&tv.version, &platform).await?
+        else {
+            return Ok(None);
+        };
 
         let filename = format!("ruby-{}.{}.tar.gz", tv.version, platform);
         let tarball_path = tv.download_path().join(&filename);
@@ -544,7 +545,7 @@ impl RubyPlugin {
             },
         )?;
 
-        Ok(tv.clone())
+        Ok(Some(tv.clone()))
     }
 }
 
@@ -596,20 +597,28 @@ impl Backend for RubyPlugin {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        // Use precompiled if explicitly enabled (requires experimental=true AND compile=false)
-        if self.should_use_precompiled() {
-            let installed_tv = self.install_precompiled(ctx, &tv).await?;
-            self.install_rubygems_hook(&installed_tv)?;
-            if let Err(err) = self
-                .install_default_gems(&ctx.config, &installed_tv, ctx.pr.as_ref())
-                .await
-            {
-                warn!("failed to install default ruby gems {err:#}");
+        // Try precompiled if experimental mode is enabled and compile is not explicitly true
+        if self.should_try_precompiled() {
+            if let Some(installed_tv) = self.install_precompiled(ctx, &tv).await? {
+                hint!(
+                    "ruby_precompiled",
+                    "installing precompiled ruby from jdx/ruby\n\
+                    if you experience issues, switch to ruby-build by running",
+                    "mise settings ruby.compile=1"
+                );
+                self.install_rubygems_hook(&installed_tv)?;
+                if let Err(err) = self
+                    .install_default_gems(&ctx.config, &installed_tv, ctx.pr.as_ref())
+                    .await
+                {
+                    warn!("failed to install default ruby gems {err:#}");
+                }
+                return Ok(installed_tv);
             }
-            return Ok(installed_tv);
+            // No precompiled available, fall through to compile from source
         }
 
-        // Default: compile from source
+        // Compile from source
         if let Err(err) = self.update_build_tool(Some(ctx)).await {
             warn!("ruby build tool update error: {err:#}");
         }
@@ -668,7 +677,7 @@ impl Backend for RubyPlugin {
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
         // Precompiled binary info if enabled
-        if self.should_use_precompiled()
+        if self.should_try_precompiled()
             && let Some(platform) = self.precompiled_platform_for_target(target)
             && let Some((url, checksum)) =
                 self.resolve_precompiled_url(&tv.version, &platform).await?

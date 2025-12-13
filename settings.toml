@@ -1084,16 +1084,19 @@ optional = true
 type = "String"
 
 [ruby.compile]
-description = "[experimental] If true or unset, compile ruby from source. If false, use precompiled binaries."
+description = "[experimental] Set to true to always compile ruby from source."
 docs = """
-Set to `false` to download precompiled Ruby binaries instead of compiling from source.
+Controls whether Ruby is compiled from source or downloaded as precompiled binaries.
 Requires `experimental = true` to be enabled.
 
-Example:
+- If unset or `false`: Try precompiled binaries first, fall back to compiling if unavailable
+- If `true`: Always compile from source using ruby-build
+
+Example to force compilation:
 ```toml
 [settings]
 experimental = true
-ruby.compile = false
+ruby.compile = true
 ```
 """
 env = "MISE_RUBY_COMPILE"
