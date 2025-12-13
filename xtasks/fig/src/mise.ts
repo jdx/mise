@@ -1590,6 +1590,12 @@ const completionSpec: Fig.Spec = {
           description: "Show all installed plugins and versions",
           isRepeatable: false,
         },
+        {
+          name: ["-J", "--json"],
+          description:
+            "Output in JSON format (includes version metadata like created_at timestamps when available)",
+          isRepeatable: false,
+        },
       ],
       args: [
         {

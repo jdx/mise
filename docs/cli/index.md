@@ -109,7 +109,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise link [-f --force] <TOOL@VERSION> <PATH>`](/cli/link.md)
 - [`mise lock [FLAGS] [TOOL]…`](/cli/lock.md)
 - [`mise ls [FLAGS] [INSTALLED_TOOL]…`](/cli/ls.md)
-- [`mise ls-remote [--all] [TOOL@VERSION] [PREFIX]`](/cli/ls-remote.md)
+- [`mise ls-remote [--all] [-J --json] [TOOL@VERSION] [PREFIX]`](/cli/ls-remote.md)
 - [`mise mcp`](/cli/mcp.md)
 - [`mise outdated [FLAGS] [TOOL@VERSION]…`](/cli/outdated.md)
 - [`mise plugins [FLAGS] <SUBCOMMAND>`](/cli/plugins.md)
