@@ -62,7 +62,7 @@ pub mod vfox;
 pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
-pub type VersionCacheManager = CacheManager<Vec<String>>;
+pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
 /// Information about a GitHub/GitLab release for platform-specific tools
 #[derive(Debug, Clone)]
@@ -77,6 +77,14 @@ pub struct GitHubReleaseInfo {
 pub enum ReleaseType {
     GitHub,
     GitLab,
+}
+
+/// Information about a tool version including optional metadata like creation time
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct VersionInfo {
+    pub version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
 }
 
 static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
@@ -293,6 +301,21 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     async fn list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+        Ok(self
+            .list_remote_versions_with_info(config)
+            .await?
+            .into_iter()
+            .map(|v| v.version)
+            .collect())
+    }
+
+    /// List remote versions with additional metadata like created_at timestamps.
+    /// Results are cached. Backends can override `_list_remote_versions_with_info`
+    /// to provide timestamp information.
+    async fn list_remote_versions_with_info(
+        &self,
+        config: &Arc<Config>,
+    ) -> eyre::Result<Vec<VersionInfo>> {
         let remote_versions = self.get_remote_version_cache();
         let remote_versions = remote_versions.lock().await;
         let ba = self.ba().clone();
@@ -300,8 +323,17 @@ pub trait Backend: Debug + Send + Sync {
         let versions = remote_versions
             .get_or_try_init_async(|| async {
                 trace!("Listing remote versions for {}", ba.to_string());
+                // Try versions host first (returns just version strings)
                 match versions_host::list_versions(&ba).await {
-                    Ok(Some(versions)) => return Ok(versions),
+                    Ok(Some(versions)) => {
+                        return Ok(versions
+                            .into_iter()
+                            .map(|v| VersionInfo {
+                                version: v,
+                                created_at: None,
+                            })
+                            .collect());
+                    }
                     Ok(None) => {}
                     Err(e) => {
                         debug!("Error getting versions from versions host: {:#}", e);
@@ -312,13 +344,13 @@ pub trait Backend: Debug + Send + Sync {
                     ba.to_string()
                 );
                 let versions = self
-                    ._list_remote_versions(config)
+                    ._list_remote_versions_with_info(config)
                     .await?
                     .into_iter()
-                    .filter(|v| match v.parse::<ToolVersionType>() {
+                    .filter(|v| match v.version.parse::<ToolVersionType>() {
                         Ok(ToolVersionType::Version(_)) => true,
                         _ => {
-                            warn!("Invalid version: {id}@{v}");
+                            warn!("Invalid version: {id}@{}", v.version);
                             false
                         }
                     })
@@ -331,7 +363,27 @@ pub trait Backend: Debug + Send + Sync {
             .await?;
         Ok(versions.clone())
     }
+
+    /// Backend implementation for fetching remote versions with metadata.
+    /// Default wraps `_list_remote_versions` with no timestamps.
+    /// Override this to provide timestamp information (e.g., aqua, github backends).
+    async fn _list_remote_versions_with_info(
+        &self,
+        config: &Arc<Config>,
+    ) -> eyre::Result<Vec<VersionInfo>> {
+        Ok(self
+            ._list_remote_versions(config)
+            .await?
+            .into_iter()
+            .map(|v| VersionInfo {
+                version: v,
+                created_at: None,
+            })
+            .collect())
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>>;
+
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
         self.latest_version(config, Some("latest".into())).await
     }

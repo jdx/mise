@@ -1,3 +1,4 @@
+use crate::backend::VersionInfo;
 use crate::backend::asset_detector;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
@@ -5,7 +6,7 @@ use crate::backend::static_helpers::{
     get_filename_from_url, install_artifact, lookup_platform_key, lookup_platform_key_for_target,
     template_string, try_with_v_prefix, verify_artifact,
 };
-use crate::cli::args::BackendArg;
+use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::Config;
 use crate::file;
 use crate::http::HTTP;
@@ -50,34 +51,62 @@ impl Backend for UnifiedGitBackend {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
+        Ok(self
+            ._list_remote_versions_with_info(config)
+            .await?
+            .into_iter()
+            .map(|v| v.version)
+            .collect())
+    }
+
+    async fn _list_remote_versions_with_info(
+        &self,
+        _config: &Arc<Config>,
+    ) -> Result<Vec<VersionInfo>> {
         let repo = self.ba.tool_name();
+        let id = self.ba.to_string();
         let opts = self.ba.opts();
         let api_url = self.get_api_url(&opts);
         let version_prefix = opts.get("version_prefix");
 
-        // Get tag names from either GitHub or GitLab
-        let tag_names: Vec<String> = if self.is_gitlab() {
+        // Get releases with full metadata from GitHub or GitLab
+        let raw_versions: Vec<VersionInfo> = if self.is_gitlab() {
             gitlab::list_releases_from_url(api_url.as_str(), &repo)
                 .await?
                 .into_iter()
-                .map(|r| r.tag_name)
+                .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
+                .map(|r| VersionInfo {
+                    version: self.strip_version_prefix(&r.tag_name),
+                    created_at: r.released_at,
+                })
                 .collect()
         } else {
             github::list_releases_from_url(api_url.as_str(), &repo)
                 .await?
                 .into_iter()
-                .map(|r| r.tag_name)
+                .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
+                .map(|r| VersionInfo {
+                    version: self.strip_version_prefix(&r.tag_name),
+                    created_at: Some(r.created_at),
+                })
                 .collect()
         };
 
-        // Apply common filtering and mapping
-        Ok(tag_names
+        // Apply common validation and reverse order
+        let versions = raw_versions
             .into_iter()
-            .filter(|tag| version_prefix.is_none_or(|p| tag.starts_with(p)))
-            .map(|tag| self.strip_version_prefix(&tag))
+            .filter(|v| match v.version.parse::<ToolVersionType>() {
+                Ok(ToolVersionType::Version(_)) => true,
+                _ => {
+                    warn!("Invalid version: {id}@{}", v.version);
+                    false
+                }
+            })
             .rev()
-            .collect())
+            .collect();
+
+        Ok(versions)
     }
 
     async fn install_version_(

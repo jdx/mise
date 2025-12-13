@@ -544,8 +544,9 @@ cmd ls help="List installed and active tool versions" {
 cmd ls-remote help="List runtime versions available for install." {
     alias list-all list-remote hide=#true
     long_help "List runtime versions available for install.\n\nNote that the results may be cached, run `mise cache clean` to clear the cache and get fresh results."
-    after_long_help "Examples:\n\n    $ mise ls-remote node\n    18.0.0\n    20.0.0\n\n    $ mise ls-remote node@20\n    20.0.0\n    20.1.0\n\n    $ mise ls-remote node 20\n    20.0.0\n    20.1.0\n"
+    after_long_help "Examples:\n\n    $ mise ls-remote node\n    18.0.0\n    20.0.0\n\n    $ mise ls-remote node@20\n    20.0.0\n    20.1.0\n\n    $ mise ls-remote node 20\n    20.0.0\n    20.1.0\n\n    $ mise ls-remote github:cli/cli --json\n    [{\"version\":\"2.62.0\",\"created_at\":\"2024-11-14T15:40:35Z\"},{\"version\":\"2.61.0\",\"created_at\":\"2024-10-23T19:22:15Z\"}]\n"
     flag --all help="Show all installed plugins and versions"
+    flag "-J --json" help="Output in JSON format (includes version metadata like created_at timestamps when available)"
     arg "[TOOL@VERSION]" help="Tool to get versions for" required=#false
     arg "[PREFIX]" help="The version prefix to use when querying the latest version\nsame as the first argument after the \"@\"" required=#false
 }

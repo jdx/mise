@@ -1,3 +1,4 @@
+use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
@@ -57,23 +58,74 @@ impl Backend for AquaBackend {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
-        let version_tags = self.get_version_tags().await;
-        let mut versions = Vec::new();
-        match version_tags {
-            Ok(tags) => {
-                for (v, tag) in tags.iter() {
-                    let pkg = AQUA_REGISTRY
-                        .package_with_version(&self.id, &[tag])
-                        .await
-                        .unwrap_or_default();
-                    if !pkg.no_asset && pkg.error_message.is_none() {
-                        versions.push(v.clone());
-                    }
-                }
-            }
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
+        Ok(self
+            ._list_remote_versions_with_info(config)
+            .await?
+            .into_iter()
+            .map(|v| v.version)
+            .collect())
+    }
+
+    async fn _list_remote_versions_with_info(
+        &self,
+        _config: &Arc<Config>,
+    ) -> Result<Vec<VersionInfo>> {
+        let pkg = match AQUA_REGISTRY.package(&self.id).await {
+            Ok(pkg) => pkg,
             Err(e) => {
                 warn!("Remote versions cannot be fetched: {}", e);
+                return Ok(vec![]);
+            }
+        };
+
+        if pkg.repo_owner.is_empty() || pkg.repo_name.is_empty() {
+            warn!(
+                "aqua package {} does not have repo_owner and/or repo_name.",
+                self.id
+            );
+            return Ok(vec![]);
+        }
+
+        let tags_with_timestamps = match get_tags_with_created_at(&pkg).await {
+            Ok(tags) => tags,
+            Err(e) => {
+                warn!("Remote versions cannot be fetched: {}", e);
+                return Ok(vec![]);
+            }
+        };
+
+        let mut versions = Vec::new();
+        for (tag, created_at) in tags_with_timestamps.into_iter().rev() {
+            let mut version = tag.as_str();
+            match pkg.version_filter_ok(version) {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(e) => {
+                    warn!("[{}] aqua version filter error: {e}", self.ba());
+                    continue;
+                }
+            }
+            let versioned_pkg = pkg.clone().with_version(&[version], os(), arch());
+            if let Some(prefix) = &versioned_pkg.version_prefix {
+                if let Some(_v) = version.strip_prefix(prefix) {
+                    version = _v;
+                } else {
+                    continue;
+                }
+            }
+            version = version.strip_prefix('v').unwrap_or(version);
+
+            // Validate the package has assets
+            let check_pkg = AQUA_REGISTRY
+                .package_with_version(&self.id, &[&tag])
+                .await
+                .unwrap_or_default();
+            if !check_pkg.no_asset && check_pkg.error_message.is_none() {
+                versions.push(VersionInfo {
+                    version: version.to_string(),
+                    created_at,
+                });
             }
         }
         Ok(versions)
@@ -1266,19 +1318,31 @@ impl AquaBackend {
 }
 
 async fn get_tags(pkg: &AquaPackage) -> Result<Vec<String>> {
-    if let Some("github_tag") = pkg.version_source.as_deref() {
-        let versions = github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
-        return Ok(versions);
-    }
-    let mut versions = github::list_releases(&format!("{}/{}", pkg.repo_owner, pkg.repo_name))
+    Ok(get_tags_with_created_at(pkg)
         .await?
         .into_iter()
-        .map(|r| r.tag_name)
-        .collect_vec();
-    if versions.is_empty() {
-        versions = github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
+        .map(|(tag, _)| tag)
+        .collect())
+}
+
+/// Get tags with optional created_at timestamps.
+/// Returns (tag_name, Option<created_at>) pairs.
+async fn get_tags_with_created_at(pkg: &AquaPackage) -> Result<Vec<(String, Option<String>)>> {
+    if let Some("github_tag") = pkg.version_source.as_deref() {
+        // Tags don't have created_at timestamps
+        let versions = github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
+        return Ok(versions.into_iter().map(|v| (v, None)).collect());
     }
-    Ok(versions)
+    let releases = github::list_releases(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
+    if releases.is_empty() {
+        // Fall back to tags (no timestamps)
+        let versions = github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
+        return Ok(versions.into_iter().map(|v| (v, None)).collect());
+    }
+    Ok(releases
+        .into_iter()
+        .map(|r| (r.tag_name, Some(r.created_at)))
+        .collect())
 }
 
 fn validate(pkg: &AquaPackage) -> Result<()> {

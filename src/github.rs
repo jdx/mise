@@ -19,7 +19,7 @@ pub struct GithubRelease {
     // pub body: Option<String>,
     pub draft: bool,
     pub prerelease: bool,
-    // pub created_at: String,
+    pub created_at: String,
     // pub published_at: Option<String>,
     pub assets: Vec<GithubAsset>,
 }

@@ -11,3 +11,17 @@ assert "mise ls-remote dummy 1" "1.0.0
 assert "mise ls-remote dummy@2" "2.0.0"
 assert "mise ls-remote dummy@sub-1:2" "1.0.0
 1.1.0"
+
+# Test --json flag outputs valid JSON with version field
+json_output=$(mise ls-remote dummy --json)
+assert_contains "echo '$json_output'" '"version"'
+
+# Test -J short flag works the same as --json
+json_output_short=$(mise ls-remote dummy -J)
+assert_contains "echo '$json_output_short'" '"version"'
+
+# Test JSON output for GitHub backend includes created_at
+# Using a real GitHub tool to verify created_at timestamps are included
+if github_json=$(mise ls-remote github:jdx/mise --json 2>/dev/null | head -1); then
+	assert_contains "echo '$github_json'" '"created_at"'
+fi
