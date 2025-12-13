@@ -1,5 +1,24 @@
 # Changelog
 
+## [2025.12.5](https://github.com/jdx/mise/compare/v2025.12.4..v2025.12.5) - 2025-12-13
+
+### 🚀 Features
+
+- **(ls-remote)** add --json flag with created_at timestamps by @jdx in [#7279](https://github.com/jdx/mise/pull/7279)
+
+### 🐛 Bug Fixes
+
+- **(config)** respect MISE_CONFIG_DIR when set to non-default location by @jdx in [#7271](https://github.com/jdx/mise/pull/7271)
+- **(http)** move http-tarballs from cache to data directory by @jdx in [#7273](https://github.com/jdx/mise/pull/7273)
+- **(pipx)** expand wildcards in install command for backend tools by @jdx in [#7275](https://github.com/jdx/mise/pull/7275)
+- **(tasks)** position-based flag parsing for `mise run` by @jdx in [#7278](https://github.com/jdx/mise/pull/7278)
+- **(tera)** handle empty strings in path filters by @jdx in [#7276](https://github.com/jdx/mise/pull/7276)
+- **(vfox)** make mise_env and mise_path hooks optional by @jdx in [#7274](https://github.com/jdx/mise/pull/7274)
+
+### 📚 Documentation
+
+- **(ruby)** add precompiled binaries documentation by @jdx in [#7269](https://github.com/jdx/mise/pull/7269)
+
 ## [2025.12.4](https://github.com/jdx/mise/compare/v2025.12.3..v2025.12.4) - 2025-12-13
 
 ### 🚀 Features
