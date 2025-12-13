@@ -983,6 +983,9 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
         .into_iter()
         .unique_by(|p| file::desymlink_path(p))
         .filter(|p| {
+            if is_default_config_dir_override_filtered(p) {
+                return false;
+            }
             include_ignored
                 || !(config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p))
         })
@@ -1027,7 +1030,12 @@ pub fn load_config_hierarchy_from_dir(start_dir: &Path) -> Result<Vec<PathBuf>> 
     let paths = config_files
         .into_iter()
         .unique_by(|p| file::desymlink_path(p))
-        .filter(|p| !(config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p)))
+        .filter(|p| {
+            if is_default_config_dir_override_filtered(p) {
+                return false;
+            }
+            !(config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p))
+        })
         .collect();
 
     Ok(paths)
@@ -1035,6 +1043,16 @@ pub fn load_config_hierarchy_from_dir(start_dir: &Path) -> Result<Vec<PathBuf>> 
 
 pub fn is_global_config(path: &Path) -> bool {
     global_config_files().contains(path) || system_config_files().contains(path)
+}
+
+/// Returns true if the path should be filtered out due to MISE_CONFIG_DIR override.
+/// When MISE_CONFIG_DIR is set to a non-default location, this filters out configs
+/// found under the default location (~/.config/mise) during traversal.
+/// See: https://github.com/jdx/mise/discussions/7015
+fn is_default_config_dir_override_filtered(path: &Path) -> bool {
+    *env::MISE_CONFIG_DIR_OVERRIDDEN
+        && !global_config_files().contains(path)
+        && path.starts_with(&*env::MISE_DEFAULT_CONFIG_DIR)
 }
 
 static GLOBAL_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);

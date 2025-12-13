@@ -107,6 +107,13 @@ pub static MISE_CACHE_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_CACHE_DIR").unwrap_or_else(|| XDG_CACHE_HOME.join("mise")));
 pub static MISE_CONFIG_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_CONFIG_DIR").unwrap_or_else(|| XDG_CONFIG_HOME.join("mise")));
+/// The default config directory location (XDG_CONFIG_HOME/mise), used to filter out
+/// configs from this location when MISE_CONFIG_DIR is set to a different path
+pub static MISE_DEFAULT_CONFIG_DIR: Lazy<PathBuf> = Lazy::new(|| XDG_CONFIG_HOME.join("mise"));
+/// True if MISE_CONFIG_DIR was explicitly set to a non-default location
+pub static MISE_CONFIG_DIR_OVERRIDDEN: Lazy<bool> = Lazy::new(|| {
+    var_path("MISE_CONFIG_DIR").is_some() && *MISE_CONFIG_DIR != *MISE_DEFAULT_CONFIG_DIR
+});
 pub static MISE_DATA_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_DATA_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("mise")));
 pub static MISE_STATE_DIR: Lazy<PathBuf> =

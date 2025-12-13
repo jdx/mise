@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Test that MISE_CONFIG_DIR properly overrides the default config location
+# When MISE_CONFIG_DIR is set to a custom location, configs from the default
+# location (~/.config/mise) should NOT be loaded during directory traversal.
+# See: https://github.com/jdx/mise/discussions/7015
+
+# Create a custom config directory
+CUSTOM_CONFIG_DIR="$HOME/.mise-custom"
+mkdir -p "$CUSTOM_CONFIG_DIR"
+
+# Create config in the custom location
+cat >"$CUSTOM_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+
+# Create config in the DEFAULT location (~/.config/mise) which should be ignored
+# when MISE_CONFIG_DIR is overridden
+mkdir -p "$HOME/.config/mise"
+cat >"$HOME/.config/mise/config.toml" <<'EOF'
+[tools]
+dummy = "2.0.0"
+EOF
+
+# Set MISE_CONFIG_DIR to custom location and verify only custom config is loaded
+export MISE_CONFIG_DIR="$CUSTOM_CONFIG_DIR"
+
+# The config list should show ONLY the custom config, not the default location
+# Note: mise uses ~ shorthand in output, so check for that
+assert_contains "mise config ls" ".mise-custom/config.toml"
+
+# Should NOT contain the default config location
+assert_not_contains "mise config ls" ".config/mise/config.toml"
+
+# Verify the correct tool version is used (1.0.0 from custom, not 2.0.0 from default)
+mise install
+assert_contains "mise x -- dummy" "1.0.0"
