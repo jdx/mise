@@ -24,6 +24,35 @@ from source. Ensure that you have the necessary
 You can check its [README](https://github.com/rbenv/ruby-build/blob/master/README.md) for additional settings and some
 troubleshooting.
 
+## Precompiled Binaries <Badge type="warning" text="experimental" />
+
+With `experimental = true` enabled, mise can download precompiled Ruby binaries instead of
+compiling from source. This significantly reduces installation time.
+
+```sh
+mise settings experimental=true
+mise use ruby@3.4.1
+```
+
+Precompiled binaries are sourced from [jdx/ruby](https://github.com/jdx/ruby) and are available
+for the following platforms:
+
+- macOS (arm64/Apple Silicon only)
+- Linux arm64
+- Linux x86_64
+
+If a precompiled binary is not available for your platform or Ruby version, mise automatically
+falls back to compiling from source using ruby-build.
+
+To always compile from source even when precompiled binaries are available:
+
+```sh
+mise settings ruby.compile=true
+```
+
+You can also use a custom source for precompiled binaries by setting `ruby.precompiled_url` to
+either a GitHub repo (e.g., `owner/repo`) or a full URL template.
+
 You can also install a specific ruby flavour. To get the latest version from a flavour, just use the
 flavour prefix.
 
