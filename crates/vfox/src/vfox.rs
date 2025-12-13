@@ -208,6 +208,9 @@ impl Vfox {
 
     pub async fn mise_env<T: serde::Serialize>(&self, sdk: &str, opts: T) -> Result<Vec<EnvKey>> {
         let plugin = self.get_sdk(sdk)?;
+        if !plugin.get_metadata()?.hooks.contains("mise_env") {
+            return Ok(vec![]);
+        }
         let ctx = MiseEnvContext {
             args: vec![],
             options: opts,
@@ -258,6 +261,9 @@ impl Vfox {
 
     pub async fn mise_path<T: serde::Serialize>(&self, sdk: &str, opts: T) -> Result<Vec<String>> {
         let plugin = self.get_sdk(sdk)?;
+        if !plugin.get_metadata()?.hooks.contains("mise_path") {
+            return Ok(vec![]);
+        }
         let ctx = MisePathContext {
             args: vec![],
             options: opts,
