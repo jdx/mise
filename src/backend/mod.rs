@@ -79,6 +79,14 @@ pub enum ReleaseType {
     GitLab,
 }
 
+/// Information about a tool version including optional metadata like creation time
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct VersionInfo {
+    pub version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+}
+
 static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
 
 pub async fn load_tools() -> Result<Arc<BackendMap>> {
@@ -332,6 +340,24 @@ pub trait Backend: Debug + Send + Sync {
         Ok(versions.clone())
     }
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>>;
+
+    /// List remote versions with additional metadata like created_at timestamps.
+    /// Default implementation returns versions without timestamps.
+    /// Backends can override this to provide timestamp information.
+    async fn list_remote_versions_with_info(
+        &self,
+        config: &Arc<Config>,
+    ) -> eyre::Result<Vec<VersionInfo>> {
+        let versions = self.list_remote_versions(config).await?;
+        Ok(versions
+            .into_iter()
+            .map(|v| VersionInfo {
+                version: v,
+                created_at: None,
+            })
+            .collect())
+    }
+
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
         self.latest_version(config, Some("latest".into())).await
     }

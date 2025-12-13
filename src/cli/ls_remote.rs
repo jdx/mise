@@ -27,6 +27,10 @@ pub struct LsRemote {
     /// Show all installed plugins and versions
     #[clap(long, verbatim_doc_comment, conflicts_with_all = ["plugin", "prefix"])]
     pub all: bool,
+
+    /// Output in JSON format (includes version metadata like created_at timestamps when available)
+    #[clap(short = 'J', long, verbatim_doc_comment)]
+    pub json: bool,
 }
 
 impl LsRemote {
@@ -51,32 +55,66 @@ impl LsRemote {
             _ => self.prefix.clone(),
         };
 
-        let versions = plugin.list_remote_versions(config).await?;
-        let versions = match prefix {
-            Some(prefix) => versions
-                .into_iter()
-                .filter(|v| v.starts_with(&prefix))
-                .collect(),
-            None => versions,
-        };
+        if self.json {
+            let versions = plugin.list_remote_versions_with_info(config).await?;
+            let versions = match prefix {
+                Some(prefix) => versions
+                    .into_iter()
+                    .filter(|v| v.version.starts_with(&prefix))
+                    .collect(),
+                None => versions,
+            };
 
-        for version in versions {
-            miseprintln!("{}", version);
+            for version_info in versions {
+                miseprintln!("{}", serde_json::to_string(&version_info)?);
+            }
+        } else {
+            let versions = plugin.list_remote_versions(config).await?;
+            let versions = match prefix {
+                Some(prefix) => versions
+                    .into_iter()
+                    .filter(|v| v.starts_with(&prefix))
+                    .collect(),
+                None => versions,
+            };
+
+            for version in versions {
+                miseprintln!("{}", version);
+            }
         }
 
         Ok(())
     }
 
     async fn run_all(self, config: &Arc<Config>) -> Result<()> {
-        let mut versions = vec![];
-        for b in backend::list() {
-            let v = b.list_remote_versions(config).await?;
-            versions.extend(v.into_iter().map(|v| (b.id().to_string(), v)));
-        }
-        versions.sort_by_cached_key(|(id, _)| id.to_string());
+        if self.json {
+            let mut versions = vec![];
+            for b in backend::list() {
+                let v = b.list_remote_versions_with_info(config).await?;
+                versions.extend(v.into_iter().map(|v| (b.id().to_string(), v)));
+            }
+            versions.sort_by_cached_key(|(id, _)| id.to_string());
 
-        for (tool, v) in versions {
-            miseprintln!("{tool}@{v}");
+            for (tool, version_info) in versions {
+                // Add tool field to the output
+                let output = serde_json::json!({
+                    "tool": tool,
+                    "version": version_info.version,
+                    "created_at": version_info.created_at,
+                });
+                miseprintln!("{}", serde_json::to_string(&output)?);
+            }
+        } else {
+            let mut versions = vec![];
+            for b in backend::list() {
+                let v = b.list_remote_versions(config).await?;
+                versions.extend(v.into_iter().map(|v| (b.id().to_string(), v)));
+            }
+            versions.sort_by_cached_key(|(id, _)| id.to_string());
+
+            for (tool, v) in versions {
+                miseprintln!("{tool}@{v}");
+            }
         }
         Ok(())
     }
@@ -110,5 +148,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise ls-remote node 20</bold>
     20.0.0
     20.1.0
+
+    $ <bold>mise ls-remote github:cli/cli --json</bold>
+    {"version":"2.62.0","created_at":"2024-11-14T15:40:35Z"}
+    {"version":"2.61.0","created_at":"2024-10-23T19:22:15Z"}
 "#
 );

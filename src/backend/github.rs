@@ -1,3 +1,4 @@
+use crate::backend::VersionInfo;
 use crate::backend::asset_detector;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
@@ -78,6 +79,45 @@ impl Backend for UnifiedGitBackend {
             .map(|tag| self.strip_version_prefix(&tag))
             .rev()
             .collect())
+    }
+
+    async fn list_remote_versions_with_info(
+        &self,
+        _config: &Arc<Config>,
+    ) -> Result<Vec<VersionInfo>> {
+        let repo = self.ba.tool_name();
+        let opts = self.ba.opts();
+        let api_url = self.get_api_url(&opts);
+        let version_prefix = opts.get("version_prefix");
+
+        // Get releases with full metadata from GitHub or GitLab
+        let versions: Vec<VersionInfo> = if self.is_gitlab() {
+            // GitLab doesn't have created_at in releases, use default implementation
+            gitlab::list_releases_from_url(api_url.as_str(), &repo)
+                .await?
+                .into_iter()
+                .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
+                .map(|r| VersionInfo {
+                    version: self.strip_version_prefix(&r.tag_name),
+                    created_at: None,
+                })
+                .rev()
+                .collect()
+        } else {
+            // GitHub has created_at on releases
+            github::list_releases_from_url(api_url.as_str(), &repo)
+                .await?
+                .into_iter()
+                .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
+                .map(|r| VersionInfo {
+                    version: self.strip_version_prefix(&r.tag_name),
+                    created_at: Some(r.created_at),
+                })
+                .rev()
+                .collect()
+        };
+
+        Ok(versions)
     }
 
     async fn install_version_(
