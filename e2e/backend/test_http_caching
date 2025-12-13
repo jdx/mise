@@ -4,7 +4,8 @@
 # This test verifies that the same tarball is reused when multiple tools use it
 
 # First, let's check if the cache directory exists and is empty
-CACHE_DIR="$HOME/.cache/mise/http-tarballs"
+# Note: http-tarballs is stored in DATA dir (not CACHE) to survive `mise cache clear`
+CACHE_DIR="$HOME/.local/share/mise/http-tarballs"
 if [ -d "$CACHE_DIR" ]; then
 	echo "Clearing existing HTTP cache..."
 	rm -rf "$CACHE_DIR"
