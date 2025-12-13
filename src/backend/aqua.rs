@@ -58,26 +58,13 @@ impl Backend for AquaBackend {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
-        let version_tags = self.get_version_tags().await;
-        let mut versions = Vec::new();
-        match version_tags {
-            Ok(tags) => {
-                for (v, tag) in tags.iter() {
-                    let pkg = AQUA_REGISTRY
-                        .package_with_version(&self.id, &[tag])
-                        .await
-                        .unwrap_or_default();
-                    if !pkg.no_asset && pkg.error_message.is_none() {
-                        versions.push(v.clone());
-                    }
-                }
-            }
-            Err(e) => {
-                warn!("Remote versions cannot be fetched: {}", e);
-            }
-        }
-        Ok(versions)
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
+        Ok(self
+            .list_remote_versions_with_info(config)
+            .await?
+            .into_iter()
+            .map(|v| v.version)
+            .collect())
     }
 
     async fn list_remote_versions_with_info(
