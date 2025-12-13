@@ -1,3 +1,4 @@
+use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{lookup_platform_key, try_with_v_prefix};
@@ -107,6 +108,102 @@ impl Backend for UbiBackend {
                 .rev()
                 .collect())
         }
+    }
+
+    async fn list_remote_versions_with_info(
+        &self,
+        _config: &Arc<Config>,
+    ) -> eyre::Result<Vec<VersionInfo>> {
+        if name_is_url(&self.tool_name()) {
+            return Ok(vec![VersionInfo {
+                version: "latest".to_string(),
+                created_at: None,
+            }]);
+        }
+
+        let opts = self.ba.opts();
+        let forge = match opts.get("provider") {
+            Some(forge) => ForgeType::from_str(forge)?,
+            None => ForgeType::default(),
+        };
+        let api_url = match opts.get("api_url") {
+            Some(api_url) => api_url.strip_suffix("/").unwrap_or(api_url),
+            None => match forge {
+                ForgeType::GitHub => github::API_URL,
+                ForgeType::GitLab => gitlab::API_URL,
+                _ => bail!("Unsupported forge type {:?}", forge),
+            },
+        };
+        let tag_regex = OnceLock::new();
+
+        let mut versions: Vec<VersionInfo> = match forge {
+            ForgeType::GitHub => github::list_releases_from_url(api_url, &self.tool_name())
+                .await?
+                .into_iter()
+                .map(|r| VersionInfo {
+                    version: r.tag_name,
+                    created_at: Some(r.created_at),
+                })
+                .collect(),
+            ForgeType::GitLab => gitlab::list_releases_from_url(api_url, &self.tool_name())
+                .await?
+                .into_iter()
+                .map(|r| VersionInfo {
+                    version: r.tag_name,
+                    created_at: r.released_at,
+                })
+                .collect(),
+            _ => bail!("Unsupported forge type {:?}", forge),
+        };
+
+        if versions.is_empty() {
+            // Fall back to tags (no timestamps)
+            match forge {
+                ForgeType::GitHub => {
+                    versions = github::list_tags_from_url(api_url, &self.tool_name())
+                        .await?
+                        .into_iter()
+                        .map(|v| VersionInfo {
+                            version: v,
+                            created_at: None,
+                        })
+                        .collect();
+                }
+                ForgeType::GitLab => {
+                    versions = gitlab::list_tags_from_url(api_url, &self.tool_name())
+                        .await?
+                        .into_iter()
+                        .map(|v| VersionInfo {
+                            version: v,
+                            created_at: None,
+                        })
+                        .collect();
+                }
+                _ => bail!("Unsupported forge type {:?}", forge),
+            }
+        }
+
+        Ok(versions
+            .into_iter()
+            .filter(|v| {
+                if let Some(re) = opts.get("tag_regex") {
+                    let re = tag_regex.get_or_init(|| Regex::new(re).unwrap());
+                    re.is_match(&v.version)
+                } else {
+                    true
+                }
+            })
+            // trim 'v' prefixes if they exist
+            .map(|v| VersionInfo {
+                version: match regex!(r"^v[0-9]").is_match(&v.version) {
+                    true => v.version[1..].to_string(),
+                    false => v.version,
+                },
+                created_at: v.created_at,
+            })
+            .sorted_by_cached_key(|v| !regex!(r"^[0-9]").is_match(&v.version))
+            .rev()
+            .collect())
     }
 
     async fn install_version_(
