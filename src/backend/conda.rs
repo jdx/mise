@@ -159,20 +159,21 @@ impl CondaBackend {
         // Wildcard pattern like "6.9.*" -> matches "6.9.anything"
         if let Some(prefix) = spec.strip_suffix(".*")
             && version.starts_with(prefix)
-                && version
-                    .chars()
-                    .nth(prefix.len())
-                    .map(|c| c == '.')
-                    .unwrap_or(false)
-            {
-                return true;
-            }
+            && version
+                .chars()
+                .nth(prefix.len())
+                .map(|c| c == '.')
+                .unwrap_or(false)
+        {
+            return true;
+        }
 
         // Single wildcard like "6.*" matches "6.anything"
         if let Some(prefix) = spec.strip_suffix('*')
-            && version.starts_with(prefix) {
-                return true;
-            }
+            && version.starts_with(prefix)
+        {
+            return true;
+        }
 
         // Prefix match (e.g., "1.7" matches "1.7.1")
         if version.starts_with(spec)
