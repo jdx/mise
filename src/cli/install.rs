@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::cli::args::ToolArg;
@@ -74,13 +76,45 @@ impl Install {
         runtimes: &[ToolArg],
         original_tool_args: Vec<ToolArg>,
     ) -> Result<()> {
-        let tools = runtimes.iter().map(|ta| ta.ba.short.clone()).collect();
-        let mut ts = config
-            .get_tool_request_set()
-            .await?
-            .filter_by_tool(tools)
-            .into();
-        let tool_versions = self.get_requested_tool_versions(&ts, runtimes)?;
+        let trs = config.get_tool_request_set().await?;
+
+        // Expand wildcards (e.g., "pipx:*") to actual ToolArgs from config
+        let mut has_unmatched_wildcard = false;
+        let expanded_runtimes: Vec<ToolArg> = runtimes
+            .iter()
+            .flat_map(|ta| {
+                if let Some(backend_prefix) = ta.ba.short.strip_suffix(":*") {
+                    // Find all tools in config with this backend prefix
+                    let matching: Vec<_> = trs
+                        .tools
+                        .keys()
+                        .filter(|ba| {
+                            ba.short.starts_with(&format!("{backend_prefix}:"))
+                                && ba.tool_name != "*"
+                        })
+                        .filter_map(|ba| ToolArg::from_str(&ba.short).ok())
+                        .collect();
+                    if matching.is_empty() {
+                        warn!("no tools found in config matching {}", ta.ba.short);
+                        has_unmatched_wildcard = true;
+                    }
+                    return matching;
+                }
+                vec![ta.clone()]
+            })
+            .collect();
+
+        // If only wildcards were provided and none matched, exit early
+        if expanded_runtimes.is_empty() && has_unmatched_wildcard {
+            return Ok(());
+        }
+
+        let tools: HashSet<String> = expanded_runtimes
+            .iter()
+            .map(|ta| ta.ba.short.clone())
+            .collect();
+        let mut ts: Toolset = trs.filter_by_tool(tools).into();
+        let tool_versions = self.get_requested_tool_versions(&ts, &expanded_runtimes)?;
         let mut versions = if tool_versions.is_empty() {
             warn!("no runtimes to install");
             warn!("specify a version with `mise install <PLUGIN>@<VERSION>`");
@@ -134,26 +168,24 @@ impl Install {
                 // user provided an explicit version
                 Some(tv) => requests.push(tv),
                 None => {
-                    if ta.tvr.is_none() {
-                        match ts.versions.get(ta.ba.as_ref()) {
-                            // the tool is in config so fetch the params from config
-                            // this may match multiple versions of one tool (e.g.: python)
-                            Some(tvl) => {
-                                for tvr in &tvl.requests {
-                                    requests.push(tvr.clone());
-                                }
+                    match ts.versions.get(ta.ba.as_ref()) {
+                        // the tool is in config so fetch the params from config
+                        // this may match multiple versions of one tool (e.g.: python)
+                        Some(tvl) => {
+                            for tvr in &tvl.requests {
+                                requests.push(tvr.clone());
                             }
-                            // in this case the user specified a tool which is not in config
-                            // so we default to @latest with no options
-                            None => {
-                                let tvr = ToolRequest::Version {
-                                    backend: ta.ba.clone(),
-                                    version: "latest".into(),
-                                    options: ta.ba.opts(),
-                                    source: ToolSource::Argument,
-                                };
-                                requests.push(tvr);
-                            }
+                        }
+                        // in this case the user specified a tool which is not in config
+                        // so we default to @latest with no options
+                        None => {
+                            let tvr = ToolRequest::Version {
+                                backend: ta.ba.clone(),
+                                version: "latest".into(),
+                                options: ta.ba.opts(),
+                                source: ToolSource::Argument,
+                            };
+                            requests.push(tvr);
                         }
                     }
                 }
