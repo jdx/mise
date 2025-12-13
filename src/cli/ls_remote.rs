@@ -1,12 +1,22 @@
 use std::sync::Arc;
 
 use eyre::Result;
+use serde::Serialize;
 
 use crate::backend::Backend;
 use crate::cli::args::ToolArg;
 use crate::toolset::{ToolRequest, tool_request};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{backend, config::Config};
+
+/// Output struct for --all --json mode with consistent null handling
+#[derive(Serialize)]
+struct VersionOutputAll {
+    tool: String,
+    version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    created_at: Option<String>,
+}
 
 /// List runtime versions available for install.
 ///
@@ -85,11 +95,11 @@ impl LsRemote {
 
         for (tool, version_info) in versions {
             if self.json {
-                let output = serde_json::json!({
-                    "tool": tool,
-                    "version": version_info.version,
-                    "created_at": version_info.created_at,
-                });
+                let output = VersionOutputAll {
+                    tool,
+                    version: version_info.version,
+                    created_at: version_info.created_at,
+                };
                 miseprintln!("{}", serde_json::to_string(&output)?);
             } else {
                 miseprintln!("{}@{}", tool, version_info.version);
