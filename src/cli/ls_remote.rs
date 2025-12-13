@@ -64,7 +64,7 @@ impl LsRemote {
             },
             _ => self.prefix.clone(),
         };
-        let matches_prefix = |v: &str| prefix.as_ref().map_or(true, |p| v.starts_with(p));
+        let matches_prefix = |v: &str| prefix.as_ref().is_none_or(|p| v.starts_with(p));
 
         // Both JSON and non-JSON modes use cached list_remote_versions_with_info
         for v in plugin.list_remote_versions_with_info(config).await? {
