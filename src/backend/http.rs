@@ -31,6 +31,15 @@ struct CacheMetadata {
     platform: String,
 }
 
+/// Describes what type of content was extracted to cache
+#[derive(Debug, Clone)]
+enum ExtractionType {
+    /// A single raw file (not an archive) with its filename
+    RawFile { filename: String },
+    /// An archive (tarball, zip, etc.) that was extracted
+    Archive,
+}
+
 #[derive(Debug)]
 pub struct HttpBackend {
     ba: Arc<BackendArg>,
@@ -39,6 +48,64 @@ pub struct HttpBackend {
 impl HttpBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
+    }
+
+    /// Determine the extraction type and filename from a downloaded file
+    /// This is used both during extraction and when using cached content
+    fn get_extraction_type(&self, file_path: &Path, opts: &ToolVersionOptions) -> ExtractionType {
+        // Handle `format` config to determine the effective file extension
+        let file_path_with_ext = if let Some(added_extension) =
+            lookup_platform_key(opts, "format").or_else(|| opts.get("format").cloned())
+        {
+            let mut file_path = file_path.to_path_buf();
+            let current_ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let new_ext = if current_ext.is_empty() {
+                added_extension.clone()
+            } else {
+                format!("{}.{}", current_ext, added_extension)
+            };
+            file_path.set_extension(new_ext);
+            file_path
+        } else {
+            file_path.to_path_buf()
+        };
+
+        let ext = file_path_with_ext
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        let format = file::TarFormat::from_ext(ext);
+        let file_name = file_path_with_ext.file_name().unwrap().to_string_lossy();
+        let is_compressed_binary =
+            !file_name.contains(".tar") && matches!(ext, "gz" | "xz" | "bz2" | "zst");
+
+        if is_compressed_binary {
+            let decompressed_name = file_name.trim_end_matches(&format!(".{}", ext));
+            let dest_filename = if let Some(bin_name) =
+                lookup_platform_key(opts, "bin").or_else(|| opts.get("bin").cloned())
+            {
+                bin_name
+            } else {
+                clean_binary_name(decompressed_name, Some(&self.ba.tool_name))
+            };
+            ExtractionType::RawFile {
+                filename: dest_filename,
+            }
+        } else if format == file::TarFormat::Raw {
+            let dest_filename = if let Some(bin_name) =
+                lookup_platform_key(opts, "bin").or_else(|| opts.get("bin").cloned())
+            {
+                bin_name
+            } else {
+                let original_name = file_path.file_name().unwrap().to_string_lossy();
+                clean_binary_name(&original_name, Some(&self.ba.tool_name))
+            };
+            ExtractionType::RawFile {
+                filename: dest_filename,
+            }
+        } else {
+            ExtractionType::Archive
+        }
     }
 
     /// Generate a cache key based on the actual file content (checksum) and extraction options
@@ -50,19 +117,14 @@ impl HttpBackend {
         let checksum = hash::file_hash_blake3(file_path, None)?;
 
         // Include extraction options in cache key to handle different extraction needs
+        // Note: bin_path is NOT included here because it's handled at symlink time,
+        // allowing cache deduplication for raw files with different bin_path configs
         let mut cache_key_parts = vec![checksum.clone()];
 
         let strip_components = lookup_platform_key(opts, "strip_components")
             .or_else(|| opts.get("strip_components").cloned());
         if let Some(strip_components) = strip_components {
             cache_key_parts.push(format!("strip_{strip_components}"));
-        }
-
-        // Include bin_path in cache key since it affects where files are placed
-        let bin_path =
-            lookup_platform_key(opts, "bin_path").or_else(|| opts.get("bin_path").cloned());
-        if let Some(bin_path) = bin_path {
-            cache_key_parts.push(format!("binpath_{}", bin_path.replace('/', "_")));
         }
 
         let cache_key = cache_key_parts.join("_");
@@ -95,6 +157,7 @@ impl HttpBackend {
     }
 
     /// Extract tarball to cache directory
+    /// Returns the type of extraction performed
     fn extract_to_cache(
         &self,
         file_path: &Path,
@@ -103,7 +166,7 @@ impl HttpBackend {
         tv: &ToolVersion,
         opts: &ToolVersionOptions,
         pr: Option<&dyn SingleReport>,
-    ) -> Result<()> {
+    ) -> Result<ExtractionType> {
         let cache_path = self.get_cached_tarball_path(cache_key);
         let extracted_path = self.get_cached_extracted_path(cache_key);
         let metadata_path = self.get_cache_metadata_path(cache_key);
@@ -128,7 +191,8 @@ impl HttpBackend {
         }
 
         // Perform extraction into the temp directory
-        self.extract_artifact_to_cache(file_path, &tmp_extract_path, tv, opts, pr)?;
+        let extraction_type =
+            self.extract_artifact_to_cache(file_path, &tmp_extract_path, tv, opts, pr)?;
 
         // Replace any existing extracted cache atomically
         if extracted_path.exists() {
@@ -150,18 +214,19 @@ impl HttpBackend {
         let metadata_json = serde_json::to_string_pretty(&metadata)?;
         file::write(&metadata_path, metadata_json)?;
 
-        Ok(())
+        Ok(extraction_type)
     }
 
     /// Extract artifact to cache directory (similar to install_artifact but for cache)
+    /// Returns the type of extraction performed, which affects how symlinks are created
     fn extract_artifact_to_cache(
         &self,
         file_path: &Path,
         cache_path: &Path,
-        tv: &ToolVersion,
+        _tv: &ToolVersion,
         opts: &ToolVersionOptions,
         pr: Option<&dyn SingleReport>,
-    ) -> Result<()> {
+    ) -> Result<ExtractionType> {
         let mut strip_components = lookup_platform_key(opts, "strip_components")
             .or_else(|| opts.get("strip_components").cloned())
             .and_then(|s| s.parse().ok());
@@ -201,38 +266,22 @@ impl HttpBackend {
 
         if is_compressed_binary {
             // Handle compressed single binary
+            // Note: bin_path is NOT used here - it's handled at symlink time for deduplication
             let decompressed_name = file_name.trim_end_matches(&format!(".{}", ext));
 
-            // Determine the destination path
-            let (dest_dir, dest_filename) = if let Some(bin_path_template) =
-                lookup_platform_key(opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
-            {
-                // If bin_path is specified, use it as directory
-                let bin_path = template_string(&bin_path_template, tv);
-                let bin_dir = cache_path.join(&bin_path);
-                (bin_dir, std::ffi::OsString::from(decompressed_name))
-            } else if let Some(bin_name) =
+            // Determine the destination filename (always at cache root for deduplication)
+            let dest_filename = if let Some(bin_name) =
                 lookup_platform_key(opts, "bin").or_else(|| opts.get("bin").cloned())
             {
                 // If bin is specified, rename the file to this name
-                (
-                    cache_path.to_path_buf(),
-                    std::ffi::OsString::from(&bin_name),
-                )
+                bin_name
             } else {
                 // Always auto-clean binary names by removing OS/arch suffixes
-                let cleaned_name = clean_binary_name(decompressed_name, Some(&self.ba.tool_name));
-                (
-                    cache_path.to_path_buf(),
-                    std::ffi::OsString::from(cleaned_name),
-                )
+                clean_binary_name(decompressed_name, Some(&self.ba.tool_name))
             };
 
-            // Create the destination directory
-            file::create_dir_all(&dest_dir)?;
-
-            // Construct full destination path
-            let dest = dest_dir.join(&dest_filename);
+            // Construct full destination path (always at cache root)
+            let dest = cache_path.join(&dest_filename);
 
             match ext {
                 "gz" => file::un_gz(file_path, &dest)?,
@@ -243,41 +292,31 @@ impl HttpBackend {
             }
 
             file::make_executable(&dest)?;
+            Ok(ExtractionType::RawFile {
+                filename: dest_filename,
+            })
         } else if format == file::TarFormat::Raw {
-            // For raw files, determine the destination
-            let (dest_dir, dest_filename) = if let Some(bin_path_template) =
-                lookup_platform_key(opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
-            {
-                // If bin_path is specified, use it as directory
-                let bin_path = template_string(&bin_path_template, tv);
-                let bin_dir = cache_path.join(&bin_path);
-                (bin_dir, file_path.file_name().unwrap().to_os_string())
-            } else if let Some(bin_name) =
+            // For raw files, always place at cache root for deduplication
+            // Note: bin_path is NOT used here - it's handled at symlink time
+            let dest_filename = if let Some(bin_name) =
                 lookup_platform_key(opts, "bin").or_else(|| opts.get("bin").cloned())
             {
                 // If bin is specified, rename the file to this name
-                (
-                    cache_path.to_path_buf(),
-                    std::ffi::OsString::from(&bin_name),
-                )
+                bin_name
             } else {
                 // Always auto-clean binary names by removing OS/arch suffixes
                 let original_name = file_path.file_name().unwrap().to_string_lossy();
-                let cleaned_name = clean_binary_name(&original_name, Some(&self.ba.tool_name));
-                (
-                    cache_path.to_path_buf(),
-                    std::ffi::OsString::from(cleaned_name),
-                )
+                clean_binary_name(&original_name, Some(&self.ba.tool_name))
             };
 
-            // Create the destination directory
-            file::create_dir_all(&dest_dir)?;
-
-            // Construct full destination path
-            let dest = dest_dir.join(&dest_filename);
+            // Construct full destination path (always at cache root)
+            let dest = cache_path.join(&dest_filename);
 
             file::copy(file_path, &dest)?;
             file::make_executable(&dest)?;
+            Ok(ExtractionType::RawFile {
+                filename: dest_filename,
+            })
         } else {
             // Auto-detect if we need strip_components=1 before extracting
             // Only auto-strip if strip_components is not set AND bin_path is not explicitly configured
@@ -303,17 +342,20 @@ impl HttpBackend {
 
             // Extract with determined strip_components
             file::untar(file_path, cache_path, &tar_opts)?;
+            Ok(ExtractionType::Archive)
         }
-
-        Ok(())
     }
 
     /// Create symlink from install directory to cache
+    /// For raw files with bin_path, creates directory structure and symlinks the file
+    /// For archives, symlinks the entire cache directory
     fn create_install_symlink(
         &self,
         tv: &ToolVersion,
         cache_path: &Path,
         cache_key: &str,
+        extraction_type: &ExtractionType,
+        opts: &ToolVersionOptions,
     ) -> Result<()> {
         // Determine the appropriate version name for the symlink
         let version_name = if tv.version == "latest" || tv.version.is_empty() {
@@ -336,7 +378,25 @@ impl HttpBackend {
             file::create_dir_all(parent)?;
         }
 
-        // Create symlink
+        // Handle raw files with bin_path specially to allow cache deduplication
+        if let ExtractionType::RawFile { filename } = extraction_type {
+            if let Some(bin_path_template) =
+                lookup_platform_key(opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
+            {
+                // For raw files with bin_path: create directory structure and symlink file
+                let bin_path = template_string(&bin_path_template, tv);
+                let dest_dir = version_install_path.join(&bin_path);
+                file::create_dir_all(&dest_dir)?;
+
+                // Symlink the file from install location to cache location
+                let cached_file = cache_path.join(filename);
+                let install_file = dest_dir.join(filename);
+                file::make_symlink(&cached_file, &install_file)?;
+                return Ok(());
+            }
+        }
+
+        // Default: symlink entire install path to cache directory
         file::make_symlink(cache_path, &version_install_path)?;
 
         Ok(())
@@ -474,6 +534,9 @@ impl Backend for HttpBackend {
         let cache_key = self.get_file_based_cache_key(&file_path, &opts)?;
         let cached_extracted_path = self.get_cached_extracted_path(&cache_key);
 
+        // Determine extraction type before checking cache (needed for symlink creation)
+        let extraction_type = self.get_extraction_type(&file_path, &opts);
+
         // Acquire a cache-level lock to serialize extraction for this cache key
         let _cache_lock = crate::lock_file::get(&cached_extracted_path, ctx.force)?;
 
@@ -494,7 +557,13 @@ impl Backend for HttpBackend {
 
         // Create symlink from install directory to cache
         let content_version = &cache_key[..7.min(cache_key.len())]; // First 7 chars like git
-        self.create_install_symlink(&tv, &cached_extracted_path, &cache_key)?;
+        self.create_install_symlink(
+            &tv,
+            &cached_extracted_path,
+            &cache_key,
+            &extraction_type,
+            &opts,
+        )?;
 
         // For implicit versions, also create a symlink with the original version name
         // pointing to our content-based version to maintain compatibility
