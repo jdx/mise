@@ -45,6 +45,7 @@ mod ls_remote;
 mod mcp;
 mod outdated;
 mod plugins;
+mod prepare;
 mod prune;
 mod registry;
 #[cfg(debug_assertions)]
@@ -221,6 +222,7 @@ pub enum Commands {
     Mcp(mcp::Mcp),
     Outdated(outdated::Outdated),
     Plugins(plugins::Plugins),
+    Prepare(prepare::Prepare),
     Prune(prune::Prune),
     Registry(registry::Registry),
     #[cfg(debug_assertions)]
@@ -286,6 +288,7 @@ impl Commands {
             Self::Mcp(cmd) => cmd.run().await,
             Self::Outdated(cmd) => cmd.run().await,
             Self::Plugins(cmd) => cmd.run().await,
+            Self::Prepare(cmd) => cmd.run().await,
             Self::Prune(cmd) => cmd.run().await,
             Self::Registry(cmd) => cmd.run().await,
             #[cfg(debug_assertions)]
@@ -647,6 +650,7 @@ impl Cli {
                         no_cache: Default::default(),
                         timeout: None,
                         skip_deps: false,
+                        no_prepare: false,
                     })));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(

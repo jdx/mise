@@ -67,6 +67,7 @@ mod path;
 mod path_env;
 mod platform;
 mod plugins;
+mod prepare;
 mod rand;
 mod redactions;
 mod registry;

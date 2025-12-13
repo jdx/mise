@@ -43,6 +43,7 @@ pub async fn handle_shim() -> Result<()> {
         command: Some(args),
         jobs: None,
         raw: false,
+        no_prepare: true, // Skip prepare for shims to avoid performance impact
     };
     time!("shim exec");
     exec.run().await?;
