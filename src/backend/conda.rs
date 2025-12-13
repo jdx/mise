@@ -7,14 +7,17 @@ use crate::config::Settings;
 use crate::file::{self, TarOptions};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
+use crate::lock_file::LockFile;
 use crate::lockfile::PlatformInfo;
 use crate::toolset::ToolVersion;
-use crate::{backend::Backend, hash, http::HTTP};
+use crate::{backend::Backend, dirs, hash, http::HTTP, parallel};
 use async_trait::async_trait;
 use eyre::{Result, bail};
 use itertools::Itertools;
 use serde::Deserialize;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use versions::Versioning;
 
@@ -188,16 +191,176 @@ impl CondaBackend {
     }
 
     /// Verify SHA256 checksum if available
-    fn verify_checksum(
-        &self,
-        tarball_path: &std::path::Path,
-        expected_sha256: Option<&str>,
-        pr: Option<&dyn crate::ui::progress_report::SingleReport>,
-    ) -> Result<()> {
+    fn verify_checksum(tarball_path: &Path, expected_sha256: Option<&str>) -> Result<()> {
         if let Some(expected) = expected_sha256 {
-            hash::ensure_checksum(tarball_path, expected, pr, "sha256")?;
+            hash::ensure_checksum(tarball_path, expected, None, "sha256")?;
         }
         Ok(())
+    }
+
+    /// Get the shared conda package cache directory
+    /// All conda packages (main + deps) are downloaded here for sharing across tools
+    fn conda_cache_dir() -> PathBuf {
+        dirs::DOWNLOADS.join("conda-packages")
+    }
+
+    /// Get cache path for a specific package file
+    /// Uses basename which includes version+build: "clang-21.1.7-default_h489deba_0.conda"
+    fn package_cache_path(basename: &str) -> PathBuf {
+        let filename = Path::new(basename)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(basename);
+        Self::conda_cache_dir().join(filename)
+    }
+
+    /// Fetch package files from the anaconda.org API for any package name
+    async fn fetch_package_files_for(&self, package_name: &str) -> Result<Vec<CondaPackageFile>> {
+        let channel = self.channel();
+        let url = format!(
+            "https://api.anaconda.org/package/{}/{}/files",
+            channel, package_name
+        );
+        let files: Vec<CondaPackageFile> = HTTP_FETCH.json(&url).await?;
+        Ok(files)
+    }
+
+    /// Find the best matching package for a dependency
+    fn find_matching_package<'a>(
+        files: &'a [CondaPackageFile],
+        version_spec: Option<&str>,
+        subdir: &str,
+    ) -> Option<&'a CondaPackageFile> {
+        // Filter by platform (include noarch as fallback)
+        let platform_files: Vec<_> = files
+            .iter()
+            .filter(|f| f.attrs.subdir == subdir || f.attrs.subdir == "noarch")
+            .collect();
+
+        if platform_files.is_empty() {
+            return None;
+        }
+
+        if let Some(spec) = version_spec {
+            // Try exact version match first
+            if let Some(exact) = platform_files
+                .iter()
+                .find(|f| f.version == spec)
+                .or_else(|| platform_files.iter().find(|f| f.version.starts_with(spec)))
+            {
+                // Prefer .conda format
+                let matching_version: Vec<_> = platform_files
+                    .iter()
+                    .filter(|f| f.version == exact.version)
+                    .collect();
+                return matching_version
+                    .iter()
+                    .find(|f| f.basename.ends_with(".conda"))
+                    .or_else(|| {
+                        matching_version
+                            .iter()
+                            .find(|f| f.basename.ends_with(".tar.bz2"))
+                    })
+                    .copied()
+                    .copied();
+            }
+        }
+
+        // Fall back to latest version
+        let latest = platform_files
+            .iter()
+            .max_by_key(|f| Versioning::new(&f.version))?;
+
+        // Find all files with that version and prefer .conda format
+        let matching_version: Vec<_> = platform_files
+            .iter()
+            .filter(|f| f.version == latest.version)
+            .collect();
+        matching_version
+            .iter()
+            .find(|f| f.basename.ends_with(".conda"))
+            .or_else(|| {
+                matching_version
+                    .iter()
+                    .find(|f| f.basename.ends_with(".tar.bz2"))
+            })
+            .copied()
+            .copied()
+    }
+
+    /// Recursively resolve dependencies for a package
+    async fn resolve_dependencies(
+        &self,
+        pkg_file: &CondaPackageFile,
+        subdir: &str,
+        resolved: &mut HashMap<String, ResolvedPackage>,
+        visited: &mut HashSet<String>,
+    ) -> Result<()> {
+        for dep in &pkg_file.attrs.depends {
+            let Some((name, version_spec)) = parse_dependency(dep) else {
+                continue;
+            };
+
+            // Skip if already resolved or being visited (circular dep protection)
+            if resolved.contains_key(&name) || visited.contains(&name) {
+                continue;
+            }
+            visited.insert(name.clone());
+
+            // Fetch dependency package files
+            let dep_files = match self.fetch_package_files_for(&name).await {
+                Ok(files) => files,
+                Err(e) => {
+                    debug!("skipping dependency {}: {}", name, e);
+                    continue;
+                }
+            };
+
+            // Find best matching version for this platform
+            let Some(matched) =
+                Self::find_matching_package(&dep_files, version_spec.as_deref(), subdir)
+            else {
+                debug!("no matching version for dependency {} on {}", name, subdir);
+                continue;
+            };
+
+            resolved.insert(
+                name.clone(),
+                ResolvedPackage {
+                    name: name.clone(),
+                    version: matched.version.clone(),
+                    download_url: Self::build_download_url(&matched.download_url),
+                    sha256: matched.sha256.clone(),
+                    basename: matched.basename.clone(),
+                },
+            );
+
+            // Recurse into this dependency's dependencies
+            Box::pin(self.resolve_dependencies(matched, subdir, resolved, visited)).await?;
+        }
+        Ok(())
+    }
+
+    /// Download a conda package to shared cache (standalone for parallel::parallel)
+    async fn download_package_to_cache(pkg: ResolvedPackage) -> Result<PathBuf> {
+        let cache_dir = Self::conda_cache_dir();
+        file::create_dir_all(&cache_dir)?;
+
+        let tarball_path = Self::package_cache_path(&pkg.basename);
+
+        // Take a lock on this specific package file for parallel safety
+        let _lock = LockFile::new(&tarball_path).lock()?;
+
+        // After acquiring lock, check if file already exists
+        if !tarball_path.exists() {
+            HTTP.download_file(&pkg.download_url, &tarball_path, None)
+                .await?;
+        }
+
+        // Verify checksum
+        Self::verify_checksum(&tarball_path, pkg.sha256.as_deref())?;
+
+        Ok(tarball_path)
     }
 }
 
@@ -251,43 +414,62 @@ impl Backend for CondaBackend {
             ),
         };
 
-        // Build download URL
-        let download_url = Self::build_download_url(&pkg_file.download_url);
+        // Resolve all dependencies
+        ctx.pr.set_message("resolving dependencies".to_string());
+        let mut resolved = HashMap::new();
+        let mut visited = HashSet::new();
+        self.resolve_dependencies(pkg_file, subdir, &mut resolved, &mut visited)
+            .await?;
 
-        // Download the package
-        // basename may contain a path prefix (e.g., "osx-arm64/ruff-0.8.0-py311h_0.conda")
-        let filename = std::path::Path::new(&pkg_file.basename)
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or(&pkg_file.basename);
-        let tarball_path = tv.download_path().join(filename);
-        if !tarball_path.exists() {
-            ctx.pr
-                .set_message(format!("download {}", pkg_file.basename));
-            HTTP.download_file(&download_url, &tarball_path, Some(ctx.pr.as_ref()))
-                .await?;
+        // Build main package info
+        let main_pkg = ResolvedPackage {
+            name: self.tool_name().to_string(),
+            version: tv.version.clone(),
+            download_url: Self::build_download_url(&pkg_file.download_url),
+            sha256: pkg_file.sha256.clone(),
+            basename: pkg_file.basename.clone(),
+        };
+
+        // Build list of all packages to download (deps + main)
+        let mut all_packages: Vec<ResolvedPackage> = resolved.values().cloned().collect();
+        all_packages.push(main_pkg.clone());
+
+        // Download all packages in parallel
+        ctx.pr
+            .set_message(format!("downloading {} packages", all_packages.len()));
+        let downloaded_paths =
+            parallel::parallel(all_packages.clone(), Self::download_package_to_cache).await?;
+
+        // Create map of package name -> downloaded path
+        let path_map: HashMap<String, PathBuf> = all_packages
+            .iter()
+            .zip(downloaded_paths.iter())
+            .map(|(pkg, path)| (pkg.name.clone(), path.clone()))
+            .collect();
+
+        let install_path = tv.install_path();
+        file::remove_all(&install_path)?;
+        file::create_dir_all(&install_path)?;
+
+        // Extract dependencies first (sequential to avoid conflicts)
+        for (name, _pkg) in &resolved {
+            let tarball_path = &path_map[name];
+            ctx.pr.set_message(format!("extract {name}"));
+            self.extract_conda_package(ctx, tarball_path, &install_path)?;
         }
 
-        // Verify checksum
-        self.verify_checksum(
-            &tarball_path,
-            pkg_file.sha256.as_deref(),
-            Some(ctx.pr.as_ref()),
-        )?;
+        // Extract main package last (so its files take precedence)
+        let main_tarball = &path_map[&main_pkg.name];
+        ctx.pr.set_message(format!("extract {}", self.tool_name()));
+        self.extract_conda_package(ctx, main_tarball, &install_path)?;
 
         // Store lockfile info
         let platform_key = self.get_platform_key();
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-        platform_info.url = Some(download_url);
+        platform_info.url = Some(main_pkg.download_url);
         if let Some(sha256) = &pkg_file.sha256 {
             platform_info.checksum = Some(format!("sha256:{}", sha256));
         }
-
-        // Extract to install path
-        let install_path = tv.install_path();
-        file::remove_all(&install_path)?;
-        file::create_dir_all(&install_path)?;
-        self.extract_conda_package(ctx, &tarball_path, &install_path)?;
 
         // Make binaries executable
         let bin_path = install_path.join("bin");
@@ -356,4 +538,51 @@ struct CondaPackageFile {
 struct CondaPackageAttrs {
     #[serde(default)]
     subdir: String,
+    #[serde(default)]
+    depends: Vec<String>,
+}
+
+/// Resolved package ready for download
+#[derive(Debug, Clone)]
+struct ResolvedPackage {
+    name: String,
+    version: String,
+    download_url: String,
+    sha256: Option<String>,
+    basename: String,
+}
+
+/// Packages to skip during dependency resolution
+/// - Virtual packages (__osx, __glibc, etc.) represent system requirements
+/// - Runtime dependencies (python, ruby) are typically not needed for standalone tools
+const SKIP_PACKAGES: &[&str] = &[
+    "python",
+    "python_abi",
+    "ruby",
+    "perl",
+    "r-base",
+    "libgcc-ng",    // Linux-specific, provided by system
+    "libstdcxx-ng", // Linux-specific, provided by system
+];
+
+/// Parse a conda dependency specification
+/// Returns (package_name, optional_version_spec) or None if should be skipped
+fn parse_dependency(dep: &str) -> Option<(String, Option<String>)> {
+    // Skip virtual packages (start with __)
+    if dep.starts_with("__") {
+        return None;
+    }
+
+    // Parse "package_name [version_spec] [build_spec]"
+    let parts: Vec<&str> = dep.split_whitespace().collect();
+    let name = parts.first()?.to_string();
+
+    // Skip runtime dependencies that are typically not needed for standalone tools
+    if SKIP_PACKAGES.contains(&name.as_str()) {
+        return None;
+    }
+
+    // Get version spec if present (ignore build spec)
+    let version = parts.get(1).map(|s| s.to_string());
+    Some((name, version))
 }
