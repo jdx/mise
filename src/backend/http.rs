@@ -379,8 +379,8 @@ impl HttpBackend {
         }
 
         // Handle raw files with bin_path specially to allow cache deduplication
-        if let ExtractionType::RawFile { filename } = extraction_type {
-            if let Some(bin_path_template) =
+        if let ExtractionType::RawFile { filename } = extraction_type
+            && let Some(bin_path_template) =
                 lookup_platform_key(opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
             {
                 // For raw files with bin_path: create directory structure and symlink file
@@ -394,7 +394,6 @@ impl HttpBackend {
                 file::make_symlink(&cached_file, &install_file)?;
                 return Ok(());
             }
-        }
 
         // Default: symlink entire install path to cache directory
         file::make_symlink(cache_path, &version_install_path)?;
