@@ -1122,10 +1122,9 @@ optional = true
 type = "String"
 
 [ruby.precompiled_url]
+default = "jdx/ruby"
 description = "[experimental] URL template or GitHub repo for precompiled Ruby binaries."
 docs = """
-Default uses GitHub releases from jdx/ruby.
-
 Can be either:
 - A GitHub repo shorthand: `"jdx/ruby"` or `"yourorg/ruby"`
 - A full URL template with variables: `{version}`, `{platform}`, `{os}`, `{arch}`
@@ -1134,14 +1133,13 @@ Examples:
 ```toml
 [settings.ruby]
 # Use a different GitHub repo
-precompiled_url = "jdx/ruby"
+precompiled_url = "yourorg/ruby"
 
 # Or use a custom URL template
 precompiled_url = "https://my-mirror.example.com/ruby-{version}.{platform}.tar.gz"
 ```
 """
 env = "MISE_RUBY_PRECOMPILED_URL"
-optional = true
 type = "String"
 
 [ruby.ruby_build_opts]

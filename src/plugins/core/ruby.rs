@@ -28,7 +28,6 @@ use crate::github;
 use crate::hash;
 
 const RUBY_INDEX_URL: &str = "https://cache.ruby-lang.org/pub/ruby/index.txt";
-const RUBY_PRECOMPILED_REPO: &str = "jdx/ruby";
 
 #[derive(Debug)]
 pub struct RubyPlugin {
@@ -487,19 +486,18 @@ impl RubyPlugin {
         platform: &str,
     ) -> Result<Option<(String, Option<String>)>> {
         let settings = Settings::get();
-        match &settings.ruby.precompiled_url {
-            Some(url_template) if url_template.contains("://") => Ok(Some((
-                self.render_precompiled_url(url_template, version, platform),
+        let source = &settings.ruby.precompiled_url;
+
+        if source.contains("://") {
+            // Full URL template - no checksum available
+            Ok(Some((
+                self.render_precompiled_url(source, version, platform),
                 None,
-            ))),
-            Some(repo) if repo.contains('/') && !repo.contains(' ') => {
-                self.find_precompiled_asset_in_repo(repo, version, platform)
-                    .await
-            }
-            _ => {
-                self.find_precompiled_asset_in_repo(RUBY_PRECOMPILED_REPO, version, platform)
-                    .await
-            }
+            )))
+        } else {
+            // GitHub repo shorthand (default: "jdx/ruby")
+            self.find_precompiled_asset_in_repo(source, version, platform)
+                .await
         }
     }
 
