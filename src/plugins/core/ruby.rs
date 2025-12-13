@@ -666,9 +666,9 @@ impl Backend for RubyPlugin {
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
         // Precompiled binary info if enabled
-        if self.should_use_precompiled() {
-            if let Some(platform) = self.precompiled_platform_for_target(target) {
-                if let Some((url, checksum)) =
+        if self.should_use_precompiled()
+            && let Some(platform) = self.precompiled_platform_for_target(target)
+                && let Some((url, checksum)) =
                     self.resolve_precompiled_url(&tv.version, &platform).await?
                 {
                     return Ok(PlatformInfo {
@@ -678,8 +678,6 @@ impl Backend for RubyPlugin {
                         url_api: None,
                     });
                 }
-            }
-        }
 
         // Default: source tarball
         match self.get_ruby_download_info(&tv.version).await? {

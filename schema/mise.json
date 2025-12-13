@@ -1010,7 +1010,7 @@
               "type": "string"
             },
             "precompiled_url": {
-              "description": "[experimental] URL template for precompiled Ruby binaries. Variables: {version}, {platform}, {os}, {arch}.",
+              "description": "[experimental] URL template or GitHub repo for precompiled Ruby binaries.",
               "type": "string"
             },
             "ruby_build_opts": {
