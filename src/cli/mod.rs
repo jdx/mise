@@ -352,6 +352,119 @@ fn get_global_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
     (flags_with_values, boolean_flags)
 }
 
+/// Get all flags (with values and boolean) from both global Cli and Run subcommand
+fn get_all_run_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
+    // Get global flags from Cli
+    let (mut flags_with_values, mut boolean_flags) = get_global_flags(cmd);
+
+    // Get run-specific flags from Run subcommand
+    if let Some(run_cmd) = cmd.get_subcommands().find(|s| s.get_name() == "run") {
+        let (run_vals, run_bools) = get_global_flags(run_cmd);
+        flags_with_values.extend(run_vals);
+        boolean_flags.extend(run_bools);
+    }
+
+    (flags_with_values, boolean_flags)
+}
+
+/// Prefix used to escape flags that should be passed to tasks, not mise
+const TASK_ARG_ESCAPE_PREFIX: &str = "\x00MISE_TASK_ARG\x00";
+
+/// Escape flags after task names so clap doesn't parse them as mise flags.
+/// This preserves ::: separators for multi-task handling while preventing
+/// clap from consuming flags like --jobs that appear after task names.
+fn escape_task_args(cmd: &clap::Command, args: &[String]) -> Vec<String> {
+    // If there's already a '--' separator, let clap handle everything normally
+    if args.contains(&"--".to_string()) {
+        return args.to_vec();
+    }
+
+    // Find "run" position
+    let run_pos = args.iter().position(|a| a == "run");
+    let run_pos = match run_pos {
+        Some(pos) => pos,
+        None => return args.to_vec(), // Not a run command
+    };
+
+    let (flags_with_values, _) = get_all_run_flags(cmd);
+
+    // Build result, escaping flags that appear after task names
+    let mut result = args[..=run_pos].to_vec(); // Include up to and including "run"
+    let mut in_task_args = false; // true after we've seen a task name
+
+    let mut i = run_pos + 1;
+    while i < args.len() {
+        let arg = &args[i];
+
+        // ::: starts a new task, so reset to looking for task name
+        if arg == ":::" {
+            result.push(arg.clone());
+            in_task_args = false;
+            i += 1;
+            continue;
+        }
+
+        if !in_task_args {
+            // Looking for task name - skip any mise flags
+            if arg.starts_with('-') {
+                // It's a flag - keep it as-is for mise to parse
+                result.push(arg.clone());
+
+                // Check if this flag takes a value (and needs to consume the next arg)
+                let flag_takes_value = if arg.starts_with("--") {
+                    if arg.contains('=') {
+                        false // --flag=value, no separate value
+                    } else {
+                        flags_with_values.iter().any(|f| f == arg)
+                    }
+                } else if arg.len() > 2 {
+                    // Short flag with embedded value (e.g., -j4), no separate value needed
+                    false
+                } else if arg.len() == 2 {
+                    let flag_name = &arg[..2];
+                    flags_with_values.iter().any(|f| f == flag_name)
+                } else {
+                    false
+                };
+
+                if flag_takes_value && i + 1 < args.len() && !args[i + 1].starts_with('-') {
+                    i += 1;
+                    result.push(args[i].clone());
+                }
+            } else {
+                // Found task name
+                result.push(arg.clone());
+                in_task_args = true;
+            }
+        } else {
+            // In task args - escape flags so clap doesn't parse them
+            if arg.starts_with('-') && arg != "-" {
+                // Escape the flag
+                result.push(format!("{}{}", TASK_ARG_ESCAPE_PREFIX, arg));
+            } else {
+                result.push(arg.clone());
+            }
+        }
+
+        i += 1;
+    }
+
+    result
+}
+
+/// Unescape task args that were escaped by escape_task_args
+pub fn unescape_task_args(args: &[String]) -> Vec<String> {
+    args.iter()
+        .map(|arg| {
+            if let Some(stripped) = arg.strip_prefix(TASK_ARG_ESCAPE_PREFIX) {
+                stripped.to_string()
+            } else {
+                arg.clone()
+            }
+        })
+        .collect()
+}
+
 fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<String> {
     // Check if this might be a naked run (no subcommand)
     if args.len() < 2 {
@@ -359,6 +472,7 @@ fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<St
     }
 
     // If there's already a '--' separator, let clap handle everything normally
+    // (user explicitly separated task args)
     if args.contains(&"--".to_string()) {
         return args.to_vec();
     }
@@ -455,6 +569,8 @@ impl Cli {
         // Pre-process args to handle naked runs before clap parsing
         let cmd = Cli::command();
         let processed_args = preprocess_args_for_naked_run(&cmd, args);
+        // Escape flags after task names so they go to tasks, not mise
+        let processed_args = escape_task_args(&cmd, &processed_args);
 
         let cli = measure!("get_matches_from", {
             Cli::parse_from(processed_args.iter())

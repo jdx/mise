@@ -4,7 +4,7 @@ use crate::config::config_file::toml::{TomlParser, deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{self, Config};
 use crate::path_env::PathEnv;
-use crate::task::task_script_parser::{TaskScriptParser, has_any_args_defined};
+use crate::task::task_script_parser::TaskScriptParser;
 use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
@@ -56,6 +56,7 @@ pub mod task_tool_installer;
 
 pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax};
 pub use task_output::TaskOutput;
+pub use task_script_parser::has_any_args_defined;
 
 use crate::config::config_file::ConfigFile;
 use crate::env_diff::EnvMap;
