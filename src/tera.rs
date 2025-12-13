@@ -138,44 +138,47 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
             _ => Err("canonicalize input must be a string".into()),
         },
     );
+    // Helper to create path filters that handle empty strings gracefully
+    fn path_filter<F>(input: &Value, name: &'static str, f: F) -> tera::Result<Value>
+    where
+        F: FnOnce(&Path) -> Option<String>,
+    {
+        match input {
+            Value::String(s) if s.is_empty() => Ok(Value::String(String::new())),
+            Value::String(s) => Ok(Value::String(f(Path::new(s)).unwrap_or_default())),
+            _ => Err(format!("{name} input must be a string").into()),
+        }
+    }
     tera.register_filter(
         "dirname",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
-            Value::String(s) => {
-                let p = Path::new(s).parent().unwrap();
-                Ok(Value::String(p.to_string_lossy().to_string()))
-            }
-            _ => Err("dirname input must be a string".into()),
+        move |input: &Value, _args: &HashMap<String, Value>| {
+            path_filter(input, "dirname", |p| {
+                p.parent().map(|p| p.to_string_lossy().to_string())
+            })
         },
     );
     tera.register_filter(
         "basename",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
-            Value::String(s) => {
-                let p = Path::new(s).file_name().unwrap();
-                Ok(Value::String(p.to_string_lossy().to_string()))
-            }
-            _ => Err("basename input must be a string".into()),
+        move |input: &Value, _args: &HashMap<String, Value>| {
+            path_filter(input, "basename", |p| {
+                p.file_name().map(|p| p.to_string_lossy().to_string())
+            })
         },
     );
     tera.register_filter(
         "extname",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
-            Value::String(s) => {
-                let p = Path::new(s).extension().unwrap();
-                Ok(Value::String(p.to_string_lossy().to_string()))
-            }
-            _ => Err("extname input must be a string".into()),
+        move |input: &Value, _args: &HashMap<String, Value>| {
+            path_filter(input, "extname", |p| {
+                p.extension().map(|p| p.to_string_lossy().to_string())
+            })
         },
     );
     tera.register_filter(
         "file_stem",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
-            Value::String(s) => {
-                let p = Path::new(s).file_stem().unwrap();
-                Ok(Value::String(p.to_string_lossy().to_string()))
-            }
-            _ => Err("filename input must be a string".into()),
+        move |input: &Value, _args: &HashMap<String, Value>| {
+            path_filter(input, "file_stem", |p| {
+                p.file_stem().map(|p| p.to_string_lossy().to_string())
+            })
         },
     );
     tera.register_filter(

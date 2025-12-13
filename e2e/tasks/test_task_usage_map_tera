@@ -170,3 +170,40 @@ EOF
 
 assert "mise run usage-tera-var-arg-default" "Hello, alice and bob!"
 assert "mise run usage-tera-var-arg-default -- charlie" "Hello, charlie!"
+
+# Path filters (file_stem, basename, dirname, extname) work with required args
+# Regression test for https://github.com/jdx/mise/discussions/7239
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-file-stem]
+description = "Test file_stem filter with required arg"
+usage = '''
+arg "<file>" help="The file path"
+'''
+run = '''
+echo "stem={{ usage.file | file_stem }}"
+'''
+EOF
+
+assert "mise run usage-tera-file-stem -- /path/to/myfile.txt" "stem=myfile"
+assert "mise run usage-tera-file-stem -- foo.bar.baz" "stem=foo.bar"
+
+# Test all path filters together
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-path-filters]
+description = "Test all path filters with required arg"
+usage = '''
+arg "<file>" help="The file path"
+'''
+run = '''
+echo "dirname={{ usage.file | dirname }}"
+echo "basename={{ usage.file | basename }}"
+echo "extname={{ usage.file | extname }}"
+echo "file_stem={{ usage.file | file_stem }}"
+'''
+EOF
+
+assert "mise run usage-tera-path-filters -- /path/to/file.txt" "\
+dirname=/path/to
+basename=file.txt
+extname=txt
+file_stem=file"

@@ -278,10 +278,6 @@ pub(crate) fn prune(dir: &Path, opts: &PruneOptions) -> Result<PruneResults> {
         Ok::<(), color_eyre::Report>(())
     };
     for subdir in file::dir_subdirs(dir)? {
-        // Skip http-tarballs directory to preserve HTTP backend cache
-        if subdir == "http-tarballs" {
-            continue;
-        }
         let subdir = dir.join(&subdir);
         let r = prune(&subdir, opts)?;
         results.size += r.size;

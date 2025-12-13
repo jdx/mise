@@ -51,33 +51,12 @@ impl Backend for UnifiedGitBackend {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
-        let repo = self.ba.tool_name();
-        let opts = self.ba.opts();
-        let api_url = self.get_api_url(&opts);
-        let version_prefix = opts.get("version_prefix");
-
-        // Get tag names from either GitHub or GitLab
-        let tag_names: Vec<String> = if self.is_gitlab() {
-            gitlab::list_releases_from_url(api_url.as_str(), &repo)
-                .await?
-                .into_iter()
-                .map(|r| r.tag_name)
-                .collect()
-        } else {
-            github::list_releases_from_url(api_url.as_str(), &repo)
-                .await?
-                .into_iter()
-                .map(|r| r.tag_name)
-                .collect()
-        };
-
-        // Apply common filtering and mapping
-        Ok(tag_names
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
+        Ok(self
+            .list_remote_versions_with_info(config)
+            .await?
             .into_iter()
-            .filter(|tag| version_prefix.is_none_or(|p| tag.starts_with(p)))
-            .map(|tag| self.strip_version_prefix(&tag))
-            .rev()
+            .map(|v| v.version)
             .collect())
     }
 
@@ -92,7 +71,7 @@ impl Backend for UnifiedGitBackend {
 
         // Get releases with full metadata from GitHub or GitLab
         let versions: Vec<VersionInfo> = if self.is_gitlab() {
-            // GitLab doesn't have created_at in releases, use default implementation
+            // GitLab doesn't have created_at in releases
             gitlab::list_releases_from_url(api_url.as_str(), &repo)
                 .await?
                 .into_iter()

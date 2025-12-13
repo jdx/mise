@@ -55,31 +55,20 @@ impl LsRemote {
             _ => self.prefix.clone(),
         };
 
-        if self.json {
-            let versions = plugin.list_remote_versions_with_info(config).await?;
-            let versions = match prefix {
-                Some(prefix) => versions
-                    .into_iter()
-                    .filter(|v| v.version.starts_with(&prefix))
-                    .collect(),
-                None => versions,
-            };
+        let versions = plugin.list_remote_versions_with_info(config).await?;
+        let versions: Vec<_> = match prefix {
+            Some(prefix) => versions
+                .into_iter()
+                .filter(|v| v.version.starts_with(&prefix))
+                .collect(),
+            None => versions,
+        };
 
-            for version_info in versions {
+        for version_info in versions {
+            if self.json {
                 miseprintln!("{}", serde_json::to_string(&version_info)?);
-            }
-        } else {
-            let versions = plugin.list_remote_versions(config).await?;
-            let versions = match prefix {
-                Some(prefix) => versions
-                    .into_iter()
-                    .filter(|v| v.starts_with(&prefix))
-                    .collect(),
-                None => versions,
-            };
-
-            for version in versions {
-                miseprintln!("{}", version);
+            } else {
+                miseprintln!("{}", version_info.version);
             }
         }
 
@@ -87,33 +76,23 @@ impl LsRemote {
     }
 
     async fn run_all(self, config: &Arc<Config>) -> Result<()> {
-        if self.json {
-            let mut versions = vec![];
-            for b in backend::list() {
-                let v = b.list_remote_versions_with_info(config).await?;
-                versions.extend(v.into_iter().map(|v| (b.id().to_string(), v)));
-            }
-            versions.sort_by_cached_key(|(id, _)| id.to_string());
+        let mut versions = vec![];
+        for b in backend::list() {
+            let v = b.list_remote_versions_with_info(config).await?;
+            versions.extend(v.into_iter().map(|v| (b.id().to_string(), v)));
+        }
+        versions.sort_by_cached_key(|(id, _)| id.to_string());
 
-            for (tool, version_info) in versions {
-                // Add tool field to the output
+        for (tool, version_info) in versions {
+            if self.json {
                 let output = serde_json::json!({
                     "tool": tool,
                     "version": version_info.version,
                     "created_at": version_info.created_at,
                 });
                 miseprintln!("{}", serde_json::to_string(&output)?);
-            }
-        } else {
-            let mut versions = vec![];
-            for b in backend::list() {
-                let v = b.list_remote_versions(config).await?;
-                versions.extend(v.into_iter().map(|v| (b.id().to_string(), v)));
-            }
-            versions.sort_by_cached_key(|(id, _)| id.to_string());
-
-            for (tool, v) in versions {
-                miseprintln!("{tool}@{v}");
+            } else {
+                miseprintln!("{}@{}", tool, version_info.version);
             }
         }
         Ok(())
