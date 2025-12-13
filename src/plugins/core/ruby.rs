@@ -20,11 +20,15 @@ use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, file, plugins, timeout};
 use async_trait::async_trait;
-use eyre::{Result, WrapErr};
+use eyre::{Result, WrapErr, bail};
 use itertools::Itertools;
 use xx::regex;
 
+use crate::github;
+use crate::hash;
+
 const RUBY_INDEX_URL: &str = "https://cache.ruby-lang.org/pub/ruby/index.txt";
+const RUBY_PRECOMPILED_REPO: &str = "spinel-coop/rv-ruby";
 
 #[derive(Debug)]
 pub struct RubyPlugin {
@@ -379,6 +383,180 @@ impl RubyPlugin {
 
         Ok(None)
     }
+
+    // ===== Precompiled Ruby support =====
+
+    /// Check if precompiled binaries should be used
+    /// Requires BOTH: experimental=true AND compile=false
+    fn should_use_precompiled(&self) -> bool {
+        let settings = Settings::get();
+        // Must explicitly opt-in with compile=false AND experimental must be enabled
+        settings.experimental && settings.ruby.compile == Some(false)
+    }
+
+    /// Get platform identifier for precompiled binaries
+    fn precompiled_platform(&self) -> Option<String> {
+        let settings = Settings::get();
+
+        // Auto-detect arch and os first
+        let detected_arch = match settings.arch() {
+            "arm64" | "aarch64" => Some("arm64"),
+            "x64" | "x86_64" => Some("x86_64"),
+            _ => None,
+        };
+
+        let detected_os = if cfg!(target_os = "linux") {
+            Some("linux")
+        } else if cfg!(target_os = "macos") {
+            // Only arm64 macOS is supported for precompiled binaries
+            match settings.arch() {
+                "arm64" | "aarch64" => Some("sonoma"),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        // Allow user overrides for either arch or os independently
+        let arch = settings
+            .ruby
+            .precompiled_arch
+            .as_deref()
+            .or(detected_arch)?;
+        let os = settings.ruby.precompiled_os.as_deref().or(detected_os)?;
+
+        Some(format!("{}_{}", arch, os))
+    }
+
+    /// Find precompiled asset from GitHub releases (default repo)
+    async fn find_precompiled_asset(
+        &self,
+        version: &str,
+        platform: &str,
+    ) -> Result<Option<(String, Option<String>)>> {
+        self.find_precompiled_asset_in_repo(RUBY_PRECOMPILED_REPO, version, platform)
+            .await
+    }
+
+    /// Find precompiled asset from a specific GitHub repo
+    async fn find_precompiled_asset_in_repo(
+        &self,
+        repo: &str,
+        version: &str,
+        platform: &str,
+    ) -> Result<Option<(String, Option<String>)>> {
+        let releases = github::list_releases(repo).await?;
+        let expected_name = format!("ruby-{}.{}.tar.gz", version, platform);
+
+        for release in releases {
+            for asset in release.assets {
+                if asset.name == expected_name {
+                    return Ok(Some((asset.browser_download_url, asset.digest)));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// Render custom URL template
+    fn render_precompiled_url(&self, template: &str, version: &str, platform: &str) -> String {
+        let (arch, os) = platform.split_once('_').unwrap_or((platform, ""));
+        template
+            .replace("{version}", version)
+            .replace("{platform}", platform)
+            .replace("{os}", os)
+            .replace("{arch}", arch)
+    }
+
+    /// Install from precompiled binary (errors if not found - no fallback)
+    async fn install_precompiled(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+    ) -> Result<ToolVersion> {
+        let platform = match self.precompiled_platform() {
+            Some(p) => p,
+            None => bail!(
+                "No precompiled Ruby available for this platform. Set ruby.compile=true to compile from source."
+            ),
+        };
+
+        let settings = Settings::get();
+        let (url, checksum) = match &settings.ruby.precompiled_url {
+            Some(url_or_repo) if url_or_repo.contains("://") => {
+                // Full URL template
+                (
+                    self.render_precompiled_url(url_or_repo, &tv.version, &platform),
+                    None,
+                )
+            }
+            Some(repo) if repo.contains('/') && !repo.contains(' ') => {
+                // GitHub repo shorthand (e.g., "jdx/ruby")
+                match self
+                    .find_precompiled_asset_in_repo(repo, &tv.version, &platform)
+                    .await?
+                {
+                    Some((url, checksum)) => (url, checksum),
+                    None => bail!(
+                        "No precompiled Ruby {} for {} in {}. Set ruby.compile=true to compile from source.",
+                        tv.version,
+                        platform,
+                        repo
+                    ),
+                }
+            }
+            _ => {
+                // Default repo
+                match self.find_precompiled_asset(&tv.version, &platform).await? {
+                    Some((url, checksum)) => (url, checksum),
+                    None => bail!(
+                        "No precompiled Ruby {} for {}. Set ruby.compile=true to compile from source.",
+                        tv.version,
+                        platform
+                    ),
+                }
+            }
+        };
+
+        let filename = format!("ruby-{}.{}.tar.gz", tv.version, platform);
+        let tarball_path = tv.download_path().join(&filename);
+
+        ctx.pr.set_message(format!("download {}", filename));
+        HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
+            .await?;
+
+        // Verify checksum if available
+        if let Some(checksum) = checksum {
+            if let Some(hash_str) = checksum.strip_prefix("sha256:") {
+                ctx.pr.set_message(format!("checksum {}", filename));
+                hash::ensure_checksum(&tarball_path, hash_str, Some(ctx.pr.as_ref()), "sha256")?;
+            }
+        }
+
+        // Extract - rv-ruby tarballs have structure: rv-ruby@{version}/{version}/bin/...
+        // Use system tar directly since file::untar doesn't support strip_components > 1
+        ctx.pr.set_message(format!("extract {}", filename));
+        let install_path = tv.install_path();
+        file::create_dir_all(&install_path)?;
+        cmd!(
+            "tar",
+            "-xzf",
+            &tarball_path,
+            "-C",
+            &install_path,
+            "--strip-components=2"
+        )
+        .run()
+        .wrap_err_with(|| {
+            format!(
+                "failed to extract {} to {}",
+                tarball_path.display(),
+                install_path.display()
+            )
+        })?;
+
+        Ok(tv.clone())
+    }
 }
 
 #[async_trait]
@@ -429,6 +607,20 @@ impl Backend for RubyPlugin {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        // Use precompiled if explicitly enabled (requires experimental=true AND compile=false)
+        if self.should_use_precompiled() {
+            let installed_tv = self.install_precompiled(ctx, &tv).await?;
+            self.install_rubygems_hook(&installed_tv)?;
+            if let Err(err) = self
+                .install_default_gems(&ctx.config, &installed_tv, ctx.pr.as_ref())
+                .await
+            {
+                warn!("failed to install default ruby gems {err:#}");
+            }
+            return Ok(installed_tv);
+        }
+
+        // Default: compile from source
         if let Err(err) = self.update_build_tool(Some(ctx)).await {
             warn!("ruby build tool update error: {err:#}");
         }
@@ -486,7 +678,34 @@ impl Backend for RubyPlugin {
         tv: &ToolVersion,
         _target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
-        // Ruby is source code that compiles on any platform, so same tarball for all platforms
+        // If precompiled is enabled, return precompiled binary info
+        if self.should_use_precompiled() {
+            if let Some(platform) = self.precompiled_platform() {
+                let settings = Settings::get();
+                let result = match &settings.ruby.precompiled_url {
+                    Some(url_or_repo) if url_or_repo.contains("://") => Some((
+                        self.render_precompiled_url(url_or_repo, &tv.version, &platform),
+                        None,
+                    )),
+                    Some(repo) if repo.contains('/') && !repo.contains(' ') => {
+                        self.find_precompiled_asset_in_repo(repo, &tv.version, &platform)
+                            .await?
+                    }
+                    _ => self.find_precompiled_asset(&tv.version, &platform).await?,
+                };
+
+                if let Some((url, checksum)) = result {
+                    return Ok(PlatformInfo {
+                        url: Some(url),
+                        checksum,
+                        size: None,
+                        url_api: None,
+                    });
+                }
+            }
+        }
+
+        // Default: Ruby is source code that compiles on any platform
         match self.get_ruby_download_info(&tv.version).await? {
             Some((url, checksum)) => Ok(PlatformInfo {
                 url: Some(url),

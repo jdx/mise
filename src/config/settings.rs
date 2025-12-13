@@ -190,6 +190,9 @@ impl Settings {
             if settings.erlang.compile.is_none() {
                 settings.erlang.compile = Some(true);
             }
+            if settings.ruby.compile.is_none() {
+                settings.ruby.compile = Some(true);
+            }
         }
         if settings.gpg_verify.is_some() {
             settings.node.gpg_verify = settings.node.gpg_verify.or(settings.gpg_verify);

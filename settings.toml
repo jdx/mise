@@ -1083,10 +1083,62 @@ env = "MISE_RUBY_APPLY_PATCHES"
 optional = true
 type = "String"
 
+[ruby.compile]
+description = "[experimental] If true or unset, compile ruby from source. If false, use precompiled binaries."
+docs = """
+Set to `false` to download precompiled Ruby binaries instead of compiling from source.
+Requires `experimental = true` to be enabled.
+
+Example:
+```toml
+[settings]
+experimental = true
+ruby.compile = false
+```
+"""
+env = "MISE_RUBY_COMPILE"
+optional = true
+type = "Bool"
+
 [ruby.default_packages_file]
 default = "~/.default-gems"
 description = "Path to a file containing default ruby gems to install when installing ruby."
 env = "MISE_RUBY_DEFAULT_PACKAGES_FILE"
+type = "String"
+
+[ruby.precompiled_arch]
+description = "[experimental] Override architecture identifier for precompiled Ruby binaries."
+env = "MISE_RUBY_PRECOMPILED_ARCH"
+optional = true
+type = "String"
+
+[ruby.precompiled_os]
+description = "[experimental] Override OS identifier for precompiled Ruby binaries."
+env = "MISE_RUBY_PRECOMPILED_OS"
+optional = true
+type = "String"
+
+[ruby.precompiled_url]
+description = "[experimental] URL template or GitHub repo for precompiled Ruby binaries."
+docs = """
+Default uses GitHub releases from spinel-coop/rv-ruby.
+
+Can be either:
+- A GitHub repo shorthand: `"jdx/ruby"` or `"spinel-coop/rv-ruby"`
+- A full URL template with variables: `{version}`, `{platform}`, `{os}`, `{arch}`
+
+Examples:
+```toml
+[settings.ruby]
+# Use a different GitHub repo
+precompiled_url = "jdx/ruby"
+
+# Or use a custom URL template
+precompiled_url = "https://my-mirror.example.com/ruby-{version}.{platform}.tar.gz"
+```
+"""
+env = "MISE_RUBY_PRECOMPILED_URL"
+optional = true
 type = "String"
 
 [ruby.ruby_build_opts]
