@@ -967,11 +967,10 @@ impl Toolset {
             }
 
             // Check if tool name matches the binary being searched
-            if ba.short == bin_name || ba.tool_name == bin_name {
-                if let Ok(backend) = ba.backend() {
+            if (ba.short == bin_name || ba.tool_name == bin_name)
+                && let Ok(backend) = ba.backend() {
                     plugins.insert(backend);
                 }
-            }
         }
 
         // Install missing versions for backends that provide this bin
