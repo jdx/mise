@@ -16,5 +16,5 @@ assert_succeed "mise install -f http:docker-compose"
 # Verify it's executable
 assert_succeed "mise exec http:docker-compose -- docker-compose version"
 
-# The binary should be cleaned to just "docker-compose" in the cache
-assert_succeed "test -f $HOME/.cache/mise/http-tarballs/*/docker-compose"
+# The binary should be cleaned to just "docker-compose" in the data dir
+assert_succeed "test -f $HOME/.local/share/mise/http-tarballs/*/docker-compose"

@@ -58,6 +58,13 @@ impl HttpBackend {
             cache_key_parts.push(format!("strip_{strip_components}"));
         }
 
+        // Include bin_path in cache key since it affects where files are placed
+        let bin_path =
+            lookup_platform_key(opts, "bin_path").or_else(|| opts.get("bin_path").cloned());
+        if let Some(bin_path) = bin_path {
+            cache_key_parts.push(format!("binpath_{}", bin_path.replace('/', "_")));
+        }
+
         let cache_key = cache_key_parts.join("_");
         debug!("Using file-based checksum as cache key: {}", cache_key);
         Ok(cache_key)
