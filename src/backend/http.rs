@@ -202,19 +202,29 @@ impl HttpBackend {
     // Extraction type detection
     // -------------------------------------------------------------------------
 
-    /// Determine extraction type from file info (used for both extraction and cache hits)
-    fn extraction_type(
-        &self,
-        file_path: &Path,
-        file_info: &FileInfo,
-        opts: &ToolVersionOptions,
-    ) -> ExtractionType {
-        if file_info.is_compressed_binary || file_info.format == file::TarFormat::Raw {
-            ExtractionType::RawFile {
-                filename: self.dest_filename(file_path, file_info, opts),
+    /// Detect extraction type from an existing cache directory
+    /// This handles the case where a cache hit occurs but the original extraction
+    /// used different options (e.g., different `bin` name)
+    fn extraction_type_from_cache(&self, cache_key: &str, file_info: &FileInfo) -> ExtractionType {
+        // For archives, we don't need to detect the filename
+        if !file_info.is_compressed_binary && file_info.format != file::TarFormat::Raw {
+            return ExtractionType::Archive;
+        }
+
+        // For raw files, find the actual filename in the cache directory
+        let cache_path = self.cache_path(cache_key);
+        for entry in xx::file::ls(&cache_path).unwrap_or_default() {
+            if let Some(name) = entry.file_name().map(|n| n.to_string_lossy().to_string()) {
+                // Skip metadata file
+                if name != METADATA_FILE {
+                    return ExtractionType::RawFile { filename: name };
+                }
             }
-        } else {
-            ExtractionType::Archive
+        }
+
+        // Fallback: shouldn't happen if cache is valid, but use a sensible default
+        ExtractionType::RawFile {
+            filename: self.ba.tool_name.clone(),
         }
     }
 
@@ -569,21 +579,24 @@ impl Backend for HttpBackend {
         // Verify artifact
         verify_artifact(&tv, &file_path, &opts, Some(ctx.pr.as_ref()))?;
 
-        // Generate cache key and determine extraction type
+        // Generate cache key
         let cache_key = self.cache_key(&file_path, &opts)?;
         let file_info = FileInfo::new(&file_path, &opts);
-        let extraction_type = self.extraction_type(&file_path, &file_info, &opts);
 
         // Acquire lock and extract or reuse cache
         let cache_path = self.cache_path(&cache_key);
         let _lock = crate::lock_file::get(&cache_path, ctx.force)?;
 
-        if self.is_cached(&cache_key) {
+        // Determine extraction type based on whether we're using cache or extracting fresh
+        // On cache hit, we need to detect the actual filename from the cache (which may differ
+        // from current options if a previous extraction used different `bin` name)
+        let extraction_type = if self.is_cached(&cache_key) {
             ctx.pr.set_message("using cached tarball".into());
+            self.extraction_type_from_cache(&cache_key, &file_info)
         } else {
             ctx.pr.set_message("extracting to cache".into());
-            self.extract_to_cache(&file_path, &cache_key, &url, &opts, Some(ctx.pr.as_ref()))?;
-        }
+            self.extract_to_cache(&file_path, &cache_key, &url, &opts, Some(ctx.pr.as_ref()))?
+        };
 
         // Create symlinks
         self.create_install_symlink(&tv, &cache_key, &extraction_type, &opts)?;
