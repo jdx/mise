@@ -1010,6 +1010,7 @@
               "type": "string"
             },
             "precompiled_url": {
+              "default": "jdx/ruby",
               "description": "[experimental] URL template or GitHub repo for precompiled Ruby binaries.",
               "type": "string"
             },

@@ -597,23 +597,24 @@ impl Backend for RubyPlugin {
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         // Try precompiled if experimental mode is enabled and compile is not explicitly true
         if self.should_try_precompiled()
-            && let Some(installed_tv) = self.install_precompiled(ctx, &tv).await? {
-                hint!(
-                    "ruby_precompiled",
-                    "installing precompiled ruby from jdx/ruby\n\
+            && let Some(installed_tv) = self.install_precompiled(ctx, &tv).await?
+        {
+            hint!(
+                "ruby_precompiled",
+                "installing precompiled ruby from jdx/ruby\n\
                     if you experience issues, switch to ruby-build by running",
-                    "mise settings ruby.compile=1"
-                );
-                self.install_rubygems_hook(&installed_tv)?;
-                if let Err(err) = self
-                    .install_default_gems(&ctx.config, &installed_tv, ctx.pr.as_ref())
-                    .await
-                {
-                    warn!("failed to install default ruby gems {err:#}");
-                }
-                return Ok(installed_tv);
+                "mise settings ruby.compile=1"
+            );
+            self.install_rubygems_hook(&installed_tv)?;
+            if let Err(err) = self
+                .install_default_gems(&ctx.config, &installed_tv, ctx.pr.as_ref())
+                .await
+            {
+                warn!("failed to install default ruby gems {err:#}");
             }
-            // No precompiled available, fall through to compile from source
+            return Ok(installed_tv);
+        }
+        // No precompiled available, fall through to compile from source
 
         // Compile from source
         if let Err(err) = self.update_build_tool(Some(ctx)).await {
