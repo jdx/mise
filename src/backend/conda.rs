@@ -149,7 +149,7 @@ impl CondaBackend {
     }
 
     /// Check if a version matches a conda version spec
-    /// Supports: exact match, prefix match, wildcard (*), and basic comparisons
+    /// Supports: exact match, prefix match, wildcard (*), and comparison operators
     fn version_matches(version: &str, spec: &str) -> bool {
         // Exact match
         if version == spec {
@@ -186,16 +186,48 @@ impl CondaBackend {
             return true;
         }
 
-        // Basic comparison operators (>=, <=, >, <)
-        // For dependencies, we usually just want "any version that satisfies"
-        // so we accept any version when comparison operators are present
-        if spec.starts_with(">=")
-            || spec.starts_with("<=")
-            || spec.starts_with('>')
-            || spec.starts_with('<')
-        {
-            // For now, accept any version - conda's actual version resolution is complex
-            return true;
+        // Handle compound specs like ">=1.0,<2.0" by splitting on comma
+        if spec.contains(',') {
+            return spec
+                .split(',')
+                .all(|part| Self::version_matches(version, part.trim()));
+        }
+
+        // Comparison operators (>=, <=, >, <, ==, !=)
+        Self::check_version_constraint(version, spec)
+    }
+
+    /// Check a single version constraint like ">=1.0" or "<2.0"
+    fn check_version_constraint(version: &str, constraint: &str) -> bool {
+        let v = match Versioning::new(version) {
+            Some(v) => v,
+            None => return false,
+        };
+
+        if let Some(spec_ver) = constraint.strip_prefix(">=") {
+            if let Some(s) = Versioning::new(spec_ver) {
+                return v >= s;
+            }
+        } else if let Some(spec_ver) = constraint.strip_prefix("<=") {
+            if let Some(s) = Versioning::new(spec_ver) {
+                return v <= s;
+            }
+        } else if let Some(spec_ver) = constraint.strip_prefix("==") {
+            if let Some(s) = Versioning::new(spec_ver) {
+                return v == s;
+            }
+        } else if let Some(spec_ver) = constraint.strip_prefix("!=") {
+            if let Some(s) = Versioning::new(spec_ver) {
+                return v != s;
+            }
+        } else if let Some(spec_ver) = constraint.strip_prefix('>') {
+            if let Some(s) = Versioning::new(spec_ver) {
+                return v > s;
+            }
+        } else if let Some(spec_ver) = constraint.strip_prefix('<') {
+            if let Some(s) = Versioning::new(spec_ver) {
+                return v < s;
+            }
         }
 
         false
@@ -245,15 +277,16 @@ impl CondaBackend {
             .unwrap_or("package.conda");
         ctx.pr.set_message(format!("extract {filename}"));
 
-        // Create a temp directory for extraction
-        let temp_dir = conda_path.parent().unwrap().join("conda_extract_temp");
-        file::create_dir_all(&temp_dir)?;
+        // Create a unique temp directory for extraction to avoid race conditions
+        // when multiple processes extract different packages simultaneously
+        let parent_dir = conda_path.parent().unwrap();
+        let temp_dir = tempfile::tempdir_in(parent_dir)?;
 
         // Unzip the .conda file
-        file::unzip(conda_path, &temp_dir, &Default::default())?;
+        file::unzip(conda_path, temp_dir.path(), &Default::default())?;
 
         // Find and extract pkg-*.tar.zst
-        let pkg_tar = std::fs::read_dir(&temp_dir)?
+        let pkg_tar = std::fs::read_dir(temp_dir.path())?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
             .find(|p| {
@@ -273,9 +306,7 @@ impl CondaBackend {
             bail!("could not find pkg-*.tar.zst in .conda archive");
         }
 
-        // Clean up temp directory
-        file::remove_all(&temp_dir)?;
-
+        // temp_dir is automatically cleaned up when dropped
         Ok(())
     }
 
@@ -326,8 +357,7 @@ impl CondaBackend {
             let dep_files = match self.fetch_package_files_for(&name).await {
                 Ok(files) => files,
                 Err(e) => {
-                    debug!("skipping dependency {}: {}", name, e);
-                    continue;
+                    bail!("failed to fetch dependency '{}': {}", name, e);
                 }
             };
 
@@ -335,8 +365,12 @@ impl CondaBackend {
             let Some(matched) =
                 Self::find_package_file(&dep_files, version_spec.as_deref(), subdir)
             else {
-                debug!("no matching version for dependency {} on {}", name, subdir);
-                continue;
+                bail!(
+                    "no matching version for dependency '{}' (spec: {:?}) on platform {}",
+                    name,
+                    version_spec,
+                    subdir
+                );
             };
 
             resolved.insert(name.clone(), matched.to_resolved_package(&name));
@@ -536,7 +570,6 @@ impl CondaPackageFile {
     fn to_resolved_package(&self, name: &str) -> ResolvedPackage {
         ResolvedPackage {
             name: name.to_string(),
-            version: self.version.clone(),
             download_url: CondaBackend::build_download_url(&self.download_url),
             sha256: self.sha256.clone(),
             basename: self.basename.clone(),
@@ -557,7 +590,6 @@ struct CondaPackageAttrs {
 #[derive(Debug, Clone)]
 struct ResolvedPackage {
     name: String,
-    version: String,
     download_url: String,
     sha256: Option<String>,
     basename: String,
