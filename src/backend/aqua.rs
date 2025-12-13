@@ -153,7 +153,10 @@ impl Backend for AquaBackend {
                         // URL is invalid or unreachable, regenerate it
                         debug!(
                             "lockfile URL validation failed for tool '{}' version '{}' platform '{}', will regenerate: {}",
-                            tv.short(), tv.version, platform_key, url
+                            tv.short(),
+                            tv.version,
+                            platform_key,
+                            url
                         );
                         None
                     }
@@ -162,63 +165,63 @@ impl Backend for AquaBackend {
         } else {
             None
         };
-        let (url, v, filename, api_digest) =
-            if let Some(ref existing_url) = validated_existing {
-                let filename = get_filename_from_url(&existing_url);
-                // Determine which version variant was used based on the URL or filename
-                // Check for version_prefix (e.g., "jq-" for jq), "v" prefix, or raw version
-                let v = if let Some(prefix) = &pkg.version_prefix {
-                    let prefixed_version = format!("{prefix}{}", tv.version);
-                    if existing_url.contains(&prefixed_version) || filename.contains(&prefixed_version) {
-                        prefixed_version
-                    } else if existing_url.contains(&format!("v{}", tv.version))
-                        || filename.contains(&format!("v{}", tv.version))
-                    {
-                        format!("v{}", tv.version)
-                    } else {
-                        tv.version.clone()
-                    }
+        let (url, v, filename, api_digest) = if let Some(ref existing_url) = validated_existing {
+            let filename = get_filename_from_url(existing_url);
+            // Determine which version variant was used based on the URL or filename
+            // Check for version_prefix (e.g., "jq-" for jq), "v" prefix, or raw version
+            let v = if let Some(prefix) = &pkg.version_prefix {
+                let prefixed_version = format!("{prefix}{}", tv.version);
+                if existing_url.contains(&prefixed_version) || filename.contains(&prefixed_version)
+                {
+                    prefixed_version
                 } else if existing_url.contains(&format!("v{}", tv.version))
                     || filename.contains(&format!("v{}", tv.version))
                 {
                     format!("v{}", tv.version)
                 } else {
                     tv.version.clone()
-                };
-                (existing_url.clone(), v, filename, None)
+                }
+            } else if existing_url.contains(&format!("v{}", tv.version))
+                || filename.contains(&format!("v{}", tv.version))
+            {
+                format!("v{}", tv.version)
             } else {
-                let (url, v, digest) = if let Some(v_prefixed) = v_prefixed {
-                    // Try v-prefixed version first because most aqua packages use v-prefixed versions
-                    match self.get_url(&pkg, v_prefixed.as_ref()).await {
-                        // If the url is already checked, use it
-                        Ok((url, true, digest)) => (url, v_prefixed, digest),
-                        Ok((url_prefixed, false, digest_prefixed)) => {
-                            let (url, _, digest) = self.get_url(&pkg, &v).await?;
-                            // If the v-prefixed URL is the same as the non-prefixed URL, use it
-                            if url == url_prefixed {
-                                (url_prefixed, v_prefixed, digest_prefixed)
-                            } else {
-                                // If they are different, check existence
-                                match HTTP.head(&url_prefixed).await {
-                                    Ok(_) => (url_prefixed, v_prefixed, digest_prefixed),
-                                    Err(_) => (url, v, digest),
-                                }
+                tv.version.clone()
+            };
+            (existing_url.clone(), v, filename, None)
+        } else {
+            let (url, v, digest) = if let Some(v_prefixed) = v_prefixed {
+                // Try v-prefixed version first because most aqua packages use v-prefixed versions
+                match self.get_url(&pkg, v_prefixed.as_ref()).await {
+                    // If the url is already checked, use it
+                    Ok((url, true, digest)) => (url, v_prefixed, digest),
+                    Ok((url_prefixed, false, digest_prefixed)) => {
+                        let (url, _, digest) = self.get_url(&pkg, &v).await?;
+                        // If the v-prefixed URL is the same as the non-prefixed URL, use it
+                        if url == url_prefixed {
+                            (url_prefixed, v_prefixed, digest_prefixed)
+                        } else {
+                            // If they are different, check existence
+                            match HTTP.head(&url_prefixed).await {
+                                Ok(_) => (url_prefixed, v_prefixed, digest_prefixed),
+                                Err(_) => (url, v, digest),
                             }
                         }
-                        Err(err) => {
-                            let (url, _, digest) =
-                                self.get_url(&pkg, &v).await.map_err(|e| err.wrap_err(e))?;
-                            (url, v, digest)
-                        }
                     }
-                } else {
-                    let (url, _, digest) = self.get_url(&pkg, &v).await?;
-                    (url, v, digest)
-                };
-                let filename = get_filename_from_url(&url);
-
-                (url, v.to_string(), filename, digest)
+                    Err(err) => {
+                        let (url, _, digest) =
+                            self.get_url(&pkg, &v).await.map_err(|e| err.wrap_err(e))?;
+                        (url, v, digest)
+                    }
+                }
+            } else {
+                let (url, _, digest) = self.get_url(&pkg, &v).await?;
+                (url, v, digest)
             };
+            let filename = get_filename_from_url(&url);
+
+            (url, v.to_string(), filename, digest)
+        };
 
         self.download(ctx, &tv, &url, &filename).await?;
 
