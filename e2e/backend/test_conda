@@ -3,8 +3,11 @@
 # Test basic version listing
 assert_succeed "mise ls-remote conda:ruff | head -5"
 
-# Test installation and execution
+# Test installation and execution (no dependencies)
 assert_contains "mise x conda:ruff@0.8.0 -- ruff --version" "0.8.0"
 
-# Test installing another tool
+# Test installing another tool (no dependencies)
 assert_contains "mise x conda:bat@0.24.0 -- bat --version" "0.24.0"
+
+# Test installing a tool with dependencies (jq depends on oniguruma)
+assert_contains "mise x conda:jq@1.7.1 -- jq --version" "jq-1.7.1"
