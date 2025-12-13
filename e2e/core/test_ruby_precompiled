@@ -2,6 +2,7 @@
 
 # Test precompiled Ruby binaries from spinel-coop/rv-ruby
 # Precompiled requires BOTH experimental=true AND compile=false
+export MISE_EXPERIMENTAL=1
 export MISE_RUBY_COMPILE=0
 
 # Install precompiled Ruby 3.3.0

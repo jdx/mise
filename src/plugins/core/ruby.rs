@@ -424,6 +424,30 @@ impl RubyPlugin {
         Some(format!("{}_{}", arch, os))
     }
 
+    /// Get platform identifier for a specific target (used for lockfiles)
+    fn precompiled_platform_for_target(&self, target: &PlatformTarget) -> Option<String> {
+        let arch = match target.arch_name() {
+            "arm64" | "aarch64" => "arm64",
+            "x64" | "x86_64" => "x86_64",
+            _ => return None,
+        };
+
+        let os = match target.os_name() {
+            "linux" => "linux",
+            "macos" => {
+                // Only arm64 macOS is supported for precompiled binaries
+                if arch == "arm64" {
+                    "sonoma"
+                } else {
+                    return None;
+                }
+            }
+            _ => return None,
+        };
+
+        Some(format!("{}_{}", arch, os))
+    }
+
     /// Render URL template with version and platform variables
     fn render_precompiled_url(&self, template: &str, version: &str, platform: &str) -> String {
         let (arch, os) = platform.split_once('_').unwrap_or((platform, ""));
@@ -639,11 +663,11 @@ impl Backend for RubyPlugin {
     async fn resolve_lock_info(
         &self,
         tv: &ToolVersion,
-        _target: &PlatformTarget,
+        target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
         // Precompiled binary info if enabled
         if self.should_use_precompiled() {
-            if let Some(platform) = self.precompiled_platform() {
+            if let Some(platform) = self.precompiled_platform_for_target(target) {
                 if let Some((url, checksum)) =
                     self.resolve_precompiled_url(&tv.version, &platform).await?
                 {
