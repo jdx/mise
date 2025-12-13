@@ -1416,6 +1416,11 @@ description = "A day 0 tool for getting your app on k8s fast"
 backends = ["aqua:snyk/driftctl", "asdf:nlamirault/asdf-driftctl"]
 description = "Detect, track and alert on infrastructure drift"
 
+[tools.droid]
+backends = ["asdf:ashfaqmehmood/asdf-droid"]
+description = "Factory.ai Droid CLI"
+test = ["droid --version", "{{version}}"]
+
 [tools.drone]
 backends = [
   "aqua:harness/drone-cli",
