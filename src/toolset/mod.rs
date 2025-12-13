@@ -3,6 +3,7 @@ use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
@@ -948,6 +949,27 @@ impl Toolset {
                 if let Ok(Some(_bin)) = backend.which(config, tv, bin_name).await {
                     plugins.insert(backend.clone());
                     break;
+                }
+            }
+        }
+
+        // Also check configured http: backends whose tool name matches the binary
+        // This handles http: tools with cleared cache (broken symlinks to http-tarballs)
+        for (ba, _tvl) in &self.versions {
+            // Only handle http: backend
+            if ba.backend_type() != BackendType::Http {
+                continue;
+            }
+
+            // Skip if already found
+            if plugins.iter().any(|p| p.ba() == ba) {
+                continue;
+            }
+
+            // Check if tool name matches the binary being searched
+            if ba.short == bin_name || ba.tool_name == bin_name {
+                if let Ok(backend) = ba.backend() {
+                    plugins.insert(backend);
                 }
             }
         }
