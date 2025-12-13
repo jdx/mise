@@ -224,11 +224,10 @@ impl CondaBackend {
             if let Some(s) = Versioning::new(spec_ver) {
                 return v > s;
             }
-        } else if let Some(spec_ver) = constraint.strip_prefix('<') {
-            if let Some(s) = Versioning::new(spec_ver) {
+        } else if let Some(spec_ver) = constraint.strip_prefix('<')
+            && let Some(s) = Versioning::new(spec_ver) {
                 return v < s;
             }
-        }
 
         false
     }
