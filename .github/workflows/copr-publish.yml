@@ -8,7 +8,7 @@ on:
       chroots:
         description: "COPR chroots to target (space-separated)"
         required: false
-        default: "fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-42-aarch64 fedora-42-x86_64 fedora-41-aarch64 fedora-41-x86_64 epel-10-aarch64 epel-10-x86_64 epel-9-aarch64 epel-9-x86_64"
+        default: "fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-43-aarch64 fedora-43-x86_64 fedora-42-aarch64 fedora-42-x86_64 fedora-41-aarch64 fedora-41-x86_64 epel-10-aarch64 epel-10-x86_64 epel-9-aarch64 epel-9-x86_64"
         type: string
       use_serious_profile:
         description: 'Use the "serious" profile for optimized builds (LTO enabled)'
@@ -37,7 +37,7 @@ jobs:
           VERSION=$(./scripts/get-version.sh | sed 's/^v//')
 
           if [ "${{ github.event_name }}" = "release" ]; then
-            CHROOTS="fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-42-aarch64 fedora-42-x86_64 fedora-41-aarch64 fedora-41-x86_64 epel-10-aarch64 epel-10-x86_64 epel-9-aarch64 epel-9-x86_64"
+            CHROOTS="fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-43-aarch64 fedora-43-x86_64 fedora-42-aarch64 fedora-42-x86_64 fedora-41-aarch64 fedora-41-x86_64 epel-10-aarch64 epel-10-x86_64 epel-9-aarch64 epel-9-x86_64"
           else
             CHROOTS="${{ inputs.chroots }}"
           fi
