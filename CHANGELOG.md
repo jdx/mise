@@ -1,5 +1,12 @@
 # Changelog
 
+## [2025.12.4](https://github.com/jdx/mise/compare/v2025.12.3..v2025.12.4) - 2025-12-13
+
+### 🚀 Features
+
+- **(copr)** add Fedora 43 support by @jdx in [#7265](https://github.com/jdx/mise/pull/7265)
+- **(ruby)** add precompiled binary support by @jdx in [#7263](https://github.com/jdx/mise/pull/7263)
+
 ## [2025.12.3](https://github.com/jdx/mise/compare/v2025.12.2..v2025.12.3) - 2025-12-13
 
 ### 🚀 Features
