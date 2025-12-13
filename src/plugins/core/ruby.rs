@@ -28,7 +28,7 @@ use crate::github;
 use crate::hash;
 
 const RUBY_INDEX_URL: &str = "https://cache.ruby-lang.org/pub/ruby/index.txt";
-const RUBY_PRECOMPILED_REPO: &str = "spinel-coop/rv-ruby";
+const RUBY_PRECOMPILED_REPO: &str = "jdx/ruby";
 
 #[derive(Debug)]
 pub struct RubyPlugin {
@@ -394,58 +394,60 @@ impl RubyPlugin {
     }
 
     /// Get platform identifier for precompiled binaries
+    /// Returns platform in jdx/ruby format: "macos", "arm64_linux", or "x86_64_linux"
     fn precompiled_platform(&self) -> Option<String> {
         let settings = Settings::get();
 
-        let detected_arch = match settings.arch() {
-            "arm64" | "aarch64" => Some("arm64"),
-            "x64" | "x86_64" => Some("x86_64"),
-            _ => None,
-        };
+        // Check for user overrides first
+        if let (Some(arch), Some(os)) = (
+            settings.ruby.precompiled_arch.as_deref(),
+            settings.ruby.precompiled_os.as_deref(),
+        ) {
+            return Some(format!("{}_{}", arch, os));
+        }
 
-        let detected_os = if cfg!(target_os = "linux") {
-            Some("linux")
-        } else if cfg!(target_os = "macos") {
-            // Only arm64 macOS is supported
+        // Auto-detect platform
+        if cfg!(target_os = "macos") {
+            // macOS only supports arm64 and uses "macos" without arch prefix
             match settings.arch() {
-                "arm64" | "aarch64" => Some("sonoma"),
+                "arm64" | "aarch64" => Some("macos".to_string()),
                 _ => None,
             }
+        } else if cfg!(target_os = "linux") {
+            // Linux uses arch_linux format
+            let arch = match settings.arch() {
+                "arm64" | "aarch64" => "arm64",
+                "x64" | "x86_64" => "x86_64",
+                _ => return None,
+            };
+            Some(format!("{}_linux", arch))
         } else {
             None
-        };
-
-        let arch = settings
-            .ruby
-            .precompiled_arch
-            .as_deref()
-            .or(detected_arch)?;
-        let os = settings.ruby.precompiled_os.as_deref().or(detected_os)?;
-        Some(format!("{}_{}", arch, os))
+        }
     }
 
     /// Get platform identifier for a specific target (used for lockfiles)
+    /// Returns platform in jdx/ruby format: "macos", "arm64_linux", or "x86_64_linux"
     fn precompiled_platform_for_target(&self, target: &PlatformTarget) -> Option<String> {
-        let arch = match target.arch_name() {
-            "arm64" | "aarch64" => "arm64",
-            "x64" | "x86_64" => "x86_64",
-            _ => return None,
-        };
-
-        let os = match target.os_name() {
-            "linux" => "linux",
+        match target.os_name() {
             "macos" => {
-                // Only arm64 macOS is supported for precompiled binaries
-                if arch == "arm64" {
-                    "sonoma"
-                } else {
-                    return None;
+                // macOS only supports arm64 and uses "macos" without arch prefix
+                match target.arch_name() {
+                    "arm64" | "aarch64" => Some("macos".to_string()),
+                    _ => None,
                 }
             }
-            _ => return None,
-        };
-
-        Some(format!("{}_{}", arch, os))
+            "linux" => {
+                // Linux uses arch_linux format
+                let arch = match target.arch_name() {
+                    "arm64" | "aarch64" => "arm64",
+                    "x64" | "x86_64" => "x86_64",
+                    _ => return None,
+                };
+                Some(format!("{}_linux", arch))
+            }
+            _ => None,
+        }
     }
 
     /// Render URL template with version and platform variables
@@ -531,16 +533,16 @@ impl RubyPlugin {
         ctx.pr.set_message(format!("extract {}", filename));
         let install_path = tv.install_path();
         file::create_dir_all(&install_path)?;
-        cmd!(
-            "tar",
-            "-xzf",
+        file::untar(
             &tarball_path,
-            "-C",
             &install_path,
-            "--strip-components=2"
-        )
-        .run()
-        .wrap_err_with(|| format!("failed to extract {}", tarball_path.display()))?;
+            &file::TarOptions {
+                format: file::TarFormat::TarGz,
+                strip_components: 1,
+                pr: Some(ctx.pr.as_ref()),
+                ..Default::default()
+            },
+        )?;
 
         Ok(tv.clone())
     }

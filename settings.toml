@@ -1121,10 +1121,10 @@ type = "String"
 [ruby.precompiled_url]
 description = "[experimental] URL template or GitHub repo for precompiled Ruby binaries."
 docs = """
-Default uses GitHub releases from spinel-coop/rv-ruby.
+Default uses GitHub releases from jdx/ruby.
 
 Can be either:
-- A GitHub repo shorthand: `"jdx/ruby"` or `"spinel-coop/rv-ruby"`
+- A GitHub repo shorthand: `"jdx/ruby"` or `"yourorg/ruby"`
 - A full URL template with variables: `{version}`, `{platform}`, `{os}`, `{arch}`
 
 Examples:
