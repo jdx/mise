@@ -63,9 +63,10 @@ impl HttpBackend {
         Ok(cache_key)
     }
 
-    /// Get the path to the cached tarball directory
+    /// Get the path to the http tarball directory
+    /// Uses DATA dir instead of CACHE so that `mise cache clear` won't break http: tools
     fn get_cached_tarball_path(&self, cache_key: &str) -> PathBuf {
-        dirs::CACHE.join("http-tarballs").join(cache_key)
+        dirs::DATA.join("http-tarballs").join(cache_key)
     }
 
     /// Get the path to the extracted contents within the cache
