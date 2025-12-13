@@ -8,11 +8,11 @@ run = 'echo "Building project"'
 description = 'Build the project'
 EOF
 
-# Test that --help shows help instead of running the task
-assert_contains "mise run --cd subdir build --help 2>&1 || true" "Usage:"
-assert_not_contains "mise run --cd subdir build --help 2>&1 || true" "Building project"
+# For tasks WITHOUT usage spec, --help is passed through to the task
+assert "mise run --cd subdir build --help 2>&1 || true" "[build] $ echo \"Building project\" --help
+Building project --help"
 
-# Test that -- separator passes --help through to task (for tasks without usage spec)
+# -- separator also passes --help through
 assert "mise run --cd subdir build -- --help 2>&1 || true" "[build] $ echo \"Building project\" --help
 Building project --help"
 

@@ -71,7 +71,7 @@ assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run remote_lint_https_latest
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_exists "${MISE_LOCAL_CACHE_DIR}"
 
-assert_succeed "mise run remote_lint_https_latest --no-cache" # Remote task should be redownloaded
+assert_succeed "mise run --no-cache remote_lint_https_latest" # Remote task should be redownloaded
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_exists "${MISE_LOCAL_CACHE_DIR}"
 
@@ -104,7 +104,7 @@ assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run remote_lint_https_ref" #
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_exists "${MISE_LOCAL_CACHE_DIR}"
 
-assert_succeed "mise run remote_lint_https_ref --no-cache" # Remote task should be redownloaded
+assert_succeed "mise run --no-cache remote_lint_https_ref" # Remote task should be redownloaded
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_exists "${MISE_LOCAL_CACHE_DIR}"
 

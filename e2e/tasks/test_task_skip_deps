@@ -28,16 +28,16 @@ d
 c"
 
 # Test --skip-deps
-assert "mise run d --skip-deps" "d"
+assert "mise run --skip-deps d" "d"
 assert "MISE_TASK_SKIP_DEPENDS=true mise run d" "d"
 
 # Test --skip-deps, multiple tasks
-assert_contains "mise run c --skip-deps ::: b" "c"
-assert_contains "mise run c --skip-deps ::: b" "b"
-assert_not_contains "mise run c --skip-deps ::: b" "a"
+assert_contains "mise run --skip-deps c ::: b" "c"
+assert_contains "mise run --skip-deps c ::: b" "b"
+assert_not_contains "mise run --skip-deps c ::: b" "a"
 
 # Test --skip-deps, nested dependencies
-assert "mise run e --skip-deps" "a
+assert "mise run --skip-deps e" "a
 b"
 
 # Test task_skip_depends setting

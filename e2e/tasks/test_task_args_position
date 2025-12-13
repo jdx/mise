@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+# Test that flags after task name go to task, not mise
+
+cat <<EOF >mise.toml
+[tasks.echo-args]
+description = "Echo arguments passed to task"
+run = 'echo args:'
+
+[tasks.echo-with-usage]
+description = "Task with usage args defined"
+run = 'echo "got: {{arg(name="myarg")}}"'
+EOF
+
+# Test 1: Flags after task name should go to task
+# --jobs 4 appears after the task name, so it should be passed to the task
+# (args are appended to command string for tasks without formal args)
+assert "mise run echo-args --jobs 4" "args: --jobs 4"
+
+# Test 2: Flags before task name should be mise flags (not passed to task)
+# Here --dry-run is before task name, so it's a mise flag
+# Dry-run outputs to stderr, so we check that stdout is empty (task didn't run)
+assert "mise run --dry-run echo-args" ""
+
+# Test 3: Mixed flags - before goes to mise, after goes to task
+assert "mise run echo-args --force" "args: --force"
+
+# Test 4: Naked run - flags after task go to task
+assert "mise echo-args --verbose" "args: --verbose"
+
+# Test 5: Triple colon separator still works with flags after task
+# Note: Parallel execution means order may vary, so check each output is present
+assert_contains "mise run echo-args arg1 ::: echo-args arg2" "args: arg1"
+assert_contains "mise run echo-args arg1 ::: echo-args arg2" "args: arg2"
+
+# Test 6: Backward compat - explicit -- still works
+assert "mise run echo-args -- --help" "args: --help"
+
+# Test 7: --help on task WITHOUT usage defined should pass through
+# (task has no formal args, so --help goes to the underlying command)
+assert "mise run echo-args --help" "args: --help"
+
+# Test 8: --help on task WITH usage defined should show mise help
+assert_contains "mise run echo-with-usage --help" "myarg"

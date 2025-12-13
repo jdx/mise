@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 
-# Test smart flag routing: mise flags go to mise, unknown flags go to task, -- passes everything to task
+# Test flag routing: mise flags ONLY work BEFORE task name, flags after task go to task
 
 cat <<'EOF' >mise.toml
 [tasks.echo_args]
 run = 'echo "args:$@"'
 EOF
 
-# Test 1: Mise flags work anywhere before --
-# -q is a mise flag, so it should suppress output regardless of position
+# Test 1: Mise flags work ONLY before task name
+# -q before task = mise flag, -q after task = task arg
 assert "mise run -q echo_args arg1 2>&1" "args: arg1"
-assert "mise run echo_args -q arg1 2>&1" "args: arg1"
+assert_contains "mise run echo_args -q arg1 2>&1" "args: -q arg1"
 assert "mise -q run echo_args arg1 2>&1" "args: arg1"
 
-# Test 2: Naked runs - mise flags still go to mise
+# Test 2: Naked runs - mise flags only before task name
 assert "mise -q echo_args arg1 2>&1" "args: arg1"
-assert "mise echo_args -q arg1 2>&1" "args: arg1"
+assert_contains "mise echo_args -q arg1 2>&1" "args: -q arg1"
 
 # Test 3: Unknown flags go to task
 cat <<'EOF' >mise.toml
@@ -94,8 +94,9 @@ EOF
 assert "mise run custom_quiet -- -q" "custom quiet flag received"
 assert "mise custom_quiet -- -q" "custom quiet flag received"
 
-# But without --, -q goes to mise
-assert "mise run custom_quiet -q 2>&1 | grep -v '^\\[' || true" ""
+# With new behavior, -q after task name also goes to task
+assert "mise run custom_quiet -q" "custom quiet flag received"
+assert "mise custom_quiet -q" "custom quiet flag received"
 
 # Test 11: Complex scenarios
 cat <<'EOF' >mise.toml
