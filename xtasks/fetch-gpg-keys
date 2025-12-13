@@ -25,6 +25,7 @@ for fingerprint in $keys_list; do
 		echo "ERROR: Failed to download key $fingerprint" >&2
 		exit 1
 	fi
+	echo "" >>"src/assets/gpg/node.asc"
 	key_count=$((key_count + 1))
 done
 echo "Successfully fetched $key_count Node.js release keys"
@@ -41,5 +42,6 @@ for url in "${SWIFT_KEYS[@]}"; do
 		echo "ERROR: Failed to download $url" >&2
 		exit 1
 	fi
+	echo "" >>src/assets/gpg/swift.asc
 done
 echo "Successfully fetched ${#SWIFT_KEYS[@]} Swift release keys"
