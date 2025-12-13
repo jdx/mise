@@ -71,8 +71,7 @@ impl Backend for UnifiedGitBackend {
         let version_prefix = opts.get("version_prefix");
 
         // Get releases with full metadata from GitHub or GitLab
-        let versions: Vec<VersionInfo> = if self.is_gitlab() {
-            // GitLab has released_at in releases
+        let raw_versions: Vec<VersionInfo> = if self.is_gitlab() {
             gitlab::list_releases_from_url(api_url.as_str(), &repo)
                 .await?
                 .into_iter()
@@ -81,17 +80,8 @@ impl Backend for UnifiedGitBackend {
                     version: self.strip_version_prefix(&r.tag_name),
                     created_at: r.released_at,
                 })
-                .filter(|v| match v.version.parse::<ToolVersionType>() {
-                    Ok(ToolVersionType::Version(_)) => true,
-                    _ => {
-                        warn!("Invalid version: {id}@{}", v.version);
-                        false
-                    }
-                })
-                .rev()
                 .collect()
         } else {
-            // GitHub has created_at on releases
             github::list_releases_from_url(api_url.as_str(), &repo)
                 .await?
                 .into_iter()
@@ -100,16 +90,21 @@ impl Backend for UnifiedGitBackend {
                     version: self.strip_version_prefix(&r.tag_name),
                     created_at: Some(r.created_at),
                 })
-                .filter(|v| match v.version.parse::<ToolVersionType>() {
-                    Ok(ToolVersionType::Version(_)) => true,
-                    _ => {
-                        warn!("Invalid version: {id}@{}", v.version);
-                        false
-                    }
-                })
-                .rev()
                 .collect()
         };
+
+        // Apply common validation and reverse order
+        let versions = raw_versions
+            .into_iter()
+            .filter(|v| match v.version.parse::<ToolVersionType>() {
+                Ok(ToolVersionType::Version(_)) => true,
+                _ => {
+                    warn!("Invalid version: {id}@{}", v.version);
+                    false
+                }
+            })
+            .rev()
+            .collect();
 
         Ok(versions)
     }
