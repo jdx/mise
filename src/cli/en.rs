@@ -34,6 +34,7 @@ impl En {
             jobs: None,
             c: None,
             command: Some(command),
+            no_prepare: false,
         }
         .run()
         .await

@@ -8,6 +8,7 @@ use super::args::ToolArg;
 use crate::cli::{Cli, unescape_task_args};
 use crate::config::{Config, Settings};
 use crate::duration;
+use crate::prepare::{PrepareEngine, PrepareOptions};
 use crate::task::has_any_args_defined;
 use crate::task::task_helpers::task_needs_permit;
 use crate::task::task_list::{get_task_lists, resolve_depends};
@@ -158,6 +159,10 @@ pub struct Run {
     #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
     pub no_cache: bool,
 
+    /// Skip automatic dependency preparation
+    #[clap(long)]
+    pub no_prepare: bool,
+
     /// Hides elapsed time after each task completes
     ///
     /// Default to always hide with `MISE_TASK_TIMINGS=0`
@@ -195,6 +200,13 @@ pub struct Run {
 impl Run {
     pub async fn run(mut self) -> Result<()> {
         let config = Config::get().await?;
+
+        // Run prepare unless disabled
+        if !self.no_prepare && Settings::get().prepare.auto {
+            let engine = PrepareEngine::new(config.clone())?;
+            engine.run(PrepareOptions::default()).await?;
+        }
+
         if self.task == "-h" {
             self.get_clap_command().print_help()?;
             return Ok(());

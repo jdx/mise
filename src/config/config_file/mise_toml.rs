@@ -25,6 +25,7 @@ use crate::config::{Alias, AliasMap, Config};
 use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
 use crate::hooks::{Hook, Hooks};
+use crate::prepare::PrepareConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
 use crate::task::Task;
@@ -69,6 +70,8 @@ pub struct MiseToml {
     tasks: Tasks,
     #[serde(default)]
     watch_files: Vec<WatchFile>,
+    #[serde(default)]
+    prepare: Option<PrepareConfig>,
     #[serde(default)]
     vars: EnvList,
     #[serde(default)]
@@ -689,6 +692,10 @@ impl ConfigFile for MiseToml {
             .flatten()
             .collect())
     }
+
+    fn prepare_config(&self) -> Option<PrepareConfig> {
+        self.prepare.clone()
+    }
 }
 
 /// Returns a [`toml_edit::Key`] from the given `key`.
@@ -755,6 +762,7 @@ impl Clone for MiseToml {
             task_config: self.task_config.clone(),
             settings: self.settings.clone(),
             watch_files: self.watch_files.clone(),
+            prepare: self.prepare.clone(),
             vars: self.vars.clone(),
             experimental_monorepo_root: self.experimental_monorepo_root,
         }

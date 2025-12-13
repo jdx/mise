@@ -17,6 +17,7 @@ use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::hash_to_str;
 use crate::hooks::Hook;
+use crate::prepare::PrepareConfig;
 use crate::redactions::Redactions;
 use crate::task::Task;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, Toolset};
@@ -118,6 +119,10 @@ pub trait ConfigFile: Debug + Send + Sync {
 
     fn hooks(&self) -> Result<Vec<Hook>> {
         Ok(Default::default())
+    }
+
+    fn prepare_config(&self) -> Option<PrepareConfig> {
+        None
     }
 }
 

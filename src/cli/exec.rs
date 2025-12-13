@@ -13,6 +13,7 @@ use crate::cli::args::ToolArg;
 use crate::cmd;
 use crate::config::{Config, Settings};
 use crate::env;
+use crate::prepare::{PrepareEngine, PrepareOptions};
 use crate::toolset::{InstallOptions, ResolveOptions, ToolsetBuilder};
 
 /// Execute a command with tool(s) set
@@ -45,6 +46,10 @@ pub struct Exec {
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
+    /// Skip automatic dependency preparation
+    #[clap(long)]
+    pub no_prepare: bool,
+
     /// Directly pipe stdin/stdout/stderr from plugin to user
     /// Sets --jobs=1
     #[clap(long, overrides_with = "jobs")]
@@ -55,6 +60,12 @@ impl Exec {
     #[async_backtrace::framed]
     pub async fn run(self) -> eyre::Result<()> {
         let mut config = Config::get().await?;
+
+        // Run prepare unless disabled
+        if !self.no_prepare && Settings::get().prepare.auto {
+            let engine = PrepareEngine::new(config.clone())?;
+            engine.run(PrepareOptions::default()).await?;
+        }
 
         // Check if any tool arg explicitly specified @latest
         // If so, resolve to the actual latest version from the registry (not just latest installed)
