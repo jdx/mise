@@ -9,6 +9,9 @@ use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
 use eyre::eyre;
 
+/// Dotnet backend requires experimental mode to be enabled
+pub const EXPERIMENTAL: bool = true;
+
 #[derive(Debug)]
 pub struct DotnetBackend {
     ba: Arc<BackendArg>,

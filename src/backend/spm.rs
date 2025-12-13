@@ -21,6 +21,9 @@ use strum::{AsRefStr, EnumString, VariantNames};
 use url::Url;
 use xx::regex;
 
+/// SPM backend requires experimental mode to be enabled
+pub const EXPERIMENTAL: bool = true;
+
 #[derive(Debug)]
 pub struct SPMBackend {
     ba: Arc<BackendArg>,

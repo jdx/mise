@@ -21,6 +21,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use versions::Versioning;
 
+/// Conda backend requires experimental mode to be enabled
+pub const EXPERIMENTAL: bool = true;
+
 #[derive(Debug)]
 pub struct CondaBackend {
     ba: Arc<BackendArg>,
@@ -225,9 +228,10 @@ impl CondaBackend {
                 return v > s;
             }
         } else if let Some(spec_ver) = constraint.strip_prefix('<')
-            && let Some(s) = Versioning::new(spec_ver) {
-                return v < s;
-            }
+            && let Some(s) = Versioning::new(spec_ver)
+        {
+            return v < s;
+        }
 
         false
     }
