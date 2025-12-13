@@ -53,14 +53,14 @@ impl Backend for UnifiedGitBackend {
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
         Ok(self
-            .list_remote_versions_with_info(config)
+            ._list_remote_versions_with_info(config)
             .await?
             .into_iter()
             .map(|v| v.version)
             .collect())
     }
 
-    async fn list_remote_versions_with_info(
+    async fn _list_remote_versions_with_info(
         &self,
         _config: &Arc<Config>,
     ) -> Result<Vec<VersionInfo>> {

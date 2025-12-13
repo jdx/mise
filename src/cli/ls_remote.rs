@@ -64,67 +64,41 @@ impl LsRemote {
             },
             _ => self.prefix.clone(),
         };
+        let matches_prefix = |v: &str| prefix.as_ref().map_or(true, |p| v.starts_with(p));
 
-        if self.json {
-            // Use list_remote_versions_with_info for JSON mode (uncached for some backends)
-            let versions = plugin.list_remote_versions_with_info(config).await?;
-            let versions: Vec<_> = match prefix {
-                Some(prefix) => versions
-                    .into_iter()
-                    .filter(|v| v.version.starts_with(&prefix))
-                    .collect(),
-                None => versions,
-            };
-            for version_info in versions {
-                miseprintln!("{}", serde_json::to_string(&version_info)?);
-            }
-        } else {
-            // Use cached list_remote_versions for non-JSON mode
-            let versions = plugin.list_remote_versions(config).await?;
-            let versions: Vec<_> = match prefix {
-                Some(prefix) => versions
-                    .into_iter()
-                    .filter(|v| v.starts_with(&prefix))
-                    .collect(),
-                None => versions,
-            };
-            for version in versions {
-                miseprintln!("{}", version);
+        // Both JSON and non-JSON modes use cached list_remote_versions_with_info
+        for v in plugin.list_remote_versions_with_info(config).await? {
+            if matches_prefix(&v.version) {
+                if self.json {
+                    miseprintln!("{}", serde_json::to_string(&v)?);
+                } else {
+                    miseprintln!("{}", v.version);
+                }
             }
         }
-
         Ok(())
     }
 
     async fn run_all(self, config: &Arc<Config>) -> Result<()> {
-        if self.json {
-            // Use list_remote_versions_with_info for JSON mode (uncached for some backends)
-            let mut versions = vec![];
-            for b in backend::list() {
-                let v = b.list_remote_versions_with_info(config).await?;
-                versions.extend(v.into_iter().map(|v| (b.id().to_string(), v)));
+        // Both JSON and non-JSON modes use cached list_remote_versions_with_info
+        let mut versions = vec![];
+        for b in backend::list() {
+            let tool = b.id().to_string();
+            for v in b.list_remote_versions_with_info(config).await? {
+                versions.push(VersionOutputAll {
+                    tool: tool.clone(),
+                    version: v.version,
+                    created_at: v.created_at,
+                });
             }
-            versions.sort_by_cached_key(|(id, _)| id.to_string());
+        }
+        versions.sort_by(|a, b| a.tool.cmp(&b.tool));
 
-            for (tool, version_info) in versions {
-                let output = VersionOutputAll {
-                    tool,
-                    version: version_info.version,
-                    created_at: version_info.created_at,
-                };
-                miseprintln!("{}", serde_json::to_string(&output)?);
-            }
-        } else {
-            // Use cached list_remote_versions for non-JSON mode
-            let mut versions = vec![];
-            for b in backend::list() {
-                let v = b.list_remote_versions(config).await?;
-                versions.extend(v.into_iter().map(|v| (b.id().to_string(), v)));
-            }
-            versions.sort_by_cached_key(|(id, _)| id.to_string());
-
-            for (tool, v) in versions {
-                miseprintln!("{tool}@{v}");
+        for v in versions {
+            if self.json {
+                miseprintln!("{}", serde_json::to_string(&v)?);
+            } else {
+                miseprintln!("{}@{}", v.tool, v.version);
             }
         }
         Ok(())
