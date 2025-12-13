@@ -6,7 +6,7 @@ use crate::backend::static_helpers::{
     get_filename_from_url, install_artifact, lookup_platform_key, lookup_platform_key_for_target,
     template_string, try_with_v_prefix, verify_artifact,
 };
-use crate::cli::args::BackendArg;
+use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::Config;
 use crate::file;
 use crate::http::HTTP;
@@ -65,6 +65,7 @@ impl Backend for UnifiedGitBackend {
         _config: &Arc<Config>,
     ) -> Result<Vec<VersionInfo>> {
         let repo = self.ba.tool_name();
+        let id = self.ba.to_string();
         let opts = self.ba.opts();
         let api_url = self.get_api_url(&opts);
         let version_prefix = opts.get("version_prefix");
@@ -80,6 +81,13 @@ impl Backend for UnifiedGitBackend {
                     version: self.strip_version_prefix(&r.tag_name),
                     created_at: None,
                 })
+                .filter(|v| match v.version.parse::<ToolVersionType>() {
+                    Ok(ToolVersionType::Version(_)) => true,
+                    _ => {
+                        warn!("Invalid version: {id}@{}", v.version);
+                        false
+                    }
+                })
                 .rev()
                 .collect()
         } else {
@@ -91,6 +99,13 @@ impl Backend for UnifiedGitBackend {
                 .map(|r| VersionInfo {
                     version: self.strip_version_prefix(&r.tag_name),
                     created_at: Some(r.created_at),
+                })
+                .filter(|v| match v.version.parse::<ToolVersionType>() {
+                    Ok(ToolVersionType::Version(_)) => true,
+                    _ => {
+                        warn!("Invalid version: {id}@{}", v.version);
+                        false
+                    }
                 })
                 .rev()
                 .collect()
