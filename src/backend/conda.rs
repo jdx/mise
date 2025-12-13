@@ -93,17 +93,26 @@ impl CondaBackend {
     }
 
     /// Find the best package file for a given version and platform
-    /// Prefers .conda format over .tar.bz2 (newer, faster)
+    /// Prefers platform-specific packages over noarch, and .conda format over .tar.bz2
     fn find_package_file<'a>(
         files: &'a [CondaPackageFile],
         version: Option<&str>,
         subdir: &str,
     ) -> Option<&'a CondaPackageFile> {
-        // Filter by platform (include noarch as fallback)
-        let platform_files: Vec<_> = files
-            .iter()
-            .filter(|f| f.attrs.subdir == subdir || f.attrs.subdir == "noarch")
-            .collect();
+        // Try platform-specific packages first, then fall back to noarch
+        Self::find_package_file_for_subdir(files, version, subdir)
+            .or_else(|| Self::find_package_file_for_subdir(files, version, "noarch"))
+    }
+
+    /// Find the best package file for a given version and specific subdir
+    /// Prefers .conda format over .tar.bz2 (newer, faster)
+    fn find_package_file_for_subdir<'a>(
+        files: &'a [CondaPackageFile],
+        version: Option<&str>,
+        subdir: &str,
+    ) -> Option<&'a CondaPackageFile> {
+        // Filter by exact platform match
+        let platform_files: Vec<_> = files.iter().filter(|f| f.attrs.subdir == subdir).collect();
 
         if platform_files.is_empty() {
             return None;
@@ -442,9 +451,8 @@ impl Backend for CondaBackend {
         let files = self.fetch_package_files().await?;
         let subdir = Self::conda_subdir();
 
-        // Find the package file for this version
-        let pkg_file = Self::find_package_file(&files, Some(&tv.version), subdir)
-            .or_else(|| Self::find_package_file(&files, Some(&tv.version), "noarch"));
+        // Find the package file for this version (prefers platform-specific over noarch)
+        let pkg_file = Self::find_package_file(&files, Some(&tv.version), subdir);
 
         let pkg_file = match pkg_file {
             Some(f) => f,
@@ -530,9 +538,8 @@ impl Backend for CondaBackend {
         let files = self.fetch_package_files().await?;
         let subdir = Self::conda_subdir_for_platform(target);
 
-        // Find the package file for this version and platform
-        let pkg_file = Self::find_package_file(&files, Some(&tv.version), subdir)
-            .or_else(|| Self::find_package_file(&files, Some(&tv.version), "noarch"));
+        // Find the package file for this version and platform (prefers platform-specific over noarch)
+        let pkg_file = Self::find_package_file(&files, Some(&tv.version), subdir);
 
         match pkg_file {
             Some(pkg_file) => {
@@ -601,14 +608,21 @@ struct ResolvedPackage {
 /// Packages to skip during dependency resolution
 /// - Virtual packages (__osx, __glibc, etc.) represent system requirements
 /// - Runtime dependencies (python, ruby) are typically not needed for standalone tools
+/// - System-provided libraries (gcc, vc runtime) should be installed separately
 const SKIP_PACKAGES: &[&str] = &[
     "python",
     "python_abi",
     "ruby",
     "perl",
     "r-base",
-    "libgcc-ng",    // Linux-specific, provided by system
-    "libstdcxx-ng", // Linux-specific, provided by system
+    // Linux system libraries (provided by distro)
+    "libgcc-ng",
+    "libstdcxx-ng",
+    // Windows Visual C++ runtime (requires Visual Studio or VC++ redistributable)
+    "ucrt",
+    "vc",
+    "vc14_runtime",
+    "vs2015_runtime",
 ];
 
 /// Parse a conda dependency specification
