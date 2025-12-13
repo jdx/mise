@@ -137,20 +137,43 @@ impl Backend for AquaBackend {
             .and_then(|asset| asset.url.clone());
 
         // Validate existing lockfile URL if present
+        // Only validate if file hasn't been downloaded yet (performance optimization)
+        let mut validation_error: Option<eyre::Report> = None;
         let validated_existing = if let Some(ref url) = existing_platform {
-            match HTTP.head(url).await {
-                Ok(_) => Some(url.clone()),
-                Err(_) => {
-                    debug!("lockfile URL failed validation, will regenerate: {}", url);
-                    // Clear stale platform info since URL is invalid
-                    tv.lock_platforms.remove(&platform_key);
-                    None
+            let cached_filename = get_filename_from_url(url);
+            let tarball_path = tv.download_path().join(&cached_filename);
+
+            if tarball_path.exists() {
+                // File already downloaded, no need to validate URL
+                Some(url.clone())
+            } else {
+                // File needs to be downloaded, validate URL first
+                match HTTP.head(url).await {
+                    Ok(_) => Some(url.clone()),
+                    Err(e) => {
+                        // Only treat 404 as stale URL that needs regeneration
+                        // Other errors (network, timeout, SSL) should be propagated
+                        let is_404 = e
+                            .downcast_ref::<reqwest::Error>()
+                            .and_then(|re| re.status())
+                            .is_some_and(|s| s.as_u16() == 404);
+
+                        if is_404 {
+                            debug!(
+                                "lockfile URL returned 404 for tool '{}' version '{}' platform '{}', will regenerate: {}",
+                                tv.short(), tv.version, platform_key, url
+                            );
+                            None
+                        } else {
+                            validation_error = Some(e);
+                            None
+                        }
+                    }
                 }
             }
         } else {
             None
         };
-
         let (url, v, filename, api_digest) =
             if let Some(ref existing_url) = validated_existing {
                 let filename = get_filename_from_url(&existing_url);
@@ -208,6 +231,11 @@ impl Backend for AquaBackend {
 
                 (url, v.to_string(), filename, digest)
             };
+
+        // Check for validation errors that need to be propagated
+        if let Some(e) = validation_error {
+            return Err(e);
+        }
 
         self.download(ctx, &tv, &url, &filename).await?;
 
