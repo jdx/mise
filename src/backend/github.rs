@@ -72,14 +72,14 @@ impl Backend for UnifiedGitBackend {
 
         // Get releases with full metadata from GitHub or GitLab
         let versions: Vec<VersionInfo> = if self.is_gitlab() {
-            // GitLab doesn't have created_at in releases
+            // GitLab has released_at in releases
             gitlab::list_releases_from_url(api_url.as_str(), &repo)
                 .await?
                 .into_iter()
                 .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
                 .map(|r| VersionInfo {
                     version: self.strip_version_prefix(&r.tag_name),
-                    created_at: None,
+                    created_at: r.released_at,
                 })
                 .filter(|v| match v.version.parse::<ToolVersionType>() {
                     Ok(ToolVersionType::Version(_)) => true,

@@ -16,6 +16,7 @@ use crate::{dirs, duration, env};
 pub struct GitlabRelease {
     pub tag_name: String,
     pub description: Option<String>,
+    pub released_at: Option<String>,
     pub assets: GitlabAssets,
 }
 
