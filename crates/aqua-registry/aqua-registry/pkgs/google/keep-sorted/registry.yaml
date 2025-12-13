@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: google
+    repo_name: keep-sorted
+    description: keep-sorted is a language-agnostic formatter that sorts lines between two markers in a larger file
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.6.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: keep-sorted_{{.OS}}
+        format: raw
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

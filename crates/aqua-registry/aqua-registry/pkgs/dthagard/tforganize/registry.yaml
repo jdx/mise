@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: dthagard
+    repo_name: tforganize
+    description: CLI tool to organize your Terraform code
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        error_message: This version isn't support because assets are broken.
+      - version_constraint: "true"
+        asset: tforganize-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.md5"
+          algorithm: md5
+        overrides:
+          - goos: windows
+            format: zip

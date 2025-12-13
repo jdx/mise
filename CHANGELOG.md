@@ -1,5 +1,49 @@
 # Changelog
 
+## [2025.12.3](https://github.com/jdx/mise/compare/v2025.12.2..v2025.12.3) - 2025-12-13
+
+### 🚀 Features
+
+- **(ui)** add color_theme setting for light terminal support by @bishopmatthew in [#7257](https://github.com/jdx/mise/pull/7257)
+
+### 🐛 Bug Fixes
+
+- **(node)** add newlines between GPG keys in fetch script by @jdx in [#7262](https://github.com/jdx/mise/pull/7262)
+- **(run)** truncate task description to first line in run selector by @jdx in [#7256](https://github.com/jdx/mise/pull/7256)
+- unset -f bash functions by @agriffis in [#7072](https://github.com/jdx/mise/pull/7072)
+
+### 📚 Documentation
+
+- fix type of mise_env in templates by @risu729 in [#7261](https://github.com/jdx/mise/pull/7261)
+
+### 🧪 Testing
+
+- add empty secret redaction test by @risu729 in [#7260](https://github.com/jdx/mise/pull/7260)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:copr docker digest to af06edf by @renovate[bot] in [#7245](https://github.com/jdx/mise/pull/7245)
+- update ghcr.io/jdx/mise:alpine docker digest to 3ca5ebd by @renovate[bot] in [#7244](https://github.com/jdx/mise/pull/7244)
+- update ghcr.io/jdx/mise:rpm docker digest to bdc5d0d by @renovate[bot] in [#7247](https://github.com/jdx/mise/pull/7247)
+- update ghcr.io/jdx/mise:deb docker digest to f73d7ef by @renovate[bot] in [#7246](https://github.com/jdx/mise/pull/7246)
+- update mcr.microsoft.com/devcontainers/rust:1 docker digest to 884de39 by @renovate[bot] in [#7249](https://github.com/jdx/mise/pull/7249)
+- update jdx/mise-action digest to 146a281 by @renovate[bot] in [#7248](https://github.com/jdx/mise/pull/7248)
+
+### Chore
+
+- **(registry)** retry only failed tools by @risu729 in [#7251](https://github.com/jdx/mise/pull/7251)
+
+### New Contributors
+
+- @agriffis made their first contribution in [#7072](https://github.com/jdx/mise/pull/7072)
+- @bishopmatthew made their first contribution in [#7257](https://github.com/jdx/mise/pull/7257)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`dthagard/tforganize`](https://github.com/dthagard/tforganize)
+- [`google/keep-sorted`](https://github.com/google/keep-sorted)
 ## [2025.12.2](https://github.com/jdx/mise/compare/v2025.12.1..v2025.12.2) - 2025-12-11
 
 ### 🐛 Bug Fixes
