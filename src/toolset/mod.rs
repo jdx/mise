@@ -633,37 +633,41 @@ impl Toolset {
         &self,
         config: &Arc<Config>,
         bump: bool,
+        opts: &ResolveOptions,
     ) -> Vec<OutdatedInfo> {
         let versions = self
             .list_current_versions()
             .into_iter()
             // Respect per-tool os constraints set via options.os
             .filter(|(_, tv)| tv.request.is_os_supported())
-            .map(|(t, tv)| (config.clone(), t, tv, bump))
+            .map(|(t, tv)| (config.clone(), t, tv, bump, opts.clone()))
             .collect::<Vec<_>>();
-        let outdated = parallel::parallel(versions, |(config, t, tv, bump)| async move {
-            let mut outdated = vec![];
-            match t.outdated_info(&config, &tv, bump).await {
-                Ok(Some(oi)) => outdated.push(oi),
-                Ok(None) => {}
-                Err(e) => {
-                    warn!("Error getting outdated info for {tv}: {e:#}");
+        let outdated = parallel::parallel(
+            versions,
+            |(config, t, tv, bump, opts)| async move {
+                let mut outdated = vec![];
+                match t.outdated_info(&config, &tv, bump).await {
+                    Ok(Some(oi)) => outdated.push(oi),
+                    Ok(None) => {}
+                    Err(e) => {
+                        warn!("Error getting outdated info for {tv}: {e:#}");
+                    }
                 }
-            }
-            if t.symlink_path(&tv).is_some() {
-                trace!("skipping symlinked version {tv}");
-                // do not consider symlinked versions to be outdated
-                return Ok(outdated);
-            }
-            match OutdatedInfo::resolve(&config, tv.clone(), bump).await {
-                Ok(Some(oi)) => outdated.push(oi),
-                Ok(None) => {}
-                Err(e) => {
-                    warn!("Error creating OutdatedInfo for {tv}: {e:#}");
+                if t.symlink_path(&tv).is_some() {
+                    trace!("skipping symlinked version {tv}");
+                    // do not consider symlinked versions to be outdated
+                    return Ok(outdated);
                 }
-            }
-            Ok(outdated)
-        })
+                match OutdatedInfo::resolve(&config, tv.clone(), bump, &opts).await {
+                    Ok(Some(oi)) => outdated.push(oi),
+                    Ok(None) => {}
+                    Err(e) => {
+                        warn!("Error creating OutdatedInfo for {tv}: {e:#}");
+                    }
+                }
+                Ok(outdated)
+            },
+        )
         .await
         .unwrap_or_else(|e| {
             warn!("Error in parallel outdated version check: {e:#}");

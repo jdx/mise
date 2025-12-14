@@ -128,10 +128,19 @@ impl ToolVersion {
         self.request.ba().downloads_path.join(self.tv_pathname())
     }
     pub async fn latest_version(&self, config: &Arc<Config>) -> Result<String> {
+        self.latest_version_with_opts(config, &ResolveOptions::default())
+            .await
+    }
+
+    pub async fn latest_version_with_opts(
+        &self,
+        config: &Arc<Config>,
+        base_opts: &ResolveOptions,
+    ) -> Result<String> {
         let opts = ResolveOptions {
             latest_versions: true,
             use_locked_version: false,
-            ..Default::default()
+            before_date: base_opts.before_date,
         };
         let tv = self.request.resolve(config, &opts).await?;
         // map cargo backend specific prefixes to ref

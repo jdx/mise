@@ -77,7 +77,12 @@ impl Upgrade {
             .with_args(&self.tool)
             .build(&config)
             .await?;
-        let mut outdated = ts.list_outdated_versions(&config, self.bump).await;
+        let opts = ResolveOptions {
+            use_locked_version: false,
+            latest_versions: true,
+            before_date: self.get_before_date()?,
+        };
+        let mut outdated = ts.list_outdated_versions(&config, self.bump, &opts).await;
         if self.interactive && !outdated.is_empty() {
             outdated = self.get_interactive_tool_set(&outdated)?;
         } else if !self.tool.is_empty() {
