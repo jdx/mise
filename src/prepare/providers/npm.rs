@@ -132,27 +132,28 @@ impl PrepareProvider for NpmPrepareProvider {
     fn prepare_command(&self) -> Result<PrepareCommand> {
         // Check for custom command override
         if let Some(config) = &self.config
-            && let Some(custom_run) = &config.run {
-                let parts: Vec<&str> = custom_run.split_whitespace().collect();
-                let (program, args) = parts.split_first().unwrap_or((&"npm", &[]));
+            && let Some(custom_run) = &config.run
+        {
+            let parts: Vec<&str> = custom_run.split_whitespace().collect();
+            let (program, args) = parts.split_first().unwrap_or((&"npm", &[]));
 
-                let mut env = BTreeMap::new();
-                for (k, v) in &config.env {
-                    env.insert(k.clone(), v.clone());
-                }
-
-                return Ok(PrepareCommand {
-                    program: program.to_string(),
-                    args: args.iter().map(|s| s.to_string()).collect(),
-                    env,
-                    cwd: config
-                        .dir
-                        .as_ref()
-                        .map(|d| self.project_root.join(d))
-                        .or_else(|| Some(self.project_root.clone())),
-                    description: format!("Installing {} dependencies", self.id()),
-                });
+            let mut env = BTreeMap::new();
+            for (k, v) in &config.env {
+                env.insert(k.clone(), v.clone());
             }
+
+            return Ok(PrepareCommand {
+                program: program.to_string(),
+                args: args.iter().map(|s| s.to_string()).collect(),
+                env,
+                cwd: config
+                    .dir
+                    .as_ref()
+                    .map(|d| self.project_root.join(d))
+                    .or_else(|| Some(self.project_root.clone())),
+                description: format!("Installing {} dependencies", self.id()),
+            });
+        }
 
         // Use detected package manager
         let pm = self.package_manager.unwrap_or(PackageManager::Npm);
@@ -177,9 +178,10 @@ impl PrepareProvider for NpmPrepareProvider {
     fn is_applicable(&self) -> bool {
         // Check if disabled in config
         if let Some(config) = &self.config
-            && !config.enabled {
-                return false;
-            }
+            && !config.enabled
+        {
+            return false;
+        }
 
         // Applicable if we detected a package manager
         self.package_manager.is_some()
