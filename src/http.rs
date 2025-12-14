@@ -241,6 +241,26 @@ impl Client {
             .map(|(json, _)| json)
     }
 
+    /// POST JSON data to a URL. Returns Ok(true) on success, Ok(false) on non-success status.
+    /// Errors only on network/connection failures.
+    pub async fn post_json<U: IntoUrl, T: serde::Serialize>(
+        &self,
+        url: U,
+        body: &T,
+    ) -> Result<bool> {
+        ensure!(!*env::OFFLINE, "offline mode is enabled");
+        let url = url.into_url()?;
+        debug!("POST {}", &url);
+        let resp = self
+            .reqwest
+            .post(url)
+            .header("Content-Type", "application/json")
+            .json(body)
+            .send()
+            .await?;
+        Ok(resp.status().is_success())
+    }
+
     pub async fn download_file<U: IntoUrl>(
         &self,
         url: U,
