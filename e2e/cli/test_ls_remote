@@ -25,3 +25,18 @@ assert_contains "echo '$json_output_short'" '"version"'
 if github_json=$(mise ls-remote github:jdx/mise --json 2>/dev/null | head -1); then
 	assert_contains "echo '$github_json'" '"created_at"'
 fi
+
+# Test JSON output for NPM backend includes created_at
+if npm_json=$(mise ls-remote npm:prettier --json 2>/dev/null | head -1); then
+	assert_contains "echo '$npm_json'" '"created_at"'
+fi
+
+# Test JSON output for Cargo backend includes created_at
+if cargo_json=$(mise ls-remote cargo:eza --json 2>/dev/null | head -1); then
+	assert_contains "echo '$cargo_json'" '"created_at"'
+fi
+
+# Test JSON output for Pipx backend includes created_at
+if pipx_json=$(mise ls-remote pipx:black --json 2>/dev/null | head -1); then
+	assert_contains "echo '$pipx_json'" '"created_at"'
+fi

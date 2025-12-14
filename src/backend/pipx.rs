@@ -1,5 +1,6 @@
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::{Backend, VersionInfo};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -7,10 +8,10 @@ use crate::config::{Config, Settings};
 use crate::github;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
+use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::{backend::Backend, timeout};
 use async_trait::async_trait;
 use eyre::{Result, eyre};
 use indexmap::IndexMap;
@@ -46,11 +47,10 @@ impl Backend for PIPXBackend {
         Ok(vec!["uv"])
     }
 
-    /*
-     * Pipx doesn't have a remote version concept across its backends, so
-     * we return a single version.
-     */
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions_with_info(
+        &self,
+        _config: &Arc<Config>,
+    ) -> eyre::Result<Vec<VersionInfo>> {
         match self.tool_name().parse()? {
             PipxRequest::Pypi(package) => {
                 let registry_url = Self::get_registry_url()?;
@@ -58,11 +58,24 @@ impl Backend for PIPXBackend {
                     debug!("Fetching JSON for {}", package);
                     let url = registry_url.replace("{}", &package);
                     let data: PypiPackage = HTTP_FETCH.json(url).await?;
+
+                    // Get versions sorted and attach timestamps from the first file in each release
                     let versions = data
                         .releases
-                        .keys()
-                        .map(|v| v.to_string())
-                        .sorted_by_cached_key(|v| Versioning::new(v))
+                        .into_iter()
+                        .sorted_by_cached_key(|(v, _)| Versioning::new(v))
+                        .map(|(version, files)| {
+                            // Get the earliest upload_time from the release files
+                            let created_at = files
+                                .iter()
+                                .filter_map(|f| f.upload_time.as_ref())
+                                .min()
+                                .cloned();
+                            VersionInfo {
+                                version,
+                                created_at,
+                            }
+                        })
                         .collect();
 
                     Ok(versions)
@@ -71,12 +84,12 @@ impl Backend for PIPXBackend {
                     let url = registry_url.replace("{}", &package);
                     let html = HTTP_FETCH.get_html(url).await?;
 
-                    // PEP-0503
+                    // PEP-0503 (HTML format doesn't include timestamps)
                     let version_re = regex!(
                         r#"href=["'][^"']*/([^/]+)\.tar\.gz(?:#(md5|sha1|sha224|sha256|sha384|sha512)=[0-9A-Fa-f]+)?["']"#
                     );
 
-                    let versions: Vec<String> = version_re
+                    let versions: Vec<VersionInfo> = version_re
                         .captures_iter(&html)
                         .filter_map(|cap| {
                             let filename = cap.get(1)?.as_str();
@@ -86,9 +99,12 @@ impl Backend for PIPXBackend {
                             let re_str = format!("^{re_str}-(.+)$");
                             let pkg_re = regex::Regex::new(&re_str).ok()?;
                             let pkg_version = pkg_re.captures(filename)?.get(1)?.as_str();
-                            Some(pkg_version.to_string())
+                            Some(VersionInfo {
+                                version: pkg_version.to_string(),
+                                created_at: None,
+                            })
                         })
-                        .sorted_by_cached_key(|v| Versioning::new(v))
+                        .sorted_by_cached_key(|v| Versioning::new(&v.version))
                         .collect();
 
                     Ok(versions)
@@ -97,9 +113,19 @@ impl Backend for PIPXBackend {
             PipxRequest::Git(url) if url.starts_with("https://github.com/") => {
                 let repo = url.strip_prefix("https://github.com/").unwrap();
                 let data = github::list_releases(repo).await?;
-                Ok(data.into_iter().rev().map(|r| r.tag_name).collect())
+                Ok(data
+                    .into_iter()
+                    .rev()
+                    .map(|r| VersionInfo {
+                        version: r.tag_name,
+                        created_at: Some(r.created_at),
+                    })
+                    .collect())
             }
-            PipxRequest::Git { .. } => Ok(vec!["latest".to_string()]),
+            PipxRequest::Git { .. } => Ok(vec![VersionInfo {
+                version: "latest".to_string(),
+                created_at: None,
+            }]),
         }
     }
 
@@ -427,7 +453,9 @@ struct PypiInfo {
 }
 
 #[derive(serde::Deserialize)]
-struct PypiRelease {}
+struct PypiRelease {
+    upload_time: Option<String>,
+}
 
 impl FromStr for PipxRequest {
     type Err = eyre::Error;

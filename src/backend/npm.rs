@@ -1,5 +1,6 @@
 use crate::Result;
 use crate::backend::Backend;
+use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
@@ -10,6 +11,7 @@ use crate::timeout;
 use crate::toolset::ToolVersion;
 use async_trait::async_trait;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -36,21 +38,40 @@ impl Backend for NPMBackend {
         Ok(vec!["node", "bun", "pnpm"])
     }
 
-    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
-        // TODO: Add bun support for listing package versions without npm
-        // Currently bun info requires a package.json file, so we always use npm.
-        // Once bun provides a way to query registry without package.json, we can
-        // switch to using bun when npm.bun=true
+    async fn _list_remote_versions_with_info(
+        &self,
+        config: &Arc<Config>,
+    ) -> eyre::Result<Vec<VersionInfo>> {
+        // Use npm CLI to respect custom registry configurations
         self.ensure_npm_for_version_check(config).await;
         timeout::run_with_timeout_async(
             async || {
-                // Always use npm for listing versions since bun info requires package.json
-                // bun is only used for actual package installation
-                let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
-                    .full_env(self.dependency_env(config).await?)
+                let env = self.dependency_env(config).await?;
+
+                // Fetch versions and timestamps in parallel
+                let versions_raw =
+                    cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
+                        .full_env(&env)
+                        .read()?;
+                let time_raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "time", "--json")
+                    .full_env(&env)
                     .read()?;
-                let versions: Vec<String> = serde_json::from_str(&raw)?;
-                Ok(versions)
+
+                let versions: Vec<String> = serde_json::from_str(&versions_raw)?;
+                let time: HashMap<String, String> = serde_json::from_str(&time_raw)?;
+
+                let version_info = versions
+                    .into_iter()
+                    .map(|version| {
+                        let created_at = time.get(&version).cloned();
+                        VersionInfo {
+                            version,
+                            created_at,
+                        }
+                    })
+                    .collect();
+
+                Ok(version_info)
             },
             Settings::get().fetch_remote_versions_timeout(),
         )

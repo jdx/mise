@@ -382,7 +382,18 @@ pub trait Backend: Debug + Send + Sync {
             .collect())
     }
 
-    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>>;
+    /// Backend implementation for fetching remote versions (without metadata).
+    /// Default delegates to `_list_remote_versions_with_info`.
+    /// Override this OR `_list_remote_versions_with_info` (not both needed).
+    /// WARNING: Implementing neither will cause infinite recursion.
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+        Ok(self
+            ._list_remote_versions_with_info(config)
+            .await?
+            .into_iter()
+            .map(|v| v.version)
+            .collect())
+    }
 
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
         self.latest_version(config, Some("latest".into())).await

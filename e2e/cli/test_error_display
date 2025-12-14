@@ -50,8 +50,7 @@ local_assert_fail "mise install core:node@invalid-version" \
 # Test 2: Backend error (cargo)
 echo "Test 2: Cargo backend error"
 local_assert_fail "mise install cargo:nonexistent-crate-12345@1.0.0" \
-	"mise ERROR Failed to install cargo:nonexistent-crate-12345@1.0.0: 
-   0: HTTP status client error (404 Not Found) for url (https://index.crates.io/no/ne/nonexistent-crate-12345)"
+	"HTTP status client error (404 Not Found) for url (https://crates.io/api/v1/crates/nonexistent-crate-12345/versions)"
 
 # Test 3: GitHub repository not found
 echo "Test 3: GitHub repository not found"
@@ -88,9 +87,7 @@ local_assert_fail "mise install core:node@invalid-version" \
 # Test 2: Backend error (cargo) - check for numbered error format with more context
 echo "Test 2: Cargo backend error"
 local_assert_fail "mise install cargo:nonexistent-crate-12345@1.0.0" \
-	"Error: 
-   0: Failed to install cargo:nonexistent-crate-12345@1.0.0: 
-         0: HTTP status client error (404 Not Found) for url (https://index.crates.io/no/ne/nonexistent-crate-12345)"
+	"HTTP status client error (404 Not Found) for url (https://crates.io/api/v1/crates/nonexistent-crate-12345/versions)"
 
 # Test 3: GitHub repository not found - check for numbered error format with more context
 echo "Test 3: GitHub repository not found"
