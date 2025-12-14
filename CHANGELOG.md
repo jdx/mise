@@ -1,5 +1,28 @@
 # Changelog
 
+## [2025.12.6](https://github.com/jdx/mise/compare/v2025.12.5..v2025.12.6) - 2025-12-14
+
+### 🚀 Features
+
+- add anonymous download tracking for tool popularity stats by @jdx in [#7289](https://github.com/jdx/mise/pull/7289)
+
+### 🐛 Bug Fixes
+
+- add --compressed flag to curl for Swift GPG keys by @jdx in [7bc1273](https://github.com/jdx/mise/commit/7bc1273e78c9a1b58e0c987f5f2560f498efd2d4)
+
+### 📚 Documentation
+
+- add Versions link to nav bar by @jdx in [#7283](https://github.com/jdx/mise/pull/7283)
+- add mise-tools link to nav bar by @jdx in [#7285](https://github.com/jdx/mise/pull/7285)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (4)
+
+- [`abhimanyu003/sttr`](https://github.com/abhimanyu003/sttr)
+- [`babarot/afx`](https://github.com/babarot/afx)
+- [`becheran/mlc`](https://github.com/becheran/mlc)
+- [`maxpert/marmot`](https://github.com/maxpert/marmot)
 ## [2025.12.5](https://github.com/jdx/mise/compare/v2025.12.4..v2025.12.5) - 2025-12-13
 
 ### 🚀 Features
