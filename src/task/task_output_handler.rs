@@ -178,6 +178,28 @@ impl OutputHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::settings::SettingsPartial;
+    use confique::Partial;
+
+    // Mutex to ensure tests don't interfere with each other when modifying global settings
+    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    // Helper to run test with specific task_output setting
+    fn with_task_output_setting<F, R>(task_output: TaskOutput, test_fn: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+
+        let mut settings = SettingsPartial::empty();
+        settings.task_output = Some(task_output);
+
+        crate::config::Settings::reset(Some(settings));
+        let result = test_fn();
+        crate::config::Settings::reset(None);
+
+        result
+    }
 
     fn default_config() -> OutputHandlerConfig {
         OutputHandlerConfig {
@@ -201,49 +223,38 @@ mod tests {
 
     #[test]
     fn test_raw_task_gets_interleave_output() {
-        // When a task has raw=true, it should get Interleave output mode
-        // regardless of other settings (except explicit CLI flags)
         let handler = OutputHandler::new(default_config());
         let task = raw_task();
-
         assert_eq!(handler.output(Some(&task)), TaskOutput::Interleave);
     }
 
     #[test]
-    fn test_raw_handler_gets_interleave_output() {
-        // When the handler itself is configured with raw=true
-        let config = OutputHandlerConfig {
-            raw: true,
-            ..default_config()
-        };
-        let handler = OutputHandler::new(config);
-
-        assert_eq!(handler.output(None), TaskOutput::Interleave);
-    }
-
-    #[test]
     fn test_prefix_flag_overrides_raw() {
-        // Explicit --prefix flag should still work (user explicitly requested it)
         let config = OutputHandlerConfig {
             prefix: true,
             ..default_config()
         };
         let handler = OutputHandler::new(config);
         let task = raw_task();
-
         assert_eq!(handler.output(Some(&task)), TaskOutput::Prefix);
     }
 
     #[test]
-    fn test_interleave_flag_with_raw() {
-        // Explicit --interleave flag with raw task should be Interleave
-        let config = OutputHandlerConfig {
-            interleave: true,
-            ..default_config()
-        };
-        let handler = OutputHandler::new(config);
-        let task = raw_task();
+    fn test_raw_task_overrides_task_output_setting() {
+        // Key test: raw=true must override task_output=prefix setting
+        with_task_output_setting(TaskOutput::Prefix, || {
+            let handler = OutputHandler::new(default_config());
+            let task = raw_task();
+            assert_eq!(handler.output(Some(&task)), TaskOutput::Interleave);
+        });
+    }
 
-        assert_eq!(handler.output(Some(&task)), TaskOutput::Interleave);
+    #[test]
+    fn test_task_output_setting_applies_to_normal_tasks() {
+        with_task_output_setting(TaskOutput::Prefix, || {
+            let handler = OutputHandler::new(default_config());
+            let task = Task::default();
+            assert_eq!(handler.output(Some(&task)), TaskOutput::Prefix);
+        });
     }
 }
