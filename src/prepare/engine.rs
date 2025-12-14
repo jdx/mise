@@ -133,12 +133,11 @@ impl PrepareEngine {
             }
 
             // Check only list
-            if let Some(ref only) = opts.only {
-                if !only.contains(&id) {
+            if let Some(ref only) = opts.only
+                && !only.contains(&id) {
                     results.push(PrepareStepResult::Skipped(id));
                     continue;
                 }
-            }
 
             let is_fresh = if opts.force {
                 false

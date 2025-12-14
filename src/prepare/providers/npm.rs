@@ -131,8 +131,8 @@ impl PrepareProvider for NpmPrepareProvider {
 
     fn prepare_command(&self) -> Result<PrepareCommand> {
         // Check for custom command override
-        if let Some(config) = &self.config {
-            if let Some(custom_run) = &config.run {
+        if let Some(config) = &self.config
+            && let Some(custom_run) = &config.run {
                 let parts: Vec<&str> = custom_run.split_whitespace().collect();
                 let (program, args) = parts.split_first().unwrap_or((&"npm", &[]));
 
@@ -153,7 +153,6 @@ impl PrepareProvider for NpmPrepareProvider {
                     description: format!("Installing {} dependencies", self.id()),
                 });
             }
-        }
 
         // Use detected package manager
         let pm = self.package_manager.unwrap_or(PackageManager::Npm);
@@ -177,11 +176,10 @@ impl PrepareProvider for NpmPrepareProvider {
 
     fn is_applicable(&self) -> bool {
         // Check if disabled in config
-        if let Some(config) = &self.config {
-            if !config.enabled {
+        if let Some(config) = &self.config
+            && !config.enabled {
                 return false;
             }
-        }
 
         // Applicable if we detected a package manager
         self.package_manager.is_some()
