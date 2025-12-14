@@ -120,9 +120,10 @@ impl OutputHandler {
         // Check task_output setting for silent/quiet before raw check
         // (raw should not bypass explicit output suppression from task_output setting)
         if let Some(output) = Settings::get().task_output
-            && (output.is_silent() || output.is_quiet()) {
-                return output;
-            }
+            && (output.is_silent() || output.is_quiet())
+        {
+            return output;
+        }
 
         if self.prefix {
             TaskOutput::Prefix
