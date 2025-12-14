@@ -61,12 +61,6 @@ impl Exec {
     pub async fn run(self) -> eyre::Result<()> {
         let mut config = Config::get().await?;
 
-        // Run prepare unless disabled
-        if !self.no_prepare && Settings::get().prepare.auto {
-            let engine = PrepareEngine::new(config.clone())?;
-            engine.run(PrepareOptions::default()).await?;
-        }
-
         // Check if any tool arg explicitly specified @latest
         // If so, resolve to the actual latest version from the registry (not just latest installed)
         let has_explicit_latest = self
@@ -122,6 +116,17 @@ impl Exec {
 
         let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
         let mut env = measure!("env_with_path", { ts.env_with_path(&config).await? });
+
+        // Run prepare after tools are installed so we have access to npm/yarn/etc.
+        if !self.no_prepare && Settings::get().prepare.auto {
+            let engine = PrepareEngine::new(config.clone())?;
+            engine
+                .run(PrepareOptions {
+                    env: env.clone(),
+                    ..Default::default()
+                })
+                .await?;
+        }
 
         // Ensure MISE_ENV is set in the spawned shell if it was specified via -E flag
         if !env::MISE_ENV.is_empty() {

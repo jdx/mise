@@ -115,6 +115,10 @@ Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.
 
 Do not use cache on remote tasks
 
+### `--no-prepare`
+
+Skip automatic dependency preparation
+
 ### `--no-timings`
 
 Hides elapsed time after each task completes

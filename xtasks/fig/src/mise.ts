@@ -979,6 +979,11 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
+          name: "--no-prepare",
+          description: "Skip automatic dependency preparation",
+          isRepeatable: false,
+        },
+        {
           name: "--raw",
           description:
             "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
@@ -1831,6 +1836,43 @@ const completionSpec: Fig.Spec = {
       ],
     },
     {
+      name: ["prepare", "prep"],
+      description: "Ensure project dependencies are ready",
+      options: [
+        {
+          name: ["-f", "--force"],
+          description: "Force run all prepare steps even if outputs are fresh",
+          isRepeatable: false,
+        },
+        {
+          name: "--list",
+          description: "Show what prepare steps are available",
+          isRepeatable: false,
+        },
+        {
+          name: ["-n", "--dry-run"],
+          description: "Only check if prepare is needed, don't run commands",
+          isRepeatable: false,
+        },
+        {
+          name: "--only",
+          description: "Run specific prepare rule(s) only",
+          isRepeatable: true,
+          args: {
+            name: "only",
+          },
+        },
+        {
+          name: "--skip",
+          description: "Skip specific prepare rule(s)",
+          isRepeatable: true,
+          args: {
+            name: "skip",
+          },
+        },
+      ],
+    },
+    {
       name: "prune",
       description: "Delete unused versions of tools",
       options: [
@@ -1989,6 +2031,11 @@ const completionSpec: Fig.Spec = {
         {
           name: "--no-cache",
           description: "Do not use cache on remote tasks",
+          isRepeatable: false,
+        },
+        {
+          name: "--no-prepare",
+          description: "Skip automatic dependency preparation",
           isRepeatable: false,
         },
         {
@@ -2741,6 +2788,11 @@ const completionSpec: Fig.Spec = {
             {
               name: "--no-cache",
               description: "Do not use cache on remote tasks",
+              isRepeatable: false,
+            },
+            {
+              name: "--no-prepare",
+              description: "Skip automatic dependency preparation",
               isRepeatable: false,
             },
             {

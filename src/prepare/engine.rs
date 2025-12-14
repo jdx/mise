@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -6,6 +7,7 @@ use eyre::Result;
 
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
+use crate::miseprintln;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 use super::PrepareProvider;
@@ -23,6 +25,8 @@ pub struct PrepareOptions {
     pub only: Option<Vec<String>>,
     /// Skip specific prepare rule(s)
     pub skip: Vec<String>,
+    /// Environment variables to pass to prepare commands (e.g., toolset PATH)
+    pub env: BTreeMap<String, String>,
 }
 
 /// Result of a prepare step
@@ -146,11 +150,14 @@ impl PrepareEngine {
                 let cmd = provider.prepare_command()?;
 
                 if opts.dry_run {
-                    info!("[dry-run] would run: {} ({})", cmd.description, id);
+                    miseprintln!("[dry-run] would run: {} ({})", cmd.description, id);
                     results.push(PrepareStepResult::WouldRun(id));
                 } else {
                     let pr = mpr.add(&cmd.description);
-                    match self.execute_prepare(provider.as_ref(), &cmd).await {
+                    match self
+                        .execute_prepare(provider.as_ref(), &cmd, &opts.env)
+                        .await
+                    {
                         Ok(()) => {
                             pr.finish_with_message(format!("{} done", cmd.description));
                             results.push(PrepareStepResult::Ran(id));
@@ -206,6 +213,7 @@ impl PrepareEngine {
         &self,
         _provider: &dyn PrepareProvider,
         cmd: &super::PrepareCommand,
+        toolset_env: &BTreeMap<String, String>,
     ) -> Result<()> {
         let cwd = cmd
             .cwd
@@ -217,6 +225,12 @@ impl PrepareEngine {
             .args(&cmd.args)
             .current_dir(cwd);
 
+        // Apply toolset environment (includes PATH with installed tools)
+        for (k, v) in toolset_env {
+            runner = runner.env(k, v);
+        }
+
+        // Apply command-specific environment (can override toolset env)
         for (k, v) in &cmd.env {
             runner = runner.env(k, v);
         }

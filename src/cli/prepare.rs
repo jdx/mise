@@ -1,6 +1,7 @@
 use eyre::Result;
 
 use crate::config::Config;
+use crate::miseprintln;
 use crate::prepare::{PrepareEngine, PrepareOptions, PrepareStepResult};
 
 /// Ensure project dependencies are ready
@@ -51,6 +52,7 @@ impl Prepare {
             force: self.force,
             only: self.only,
             skip: self.skip.unwrap_or_default(),
+            ..Default::default()
         };
 
         let result = engine.run(opts).await?;
@@ -59,10 +61,10 @@ impl Prepare {
         for step in &result.steps {
             match step {
                 PrepareStepResult::Ran(id) => {
-                    info!("Prepared: {}", id);
+                    miseprintln!("Prepared: {}", id);
                 }
                 PrepareStepResult::WouldRun(id) => {
-                    info!("[dry-run] Would prepare: {}", id);
+                    miseprintln!("[dry-run] Would prepare: {}", id);
                 }
                 PrepareStepResult::Fresh(id) => {
                     debug!("Fresh: {}", id);
@@ -74,7 +76,7 @@ impl Prepare {
         }
 
         if !result.had_work() && !self.dry_run {
-            info!("All dependencies are up to date");
+            miseprintln!("All dependencies are up to date");
         }
 
         Ok(())
@@ -84,11 +86,11 @@ impl Prepare {
         let providers = engine.list_providers();
 
         if providers.is_empty() {
-            info!("No prepare providers found for this project");
+            miseprintln!("No prepare providers found for this project");
             return Ok(());
         }
 
-        info!("Available prepare providers:");
+        miseprintln!("Available prepare providers:");
         for provider in providers {
             let sources = provider
                 .sources()
@@ -103,9 +105,9 @@ impl Prepare {
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            info!("  {} (priority: {})", provider.id(), provider.priority());
-            info!("    sources: {}", sources);
-            info!("    outputs: {}", outputs);
+            miseprintln!("  {} (priority: {})", provider.id(), provider.priority());
+            miseprintln!("    sources: {}", sources);
+            miseprintln!("    outputs: {}", outputs);
         }
 
         Ok(())

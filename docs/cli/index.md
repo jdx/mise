@@ -119,6 +119,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise plugins ls-remote [-u --urls] [--only-names]`](/cli/plugins/ls-remote.md)
 - [`mise plugins uninstall [-a --all] [-p --purge] [PLUGIN]…`](/cli/plugins/uninstall.md)
 - [`mise plugins update [-j --jobs <JOBS>] [PLUGIN]…`](/cli/plugins/update.md)
+- [`mise prepare [FLAGS]`](/cli/prepare.md)
 - [`mise prune [FLAGS] [INSTALLED_TOOL]…`](/cli/prune.md)
 - [`mise registry [FLAGS] [NAME]`](/cli/registry.md)
 - [`mise reshim [-f --force]`](/cli/reshim.md)

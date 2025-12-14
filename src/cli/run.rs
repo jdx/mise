@@ -15,6 +15,7 @@ use crate::task::task_list::{get_task_lists, resolve_depends};
 use crate::task::task_output::TaskOutput;
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::{Deps, Task};
+use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::{ctrlc, style};
 use clap::{CommandFactory, ValueHint};
 use eyre::{Result, bail, eyre};
@@ -199,12 +200,32 @@ pub struct Run {
 
 impl Run {
     pub async fn run(mut self) -> Result<()> {
-        let config = Config::get().await?;
+        let mut config = Config::get().await?;
 
-        // Run prepare unless disabled
+        // Build and install toolset so tools like npm are available for prepare
+        let mut ts = ToolsetBuilder::new()
+            .with_args(&self.tool)
+            .with_default_to_latest(true)
+            .build(&config)
+            .await?;
+
+        let opts = InstallOptions {
+            jobs: self.jobs,
+            raw: self.raw,
+            ..Default::default()
+        };
+        ts.install_missing_versions(&mut config, &opts).await?;
+
+        // Run prepare with toolset environment (includes tools PATH)
         if !self.no_prepare && Settings::get().prepare.auto {
+            let env = ts.env_with_path(&config).await?;
             let engine = PrepareEngine::new(config.clone())?;
-            engine.run(PrepareOptions::default()).await?;
+            engine
+                .run(PrepareOptions {
+                    env,
+                    ..Default::default()
+                })
+                .await?;
         }
 
         if self.task == "-h" {

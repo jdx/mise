@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+
+# Test mise prepare (mise prep) command
+
+# Test --list with no providers
+assert_contains "mise prepare --list" "No prepare providers found"
+
+# Create a package-lock.json to trigger npm provider
+cat >package-lock.json <<'EOF'
+{
+  "name": "test-project",
+  "lockfileVersion": 3,
+  "packages": {}
+}
+EOF
+
+# Test --list with npm provider detected
+assert_contains "mise prepare --list" "npm"
+assert_contains "mise prepare --list" "package-lock.json"
+assert_contains "mise prepare --list" "node_modules"
+
+# Test --dry-run shows what would run
+assert_contains "mise prepare --dry-run" "npm"
+
+# Test alias works
+assert_contains "mise prep --list" "npm"
+
+# Test with custom prepare rule in mise.toml
+cat >mise.toml <<'EOF'
+[prepare.rules.codegen]
+sources = ["schema.graphql"]
+outputs = ["generated/"]
+run = "echo codegen"
+EOF
+
+# Create source file
+touch schema.graphql
+
+assert_contains "mise prepare --list" "codegen"
+assert_contains "mise prepare --list" "schema.graphql"
+
+# Test --only flag
+assert_contains "mise prepare --dry-run --only codegen" "codegen"
+assert_not_contains "mise prepare --dry-run --only codegen" "npm"
+
+# Test --skip flag
+assert_not_contains "mise prepare --dry-run --skip npm" "npm install"
+
+# Test disable in config
+cat >mise.toml <<'EOF'
+[prepare]
+disable = ["npm"]
+
+[prepare.rules.codegen]
+sources = ["schema.graphql"]
+outputs = ["generated/"]
+run = "echo codegen"
+EOF
+
+assert_not_contains "mise prepare --list" "npm"
+assert_contains "mise prepare --list" "codegen"
+
+# Test when prepare.auto = false (explicit command still works)
+cat >mise.toml <<'EOF'
+[prepare]
+auto = false
+EOF
+
+assert_contains "mise prepare --list" "npm"

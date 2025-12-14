@@ -870,6 +870,22 @@
           "description": "Use uvx instead of pipx if uv is installed and on PATH.",
           "type": "boolean"
         },
+        "prepare": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "auto": {
+              "default": true,
+              "description": "Automatically run prepare steps before mise x and mise run.",
+              "type": "boolean"
+            },
+            "auto_timeout": {
+              "default": "5m",
+              "description": "Timeout for auto-prepare operations.",
+              "type": "string"
+            }
+          }
+        },
         "plugin_autoupdate_last_check_duration": {
           "default": "7d",
           "description": "How long to wait before updating plugins automatically (note this isn't currently implemented).",
