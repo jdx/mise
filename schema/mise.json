@@ -1252,6 +1252,11 @@
           "description": "Set to false to disable using the mise-versions API as a quick way for mise to query for new versions.",
           "type": "boolean"
         },
+        "use_versions_host_track": {
+          "default": true,
+          "description": "Send anonymous download statistics when installing tools.",
+          "type": "boolean"
+        },
         "verbose": {
           "description": "Shows more verbose output such as installation logs when installing tools.",
           "type": "boolean"

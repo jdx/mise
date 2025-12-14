@@ -1475,6 +1475,24 @@ See [Troubleshooting](/troubleshooting.html#new-version-of-a-tool-is-not-availab
 env = "MISE_USE_VERSIONS_HOST"
 type = "Bool"
 
+[use_versions_host_track]
+default = true
+description = "Send anonymous download statistics when installing tools."
+docs = """
+When enabled, mise sends anonymous download statistics to mise-versions.jdx.dev after
+successfully installing a tool. This helps show tool popularity on [mise-tools.jdx.dev](https://mise-tools.jdx.dev).
+
+Data collected:
+- Tool name and version
+- OS and architecture (from User-Agent)
+- Hashed IP address (for daily deduplication, not stored raw)
+
+This is automatically disabled if `use_versions_host` is set to false.
+Set to false to opt-out of anonymous statistics collection.
+"""
+env = "MISE_USE_VERSIONS_HOST_TRACK"
+type = "Bool"
+
 [verbose]
 description = "Shows more verbose output such as installation logs when installing tools."
 env = "MISE_VERBOSE"

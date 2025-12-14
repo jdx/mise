@@ -96,3 +96,50 @@ fn normalize_remote(remote: &str) -> eyre::Result<String> {
     let path = url.path().trim_end_matches(".git");
     Ok(format!("{host}{path}"))
 }
+
+/// Tracks a tool installation asynchronously (fire-and-forget)
+/// Only tracks tools that are in PLUGINS_USE_VERSION_HOST
+pub fn track_install(tool: &str, version: &str) {
+    let settings = Settings::get();
+
+    // Check if tracking is enabled (also requires use_versions_host to be enabled)
+    if !settings.use_versions_host || !settings.use_versions_host_track {
+        return;
+    }
+
+    // Only track tools that use the versions host
+    if !PLUGINS_USE_VERSION_HOST.contains(tool) {
+        return;
+    }
+
+    let tool = tool.to_string();
+    let version = version.to_string();
+
+    // Fire-and-forget: spawn a task that won't block installation
+    tokio::spawn(async move {
+        if let Err(e) = track_install_async(&tool, &version).await {
+            trace!("Failed to track install for {tool}@{version}: {e}");
+        }
+    });
+}
+
+async fn track_install_async(tool: &str, version: &str) -> eyre::Result<()> {
+    use crate::cli::version::{ARCH, OS};
+
+    let url = "https://mise-tools.jdx.dev/api/track";
+
+    let body = serde_json::json!({
+        "tool": tool,
+        "version": version,
+        "os": *OS,
+        "arch": *ARCH
+    });
+
+    match HTTP_FETCH.post_json(url, &body).await {
+        Ok(true) => trace!("Tracked install: {tool}@{version}"),
+        Ok(false) => trace!("Track request failed"),
+        Err(e) => trace!("Track request error: {e}"),
+    }
+
+    Ok(())
+}
