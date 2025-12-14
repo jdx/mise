@@ -24,8 +24,10 @@ use eyre::{Result, WrapErr};
 use itertools::Itertools;
 use xx::regex;
 
+use crate::backend::VersionInfo;
 use crate::github;
 use crate::hash;
+use std::collections::HashMap;
 
 const RUBY_INDEX_URL: &str = "https://cache.ruby-lang.org/pub/ruby/index.txt";
 
@@ -501,6 +503,44 @@ impl RubyPlugin {
         }
     }
 
+    /// Convert a Ruby GitHub tag name to a version string.
+    /// Ruby uses tags like "v3_3_0" for version "3.3.0"
+    fn tag_to_version(tag: &str) -> Option<String> {
+        // Ruby tags are in format v3_3_0, v3_3_0_preview1, etc.
+        let tag = tag.strip_prefix('v')?;
+        // Replace underscores with dots, but be careful with preview/rc suffixes
+        let re = regex!(r"^(\d+)_(\d+)_(\d+)(.*)$");
+        if let Some(caps) = re.captures(tag) {
+            let major = &caps[1];
+            let minor = &caps[2];
+            let patch = &caps[3];
+            let suffix = &caps[4];
+            // Convert suffix like "_preview1" to "-preview1"
+            let suffix = suffix.replace('_', "-");
+            Some(format!("{major}.{minor}.{patch}{suffix}"))
+        } else {
+            None
+        }
+    }
+
+    /// Fetch created_at timestamps for Ruby versions from GitHub releases
+    async fn fetch_ruby_release_dates(&self) -> HashMap<String, String> {
+        let mut dates = HashMap::new();
+        match github::list_releases("ruby/ruby").await {
+            Ok(releases) => {
+                for release in releases {
+                    if let Some(version) = Self::tag_to_version(&release.tag_name) {
+                        dates.insert(version, release.created_at);
+                    }
+                }
+            }
+            Err(err) => {
+                debug!("Failed to fetch Ruby release dates: {err}");
+            }
+        }
+        dates
+    }
+
     /// Try to install from precompiled binary
     /// Returns Ok(None) if no precompiled version is available for this version/platform
     async fn install_precompiled(
@@ -552,23 +592,52 @@ impl Backend for RubyPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
+        Ok(self
+            ._list_remote_versions_with_info(config)
+            .await?
+            .into_iter()
+            .map(|v| v.version)
+            .collect())
+    }
+
+    async fn _list_remote_versions_with_info(
+        &self,
+        _config: &Arc<Config>,
+    ) -> Result<Vec<VersionInfo>> {
         timeout::run_with_timeout_async(
             async || {
                 if let Err(err) = self.update_build_tool(None).await {
                     warn!("{err}");
                 }
+
+                // Fetch Ruby release dates from GitHub in parallel with version list
+                let release_dates = self.fetch_ruby_release_dates().await;
+
                 let ruby_build_bin = self.ruby_build_bin();
                 let versions = plugins::core::run_fetch_task_with_timeout(move || {
                     let output = cmd!(ruby_build_bin, "--definitions").read()?;
-                    let versions = output
+                    let versions: Vec<String> = output
                         .split('\n')
                         .sorted_by_cached_key(|s| regex!(r#"^\d"#).is_match(s)) // show matz ruby first
                         .map(|s| s.to_string())
                         .collect();
                     Ok(versions)
                 })?;
-                Ok(versions)
+
+                // Map versions to VersionInfo with created_at timestamps
+                let version_infos = versions
+                    .into_iter()
+                    .map(|version| {
+                        let created_at = release_dates.get(&version).cloned();
+                        VersionInfo {
+                            version,
+                            created_at,
+                        }
+                    })
+                    .collect();
+
+                Ok(version_infos)
             },
             Settings::get().fetch_remote_versions_timeout(),
         )
@@ -733,6 +802,38 @@ mod tests {
     use super::*;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_tag_to_version() {
+        // Standard versions
+        assert_eq!(
+            RubyPlugin::tag_to_version("v3_3_0"),
+            Some("3.3.0".to_string())
+        );
+        assert_eq!(
+            RubyPlugin::tag_to_version("v3_2_2"),
+            Some("3.2.2".to_string())
+        );
+        assert_eq!(
+            RubyPlugin::tag_to_version("v2_7_8"),
+            Some("2.7.8".to_string())
+        );
+
+        // Preview and RC versions
+        assert_eq!(
+            RubyPlugin::tag_to_version("v3_3_0_preview1"),
+            Some("3.3.0-preview1".to_string())
+        );
+        assert_eq!(
+            RubyPlugin::tag_to_version("v3_3_0_rc1"),
+            Some("3.3.0-rc1".to_string())
+        );
+
+        // Invalid tags
+        assert_eq!(RubyPlugin::tag_to_version("3_3_0"), None); // Missing 'v' prefix
+        assert_eq!(RubyPlugin::tag_to_version("v3_3"), None); // Missing patch version
+        assert_eq!(RubyPlugin::tag_to_version("jruby-9.4.0"), None); // Different format
+    }
 
     #[test]
     fn test_parse_gemfile() {
