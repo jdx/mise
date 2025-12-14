@@ -4,6 +4,7 @@ use crate::registry::{REGISTRY, RegistryTool, tool_enabled};
 use crate::ui::table::MiseTable;
 use eyre::{Result, bail};
 use itertools::Itertools;
+use serde_derive::Serialize;
 
 /// List available tools to install
 ///
@@ -27,18 +28,38 @@ pub struct Registry {
     /// Hide aliased tools
     #[clap(long)]
     hide_aliased: bool,
+
+    /// Output in JSON format
+    #[clap(long, short = 'J')]
+    json: bool,
+}
+
+#[derive(Serialize)]
+struct RegistryToolOutput {
+    short: String,
+    backends: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    aliases: Vec<String>,
 }
 
 impl Registry {
     pub async fn run(self) -> Result<()> {
         if let Some(name) = &self.name {
             if let Some(rt) = REGISTRY.get(name.as_str()) {
-                miseprintln!("{}", rt.backends().join(" "));
+                if self.json {
+                    self.display_single_json(name, rt)?;
+                } else {
+                    miseprintln!("{}", rt.backends().join(" "));
+                }
             } else {
                 bail!("tool not found in registry: {name}");
             }
         } else if self.complete {
             self.complete()?;
+        } else if self.json {
+            self.display_json()?;
         } else {
             self.display_table()?;
         }
@@ -94,6 +115,60 @@ impl Registry {
                     description.replace(":", "\\:")
                 );
             });
+        Ok(())
+    }
+
+    fn display_json(&self) -> Result<()> {
+        let filter_backend = |rt: &RegistryTool| {
+            if let Some(backend) = &self.backend {
+                rt.backends()
+                    .iter()
+                    .filter(|full| full.starts_with(&format!("{backend}:")))
+                    .cloned()
+                    .collect()
+            } else {
+                rt.backends()
+            }
+        };
+        let tools: Vec<RegistryToolOutput> = REGISTRY
+            .iter()
+            .filter(|(short, _)| filter_enabled(short))
+            .filter(|(short, rt)| !self.hide_aliased || **short == rt.short)
+            .map(|(short, rt)| {
+                let backends = filter_backend(rt);
+                RegistryToolOutput {
+                    short: short.to_string(),
+                    backends: backends.iter().map(|s| s.to_string()).collect(),
+                    description: rt.description.map(|s| s.to_string()),
+                    aliases: rt.aliases.iter().map(|s| s.to_string()).collect(),
+                }
+            })
+            .filter(|tool| !tool.backends.is_empty())
+            .sorted_by(|a, b| a.short.cmp(&b.short))
+            .collect();
+        miseprintln!("{}", serde_json::to_string_pretty(&tools)?);
+        Ok(())
+    }
+
+    fn display_single_json(&self, name: &str, rt: &RegistryTool) -> Result<()> {
+        let filter_backend = |rt: &RegistryTool| {
+            if let Some(backend) = &self.backend {
+                rt.backends()
+                    .iter()
+                    .filter(|full| full.starts_with(&format!("{backend}:")))
+                    .cloned()
+                    .collect()
+            } else {
+                rt.backends()
+            }
+        };
+        let tool = RegistryToolOutput {
+            short: name.to_string(),
+            backends: filter_backend(rt).iter().map(|s| s.to_string()).collect(),
+            description: rt.description.map(|s| s.to_string()),
+            aliases: rt.aliases.iter().map(|s| s.to_string()).collect(),
+        };
+        miseprintln!("{}", serde_json::to_string_pretty(&tool)?);
         Ok(())
     }
 }
