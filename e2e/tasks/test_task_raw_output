@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+# Test that raw tasks get interleave output even when task_output=prefix is set
+# This ensures raw=true takes priority over task_output setting
+
+cat <<EOF >mise.toml
+[settings]
+task_output = "prefix"
+
+[tasks.normal]
+run = 'echo normal task'
+
+[tasks.raw_task]
+raw = true
+run = 'echo raw task output'
+EOF
+
+# Normal task should use prefix output (from settings)
+assert_contains "mise run normal" "[normal] normal task"
+
+# Raw task should get interleave output mode, meaning stdout goes directly
+# without the [task_name] prefix being applied to the actual output
+assert "mise run raw_task" "raw task output"
+
+# Verify stdout doesn't have the prefix (only check stdout, not stderr)
+stdout_output=$(mise run raw_task 2>/dev/null)
+if [[ $stdout_output == *"[raw_task]"* ]]; then
+	echo "FAIL: raw task stdout should not have prefix"
+	exit 1
+fi
+echo "SUCCESS: raw task stdout has no prefix"
