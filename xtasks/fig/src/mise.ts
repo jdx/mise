@@ -1873,6 +1873,11 @@ const completionSpec: Fig.Spec = {
           description: "Hide aliased tools",
           isRepeatable: false,
         },
+        {
+          name: ["-J", "--json"],
+          description: "Output in JSON format",
+          isRepeatable: false,
+        },
       ],
       args: {
         name: "name",

@@ -120,7 +120,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise plugins uninstall [-a --all] [-p --purge] [PLUGIN]…`](/cli/plugins/uninstall.md)
 - [`mise plugins update [-j --jobs <JOBS>] [PLUGIN]…`](/cli/plugins/update.md)
 - [`mise prune [FLAGS] [INSTALLED_TOOL]…`](/cli/prune.md)
-- [`mise registry [-b --backend <BACKEND>] [--hide-aliased] [NAME]`](/cli/registry.md)
+- [`mise registry [FLAGS] [NAME]`](/cli/registry.md)
 - [`mise reshim [-f --force]`](/cli/reshim.md)
 - [`mise run [FLAGS]`](/cli/run.md)
 - [`mise search [FLAGS] [NAME]`](/cli/search.md)
