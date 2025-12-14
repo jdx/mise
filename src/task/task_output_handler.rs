@@ -117,24 +117,22 @@ impl OutputHandler {
             return TaskOutput::Quiet;
         }
 
-        // Check task_output setting for silent/quiet before raw check
-        // (raw should not bypass explicit output suppression from task_output setting)
-        if let Some(output) = Settings::get().task_output
-            && (output.is_silent() || output.is_quiet())
-        {
-            return output;
-        }
-
+        // CLI flags (--prefix, --interleave) override config settings
         if self.prefix {
             TaskOutput::Prefix
         } else if self.interleave {
             TaskOutput::Interleave
-        } else if self.raw(task) {
-            // raw tasks need interleave for stdin/stdout to work properly
-            TaskOutput::Interleave
         } else if let Some(output) = Settings::get().task_output {
-            output
-        } else if self.jobs() == 1 || self.is_linear {
+            // Silent/quiet from config override raw (output suppression takes precedence)
+            // Other modes (prefix, etc.) allow raw to take precedence for stdin/stdout
+            if output.is_silent() || output.is_quiet() {
+                output
+            } else if self.raw(task) {
+                TaskOutput::Interleave
+            } else {
+                output
+            }
+        } else if self.raw(task) || self.jobs() == 1 || self.is_linear {
             TaskOutput::Interleave
         } else {
             TaskOutput::Prefix
@@ -193,6 +191,7 @@ mod tests {
     static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     // Helper to run test with specific task_output setting
+    // Also explicitly sets silent/quiet/raw to false to prevent env vars from affecting tests
     fn with_task_output_setting<F, R>(task_output: TaskOutput, test_fn: F) -> R
     where
         F: FnOnce() -> R,
@@ -201,6 +200,10 @@ mod tests {
 
         let mut settings = SettingsPartial::empty();
         settings.task_output = Some(task_output);
+        // Explicitly set these to prevent environment variables from affecting tests
+        settings.silent = Some(false);
+        settings.quiet = Some(false);
+        settings.raw = Some(false);
 
         crate::config::Settings::reset(Some(settings));
         let result = test_fn();
@@ -283,6 +286,34 @@ mod tests {
             let handler = OutputHandler::new(default_config());
             let task = raw_task();
             assert_eq!(handler.output(Some(&task)), TaskOutput::Quiet);
+        });
+    }
+
+    #[test]
+    fn test_cli_prefix_overrides_task_output_silent() {
+        // CLI --prefix flag should override task_output=silent from config
+        with_task_output_setting(TaskOutput::Silent, || {
+            let config = OutputHandlerConfig {
+                prefix: true,
+                ..default_config()
+            };
+            let handler = OutputHandler::new(config);
+            let task = raw_task();
+            assert_eq!(handler.output(Some(&task)), TaskOutput::Prefix);
+        });
+    }
+
+    #[test]
+    fn test_cli_interleave_overrides_task_output_silent() {
+        // CLI --interleave flag should override task_output=silent from config
+        with_task_output_setting(TaskOutput::Silent, || {
+            let config = OutputHandlerConfig {
+                interleave: true,
+                ..default_config()
+            };
+            let handler = OutputHandler::new(config);
+            let task = raw_task();
+            assert_eq!(handler.output(Some(&task)), TaskOutput::Interleave);
         });
     }
 }
