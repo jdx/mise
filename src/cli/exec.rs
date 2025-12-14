@@ -67,6 +67,7 @@ impl Exec {
             ResolveOptions {
                 latest_versions: true,
                 use_locked_version: false,
+                ..Default::default()
             }
         } else {
             Default::default()

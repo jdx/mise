@@ -16,6 +16,7 @@ use crate::toolset::{ToolRequest, ToolVersionOptions, tool_request};
 use console::style;
 use dashmap::DashMap;
 use eyre::Result;
+use jiff::Timestamp;
 #[cfg(windows)]
 use path_absolutize::Absolutize;
 
@@ -130,6 +131,7 @@ impl ToolVersion {
         let opts = ResolveOptions {
             latest_versions: true,
             use_locked_version: false,
+            ..Default::default()
         };
         let tv = self.request.resolve(config, &opts).await?;
         // map cargo backend specific prefixes to ref
@@ -215,7 +217,10 @@ impl ToolVersion {
             {
                 return build(v);
             }
-            if let Some(v) = backend.latest_version(config, None).await? {
+            if let Some(v) = backend
+                .latest_version_with_opts(config, None, opts.before_date)
+                .await?
+            {
                 return build(v);
             }
         }
@@ -228,7 +233,9 @@ impl ToolVersion {
                 return build(v.clone());
             }
         }
-        let matches = backend.list_versions_matching(config, &v).await?;
+        let matches = backend
+            .list_versions_matching_with_opts(config, &v, opts.before_date)
+            .await?;
         if matches.contains(&v) {
             return build(v);
         }
@@ -264,7 +271,9 @@ impl ToolVersion {
         {
             return Ok(Self::new(request, v.to_string()));
         }
-        let matches = backend.list_versions_matching(config, prefix).await?;
+        let matches = backend
+            .list_versions_matching_with_opts(config, prefix, opts.before_date)
+            .await?;
         let v = match matches.last() {
             Some(v) => v,
             None => prefix,
@@ -343,6 +352,8 @@ impl Hash for ToolVersion {
 pub struct ResolveOptions {
     pub latest_versions: bool,
     pub use_locked_version: bool,
+    /// Only consider versions released before this timestamp
+    pub before_date: Option<Timestamp>,
 }
 
 impl Default for ResolveOptions {
@@ -350,6 +361,7 @@ impl Default for ResolveOptions {
         Self {
             latest_versions: false,
             use_locked_version: true,
+            before_date: None,
         }
     }
 }
@@ -358,10 +370,13 @@ impl Display for ResolveOptions {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         let mut opts = vec![];
         if self.latest_versions {
-            opts.push("latest_versions");
+            opts.push("latest_versions".to_string());
         }
         if self.use_locked_version {
-            opts.push("use_locked_version");
+            opts.push("use_locked_version".to_string());
+        }
+        if let Some(ts) = &self.before_date {
+            opts.push(format!("before_date={ts}"));
         }
         write!(f, "({})", opts.join(", "))
     }

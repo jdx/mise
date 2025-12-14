@@ -6,11 +6,13 @@ use std::{
 use console::{Term, style};
 use eyre::{Result, bail, eyre};
 use itertools::Itertools;
+use jiff::Timestamp;
 use path_absolutize::Absolutize;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
 use crate::config::{Config, ConfigPathOptions, Settings, config_file, resolve_target_config_path};
+use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
 use crate::registry::REGISTRY;
 use crate::toolset::{
@@ -75,6 +77,12 @@ pub struct Use {
     #[clap(short, long, overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath)]
     path: Option<PathBuf>,
 
+    /// Only install versions released before this date
+    ///
+    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+    #[clap(long, verbatim_doc_comment)]
+    before: Option<String>,
+
     /// Save fuzzy version to config file
     ///
     /// e.g.: `mise use --fuzzy node@20` will save 20 as the version
@@ -116,6 +124,7 @@ impl Use {
         let mut resolve_options = ResolveOptions {
             latest_versions: false,
             use_locked_version: true,
+            before_date: self.get_before_date()?,
         };
         let versions: Vec<_> = self
             .tool
@@ -328,6 +337,17 @@ impl Use {
                 Err(eyre!(err))
             }
         }
+    }
+
+    /// Get the before_date from CLI flag or settings
+    fn get_before_date(&self) -> Result<Option<Timestamp>> {
+        if let Some(before) = &self.before {
+            return Ok(Some(parse_into_timestamp(before)?));
+        }
+        if let Some(before) = &Settings::get().install_before {
+            return Ok(Some(parse_into_timestamp(before)?));
+        }
+        Ok(None)
     }
 }
 

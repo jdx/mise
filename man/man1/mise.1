@@ -1204,6 +1204,11 @@ Show installation output
 
 This argument will print plugin output such as download, configuration, and compilation output.
 .TP
+\fB\-\-before\fR \fI<BEFORE>\fR
+Only install versions released before this date
+
+Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
+.TP
 \fB\-\-raw\fR
 Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
 \fBArguments:\fR
@@ -2695,6 +2700,16 @@ would change your config to `node = "22"`.
 \fB\-n, \-\-dry\-run\fR
 Just print what would be done, don't actually do it
 .TP
+\fB\-\-before\fR \fI<BEFORE>\fR
+Only upgrade to versions released before this date
+
+Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
+This can be useful for reproducibility or security purposes.
+
+In "soft" mode (default), this only affects fuzzy version matches like "20" or "latest".
+Explicitly pinned versions like "22.5.0" are not filtered.
+Use `install_before_mode = "hard"` setting to filter all versions strictly.
+.TP
 \fB\-\-raw\fR
 Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
 \fBArguments:\fR
@@ -2745,6 +2760,11 @@ Perform a dry run, showing what would be installed and modified without making c
 Specify a path to a config file or directory
 
 If a directory is specified, it will look for a config file in that directory following the rules above.
+.TP
+\fB\-\-before\fR \fI<BEFORE>\fR
+Only install versions released before this date
+
+Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
 .TP
 \fB\-\-fuzzy\fR
 Save fuzzy version to config file

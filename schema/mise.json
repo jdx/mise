@@ -710,6 +710,10 @@
             "type": "string"
           }
         },
+        "install_before": {
+          "description": "Only install versions released before this date",
+          "type": "string"
+        },
         "jobs": {
           "default": 8,
           "description": "How many jobs to run concurrently such as tool installs.",

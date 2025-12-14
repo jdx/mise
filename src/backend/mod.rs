@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as TokioMutex;
 
+use jiff::Timestamp;
+
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -85,6 +87,33 @@ pub struct VersionInfo {
     pub version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
+}
+
+impl VersionInfo {
+    /// Filter versions to only include those released before the given timestamp.
+    /// Versions without a created_at timestamp are included by default.
+    pub fn filter_by_date(versions: Vec<Self>, before: Timestamp) -> Vec<Self> {
+        versions
+            .into_iter()
+            .filter(|v| {
+                match &v.created_at {
+                    Some(ts) => {
+                        // Parse the timestamp and compare
+                        match ts.parse::<Timestamp>() {
+                            Ok(created) => created < before,
+                            Err(_) => {
+                                // If we can't parse the timestamp, include the version
+                                trace!("Failed to parse timestamp: {}", ts);
+                                true
+                            }
+                        }
+                    }
+                    // Include versions without timestamps
+                    None => true,
+                }
+            })
+            .collect()
+    }
 }
 
 static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
@@ -515,6 +544,34 @@ pub trait Backend: Debug + Send + Sync {
         let versions = self.list_remote_versions(config).await?;
         Ok(self.fuzzy_match_filter(versions, query))
     }
+
+    /// List versions matching a query, optionally filtered by release date.
+    /// Use this when you have a `before_date` from ResolveOptions.
+    async fn list_versions_matching_with_opts(
+        &self,
+        config: &Arc<Config>,
+        query: &str,
+        before_date: Option<Timestamp>,
+    ) -> eyre::Result<Vec<String>> {
+        let versions = match before_date {
+            Some(before) => {
+                // Use version info to filter by date
+                let versions_with_info = self.list_remote_versions_with_info(config).await?;
+                let filtered = VersionInfo::filter_by_date(versions_with_info, before);
+                // Warn if no versions have timestamps
+                if filtered.iter().all(|v| v.created_at.is_none()) && !filtered.is_empty() {
+                    debug!(
+                        "Backend {} does not provide release dates; --before filter may not work as expected",
+                        self.id()
+                    );
+                }
+                filtered.into_iter().map(|v| v.version).collect()
+            }
+            None => self.list_remote_versions(config).await?,
+        };
+        Ok(self.fuzzy_match_filter(versions, query))
+    }
+
     async fn latest_version(
         &self,
         config: &Arc<Config>,
@@ -529,6 +586,52 @@ pub trait Backend: Debug + Send + Sync {
                 Ok(find_match_in_list(&matches, &query))
             }
             None => self.latest_stable_version(config).await,
+        }
+    }
+
+    /// Get the latest version, optionally filtered by release date.
+    /// Use this when you have a `before_date` from ResolveOptions.
+    async fn latest_version_with_opts(
+        &self,
+        config: &Arc<Config>,
+        query: Option<String>,
+        before_date: Option<Timestamp>,
+    ) -> eyre::Result<Option<String>> {
+        match query {
+            Some(query) => {
+                let mut matches = self
+                    .list_versions_matching_with_opts(config, &query, before_date)
+                    .await?;
+                if matches.is_empty() && query == "latest" {
+                    // Fall back to all versions if no match
+                    matches = match before_date {
+                        Some(before) => {
+                            let versions_with_info =
+                                self.list_remote_versions_with_info(config).await?;
+                            VersionInfo::filter_by_date(versions_with_info, before)
+                                .into_iter()
+                                .map(|v| v.version)
+                                .collect()
+                        }
+                        None => self.list_remote_versions(config).await?,
+                    };
+                }
+                Ok(find_match_in_list(&matches, &query))
+            }
+            None => {
+                // For stable version, apply date filter if provided
+                match before_date {
+                    Some(before) => {
+                        let versions_with_info =
+                            self.list_remote_versions_with_info(config).await?;
+                        let filtered = VersionInfo::filter_by_date(versions_with_info, before);
+                        let versions: Vec<String> =
+                            filtered.into_iter().map(|v| v.version).collect();
+                        Ok(find_match_in_list(&versions, "latest"))
+                    }
+                    None => self.latest_stable_version(config).await,
+                }
+            }
         }
     }
     fn latest_installed_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
