@@ -174,3 +174,76 @@ impl OutputHandler {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn default_config() -> OutputHandlerConfig {
+        OutputHandlerConfig {
+            prefix: false,
+            interleave: false,
+            output: None,
+            silent: false,
+            quiet: false,
+            raw: false,
+            is_linear: false,
+            jobs: None,
+        }
+    }
+
+    fn raw_task() -> Task {
+        Task {
+            raw: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_raw_task_gets_interleave_output() {
+        // When a task has raw=true, it should get Interleave output mode
+        // regardless of other settings (except explicit CLI flags)
+        let handler = OutputHandler::new(default_config());
+        let task = raw_task();
+
+        assert_eq!(handler.output(Some(&task)), TaskOutput::Interleave);
+    }
+
+    #[test]
+    fn test_raw_handler_gets_interleave_output() {
+        // When the handler itself is configured with raw=true
+        let config = OutputHandlerConfig {
+            raw: true,
+            ..default_config()
+        };
+        let handler = OutputHandler::new(config);
+
+        assert_eq!(handler.output(None), TaskOutput::Interleave);
+    }
+
+    #[test]
+    fn test_prefix_flag_overrides_raw() {
+        // Explicit --prefix flag should still work (user explicitly requested it)
+        let config = OutputHandlerConfig {
+            prefix: true,
+            ..default_config()
+        };
+        let handler = OutputHandler::new(config);
+        let task = raw_task();
+
+        assert_eq!(handler.output(Some(&task)), TaskOutput::Prefix);
+    }
+
+    #[test]
+    fn test_interleave_flag_with_raw() {
+        // Explicit --interleave flag with raw task should be Interleave
+        let config = OutputHandlerConfig {
+            interleave: true,
+            ..default_config()
+        };
+        let handler = OutputHandler::new(config);
+        let task = raw_task();
+
+        assert_eq!(handler.output(Some(&task)), TaskOutput::Interleave);
+    }
+}
