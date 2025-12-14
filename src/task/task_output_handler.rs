@@ -121,9 +121,12 @@ impl OutputHandler {
             TaskOutput::Prefix
         } else if self.interleave {
             TaskOutput::Interleave
+        } else if self.raw(task) {
+            // raw tasks need interleave for stdin/stdout to work properly
+            TaskOutput::Interleave
         } else if let Some(output) = Settings::get().task_output {
             output
-        } else if self.raw(task) || self.jobs() == 1 || self.is_linear {
+        } else if self.jobs() == 1 || self.is_linear {
             TaskOutput::Interleave
         } else {
             TaskOutput::Prefix
