@@ -117,6 +117,14 @@ impl OutputHandler {
             return TaskOutput::Quiet;
         }
 
+        // Check task_output setting for silent/quiet before raw check
+        // (raw should not bypass explicit output suppression from task_output setting)
+        if let Some(output) = Settings::get().task_output {
+            if output.is_silent() || output.is_quiet() {
+                return output;
+            }
+        }
+
         if self.prefix {
             TaskOutput::Prefix
         } else if self.interleave {
@@ -255,6 +263,26 @@ mod tests {
             let handler = OutputHandler::new(default_config());
             let task = Task::default();
             assert_eq!(handler.output(Some(&task)), TaskOutput::Prefix);
+        });
+    }
+
+    #[test]
+    fn test_task_output_silent_applies_to_raw_task() {
+        // task_output=silent should still apply to raw tasks (output suppression takes precedence)
+        with_task_output_setting(TaskOutput::Silent, || {
+            let handler = OutputHandler::new(default_config());
+            let task = raw_task();
+            assert_eq!(handler.output(Some(&task)), TaskOutput::Silent);
+        });
+    }
+
+    #[test]
+    fn test_task_output_quiet_applies_to_raw_task() {
+        // task_output=quiet should still apply to raw tasks (output suppression takes precedence)
+        with_task_output_setting(TaskOutput::Quiet, || {
+            let handler = OutputHandler::new(default_config());
+            let task = raw_task();
+            assert_eq!(handler.output(Some(&task)), TaskOutput::Quiet);
         });
     }
 }
