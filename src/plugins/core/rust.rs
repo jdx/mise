@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::{collections::BTreeMap, sync::Arc};
 
 use crate::backend::Backend;
+use crate::backend::VersionInfo;
 use crate::build_time::TARGET;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -73,13 +74,32 @@ impl Backend for RustPlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
-        let versions = github::list_releases("rust-lang/rust")
+    async fn _list_remote_versions_with_info(
+        &self,
+        _config: &Arc<Config>,
+    ) -> Result<Vec<VersionInfo>> {
+        let versions: Vec<VersionInfo> = github::list_releases("rust-lang/rust")
             .await?
             .into_iter()
-            .map(|r| r.tag_name)
+            .map(|r| VersionInfo {
+                version: r.tag_name,
+                created_at: Some(r.created_at),
+            })
             .rev()
-            .chain(vec!["nightly".into(), "beta".into(), "stable".into()])
+            .chain(vec![
+                VersionInfo {
+                    version: "nightly".into(),
+                    created_at: None,
+                },
+                VersionInfo {
+                    version: "beta".into(),
+                    created_at: None,
+                },
+                VersionInfo {
+                    version: "stable".into(),
+                    created_at: None,
+                },
+            ])
             .collect();
         Ok(versions)
     }

@@ -156,7 +156,7 @@ pub fn is_trusted_plugin(name: &str, remote: &str) -> bool {
     !is_shorthand || is_mise_url
 }
 
-fn normalize_remote(remote: &str) -> eyre::Result<String> {
+pub fn normalize_remote(remote: &str) -> eyre::Result<String> {
     let url = Url::parse(remote)?;
     let host = url.host_str().unwrap();
     let path = url.path().trim_end_matches(".git");
