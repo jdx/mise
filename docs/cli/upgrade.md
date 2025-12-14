@@ -53,9 +53,8 @@ Only upgrade to versions released before this date
 Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
 This can be useful for reproducibility or security purposes.
 
-In "soft" mode (default), this only affects fuzzy version matches like "20" or "latest".
+This only affects fuzzy version matches like "20" or "latest".
 Explicitly pinned versions like "22.5.0" are not filtered.
-Use `install_before_mode = "hard"` setting to filter all versions strictly.
 
 ### `--raw`
 
