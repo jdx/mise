@@ -647,6 +647,7 @@ cmd registry help="List available tools to install" {
     }
     flag --complete help="Print all tools with descriptions for shell completions" hide=#true
     flag --hide-aliased help="Hide aliased tools"
+    flag "-J --json" help="Output in JSON format"
     arg "[NAME]" help="Show only the specified tool's full name" required=#false
 }
 cmd render-help hide=#true help="internal command to generate markdown from help"
