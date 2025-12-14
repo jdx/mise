@@ -137,6 +137,8 @@ impl ToolVersion {
         config: &Arc<Config>,
         base_opts: &ResolveOptions,
     ) -> Result<String> {
+        // Note: We always use latest_versions=true and use_locked_version=false for latest version lookup,
+        // but we preserve before_date from base_opts to respect date-based filtering
         let opts = ResolveOptions {
             latest_versions: true,
             use_locked_version: false,
