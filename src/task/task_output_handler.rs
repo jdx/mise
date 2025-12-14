@@ -190,6 +190,26 @@ mod tests {
     // Mutex to ensure tests don't interfere with each other when modifying global settings
     static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    // Helper to run test with default settings (no task_output set)
+    // Acquires lock and resets settings to prevent race conditions with other tests
+    fn with_default_settings<F, R>(test_fn: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+
+        let mut settings = SettingsPartial::empty();
+        settings.silent = Some(false);
+        settings.quiet = Some(false);
+        settings.raw = Some(false);
+
+        crate::config::Settings::reset(Some(settings));
+        let result = test_fn();
+        crate::config::Settings::reset(None);
+
+        result
+    }
+
     // Helper to run test with specific task_output setting
     // Also explicitly sets silent/quiet/raw to false to prevent env vars from affecting tests
     fn with_task_output_setting<F, R>(task_output: TaskOutput, test_fn: F) -> R
@@ -234,20 +254,24 @@ mod tests {
 
     #[test]
     fn test_raw_task_gets_interleave_output() {
-        let handler = OutputHandler::new(default_config());
-        let task = raw_task();
-        assert_eq!(handler.output(Some(&task)), TaskOutput::Interleave);
+        with_default_settings(|| {
+            let handler = OutputHandler::new(default_config());
+            let task = raw_task();
+            assert_eq!(handler.output(Some(&task)), TaskOutput::Interleave);
+        });
     }
 
     #[test]
     fn test_prefix_flag_overrides_raw() {
-        let config = OutputHandlerConfig {
-            prefix: true,
-            ..default_config()
-        };
-        let handler = OutputHandler::new(config);
-        let task = raw_task();
-        assert_eq!(handler.output(Some(&task)), TaskOutput::Prefix);
+        with_default_settings(|| {
+            let config = OutputHandlerConfig {
+                prefix: true,
+                ..default_config()
+            };
+            let handler = OutputHandler::new(config);
+            let task = raw_task();
+            assert_eq!(handler.output(Some(&task)), TaskOutput::Prefix);
+        });
     }
 
     #[test]
