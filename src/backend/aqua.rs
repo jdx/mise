@@ -58,15 +58,6 @@ impl Backend for AquaBackend {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
-        Ok(self
-            ._list_remote_versions_with_info(config)
-            .await?
-            .into_iter()
-            .map(|v| v.version)
-            .collect())
-    }
-
     async fn _list_remote_versions_with_info(
         &self,
         _config: &Arc<Config>,
