@@ -25,7 +25,12 @@ static PLUGINS_USE_VERSION_HOST: LazyLock<HashSet<&str>> = LazyLock::new(|| {
 /// Response format from the versions host TOML endpoint
 #[derive(serde::Deserialize)]
 struct VersionsResponse {
-    versions: Vec<VersionInfo>,
+    versions: indexmap::IndexMap<String, VersionEntry>,
+}
+
+#[derive(serde::Deserialize)]
+struct VersionEntry {
+    created_at: toml::value::Datetime,
 }
 
 /// List versions from the versions host (mise-versions.jdx.dev).
@@ -52,7 +57,14 @@ pub async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>>
     let versions: Vec<VersionInfo> = match HTTP_FETCH.get_text(&url).await {
         Ok(body) => {
             let response: VersionsResponse = toml::from_str(&body)?;
-            response.versions
+            response
+                .versions
+                .into_iter()
+                .map(|(version, entry)| VersionInfo {
+                    version,
+                    created_at: Some(entry.created_at.to_string()),
+                })
+                .collect()
         }
         Err(err) => match http::error_code(&err).unwrap_or(0) {
             404 => return Ok(None),
