@@ -17,7 +17,7 @@ use crate::lockfile::PlatformInfo;
 use crate::platform::Platform;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{PluginType, VERSION_REGEX};
-use crate::registry::{REGISTRY, tool_enabled};
+use crate::registry::{REGISTRY, full_to_url, normalize_remote, tool_enabled};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset, install_state, is_outdated_version};
@@ -312,6 +312,10 @@ pub trait Backend: Debug + Send + Sync {
     /// List remote versions with additional metadata like created_at timestamps.
     /// Results are cached. Backends can override `_list_remote_versions_with_info`
     /// to provide timestamp information.
+    ///
+    /// This method first tries the versions host (mise-versions.jdx.dev) which provides
+    /// version info with created_at timestamps. If that fails, it falls back to the
+    /// backend's `_list_remote_versions_with_info` implementation.
     async fn list_remote_versions_with_info(
         &self,
         config: &Arc<Config>,
@@ -320,25 +324,51 @@ pub trait Backend: Debug + Send + Sync {
         let remote_versions = remote_versions.lock().await;
         let ba = self.ba().clone();
         let id = self.id();
+
+        // Check if this is an external plugin with a custom remote - skip versions host if so
+        let use_versions_host = if let Some(plugin) = self.plugin()
+            && let Ok(Some(remote_url)) = plugin.get_remote_url()
+        {
+            // Check if remote matches the registry default
+            let normalized_remote =
+                normalize_remote(&remote_url).unwrap_or_else(|_| "INVALID_URL".into());
+            let shorthand_remote = REGISTRY
+                .get(plugin.name())
+                .and_then(|rt| rt.backends().first().map(|b| full_to_url(b)))
+                .unwrap_or_default();
+            let matches =
+                normalized_remote == normalize_remote(&shorthand_remote).unwrap_or_default();
+            if !matches {
+                trace!(
+                    "Skipping versions host for {} because it has a non-default remote",
+                    ba.short
+                );
+            }
+            matches
+        } else {
+            true // Core plugins and plugins without remote URLs can use versions host
+        };
+
         let versions = remote_versions
             .get_or_try_init_async(|| async {
                 trace!("Listing remote versions for {}", ba.to_string());
-                // Try versions host first (returns just version strings)
-                match versions_host::list_versions(&ba).await {
-                    Ok(Some(versions)) => {
-                        return Ok(versions
-                            .into_iter()
-                            .map(|v| VersionInfo {
-                                version: v,
-                                created_at: None,
-                            })
-                            .collect());
+                // Try versions host first (now returns VersionInfo with timestamps)
+                if use_versions_host {
+                    match versions_host::list_versions(&ba.short).await {
+                        Ok(Some(versions)) => {
+                            trace!(
+                                "Got {} versions from versions host for {}",
+                                versions.len(),
+                                ba.to_string()
+                            );
+                            return Ok(versions);
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            debug!("Error getting versions from versions host: {:#}", e);
+                        }
                     }
-                    Ok(None) => {}
-                    Err(e) => {
-                        debug!("Error getting versions from versions host: {:#}", e);
-                    }
-                };
+                }
                 trace!(
                     "Calling backend to list remote versions for {}",
                     ba.to_string()

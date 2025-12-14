@@ -1,3 +1,4 @@
+use crate::backend::VersionInfo;
 use crate::backend::static_helpers::fetch_checksum_from_shasums;
 use crate::backend::{Backend, VersionCacheManager, platform_target::PlatformTarget};
 use crate::build_time::built_info;
@@ -403,7 +404,10 @@ impl Backend for NodePlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
+    async fn _list_remote_versions_with_info(
+        &self,
+        _config: &Arc<Config>,
+    ) -> Result<Vec<VersionInfo>> {
         let settings = Settings::get();
         let base = Settings::get().node.mirror_url();
         let versions = HTTP_FETCH
@@ -420,10 +424,14 @@ impl Backend for NodePlugin {
                 }
             })
             .map(|v| {
-                if regex!(r"^v\d+\.").is_match(&v.version) {
+                let version = if regex!(r"^v\d+\.").is_match(&v.version) {
                     v.version.strip_prefix('v').unwrap().to_string()
                 } else {
                     v.version
+                };
+                VersionInfo {
+                    version,
+                    created_at: v.date,
                 }
             })
             .rev()
@@ -792,5 +800,6 @@ fn slug(v: &str) -> String {
 #[derive(Debug, Deserialize)]
 struct NodeVersion {
     version: String,
+    date: Option<String>,
     files: Vec<String>,
 }
