@@ -1,5 +1,25 @@
 # Changelog
 
+## [2025.12.7](https://github.com/jdx/mise/compare/v2025.12.6..v2025.12.7) - 2025-12-14
+
+### 🚀 Features
+
+- **(java)** add created_at support to ls-remote --json by @jdx in [#7297](https://github.com/jdx/mise/pull/7297)
+- **(ls-remote)** add created_at timestamps to ls-remote --json for more backends by @jdx in [#7295](https://github.com/jdx/mise/pull/7295)
+- **(ls-remote)** add created_at timestamps to ls-remote --json for core plugins by @jdx in [#7294](https://github.com/jdx/mise/pull/7294)
+- **(registry)** add --json flag to registry command by @jdx in [#7290](https://github.com/jdx/mise/pull/7290)
+- **(ruby)** add created_at timestamps to ls-remote --json by @jdx in [#7296](https://github.com/jdx/mise/pull/7296)
+
+### 🐛 Bug Fixes
+
+- **(spm)** recursively update submodules after checkout by @JFej in [#7292](https://github.com/jdx/mise/pull/7292)
+- prioritize raw task output over task_output setting by @skorfmann in [#7286](https://github.com/jdx/mise/pull/7286)
+
+### New Contributors
+
+- @skorfmann made their first contribution in [#7286](https://github.com/jdx/mise/pull/7286)
+- @JFej made their first contribution in [#7292](https://github.com/jdx/mise/pull/7292)
+
 ## [2025.12.6](https://github.com/jdx/mise/compare/v2025.12.5..v2025.12.6) - 2025-12-14
 
 ### 🚀 Features
