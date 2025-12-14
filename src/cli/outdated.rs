@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
-use crate::toolset::ToolsetBuilder;
+use crate::toolset::{ResolveOptions, ToolsetBuilder};
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::ui::table;
 use eyre::Result;
@@ -54,7 +54,9 @@ impl Outdated {
             .collect::<HashSet<_>>();
         ts.versions
             .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.backend));
-        let outdated = ts.list_outdated_versions(&config, self.bump).await;
+        let outdated = ts
+            .list_outdated_versions(&config, self.bump, &ResolveOptions::default())
+            .await;
         self.display(outdated).await?;
         Ok(())
     }
