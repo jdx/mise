@@ -22,7 +22,9 @@ use crate::plugins::{PluginType, VERSION_REGEX};
 use crate::registry::{REGISTRY, full_to_url, normalize_remote, tool_enabled};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::outdated_info::OutdatedInfo;
-use crate::toolset::{ResolveOptions, ToolRequest, ToolVersion, Toolset, install_state, is_outdated_version};
+use crate::toolset::{
+    ResolveOptions, ToolRequest, ToolVersion, Toolset, install_state, is_outdated_version,
+};
 use crate::ui::progress_report::SingleReport;
 use crate::{
     cache::{CacheManager, CacheManagerBuilder},

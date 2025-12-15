@@ -268,7 +268,10 @@ impl ToolVersion {
                 .await?
                 .ok_or_else(|| {
                     let msg = if opts.before_date.is_some() {
-                        format!("no versions found for {} matching date filter", backend.id())
+                        format!(
+                            "no versions found for {} matching date filter",
+                            backend.id()
+                        )
                     } else {
                         format!("no versions found for {}", backend.id())
                     };
