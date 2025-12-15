@@ -377,12 +377,13 @@ impl CondaBackend {
             let Some(matched) =
                 Self::find_package_file(&dep_files, version_spec.as_deref(), subdir)
             else {
-                bail!(
-                    "no matching version for dependency '{}' (spec: {:?}) on platform {}",
-                    name,
-                    version_spec,
-                    subdir
+                // Skip dependencies not available for this platform
+                // This is common - many conda packages have platform-specific deps
+                debug!(
+                    "skipping dependency '{}' (spec: {:?}) - not available for platform {}",
+                    name, version_spec, subdir
                 );
+                continue;
             };
 
             resolved.insert(name.clone(), matched.to_resolved_package(&name));
