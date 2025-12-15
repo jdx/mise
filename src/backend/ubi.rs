@@ -160,6 +160,25 @@ impl Backend for UbiBackend {
                 _ => bail!("Unsupported forge type {:?}", forge),
             };
 
+            // Helper to check if tag matches tag_regex (if provided)
+            let matches_tag_regex = |tag: &str| -> bool {
+                if let Some(re_str) = opts.get("tag_regex") {
+                    let re = tag_regex_cell.get_or_init(|| Regex::new(re_str).unwrap());
+                    re.is_match(tag)
+                } else {
+                    true
+                }
+            };
+
+            // Helper to strip 'v' prefix from version
+            let strip_v_prefix = |tag: &str| -> String {
+                if regex!(r"^v[0-9]").is_match(tag) {
+                    tag[1..].to_string()
+                } else {
+                    tag.to_string()
+                }
+            };
+
             let mut version_infos: Vec<VersionInfo> = match forge {
                 ForgeType::GitHub => {
                     let releases =
@@ -169,16 +188,12 @@ impl Backend for UbiBackend {
                         github::list_tags_from_url(api_url, &self.tool_name())
                             .await?
                             .into_iter()
+                            .filter(|tag| matches_tag_regex(tag))
                             .map(|tag| {
                                 let release_url =
                                     format!("{}/releases/tag/{}", release_url_base, tag);
-                                let version = if regex!(r"^v[0-9]").is_match(&tag) {
-                                    tag[1..].to_string()
-                                } else {
-                                    tag
-                                };
                                 VersionInfo {
-                                    version,
+                                    version: strip_v_prefix(&tag),
                                     created_at: None,
                                     release_url: Some(release_url),
                                 }
@@ -187,16 +202,12 @@ impl Backend for UbiBackend {
                     } else {
                         releases
                             .into_iter()
+                            .filter(|r| matches_tag_regex(&r.tag_name))
                             .map(|r| {
                                 let release_url =
                                     format!("{}/releases/tag/{}", release_url_base, r.tag_name);
-                                let version = if regex!(r"^v[0-9]").is_match(&r.tag_name) {
-                                    r.tag_name[1..].to_string()
-                                } else {
-                                    r.tag_name
-                                };
                                 VersionInfo {
-                                    version,
+                                    version: strip_v_prefix(&r.tag_name),
                                     created_at: Some(r.created_at),
                                     release_url: Some(release_url),
                                 }
@@ -212,16 +223,12 @@ impl Backend for UbiBackend {
                         gitlab::list_tags_from_url(api_url, &self.tool_name())
                             .await?
                             .into_iter()
+                            .filter(|tag| matches_tag_regex(tag))
                             .map(|tag| {
-                                let release_url =
-                                    format!("{}/-/releases/{}", release_url_base, tag);
-                                let version = if regex!(r"^v[0-9]").is_match(&tag) {
-                                    tag[1..].to_string()
-                                } else {
-                                    tag
-                                };
+                                // Use /-/tags/ for tag-only URLs (no release exists)
+                                let release_url = format!("{}/-/tags/{}", release_url_base, tag);
                                 VersionInfo {
-                                    version,
+                                    version: strip_v_prefix(&tag),
                                     created_at: None,
                                     release_url: Some(release_url),
                                 }
@@ -230,16 +237,12 @@ impl Backend for UbiBackend {
                     } else {
                         releases
                             .into_iter()
+                            .filter(|r| matches_tag_regex(&r.tag_name))
                             .map(|r| {
                                 let release_url =
                                     format!("{}/-/releases/{}", release_url_base, r.tag_name);
-                                let version = if regex!(r"^v[0-9]").is_match(&r.tag_name) {
-                                    r.tag_name[1..].to_string()
-                                } else {
-                                    r.tag_name
-                                };
                                 VersionInfo {
-                                    version,
+                                    version: strip_v_prefix(&r.tag_name),
                                     created_at: r.released_at,
                                     release_url: Some(release_url),
                                 }
@@ -249,12 +252,6 @@ impl Backend for UbiBackend {
                 }
                 _ => bail!("Unsupported forge type {:?}", forge),
             };
-
-            // Apply tag_regex filter if provided
-            if let Some(re_str) = opts.get("tag_regex") {
-                let re = tag_regex_cell.get_or_init(|| Regex::new(re_str).unwrap());
-                version_infos.retain(|vi| re.is_match(&vi.version));
-            }
 
             // Sort: versions starting with digits first, then reverse
             version_infos.sort_by_cached_key(|vi| !regex!(r"^[0-9]").is_match(&vi.version));
