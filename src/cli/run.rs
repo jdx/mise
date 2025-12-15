@@ -200,6 +200,16 @@ pub struct Run {
 
 impl Run {
     pub async fn run(mut self) -> Result<()> {
+        // Check help flags before doing any work
+        if self.task == "-h" {
+            self.get_clap_command().print_help()?;
+            return Ok(());
+        }
+        if self.task == "--help" {
+            self.get_clap_command().print_long_help()?;
+            return Ok(());
+        }
+
         let mut config = Config::get().await?;
 
         // Build and install toolset so tools like npm are available for prepare
@@ -227,15 +237,6 @@ impl Run {
                     ..Default::default()
                 })
                 .await?;
-        }
-
-        if self.task == "-h" {
-            self.get_clap_command().print_help()?;
-            return Ok(());
-        }
-        if self.task == "--help" {
-            self.get_clap_command().print_long_help()?;
-            return Ok(());
         }
 
         // Unescape task args that were escaped to prevent clap from parsing them

@@ -302,9 +302,9 @@ impl PrepareEngine {
         let outputs_mtime = Self::last_modified(&outputs)?;
 
         match (sources_mtime, outputs_mtime) {
-            (Some(src), Some(out)) => Ok(src < out), // Fresh if outputs newer than sources
-            (None, _) => Ok(true),                   // No sources exist, consider fresh
-            (_, None) => Ok(false),                  // No outputs exist, not fresh
+            (Some(src), Some(out)) => Ok(src <= out), // Fresh if outputs newer or equal to sources
+            (None, _) => Ok(true),                    // No sources exist, consider fresh
+            (_, None) => Ok(false),                   // No outputs exist, not fresh
         }
     }
 

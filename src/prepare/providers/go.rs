@@ -27,10 +27,8 @@ impl PrepareProvider for GoPrepareProvider {
     }
 
     fn sources(&self) -> Vec<PathBuf> {
-        vec![
-            self.project_root.join("go.sum"),
-            self.project_root.join("go.mod"),
-        ]
+        // go.mod defines dependencies - changes here trigger downloads
+        vec![self.project_root.join("go.mod")]
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
@@ -39,8 +37,7 @@ impl PrepareProvider for GoPrepareProvider {
         if vendor.exists() {
             vec![vendor]
         } else {
-            // Use go.sum as both source and output indicator
-            // (go mod download updates go.sum)
+            // go.sum gets updated after go mod download completes
             vec![self.project_root.join("go.sum")]
         }
     }
