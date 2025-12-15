@@ -309,15 +309,48 @@ impl PrepareEngine {
     }
 
     /// Get the most recent modification time from a list of paths
+    /// For directories, recursively finds the newest file within (up to 3 levels deep)
     fn last_modified(paths: &[PathBuf]) -> Result<Option<SystemTime>> {
-        let mtimes: Vec<SystemTime> = paths
-            .iter()
-            .filter(|p| p.exists())
-            .filter_map(|p| p.metadata().ok())
-            .filter_map(|m| m.modified().ok())
-            .collect();
+        let mut mtimes: Vec<SystemTime> = vec![];
+
+        for path in paths.iter().filter(|p| p.exists()) {
+            if path.is_dir() {
+                // For directories, find the newest file within (limited depth for performance)
+                if let Some(mtime) = Self::newest_file_in_dir(path, 3) {
+                    mtimes.push(mtime);
+                }
+            } else if let Some(mtime) = path.metadata().ok().and_then(|m| m.modified().ok()) {
+                mtimes.push(mtime);
+            }
+        }
 
         Ok(mtimes.into_iter().max())
+    }
+
+    /// Recursively find the newest file modification time in a directory
+    fn newest_file_in_dir(dir: &Path, max_depth: usize) -> Option<SystemTime> {
+        if max_depth == 0 {
+            return dir.metadata().ok().and_then(|m| m.modified().ok());
+        }
+
+        let mut newest: Option<SystemTime> = None;
+
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let mtime = if path.is_dir() {
+                    Self::newest_file_in_dir(&path, max_depth - 1)
+                } else {
+                    path.metadata().ok().and_then(|m| m.modified().ok())
+                };
+
+                if let Some(t) = mtime {
+                    newest = Some(newest.map_or(t, |n| n.max(t)));
+                }
+            }
+        }
+
+        newest
     }
 
     /// Execute a prepare command (static version for parallel execution)

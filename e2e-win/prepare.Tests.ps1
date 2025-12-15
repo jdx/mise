@@ -16,8 +16,9 @@ Describe 'prepare' {
     }
 
     AfterEach {
-        Remove-Item -Path (Join-Path $TestDrive 'package-lock.json') -ErrorAction SilentlyContinue
-        Remove-Item -Path (Join-Path $TestDrive 'mise.toml') -ErrorAction SilentlyContinue
+        # Clean up files in current directory
+        Remove-Item -Path 'package-lock.json' -ErrorAction SilentlyContinue
+        Remove-Item -Path 'mise.toml' -ErrorAction SilentlyContinue
     }
 
     It 'lists no providers when no lockfiles exist' {
@@ -25,63 +26,56 @@ Describe 'prepare' {
     }
 
     It 'detects npm provider when configured with package-lock.json' {
-        # Create files using full physical path to ensure they're in the right location
-        $lockfile = Join-Path $TestDrive 'package-lock.json'
-        $configfile = Join-Path $TestDrive 'mise.toml'
-
+        # Create files in current directory (we're in $TestDrive from BeforeAll)
         @'
 {
   "name": "test-project",
   "lockfileVersion": 3,
   "packages": {}
 }
-'@ | Out-File -FilePath $lockfile -Encoding utf8NoBOM
+'@ | Out-File -FilePath 'package-lock.json' -Encoding utf8NoBOM
 
         @'
 [prepare.npm]
-'@ | Out-File -FilePath $configfile -Encoding utf8NoBOM
+'@ | Out-File -FilePath 'mise.toml' -Encoding utf8NoBOM
 
-        # Verify files exist
-        $lockfile | Should -Exist
-        $configfile | Should -Exist
+        # Verify files exist in current directory
+        'package-lock.json' | Should -Exist
+        'mise.toml' | Should -Exist
 
         mise prepare --list | Should -Match 'npm'
     }
 
     It 'prep alias works' {
-        $lockfile = Join-Path $TestDrive 'package-lock.json'
-        $configfile = Join-Path $TestDrive 'mise.toml'
-
+        # Create files in current directory (we're in $TestDrive from BeforeAll)
         @'
 {
   "name": "test-project",
   "lockfileVersion": 3,
   "packages": {}
 }
-'@ | Out-File -FilePath $lockfile -Encoding utf8NoBOM
+'@ | Out-File -FilePath 'package-lock.json' -Encoding utf8NoBOM
 
         @'
 [prepare.npm]
-'@ | Out-File -FilePath $configfile -Encoding utf8NoBOM
+'@ | Out-File -FilePath 'mise.toml' -Encoding utf8NoBOM
 
         mise prep --list | Should -Match 'npm'
     }
 
     It 'dry-run shows what would run' {
-        $lockfile = Join-Path $TestDrive 'package-lock.json'
-        $configfile = Join-Path $TestDrive 'mise.toml'
-
+        # Create files in current directory (we're in $TestDrive from BeforeAll)
         @'
 {
   "name": "test-project",
   "lockfileVersion": 3,
   "packages": {}
 }
-'@ | Out-File -FilePath $lockfile -Encoding utf8NoBOM
+'@ | Out-File -FilePath 'package-lock.json' -Encoding utf8NoBOM
 
         @'
 [prepare.npm]
-'@ | Out-File -FilePath $configfile -Encoding utf8NoBOM
+'@ | Out-File -FilePath 'mise.toml' -Encoding utf8NoBOM
 
         mise prepare --dry-run | Should -Match 'npm'
     }
