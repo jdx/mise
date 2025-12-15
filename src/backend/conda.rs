@@ -633,7 +633,8 @@ impl CondaPackageFile {
         ResolvedPackage {
             name: name.to_string(),
             download_url: CondaBackend::build_download_url(&self.download_url),
-            sha256: self.sha256.clone(),
+            // Filter out empty strings - API sometimes returns "" instead of null
+            sha256: self.sha256.as_ref().filter(|s| !s.is_empty()).cloned(),
             basename: self.basename.clone(),
         }
     }
