@@ -68,6 +68,9 @@ async fn get_or_create_venv(ts: &Toolset, venv_path: PathBuf, uv_path: PathBuf) 
         if !log::log_enabled!(log::Level::Debug) {
             cmd = cmd.arg("--quiet");
         }
+        if let Some(extra) = Settings::get().python.uv_venv_create_args.clone() {
+            cmd = cmd.args(extra);
+        }
         cmd.execute()?;
     }
     venv.env.insert(
