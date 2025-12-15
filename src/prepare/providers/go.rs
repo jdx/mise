@@ -75,7 +75,8 @@ impl PrepareProvider for GoPrepareProvider {
     }
 
     fn is_applicable(&self) -> bool {
-        self.project_root.join("go.sum").exists()
+        // Check for go.mod (the source/lockfile), not go.sum (which may be an output)
+        self.project_root.join("go.mod").exists()
     }
 
     fn is_auto(&self) -> bool {
