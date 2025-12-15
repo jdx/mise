@@ -3,8 +3,8 @@ Describe 'task' {
     BeforeAll {
         $originalPath = Get-Location
         Set-Location TestDrive:
-        # Trust the TestDrive config path
-        $env:MISE_TRUSTED_CONFIG_PATHS = (Get-Location).Path
+        # Trust the TestDrive config path - use $TestDrive for physical path, not PSDrive path
+        $env:MISE_TRUSTED_CONFIG_PATHS = $TestDrive
 
         # Create mise.toml that includes tasks directory
         @'
