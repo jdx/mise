@@ -1,5 +1,38 @@
 
 Describe 'task' {
+    BeforeAll {
+        $originalPath = Get-Location
+        Set-Location TestDrive:
+
+        # Create mise.toml that includes tasks directory
+        @'
+includes = ["tasks"]
+'@ | Out-File -FilePath "mise.toml" -Encoding utf8
+
+        # Create tasks directory
+        New-Item -ItemType Directory -Path "tasks" -Force | Out-Null
+
+        # Create filetask.bat
+        @'
+@echo off
+echo mytask
+'@ | Out-File -FilePath "tasks\filetask.bat" -Encoding ascii -NoNewline
+
+        # Create filetask (no extension) for MIME_WINDOWS_DEFAULT_FILE_SHELL_ARGS test
+        @'
+@echo off
+echo mytask
+'@ | Out-File -FilePath "tasks\filetask" -Encoding ascii -NoNewline
+
+        # Create testtask.ps1 for pwsh test
+        @'
+Write-Output "windows"
+'@ | Out-File -FilePath "tasks\testtask.ps1" -Encoding utf8
+    }
+
+    AfterAll {
+        Set-Location $originalPath
+    }
 
     BeforeEach {
         Remove-Item -Path Env:\MISE_WINDOWS_EXECUTABLE_EXTENSIONS -ErrorAction SilentlyContinue
