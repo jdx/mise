@@ -6,14 +6,14 @@ use eyre::Result;
 use crate::prepare::rule::PrepareProviderConfig;
 use crate::prepare::{PrepareCommand, PrepareProvider};
 
-/// Prepare provider for npm
+/// Prepare provider for yarn
 #[derive(Debug)]
-pub struct NpmPrepareProvider {
+pub struct YarnPrepareProvider {
     project_root: PathBuf,
     config: PrepareProviderConfig,
 }
 
-impl NpmPrepareProvider {
+impl YarnPrepareProvider {
     pub fn new(project_root: &PathBuf, config: PrepareProviderConfig) -> Self {
         Self {
             project_root: project_root.clone(),
@@ -22,13 +22,13 @@ impl NpmPrepareProvider {
     }
 
     fn lockfile_path(&self) -> PathBuf {
-        self.project_root.join("package-lock.json")
+        self.project_root.join("yarn.lock")
     }
 }
 
-impl PrepareProvider for NpmPrepareProvider {
+impl PrepareProvider for YarnPrepareProvider {
     fn id(&self) -> &str {
-        "npm"
+        "yarn"
     }
 
     fn sources(&self) -> Vec<PathBuf> {
@@ -72,7 +72,7 @@ impl PrepareProvider for NpmPrepareProvider {
         // Check for custom command override
         if let Some(custom_run) = &self.config.run {
             let parts: Vec<&str> = custom_run.split_whitespace().collect();
-            let (program, args) = parts.split_first().unwrap_or((&"npm", &[]));
+            let (program, args) = parts.split_first().unwrap_or((&"yarn", &[]));
 
             let mut env = BTreeMap::new();
             for (k, v) in &self.config.env {
@@ -93,7 +93,7 @@ impl PrepareProvider for NpmPrepareProvider {
                     .config
                     .description
                     .clone()
-                    .unwrap_or_else(|| "Installing npm dependencies".to_string()),
+                    .unwrap_or_else(|| "Installing yarn dependencies".to_string()),
             });
         }
 
@@ -103,7 +103,7 @@ impl PrepareProvider for NpmPrepareProvider {
         }
 
         Ok(PrepareCommand {
-            program: "npm".to_string(),
+            program: "yarn".to_string(),
             args: vec!["install".to_string()],
             env,
             cwd: Some(self.project_root.clone()),
@@ -111,7 +111,7 @@ impl PrepareProvider for NpmPrepareProvider {
                 .config
                 .description
                 .clone()
-                .unwrap_or_else(|| "Installing npm dependencies".to_string()),
+                .unwrap_or_else(|| "Installing yarn dependencies".to_string()),
         })
     }
 
@@ -120,7 +120,7 @@ impl PrepareProvider for NpmPrepareProvider {
             return false;
         }
 
-        // Applicable if package-lock.json exists
+        // Applicable if yarn.lock exists
         self.lockfile_path().exists()
     }
 

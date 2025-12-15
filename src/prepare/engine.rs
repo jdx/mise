@@ -11,7 +11,10 @@ use crate::miseprintln;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 use super::PrepareProvider;
-use super::providers::{CustomPrepareProvider, NpmPrepareProvider};
+use super::providers::{
+    BunPrepareProvider, CustomPrepareProvider, NpmPrepareProvider, PnpmPrepareProvider,
+    YarnPrepareProvider,
+};
 use super::rule::{BUILTIN_PROVIDERS, PrepareConfig};
 
 /// Options for running prepare steps
@@ -97,6 +100,18 @@ impl PrepareEngine {
                 // Built-in provider with specialized implementation
                 match id.as_str() {
                     "npm" => Box::new(NpmPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    "yarn" => Box::new(YarnPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    "pnpm" => Box::new(PnpmPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    "bun" => Box::new(BunPrepareProvider::new(
                         &project_root,
                         provider_config.clone(),
                     )),

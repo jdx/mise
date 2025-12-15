@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 /// List of built-in provider names that have specialized implementations
-pub const BUILTIN_PROVIDERS: &[&str] = &["npm", "cargo", "go", "python"];
+pub const BUILTIN_PROVIDERS: &[&str] = &["npm", "yarn", "pnpm", "bun", "cargo", "go", "python"];
 
 /// Configuration for a prepare provider (both built-in and custom)
 ///
