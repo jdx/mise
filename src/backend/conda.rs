@@ -396,22 +396,29 @@ impl CondaBackend {
 
     /// Download a conda package to shared data directory (standalone for parallel::parallel)
     async fn download_package(pkg: ResolvedPackage) -> Result<PathBuf> {
+        use eyre::WrapErr;
+
         let data_dir = Self::conda_data_dir();
-        file::create_dir_all(&data_dir)?;
+        file::create_dir_all(&data_dir)
+            .wrap_err_with(|| format!("failed to create conda data dir for {}", pkg.name))?;
 
         let tarball_path = Self::package_path(&pkg.basename);
 
         // Take a lock on this specific package file for parallel safety
-        let _lock = LockFile::new(&tarball_path).lock()?;
+        let _lock = LockFile::new(&tarball_path)
+            .lock()
+            .wrap_err_with(|| format!("failed to acquire lock for {}", pkg.name))?;
 
         // After acquiring lock, check if file already exists
         if !tarball_path.exists() {
             HTTP.download_file(&pkg.download_url, &tarball_path, None)
-                .await?;
+                .await
+                .wrap_err_with(|| format!("failed to download {}", pkg.download_url))?;
         }
 
         // Verify checksum
-        Self::verify_checksum(&tarball_path, pkg.sha256.as_deref())?;
+        Self::verify_checksum(&tarball_path, pkg.sha256.as_deref())
+            .wrap_err_with(|| format!("checksum verification failed for {}", pkg.name))?;
 
         Ok(tarball_path)
     }
