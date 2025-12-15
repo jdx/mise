@@ -175,14 +175,6 @@ pub fn should_exit_early_fast() -> bool {
                 } else {
                     dir.join(subdir)
                 };
-                // Skip directories we've cached as having no config (only when within TTL window)
-                if within_ttl_window
-                    && PREV_SESSION
-                        .checked_dirs_without_config
-                        .contains(&check_dir)
-                {
-                    continue;
-                }
                 if let Ok(metadata) = check_dir.metadata()
                     && let Ok(modified) = metadata.modified()
                     && mtime_to_millis(modified) > PREV_SESSION.latest_update
@@ -286,10 +278,6 @@ pub struct HookEnvSession {
     dir: Option<PathBuf>,
     env_var_hash: String,
     latest_update: u128,
-    /// Directories that were checked and found to have no config files.
-    /// Used to skip stat operations on subsequent hook-env calls when cache_ttl is set.
-    #[serde(default)]
-    checked_dirs_without_config: IndexSet<PathBuf>,
     /// Timestamp (millis since epoch) of the last full directory traversal check.
     /// Used with hook_env.cache_ttl to skip checks within the TTL window.
     #[serde(default)]
@@ -330,37 +318,7 @@ pub async fn build_session(
         IndexSet::new()
     };
 
-    // Build the set of directories that were checked but have no config files.
-    // This is used by should_exit_early_fast() to skip stat operations when
-    // hook_env.cache_ttl is set (useful for slow filesystems like NFS).
     let loaded_configs: IndexSet<PathBuf> = config.config_files.keys().cloned().collect();
-    let loaded_config_dirs: std::collections::HashSet<&Path> =
-        loaded_configs.iter().filter_map(|p| p.parent()).collect();
-
-    let mut checked_dirs_without_config = IndexSet::new();
-    if let Some(cwd) = &*dirs::CWD
-        && let Ok(ancestor_dirs) = file::all_dirs(cwd, &env::MISE_CEILING_PATHS)
-    {
-        let config_subdirs = DEFAULT_CONFIG_FILENAMES
-            .iter()
-            .map(|f| Path::new(f).parent().and_then(|p| p.to_str()).unwrap_or(""))
-            .unique()
-            .collect::<Vec<_>>();
-
-        for dir in ancestor_dirs {
-            for subdir in &config_subdirs {
-                let check_dir = if subdir.is_empty() {
-                    dir.clone()
-                } else {
-                    dir.join(subdir)
-                };
-                // If no config file was loaded from this directory, cache it
-                if !loaded_config_dirs.contains(check_dir.as_path()) {
-                    checked_dirs_without_config.insert(check_dir);
-                }
-            }
-        }
-    }
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -375,7 +333,6 @@ pub async fn build_session(
         loaded_tools,
         config_paths,
         latest_update: mtime_to_millis(max_modtime),
-        checked_dirs_without_config,
         last_full_check: now,
     })
 }
