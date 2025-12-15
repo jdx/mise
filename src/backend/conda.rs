@@ -565,6 +565,21 @@ impl Backend for CondaBackend {
             }
         }
     }
+
+    async fn list_bin_paths(
+        &self,
+        _config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Result<Vec<PathBuf>> {
+        let install_path = tv.install_path();
+        if cfg!(windows) {
+            // Windows conda packages put binaries in Library/bin
+            Ok(vec![install_path.join("Library").join("bin")])
+        } else {
+            // Unix conda packages put binaries in bin
+            Ok(vec![install_path.join("bin")])
+        }
+    }
 }
 
 /// Represents a conda package file from the anaconda.org API
