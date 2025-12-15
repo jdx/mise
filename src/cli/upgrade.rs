@@ -110,7 +110,12 @@ impl Upgrade {
         Ok(())
     }
 
-    async fn upgrade(&self, config: &mut Arc<Config>, outdated: Vec<OutdatedInfo>, before_date: Option<Timestamp>) -> Result<()> {
+    async fn upgrade(
+        &self,
+        config: &mut Arc<Config>,
+        outdated: Vec<OutdatedInfo>,
+        before_date: Option<Timestamp>,
+    ) -> Result<()> {
         let mpr = MultiProgressReport::get();
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
