@@ -75,6 +75,7 @@ pub struct PrepareEngine {
 impl PrepareEngine {
     /// Create a new PrepareEngine, discovering all applicable providers
     pub fn new(config: Arc<Config>) -> Result<Self> {
+        Settings::get().ensure_experimental("prepare")?;
         let providers = Self::discover_providers(&config)?;
         Ok(Self { config, providers })
     }

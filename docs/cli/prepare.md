@@ -5,7 +5,7 @@
 - **Aliases**: `prep`
 - **Source code**: [`src/cli/prepare.rs`](https://github.com/jdx/mise/blob/main/src/cli/prepare.rs)
 
-Ensure project dependencies are ready
+[experimental] Ensure project dependencies are ready
 
 Runs all applicable prepare steps for the current project.
 This checks if dependency lockfiles are newer than installed outputs

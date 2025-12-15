@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::miseprintln;
 use crate::prepare::{PrepareEngine, PrepareOptions, PrepareStepResult};
 
-/// Ensure project dependencies are ready
+/// [experimental] Ensure project dependencies are ready
 ///
 /// Runs all applicable prepare steps for the current project.
 /// This checks if dependency lockfiles are newer than installed outputs
