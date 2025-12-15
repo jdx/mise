@@ -1,6 +1,6 @@
 use crate::semver::{chunkify_version, split_version_prefix};
 use crate::toolset;
-use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, ToolVersion};
 use crate::{Result, config::Config};
 use serde_derive::Serialize;
 use std::{
@@ -53,15 +53,24 @@ impl OutdatedInfo {
         config: &Arc<Config>,
         tv: ToolVersion,
         bump: bool,
+        opts: &ResolveOptions,
     ) -> eyre::Result<Option<Self>> {
         let t = tv.backend()?;
         // prefix is something like "temurin-" or "corretto-"
         let (prefix, _) = split_version_prefix(&tv.request.version());
         let latest_result = if bump {
-            t.latest_version(config, Some(prefix.clone()).filter(|s| !s.is_empty()))
-                .await
+            // Note: Backend's latest_version_with_opts takes individual parameters,
+            // not a ResolveOptions struct like ToolVersion's method
+            t.latest_version_with_opts(
+                config,
+                Some(prefix.clone()).filter(|s| !s.is_empty()),
+                opts.before_date,
+            )
+            .await
         } else {
-            tv.latest_version(config).await.map(Option::from)
+            tv.latest_version_with_opts(config, opts)
+                .await
+                .map(Option::from)
         };
         let latest = match latest_result {
             Ok(Some(latest)) => latest,

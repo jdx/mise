@@ -11,7 +11,7 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolSource::IdiomaticVersionFile;
 use crate::toolset::outdated_info::OutdatedInfo;
-use crate::toolset::{ToolVersion, Toolset};
+use crate::toolset::{ResolveOptions, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, github, plugins};
 use async_trait::async_trait;
@@ -193,10 +193,11 @@ impl Backend for RustPlugin {
         config: &Arc<Config>,
         tv: &ToolVersion,
         bump: bool,
+        opts: &ResolveOptions,
     ) -> Result<Option<OutdatedInfo>> {
         let v_re = regex!(r#"Update available : (.*) -> (.*)"#);
         if regex!(r"(\d+)\.(\d+)\.(\d+)").is_match(&tv.version) {
-            let oi = OutdatedInfo::resolve(config, tv.clone(), bump).await?;
+            let oi = OutdatedInfo::resolve(config, tv.clone(), bump, opts).await?;
             Ok(oi)
         } else {
             let ts = config.get_toolset().await?;

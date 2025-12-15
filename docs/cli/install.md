@@ -42,6 +42,12 @@ Show installation output
 
 This argument will print plugin output such as download, configuration, and compilation output.
 
+### `--before <BEFORE>`
+
+Only install versions released before this date
+
+Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+
 ### `--raw`
 
 Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1

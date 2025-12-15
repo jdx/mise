@@ -581,6 +581,30 @@ parse_env = "list_by_colon"
 rust_type = "BTreeSet<PathBuf>"
 type = "ListPath"
 
+[install_before]
+description = "Only install versions released before this date"
+docs = """
+Filter tool versions by release date. Supports:
+
+- Absolute dates: `2024-06-01`, `2024-06-01T12:00:00Z`
+- Relative durations: `90d` (90 days ago), `1y` (1 year ago), `6m` (6 months ago)
+
+This is useful for reproducible builds or security purposes where you want to ensure
+you're only installing versions that existed before a certain point in time.
+
+Only affects backends that provide release timestamps (aqua, cargo, npm, pipx, and some core plugins).
+Versions without timestamps are included by default.
+
+**Behavior**: This filter only applies when resolving fuzzy version requests like `node@20` or `latest`.
+Explicitly pinned versions like `node@22.5.0` are not filtered, allowing you to selectively
+use newer versions for specific tools while keeping others behind the cutoff date.
+
+Can be overridden with the `--before` CLI flag.
+"""
+env = "MISE_INSTALL_BEFORE"
+optional = true
+type = "String"
+
 [jobs]
 default = 8
 description = "How many jobs to run concurrently such as tool installs."

@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::ToolArg;
-use crate::config::{Config, config_file};
+use crate::config::{Config, Settings, config_file};
+use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder};
@@ -12,6 +13,7 @@ use crate::{config, ui};
 use console::Term;
 use demand::DemandOption;
 use eyre::{Context, Result, eyre};
+use jiff::Timestamp;
 
 /// Upgrades outdated tools
 ///
@@ -52,6 +54,16 @@ pub struct Upgrade {
     #[clap(long, short = 'n', verbatim_doc_comment)]
     dry_run: bool,
 
+    /// Only upgrade to versions released before this date
+    ///
+    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+    /// This can be useful for reproducibility or security purposes.
+    ///
+    /// This only affects fuzzy version matches like "20" or "latest".
+    /// Explicitly pinned versions like "22.5.0" are not filtered.
+    #[clap(long, verbatim_doc_comment)]
+    before: Option<String>,
+
     /// Directly pipe stdin/stdout/stderr from plugin to user
     /// Sets --jobs=1
     #[clap(long, overrides_with = "jobs")]
@@ -65,7 +77,14 @@ impl Upgrade {
             .with_args(&self.tool)
             .build(&config)
             .await?;
-        let mut outdated = ts.list_outdated_versions(&config, self.bump).await;
+        // Compute before_date once to ensure consistency when using relative durations
+        let before_date = self.get_before_date()?;
+        let opts = ResolveOptions {
+            use_locked_version: false,
+            latest_versions: true,
+            before_date,
+        };
+        let mut outdated = ts.list_outdated_versions(&config, self.bump, &opts).await;
         if self.interactive && !outdated.is_empty() {
             outdated = self.get_interactive_tool_set(&outdated)?;
         } else if !self.tool.is_empty() {
@@ -85,13 +104,18 @@ impl Upgrade {
                 );
             }
         } else {
-            self.upgrade(&mut config, outdated).await?;
+            self.upgrade(&mut config, outdated, before_date).await?;
         }
 
         Ok(())
     }
 
-    async fn upgrade(&self, config: &mut Arc<Config>, outdated: Vec<OutdatedInfo>) -> Result<()> {
+    async fn upgrade(
+        &self,
+        config: &mut Arc<Config>,
+        outdated: Vec<OutdatedInfo>,
+        before_date: Option<Timestamp>,
+    ) -> Result<()> {
         let mpr = MultiProgressReport::get();
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
@@ -154,6 +178,7 @@ impl Upgrade {
             resolve_options: ResolveOptions {
                 use_locked_version: false,
                 latest_versions: true,
+                before_date,
             },
             ..Default::default()
         };
@@ -254,6 +279,19 @@ impl Upgrade {
                 Err(eyre!(e))
             }
         }
+    }
+
+    /// Get the before_date from CLI flag or settings
+    fn get_before_date(&self) -> Result<Option<Timestamp>> {
+        // CLI flag takes precedence over settings
+        if let Some(before) = &self.before {
+            return Ok(Some(parse_into_timestamp(before)?));
+        }
+        // Fall back to settings
+        if let Some(before) = &Settings::get().install_before {
+            return Ok(Some(parse_into_timestamp(before)?));
+        }
+        Ok(None)
     }
 }
 

@@ -5,11 +5,13 @@ use std::sync::Arc;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::config::Settings;
+use crate::duration::parse_into_timestamp;
 use crate::hooks::Hooks;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset};
 use crate::{config, env, hooks};
 use eyre::Result;
 use itertools::Itertools;
+use jiff::Timestamp;
 
 /// Install a tool version
 ///
@@ -46,6 +48,12 @@ pub struct Install {
     /// This argument will print plugin output such as download, configuration, and compilation output.
     #[clap(long, short, action = clap::ArgAction::Count)]
     verbose: u8,
+
+    /// Only install versions released before this date
+    ///
+    /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
+    #[clap(long, verbatim_doc_comment)]
+    before: Option<String>,
 
     /// Directly pipe stdin/stdout/stderr from plugin to user
     /// Sets --jobs=1
@@ -120,7 +128,7 @@ impl Install {
             warn!("specify a version with `mise install <PLUGIN>@<VERSION>`");
             vec![]
         } else {
-            ts.install_all_versions(&mut config, tool_versions, &self.install_opts())
+            ts.install_all_versions(&mut config, tool_versions, &self.install_opts()?)
                 .await?
         };
         // because we may be installing a tool that is not in config, we need to restore the original tool args and reset everything
@@ -141,8 +149,8 @@ impl Install {
         Ok(())
     }
 
-    fn install_opts(&self) -> InstallOptions {
-        InstallOptions {
+    fn install_opts(&self) -> Result<InstallOptions> {
+        Ok(InstallOptions {
             force: self.force,
             jobs: self.jobs,
             raw: self.raw,
@@ -150,11 +158,23 @@ impl Install {
             resolve_options: ResolveOptions {
                 use_locked_version: true,
                 latest_versions: true,
+                before_date: self.get_before_date()?,
             },
             dry_run: self.dry_run,
             locked: Settings::get().locked,
             ..Default::default()
+        })
+    }
+
+    /// Get the before_date from CLI flag or settings
+    fn get_before_date(&self) -> Result<Option<Timestamp>> {
+        if let Some(before) = &self.before {
+            return Ok(Some(parse_into_timestamp(before)?));
         }
+        if let Some(before) = &Settings::get().install_before {
+            return Ok(Some(parse_into_timestamp(before)?));
+        }
+        Ok(None)
     }
 
     fn get_requested_tool_versions(
@@ -227,7 +247,7 @@ impl Install {
         } else {
             let mut ts = Toolset::from(trs.clone());
             measure!("install_all_versions", {
-                ts.install_all_versions(&mut config, versions, &self.install_opts())
+                ts.install_all_versions(&mut config, versions, &self.install_opts()?)
                     .await?
             })
         };

@@ -633,17 +633,18 @@ impl Toolset {
         &self,
         config: &Arc<Config>,
         bump: bool,
+        opts: &ResolveOptions,
     ) -> Vec<OutdatedInfo> {
         let versions = self
             .list_current_versions()
             .into_iter()
             // Respect per-tool os constraints set via options.os
             .filter(|(_, tv)| tv.request.is_os_supported())
-            .map(|(t, tv)| (config.clone(), t, tv, bump))
+            .map(|(t, tv)| (config.clone(), t, tv, bump, opts.clone()))
             .collect::<Vec<_>>();
-        let outdated = parallel::parallel(versions, |(config, t, tv, bump)| async move {
+        let outdated = parallel::parallel(versions, |(config, t, tv, bump, opts)| async move {
             let mut outdated = vec![];
-            match t.outdated_info(&config, &tv, bump).await {
+            match t.outdated_info(&config, &tv, bump, &opts).await {
                 Ok(Some(oi)) => outdated.push(oi),
                 Ok(None) => {}
                 Err(e) => {
@@ -655,7 +656,7 @@ impl Toolset {
                 // do not consider symlinked versions to be outdated
                 return Ok(outdated);
             }
-            match OutdatedInfo::resolve(&config, tv.clone(), bump).await {
+            match OutdatedInfo::resolve(&config, tv.clone(), bump, &opts).await {
                 Ok(Some(oi)) => outdated.push(oi),
                 Ok(None) => {}
                 Err(e) => {

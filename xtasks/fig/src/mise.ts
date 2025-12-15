@@ -1386,6 +1386,14 @@ const completionSpec: Fig.Spec = {
           isRepeatable: true,
         },
         {
+          name: "--before",
+          description: "Only install versions released before this date",
+          isRepeatable: false,
+          args: {
+            name: "before",
+          },
+        },
+        {
           name: "--raw",
           description:
             "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
@@ -3134,6 +3142,14 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--before",
+          description: "Only upgrade to versions released before this date",
+          isRepeatable: false,
+          args: {
+            name: "before",
+          },
+        },
+        {
           name: "--raw",
           description:
             "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
@@ -3195,6 +3211,14 @@ const completionSpec: Fig.Spec = {
           args: {
             name: "path",
             template: "filepaths",
+          },
+        },
+        {
+          name: "--before",
+          description: "Only install versions released before this date",
+          isRepeatable: false,
+          args: {
+            name: "before",
           },
         },
         {
