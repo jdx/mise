@@ -74,6 +74,7 @@ impl Backend for PIPXBackend {
                             VersionInfo {
                                 version,
                                 created_at,
+                                ..Default::default()
                             }
                         })
                         .collect();
@@ -101,7 +102,7 @@ impl Backend for PIPXBackend {
                             let pkg_version = pkg_re.captures(filename)?.get(1)?.as_str();
                             Some(VersionInfo {
                                 version: pkg_version.to_string(),
-                                created_at: None,
+                                ..Default::default()
                             })
                         })
                         .sorted_by_cached_key(|v| Versioning::new(&v.version))
@@ -119,12 +120,13 @@ impl Backend for PIPXBackend {
                     .map(|r| VersionInfo {
                         version: r.tag_name,
                         created_at: Some(r.created_at),
+                        ..Default::default()
                     })
                     .collect())
             }
             PipxRequest::Git { .. } => Ok(vec![VersionInfo {
                 version: "latest".to_string(),
-                created_at: None,
+                ..Default::default()
             }]),
         }
     }

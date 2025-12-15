@@ -284,6 +284,7 @@ impl Backend for ZigPlugin {
             .map(|(version, date)| VersionInfo {
                 version,
                 created_at: date,
+                ..Default::default()
             })
             .collect();
 

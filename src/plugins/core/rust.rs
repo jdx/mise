@@ -84,20 +84,21 @@ impl Backend for RustPlugin {
             .map(|r| VersionInfo {
                 version: r.tag_name,
                 created_at: Some(r.created_at),
+                ..Default::default()
             })
             .rev()
             .chain(vec![
                 VersionInfo {
                     version: "nightly".into(),
-                    created_at: None,
+                    ..Default::default()
                 },
                 VersionInfo {
                     version: "beta".into(),
-                    created_at: None,
+                    ..Default::default()
                 },
                 VersionInfo {
                     version: "stable".into(),
-                    created_at: None,
+                    ..Default::default()
                 },
             ])
             .collect();

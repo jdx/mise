@@ -43,6 +43,8 @@ struct VersionsResponse {
 #[derive(serde::Deserialize)]
 struct VersionEntry {
     created_at: toml::value::Datetime,
+    #[serde(default)]
+    release_url: Option<String>,
 }
 
 /// List versions from the versions host (mise-versions.jdx.dev).
@@ -75,6 +77,7 @@ pub async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>>
                 .map(|(version, entry)| VersionInfo {
                     version,
                     created_at: Some(entry.created_at.to_string()),
+                    release_url: entry.release_url,
                 })
                 .collect()
         }

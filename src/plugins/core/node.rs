@@ -447,6 +447,7 @@ impl Backend for NodePlugin {
                 VersionInfo {
                     version,
                     created_at: v.date,
+                    ..Default::default()
                 }
             })
             .rev()

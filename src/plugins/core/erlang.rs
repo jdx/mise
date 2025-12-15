@@ -322,6 +322,7 @@ impl Backend for ErlangPlugin {
                 .map(|(version, created_at)| VersionInfo {
                     version,
                     created_at,
+                    ..Default::default()
                 })
                 .collect()
         } else {
@@ -335,7 +336,7 @@ impl Backend for ErlangPlugin {
                     .filter(|s| regex!(r"^[0-9].+$").is_match(s))
                     .map(|s| VersionInfo {
                         version: s.to_string(),
-                        created_at: None,
+                        ..Default::default()
                     })
                     .collect();
                 Ok(versions)

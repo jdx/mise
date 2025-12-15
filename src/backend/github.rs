@@ -61,6 +61,23 @@ impl Backend for UnifiedGitBackend {
         let api_url = self.get_api_url(&opts);
         let version_prefix = opts.get("version_prefix");
 
+        // Derive web URL base from API URL for enterprise support
+        let web_url_base = if self.is_gitlab() {
+            if api_url == DEFAULT_GITLAB_API_BASE_URL {
+                format!("https://gitlab.com/{}", repo)
+            } else {
+                // Enterprise GitLab - derive web URL from API URL
+                let web_url = api_url.replace("/api/v4", "");
+                format!("{}/{}", web_url, repo)
+            }
+        } else if api_url == DEFAULT_GITHUB_API_BASE_URL {
+            format!("https://github.com/{}", repo)
+        } else {
+            // Enterprise GitHub - derive web URL from API URL
+            let web_url = api_url.replace("/api/v3", "").replace("api.", "");
+            format!("{}/{}", web_url, repo)
+        };
+
         // Get releases with full metadata from GitHub or GitLab
         let raw_versions: Vec<VersionInfo> = if self.is_gitlab() {
             gitlab::list_releases_from_url(api_url.as_str(), &repo)
@@ -70,6 +87,7 @@ impl Backend for UnifiedGitBackend {
                 .map(|r| VersionInfo {
                     version: self.strip_version_prefix(&r.tag_name),
                     created_at: r.released_at,
+                    release_url: Some(format!("{}/-/releases/{}", web_url_base, r.tag_name)),
                 })
                 .collect()
         } else {
@@ -80,6 +98,7 @@ impl Backend for UnifiedGitBackend {
                 .map(|r| VersionInfo {
                     version: self.strip_version_prefix(&r.tag_name),
                     created_at: Some(r.created_at),
+                    release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
                 })
                 .collect()
         };

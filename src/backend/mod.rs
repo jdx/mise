@@ -84,11 +84,14 @@ pub enum ReleaseType {
 }
 
 /// Information about a tool version including optional metadata like creation time
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct VersionInfo {
     pub version: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub created_at: Option<String>,
+    /// URL to the release page (e.g., GitHub/GitLab release page)
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub release_url: Option<String>,
 }
 
 impl VersionInfo {
@@ -464,7 +467,7 @@ pub trait Backend: Debug + Send + Sync {
             .into_iter()
             .map(|v| VersionInfo {
                 version: v,
-                created_at: None,
+                ..Default::default()
             })
             .collect())
     }

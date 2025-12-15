@@ -1,3 +1,4 @@
+use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{lookup_platform_key, try_with_v_prefix};
@@ -106,6 +107,157 @@ impl Backend for UbiBackend {
                 .sorted_by_cached_key(|v| !regex!(r"^[0-9]").is_match(v))
                 .rev()
                 .collect())
+        }
+    }
+
+    async fn _list_remote_versions_with_info(
+        &self,
+        _config: &Arc<Config>,
+    ) -> eyre::Result<Vec<VersionInfo>> {
+        if name_is_url(&self.tool_name()) {
+            Ok(vec![VersionInfo {
+                version: "latest".to_string(),
+                created_at: None,
+                release_url: None,
+            }])
+        } else {
+            let opts = self.ba.opts();
+            let forge = match opts.get("provider") {
+                Some(forge) => ForgeType::from_str(forge)?,
+                None => ForgeType::default(),
+            };
+            let api_url = match opts.get("api_url") {
+                Some(api_url) => api_url.strip_suffix("/").unwrap_or(api_url),
+                None => match forge {
+                    ForgeType::GitHub => github::API_URL,
+                    ForgeType::GitLab => gitlab::API_URL,
+                    _ => bail!("Unsupported forge type {:?}", forge),
+                },
+            };
+
+            let tag_regex_cell = OnceLock::new();
+
+            // Build release URL base based on forge type and api_url
+            let release_url_base = match forge {
+                ForgeType::GitHub => {
+                    if api_url == github::API_URL {
+                        format!("https://github.com/{}", self.tool_name())
+                    } else {
+                        // Enterprise GitHub - derive web URL from API URL
+                        let web_url = api_url.replace("/api/v3", "").replace("api.", "");
+                        format!("{}/{}", web_url, self.tool_name())
+                    }
+                }
+                ForgeType::GitLab => {
+                    if api_url == gitlab::API_URL {
+                        format!("https://gitlab.com/{}", self.tool_name())
+                    } else {
+                        // Enterprise GitLab - derive web URL from API URL
+                        let web_url = api_url.replace("/api/v4", "");
+                        format!("{}/{}", web_url, self.tool_name())
+                    }
+                }
+                _ => bail!("Unsupported forge type {:?}", forge),
+            };
+
+            // Helper to check if tag matches tag_regex (if provided)
+            let matches_tag_regex = |tag: &str| -> bool {
+                if let Some(re_str) = opts.get("tag_regex") {
+                    let re = tag_regex_cell.get_or_init(|| Regex::new(re_str).unwrap());
+                    re.is_match(tag)
+                } else {
+                    true
+                }
+            };
+
+            // Helper to strip 'v' prefix from version
+            let strip_v_prefix = |tag: &str| -> String {
+                if regex!(r"^v[0-9]").is_match(tag) {
+                    tag[1..].to_string()
+                } else {
+                    tag.to_string()
+                }
+            };
+
+            let mut version_infos: Vec<VersionInfo> = match forge {
+                ForgeType::GitHub => {
+                    let releases =
+                        github::list_releases_from_url(api_url, &self.tool_name()).await?;
+                    if releases.is_empty() {
+                        // Fall back to tags (no created_at available)
+                        github::list_tags_from_url(api_url, &self.tool_name())
+                            .await?
+                            .into_iter()
+                            .filter(|tag| matches_tag_regex(tag))
+                            .map(|tag| {
+                                let release_url =
+                                    format!("{}/releases/tag/{}", release_url_base, tag);
+                                VersionInfo {
+                                    version: strip_v_prefix(&tag),
+                                    created_at: None,
+                                    release_url: Some(release_url),
+                                }
+                            })
+                            .collect()
+                    } else {
+                        releases
+                            .into_iter()
+                            .filter(|r| matches_tag_regex(&r.tag_name))
+                            .map(|r| {
+                                let release_url =
+                                    format!("{}/releases/tag/{}", release_url_base, r.tag_name);
+                                VersionInfo {
+                                    version: strip_v_prefix(&r.tag_name),
+                                    created_at: Some(r.created_at),
+                                    release_url: Some(release_url),
+                                }
+                            })
+                            .collect()
+                    }
+                }
+                ForgeType::GitLab => {
+                    let releases =
+                        gitlab::list_releases_from_url(api_url, &self.tool_name()).await?;
+                    if releases.is_empty() {
+                        // Fall back to tags (no created_at available)
+                        gitlab::list_tags_from_url(api_url, &self.tool_name())
+                            .await?
+                            .into_iter()
+                            .filter(|tag| matches_tag_regex(tag))
+                            .map(|tag| {
+                                // Use /-/tags/ for tag-only URLs (no release exists)
+                                let release_url = format!("{}/-/tags/{}", release_url_base, tag);
+                                VersionInfo {
+                                    version: strip_v_prefix(&tag),
+                                    created_at: None,
+                                    release_url: Some(release_url),
+                                }
+                            })
+                            .collect()
+                    } else {
+                        releases
+                            .into_iter()
+                            .filter(|r| matches_tag_regex(&r.tag_name))
+                            .map(|r| {
+                                let release_url =
+                                    format!("{}/-/releases/{}", release_url_base, r.tag_name);
+                                VersionInfo {
+                                    version: strip_v_prefix(&r.tag_name),
+                                    created_at: r.released_at,
+                                    release_url: Some(release_url),
+                                }
+                            })
+                            .collect()
+                    }
+                }
+                _ => bail!("Unsupported forge type {:?}", forge),
+            };
+
+            // Sort: versions starting with digits first, then reverse
+            version_infos.sort_by_cached_key(|vi| !regex!(r"^[0-9]").is_match(&vi.version));
+            version_infos.reverse();
+
+            Ok(version_infos)
         }
     }
 

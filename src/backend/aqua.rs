@@ -168,9 +168,14 @@ impl Backend for AquaBackend {
                 .await
                 .unwrap_or_default();
             if !check_pkg.no_asset && check_pkg.error_message.is_none() {
+                let release_url = format!(
+                    "https://github.com/{}/{}/releases/tag/{}",
+                    pkg.repo_owner, pkg.repo_name, tag
+                );
                 versions.push(VersionInfo {
                     version: version.to_string(),
                     created_at,
+                    release_url: Some(release_url),
                 });
             }
         }

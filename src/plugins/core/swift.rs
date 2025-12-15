@@ -191,6 +191,7 @@ impl Backend for SwiftPlugin {
             .map(|(version, created_at)| VersionInfo {
                 version,
                 created_at: Some(created_at),
+                ..Default::default()
             })
             .collect();
         Ok(versions)
