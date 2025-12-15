@@ -469,6 +469,8 @@ impl Backend for CondaBackend {
         ctx.pr.set_message("resolving dependencies".to_string());
         let mut resolved = HashMap::new();
         let mut visited = HashSet::new();
+        // Add main package to visited to prevent circular resolution back to it
+        visited.insert(self.tool_name());
         self.resolve_dependencies(pkg_file, subdir, &mut resolved, &mut visited)
             .await?;
 
