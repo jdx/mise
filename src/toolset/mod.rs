@@ -485,8 +485,8 @@ impl Toolset {
                         let result = ba.install_version(ctx, tv).await;
 
                         // Run per-tool postinstall hook (only on success)
-                        if !opts.dry_run {
-                            if let Ok(ref installed_tv) = result {
+                        if !opts.dry_run
+                            && let Ok(ref installed_tv) = result {
                                 let tool_ctx = HookToolContext {
                                     name: installed_tv.ba().short.clone(),
                                     version: installed_tv.version.clone(),
@@ -499,7 +499,6 @@ impl Toolset {
                                 )
                                 .await;
                             }
-                        }
 
                         result
                     }
