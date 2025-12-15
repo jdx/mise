@@ -15,7 +15,7 @@ EXPLICIT_PRE_TOOLS = {value = "explicitly_pre_tools", tools = false}
 POST_TOOLS_VAR = {value = "available_after_tools", tools = true}
 
 [tools]
-dummy = { version = "latest", postinstall = "echo PRE_TOOLS_VAR=\$PRE_TOOLS_VAR; echo EXPLICIT_PRE_TOOLS=\$EXPLICIT_PRE_TOOLS; echo POST_TOOLS_VAR=\$POST_TOOLS_VAR" }
+dummy = { version = "latest", postinstall = "echo PRE_TOOLS_VAR=\$PRE_TOOLS_VAR; echo EXPLICIT_PRE_TOOLS=\$EXPLICIT_PRE_TOOLS; echo POST_TOOLS_VAR=\$POST_TOOLS_VAR; echo MISE_TOOL_NAME=\$MISE_TOOL_NAME; echo MISE_TOOL_VERSION=\$MISE_TOOL_VERSION" }
 EOF
 
 # Remove any existing dummy installation to force reinstall
@@ -55,6 +55,24 @@ if [[ $output != *"POST_TOOLS_VAR=available_after_tools"* ]]; then
 	echo "✓ POST_TOOLS_VAR with tools=true is not available as expected"
 else
 	echo "✗ POST_TOOLS_VAR with tools=true should not be available"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Verify MISE_TOOL_NAME is set
+if [[ $output == *"MISE_TOOL_NAME=dummy"* ]]; then
+	echo "✓ MISE_TOOL_NAME is set correctly"
+else
+	echo "✗ MISE_TOOL_NAME is not set correctly"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Verify MISE_TOOL_VERSION is set (should be "latest" resolved version)
+if [[ $output == *"MISE_TOOL_VERSION="* ]] && [[ $output != *"MISE_TOOL_VERSION=$"* ]]; then
+	echo "✓ MISE_TOOL_VERSION is set"
+else
+	echo "✗ MISE_TOOL_VERSION is not set"
 	echo "Output: $output"
 	exit 1
 fi
