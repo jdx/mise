@@ -416,16 +416,29 @@ impl CondaBackend {
         .await
         .wrap_err_with(|| format!("lock task failed for {}", pkg.name))??;
 
-        // After acquiring lock, check if file already exists
-        if !tarball_path.exists() {
+        // Check if file exists and has valid checksum
+        let needs_download = if tarball_path.exists() {
+            // File exists - verify checksum to ensure it's not corrupted/incomplete
+            if Self::verify_checksum(&tarball_path, pkg.sha256.as_deref()).is_err() {
+                // Checksum failed - delete corrupted file and re-download
+                let _ = std::fs::remove_file(&tarball_path);
+                true
+            } else {
+                false
+            }
+        } else {
+            true
+        };
+
+        if needs_download {
             HTTP.download_file(&pkg.download_url, &tarball_path, None)
                 .await
                 .wrap_err_with(|| format!("failed to download {}", pkg.download_url))?;
-        }
 
-        // Verify checksum
-        Self::verify_checksum(&tarball_path, pkg.sha256.as_deref())
-            .wrap_err_with(|| format!("checksum verification failed for {}", pkg.name))?;
+            // Verify checksum of freshly downloaded file
+            Self::verify_checksum(&tarball_path, pkg.sha256.as_deref())
+                .wrap_err_with(|| format!("checksum verification failed for {}", pkg.name))?;
+        }
 
         Ok(tarball_path)
     }
