@@ -108,7 +108,7 @@ pub async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>>
 
 /// Tracks a tool installation asynchronously (fire-and-forget)
 /// Tracks all core plugins and registry tools (including java/python)
-pub fn track_install(tool: &str, version: &str) {
+pub fn track_install(tool: &str, full: &str, version: &str) {
     let settings = Settings::get();
 
     // Check if tracking is enabled (also requires use_versions_host to be enabled)
@@ -122,30 +122,32 @@ pub fn track_install(tool: &str, version: &str) {
     }
 
     let tool = tool.to_string();
+    let full = full.to_string();
     let version = version.to_string();
 
     // Fire-and-forget: spawn a task that won't block installation
     tokio::spawn(async move {
-        if let Err(e) = track_install_async(&tool, &version).await {
+        if let Err(e) = track_install_async(&tool, &full, &version).await {
             trace!("Failed to track install for {tool}@{version}: {e}");
         }
     });
 }
 
-async fn track_install_async(tool: &str, version: &str) -> eyre::Result<()> {
+async fn track_install_async(tool: &str, full: &str, version: &str) -> eyre::Result<()> {
     use crate::cli::version::{ARCH, OS};
 
     let url = "https://mise-tools.jdx.dev/api/track";
 
     let body = serde_json::json!({
         "tool": tool,
+        "full": full,
         "version": version,
         "os": *OS,
         "arch": *ARCH
     });
 
     match HTTP_FETCH.post_json(url, &body).await {
-        Ok(true) => trace!("Tracked install: {tool}@{version}"),
+        Ok(true) => trace!("Tracked install: {full}@{version}"),
         Ok(false) => trace!("Track request failed"),
         Err(e) => trace!("Track request error: {e}"),
     }
