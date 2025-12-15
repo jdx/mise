@@ -53,18 +53,18 @@ disable = ["npm"]
 
 mise includes built-in providers for common package managers:
 
-| Provider   | Lockfile                  | Output                | Command                           |
-| ---------- | ------------------------- | --------------------- | --------------------------------- |
-| `npm`      | `package-lock.json`       | `node_modules/`       | `npm install`                     |
-| `yarn`     | `yarn.lock`               | `node_modules/`       | `yarn install`                    |
-| `pnpm`     | `pnpm-lock.yaml`          | `node_modules/`       | `pnpm install`                    |
-| `bun`      | `bun.lockb` or `bun.lock` | `node_modules/`       | `bun install`                     |
-| `go`       | `go.sum`                  | `vendor/` or `go.sum` | `go mod download`                 |
-| `pip`      | `requirements.txt`        | `.venv/`              | `pip install -r requirements.txt` |
-| `poetry`   | `poetry.lock`             | `.venv/`              | `poetry install`                  |
-| `uv`       | `uv.lock`                 | `.venv/`              | `uv sync`                         |
-| `bundler`  | `Gemfile.lock`            | `vendor/bundle/`      | `bundle install`                  |
-| `composer` | `composer.lock`           | `vendor/`             | `composer install`                |
+| Provider   | Lockfile                  | Output                | Command                              |
+| ---------- | ------------------------- | --------------------- | ------------------------------------ |
+| `npm`      | `package-lock.json`       | `node_modules/`       | `npm install`                        |
+| `yarn`     | `yarn.lock`               | `node_modules/`       | `yarn install`                       |
+| `pnpm`     | `pnpm-lock.yaml`          | `node_modules/`       | `pnpm install`                       |
+| `bun`      | `bun.lockb` or `bun.lock` | `node_modules/`       | `bun install`                        |
+| `go`       | `go.mod`                  | `vendor/` or `go.sum` | `go mod vendor` or `go mod download` |
+| `pip`      | `requirements.txt`        | `.venv/`              | `pip install -r requirements.txt`    |
+| `poetry`   | `poetry.lock`             | `.venv/`              | `poetry install`                     |
+| `uv`       | `uv.lock`                 | `.venv/`              | `uv sync`                            |
+| `bundler`  | `Gemfile.lock`            | `vendor/bundle/`      | `bundle install`                     |
+| `composer` | `composer.lock`           | `vendor/`             | `composer install`                   |
 
 Built-in providers are only active when explicitly configured in `mise.toml` and their lockfile exists.
 

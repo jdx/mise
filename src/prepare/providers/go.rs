@@ -47,16 +47,30 @@ impl PrepareProvider for GoPrepareProvider {
             return PrepareCommand::from_string(run, &self.project_root, &self.config);
         }
 
+        // Use `go mod vendor` if vendor/ exists, otherwise `go mod download`
+        let vendor = self.project_root.join("vendor");
+        let (args, desc) = if vendor.exists() {
+            (
+                vec!["mod".to_string(), "vendor".to_string()],
+                "go mod vendor",
+            )
+        } else {
+            (
+                vec!["mod".to_string(), "download".to_string()],
+                "go mod download",
+            )
+        };
+
         Ok(PrepareCommand {
             program: "go".to_string(),
-            args: vec!["mod".to_string(), "download".to_string()],
+            args,
             env: self.config.env.clone(),
             cwd: Some(self.project_root.clone()),
             description: self
                 .config
                 .description
                 .clone()
-                .unwrap_or_else(|| "go mod download".to_string()),
+                .unwrap_or_else(|| desc.to_string()),
         })
     }
 
