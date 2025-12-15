@@ -27,6 +27,35 @@ pub struct GithubRelease {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GithubTag {
     pub name: String,
+    pub commit: Option<GithubTagCommit>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GithubTagCommit {
+    pub sha: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GithubCommit {
+    pub commit: GithubCommitInfo,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GithubCommitInfo {
+    pub committer: GithubCommitPerson,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GithubCommitPerson {
+    pub date: String,
+}
+
+/// Tag with date information
+#[derive(Debug, Clone)]
+pub struct GithubTagWithDate {
+    pub name: String,
+    pub date: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -171,6 +200,56 @@ async fn list_tags_(api_url: &str, repo: &str) -> Result<Vec<String>> {
     }
 
     Ok(tags.into_iter().map(|t| t.name).collect())
+}
+
+/// List tags with their commit dates. This is slower than `list_tags` as it requires
+/// fetching commit info for each tag. Use only when MISE_LIST_ALL_VERSIONS is set.
+pub async fn list_tags_with_dates(repo: &str) -> Result<Vec<GithubTagWithDate>> {
+    list_tags_with_dates_(API_URL, repo).await
+}
+
+async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTagWithDate>> {
+    let url = format!("{api_url}/repos/{repo}/tags");
+    let headers = get_headers(&url);
+    let (mut tags, mut response_headers) = crate::http::HTTP_FETCH
+        .json_headers_with_headers::<Vec<GithubTag>, _>(url, &headers)
+        .await?;
+
+    // Fetch all pages when MISE_LIST_ALL_VERSIONS is set
+    while let Some(next) = next_page(&response_headers) {
+        response_headers = get_headers(&next);
+        let (more, h) = crate::http::HTTP_FETCH
+            .json_headers_with_headers::<Vec<GithubTag>, _>(next, &response_headers)
+            .await?;
+        tags.extend(more);
+        response_headers = h;
+    }
+
+    // Fetch commit dates in parallel using the parallel utility
+    let results = crate::parallel::parallel(tags, |tag| async move {
+        let date = if let Some(commit) = tag.commit {
+            let headers = get_headers(&commit.url);
+            match crate::http::HTTP_FETCH
+                .json_with_headers::<GithubCommit, _>(&commit.url, &headers)
+                .await
+            {
+                Ok(commit_info) => Some(commit_info.commit.committer.date),
+                Err(e) => {
+                    debug!("Failed to fetch commit date for {}: {}", tag.name, e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        Ok((tag.name, date))
+    })
+    .await?;
+
+    Ok(results
+        .into_iter()
+        .filter_map(|(name, date)| date.map(|d| GithubTagWithDate { name, date: d }))
+        .collect())
 }
 
 pub async fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
