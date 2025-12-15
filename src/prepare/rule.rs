@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 /// List of built-in provider names that have specialized implementations
 pub const BUILTIN_PROVIDERS: &[&str] = &[
     "npm", "yarn", "pnpm", "bun",      // Node.js
-    "cargo",    // Rust
     "go",       // Go
     "pip",      // Python (requirements.txt)
     "poetry",   // Python (poetry)

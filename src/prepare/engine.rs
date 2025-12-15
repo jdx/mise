@@ -12,9 +12,9 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 
 use super::PrepareProvider;
 use super::providers::{
-    BunPrepareProvider, BundlerPrepareProvider, CargoPrepareProvider, ComposerPrepareProvider,
-    CustomPrepareProvider, GoPrepareProvider, NpmPrepareProvider, PipPrepareProvider,
-    PnpmPrepareProvider, PoetryPrepareProvider, UvPrepareProvider, YarnPrepareProvider,
+    BunPrepareProvider, BundlerPrepareProvider, ComposerPrepareProvider, CustomPrepareProvider,
+    GoPrepareProvider, NpmPrepareProvider, PipPrepareProvider, PnpmPrepareProvider,
+    PoetryPrepareProvider, UvPrepareProvider, YarnPrepareProvider,
 };
 use super::rule::{BUILTIN_PROVIDERS, PrepareConfig};
 
@@ -118,11 +118,6 @@ impl PrepareEngine {
                         provider_config.clone(),
                     )),
                     "bun" => Box::new(BunPrepareProvider::new(
-                        &project_root,
-                        provider_config.clone(),
-                    )),
-                    // Rust
-                    "cargo" => Box::new(CargoPrepareProvider::new(
                         &project_root,
                         provider_config.clone(),
                     )),

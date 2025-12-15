@@ -1,6 +1,5 @@
 mod bun;
 mod bundler;
-mod cargo;
 mod composer;
 mod custom;
 mod go;
@@ -13,7 +12,6 @@ mod yarn;
 
 pub use bun::BunPrepareProvider;
 pub use bundler::BundlerPrepareProvider;
-pub use cargo::CargoPrepareProvider;
 pub use composer::ComposerPrepareProvider;
 pub use custom::CustomPrepareProvider;
 pub use go::GoPrepareProvider;
