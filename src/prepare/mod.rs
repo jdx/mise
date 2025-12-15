@@ -1,9 +1,13 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use eyre::Result;
+
+use crate::config::{Config, Settings};
+use crate::env;
 
 pub use engine::{PrepareEngine, PrepareOptions, PrepareStepResult};
 pub use rule::PrepareConfig;
@@ -56,5 +60,28 @@ pub trait PrepareProvider: Debug + Send + Sync {
     /// Priority - higher priority providers run first (default: 100)
     fn priority(&self) -> u32 {
         100
+    }
+}
+
+/// Warn if any auto-enabled prepare providers are stale
+pub fn notify_if_stale(config: &Arc<Config>) {
+    // Skip in shims or quiet mode
+    if *env::__MISE_SHIM || Settings::get().quiet {
+        return;
+    }
+
+    // Check if this feature is enabled
+    if !Settings::get().status.show_prepare_stale {
+        return;
+    }
+
+    let Ok(engine) = PrepareEngine::new(config.clone()) else {
+        return;
+    };
+
+    let stale = engine.check_staleness();
+    if !stale.is_empty() {
+        let providers = stale.join(", ");
+        warn!("prepare: {providers} may need update, run `mise prep`");
     }
 }

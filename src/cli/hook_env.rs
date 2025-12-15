@@ -175,6 +175,7 @@ impl HookEnv {
             }
         }
         ts.notify_if_versions_missing(config).await;
+        crate::prepare::notify_if_stale(config);
         Ok(())
     }
 

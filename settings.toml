@@ -1362,6 +1362,12 @@ description = "Show configured tools when entering a directory with a mise.toml 
 env = "MISE_STATUS_MESSAGE_SHOW_TOOLS"
 type = "Bool"
 
+[status.show_prepare_stale]
+default = true
+description = "Show warning when prepare providers have stale dependencies."
+env = "MISE_STATUS_SHOW_PREPARE_STALE"
+type = "Bool"
+
 [status.truncate]
 default = true
 description = "Truncate status messages."

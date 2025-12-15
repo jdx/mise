@@ -131,6 +131,17 @@ impl PrepareEngine {
         self.providers.iter().map(|p| p.as_ref()).collect()
     }
 
+    /// Check if any auto-enabled provider has stale outputs (without running)
+    /// Returns the IDs of stale providers
+    pub fn check_staleness(&self) -> Vec<&str> {
+        self.providers
+            .iter()
+            .filter(|p| p.is_auto())
+            .filter(|p| !self.check_freshness(p.as_ref()).unwrap_or(true))
+            .map(|p| p.id())
+            .collect()
+    }
+
     /// Run all stale prepare steps
     pub async fn run(&self, opts: PrepareOptions) -> Result<PrepareResult> {
         let mut results = vec![];
