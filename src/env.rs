@@ -92,17 +92,6 @@ pub static MISE_TOOL_STUB: Lazy<bool> =
     Lazy::new(|| ARGS.read().unwrap().get(1).map(|s| s.as_str()) == Some("tool-stub"));
 pub static MISE_NO_CONFIG: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_CONFIG"));
 pub static MISE_PROGRESS_TRACE: Lazy<bool> = Lazy::new(|| var_is_true("MISE_PROGRESS_TRACE"));
-/// true if RUST_BACKTRACE is set (enables detailed error tracebacks)
-pub static RUST_BACKTRACE: Lazy<bool> = Lazy::new(|| {
-    match var("RUST_BACKTRACE") {
-        Ok(v) => {
-            let v = v.to_lowercase();
-            // RUST_BACKTRACE accepts "1" and "full" as valid values
-            v == "1" || v == "full"
-        }
-        Err(_) => false,
-    }
-});
 pub static MISE_CACHE_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_CACHE_DIR").unwrap_or_else(|| XDG_CACHE_HOME.join("mise")));
 pub static MISE_CONFIG_DIR: Lazy<PathBuf> =
