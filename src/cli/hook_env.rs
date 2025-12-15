@@ -87,10 +87,17 @@ impl HookEnv {
             .collect();
         diff.path.clone_from(&all_paths); // update __MISE_DIFF with the new paths for the next run
 
+        // Get shell aliases from config
+        let new_aliases: indexmap::IndexMap<String, String> = config
+            .shell_aliases
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect();
+
         patches.extend(self.build_path_operations(&user_paths, &tool_paths, &__MISE_DIFF.path)?);
         patches.push(self.build_diff_operation(&diff)?);
         patches.push(
-            self.build_session_operation(&config, ts, mise_env, watch_files)
+            self.build_session_operation(&config, ts, mise_env, new_aliases.clone(), watch_files)
                 .await?,
         );
 
@@ -104,6 +111,11 @@ impl HookEnv {
 
         let output = hook_env::build_env_commands(&*shell, &patches);
         miseprint!("{output}")?;
+
+        // Build and output alias commands
+        let alias_output =
+            hook_env::build_alias_commands(&*shell, &PREV_SESSION.aliases, &new_aliases);
+        miseprint!("{alias_output}")?;
 
         hooks::run_all_hooks(&config, ts, &*shell).await;
         watch_files::execute_runs(&config, ts).await;
@@ -371,6 +383,7 @@ impl HookEnv {
         config: &Arc<Config>,
         ts: &Toolset,
         env: EnvMap,
+        aliases: indexmap::IndexMap<String, String>,
         watch_files: BTreeSet<WatchFilePattern>,
     ) -> Result<EnvDiffOperation> {
         let loaded_tools = if self.status || Settings::get().status.show_tools {
@@ -381,7 +394,8 @@ impl HookEnv {
         } else {
             Default::default()
         };
-        let session = hook_env::build_session(config, env, loaded_tools, watch_files).await?;
+        let session =
+            hook_env::build_session(config, env, aliases, loaded_tools, watch_files).await?;
         Ok(EnvDiffOperation::Add(
             "__MISE_SESSION".into(),
             hook_env::serialize(&session)?,

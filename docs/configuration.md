@@ -198,7 +198,12 @@ This is similar
 to [`MISE_SHORTHANDS`](https://github.com/jdx/mise#mise_shorthands_fileconfigmiseshorthandstoml)
 but doesn't require a separate file.
 
-### `[alias]` - Tool version aliases
+### `[tool_alias]` - Tool version aliases
+
+::: tip
+`[alias]` has been renamed to `[tool_alias]` to distinguish it from `[shell_alias]`.
+The old `[alias]` key still works but is deprecated.
+:::
 
 The following makes `mise install node@my_custom_node` install node-20.x
 this can also be specified in a [plugin](/dev-tools/aliases.md).
@@ -209,8 +214,23 @@ note adding an alias will also add a symlink, in this case:
 ```
 
 ```toml
+[tool_alias.node.versions]
 my_custom_node = '20'
 ```
+
+### `[shell_alias]` - Shell aliases
+
+Define shell aliases that are set when entering a directory and unset when leaving:
+
+```toml
+[shell_alias]
+ll = "ls -la"
+gs = "git status"
+dev = "npm run dev"
+```
+
+These work similar to environment variables—they're set dynamically based on your current directory.
+See [Shell Aliases](/shell-aliases) for more details.
 
 ### Minimum mise version
 

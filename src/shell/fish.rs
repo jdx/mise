@@ -169,6 +169,17 @@ impl Shell for Fish {
     fn unset_env(&self, k: &str) -> String {
         format!("set -e {k}\n", k = escape(k.into()))
     }
+
+    fn set_alias(&self, name: &str, cmd: &str) -> String {
+        let name = escape(name.into());
+        let cmd = escape(cmd.into());
+        format!("alias {name} {cmd}\n")
+    }
+
+    fn unset_alias(&self, name: &str) -> String {
+        let name = escape(name.into());
+        format!("functions -e {name}\n")
+    }
 }
 
 impl Display for Fish {
