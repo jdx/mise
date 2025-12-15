@@ -7,7 +7,6 @@ use crate::config::Settings;
 use crate::file::{self, TarOptions};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::lock_file::LockFile;
 use crate::lockfile::PlatformInfo;
 use crate::toolset::ToolVersion;
 use crate::{backend::Backend, dirs, hash, http::HTTP, parallel};
@@ -404,41 +403,45 @@ impl CondaBackend {
 
         let tarball_path = Self::package_path(&pkg.basename);
 
-        // Acquire lock using spawn_blocking to avoid blocking the async runtime
-        // This is important on Windows where blocking in async can cause task cancellation
-        let lock_path = tarball_path.clone();
-        let pkg_name_for_lock = pkg.name.clone();
-        let _lock = tokio::task::spawn_blocking(move || {
-            LockFile::new(&lock_path)
-                .lock()
-                .wrap_err_with(|| format!("failed to acquire lock for {}", pkg_name_for_lock))
-        })
-        .await
-        .wrap_err_with(|| format!("lock task failed for {}", pkg.name))??;
-
-        // Check if file exists and has valid checksum
-        let needs_download = if tarball_path.exists() {
-            // File exists - verify checksum to ensure it's not corrupted/incomplete
-            if Self::verify_checksum(&tarball_path, pkg.sha256.as_deref()).is_err() {
-                // Checksum failed - delete corrupted file and re-download
-                let _ = std::fs::remove_file(&tarball_path);
-                true
-            } else {
-                false
+        // Check if file already exists with valid checksum
+        if tarball_path.exists() {
+            if Self::verify_checksum(&tarball_path, pkg.sha256.as_deref()).is_ok() {
+                return Ok(tarball_path);
             }
-        } else {
-            true
-        };
-
-        if needs_download {
-            HTTP.download_file(&pkg.download_url, &tarball_path, None)
-                .await
-                .wrap_err_with(|| format!("failed to download {}", pkg.download_url))?;
-
-            // Verify checksum of freshly downloaded file
-            Self::verify_checksum(&tarball_path, pkg.sha256.as_deref())
-                .wrap_err_with(|| format!("checksum verification failed for {}", pkg.name))?;
+            // Corrupted file - delete it
+            let _ = std::fs::remove_file(&tarball_path);
         }
+
+        // Download to a temp file first, then rename after verification
+        // This ensures the final path never contains a corrupted file
+        let temp_path = tarball_path.with_extension(format!(
+            "{}.tmp.{}",
+            tarball_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or(""),
+            std::process::id()
+        ));
+
+        // Clean up any stale temp file from previous runs
+        let _ = std::fs::remove_file(&temp_path);
+
+        HTTP.download_file(&pkg.download_url, &temp_path, None)
+            .await
+            .wrap_err_with(|| format!("failed to download {}", pkg.download_url))?;
+
+        // Verify checksum of downloaded file
+        let file_size = std::fs::metadata(&temp_path).map(|m| m.len()).unwrap_or(0);
+        Self::verify_checksum(&temp_path, pkg.sha256.as_deref()).wrap_err_with(|| {
+            format!(
+                "checksum verification failed for {} (file size: {} bytes)",
+                pkg.name, file_size
+            )
+        })?;
+
+        // Rename temp file to final path (atomic on most filesystems)
+        std::fs::rename(&temp_path, &tarball_path)
+            .wrap_err_with(|| format!("failed to rename temp file for {}", pkg.name))?;
 
         Ok(tarball_path)
     }

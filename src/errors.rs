@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::process::ExitStatus;
 
 use crate::cli::args::BackendArg;
-use crate::env::RUST_BACKTRACE;
 use crate::file::display_path;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
 use eyre::Report;
@@ -51,15 +50,12 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
     if failed_installations.len() == 1 {
         let (tr, error) = &failed_installations[0];
         // Show the underlying error with the tool context
+        // Use {:#} to show full error chain (includes wrapped errors)
         return format!(
-            "Failed to install {}@{}: {}",
+            "Failed to install {}@{}: {:#}",
             tr.ba().full(),
             tr.version(),
-            if *RUST_BACKTRACE {
-                format!("{error}")
-            } else {
-                format!("{error:?}")
-            }
+            error
         );
     }
 
@@ -76,16 +72,13 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
     ));
 
     // Show detailed errors for each failure
+    // Use {:#} to show full error chain (includes wrapped errors)
     for (tr, error) in failed_installations.iter() {
-        let error_str = if *RUST_BACKTRACE {
-            format!("{error}")
-        } else {
-            format!("{error:?}")
-        };
         output.push(format!(
-            "\n{}@{}: {error_str}",
+            "\n{}@{}: {:#}",
             tr.ba().full(),
-            tr.version()
+            tr.version(),
+            error
         ));
     }
 
