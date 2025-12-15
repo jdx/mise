@@ -55,7 +55,7 @@ pub struct GithubCommitPerson {
 #[derive(Debug, Clone)]
 pub struct GithubTagWithDate {
     pub name: String,
-    pub date: String,
+    pub date: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -235,7 +235,7 @@ async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTa
             {
                 Ok(commit_info) => Some(commit_info.commit.committer.date),
                 Err(e) => {
-                    debug!("Failed to fetch commit date for {}: {}", tag.name, e);
+                    warn!("Failed to fetch commit date for tag {}: {}", tag.name, e);
                     None
                 }
             }
@@ -248,7 +248,7 @@ async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTa
 
     Ok(results
         .into_iter()
-        .filter_map(|(name, date)| date.map(|d| GithubTagWithDate { name, date: d }))
+        .map(|(name, date)| GithubTagWithDate { name, date })
         .collect())
 }
 

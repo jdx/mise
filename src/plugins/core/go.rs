@@ -208,17 +208,28 @@ impl Backend for GoPlugin {
         &self,
         _config: &Arc<Config>,
     ) -> eyre::Result<Vec<VersionInfo>> {
+        // Extract repo name (e.g., "golang/go") from the configured URL
+        // The go_repo setting is like "https://github.com/golang/go"
+        let settings = Settings::get();
+        let repo = settings
+            .go_repo
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .trim_start_matches("github.com/")
+            .trim_end_matches(".git")
+            .trim_end_matches('/');
+
         // Go uses tags, not releases. When MISE_LIST_ALL_VERSIONS is set,
         // we fetch tags with dates (slower). Otherwise, use fast method without dates.
         let versions: Vec<VersionInfo> = if *env::MISE_LIST_ALL_VERSIONS {
             // Slow path: fetch tags with commit dates for versions host
-            github::list_tags_with_dates("golang/go")
+            github::list_tags_with_dates(repo)
                 .await?
                 .into_iter()
                 .filter_map(|t| {
                     t.name
                         .strip_prefix("go")
-                        .map(|v| (v.to_string(), Some(t.date)))
+                        .map(|v| (v.to_string(), t.date))
                 })
                 .filter(|(v, _)| {
                     !regex!(r"^1($|\.0|\.0\.[0-9]|\.1|\.1rc[0-9]|\.1\.[0-9]|.2|\.2rc[0-9]|\.2\.1|.8.5rc5)$")
@@ -230,7 +241,7 @@ impl Backend for GoPlugin {
                 .collect()
         } else {
             // Fast path: just tag names, no dates (versions host will provide them)
-            github::list_tags("golang/go")
+            github::list_tags(repo)
                 .await?
                 .into_iter()
                 .filter_map(|name| name.strip_prefix("go").map(|v| v.to_string()))
