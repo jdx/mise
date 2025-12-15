@@ -46,11 +46,7 @@ impl PrepareProvider for BundlerPrepareProvider {
 
     fn prepare_command(&self) -> Result<PrepareCommand> {
         if let Some(run) = &self.config.run {
-            return Ok(PrepareCommand::from_string(
-                run,
-                &self.project_root,
-                &self.config,
-            ));
+            return PrepareCommand::from_string(run, &self.project_root, &self.config);
         }
 
         Ok(PrepareCommand {

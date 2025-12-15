@@ -73,11 +73,7 @@ impl PrepareProvider for CustomPrepareProvider {
             .as_ref()
             .ok_or_else(|| eyre::eyre!("prepare rule {} has no run command", self.id))?;
 
-        Ok(PrepareCommand::from_string(
-            run,
-            &self.project_root,
-            &self.config,
-        ))
+        PrepareCommand::from_string(run, &self.project_root, &self.config)
     }
 
     fn is_applicable(&self) -> bool {

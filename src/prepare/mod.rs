@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use eyre::Result;
+use eyre::{Result, bail};
 
 use crate::config::{Config, Settings};
 use crate::env;
@@ -32,17 +32,24 @@ pub struct PrepareCommand {
 
 impl PrepareCommand {
     /// Create a PrepareCommand from a run string like "npm install"
+    ///
+    /// Uses shell-aware parsing to handle quoted arguments correctly.
     pub fn from_string(
         run: &str,
         project_root: &PathBuf,
         config: &rule::PrepareProviderConfig,
-    ) -> Self {
-        let parts: Vec<&str> = run.split_whitespace().collect();
-        let (program, args) = parts.split_first().unwrap_or((&"sh", &[]));
+    ) -> Result<Self> {
+        let parts = shell_words::split(run).map_err(|e| eyre::eyre!("invalid command: {e}"))?;
 
-        Self {
+        if parts.is_empty() {
+            bail!("prepare run command cannot be empty");
+        }
+
+        let (program, args) = parts.split_first().unwrap();
+
+        Ok(Self {
             program: program.to_string(),
-            args: args.iter().map(|s| s.to_string()).collect(),
+            args: args.to_vec(),
             env: config.env.clone(),
             cwd: config
                 .dir
@@ -53,7 +60,7 @@ impl PrepareCommand {
                 .description
                 .clone()
                 .unwrap_or_else(|| run.to_string()),
-        }
+        })
     }
 }
 
