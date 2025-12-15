@@ -263,7 +263,10 @@ impl ToolVersion {
     ) -> Result<Self> {
         let backend = request.backend()?;
         let v = match v {
-            "latest" => backend.latest_version(config, None).await?.unwrap(),
+            "latest" => backend
+                .latest_version_with_opts(config, None, opts.before_date)
+                .await?
+                .unwrap(),
             _ => config.resolve_alias(&backend, v).await?,
         };
         let v = tool_request::version_sub(&v, sub);
