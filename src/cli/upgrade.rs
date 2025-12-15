@@ -77,10 +77,12 @@ impl Upgrade {
             .with_args(&self.tool)
             .build(&config)
             .await?;
+        // Compute before_date once to ensure consistency when using relative durations
+        let before_date = self.get_before_date()?;
         let opts = ResolveOptions {
             use_locked_version: false,
             latest_versions: true,
-            before_date: self.get_before_date()?,
+            before_date,
         };
         let mut outdated = ts.list_outdated_versions(&config, self.bump, &opts).await;
         if self.interactive && !outdated.is_empty() {
@@ -102,13 +104,13 @@ impl Upgrade {
                 );
             }
         } else {
-            self.upgrade(&mut config, outdated).await?;
+            self.upgrade(&mut config, outdated, before_date).await?;
         }
 
         Ok(())
     }
 
-    async fn upgrade(&self, config: &mut Arc<Config>, outdated: Vec<OutdatedInfo>) -> Result<()> {
+    async fn upgrade(&self, config: &mut Arc<Config>, outdated: Vec<OutdatedInfo>, before_date: Option<Timestamp>) -> Result<()> {
         let mpr = MultiProgressReport::get();
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
@@ -171,7 +173,7 @@ impl Upgrade {
             resolve_options: ResolveOptions {
                 use_locked_version: false,
                 latest_versions: true,
-                before_date: self.get_before_date()?,
+                before_date,
             },
             ..Default::default()
         };
