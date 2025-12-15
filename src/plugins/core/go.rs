@@ -244,22 +244,37 @@ impl Backend for GoPlugin {
                 })
                 .collect()
         } else {
-            // Fast path: just tag names, no dates (versions host will provide them)
-            github::list_tags(repo)
-                .await?
-                .into_iter()
-                .filter_map(|name| name.strip_prefix("go").map(|v| v.to_string()))
-                .filter(|v| {
-                    !regex!(r"^1($|\.0|\.0\.[0-9]|\.1|\.1rc[0-9]|\.1\.[0-9]|.2|\.2rc[0-9]|\.2\.1|.8.5rc5)$")
-                        .is_match(v)
-                })
-                .unique()
-                .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
-                .map(|version| VersionInfo {
-                    version,
-                    ..Default::default()
-                })
-                .collect()
+            // Fast path: use git ls-remote to get all go tags efficiently
+            // We can't use github::list_tags here because golang/go has 500+ tags
+            // and the "go1.x" version tags aren't on the first page of API results
+            plugins::core::run_fetch_task_with_timeout(move || {
+                let output = cmd!(
+                    "git",
+                    "ls-remote",
+                    "--tags",
+                    "--refs",
+                    &Settings::get().go_repo,
+                    "go*"
+                )
+                .read()?;
+                let versions: Vec<VersionInfo> = output
+                    .lines()
+                    .filter_map(|line| line.split("/go").last())
+                    .filter(|s| !s.is_empty())
+                    .filter(|s| {
+                        !regex!(r"^1($|\.0|\.0\.[0-9]|\.1|\.1rc[0-9]|\.1\.[0-9]|.2|\.2rc[0-9]|\.2\.1|.8.5rc5)$")
+                            .is_match(s)
+                    })
+                    .map(|s| s.to_string())
+                    .unique()
+                    .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
+                    .map(|version| VersionInfo {
+                        version,
+                        ..Default::default()
+                    })
+                    .collect();
+                Ok(versions)
+            })?
         };
         Ok(versions)
     }
