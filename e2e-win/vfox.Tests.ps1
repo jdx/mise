@@ -1,4 +1,9 @@
 Describe 'vfox' {
+    BeforeAll {
+        # vfox-npm is a custom backend which requires experimental mode
+        $env:MISE_EXPERIMENTAL = "1"
+    }
+
     It 'executes vfox backend command execution' {
         # Test that vfox backend can execute commands cross-platform
         # This tests the cmd.exec function that was fixed for Windows compatibility

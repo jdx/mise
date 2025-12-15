@@ -13,6 +13,7 @@ use crate::cli::args::ToolArg;
 use crate::cmd;
 use crate::config::{Config, Settings};
 use crate::env;
+use crate::prepare::{PrepareEngine, PrepareOptions};
 use crate::toolset::{InstallOptions, ResolveOptions, ToolsetBuilder};
 
 /// Execute a command with tool(s) set
@@ -44,6 +45,10 @@ pub struct Exec {
     /// [default: 4]
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
+
+    /// Skip automatic dependency preparation
+    #[clap(long)]
+    pub no_prepare: bool,
 
     /// Directly pipe stdin/stdout/stderr from plugin to user
     /// Sets --jobs=1
@@ -111,6 +116,18 @@ impl Exec {
 
         let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
         let mut env = measure!("env_with_path", { ts.env_with_path(&config).await? });
+
+        // Run auto-enabled prepare steps (unless --no-prepare)
+        if !self.no_prepare {
+            let engine = PrepareEngine::new(config.clone())?;
+            engine
+                .run(PrepareOptions {
+                    auto_only: true, // Only run providers with auto=true
+                    env: env.clone(),
+                    ..Default::default()
+                })
+                .await?;
+        }
 
         // Ensure MISE_ENV is set in the spawned shell if it was specified via -E flag
         if !env::MISE_ENV.is_empty() {

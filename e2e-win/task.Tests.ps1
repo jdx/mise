@@ -1,5 +1,42 @@
 
 Describe 'task' {
+    BeforeAll {
+        $originalPath = Get-Location
+        Set-Location TestDrive:
+        # Trust the TestDrive config path - use $TestDrive for physical path, not PSDrive path
+        $env:MISE_TRUSTED_CONFIG_PATHS = $TestDrive
+
+        # Create mise.toml that includes tasks directory
+        @'
+[task_config]
+includes = ["tasks"]
+'@ | Out-File -FilePath "mise.toml" -Encoding utf8NoBOM
+
+        # Create tasks directory
+        New-Item -ItemType Directory -Path "tasks" -Force | Out-Null
+
+        # Create filetask.bat
+        @'
+@echo off
+echo mytask
+'@ | Out-File -FilePath "tasks\filetask.bat" -Encoding ascii -NoNewline
+
+        # Create filetask (no extension) for MISE_WINDOWS_DEFAULT_FILE_SHELL_ARGS test
+        @'
+@echo off
+echo mytask
+'@ | Out-File -FilePath "tasks\filetask" -Encoding ascii -NoNewline
+
+        # Create testtask.ps1 for pwsh test
+        @'
+Write-Output "windows"
+'@ | Out-File -FilePath "tasks\testtask.ps1" -Encoding utf8NoBOM
+    }
+
+    AfterAll {
+        Set-Location $originalPath
+        Remove-Item -Path Env:\MISE_TRUSTED_CONFIG_PATHS -ErrorAction SilentlyContinue
+    }
 
     BeforeEach {
         Remove-Item -Path Env:\MISE_WINDOWS_EXECUTABLE_EXTENSIONS -ErrorAction SilentlyContinue

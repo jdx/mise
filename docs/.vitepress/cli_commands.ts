@@ -210,6 +210,9 @@ export const commands: { [key: string]: Command } = {
       },
     },
   },
+  prepare: {
+    hide: false,
+  },
   prune: {
     hide: false,
   },

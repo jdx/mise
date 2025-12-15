@@ -1,0 +1,389 @@
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::SystemTime;
+
+use eyre::Result;
+
+use crate::cmd::CmdLineRunner;
+use crate::config::{Config, Settings};
+use crate::parallel;
+use crate::ui::multi_progress_report::MultiProgressReport;
+
+use super::PrepareProvider;
+use super::providers::{
+    BunPrepareProvider, BundlerPrepareProvider, ComposerPrepareProvider, CustomPrepareProvider,
+    GoPrepareProvider, NpmPrepareProvider, PipPrepareProvider, PnpmPrepareProvider,
+    PoetryPrepareProvider, UvPrepareProvider, YarnPrepareProvider,
+};
+use super::rule::{BUILTIN_PROVIDERS, PrepareConfig};
+
+/// Options for running prepare steps
+#[derive(Debug, Default)]
+pub struct PrepareOptions {
+    /// Only check if prepare is needed, don't run commands
+    pub dry_run: bool,
+    /// Force run all prepare steps even if outputs are fresh
+    pub force: bool,
+    /// Run specific prepare rule(s) only
+    pub only: Option<Vec<String>>,
+    /// Skip specific prepare rule(s)
+    pub skip: Vec<String>,
+    /// Environment variables to pass to prepare commands (e.g., toolset PATH)
+    pub env: BTreeMap<String, String>,
+    /// If true, only run providers with auto=true
+    pub auto_only: bool,
+}
+
+/// Result of a prepare step
+#[derive(Debug)]
+pub enum PrepareStepResult {
+    /// Step ran successfully
+    Ran(String),
+    /// Step would have run (dry-run mode)
+    WouldRun(String),
+    /// Step was skipped because outputs are fresh
+    Fresh(String),
+    /// Step was skipped by user request
+    Skipped(String),
+}
+
+/// Result of running all prepare steps
+#[derive(Debug)]
+pub struct PrepareResult {
+    pub steps: Vec<PrepareStepResult>,
+}
+
+impl PrepareResult {
+    /// Returns true if any steps ran or would have run
+    pub fn had_work(&self) -> bool {
+        self.steps.iter().any(|s| {
+            matches!(
+                s,
+                PrepareStepResult::Ran(_) | PrepareStepResult::WouldRun(_)
+            )
+        })
+    }
+}
+
+/// Engine that discovers and runs prepare providers
+pub struct PrepareEngine {
+    config: Arc<Config>,
+    providers: Vec<Box<dyn PrepareProvider>>,
+}
+
+impl PrepareEngine {
+    /// Create a new PrepareEngine, discovering all applicable providers
+    pub fn new(config: Arc<Config>) -> Result<Self> {
+        let providers = Self::discover_providers(&config)?;
+        // Only require experimental when prepare is actually configured
+        if !providers.is_empty() {
+            Settings::get().ensure_experimental("prepare")?;
+        }
+        Ok(Self { config, providers })
+    }
+
+    /// Discover all applicable prepare providers for the current project
+    fn discover_providers(config: &Config) -> Result<Vec<Box<dyn PrepareProvider>>> {
+        let project_root = config
+            .project_root
+            .clone()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+        let mut providers: Vec<Box<dyn PrepareProvider>> = vec![];
+
+        // Load prepare config from mise.toml
+        let prepare_config = config
+            .config_files
+            .values()
+            .filter_map(|cf| cf.prepare_config())
+            .fold(PrepareConfig::default(), |acc, pc| acc.merge(&pc));
+
+        // Iterate over all configured providers
+        for (id, provider_config) in &prepare_config.providers {
+            let provider: Box<dyn PrepareProvider> = if BUILTIN_PROVIDERS.contains(&id.as_str()) {
+                // Built-in provider with specialized implementation
+                match id.as_str() {
+                    // Node.js package managers
+                    "npm" => Box::new(NpmPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    "yarn" => Box::new(YarnPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    "pnpm" => Box::new(PnpmPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    "bun" => Box::new(BunPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    // Go
+                    "go" => Box::new(GoPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    // Python
+                    "pip" => Box::new(PipPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    "poetry" => Box::new(PoetryPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    "uv" => Box::new(UvPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    // Ruby
+                    "bundler" => Box::new(BundlerPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    // PHP
+                    "composer" => Box::new(ComposerPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    _ => continue, // Skip unimplemented built-ins
+                }
+            } else {
+                // Custom provider
+                Box::new(CustomPrepareProvider::new(
+                    id.clone(),
+                    provider_config.clone(),
+                    project_root.clone(),
+                ))
+            };
+
+            if provider.is_applicable() {
+                providers.push(provider);
+            }
+        }
+
+        // Filter disabled providers
+        providers.retain(|p| !prepare_config.disable.contains(&p.id().to_string()));
+
+        Ok(providers)
+    }
+
+    /// List all discovered providers
+    pub fn list_providers(&self) -> Vec<&dyn PrepareProvider> {
+        self.providers.iter().map(|p| p.as_ref()).collect()
+    }
+
+    /// Check if any auto-enabled provider has stale outputs (without running)
+    /// Returns the IDs of stale providers
+    pub fn check_staleness(&self) -> Vec<&str> {
+        self.providers
+            .iter()
+            .filter(|p| p.is_auto())
+            .filter(|p| !self.check_freshness(p.as_ref()).unwrap_or(true))
+            .map(|p| p.id())
+            .collect()
+    }
+
+    /// Run all stale prepare steps in parallel
+    pub async fn run(&self, opts: PrepareOptions) -> Result<PrepareResult> {
+        let mut results = vec![];
+
+        // Collect providers that need to run with their commands
+        let mut to_run: Vec<(String, super::PrepareCommand)> = vec![];
+
+        for provider in &self.providers {
+            let id = provider.id().to_string();
+
+            // Check auto_only filter
+            if opts.auto_only && !provider.is_auto() {
+                trace!("prepare step {} is not auto, skipping", id);
+                results.push(PrepareStepResult::Skipped(id));
+                continue;
+            }
+
+            // Check skip list
+            if opts.skip.contains(&id) {
+                results.push(PrepareStepResult::Skipped(id));
+                continue;
+            }
+
+            // Check only list
+            if let Some(ref only) = opts.only
+                && !only.contains(&id)
+            {
+                results.push(PrepareStepResult::Skipped(id));
+                continue;
+            }
+
+            let is_fresh = if opts.force {
+                false
+            } else {
+                self.check_freshness(provider.as_ref())?
+            };
+
+            if !is_fresh {
+                let cmd = provider.prepare_command()?;
+
+                if opts.dry_run {
+                    // Just record that it would run, let CLI handle output
+                    results.push(PrepareStepResult::WouldRun(id));
+                } else {
+                    to_run.push((id, cmd));
+                }
+            } else {
+                trace!("prepare step {} is fresh, skipping", id);
+                results.push(PrepareStepResult::Fresh(id));
+            }
+        }
+
+        // Run stale providers in parallel
+        if !to_run.is_empty() {
+            let mpr = MultiProgressReport::get();
+            let project_root = self
+                .config
+                .project_root
+                .clone()
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+            let toolset_env = opts.env.clone();
+
+            // Include all data in the tuple so closure doesn't capture anything
+            let to_run_with_context: Vec<_> = to_run
+                .into_iter()
+                .map(|(id, cmd)| {
+                    (
+                        id,
+                        cmd,
+                        mpr.clone(),
+                        project_root.clone(),
+                        toolset_env.clone(),
+                    )
+                })
+                .collect();
+
+            let run_results = parallel::parallel(
+                to_run_with_context,
+                |(id, cmd, mpr, project_root, toolset_env)| async move {
+                    let pr = mpr.add(&cmd.description);
+                    match Self::execute_prepare_static(&cmd, &toolset_env, &project_root) {
+                        Ok(()) => {
+                            pr.finish_with_message(format!("{} done", cmd.description));
+                            Ok(PrepareStepResult::Ran(id))
+                        }
+                        Err(e) => {
+                            pr.finish_with_message(format!("{} failed: {}", cmd.description, e));
+                            Err(e)
+                        }
+                    }
+                },
+            )
+            .await?;
+
+            results.extend(run_results);
+        }
+
+        Ok(PrepareResult { steps: results })
+    }
+
+    /// Check if outputs are newer than sources (stateless mtime comparison)
+    fn check_freshness(&self, provider: &dyn PrepareProvider) -> Result<bool> {
+        let sources = provider.sources();
+        let outputs = provider.outputs();
+
+        if outputs.is_empty() {
+            return Ok(false); // No outputs defined, always run to be safe
+        }
+        // Note: empty sources is handled below - last_modified([]) returns None,
+        // and if outputs don't exist either, (_, None) takes precedence → stale
+
+        let sources_mtime = Self::last_modified(&sources)?;
+        let outputs_mtime = Self::last_modified(&outputs)?;
+
+        match (sources_mtime, outputs_mtime) {
+            (Some(src), Some(out)) => Ok(src <= out), // Fresh if outputs newer or equal to sources
+            (_, None) => Ok(false), // No outputs exist, not fresh (takes precedence)
+            (None, _) => Ok(true),  // No sources exist, consider fresh
+        }
+    }
+
+    /// Get the most recent modification time from a list of paths
+    /// For directories, recursively finds the newest file within (up to 3 levels deep)
+    fn last_modified(paths: &[PathBuf]) -> Result<Option<SystemTime>> {
+        let mut mtimes: Vec<SystemTime> = vec![];
+
+        for path in paths.iter().filter(|p| p.exists()) {
+            if path.is_dir() {
+                // For directories, find the newest file within (limited depth for performance)
+                if let Some(mtime) = Self::newest_file_in_dir(path, 3) {
+                    mtimes.push(mtime);
+                }
+            } else if let Some(mtime) = path.metadata().ok().and_then(|m| m.modified().ok()) {
+                mtimes.push(mtime);
+            }
+        }
+
+        Ok(mtimes.into_iter().max())
+    }
+
+    /// Recursively find the newest file modification time in a directory
+    fn newest_file_in_dir(dir: &Path, max_depth: usize) -> Option<SystemTime> {
+        if max_depth == 0 {
+            return dir.metadata().ok().and_then(|m| m.modified().ok());
+        }
+
+        let mut newest: Option<SystemTime> = None;
+
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let mtime = if path.is_dir() {
+                    Self::newest_file_in_dir(&path, max_depth - 1)
+                } else {
+                    path.metadata().ok().and_then(|m| m.modified().ok())
+                };
+
+                if let Some(t) = mtime {
+                    newest = Some(newest.map_or(t, |n| n.max(t)));
+                }
+            }
+        }
+
+        newest
+    }
+
+    /// Execute a prepare command (static version for parallel execution)
+    fn execute_prepare_static(
+        cmd: &super::PrepareCommand,
+        toolset_env: &BTreeMap<String, String>,
+        default_project_root: &Path,
+    ) -> Result<()> {
+        let cwd = cmd
+            .cwd
+            .clone()
+            .unwrap_or_else(|| default_project_root.to_path_buf());
+
+        let mut runner = CmdLineRunner::new(&cmd.program)
+            .args(&cmd.args)
+            .current_dir(cwd);
+
+        // Apply toolset environment (includes PATH with installed tools)
+        for (k, v) in toolset_env {
+            runner = runner.env(k, v);
+        }
+
+        // Apply command-specific environment (can override toolset env)
+        for (k, v) in &cmd.env {
+            runner = runner.env(k, v);
+        }
+
+        // Use raw output for better UX during dependency installation
+        if Settings::get().raw {
+            runner = runner.raw(true);
+        }
+
+        runner.execute()?;
+        Ok(())
+    }
+}

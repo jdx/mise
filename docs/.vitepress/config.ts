@@ -67,6 +67,7 @@ export default withMermaid(
             { text: "Tool Stubs", link: "/dev-tools/tool-stubs" },
             { text: "Registry", link: "/registry" },
             { text: "mise.lock Lockfile", link: "/dev-tools/mise-lock" },
+            { text: "Prepare", link: "/dev-tools/prepare" },
             {
               text: "Backend Architecture",
               link: "/dev-tools/backend_architecture",

@@ -275,6 +275,7 @@ cmd exec help="Execute a command with tool(s) set" {
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg <JOBS>
     }
+    flag --no-prepare help="Skip automatic dependency preparation"
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
     arg "[TOOL@VERSION]…" help="Tool(s) to start e.g.: node@20 python@3.10" required=#false var=#true
     arg "[-- COMMAND]…" help="Command string to execute (same as --command)" required=#false var=#true
@@ -635,6 +636,20 @@ cmd plugins help="Manage plugins" {
         arg "[PLUGIN]…" help="Plugin(s) to update" required=#false var=#true
     }
 }
+cmd prepare help="[experimental] Ensure project dependencies are ready" {
+    alias prep
+    long_help "[experimental] Ensure project dependencies are ready\n\nRuns all applicable prepare steps for the current project.\nThis checks if dependency lockfiles are newer than installed outputs\n(e.g., package-lock.json vs node_modules/) and runs install commands\nif needed.\n\nProviders with `auto = true` are automatically invoked before `mise x` and `mise run`\nunless skipped with the --no-prepare flag."
+    after_long_help "Examples:\n\n    $ mise prepare              # Run all applicable prepare steps\n    $ mise prepare --dry-run    # Show what would run without executing\n    $ mise prepare --force      # Force run even if outputs are fresh\n    $ mise prepare --list       # List available prepare providers\n    $ mise prepare --only npm   # Run only npm prepare\n    $ mise prepare --skip npm   # Skip npm prepare\n\nConfiguration:\n\n    Configure prepare providers in mise.toml:\n\n    ```toml\n    # Built-in npm provider (auto-detects lockfile)\n    [prepare.npm]\n    auto = true              # Auto-run before mise x/run\n\n    # Custom provider\n    [prepare.codegen]\n    auto = true\n    sources = [\"schema/*.graphql\"]\n    outputs = [\"src/generated/\"]\n    run = \"npm run codegen\"\n\n    [prepare]\n    disable = [\"npm\"]        # Disable specific providers at runtime\n    ```\n"
+    flag "-f --force" help="Force run all prepare steps even if outputs are fresh"
+    flag --list help="Show what prepare steps are available"
+    flag "-n --dry-run" help="Only check if prepare is needed, don't run commands"
+    flag --only help="Run specific prepare rule(s) only" var=#true {
+        arg <ONLY>
+    }
+    flag --skip help="Skip specific prepare rule(s)" var=#true {
+        arg <SKIP>
+    }
+}
 cmd prune help="Delete unused versions of tools" {
     long_help "Delete unused versions of tools\n\nmise tracks which config files have been used in ~/.local/state/mise/tracked-configs\nVersions which are no longer the latest specified in any of those configs are deleted.\nVersions installed only with environment variables `MISE_<PLUGIN>_VERSION` will be deleted,\nas will versions only referenced on the command line `mise exec <PLUGIN>@<VERSION>`.\n\nYou can list prunable tools with `mise ls --prunable`"
     after_long_help "Examples:\n\n    $ mise prune --dry-run\n    rm -rf ~/.local/share/mise/versions/node/20.0.0\n    rm -rf ~/.local/share/mise/versions/node/20.0.1\n"
@@ -692,6 +707,7 @@ cmd run help="Run task(s)" {
         arg <TOOL@VERSION>
     }
     flag --no-cache help="Do not use cache on remote tasks"
+    flag --no-prepare help="Skip automatic dependency preparation"
     flag --no-timings help="Hides elapsed time after each task completes" {
         long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
     }
@@ -972,6 +988,7 @@ cmd tasks help="Manage tasks" {
             arg <TOOL@VERSION>
         }
         flag --no-cache help="Do not use cache on remote tasks"
+        flag --no-prepare help="Skip automatic dependency preparation"
         flag --no-timings help="Hides elapsed time after each task completes" {
             long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
         }

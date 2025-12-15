@@ -338,6 +338,12 @@ Updates a plugin to the latest version
 \fIAliases: \fRup, upgrade
 .RE
 .TP
+\fBprepare\fR
+[experimental] Ensure project dependencies are ready
+.RS
+\fIAliases: \fRprep
+.RE
+.TP
 \fBprune\fR
 Delete unused versions of tools
 .TP
@@ -884,6 +890,9 @@ Command string to execute
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
 [default: 4]
+.TP
+\fB\-\-no\-prepare\fR
+Skip automatic dependency preparation
 .TP
 \fB\-\-raw\fR
 Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
@@ -1586,6 +1595,36 @@ Default: 4
 .TP
 \fB<PLUGIN>\fR
 Plugin(s) to update
+.SH "MISE PREPARE"
+[experimental] Ensure project dependencies are ready
+
+Runs all applicable prepare steps for the current project.
+This checks if dependency lockfiles are newer than installed outputs
+(e.g., package\-lock.json vs node_modules/) and runs install commands
+if needed.
+
+Providers with `auto = true` are automatically invoked before `mise x` and `mise run`
+unless skipped with the \-\-no\-prepare flag.
+.PP
+\fBUsage:\fR mise prepare [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-f, \-\-force\fR
+Force run all prepare steps even if outputs are fresh
+.TP
+\fB\-\-list\fR
+Show what prepare steps are available
+.TP
+\fB\-n, \-\-dry\-run\fR
+Only check if prepare is needed, don't run commands
+.TP
+\fB\-\-only\fR \fI<ONLY>\fR
+Run specific prepare rule(s) only
+.TP
+\fB\-\-skip\fR \fI<SKIP>\fR
+Skip specific prepare rule(s)
 .SH "MISE PRUNE"
 Delete unused versions of tools
 
@@ -1762,6 +1801,9 @@ Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.
 .TP
 \fB\-\-no\-cache\fR
 Do not use cache on remote tasks
+.TP
+\fB\-\-no\-prepare\fR
+Skip automatic dependency preparation
 .TP
 \fB\-\-no\-timings\fR
 Hides elapsed time after each task completes
@@ -2410,6 +2452,9 @@ Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.
 .TP
 \fB\-\-no\-cache\fR
 Do not use cache on remote tasks
+.TP
+\fB\-\-no\-prepare\fR
+Skip automatic dependency preparation
 .TP
 \fB\-\-no\-timings\fR
 Hides elapsed time after each task completes
