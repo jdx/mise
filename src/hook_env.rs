@@ -352,7 +352,14 @@ pub fn clear_old_env(shell: &dyn Shell) -> String {
         let new_path = compute_deactivated_path();
         patches.push(EnvDiffOperation::Change(PATH_KEY.to_string(), new_path));
     }
-    build_env_commands(shell, &patches)
+    let mut output = build_env_commands(shell, &patches);
+
+    // Clear all aliases from previous session during deactivation
+    for name in PREV_SESSION.aliases.keys() {
+        output.push_str(&shell.unset_alias(name));
+    }
+
+    output
 }
 
 /// Compute PATH after deactivation, preserving user additions
