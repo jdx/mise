@@ -21,6 +21,42 @@ use crate::hash::hash_to_str;
 use crate::shell::Shell;
 use crate::{dirs, duration, env, file, hooks, watch_files};
 
+/// Directory to store per-directory last check timestamps.
+/// Timestamps are stored per-directory (using a hash of CWD) so that
+/// multiple shells in different directories don't interfere with each other.
+static LAST_CHECK_DIR: Lazy<PathBuf> = Lazy::new(|| dirs::STATE.join("hook-env-checks"));
+
+/// Get the path to the last check file for a specific directory.
+fn last_check_file_for_dir(dir: &Path) -> PathBuf {
+    let hash = hash_to_str(&dir.to_string_lossy());
+    LAST_CHECK_DIR.join(hash)
+}
+
+/// Read the last full check timestamp from the state file for the current directory.
+fn read_last_full_check() -> u128 {
+    let Some(cwd) = &*dirs::CWD else {
+        return 0;
+    };
+    std::fs::read_to_string(last_check_file_for_dir(cwd))
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+/// Write the last full check timestamp to the state file for the current directory.
+fn write_last_full_check(timestamp: u128) {
+    let Some(cwd) = &*dirs::CWD else {
+        return;
+    };
+    if let Err(e) = file::create_dir_all(&*LAST_CHECK_DIR) {
+        trace!("failed to create last check dir: {e}");
+        return;
+    }
+    if let Err(e) = std::fs::write(last_check_file_for_dir(cwd), timestamp.to_string()) {
+        trace!("failed to write last check file: {e}");
+    }
+}
+
 /// Convert a SystemTime to milliseconds since Unix epoch
 fn mtime_to_millis(mtime: SystemTime) -> u128 {
     mtime
@@ -107,8 +143,9 @@ pub fn should_exit_early_fast() -> bool {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    let within_ttl_window =
-        cache_ttl_ms > 0 && now.saturating_sub(PREV_SESSION.last_full_check) < cache_ttl_ms;
+    // Read last check time from file (allows updating when exiting early after fs checks)
+    let last_full_check = read_last_full_check();
+    let within_ttl_window = cache_ttl_ms > 0 && now.saturating_sub(last_full_check) < cache_ttl_ms;
 
     // Can't exit early if directory changed
     if dir_change().is_some() {
@@ -183,6 +220,11 @@ pub fn should_exit_early_fast() -> bool {
                 }
             }
         }
+    }
+    // Filesystem checks passed - update the last check timestamp so subsequent
+    // prompts can benefit from the TTL cache without repeating these checks
+    if cache_ttl_ms > 0 {
+        write_last_full_check(now);
     }
     true
 }
@@ -278,10 +320,6 @@ pub struct HookEnvSession {
     dir: Option<PathBuf>,
     env_var_hash: String,
     latest_update: u128,
-    /// Timestamp (millis since epoch) of the last full directory traversal check.
-    /// Used with hook_env.cache_ttl to skip checks within the TTL window.
-    #[serde(default)]
-    last_full_check: u128,
 }
 
 pub fn serialize<T: serde::Serialize>(obj: &T) -> Result<String> {
@@ -320,10 +358,12 @@ pub async fn build_session(
 
     let loaded_configs: IndexSet<PathBuf> = config.config_files.keys().cloned().collect();
 
+    // Update the last full check timestamp (used by cache_ttl feature)
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
+    write_last_full_check(now);
 
     Ok(HookEnvSession {
         dir: dirs::CWD.clone(),
@@ -333,7 +373,6 @@ pub async fn build_session(
         loaded_tools,
         config_paths,
         latest_update: mtime_to_millis(max_modtime),
-        last_full_check: now,
     })
 }
 
