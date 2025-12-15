@@ -1603,8 +1603,8 @@ This checks if dependency lockfiles are newer than installed outputs
 (e.g., package\-lock.json vs node_modules/) and runs install commands
 if needed.
 
-This is automatically invoked before `mise x` and `mise run`
-unless disabled via settings or \-\-no\-prepare flag.
+Providers with `auto = true` are automatically invoked before `mise x` and `mise run`
+unless skipped with the \-\-no\-prepare flag.
 .PP
 \fBUsage:\fR mise prepare [OPTIONS]
 .PP
