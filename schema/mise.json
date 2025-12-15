@@ -1158,6 +1158,11 @@
               "description": "Show configured tools when entering a directory with a mise.toml file.",
               "type": "boolean"
             },
+            "show_prepare_stale": {
+              "default": true,
+              "description": "Show warning when prepare providers have stale dependencies.",
+              "type": "boolean"
+            },
             "truncate": {
               "default": true,
               "description": "Truncate status messages.",
