@@ -105,7 +105,7 @@ impl Prepare {
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            miseprintln!("  {} (priority: {})", provider.id(), provider.priority());
+            miseprintln!("  {}", provider.id());
             miseprintln!("    sources: {}", sources);
             miseprintln!("    outputs: {}", outputs);
         }

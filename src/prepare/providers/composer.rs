@@ -5,14 +5,14 @@ use eyre::Result;
 use crate::prepare::rule::PrepareProviderConfig;
 use crate::prepare::{PrepareCommand, PrepareProvider};
 
-/// Prepare provider for yarn (yarn.lock)
+/// Prepare provider for PHP Composer (composer.lock)
 #[derive(Debug)]
-pub struct YarnPrepareProvider {
+pub struct ComposerPrepareProvider {
     project_root: PathBuf,
     config: PrepareProviderConfig,
 }
 
-impl YarnPrepareProvider {
+impl ComposerPrepareProvider {
     pub fn new(project_root: &PathBuf, config: PrepareProviderConfig) -> Self {
         Self {
             project_root: project_root.clone(),
@@ -21,20 +21,20 @@ impl YarnPrepareProvider {
     }
 }
 
-impl PrepareProvider for YarnPrepareProvider {
+impl PrepareProvider for ComposerPrepareProvider {
     fn id(&self) -> &str {
-        "yarn"
+        "composer"
     }
 
     fn sources(&self) -> Vec<PathBuf> {
         vec![
-            self.project_root.join("yarn.lock"),
-            self.project_root.join("package.json"),
+            self.project_root.join("composer.lock"),
+            self.project_root.join("composer.json"),
         ]
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        vec![self.project_root.join("node_modules")]
+        vec![self.project_root.join("vendor")]
     }
 
     fn prepare_command(&self) -> Result<PrepareCommand> {
@@ -47,7 +47,7 @@ impl PrepareProvider for YarnPrepareProvider {
         }
 
         Ok(PrepareCommand {
-            program: "yarn".to_string(),
+            program: "composer".to_string(),
             args: vec!["install".to_string()],
             env: self.config.env.clone(),
             cwd: Some(self.project_root.clone()),
@@ -55,12 +55,12 @@ impl PrepareProvider for YarnPrepareProvider {
                 .config
                 .description
                 .clone()
-                .unwrap_or_else(|| "yarn install".to_string()),
+                .unwrap_or_else(|| "composer install".to_string()),
         })
     }
 
     fn is_applicable(&self) -> bool {
-        self.project_root.join("yarn.lock").exists()
+        self.project_root.join("composer.lock").exists()
     }
 
     fn is_auto(&self) -> bool {

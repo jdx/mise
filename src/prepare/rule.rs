@@ -3,22 +3,28 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 /// List of built-in provider names that have specialized implementations
-pub const BUILTIN_PROVIDERS: &[&str] = &["npm", "yarn", "pnpm", "bun", "cargo", "go", "python"];
+pub const BUILTIN_PROVIDERS: &[&str] = &[
+    "npm", "yarn", "pnpm", "bun",      // Node.js
+    "cargo",    // Rust
+    "go",       // Go
+    "pip",      // Python (requirements.txt)
+    "poetry",   // Python (poetry)
+    "uv",       // Python (uv)
+    "bundler",  // Ruby
+    "composer", // PHP
+];
 
 /// Configuration for a prepare provider (both built-in and custom)
 ///
-/// Built-in providers (npm, cargo, go, python) have auto-detected sources/outputs
-/// and default run commands. Custom providers require explicit sources, outputs, and run.
+/// Built-in providers have auto-detected sources/outputs and default run commands.
+/// Custom providers require explicit sources, outputs, and run.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PrepareProviderConfig {
     /// Whether to auto-run this provider before mise x/run (default: false)
     #[serde(default)]
     pub auto: bool,
-    /// Whether this provider is enabled (default: true)
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    /// Command to run when stale (required for custom, optional for built-in)
+    /// Command to run when stale (required for custom, optional override for built-in)
     pub run: Option<String>,
     /// Files/patterns to check for changes (required for custom, auto-detected for built-in)
     #[serde(default)]
@@ -26,12 +32,6 @@ pub struct PrepareProviderConfig {
     /// Files/directories that should be newer than sources (required for custom, auto-detected for built-in)
     #[serde(default)]
     pub outputs: Vec<String>,
-    /// Additional sources to watch beyond the defaults (for built-in providers)
-    #[serde(default)]
-    pub extra_sources: Vec<String>,
-    /// Additional outputs to check beyond the defaults (for built-in providers)
-    #[serde(default)]
-    pub extra_outputs: Vec<String>,
     /// Environment variables to set
     #[serde(default)]
     pub env: BTreeMap<String, String>,
@@ -39,9 +39,6 @@ pub struct PrepareProviderConfig {
     pub dir: Option<String>,
     /// Optional description
     pub description: Option<String>,
-    /// Priority (higher runs first, default: 100)
-    #[serde(default = "default_priority")]
-    pub priority: u32,
 }
 
 impl PrepareProviderConfig {
@@ -84,12 +81,4 @@ impl PrepareConfig {
     pub fn get(&self, name: &str) -> Option<&PrepareProviderConfig> {
         self.providers.get(name)
     }
-}
-
-fn default_true() -> bool {
-    true
-}
-
-fn default_priority() -> u32 {
-    100
 }

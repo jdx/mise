@@ -12,8 +12,9 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 
 use super::PrepareProvider;
 use super::providers::{
-    BunPrepareProvider, CustomPrepareProvider, NpmPrepareProvider, PnpmPrepareProvider,
-    YarnPrepareProvider,
+    BunPrepareProvider, BundlerPrepareProvider, CargoPrepareProvider, ComposerPrepareProvider,
+    CustomPrepareProvider, GoPrepareProvider, NpmPrepareProvider, PipPrepareProvider,
+    PnpmPrepareProvider, PoetryPrepareProvider, UvPrepareProvider, YarnPrepareProvider,
 };
 use super::rule::{BUILTIN_PROVIDERS, PrepareConfig};
 
@@ -99,6 +100,7 @@ impl PrepareEngine {
             let provider: Box<dyn PrepareProvider> = if BUILTIN_PROVIDERS.contains(&id.as_str()) {
                 // Built-in provider with specialized implementation
                 match id.as_str() {
+                    // Node.js package managers
                     "npm" => Box::new(NpmPrepareProvider::new(
                         &project_root,
                         provider_config.clone(),
@@ -115,7 +117,39 @@ impl PrepareEngine {
                         &project_root,
                         provider_config.clone(),
                     )),
-                    // Future: "cargo", "go", "python"
+                    // Rust
+                    "cargo" => Box::new(CargoPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    // Go
+                    "go" => Box::new(GoPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    // Python
+                    "pip" => Box::new(PipPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    "poetry" => Box::new(PoetryPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    "uv" => Box::new(UvPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    // Ruby
+                    "bundler" => Box::new(BundlerPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    // PHP
+                    "composer" => Box::new(ComposerPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
                     _ => continue, // Skip unimplemented built-ins
                 }
             } else {
@@ -134,9 +168,6 @@ impl PrepareEngine {
 
         // Filter disabled providers
         providers.retain(|p| !prepare_config.disable.contains(&p.id().to_string()));
-
-        // Sort by priority (higher first)
-        providers.sort_by(|a, b| b.priority().cmp(&a.priority()));
 
         Ok(providers)
     }
@@ -200,10 +231,7 @@ impl PrepareEngine {
                     results.push(PrepareStepResult::WouldRun(id));
                 } else {
                     let pr = mpr.add(&cmd.description);
-                    match self
-                        .execute_prepare(provider.as_ref(), &cmd, &opts.env)
-                        .await
-                    {
+                    match self.execute_prepare(&cmd, &opts.env) {
                         Ok(()) => {
                             pr.finish_with_message(format!("{} done", cmd.description));
                             results.push(PrepareStepResult::Ran(id));
@@ -255,9 +283,8 @@ impl PrepareEngine {
     }
 
     /// Execute a prepare command
-    async fn execute_prepare(
+    fn execute_prepare(
         &self,
-        _provider: &dyn PrepareProvider,
         cmd: &super::PrepareCommand,
         toolset_env: &BTreeMap<String, String>,
     ) -> Result<()> {

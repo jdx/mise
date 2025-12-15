@@ -5,14 +5,14 @@ use eyre::Result;
 use crate::prepare::rule::PrepareProviderConfig;
 use crate::prepare::{PrepareCommand, PrepareProvider};
 
-/// Prepare provider for yarn (yarn.lock)
+/// Prepare provider for pip (requirements.txt)
 #[derive(Debug)]
-pub struct YarnPrepareProvider {
+pub struct PipPrepareProvider {
     project_root: PathBuf,
     config: PrepareProviderConfig,
 }
 
-impl YarnPrepareProvider {
+impl PipPrepareProvider {
     pub fn new(project_root: &PathBuf, config: PrepareProviderConfig) -> Self {
         Self {
             project_root: project_root.clone(),
@@ -21,20 +21,18 @@ impl YarnPrepareProvider {
     }
 }
 
-impl PrepareProvider for YarnPrepareProvider {
+impl PrepareProvider for PipPrepareProvider {
     fn id(&self) -> &str {
-        "yarn"
+        "pip"
     }
 
     fn sources(&self) -> Vec<PathBuf> {
-        vec![
-            self.project_root.join("yarn.lock"),
-            self.project_root.join("package.json"),
-        ]
+        vec![self.project_root.join("requirements.txt")]
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        vec![self.project_root.join("node_modules")]
+        // Check for .venv directory as output indicator
+        vec![self.project_root.join(".venv")]
     }
 
     fn prepare_command(&self) -> Result<PrepareCommand> {
@@ -47,20 +45,24 @@ impl PrepareProvider for YarnPrepareProvider {
         }
 
         Ok(PrepareCommand {
-            program: "yarn".to_string(),
-            args: vec!["install".to_string()],
+            program: "pip".to_string(),
+            args: vec![
+                "install".to_string(),
+                "-r".to_string(),
+                "requirements.txt".to_string(),
+            ],
             env: self.config.env.clone(),
             cwd: Some(self.project_root.clone()),
             description: self
                 .config
                 .description
                 .clone()
-                .unwrap_or_else(|| "yarn install".to_string()),
+                .unwrap_or_else(|| "pip install".to_string()),
         })
     }
 
     fn is_applicable(&self) -> bool {
-        self.project_root.join("yarn.lock").exists()
+        self.project_root.join("requirements.txt").exists()
     }
 
     fn is_auto(&self) -> bool {

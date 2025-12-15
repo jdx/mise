@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use eyre::Result;
@@ -74,45 +73,19 @@ impl PrepareProvider for CustomPrepareProvider {
             .as_ref()
             .ok_or_else(|| eyre::eyre!("prepare rule {} has no run command", self.id))?;
 
-        let parts: Vec<&str> = run.split_whitespace().collect();
-        let (program, args) = parts
-            .split_first()
-            .ok_or_else(|| eyre::eyre!("prepare rule {} has empty run command", self.id))?;
-
-        let env: BTreeMap<String, String> = self.config.env.clone();
-
-        let cwd = self
-            .config
-            .dir
-            .as_ref()
-            .map(|d| self.project_root.join(d))
-            .unwrap_or_else(|| self.project_root.clone());
-
-        let description = self
-            .config
-            .description
-            .clone()
-            .unwrap_or_else(|| format!("Running prepare rule: {}", self.id));
-
-        Ok(PrepareCommand {
-            program: program.to_string(),
-            args: args.iter().map(|s| s.to_string()).collect(),
-            env,
-            cwd: Some(cwd),
-            description,
-        })
+        Ok(PrepareCommand::from_string(
+            run,
+            &self.project_root,
+            &self.config,
+        ))
     }
 
     fn is_applicable(&self) -> bool {
         // Custom providers require a run command to be applicable
-        self.config.enabled && self.config.run.is_some()
+        self.config.run.is_some()
     }
 
     fn is_auto(&self) -> bool {
         self.config.auto
-    }
-
-    fn priority(&self) -> u32 {
-        self.config.priority
     }
 }

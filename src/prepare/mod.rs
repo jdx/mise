@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use eyre::Result;
 
 use crate::config::{Config, Settings};
@@ -31,35 +30,53 @@ pub struct PrepareCommand {
     pub description: String,
 }
 
+impl PrepareCommand {
+    /// Create a PrepareCommand from a run string like "npm install"
+    pub fn from_string(
+        run: &str,
+        project_root: &PathBuf,
+        config: &rule::PrepareProviderConfig,
+    ) -> Self {
+        let parts: Vec<&str> = run.split_whitespace().collect();
+        let (program, args) = parts.split_first().unwrap_or((&"sh", &[]));
+
+        Self {
+            program: program.to_string(),
+            args: args.iter().map(|s| s.to_string()).collect(),
+            env: config.env.clone(),
+            cwd: config
+                .dir
+                .as_ref()
+                .map(|d| project_root.join(d))
+                .or_else(|| Some(project_root.clone())),
+            description: config
+                .description
+                .clone()
+                .unwrap_or_else(|| run.to_string()),
+        }
+    }
+}
+
 /// Trait for prepare providers that can check and install dependencies
-#[async_trait]
 pub trait PrepareProvider: Debug + Send + Sync {
     /// Unique identifier for this provider (e.g., "npm", "cargo", "codegen")
     fn id(&self) -> &str;
 
     /// Returns the source files to check for freshness (lock files, config files)
-    /// These are the files that, when modified, indicate dependencies may need updating
     fn sources(&self) -> Vec<PathBuf>;
 
     /// Returns the output files/directories that should be newer than sources
-    /// These indicate that dependencies have been installed
     fn outputs(&self) -> Vec<PathBuf>;
 
     /// The command to run when outputs are stale relative to sources
     fn prepare_command(&self) -> Result<PrepareCommand>;
 
-    /// Whether this provider is applicable to the current project
-    /// (e.g., npm provider is applicable if package-lock.json exists)
+    /// Whether this provider is applicable (e.g., lockfile exists)
     fn is_applicable(&self) -> bool;
 
-    /// Whether this provider should auto-run before mise x/run (default: false)
+    /// Whether this provider should auto-run before mise x/run
     fn is_auto(&self) -> bool {
         false
-    }
-
-    /// Priority - higher priority providers run first (default: 100)
-    fn priority(&self) -> u32 {
-        100
     }
 }
 

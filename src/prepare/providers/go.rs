@@ -5,14 +5,14 @@ use eyre::Result;
 use crate::prepare::rule::PrepareProviderConfig;
 use crate::prepare::{PrepareCommand, PrepareProvider};
 
-/// Prepare provider for yarn (yarn.lock)
+/// Prepare provider for Go (go.sum)
 #[derive(Debug)]
-pub struct YarnPrepareProvider {
+pub struct GoPrepareProvider {
     project_root: PathBuf,
     config: PrepareProviderConfig,
 }
 
-impl YarnPrepareProvider {
+impl GoPrepareProvider {
     pub fn new(project_root: &PathBuf, config: PrepareProviderConfig) -> Self {
         Self {
             project_root: project_root.clone(),
@@ -21,20 +21,28 @@ impl YarnPrepareProvider {
     }
 }
 
-impl PrepareProvider for YarnPrepareProvider {
+impl PrepareProvider for GoPrepareProvider {
     fn id(&self) -> &str {
-        "yarn"
+        "go"
     }
 
     fn sources(&self) -> Vec<PathBuf> {
         vec![
-            self.project_root.join("yarn.lock"),
-            self.project_root.join("package.json"),
+            self.project_root.join("go.sum"),
+            self.project_root.join("go.mod"),
         ]
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        vec![self.project_root.join("node_modules")]
+        // Go downloads modules to GOPATH/pkg/mod, but we can check vendor/ if used
+        let vendor = self.project_root.join("vendor");
+        if vendor.exists() {
+            vec![vendor]
+        } else {
+            // Use go.sum as both source and output indicator
+            // (go mod download updates go.sum)
+            vec![self.project_root.join("go.sum")]
+        }
     }
 
     fn prepare_command(&self) -> Result<PrepareCommand> {
@@ -47,20 +55,20 @@ impl PrepareProvider for YarnPrepareProvider {
         }
 
         Ok(PrepareCommand {
-            program: "yarn".to_string(),
-            args: vec!["install".to_string()],
+            program: "go".to_string(),
+            args: vec!["mod".to_string(), "download".to_string()],
             env: self.config.env.clone(),
             cwd: Some(self.project_root.clone()),
             description: self
                 .config
                 .description
                 .clone()
-                .unwrap_or_else(|| "yarn install".to_string()),
+                .unwrap_or_else(|| "go mod download".to_string()),
         })
     }
 
     fn is_applicable(&self) -> bool {
-        self.project_root.join("yarn.lock").exists()
+        self.project_root.join("go.sum").exists()
     }
 
     fn is_auto(&self) -> bool {
