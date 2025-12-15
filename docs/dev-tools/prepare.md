@@ -30,7 +30,6 @@ auto = true  # Auto-run before mise x/run
 [prepare.yarn]
 [prepare.pnpm]
 [prepare.bun]
-[prepare.cargo]
 [prepare.go]
 [prepare.pip]
 [prepare.poetry]
@@ -47,7 +46,7 @@ run = "npm run codegen"
 
 # Disable specific providers
 [prepare]
-disable = ["cargo"]
+disable = ["npm"]
 ```
 
 ## Built-in Providers
@@ -60,7 +59,6 @@ mise includes built-in providers for common package managers:
 | `yarn`     | `yarn.lock`               | `node_modules/`       | `yarn install`                    |
 | `pnpm`     | `pnpm-lock.yaml`          | `node_modules/`       | `pnpm install`                    |
 | `bun`      | `bun.lockb` or `bun.lock` | `node_modules/`       | `bun install`                     |
-| `cargo`    | `Cargo.lock`              | `target/`             | `cargo fetch`                     |
 | `go`       | `go.sum`                  | `vendor/` or `go.sum` | `go mod download`                 |
 | `pip`      | `requirements.txt`        | `.venv/`              | `pip install -r requirements.txt` |
 | `poetry`   | `poetry.lock`             | `.venv/`              | `poetry install`                  |
@@ -163,7 +161,7 @@ mise prepare --list
 mise prepare --only npm --only codegen
 
 # Skip specific providers
-mise prepare --skip cargo
+mise prepare --skip npm
 ```
 
 ## Parallel Execution
