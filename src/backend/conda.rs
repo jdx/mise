@@ -404,10 +404,17 @@ impl CondaBackend {
 
         let tarball_path = Self::package_path(&pkg.basename);
 
-        // Take a lock on this specific package file for parallel safety
-        let _lock = LockFile::new(&tarball_path)
-            .lock()
-            .wrap_err_with(|| format!("failed to acquire lock for {}", pkg.name))?;
+        // Acquire lock using spawn_blocking to avoid blocking the async runtime
+        // This is important on Windows where blocking in async can cause task cancellation
+        let lock_path = tarball_path.clone();
+        let pkg_name_for_lock = pkg.name.clone();
+        let _lock = tokio::task::spawn_blocking(move || {
+            LockFile::new(&lock_path)
+                .lock()
+                .wrap_err_with(|| format!("failed to acquire lock for {}", pkg_name_for_lock))
+        })
+        .await
+        .wrap_err_with(|| format!("lock task failed for {}", pkg.name))??;
 
         // After acquiring lock, check if file already exists
         if !tarball_path.exists() {
@@ -525,8 +532,12 @@ impl Backend for CondaBackend {
             platform_info.checksum = Some(format!("sha256:{}", sha256));
         }
 
-        // Make binaries executable
-        let bin_path = install_path.join("bin");
+        // Make binaries executable (use same path logic as list_bin_paths)
+        let bin_path = if cfg!(windows) {
+            install_path.join("Library").join("bin")
+        } else {
+            install_path.join("bin")
+        };
         if bin_path.exists() {
             for entry in std::fs::read_dir(&bin_path)? {
                 let entry = entry?;
