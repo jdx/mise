@@ -9,7 +9,7 @@ Describe 'prepare' {
     AfterAll {
         Set-Location $script:originalPath
         Remove-Item -Path Env:\MISE_TRUSTED_CONFIG_PATHS -ErrorAction SilentlyContinue
-        # Don't remove MISE_EXPERIMENTAL - other tests (like vfox) need it for custom backends
+        Remove-Item -Path Env:\MISE_EXPERIMENTAL -ErrorAction SilentlyContinue
     }
 
     It 'lists no providers when no lockfiles exist' {
