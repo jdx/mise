@@ -266,7 +266,14 @@ impl ToolVersion {
             "latest" => backend
                 .latest_version_with_opts(config, None, opts.before_date)
                 .await?
-                .unwrap(),
+                .ok_or_else(|| {
+                    let msg = if opts.before_date.is_some() {
+                        format!("no versions found for {} matching date filter", backend.id())
+                    } else {
+                        format!("no versions found for {}", backend.id())
+                    };
+                    eyre::eyre!(msg)
+                })?,
             _ => config.resolve_alias(&backend, v).await?,
         };
         let v = tool_request::version_sub(&v, sub);
