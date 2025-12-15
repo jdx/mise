@@ -66,6 +66,6 @@ outputs = ["src/generated/"]
 run = "npm run codegen"
 
 [prepare]
-disable = ["npm"]        # Disable specific providers at runtime
+disable = ["cargo"]      # Disable specific providers at runtime
 ```
 ```
