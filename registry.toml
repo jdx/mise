@@ -4496,7 +4496,10 @@ backends = ["asdf:mise-plugins/mise-swiftformat"]
 description = "A command-line tool and Xcode Extension for formatting Swift code"
 
 [tools.swiftgen]
-backends = ["asdf:mise-plugins/mise-swiftgen"]
+backends = [
+  "github:SwiftGen/SwiftGen[exe=swiftgen/bin/swiftgen]",
+  "asdf:mise-plugins/mise-swiftgen",
+]
 description = "The Swift code generator for your assets, storyboards, Localizable.strings, … — Get rid of all String-based APIs!"
 
 [tools.swiftlint]
