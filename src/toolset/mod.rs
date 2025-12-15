@@ -689,24 +689,30 @@ impl Toolset {
         Ok(env)
     }
     pub async fn env_from_tools(&self, config: &Arc<Config>) -> Vec<(String, String, String)> {
-        let mut envs = vec![];
-        for (b, tv) in self.list_current_installed_versions(config).into_iter() {
-            if matches!(tv.request, ToolRequest::System { .. }) {
-                continue;
-            }
-            let this = Arc::new(self.clone());
-            let config = config.clone();
-            envs.push(match b.exec_env(&config, &this, &tv).await {
-                Ok(env) => env
+        let this = Arc::new(self.clone());
+        let items: Vec<_> = self
+            .list_current_installed_versions(config)
+            .into_iter()
+            .filter(|(_, tv)| !matches!(tv.request, ToolRequest::System { .. }))
+            .map(|(b, tv)| (config.clone(), this.clone(), b, tv))
+            .collect();
+
+        let envs = parallel::parallel(items, |(config, this, b, tv)| async move {
+            let backend_id = b.id().to_string();
+            match b.exec_env(&config, &this, &tv).await {
+                Ok(env) => Ok(env
                     .into_iter()
-                    .map(|(k, v)| (k, v, b.id().to_string()))
-                    .collect(),
+                    .map(|(k, v)| (k, v, backend_id.clone()))
+                    .collect::<Vec<_>>()),
                 Err(e) => {
                     warn!("Error running exec-env: {:#}", e);
-                    Vec::new()
+                    Ok(Vec::new())
                 }
-            });
-        }
+            }
+        })
+        .await
+        .unwrap_or_default();
+
         envs.into_iter()
             .flatten()
             .filter(|(k, _, _)| k.to_uppercase() != "PATH")
