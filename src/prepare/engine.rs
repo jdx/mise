@@ -7,8 +7,8 @@ use eyre::Result;
 
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::miseprintln;
 use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::{miseprintln, parallel};
 
 use super::PrepareProvider;
 use super::providers::{
@@ -188,10 +188,12 @@ impl PrepareEngine {
             .collect()
     }
 
-    /// Run all stale prepare steps
+    /// Run all stale prepare steps in parallel
     pub async fn run(&self, opts: PrepareOptions) -> Result<PrepareResult> {
         let mut results = vec![];
-        let mpr = MultiProgressReport::get();
+
+        // Collect providers that need to run with their commands
+        let mut to_run: Vec<(String, super::PrepareCommand)> = vec![];
 
         for provider in &self.providers {
             let id = provider.id().to_string();
@@ -230,22 +232,57 @@ impl PrepareEngine {
                     miseprintln!("[dry-run] would run: {} ({})", cmd.description, id);
                     results.push(PrepareStepResult::WouldRun(id));
                 } else {
-                    let pr = mpr.add(&cmd.description);
-                    match self.execute_prepare(&cmd, &opts.env) {
-                        Ok(()) => {
-                            pr.finish_with_message(format!("{} done", cmd.description));
-                            results.push(PrepareStepResult::Ran(id));
-                        }
-                        Err(e) => {
-                            pr.finish_with_message(format!("{} failed: {}", cmd.description, e));
-                            return Err(e);
-                        }
-                    }
+                    to_run.push((id, cmd));
                 }
             } else {
                 trace!("prepare step {} is fresh, skipping", id);
                 results.push(PrepareStepResult::Fresh(id));
             }
+        }
+
+        // Run stale providers in parallel
+        if !to_run.is_empty() {
+            let mpr = MultiProgressReport::get();
+            let project_root = self
+                .config
+                .project_root
+                .clone()
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+            let toolset_env = opts.env.clone();
+
+            // Include all data in the tuple so closure doesn't capture anything
+            let to_run_with_context: Vec<_> = to_run
+                .into_iter()
+                .map(|(id, cmd)| {
+                    (
+                        id,
+                        cmd,
+                        mpr.clone(),
+                        project_root.clone(),
+                        toolset_env.clone(),
+                    )
+                })
+                .collect();
+
+            let run_results = parallel::parallel(
+                to_run_with_context,
+                |(id, cmd, mpr, project_root, toolset_env)| async move {
+                    let pr = mpr.add(&cmd.description);
+                    match Self::execute_prepare_static(&cmd, &toolset_env, &project_root) {
+                        Ok(()) => {
+                            pr.finish_with_message(format!("{} done", cmd.description));
+                            Ok(PrepareStepResult::Ran(id))
+                        }
+                        Err(e) => {
+                            pr.finish_with_message(format!("{} failed: {}", cmd.description, e));
+                            Err(e)
+                        }
+                    }
+                },
+            )
+            .await?;
+
+            results.extend(run_results);
         }
 
         Ok(PrepareResult { steps: results })
@@ -282,17 +319,16 @@ impl PrepareEngine {
         Ok(mtimes.into_iter().max())
     }
 
-    /// Execute a prepare command
-    fn execute_prepare(
-        &self,
+    /// Execute a prepare command (static version for parallel execution)
+    fn execute_prepare_static(
         cmd: &super::PrepareCommand,
         toolset_env: &BTreeMap<String, String>,
+        default_project_root: &PathBuf,
     ) -> Result<()> {
         let cwd = cmd
             .cwd
             .clone()
-            .or_else(|| self.config.project_root.clone())
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+            .unwrap_or_else(|| default_project_root.clone());
 
         let mut runner = CmdLineRunner::new(&cmd.program)
             .args(&cmd.args)
