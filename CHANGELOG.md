@@ -1,5 +1,40 @@
 # Changelog
 
+## [2025.12.8](https://github.com/jdx/mise/compare/v2025.12.7..v2025.12.8) - 2025-12-15
+
+### 🚀 Features
+
+- **(conda)** add dependency resolution for conda packages by @jdx in [#7280](https://github.com/jdx/mise/pull/7280)
+- **(go)** add created_at support to ls-remote --json by @jdx in [#7305](https://github.com/jdx/mise/pull/7305)
+- **(hook-env)** add hook_env.cache_ttl and hook_env.chpwd_only settings for NFS optimization by @jdx in [#7312](https://github.com/jdx/mise/pull/7312)
+- **(hooks)** add MISE_TOOL_NAME and MISE_TOOL_VERSION to preinstall/postinstall hooks by @jdx in [#7311](https://github.com/jdx/mise/pull/7311)
+- **(shell_alias)** add shell_alias support for cross-shell aliases by @jdx in [#7316](https://github.com/jdx/mise/pull/7316)
+- **(tool)** add security field to mise tool --json by @jdx in [#7303](https://github.com/jdx/mise/pull/7303)
+- add --before flag for date-based version filtering by @jdx in [#7298](https://github.com/jdx/mise/pull/7298)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** support cosign v3 bundle verification by @jdx in [#7314](https://github.com/jdx/mise/pull/7314)
+- **(config)** use correct config_root in tera context for hooks by @jdx in [#7309](https://github.com/jdx/mise/pull/7309)
+- **(nu)** fix nushell deactivation script on Windows by @fu050409 in [#7213](https://github.com/jdx/mise/pull/7213)
+- **(python)** apply uv_venv_create_args in auto-venv code path by @jdx in [#7310](https://github.com/jdx/mise/pull/7310)
+- **(shell)** escape exe path in activation scripts for paths with spaces by @jdx in [#7315](https://github.com/jdx/mise/pull/7315)
+- **(task)** parallelize exec_env loading to fix parallel task execution by @jdx in [#7313](https://github.com/jdx/mise/pull/7313)
+- track downloads for python and java by @jdx in [#7304](https://github.com/jdx/mise/pull/7304)
+- include full tool ID in download track by @jdx in [#7320](https://github.com/jdx/mise/pull/7320)
+
+### 📚 Documentation
+
+- Switch `postinstall` code to be shell-agnostic by @thejcannon in [#7317](https://github.com/jdx/mise/pull/7317)
+
+### 🧪 Testing
+
+- **(e2e)** disable debug mode by default for windows-e2e by @jdx in [#7318](https://github.com/jdx/mise/pull/7318)
+
+### New Contributors
+
+- @fu050409 made their first contribution in [#7213](https://github.com/jdx/mise/pull/7213)
+
 ## [2025.12.7](https://github.com/jdx/mise/compare/v2025.12.6..v2025.12.7) - 2025-12-14
 
 ### 🚀 Features
