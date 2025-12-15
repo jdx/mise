@@ -2,9 +2,9 @@ use std::path::{Path, PathBuf};
 use std::{collections::BTreeMap, sync::Arc};
 
 use crate::Result;
-use crate::backend::Backend;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::fetch_checksum_from_file;
+use crate::backend::{Backend, VersionInfo};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -14,7 +14,7 @@ use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{cmd, env, file, plugins};
+use crate::{cmd, env, file, github, plugins};
 use async_trait::async_trait;
 use itertools::Itertools;
 use tempfile::tempdir_in;
@@ -204,25 +204,60 @@ impl Backend for GoPlugin {
         }]
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
-        plugins::core::run_fetch_task_with_timeout(move || {
-            let output = cmd!(
-                "git",
-                "ls-remote",
-                "--tags",
-                &Settings::get().go_repo,
-                "go*"
-            )
-            .read()?;
-            let lines = output.split('\n');
-            let versions = lines.map(|s| s.split("/go").last().unwrap_or_default().to_string())
-                .filter(|s| !s.is_empty())
-                .filter(|s| !regex!(r"^1($|\.0|\.0\.[0-9]|\.1|\.1rc[0-9]|\.1\.[0-9]|.2|\.2rc[0-9]|\.2\.1|.8.5rc5)$").is_match(s))
+    async fn _list_remote_versions_with_info(
+        &self,
+        _config: &Arc<Config>,
+    ) -> eyre::Result<Vec<VersionInfo>> {
+        // Extract repo name (e.g., "golang/go") from the configured URL
+        // The go_repo setting is like "https://github.com/golang/go"
+        let settings = Settings::get();
+        let repo = settings
+            .go_repo
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .trim_start_matches("github.com/")
+            .trim_end_matches(".git")
+            .trim_end_matches('/');
+
+        // Go uses tags, not releases. When MISE_LIST_ALL_VERSIONS is set,
+        // we fetch tags with dates (slower). Otherwise, use fast method without dates.
+        let versions: Vec<VersionInfo> = if *env::MISE_LIST_ALL_VERSIONS {
+            // Slow path: fetch tags with commit dates for versions host
+            github::list_tags_with_dates(repo)
+                .await?
+                .into_iter()
+                .filter_map(|t| {
+                    t.name
+                        .strip_prefix("go")
+                        .map(|v| (v.to_string(), t.date))
+                })
+                .filter(|(v, _)| {
+                    !regex!(r"^1($|\.0|\.0\.[0-9]|\.1|\.1rc[0-9]|\.1\.[0-9]|.2|\.2rc[0-9]|\.2\.1|.8.5rc5)$")
+                        .is_match(v)
+                })
+                .unique_by(|(v, _)| v.clone())
+                .sorted_by_cached_key(|(v, _)| (Versioning::new(v), v.to_string()))
+                .map(|(version, created_at)| VersionInfo { version, created_at })
+                .collect()
+        } else {
+            // Fast path: just tag names, no dates (versions host will provide them)
+            github::list_tags(repo)
+                .await?
+                .into_iter()
+                .filter_map(|name| name.strip_prefix("go").map(|v| v.to_string()))
+                .filter(|v| {
+                    !regex!(r"^1($|\.0|\.0\.[0-9]|\.1|\.1rc[0-9]|\.1\.[0-9]|.2|\.2rc[0-9]|\.2\.1|.8.5rc5)$")
+                        .is_match(v)
+                })
                 .unique()
-                .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
-                .collect();
-            Ok(versions)
-        })
+                .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
+                .map(|version| VersionInfo {
+                    version,
+                    created_at: None,
+                })
+                .collect()
+        };
+        Ok(versions)
     }
     async fn idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
         Ok(vec![".go-version".into()])
