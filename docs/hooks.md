@@ -48,7 +48,7 @@ You can use these variables to run conditional logic based on the tool:
 ```toml
 [hooks]
 postinstall = '''
-if [[ "$MISE_TOOL_NAME" == "node" ]]; then
+if [ "$MISE_TOOL_NAME" = "node" ]; then
   echo "Node.js $MISE_TOOL_VERSION installed, running npm setup..."
   npm config set prefix ~/.npm-global
 fi
