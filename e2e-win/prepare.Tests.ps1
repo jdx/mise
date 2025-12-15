@@ -33,6 +33,9 @@ Describe 'prepare' {
         New-Item -ItemType Directory -Path $testDir | Out-Null
         Set-Location $testDir
         $env:MISE_TRUSTED_CONFIG_PATHS = $testDir
+        # Point to our test config to prevent finding parent configs
+        $configFile = Join-Path $testDir 'mise.toml'
+        $env:MISE_CONFIG_FILE = $configFile
 
         try {
             # Create test files
@@ -46,6 +49,7 @@ Describe 'prepare' {
             mise prepare --list | Should -Match 'npm'
         } finally {
             Set-Location $script:originalPath
+            Remove-Item -Path Env:\MISE_CONFIG_FILE -ErrorAction SilentlyContinue
             Remove-Item -Path $testDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
@@ -56,6 +60,9 @@ Describe 'prepare' {
         New-Item -ItemType Directory -Path $testDir | Out-Null
         Set-Location $testDir
         $env:MISE_TRUSTED_CONFIG_PATHS = $testDir
+        # Point to our test config to prevent finding parent configs
+        $configFile = Join-Path $testDir 'mise.toml'
+        $env:MISE_CONFIG_FILE = $configFile
 
         try {
             # Create test files
@@ -65,6 +72,7 @@ Describe 'prepare' {
             mise prep --list | Should -Match 'npm'
         } finally {
             Set-Location $script:originalPath
+            Remove-Item -Path Env:\MISE_CONFIG_FILE -ErrorAction SilentlyContinue
             Remove-Item -Path $testDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
@@ -75,6 +83,9 @@ Describe 'prepare' {
         New-Item -ItemType Directory -Path $testDir | Out-Null
         Set-Location $testDir
         $env:MISE_TRUSTED_CONFIG_PATHS = $testDir
+        # Point to our test config to prevent finding parent configs
+        $configFile = Join-Path $testDir 'mise.toml'
+        $env:MISE_CONFIG_FILE = $configFile
 
         try {
             # Create test files
@@ -84,6 +95,7 @@ Describe 'prepare' {
             mise prepare --dry-run | Should -Match 'npm'
         } finally {
             Set-Location $script:originalPath
+            Remove-Item -Path Env:\MISE_CONFIG_FILE -ErrorAction SilentlyContinue
             Remove-Item -Path $testDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
