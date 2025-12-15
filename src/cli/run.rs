@@ -210,48 +210,18 @@ impl Run {
             return Ok(());
         }
 
-        let mut config = Config::get().await?;
-
-        // Build and install toolset so tools like npm are available for prepare
-        let mut ts = ToolsetBuilder::new()
-            .with_args(&self.tool)
-            .with_default_to_latest(true)
-            .build(&config)
-            .await?;
-
-        let opts = InstallOptions {
-            jobs: self.jobs,
-            raw: self.raw,
-            ..Default::default()
-        };
-        ts.install_missing_versions(&mut config, &opts).await?;
-
-        // Run auto-enabled prepare steps (unless --no-prepare)
-        if !self.no_prepare {
-            let env = ts.env_with_path(&config).await?;
-            let engine = PrepareEngine::new(config.clone())?;
-            engine
-                .run(PrepareOptions {
-                    auto_only: true, // Only run providers with auto=true
-                    env,
-                    ..Default::default()
-                })
-                .await?;
-        }
-
-        // Unescape task args that were escaped to prevent clap from parsing them
+        // Unescape task args early so we can check for help flags
         self.args = unescape_task_args(&self.args);
 
-        if !self.skip_deps {
-            self.skip_deps = Settings::get().task_skip_depends;
-        }
-
-        // Check if --help or -h is in the task args
+        // Check if --help or -h is in the task args BEFORE toolset/prepare
         // NOTE: Only check self.args, not self.args_last, because args_last contains
         // arguments after explicit -- which should always be passed through to the task
         let has_help_in_task_args =
             self.args.contains(&"--help".to_string()) || self.args.contains(&"-h".to_string());
 
+        let mut config = Config::get().await?;
+
+        // Handle task help early to avoid unnecessary toolset/prepare work
         if has_help_in_task_args {
             // Build args list to get the task (filter out --help/-h for task lookup)
             let args = once(self.task.clone())
@@ -282,6 +252,37 @@ impl Run {
                 self.get_clap_command().print_long_help()?;
                 return Ok(());
             }
+        }
+
+        // Build and install toolset so tools like npm are available for prepare
+        let mut ts = ToolsetBuilder::new()
+            .with_args(&self.tool)
+            .with_default_to_latest(true)
+            .build(&config)
+            .await?;
+
+        let opts = InstallOptions {
+            jobs: self.jobs,
+            raw: self.raw,
+            ..Default::default()
+        };
+        ts.install_missing_versions(&mut config, &opts).await?;
+
+        // Run auto-enabled prepare steps (unless --no-prepare)
+        if !self.no_prepare {
+            let env = ts.env_with_path(&config).await?;
+            let engine = PrepareEngine::new(config.clone())?;
+            engine
+                .run(PrepareOptions {
+                    auto_only: true, // Only run providers with auto=true
+                    env,
+                    ..Default::default()
+                })
+                .await?;
+        }
+
+        if !self.skip_deps {
+            self.skip_deps = Settings::get().task_skip_depends;
         }
 
         time!("run init");

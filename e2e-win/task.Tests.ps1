@@ -3,6 +3,8 @@ Describe 'task' {
     BeforeAll {
         $originalPath = Get-Location
         Set-Location TestDrive:
+        # Trust the TestDrive config path
+        $env:MISE_TRUSTED_CONFIG_PATHS = (Get-Location).Path
 
         # Create mise.toml that includes tasks directory
         @'
@@ -33,6 +35,7 @@ Write-Output "windows"
 
     AfterAll {
         Set-Location $originalPath
+        Remove-Item -Path Env:\MISE_TRUSTED_CONFIG_PATHS -ErrorAction SilentlyContinue
     }
 
     BeforeEach {

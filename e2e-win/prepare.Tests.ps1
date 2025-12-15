@@ -3,10 +3,13 @@ Describe 'prepare' {
     BeforeAll {
         $originalPath = Get-Location
         Set-Location TestDrive:
+        # Trust the TestDrive config path
+        $env:MISE_TRUSTED_CONFIG_PATHS = (Get-Location).Path
     }
 
     AfterAll {
         Set-Location $originalPath
+        Remove-Item -Path Env:\MISE_TRUSTED_CONFIG_PATHS -ErrorAction SilentlyContinue
     }
 
     AfterEach {
