@@ -244,11 +244,21 @@ impl ToolVersion {
                 return build(v.clone());
             }
         }
+        // First try with date filter (common case)
         let matches = backend
             .list_versions_matching_with_opts(config, &v, opts.before_date)
             .await?;
         if matches.contains(&v) {
             return build(v);
+        }
+        // If date filter is active and exact version not found, check without filter.
+        // Explicit pinned versions like "22.5.0" should not be filtered by date.
+        if opts.before_date.is_some() {
+            let all_versions = backend.list_versions_matching(config, &v).await?;
+            if all_versions.contains(&v) {
+                // Exact match exists but was filtered by date - use it anyway
+                return build(v);
+            }
         }
         Self::resolve_prefix(config, request, &v, opts).await
     }

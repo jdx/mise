@@ -46,6 +46,11 @@ pub fn parse_into_timestamp(s: &str) -> Result<Timestamp> {
 
     // Try parsing as duration and subtract from now
     if let Ok(span) = s.parse::<Span>() {
+        // Validate that duration is positive (negative would result in future date)
+        let duration = span.to_duration(date(2025, 1, 1))?;
+        if duration.is_negative() {
+            bail!("duration must not be negative: {}", s);
+        }
         let now = Timestamp::now();
         let past = now.checked_sub(span)?;
         return Ok(past);
