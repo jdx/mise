@@ -193,10 +193,11 @@ impl Backend for RustPlugin {
         config: &Arc<Config>,
         tv: &ToolVersion,
         bump: bool,
+        opts: &ResolveOptions,
     ) -> Result<Option<OutdatedInfo>> {
         let v_re = regex!(r#"Update available : (.*) -> (.*)"#);
         if regex!(r"(\d+)\.(\d+)\.(\d+)").is_match(&tv.version) {
-            let oi = OutdatedInfo::resolve(config, tv.clone(), bump, &ResolveOptions::default())
+            let oi = OutdatedInfo::resolve(config, tv.clone(), bump, opts)
                 .await?;
             Ok(oi)
         } else {

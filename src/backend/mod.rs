@@ -22,7 +22,7 @@ use crate::plugins::{PluginType, VERSION_REGEX};
 use crate::registry::{REGISTRY, full_to_url, normalize_remote, tool_enabled};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::outdated_info::OutdatedInfo;
-use crate::toolset::{ToolRequest, ToolVersion, Toolset, install_state, is_outdated_version};
+use crate::toolset::{ResolveOptions, ToolRequest, ToolVersion, Toolset, install_state, is_outdated_version};
 use crate::ui::progress_report::SingleReport;
 use crate::{
     cache::{CacheManager, CacheManagerBuilder},
@@ -93,13 +93,15 @@ impl VersionInfo {
     /// Filter versions to only include those released before the given timestamp.
     /// Versions without a created_at timestamp are included by default.
     pub fn filter_by_date(versions: Vec<Self>, before: Timestamp) -> Vec<Self> {
+        use crate::duration::parse_into_timestamp;
         versions
             .into_iter()
             .filter(|v| {
                 match &v.created_at {
                     Some(ts) => {
-                        // Parse the timestamp and compare
-                        match ts.parse::<Timestamp>() {
+                        // Parse the timestamp using parse_into_timestamp which handles
+                        // RFC3339, date-only (YYYY-MM-DD), and other formats
+                        match parse_into_timestamp(ts) {
                             Ok(created) => created < before,
                             Err(_) => {
                                 // If we can't parse the timestamp, include the version
@@ -1154,6 +1156,7 @@ pub trait Backend: Debug + Send + Sync {
         _config: &Arc<Config>,
         _tv: &ToolVersion,
         _bump: bool,
+        _opts: &ResolveOptions,
     ) -> Result<Option<OutdatedInfo>> {
         Ok(None)
     }

@@ -646,7 +646,7 @@ impl Toolset {
             versions,
             |(config, t, tv, bump, opts)| async move {
                 let mut outdated = vec![];
-                match t.outdated_info(&config, &tv, bump).await {
+                match t.outdated_info(&config, &tv, bump, &opts).await {
                     Ok(Some(oi)) => outdated.push(oi),
                     Ok(None) => {}
                     Err(e) => {
