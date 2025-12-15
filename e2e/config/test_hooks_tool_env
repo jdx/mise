@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+# Test that MISE_TOOL_NAME and MISE_TOOL_VERSION are set in preinstall/postinstall hooks
+
+cat <<EOF >mise.toml
+[tools]
+dummy = 'latest'
+
+[hooks]
+preinstall = 'echo "PREINSTALL: name=\$MISE_TOOL_NAME version=\$MISE_TOOL_VERSION"'
+postinstall = 'echo "POSTINSTALL: name=\$MISE_TOOL_NAME version=\$MISE_TOOL_VERSION"'
+EOF
+
+# Install dummy tool and check that env vars are set
+assert_contains "mise i dummy@1.0.0 2>&1" "PREINSTALL: name=dummy version=1.0.0"
+assert_contains "mise i dummy@1.0.0 2>&1" "POSTINSTALL: name=dummy version=1.0.0"
+
+# Test with a different version
+assert_contains "mise i dummy@2.0.0 2>&1" "PREINSTALL: name=dummy version=2.0.0"
+assert_contains "mise i dummy@2.0.0 2>&1" "POSTINSTALL: name=dummy version=2.0.0"
