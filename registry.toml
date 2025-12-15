@@ -5318,7 +5318,11 @@ description = "Fort Knox for your secrets"
 test = ["fnox --version", "fnox {{version}}"]
 
 [tools.zigmod]
-backends = ["github:nektro/zigmod", "asdf:mise-plugins/asdf-zigmod"]
+backends = [
+  "aqua:nektro/zigmod",
+  "github:nektro/zigmod",
+  "asdf:mise-plugins/asdf-zigmod",
+]
 description = "A package manager for the Zig programming language"
 test = ["zigmod version", "{{version}}"]
 
