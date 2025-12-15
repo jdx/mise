@@ -138,14 +138,17 @@ pub fn should_exit_early_fast() -> bool {
         .inspect_err(|e| warn!("invalid hook_env.cache_ttl setting: {e}"))
         .unwrap_or(0);
 
-    // Compute current timestamp for TTL checks
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    // Read last check time from file (allows updating when exiting early after fs checks)
-    let last_full_check = read_last_full_check();
-    let within_ttl_window = cache_ttl_ms > 0 && now.saturating_sub(last_full_check) < cache_ttl_ms;
+    // Compute TTL window check only if cache_ttl is enabled (avoid unnecessary file read)
+    let (now, within_ttl_window) = if cache_ttl_ms > 0 {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let last_full_check = read_last_full_check();
+        (now, now.saturating_sub(last_full_check) < cache_ttl_ms)
+    } else {
+        (0, false)
+    };
 
     // Can't exit early if directory changed
     if dir_change().is_some() {
@@ -358,12 +361,18 @@ pub async fn build_session(
 
     let loaded_configs: IndexSet<PathBuf> = config.config_files.keys().cloned().collect();
 
-    // Update the last full check timestamp (used by cache_ttl feature)
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    write_last_full_check(now);
+    // Update the last full check timestamp (only if cache_ttl feature is enabled)
+    let settings = Settings::get();
+    if duration::parse_duration(&settings.hook_env.cache_ttl)
+        .map(|d| d.as_millis() > 0)
+        .unwrap_or(false)
+    {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        write_last_full_check(now);
+    }
 
     Ok(HookEnvSession {
         dir: dirs::CWD.clone(),
