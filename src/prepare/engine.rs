@@ -292,17 +292,19 @@ impl PrepareEngine {
         let sources = provider.sources();
         let outputs = provider.outputs();
 
-        if sources.is_empty() || outputs.is_empty() {
-            return Ok(false); // If no sources or outputs defined, always run
+        if outputs.is_empty() {
+            return Ok(false); // No outputs defined, always run to be safe
         }
+        // Note: empty sources is handled below - last_modified([]) returns None,
+        // and if outputs don't exist either, (_, None) takes precedence → stale
 
         let sources_mtime = Self::last_modified(&sources)?;
         let outputs_mtime = Self::last_modified(&outputs)?;
 
         match (sources_mtime, outputs_mtime) {
             (Some(src), Some(out)) => Ok(src <= out), // Fresh if outputs newer or equal to sources
-            (None, _) => Ok(true),                    // No sources exist, consider fresh
-            (_, None) => Ok(false),                   // No outputs exist, not fresh
+            (_, None) => Ok(false), // No outputs exist, not fresh (takes precedence)
+            (None, _) => Ok(true),  // No sources exist, consider fresh
         }
     }
 
