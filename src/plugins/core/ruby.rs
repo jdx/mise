@@ -633,6 +633,7 @@ impl Backend for RubyPlugin {
                         VersionInfo {
                             version,
                             created_at,
+                            ..Default::default()
                         }
                     })
                     .collect();

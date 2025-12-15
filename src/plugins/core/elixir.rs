@@ -123,6 +123,7 @@ impl Backend for ElixirPlugin {
             .map(|(version, created_at)| VersionInfo {
                 version,
                 created_at: Some(created_at),
+                ..Default::default()
             })
             .collect();
         Ok(versions)

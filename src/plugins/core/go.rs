@@ -237,7 +237,11 @@ impl Backend for GoPlugin {
                 })
                 .unique_by(|(v, _)| v.clone())
                 .sorted_by_cached_key(|(v, _)| (Versioning::new(v), v.to_string()))
-                .map(|(version, created_at)| VersionInfo { version, created_at })
+                .map(|(version, created_at)| VersionInfo {
+                    version,
+                    created_at,
+                    ..Default::default()
+                })
                 .collect()
         } else {
             // Fast path: just tag names, no dates (versions host will provide them)
@@ -253,7 +257,7 @@ impl Backend for GoPlugin {
                 .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                 .map(|version| VersionInfo {
                     version,
-                    created_at: None,
+                    ..Default::default()
                 })
                 .collect()
         };

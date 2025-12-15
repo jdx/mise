@@ -52,7 +52,7 @@ impl Backend for CargoBackend {
             // TODO: maybe fetch tags/branches from git?
             return Ok(vec![VersionInfo {
                 version: "HEAD".into(),
-                created_at: None,
+                ..Default::default()
             }]);
         }
 
@@ -70,6 +70,7 @@ impl Backend for CargoBackend {
             .map(|v| VersionInfo {
                 version: v.num,
                 created_at: Some(v.created_at),
+                ..Default::default()
             })
             .rev() // API returns newest first, we want oldest first
             .collect();

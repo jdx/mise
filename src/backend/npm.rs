@@ -67,6 +67,7 @@ impl Backend for NPMBackend {
                         VersionInfo {
                             version,
                             created_at,
+                            ..Default::default()
                         }
                     })
                     .collect();

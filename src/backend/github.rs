@@ -70,6 +70,10 @@ impl Backend for UnifiedGitBackend {
                 .map(|r| VersionInfo {
                     version: self.strip_version_prefix(&r.tag_name),
                     created_at: r.released_at,
+                    release_url: Some(format!(
+                        "https://gitlab.com/{}/-/releases/{}",
+                        repo, r.tag_name
+                    )),
                 })
                 .collect()
         } else {
@@ -80,6 +84,10 @@ impl Backend for UnifiedGitBackend {
                 .map(|r| VersionInfo {
                     version: self.strip_version_prefix(&r.tag_name),
                     created_at: Some(r.created_at),
+                    release_url: Some(format!(
+                        "https://github.com/{}/releases/tag/{}",
+                        repo, r.tag_name
+                    )),
                 })
                 .collect()
         };
