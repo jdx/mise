@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
@@ -13,9 +13,9 @@ pub struct GoPrepareProvider {
 }
 
 impl GoPrepareProvider {
-    pub fn new(project_root: &PathBuf, config: PrepareProviderConfig) -> Self {
+    pub fn new(project_root: &Path, config: PrepareProviderConfig) -> Self {
         Self {
-            project_root: project_root.clone(),
+            project_root: project_root.to_path_buf(),
             config,
         }
     }

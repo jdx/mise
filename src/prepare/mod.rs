@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use eyre::{Result, bail};
@@ -36,7 +36,7 @@ impl PrepareCommand {
     /// Uses shell-aware parsing to handle quoted arguments correctly.
     pub fn from_string(
         run: &str,
-        project_root: &PathBuf,
+        project_root: &Path,
         config: &rule::PrepareProviderConfig,
     ) -> Result<Self> {
         let parts = shell_words::split(run).map_err(|e| eyre::eyre!("invalid command: {e}"))?;
@@ -55,7 +55,7 @@ impl PrepareCommand {
                 .dir
                 .as_ref()
                 .map(|d| project_root.join(d))
-                .or_else(|| Some(project_root.clone())),
+                .or_else(|| Some(project_root.to_path_buf())),
             description: config
                 .description
                 .clone()
