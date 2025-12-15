@@ -19,7 +19,7 @@ impl Shell for Fish {
         let exe = opts.exe;
         let flags = opts.flags;
 
-        let exe = exe.to_string_lossy();
+        let exe = escape(exe.to_string_lossy());
         let description = "'Update mise environment when changing directories'";
         let mut out = String::new();
 
