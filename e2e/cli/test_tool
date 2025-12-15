@@ -18,3 +18,15 @@ assert_fail "mise tool INVALID_TOOL_NAME"
 mise use tiny@1.0.0
 mise use tiny@1.1.0
 assert "mise tool tiny --installed" "1.0.0 1.1.0"
+
+# Test security field exists in JSON output for aqua tool
+mise tool aqua:cli/cli --json | jq -e '.security' || fail "security field not found in JSON"
+
+# Test security field is an array
+mise tool aqua:cli/cli --json | jq -e '.security | type == "array"' || fail "security is not an array"
+
+# Test non-aqua tool has empty security array
+mise tool node --json | jq -e '.security == []' || fail "non-aqua tool should have empty security"
+
+# Test that security features have type field when present
+mise tool aqua:cli/cli --json | jq -e '.security | if length > 0 then .[0].type else true end' || fail "security feature missing type field"
