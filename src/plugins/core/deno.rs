@@ -94,6 +94,14 @@ impl Backend for DenoPlugin {
         &self.ba
     }
 
+    async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
+        use crate::backend::SecurityFeature;
+
+        vec![SecurityFeature::Checksum {
+            algorithm: Some("sha256".to_string()),
+        }]
+    }
+
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         let versions: DenoVersions = HTTP_FETCH.json("https://deno.com/versions.json").await?;
         let versions = versions

@@ -195,6 +195,15 @@ impl Backend for GoPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
+
+    async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
+        use crate::backend::SecurityFeature;
+
+        vec![SecurityFeature::Checksum {
+            algorithm: Some("sha256".to_string()),
+        }]
+    }
+
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         plugins::core::run_fetch_task_with_timeout(move || {
             let output = cmd!(

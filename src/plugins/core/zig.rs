@@ -242,6 +242,19 @@ impl Backend for ZigPlugin {
         &self.ba
     }
 
+    async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
+        use crate::backend::SecurityFeature;
+
+        vec![
+            SecurityFeature::Checksum {
+                algorithm: Some("sha256".to_string()),
+            },
+            SecurityFeature::Minisign {
+                public_key: Some(ZIG_MINISIGN_KEY.to_string()),
+            },
+        ]
+    }
+
     async fn _list_remote_versions_with_info(
         &self,
         _config: &Arc<Config>,

@@ -1,3 +1,4 @@
+use crate::backend::SecurityFeature;
 use crate::ui::style;
 use eyre::Result;
 use itertools::Itertools;
@@ -75,10 +76,10 @@ impl Tool {
             }
         };
 
-        let description = if let Some(backend) = backend {
-            backend.description().await
+        let (description, security) = if let Some(backend) = &backend {
+            (backend.description().await, backend.security_info().await)
         } else {
-            None
+            (None, vec![])
         };
         let info = ToolInfo {
             backend: ba.full(),
@@ -105,6 +106,7 @@ impl Tool {
             }),
             config_source: tvl.map(|tvl| tvl.source.clone()),
             tool_options: ba.opts(),
+            security,
         };
 
         if self.json {
@@ -242,6 +244,31 @@ impl Tool {
                         .join(","),
                 ));
             }
+            if info.security.is_empty() {
+                table.push(("Security:", "[none]".to_string()));
+            } else {
+                let security_str = info
+                    .security
+                    .iter()
+                    .map(|f| match f {
+                        SecurityFeature::Checksum { algorithm } => {
+                            if let Some(alg) = algorithm {
+                                format!("checksum ({})", alg)
+                            } else {
+                                "checksum".to_string()
+                            }
+                        }
+                        SecurityFeature::GithubAttestations { .. } => {
+                            "github_attestations".to_string()
+                        }
+                        SecurityFeature::Slsa => "slsa".to_string(),
+                        SecurityFeature::Cosign => "cosign".to_string(),
+                        SecurityFeature::Minisign { .. } => "minisign".to_string(),
+                        SecurityFeature::Gpg => "gpg".to_string(),
+                    })
+                    .join(", ");
+                table.push(("Security:", security_str));
+            }
             let mut table = tabled::Table::new(table);
             table::default_style(&mut table, true);
             miseprintln!("{table}");
@@ -260,6 +287,7 @@ struct ToolInfo {
     active_versions: Option<Vec<String>>,
     config_source: Option<ToolSource>,
     tool_options: ToolVersionOptions,
+    security: Vec<SecurityFeature>,
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

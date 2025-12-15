@@ -120,6 +120,27 @@ impl VersionInfo {
     }
 }
 
+/// Security feature information for a tool
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SecurityFeature {
+    Checksum {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        algorithm: Option<String>,
+    },
+    GithubAttestations {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        signer_workflow: Option<String>,
+    },
+    Slsa,
+    Cosign,
+    Minisign {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        public_key: Option<String>,
+    },
+    Gpg,
+}
+
 static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
 
 pub async fn load_tools() -> Result<Arc<BackendMap>> {
@@ -294,6 +315,9 @@ pub trait Backend: Debug + Send + Sync {
 
     async fn description(&self) -> Option<String> {
         None
+    }
+    async fn security_info(&self) -> Vec<SecurityFeature> {
+        vec![]
     }
     fn get_plugin_type(&self) -> Option<PluginType> {
         None

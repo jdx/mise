@@ -592,6 +592,15 @@ impl Backend for RubyPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
+
+    async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
+        use crate::backend::SecurityFeature;
+
+        vec![SecurityFeature::Checksum {
+            algorithm: Some("sha256".to_string()),
+        }]
+    }
+
     async fn _list_remote_versions_with_info(
         &self,
         _config: &Arc<Config>,

@@ -54,6 +54,61 @@ impl Backend for AquaBackend {
             .and_then(|p| p.description.clone())
     }
 
+    async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
+        use crate::backend::SecurityFeature;
+
+        let pkg = match AQUA_REGISTRY.package(&self.ba.tool_name).await {
+            Ok(pkg) => pkg,
+            Err(_) => return vec![],
+        };
+
+        let mut features = vec![];
+
+        // Checksum
+        if let Some(checksum) = &pkg.checksum
+            && checksum.enabled()
+        {
+            features.push(SecurityFeature::Checksum {
+                algorithm: checksum.algorithm.as_ref().map(|a| a.to_string()),
+            });
+        }
+
+        // GitHub Attestations
+        if let Some(attestations) = &pkg.github_artifact_attestations
+            && attestations.enabled.unwrap_or(false)
+        {
+            features.push(SecurityFeature::GithubAttestations {
+                signer_workflow: attestations.signer_workflow.clone(),
+            });
+        }
+
+        // SLSA
+        if let Some(slsa) = &pkg.slsa_provenance
+            && slsa.enabled.unwrap_or(false)
+        {
+            features.push(SecurityFeature::Slsa);
+        }
+
+        // Cosign (nested in checksum)
+        if let Some(checksum) = &pkg.checksum
+            && let Some(cosign) = &checksum.cosign
+            && cosign.enabled.unwrap_or(false)
+        {
+            features.push(SecurityFeature::Cosign);
+        }
+
+        // Minisign
+        if let Some(minisign) = &pkg.minisign
+            && minisign.enabled.unwrap_or(false)
+        {
+            features.push(SecurityFeature::Minisign {
+                public_key: minisign.public_key.clone(),
+            });
+        }
+
+        features
+    }
+
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
