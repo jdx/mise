@@ -121,6 +121,7 @@ pub fn build_deactivation_script(shell: &dyn Shell) -> String {
     }
 
     let mut out = hook_env::clear_old_env(shell);
+    out.push_str(&hook_env::clear_aliases(shell));
     out.push_str(&shell.deactivate());
     out
 }
