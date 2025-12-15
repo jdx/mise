@@ -4,6 +4,7 @@ use std::fmt::Display;
 
 use crate::shell::{self, ActivateOptions, Shell};
 use indoc::formatdoc;
+use shell_escape::unix::escape;
 
 #[derive(Default)]
 pub struct Elvish {}
@@ -12,7 +13,7 @@ impl Shell for Elvish {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
-        let exe = exe.to_string_lossy();
+        let exe = escape(exe.to_string_lossy());
 
         let mut out = String::new();
         out.push_str(&shell::build_deactivation_script(self));
@@ -22,7 +23,7 @@ impl Shell for Elvish {
 
             fn hook-env {{
               if $hook-enabled {{
-                eval ({exe} hook-env{flags} -s elvish | slurp)
+                eval ((external {exe}) hook-env{flags} -s elvish | slurp)
               }}
             }}
 
@@ -37,19 +38,19 @@ impl Shell for Elvish {
 
             fn deactivate {{
               set hook-enabled = $false
-              eval ({exe} deactivate | slurp)
+              eval ((external {exe}) deactivate | slurp)
             }}
 
             fn mise {{|@a|
               if (== (count $a) 0) {{
-                {exe}
+                (external {exe})
                 return
               }}
 
               if (not (or (has-value $a -h) (has-value $a --help))) {{
                 var command = $a[0]
                 if (==s $command shell) {{
-                  try {{ eval ({exe} $@a) }} catch {{ }}
+                  try {{ eval ((external {exe}) $@a) }} catch {{ }}
                   return
                 }} elif (==s $command deactivate) {{
                   deactivate
@@ -59,7 +60,7 @@ impl Shell for Elvish {
                   return
                 }}
               }}
-              {exe} $@a
+              (external {exe}) $@a
             }}
             "#, hook_enabled = !opts.no_hook_env});
         out
