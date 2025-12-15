@@ -14,12 +14,48 @@ use serde_derive::{Deserialize, Serialize};
 use std::sync::LazyLock as Lazy;
 
 use crate::cli::HookReason;
-use crate::config::{Config, DEFAULT_CONFIG_FILENAMES};
+use crate::config::{Config, DEFAULT_CONFIG_FILENAMES, Settings};
 use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiffOperation, EnvDiffPatches, EnvMap};
 use crate::hash::hash_to_str;
 use crate::shell::Shell;
-use crate::{dirs, env, file, hooks, watch_files};
+use crate::{dirs, duration, env, file, hooks, watch_files};
+
+/// Directory to store per-directory last check timestamps.
+/// Timestamps are stored per-directory (using a hash of CWD) so that
+/// multiple shells in different directories don't interfere with each other.
+static LAST_CHECK_DIR: Lazy<PathBuf> = Lazy::new(|| dirs::STATE.join("hook-env-checks"));
+
+/// Get the path to the last check file for a specific directory.
+fn last_check_file_for_dir(dir: &Path) -> PathBuf {
+    let hash = hash_to_str(&dir.to_string_lossy());
+    LAST_CHECK_DIR.join(hash)
+}
+
+/// Read the last full check timestamp from the state file for the current directory.
+fn read_last_full_check() -> u128 {
+    let Some(cwd) = &*dirs::CWD else {
+        return 0;
+    };
+    std::fs::read_to_string(last_check_file_for_dir(cwd))
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+/// Write the last full check timestamp to the state file for the current directory.
+fn write_last_full_check(timestamp: u128) {
+    let Some(cwd) = &*dirs::CWD else {
+        return;
+    };
+    if let Err(e) = file::create_dir_all(&*LAST_CHECK_DIR) {
+        trace!("failed to create last check dir: {e}");
+        return;
+    }
+    if let Err(e) = std::fs::write(last_check_file_for_dir(cwd), timestamp.to_string()) {
+        trace!("failed to write last check file: {e}");
+    }
+}
 
 /// Convert a SystemTime to milliseconds since Unix epoch
 fn mtime_to_millis(mtime: SystemTime) -> u128 {
@@ -94,14 +130,50 @@ pub fn should_exit_early_fast() -> bool {
     if is_precmd && !*env::__MISE_ZSH_PRECMD_RUN {
         return false;
     }
+
+    // Get settings for cache_ttl and chpwd_only
+    let settings = Settings::get();
+    let cache_ttl_ms = duration::parse_duration(&settings.hook_env.cache_ttl)
+        .map(|d| d.as_millis())
+        .inspect_err(|e| warn!("invalid hook_env.cache_ttl setting: {e}"))
+        .unwrap_or(0);
+
+    // Compute TTL window check only if cache_ttl is enabled (avoid unnecessary file read)
+    let (now, within_ttl_window) = if cache_ttl_ms > 0 {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let last_full_check = read_last_full_check();
+        (now, now.saturating_sub(last_full_check) < cache_ttl_ms)
+    } else {
+        (0, false)
+    };
+
     // Can't exit early if directory changed
     if dir_change().is_some() {
         return false;
     }
-    // Can't exit early if MISE_ env vars changed
+    // Can't exit early if MISE_ env vars changed (cheap in-memory hash comparison)
     if have_mise_env_vars_been_modified() {
         return false;
     }
+
+    // chpwd_only mode: skip on precmd if directory hasn't changed
+    // This significantly reduces stat operations on slow filesystems like NFS
+    // Note: We check this AFTER env var check since that's cheap (no I/O)
+    if settings.hook_env.chpwd_only && is_precmd {
+        trace!("chpwd_only enabled, skipping precmd hook-env");
+        return true;
+    }
+
+    // Cache TTL check: if within the TTL window, skip all stat operations
+    // This is useful for slow filesystems like NFS where stat calls are expensive
+    if within_ttl_window {
+        trace!("within cache TTL, skipping filesystem checks");
+        return true;
+    }
+
     // Check if any loaded config files have been modified
     for config_path in &PREV_SESSION.loaded_configs {
         if let Ok(metadata) = config_path.metadata() {
@@ -133,7 +205,7 @@ pub fn should_exit_early_fast() -> bool {
         // Config subdirectories that might contain config files
         let config_subdirs = DEFAULT_CONFIG_FILENAMES
             .iter()
-            .map(|f| f.rsplit_once("/").map(|(dir, _)| dir).unwrap_or(""))
+            .map(|f| Path::new(f).parent().and_then(|p| p.to_str()).unwrap_or(""))
             .unique()
             .collect::<Vec<_>>();
         for dir in ancestor_dirs {
@@ -151,6 +223,11 @@ pub fn should_exit_early_fast() -> bool {
                 }
             }
         }
+    }
+    // Filesystem checks passed - update the last check timestamp so subsequent
+    // prompts can benefit from the TTL cache without repeating these checks
+    if cache_ttl_ms > 0 {
+        write_last_full_check(now);
     }
     true
 }
@@ -282,11 +359,26 @@ pub async fn build_session(
         IndexSet::new()
     };
 
+    let loaded_configs: IndexSet<PathBuf> = config.config_files.keys().cloned().collect();
+
+    // Update the last full check timestamp (only if cache_ttl feature is enabled)
+    let settings = Settings::get();
+    if duration::parse_duration(&settings.hook_env.cache_ttl)
+        .map(|d| d.as_millis() > 0)
+        .unwrap_or(false)
+    {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        write_last_full_check(now);
+    }
+
     Ok(HookEnvSession {
         dir: dirs::CWD.clone(),
         env_var_hash: get_mise_env_vars_hashed(),
         env,
-        loaded_configs: config.config_files.keys().cloned().collect(),
+        loaded_configs,
         loaded_tools,
         config_paths,
         latest_update: mtime_to_millis(max_modtime),
