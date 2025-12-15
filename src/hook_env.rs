@@ -243,6 +243,8 @@ pub struct HookEnvSession {
     pub loaded_configs: IndexSet<PathBuf>,
     pub config_paths: IndexSet<PathBuf>,
     pub env: EnvMap,
+    #[serde(default)]
+    pub aliases: indexmap::IndexMap<String, String>,
     dir: Option<PathBuf>,
     env_var_hash: String,
     latest_update: u128,
@@ -266,6 +268,7 @@ pub fn deserialize<T: serde::de::DeserializeOwned>(raw: String) -> Result<T> {
 pub async fn build_session(
     config: &Arc<Config>,
     env: EnvMap,
+    aliases: indexmap::IndexMap<String, String>,
     loaded_tools: IndexSet<String>,
     watch_files: BTreeSet<WatchFilePattern>,
 ) -> Result<HookEnvSession> {
@@ -286,6 +289,7 @@ pub async fn build_session(
         dir: dirs::CWD.clone(),
         env_var_hash: get_mise_env_vars_hashed(),
         env,
+        aliases,
         loaded_configs: config.config_files.keys().cloned().collect(),
         loaded_tools,
         config_paths,
@@ -454,6 +458,42 @@ pub fn build_env_commands(shell: &dyn Shell, patches: &EnvDiffPatches) -> String
             EnvDiffOperation::Remove(k) => {
                 output.push_str(&shell.unset_env(k));
             }
+        }
+    }
+
+    output
+}
+
+/// Build shell alias commands based on the difference between old and new aliases
+pub fn build_alias_commands(
+    shell: &dyn Shell,
+    old_aliases: &indexmap::IndexMap<String, String>,
+    new_aliases: &indexmap::IndexMap<String, String>,
+) -> String {
+    let mut output = String::new();
+
+    // Remove aliases that no longer exist or have changed
+    for (name, old_cmd) in old_aliases {
+        match new_aliases.get(name) {
+            Some(new_cmd) if new_cmd != old_cmd => {
+                // Alias changed, unset then set new
+                output.push_str(&shell.unset_alias(name));
+                output.push_str(&shell.set_alias(name, new_cmd));
+            }
+            None => {
+                // Alias removed
+                output.push_str(&shell.unset_alias(name));
+            }
+            _ => {
+                // Alias unchanged, do nothing
+            }
+        }
+    }
+
+    // Add new aliases
+    for (name, cmd) in new_aliases {
+        if !old_aliases.contains_key(name) {
+            output.push_str(&shell.set_alias(name, cmd));
         }
     }
 

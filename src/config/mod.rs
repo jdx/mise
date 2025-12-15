@@ -55,6 +55,7 @@ pub struct Config {
     pub vars: IndexMap<String, String>,
     pub tera_ctx: tera::Context,
     pub shorthands: Shorthands,
+    pub shell_aliases: EnvWithSources,
     aliases: AliasMap,
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
@@ -141,6 +142,7 @@ impl Config {
             aliases: Default::default(),
             project_root: Default::default(),
             repo_urls: Default::default(),
+            shell_aliases: Default::default(),
             vars: Default::default(),
             vars_loader: None,
             vars_results: OnceCell::new(),
@@ -159,6 +161,7 @@ impl Config {
             aliases: config.aliases.clone(),
             project_root: config.project_root.clone(),
             repo_urls: config.repo_urls.clone(),
+            shell_aliases: config.shell_aliases.clone(),
             vars: config.vars.clone(),
             vars_loader: None,
             vars_results: OnceCell::new(),
@@ -179,6 +182,7 @@ impl Config {
 
         config.vars = vars;
         config.aliases = load_aliases(&config.config_files)?;
+        config.shell_aliases = load_shell_aliases(&config.config_files)?;
         config.project_root = get_project_root(&config.config_files);
         config.repo_urls = load_plugins(&config.config_files)?;
         measure!("config::load validate", {
@@ -1329,6 +1333,20 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
     trace!("load_aliases: {}", aliases.len());
 
     Ok(aliases)
+}
+
+fn load_shell_aliases(config_files: &ConfigMap) -> Result<EnvWithSources> {
+    let mut shell_aliases: EnvWithSources = EnvWithSources::new();
+
+    for config_file in config_files.values() {
+        let path = config_file.get_path().to_path_buf();
+        for (name, cmd) in config_file.shell_aliases()? {
+            shell_aliases.insert(name, (cmd, path.clone()));
+        }
+    }
+    trace!("load_shell_aliases: {}", shell_aliases.len());
+
+    Ok(shell_aliases)
 }
 
 fn load_plugins(config_files: &ConfigMap) -> Result<HashMap<String, String>> {

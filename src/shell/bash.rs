@@ -129,6 +129,17 @@ impl Shell for Bash {
     fn unset_env(&self, k: &str) -> String {
         format!("unset {k}\n", k = shell_escape::unix::escape(k.into()))
     }
+
+    fn set_alias(&self, name: &str, cmd: &str) -> String {
+        let name = shell_escape::unix::escape(name.into());
+        let cmd = shell_escape::unix::escape(cmd.into());
+        format!("alias {name}={cmd}\n")
+    }
+
+    fn unset_alias(&self, name: &str) -> String {
+        let name = shell_escape::unix::escape(name.into());
+        format!("unalias {name} 2>/dev/null || true\n")
+    }
 }
 
 impl Display for Bash {

@@ -25,6 +25,7 @@ use crate::watch_files::WatchFile;
 use crate::{backend, config, dirs, env, file, hash};
 use eyre::{Result, eyre};
 use idiomatic_version::IdiomaticVersionFile;
+use indexmap::IndexMap;
 use serde_derive::Deserialize;
 use std::sync::LazyLock as Lazy;
 use tool_versions::ToolVersions;
@@ -95,6 +96,10 @@ pub trait ConfigFile: Debug + Send + Sync {
     }
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet>;
     fn aliases(&self) -> eyre::Result<AliasMap> {
+        Ok(Default::default())
+    }
+
+    fn shell_aliases(&self) -> eyre::Result<IndexMap<String, String>> {
         Ok(Default::default())
     }
 
