@@ -159,6 +159,21 @@ impl Backend for SwiftPlugin {
         &self.ba
     }
 
+    async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
+        use crate::backend::SecurityFeature;
+
+        let mut features = vec![SecurityFeature::Checksum {
+            algorithm: Some("sha256".to_string()),
+        }];
+
+        // GPG verification is available on Linux when gpg is installed
+        if cfg!(target_os = "linux") && Settings::get().swift.gpg_verify != Some(false) {
+            features.push(SecurityFeature::Gpg);
+        }
+
+        features
+    }
+
     async fn _list_remote_versions_with_info(
         &self,
         _config: &Arc<Config>,

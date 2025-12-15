@@ -264,6 +264,7 @@ impl Tool {
                         SecurityFeature::Slsa => "slsa".to_string(),
                         SecurityFeature::Cosign => "cosign".to_string(),
                         SecurityFeature::Minisign { .. } => "minisign".to_string(),
+                        SecurityFeature::Gpg => "gpg".to_string(),
                     })
                     .join(", ");
                 table.push(("Security:", security_str));

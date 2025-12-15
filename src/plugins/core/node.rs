@@ -404,6 +404,21 @@ impl Backend for NodePlugin {
         &self.ba
     }
 
+    async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
+        use crate::backend::SecurityFeature;
+
+        let mut features = vec![SecurityFeature::Checksum {
+            algorithm: Some("sha256".to_string()),
+        }];
+
+        // GPG verification is available for Node.js v20+ when gpg is installed
+        if Settings::get().node.gpg_verify != Some(false) {
+            features.push(SecurityFeature::Gpg);
+        }
+
+        features
+    }
+
     async fn _list_remote_versions_with_info(
         &self,
         _config: &Arc<Config>,

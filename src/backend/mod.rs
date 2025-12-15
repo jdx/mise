@@ -138,6 +138,7 @@ pub enum SecurityFeature {
         #[serde(skip_serializing_if = "Option::is_none")]
         public_key: Option<String>,
     },
+    Gpg,
 }
 
 static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);

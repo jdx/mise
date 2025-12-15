@@ -96,6 +96,14 @@ impl Backend for BunPlugin {
         &self.ba
     }
 
+    async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
+        use crate::backend::SecurityFeature;
+
+        vec![SecurityFeature::Checksum {
+            algorithm: Some("sha256".to_string()),
+        }]
+    }
+
     /// Override get_platform_key to include bun's compile-time variant (baseline, musl, etc.)
     /// This ensures lockfile lookups use the correct platform key that matches the variant
     fn get_platform_key(&self) -> String {
