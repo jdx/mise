@@ -99,35 +99,39 @@ pub fn should_exit_early_fast() -> bool {
     let settings = Settings::get();
     let cache_ttl_ms = duration::parse_duration(&settings.hook_env.cache_ttl)
         .map(|d| d.as_millis())
+        .inspect_err(|e| warn!("invalid hook_env.cache_ttl setting: {e}"))
         .unwrap_or(0);
 
-    // chpwd_only mode: skip on precmd if directory hasn't changed
-    // This significantly reduces stat operations on slow filesystems like NFS
-    if settings.hook_env.chpwd_only && is_precmd && dir_change().is_none() {
-        trace!("chpwd_only enabled, skipping precmd hook-env");
-        return true;
-    }
+    // Compute current timestamp for TTL checks
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let within_ttl_window =
+        cache_ttl_ms > 0 && now.saturating_sub(PREV_SESSION.last_full_check) < cache_ttl_ms;
 
     // Can't exit early if directory changed
     if dir_change().is_some() {
         return false;
     }
-    // Can't exit early if MISE_ env vars changed
+    // Can't exit early if MISE_ env vars changed (cheap in-memory hash comparison)
     if have_mise_env_vars_been_modified() {
         return false;
     }
 
+    // chpwd_only mode: skip on precmd if directory hasn't changed
+    // This significantly reduces stat operations on slow filesystems like NFS
+    // Note: We check this AFTER env var check since that's cheap (no I/O)
+    if settings.hook_env.chpwd_only && is_precmd {
+        trace!("chpwd_only enabled, skipping precmd hook-env");
+        return true;
+    }
+
     // Cache TTL check: if within the TTL window, skip all stat operations
     // This is useful for slow filesystems like NFS where stat calls are expensive
-    if cache_ttl_ms > 0 {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        if now.saturating_sub(PREV_SESSION.last_full_check) < cache_ttl_ms {
-            trace!("within cache TTL, skipping filesystem checks");
-            return true;
-        }
+    if within_ttl_window {
+        trace!("within cache TTL, skipping filesystem checks");
+        return true;
     }
 
     // Check if any loaded config files have been modified
@@ -161,7 +165,7 @@ pub fn should_exit_early_fast() -> bool {
         // Config subdirectories that might contain config files
         let config_subdirs = DEFAULT_CONFIG_FILENAMES
             .iter()
-            .map(|f| f.rsplit_once("/").map(|(dir, _)| dir).unwrap_or(""))
+            .map(|f| Path::new(f).parent().and_then(|p| p.to_str()).unwrap_or(""))
             .unique()
             .collect::<Vec<_>>();
         for dir in ancestor_dirs {
@@ -171,8 +175,8 @@ pub fn should_exit_early_fast() -> bool {
                 } else {
                     dir.join(subdir)
                 };
-                // Skip directories we've cached as having no config (when cache_ttl is set)
-                if cache_ttl_ms > 0
+                // Skip directories we've cached as having no config (only when within TTL window)
+                if within_ttl_window
                     && PREV_SESSION
                         .checked_dirs_without_config
                         .contains(&check_dir)
@@ -339,7 +343,7 @@ pub async fn build_session(
     {
         let config_subdirs = DEFAULT_CONFIG_FILENAMES
             .iter()
-            .map(|f| f.rsplit_once("/").map(|(dir, _)| dir).unwrap_or(""))
+            .map(|f| Path::new(f).parent().and_then(|p| p.to_str()).unwrap_or(""))
             .unique()
             .collect::<Vec<_>>();
 
