@@ -7,8 +7,8 @@ use eyre::Result;
 
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
+use crate::parallel;
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{miseprintln, parallel};
 
 use super::PrepareProvider;
 use super::providers::{
@@ -75,8 +75,11 @@ pub struct PrepareEngine {
 impl PrepareEngine {
     /// Create a new PrepareEngine, discovering all applicable providers
     pub fn new(config: Arc<Config>) -> Result<Self> {
-        Settings::get().ensure_experimental("prepare")?;
         let providers = Self::discover_providers(&config)?;
+        // Only require experimental when prepare is actually configured
+        if !providers.is_empty() {
+            Settings::get().ensure_experimental("prepare")?;
+        }
         Ok(Self { config, providers })
     }
 
@@ -230,7 +233,7 @@ impl PrepareEngine {
                 let cmd = provider.prepare_command()?;
 
                 if opts.dry_run {
-                    miseprintln!("[dry-run] would run: {} ({})", cmd.description, id);
+                    // Just record that it would run, let CLI handle output
                     results.push(PrepareStepResult::WouldRun(id));
                 } else {
                     to_run.push((id, cmd));

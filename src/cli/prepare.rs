@@ -3,6 +3,7 @@ use eyre::Result;
 use crate::config::Config;
 use crate::miseprintln;
 use crate::prepare::{PrepareEngine, PrepareOptions, PrepareStepResult};
+use crate::toolset::{InstallOptions, ToolsetBuilder};
 
 /// [experimental] Ensure project dependencies are ready
 ///
@@ -39,19 +40,32 @@ pub struct Prepare {
 
 impl Prepare {
     pub async fn run(self) -> Result<()> {
-        let config = Config::get().await?;
-        let engine = PrepareEngine::new(config)?;
+        let mut config = Config::get().await?;
+        let engine = PrepareEngine::new(config.clone())?;
 
         if self.list {
             self.list_providers(&engine)?;
             return Ok(());
         }
 
+        // Build and install toolset so tools like npm are available
+        let mut ts = ToolsetBuilder::new()
+            .with_default_to_latest(true)
+            .build(&config)
+            .await?;
+
+        ts.install_missing_versions(&mut config, &InstallOptions::default())
+            .await?;
+
+        // Get toolset environment with PATH
+        let env = ts.env_with_path(&config).await?;
+
         let opts = PrepareOptions {
             dry_run: self.dry_run,
             force: self.force,
             only: self.only,
             skip: self.skip.unwrap_or_default(),
+            env,
             ..Default::default()
         };
 
