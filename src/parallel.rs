@@ -33,7 +33,8 @@ where
             Err(e) => e.into(),
         };
         jset.abort_all();
-        jset.join_all().await;
+        // Drain remaining tasks - don't use join_all() as it panics on cancelled tasks
+        while jset.join_next().await.is_some() {}
         return Err(err);
     }
     Ok(results.into_iter().flatten().collect())

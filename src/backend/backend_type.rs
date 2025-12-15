@@ -67,4 +67,15 @@ impl BackendType {
             _ => BackendType::Unknown,
         }
     }
+
+    /// Returns true if this backend requires experimental mode to be enabled
+    pub fn is_experimental(&self) -> bool {
+        use super::{conda, dotnet, spm};
+        match self {
+            BackendType::Conda => conda::EXPERIMENTAL,
+            BackendType::Spm => spm::EXPERIMENTAL,
+            BackendType::Dotnet => dotnet::EXPERIMENTAL,
+            _ => false,
+        }
+    }
 }

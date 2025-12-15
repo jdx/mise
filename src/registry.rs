@@ -78,9 +78,11 @@ impl RegistryTool {
             }
             backend_types
         });
-        let os = Settings::get().os.clone().unwrap_or(OS.to_string());
-        let arch = Settings::get().arch.clone().unwrap_or(ARCH.to_string());
+        let settings = Settings::get();
+        let os = settings.os.clone().unwrap_or(OS.to_string());
+        let arch = settings.arch.clone().unwrap_or(ARCH.to_string());
         let platform = format!("{os}-{arch}");
+        let experimental = settings.experimental;
         self.backends
             .iter()
             .filter(|rb| {
@@ -94,6 +96,14 @@ impl RegistryTool {
                 full.split(':')
                     .next()
                     .is_some_and(|b| BACKEND_TYPES.contains(b))
+            })
+            // Filter out experimental backends if experimental mode is disabled
+            .filter(|full| {
+                if experimental {
+                    return true;
+                }
+                let backend_type = BackendType::guess(full);
+                !backend_type.is_experimental()
             })
             .collect()
     }
