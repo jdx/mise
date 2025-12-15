@@ -25,11 +25,11 @@ Describe 'prepare' {
   "lockfileVersion": 3,
   "packages": {}
 }
-'@ | Set-Content -Path 'package-lock.json'
+'@ | Out-File -FilePath 'package-lock.json' -Encoding utf8NoBOM
 
         @'
 [prepare.npm]
-'@ | Set-Content -Path 'mise.toml'
+'@ | Out-File -FilePath 'mise.toml' -Encoding utf8NoBOM
 
         mise prepare --list | Should -Match 'npm'
     }
@@ -41,11 +41,11 @@ Describe 'prepare' {
   "lockfileVersion": 3,
   "packages": {}
 }
-'@ | Set-Content -Path 'package-lock.json'
+'@ | Out-File -FilePath 'package-lock.json' -Encoding utf8NoBOM
 
         @'
 [prepare.npm]
-'@ | Set-Content -Path 'mise.toml'
+'@ | Out-File -FilePath 'mise.toml' -Encoding utf8NoBOM
 
         mise prep --list | Should -Match 'npm'
     }
@@ -57,11 +57,11 @@ Describe 'prepare' {
   "lockfileVersion": 3,
   "packages": {}
 }
-'@ | Set-Content -Path 'package-lock.json'
+'@ | Out-File -FilePath 'package-lock.json' -Encoding utf8NoBOM
 
         @'
 [prepare.npm]
-'@ | Set-Content -Path 'mise.toml'
+'@ | Out-File -FilePath 'mise.toml' -Encoding utf8NoBOM
 
         mise prepare --dry-run | Should -Match 'npm'
     }

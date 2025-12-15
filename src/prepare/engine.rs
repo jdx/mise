@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -327,12 +327,12 @@ impl PrepareEngine {
     fn execute_prepare_static(
         cmd: &super::PrepareCommand,
         toolset_env: &BTreeMap<String, String>,
-        default_project_root: &PathBuf,
+        default_project_root: &Path,
     ) -> Result<()> {
         let cwd = cmd
             .cwd
             .clone()
-            .unwrap_or_else(|| default_project_root.clone());
+            .unwrap_or_else(|| default_project_root.to_path_buf());
 
         let mut runner = CmdLineRunner::new(&cmd.program)
             .args(&cmd.args)
