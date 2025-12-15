@@ -1837,7 +1837,7 @@ const completionSpec: Fig.Spec = {
     },
     {
       name: ["prepare", "prep"],
-      description: "Ensure project dependencies are ready",
+      description: "[experimental] Ensure project dependencies are ready",
       options: [
         {
           name: ["-f", "--force"],
