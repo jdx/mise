@@ -1338,7 +1338,8 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
 fn load_shell_aliases(config_files: &ConfigMap) -> Result<EnvWithSources> {
     let mut shell_aliases: EnvWithSources = EnvWithSources::new();
 
-    for config_file in config_files.values() {
+    // Iterate in reverse order (global -> local) so child directories override parent configs
+    for config_file in config_files.values().rev() {
         let path = config_file.get_path().to_path_buf();
         for (name, cmd) in config_file.shell_aliases()? {
             shell_aliases.insert(name, (cmd, path.clone()));
