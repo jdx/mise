@@ -11,7 +11,6 @@ if ($TestName) {
     $config.Filter.FullName = $TestName
 }
 
-$env:MISE_DEBUG = "1"
 $env:PATH = "$PSScriptRoot\..\target\debug;$env:PATH"
 
 Invoke-Pester -Configuration $config
