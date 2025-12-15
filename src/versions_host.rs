@@ -13,12 +13,24 @@ use std::{
 };
 use tokio::sync::Mutex;
 
+/// Tools that use the versions host for listing versions
+/// (excludes java/python due to complex version schemes)
 static PLUGINS_USE_VERSION_HOST: LazyLock<HashSet<&str>> = LazyLock::new(|| {
     CORE_PLUGINS
         .keys()
         .map(|name| name.as_str())
         .chain(REGISTRY.keys().copied())
         .filter(|name| !matches!(*name, "java" | "python"))
+        .collect()
+});
+
+/// Tools that should have downloads tracked
+/// (all core plugins and registry tools, including java/python)
+static PLUGINS_TRACK_DOWNLOADS: LazyLock<HashSet<&str>> = LazyLock::new(|| {
+    CORE_PLUGINS
+        .keys()
+        .map(|name| name.as_str())
+        .chain(REGISTRY.keys().copied())
         .collect()
 });
 
@@ -95,7 +107,7 @@ pub async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>>
 }
 
 /// Tracks a tool installation asynchronously (fire-and-forget)
-/// Only tracks tools that are in PLUGINS_USE_VERSION_HOST
+/// Tracks all core plugins and registry tools (including java/python)
 pub fn track_install(tool: &str, version: &str) {
     let settings = Settings::get();
 
@@ -104,8 +116,8 @@ pub fn track_install(tool: &str, version: &str) {
         return;
     }
 
-    // Only track tools that use the versions host
-    if !PLUGINS_USE_VERSION_HOST.contains(tool) {
+    // Only track known tools (core plugins and registry tools)
+    if !PLUGINS_TRACK_DOWNLOADS.contains(tool) {
         return;
     }
 
