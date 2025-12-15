@@ -41,18 +41,18 @@ pub struct NpmPrepareProvider {
     project_root: PathBuf,
     package_manager: Option<PackageManager>,
     lockfile: Option<PathBuf>,
-    config: Option<PrepareProviderConfig>,
+    config: PrepareProviderConfig,
 }
 
 impl NpmPrepareProvider {
-    pub fn new(project_root: &PathBuf, config: Option<&PrepareProviderConfig>) -> Self {
+    pub fn new(project_root: &PathBuf, config: PrepareProviderConfig) -> Self {
         let (package_manager, lockfile) = Self::detect_package_manager(project_root);
 
         Self {
             project_root: project_root.clone(),
             package_manager,
             lockfile,
-            config: config.cloned(),
+            config,
         }
     }
 
@@ -104,12 +104,10 @@ impl PrepareProvider for NpmPrepareProvider {
         }
 
         // Add extra sources from config
-        if let Some(config) = &self.config {
-            for extra in &config.extra_sources {
-                let path = self.project_root.join(extra);
-                if path.exists() {
-                    sources.push(path);
-                }
+        for extra in &self.config.extra_sources {
+            let path = self.project_root.join(extra);
+            if path.exists() {
+                sources.push(path);
             }
         }
 
@@ -120,10 +118,8 @@ impl PrepareProvider for NpmPrepareProvider {
         let mut outputs = vec![self.project_root.join("node_modules")];
 
         // Add extra outputs from config
-        if let Some(config) = &self.config {
-            for extra in &config.extra_outputs {
-                outputs.push(self.project_root.join(extra));
-            }
+        for extra in &self.config.extra_outputs {
+            outputs.push(self.project_root.join(extra));
         }
 
         outputs
@@ -131,14 +127,12 @@ impl PrepareProvider for NpmPrepareProvider {
 
     fn prepare_command(&self) -> Result<PrepareCommand> {
         // Check for custom command override
-        if let Some(config) = &self.config
-            && let Some(custom_run) = &config.run
-        {
+        if let Some(custom_run) = &self.config.run {
             let parts: Vec<&str> = custom_run.split_whitespace().collect();
             let (program, args) = parts.split_first().unwrap_or((&"npm", &[]));
 
             let mut env = BTreeMap::new();
-            for (k, v) in &config.env {
+            for (k, v) in &self.config.env {
                 env.insert(k.clone(), v.clone());
             }
 
@@ -146,12 +140,17 @@ impl PrepareProvider for NpmPrepareProvider {
                 program: program.to_string(),
                 args: args.iter().map(|s| s.to_string()).collect(),
                 env,
-                cwd: config
+                cwd: self
+                    .config
                     .dir
                     .as_ref()
                     .map(|d| self.project_root.join(d))
                     .or_else(|| Some(self.project_root.clone())),
-                description: format!("Installing {} dependencies", self.id()),
+                description: self
+                    .config
+                    .description
+                    .clone()
+                    .unwrap_or_else(|| format!("Installing {} dependencies", self.id())),
             });
         }
 
@@ -160,10 +159,8 @@ impl PrepareProvider for NpmPrepareProvider {
         let (program, args) = pm.install_command();
 
         let mut env = BTreeMap::new();
-        if let Some(config) = &self.config {
-            for (k, v) in &config.env {
-                env.insert(k.clone(), v.clone());
-            }
+        for (k, v) in &self.config.env {
+            env.insert(k.clone(), v.clone());
         }
 
         Ok(PrepareCommand {
@@ -171,15 +168,17 @@ impl PrepareProvider for NpmPrepareProvider {
             args: args.iter().map(|s| s.to_string()).collect(),
             env,
             cwd: Some(self.project_root.clone()),
-            description: format!("Installing {} dependencies", pm.name()),
+            description: self
+                .config
+                .description
+                .clone()
+                .unwrap_or_else(|| format!("Installing {} dependencies", pm.name())),
         })
     }
 
     fn is_applicable(&self) -> bool {
         // Check if disabled in config
-        if let Some(config) = &self.config
-            && !config.enabled
-        {
+        if !self.config.enabled {
             return false;
         }
 
@@ -187,7 +186,11 @@ impl PrepareProvider for NpmPrepareProvider {
         self.package_manager.is_some()
     }
 
+    fn is_auto(&self) -> bool {
+        self.config.auto
+    }
+
     fn priority(&self) -> u32 {
-        100
+        self.config.priority
     }
 }

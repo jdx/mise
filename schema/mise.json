@@ -871,18 +871,83 @@
           "type": "boolean"
         },
         "prepare": {
+          "description": "Configure prepare providers for dependency management.",
           "type": "object",
-          "additionalProperties": false,
           "properties": {
-            "auto": {
-              "default": true,
-              "description": "Automatically run prepare steps before mise x and mise run.",
-              "type": "boolean"
-            },
-            "auto_timeout": {
-              "default": "5m",
-              "description": "Timeout for auto-prepare operations.",
-              "type": "string"
+            "disable": {
+              "description": "List of provider IDs to disable at runtime.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": {
+            "description": "Configuration for a prepare provider (npm, cargo, or custom).",
+            "type": "object",
+            "properties": {
+              "auto": {
+                "default": false,
+                "description": "Auto-run this provider before mise x/run.",
+                "type": "boolean"
+              },
+              "enabled": {
+                "default": true,
+                "description": "Whether this provider is enabled.",
+                "type": "boolean"
+              },
+              "run": {
+                "description": "Command to run when stale (required for custom providers).",
+                "type": "string"
+              },
+              "sources": {
+                "description": "Files/patterns to check for changes.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "outputs": {
+                "description": "Files/directories that should be newer than sources.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "extra_sources": {
+                "description": "Additional sources to watch (for built-in providers).",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "extra_outputs": {
+                "description": "Additional outputs to check (for built-in providers).",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "env": {
+                "description": "Environment variables to set.",
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "dir": {
+                "description": "Working directory.",
+                "type": "string"
+              },
+              "description": {
+                "description": "Human-readable description.",
+                "type": "string"
+              },
+              "priority": {
+                "default": 100,
+                "description": "Priority (higher runs first).",
+                "type": "integer"
+              }
             }
           }
         },

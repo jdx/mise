@@ -216,12 +216,13 @@ impl Run {
         };
         ts.install_missing_versions(&mut config, &opts).await?;
 
-        // Run prepare with toolset environment (includes tools PATH)
-        if !self.no_prepare && Settings::get().prepare.auto {
+        // Run auto-enabled prepare steps (unless --no-prepare)
+        if !self.no_prepare {
             let env = ts.env_with_path(&config).await?;
             let engine = PrepareEngine::new(config.clone())?;
             engine
                 .run(PrepareOptions {
+                    auto_only: true, // Only run providers with auto=true
                     env,
                     ..Default::default()
                 })

@@ -12,7 +12,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 
 use super::PrepareProvider;
 use super::providers::{CustomPrepareProvider, NpmPrepareProvider};
-use super::rule::PrepareConfig;
+use super::rule::{BUILTIN_PROVIDERS, PrepareConfig};
 
 /// Options for running prepare steps
 #[derive(Debug, Default)]
@@ -27,6 +27,8 @@ pub struct PrepareOptions {
     pub skip: Vec<String>,
     /// Environment variables to pass to prepare commands (e.g., toolset PATH)
     pub env: BTreeMap<String, String>,
+    /// If true, only run providers with auto=true
+    pub auto_only: bool,
 }
 
 /// Result of a prepare step
@@ -89,25 +91,36 @@ impl PrepareEngine {
             .filter_map(|cf| cf.prepare_config())
             .fold(PrepareConfig::default(), |acc, pc| acc.merge(&pc));
 
-        // 1. Add built-in providers
-        let npm_provider = NpmPrepareProvider::new(&project_root, prepare_config.npm.as_ref());
-        if npm_provider.is_applicable() {
-            providers.push(Box::new(npm_provider));
-        }
+        // Iterate over all configured providers
+        for (id, provider_config) in &prepare_config.providers {
+            let provider: Box<dyn PrepareProvider> = if BUILTIN_PROVIDERS.contains(&id.as_str()) {
+                // Built-in provider with specialized implementation
+                match id.as_str() {
+                    "npm" => Box::new(NpmPrepareProvider::new(
+                        &project_root,
+                        provider_config.clone(),
+                    )),
+                    // Future: "cargo", "go", "python"
+                    _ => continue, // Skip unimplemented built-ins
+                }
+            } else {
+                // Custom provider
+                Box::new(CustomPrepareProvider::new(
+                    id.clone(),
+                    provider_config.clone(),
+                    project_root.clone(),
+                ))
+            };
 
-        // 2. Add user-defined rules from config
-        for (id, rule) in &prepare_config.rules {
-            let provider =
-                CustomPrepareProvider::new(id.clone(), rule.clone(), project_root.clone());
             if provider.is_applicable() {
-                providers.push(Box::new(provider));
+                providers.push(provider);
             }
         }
 
-        // 3. Filter disabled providers
+        // Filter disabled providers
         providers.retain(|p| !prepare_config.disable.contains(&p.id().to_string()));
 
-        // 4. Sort by priority (higher first)
+        // Sort by priority (higher first)
         providers.sort_by(|a, b| b.priority().cmp(&a.priority()));
 
         Ok(providers)
@@ -125,6 +138,13 @@ impl PrepareEngine {
 
         for provider in &self.providers {
             let id = provider.id().to_string();
+
+            // Check auto_only filter
+            if opts.auto_only && !provider.is_auto() {
+                trace!("prepare step {} is not auto, skipping", id);
+                results.push(PrepareStepResult::Skipped(id));
+                continue;
+            }
 
             // Check skip list
             if opts.skip.contains(&id) {

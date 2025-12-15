@@ -930,25 +930,6 @@ hide = true
 optional = true
 type = "Bool"
 
-[prepare.auto]
-default = true
-description = "Automatically run prepare steps before mise x and mise run."
-docs = """
-When enabled, mise will automatically check if project dependencies need to be installed
-before running commands with `mise x` or `mise run`. This uses mtime comparison of lockfiles
-vs output directories (e.g., package-lock.json vs node_modules/).
-
-Set to `false` to disable auto-prepare globally. You can also use `--no-prepare` flag per-command.
-"""
-env = "MISE_PREPARE_AUTO"
-type = "Bool"
-
-[prepare.auto_timeout]
-default = "5m"
-description = "Timeout for auto-prepare operations."
-env = "MISE_PREPARE_AUTO_TIMEOUT"
-type = "Duration"
-
 [plugin_autoupdate_last_check_duration]
 default = "7d"
 description = "How long to wait before updating plugins automatically (note this isn't currently implemented)."

@@ -30,7 +30,7 @@ pub struct PrepareCommand {
 /// Trait for prepare providers that can check and install dependencies
 #[async_trait]
 pub trait PrepareProvider: Debug + Send + Sync {
-    /// Unique identifier for this provider (e.g., "npm", "cargo", "custom:my-rule")
+    /// Unique identifier for this provider (e.g., "npm", "cargo", "codegen")
     fn id(&self) -> &str;
 
     /// Returns the source files to check for freshness (lock files, config files)
@@ -47,6 +47,11 @@ pub trait PrepareProvider: Debug + Send + Sync {
     /// Whether this provider is applicable to the current project
     /// (e.g., npm provider is applicable if package-lock.json exists)
     fn is_applicable(&self) -> bool;
+
+    /// Whether this provider should auto-run before mise x/run (default: false)
+    fn is_auto(&self) -> bool {
+        false
+    }
 
     /// Priority - higher priority providers run first (default: 100)
     fn priority(&self) -> u32 {

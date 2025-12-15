@@ -2,46 +2,34 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-/// Configuration for a user-defined prepare rule
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct PrepareRule {
-    /// Files/patterns to check for changes (sources)
-    #[serde(default)]
-    pub sources: Vec<String>,
-    /// Files/directories that should be newer than sources
-    #[serde(default)]
-    pub outputs: Vec<String>,
-    /// Command to run when stale
-    pub run: String,
-    /// Optional description
-    pub description: Option<String>,
-    /// Whether this rule is enabled (default: true)
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    /// Working directory
-    pub dir: Option<String>,
-    /// Environment variables
-    #[serde(default)]
-    pub env: BTreeMap<String, String>,
-    /// Priority (higher runs first, default: 100)
-    #[serde(default = "default_priority")]
-    pub priority: u32,
-}
+/// List of built-in provider names that have specialized implementations
+pub const BUILTIN_PROVIDERS: &[&str] = &["npm", "cargo", "go", "python"];
 
-/// Configuration for overriding a built-in provider
+/// Configuration for a prepare provider (both built-in and custom)
+///
+/// Built-in providers (npm, cargo, go, python) have auto-detected sources/outputs
+/// and default run commands. Custom providers require explicit sources, outputs, and run.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PrepareProviderConfig {
+    /// Whether to auto-run this provider before mise x/run (default: false)
+    #[serde(default)]
+    pub auto: bool,
     /// Whether this provider is enabled (default: true)
     #[serde(default = "default_true")]
     pub enabled: bool,
-    /// Custom command to run (overrides default)
+    /// Command to run when stale (required for custom, optional for built-in)
     pub run: Option<String>,
-    /// Additional sources to watch beyond the defaults
+    /// Files/patterns to check for changes (required for custom, auto-detected for built-in)
+    #[serde(default)]
+    pub sources: Vec<String>,
+    /// Files/directories that should be newer than sources (required for custom, auto-detected for built-in)
+    #[serde(default)]
+    pub outputs: Vec<String>,
+    /// Additional sources to watch beyond the defaults (for built-in providers)
     #[serde(default)]
     pub extra_sources: Vec<String>,
-    /// Additional outputs to check beyond the defaults
+    /// Additional outputs to check beyond the defaults (for built-in providers)
     #[serde(default)]
     pub extra_outputs: Vec<String>,
     /// Environment variables to set
@@ -49,49 +37,52 @@ pub struct PrepareProviderConfig {
     pub env: BTreeMap<String, String>,
     /// Working directory
     pub dir: Option<String>,
+    /// Optional description
+    pub description: Option<String>,
+    /// Priority (higher runs first, default: 100)
+    #[serde(default = "default_priority")]
+    pub priority: u32,
+}
+
+impl PrepareProviderConfig {
+    /// Check if this is a custom rule (has explicit run command and is not a built-in name)
+    pub fn is_custom(&self, name: &str) -> bool {
+        !BUILTIN_PROVIDERS.contains(&name) && self.run.is_some()
+    }
 }
 
 /// Top-level [prepare] configuration section
+///
+/// All providers are configured at the same level:
+/// - `[prepare.npm]` - built-in npm provider
+/// - `[prepare.codegen]` - custom provider
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct PrepareConfig {
-    /// Master switch to enable/disable auto-prepare (default: true)
-    #[serde(default = "default_true")]
-    pub auto: bool,
-    /// List of provider IDs to disable
+    /// List of provider IDs to disable at runtime
     #[serde(default)]
     pub disable: Vec<String>,
-    /// User-defined prepare rules
-    #[serde(default)]
-    pub rules: BTreeMap<String, PrepareRule>,
-    /// NPM provider configuration override
-    pub npm: Option<PrepareProviderConfig>,
-    /// Cargo provider configuration override (future)
-    pub cargo: Option<PrepareProviderConfig>,
-    /// Go provider configuration override (future)
-    pub go: Option<PrepareProviderConfig>,
-    /// Python/pip provider configuration override (future)
-    pub python: Option<PrepareProviderConfig>,
+    /// All provider configurations (both built-in and custom)
+    #[serde(flatten)]
+    pub providers: BTreeMap<String, PrepareProviderConfig>,
 }
 
 impl PrepareConfig {
     /// Merge two PrepareConfigs, with `other` taking precedence
     pub fn merge(&self, other: &PrepareConfig) -> PrepareConfig {
-        let mut rules = self.rules.clone();
-        rules.extend(other.rules.clone());
+        let mut providers = self.providers.clone();
+        for (k, v) in &other.providers {
+            providers.insert(k.clone(), v.clone());
+        }
 
         let mut disable = self.disable.clone();
         disable.extend(other.disable.clone());
 
-        PrepareConfig {
-            auto: other.auto,
-            disable,
-            rules,
-            npm: other.npm.clone().or_else(|| self.npm.clone()),
-            cargo: other.cargo.clone().or_else(|| self.cargo.clone()),
-            go: other.go.clone().or_else(|| self.go.clone()),
-            python: other.python.clone().or_else(|| self.python.clone()),
-        }
+        PrepareConfig { disable, providers }
+    }
+
+    /// Get a provider config by name
+    pub fn get(&self, name: &str) -> Option<&PrepareProviderConfig> {
+        self.providers.get(name)
     }
 }
 

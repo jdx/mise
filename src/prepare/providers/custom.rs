@@ -4,22 +4,22 @@ use std::path::PathBuf;
 use eyre::Result;
 use glob::glob;
 
-use crate::prepare::rule::PrepareRule;
+use crate::prepare::rule::PrepareProviderConfig;
 use crate::prepare::{PrepareCommand, PrepareProvider};
 
-/// Prepare provider for user-defined rules from mise.toml [prepare.rules.*]
+/// Prepare provider for user-defined custom rules from mise.toml [prepare.*]
 #[derive(Debug)]
 pub struct CustomPrepareProvider {
     id: String,
-    rule: PrepareRule,
+    config: PrepareProviderConfig,
     project_root: PathBuf,
 }
 
 impl CustomPrepareProvider {
-    pub fn new(id: String, rule: PrepareRule, project_root: PathBuf) -> Self {
+    pub fn new(id: String, config: PrepareProviderConfig, project_root: PathBuf) -> Self {
         Self {
             id,
-            rule,
+            config,
             project_root,
         }
     }
@@ -60,30 +60,36 @@ impl PrepareProvider for CustomPrepareProvider {
     }
 
     fn sources(&self) -> Vec<PathBuf> {
-        self.expand_globs(&self.rule.sources)
+        self.expand_globs(&self.config.sources)
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        self.expand_globs(&self.rule.outputs)
+        self.expand_globs(&self.config.outputs)
     }
 
     fn prepare_command(&self) -> Result<PrepareCommand> {
-        let parts: Vec<&str> = self.rule.run.split_whitespace().collect();
+        let run = self
+            .config
+            .run
+            .as_ref()
+            .ok_or_else(|| eyre::eyre!("prepare rule {} has no run command", self.id))?;
+
+        let parts: Vec<&str> = run.split_whitespace().collect();
         let (program, args) = parts
             .split_first()
             .ok_or_else(|| eyre::eyre!("prepare rule {} has empty run command", self.id))?;
 
-        let env: BTreeMap<String, String> = self.rule.env.clone();
+        let env: BTreeMap<String, String> = self.config.env.clone();
 
         let cwd = self
-            .rule
+            .config
             .dir
             .as_ref()
             .map(|d| self.project_root.join(d))
             .unwrap_or_else(|| self.project_root.clone());
 
         let description = self
-            .rule
+            .config
             .description
             .clone()
             .unwrap_or_else(|| format!("Running prepare rule: {}", self.id));
@@ -98,10 +104,15 @@ impl PrepareProvider for CustomPrepareProvider {
     }
 
     fn is_applicable(&self) -> bool {
-        self.rule.enabled
+        // Custom providers require a run command to be applicable
+        self.config.enabled && self.config.run.is_some()
+    }
+
+    fn is_auto(&self) -> bool {
+        self.config.auto
     }
 
     fn priority(&self) -> u32 {
-        self.rule.priority
+        self.config.priority
     }
 }

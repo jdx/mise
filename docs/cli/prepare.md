@@ -12,8 +12,8 @@ This checks if dependency lockfiles are newer than installed outputs
 (e.g., package-lock.json vs node_modules/) and runs install commands
 if needed.
 
-This is automatically invoked before `mise x` and `mise run`
-unless disabled via settings or --no-prepare flag.
+Providers with `auto = true` are automatically invoked before `mise x` and `mise run`
+unless skipped with the --no-prepare flag.
 
 ## Flags
 
@@ -51,16 +51,21 @@ mise prepare --skip npm   # Skip npm prepare
 Configuration:
 
 ```
-Configure prepare rules in mise.toml:
+Configure prepare providers in mise.toml:
 
 ```toml
-[prepare]
-auto = true              # Enable auto-prepare (default)
-disable = ["cargo"]      # Disable specific providers
+# Built-in npm provider (auto-detects lockfile)
+[prepare.npm]
+auto = true              # Auto-run before mise x/run
 
-[prepare.rules.codegen]
+# Custom provider
+[prepare.codegen]
+auto = true
 sources = ["schema/*.graphql"]
 outputs = ["src/generated/"]
 run = "npm run codegen"
+
+[prepare]
+disable = ["cargo"]      # Disable specific providers at runtime
 ```
 ```

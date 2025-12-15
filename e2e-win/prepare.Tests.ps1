@@ -5,7 +5,7 @@ Describe 'prepare' {
         mise prepare --list | Should -Match 'No prepare providers found'
     }
 
-    It 'detects npm provider with package-lock.json' {
+    It 'detects npm provider when configured with package-lock.json' {
         @'
 {
   "name": "test-project",
@@ -13,6 +13,11 @@ Describe 'prepare' {
   "packages": {}
 }
 '@ | Set-Content -Path 'package-lock.json'
+
+        # Create mise.toml to enable npm provider
+        @'
+[prepare.npm]
+'@ | Set-Content -Path 'mise.toml'
 
         mise prepare --list | Should -Match 'npm'
     }
@@ -27,5 +32,6 @@ Describe 'prepare' {
 
     AfterAll {
         Remove-Item -Path 'package-lock.json' -ErrorAction SilentlyContinue
+        Remove-Item -Path 'mise.toml' -ErrorAction SilentlyContinue
     }
 }

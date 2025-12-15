@@ -117,11 +117,12 @@ impl Exec {
         let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
         let mut env = measure!("env_with_path", { ts.env_with_path(&config).await? });
 
-        // Run prepare after tools are installed so we have access to npm/yarn/etc.
-        if !self.no_prepare && Settings::get().prepare.auto {
+        // Run auto-enabled prepare steps (unless --no-prepare)
+        if !self.no_prepare {
             let engine = PrepareEngine::new(config.clone())?;
             engine
                 .run(PrepareOptions {
+                    auto_only: true, // Only run providers with auto=true
                     env: env.clone(),
                     ..Default::default()
                 })
