@@ -146,6 +146,8 @@ cat >go.mod <<'EOF'
 module test
 go 1.21
 EOF
+# Ensure go.sum (output) is older than go.mod (source) to trigger staleness
+touch -t 202301010000 go.sum
 
 cat >mise.toml <<'EOF'
 [prepare.go]
