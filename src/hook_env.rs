@@ -14,12 +14,12 @@ use serde_derive::{Deserialize, Serialize};
 use std::sync::LazyLock as Lazy;
 
 use crate::cli::HookReason;
-use crate::config::{Config, DEFAULT_CONFIG_FILENAMES};
+use crate::config::{Config, DEFAULT_CONFIG_FILENAMES, Settings};
 use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiffOperation, EnvDiffPatches, EnvMap};
 use crate::hash::hash_to_str;
 use crate::shell::Shell;
-use crate::{dirs, env, file, hooks, watch_files};
+use crate::{dirs, duration, env, file, hooks, watch_files};
 
 /// Convert a SystemTime to milliseconds since Unix epoch
 fn mtime_to_millis(mtime: SystemTime) -> u128 {
@@ -94,6 +94,20 @@ pub fn should_exit_early_fast() -> bool {
     if is_precmd && !*env::__MISE_ZSH_PRECMD_RUN {
         return false;
     }
+
+    // Get settings for cache_ttl and chpwd_only
+    let settings = Settings::get();
+    let cache_ttl_ms = duration::parse_duration(&settings.hook_env.cache_ttl)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+
+    // chpwd_only mode: skip on precmd if directory hasn't changed
+    // This significantly reduces stat operations on slow filesystems like NFS
+    if settings.hook_env.chpwd_only && is_precmd && dir_change().is_none() {
+        trace!("chpwd_only enabled, skipping precmd hook-env");
+        return true;
+    }
+
     // Can't exit early if directory changed
     if dir_change().is_some() {
         return false;
@@ -102,6 +116,20 @@ pub fn should_exit_early_fast() -> bool {
     if have_mise_env_vars_been_modified() {
         return false;
     }
+
+    // Cache TTL check: if within the TTL window, skip all stat operations
+    // This is useful for slow filesystems like NFS where stat calls are expensive
+    if cache_ttl_ms > 0 {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        if now.saturating_sub(PREV_SESSION.last_full_check) < cache_ttl_ms {
+            trace!("within cache TTL, skipping filesystem checks");
+            return true;
+        }
+    }
+
     // Check if any loaded config files have been modified
     for config_path in &PREV_SESSION.loaded_configs {
         if let Ok(metadata) = config_path.metadata() {
@@ -143,6 +171,14 @@ pub fn should_exit_early_fast() -> bool {
                 } else {
                     dir.join(subdir)
                 };
+                // Skip directories we've cached as having no config (when cache_ttl is set)
+                if cache_ttl_ms > 0
+                    && PREV_SESSION
+                        .checked_dirs_without_config
+                        .contains(&check_dir)
+                {
+                    continue;
+                }
                 if let Ok(metadata) = check_dir.metadata()
                     && let Ok(modified) = metadata.modified()
                     && mtime_to_millis(modified) > PREV_SESSION.latest_update
@@ -246,6 +282,14 @@ pub struct HookEnvSession {
     dir: Option<PathBuf>,
     env_var_hash: String,
     latest_update: u128,
+    /// Directories that were checked and found to have no config files.
+    /// Used to skip stat operations on subsequent hook-env calls when cache_ttl is set.
+    #[serde(default)]
+    checked_dirs_without_config: IndexSet<PathBuf>,
+    /// Timestamp (millis since epoch) of the last full directory traversal check.
+    /// Used with hook_env.cache_ttl to skip checks within the TTL window.
+    #[serde(default)]
+    last_full_check: u128,
 }
 
 pub fn serialize<T: serde::Serialize>(obj: &T) -> Result<String> {
@@ -282,14 +326,53 @@ pub async fn build_session(
         IndexSet::new()
     };
 
+    // Build the set of directories that were checked but have no config files.
+    // This is used by should_exit_early_fast() to skip stat operations when
+    // hook_env.cache_ttl is set (useful for slow filesystems like NFS).
+    let loaded_configs: IndexSet<PathBuf> = config.config_files.keys().cloned().collect();
+    let loaded_config_dirs: std::collections::HashSet<&Path> =
+        loaded_configs.iter().filter_map(|p| p.parent()).collect();
+
+    let mut checked_dirs_without_config = IndexSet::new();
+    if let Some(cwd) = &*dirs::CWD
+        && let Ok(ancestor_dirs) = file::all_dirs(cwd, &env::MISE_CEILING_PATHS)
+    {
+        let config_subdirs = DEFAULT_CONFIG_FILENAMES
+            .iter()
+            .map(|f| f.rsplit_once("/").map(|(dir, _)| dir).unwrap_or(""))
+            .unique()
+            .collect::<Vec<_>>();
+
+        for dir in ancestor_dirs {
+            for subdir in &config_subdirs {
+                let check_dir = if subdir.is_empty() {
+                    dir.clone()
+                } else {
+                    dir.join(subdir)
+                };
+                // If no config file was loaded from this directory, cache it
+                if !loaded_config_dirs.contains(check_dir.as_path()) {
+                    checked_dirs_without_config.insert(check_dir);
+                }
+            }
+        }
+    }
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+
     Ok(HookEnvSession {
         dir: dirs::CWD.clone(),
         env_var_hash: get_mise_env_vars_hashed(),
         env,
-        loaded_configs: config.config_files.keys().cloned().collect(),
+        loaded_configs,
         loaded_tools,
         config_paths,
         latest_update: mtime_to_millis(max_modtime),
+        checked_dirs_without_config,
+        last_full_check: now,
     })
 }
 

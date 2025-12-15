@@ -680,6 +680,22 @@
           "description": "Number of retries for HTTP requests in mise.",
           "type": "number"
         },
+        "hook_env": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cache_ttl": {
+              "default": "0s",
+              "description": "Cache hook-env directory checks for this duration. Useful for slow filesystems like NFS.",
+              "type": "string"
+            },
+            "chpwd_only": {
+              "default": false,
+              "description": "Only run hook-env checks on directory change, not on every prompt.",
+              "type": "boolean"
+            }
+          }
+        },
         "idiomatic_version_file": {
           "description": "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc.",
           "type": "boolean",
