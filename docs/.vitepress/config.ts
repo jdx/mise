@@ -63,7 +63,7 @@ export default withMermaid(
               link: "/dev-tools/comparison-to-asdf",
             },
             { text: "Shims", link: "/dev-tools/shims" },
-            { text: "Aliases", link: "/dev-tools/aliases" },
+            { text: "Tool Aliases", link: "/dev-tools/aliases" },
             { text: "Tool Stubs", link: "/dev-tools/tool-stubs" },
             { text: "Registry", link: "/registry" },
             { text: "mise.lock Lockfile", link: "/dev-tools/mise-lock" },
@@ -118,6 +118,7 @@ export default withMermaid(
           text: "Environments",
           items: [
             { text: "Environment Variables", link: "/environments/" },
+            { text: "Shell Aliases", link: "/shell-aliases" },
             {
               text: "Secrets",
               link: "/environments/secrets/",
