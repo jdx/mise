@@ -5,7 +5,7 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
-use crate::{backend::Backend, config::Config};
+use crate::{backend::Backend, backend::VersionInfo, config::Config};
 use crate::{file, github, gpg, plugins};
 use async_trait::async_trait;
 use eyre::Result;
@@ -159,14 +159,39 @@ impl Backend for SwiftPlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
+    async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
+        use crate::backend::SecurityFeature;
+
+        let mut features = vec![SecurityFeature::Checksum {
+            algorithm: Some("sha256".to_string()),
+        }];
+
+        // GPG verification is available on Linux when gpg is installed
+        if cfg!(target_os = "linux") && Settings::get().swift.gpg_verify != Some(false) {
+            features.push(SecurityFeature::Gpg);
+        }
+
+        features
+    }
+
+    async fn _list_remote_versions_with_info(
+        &self,
+        _config: &Arc<Config>,
+    ) -> Result<Vec<VersionInfo>> {
         let versions = github::list_releases("swiftlang/swift")
             .await?
             .into_iter()
-            .map(|r| r.tag_name)
-            .filter_map(|v| v.strip_prefix("swift-").map(|v| v.to_string()))
-            .filter_map(|v| v.strip_suffix("-RELEASE").map(|v| v.to_string()))
+            .filter_map(|r| {
+                r.tag_name
+                    .strip_prefix("swift-")
+                    .and_then(|v| v.strip_suffix("-RELEASE"))
+                    .map(|v| (v.to_string(), r.created_at))
+            })
             .rev()
+            .map(|(version, created_at)| VersionInfo {
+                version,
+                created_at: Some(created_at),
+            })
             .collect();
         Ok(versions)
     }

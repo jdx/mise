@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::backend::Backend;
+use crate::backend::VersionInfo;
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -241,29 +242,49 @@ impl Backend for ZigPlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
+    async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
+        use crate::backend::SecurityFeature;
+
+        vec![
+            SecurityFeature::Checksum {
+                algorithm: Some("sha256".to_string()),
+            },
+            SecurityFeature::Minisign {
+                public_key: Some(ZIG_MINISIGN_KEY.to_string()),
+            },
+        ]
+    }
+
+    async fn _list_remote_versions_with_info(
+        &self,
+        _config: &Arc<Config>,
+    ) -> Result<Vec<VersionInfo>> {
         let indexes = [
             "https://ziglang.org/download/index.json",
             // "https://machengine.org/zig/index.json", // need to handle mach's CalVer
         ];
-        let mut versions: Vec<String> = Vec::new();
+        let mut versions: Vec<(String, Option<String>)> = Vec::new();
 
         for index in indexes {
             let index_json: serde_json::Value = HTTP_FETCH.json(index).await?;
-            let index_versions: Vec<String> = index_json
+            let index_obj = index_json
                 .as_object()
-                .ok_or_else(|| eyre::eyre!("Failed to get zig version from {:?}", index))?
-                .keys()
-                .cloned()
-                .collect();
+                .ok_or_else(|| eyre::eyre!("Failed to get zig version from {:?}", index))?;
 
-            versions.extend(index_versions);
+            for (version, data) in index_obj {
+                let date = data.get("date").and_then(|d| d.as_str()).map(String::from);
+                versions.push((version.clone(), date));
+            }
         }
 
         let versions = versions
             .into_iter()
-            .unique()
-            .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
+            .unique_by(|(v, _)| v.clone())
+            .sorted_by_cached_key(|(s, _)| (Versioning::new(s), s.to_string()))
+            .map(|(version, date)| VersionInfo {
+                version,
+                created_at: date,
+            })
             .collect();
 
         Ok(versions)

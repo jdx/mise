@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as TokioMutex;
 
+use jiff::Timestamp;
+
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -17,10 +19,12 @@ use crate::lockfile::PlatformInfo;
 use crate::platform::Platform;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{PluginType, VERSION_REGEX};
-use crate::registry::{REGISTRY, tool_enabled};
+use crate::registry::{REGISTRY, full_to_url, normalize_remote, tool_enabled};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::outdated_info::OutdatedInfo;
-use crate::toolset::{ToolRequest, ToolVersion, Toolset, install_state, is_outdated_version};
+use crate::toolset::{
+    ResolveOptions, ToolRequest, ToolVersion, Toolset, install_state, is_outdated_version,
+};
 use crate::ui::progress_report::SingleReport;
 use crate::{
     cache::{CacheManager, CacheManagerBuilder},
@@ -62,7 +66,7 @@ pub mod vfox;
 pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
-pub type VersionCacheManager = CacheManager<Vec<String>>;
+pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
 /// Information about a GitHub/GitLab release for platform-specific tools
 #[derive(Debug, Clone)]
@@ -77,6 +81,64 @@ pub struct GitHubReleaseInfo {
 pub enum ReleaseType {
     GitHub,
     GitLab,
+}
+
+/// Information about a tool version including optional metadata like creation time
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct VersionInfo {
+    pub version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+}
+
+impl VersionInfo {
+    /// Filter versions to only include those released before the given timestamp.
+    /// Versions without a created_at timestamp are included by default.
+    pub fn filter_by_date(versions: Vec<Self>, before: Timestamp) -> Vec<Self> {
+        use crate::duration::parse_into_timestamp;
+        versions
+            .into_iter()
+            .filter(|v| {
+                match &v.created_at {
+                    Some(ts) => {
+                        // Parse the timestamp using parse_into_timestamp which handles
+                        // RFC3339, date-only (YYYY-MM-DD), and other formats
+                        match parse_into_timestamp(ts) {
+                            Ok(created) => created < before,
+                            Err(_) => {
+                                // If we can't parse the timestamp, include the version
+                                trace!("Failed to parse timestamp: {}", ts);
+                                true
+                            }
+                        }
+                    }
+                    // Include versions without timestamps
+                    None => true,
+                }
+            })
+            .collect()
+    }
+}
+
+/// Security feature information for a tool
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SecurityFeature {
+    Checksum {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        algorithm: Option<String>,
+    },
+    GithubAttestations {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        signer_workflow: Option<String>,
+    },
+    Slsa,
+    Cosign,
+    Minisign {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        public_key: Option<String>,
+    },
+    Gpg,
 }
 
 static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
@@ -254,6 +316,9 @@ pub trait Backend: Debug + Send + Sync {
     async fn description(&self) -> Option<String> {
         None
     }
+    async fn security_info(&self) -> Vec<SecurityFeature> {
+        vec![]
+    }
     fn get_plugin_type(&self) -> Option<PluginType> {
         None
     }
@@ -293,32 +358,86 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     async fn list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+        Ok(self
+            .list_remote_versions_with_info(config)
+            .await?
+            .into_iter()
+            .map(|v| v.version)
+            .collect())
+    }
+
+    /// List remote versions with additional metadata like created_at timestamps.
+    /// Results are cached. Backends can override `_list_remote_versions_with_info`
+    /// to provide timestamp information.
+    ///
+    /// This method first tries the versions host (mise-versions.jdx.dev) which provides
+    /// version info with created_at timestamps. If that fails, it falls back to the
+    /// backend's `_list_remote_versions_with_info` implementation.
+    async fn list_remote_versions_with_info(
+        &self,
+        config: &Arc<Config>,
+    ) -> eyre::Result<Vec<VersionInfo>> {
         let remote_versions = self.get_remote_version_cache();
         let remote_versions = remote_versions.lock().await;
         let ba = self.ba().clone();
         let id = self.id();
+
+        // Check if this is an external plugin with a custom remote - skip versions host if so
+        let use_versions_host = if let Some(plugin) = self.plugin()
+            && let Ok(Some(remote_url)) = plugin.get_remote_url()
+        {
+            // Check if remote matches the registry default
+            let normalized_remote =
+                normalize_remote(&remote_url).unwrap_or_else(|_| "INVALID_URL".into());
+            let shorthand_remote = REGISTRY
+                .get(plugin.name())
+                .and_then(|rt| rt.backends().first().map(|b| full_to_url(b)))
+                .unwrap_or_default();
+            let matches =
+                normalized_remote == normalize_remote(&shorthand_remote).unwrap_or_default();
+            if !matches {
+                trace!(
+                    "Skipping versions host for {} because it has a non-default remote",
+                    ba.short
+                );
+            }
+            matches
+        } else {
+            true // Core plugins and plugins without remote URLs can use versions host
+        };
+
         let versions = remote_versions
             .get_or_try_init_async(|| async {
                 trace!("Listing remote versions for {}", ba.to_string());
-                match versions_host::list_versions(&ba).await {
-                    Ok(Some(versions)) => return Ok(versions),
-                    Ok(None) => {}
-                    Err(e) => {
-                        debug!("Error getting versions from versions host: {:#}", e);
+                // Try versions host first (now returns VersionInfo with timestamps)
+                if use_versions_host {
+                    match versions_host::list_versions(&ba.short).await {
+                        Ok(Some(versions)) => {
+                            trace!(
+                                "Got {} versions from versions host for {}",
+                                versions.len(),
+                                ba.to_string()
+                            );
+                            return Ok(versions);
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            debug!("Error getting versions from versions host: {:#}", e);
+                        }
                     }
-                };
+                }
                 trace!(
                     "Calling backend to list remote versions for {}",
                     ba.to_string()
                 );
                 let versions = self
-                    ._list_remote_versions(config)
+                    ._list_remote_versions_with_info(config)
                     .await?
                     .into_iter()
-                    .filter(|v| match v.parse::<ToolVersionType>() {
+                    .filter(|v| match v.version.parse::<ToolVersionType>() {
                         Ok(ToolVersionType::Version(_)) => true,
                         _ => {
-                            warn!("Invalid version: {id}@{v}");
+                            warn!("Invalid version: {id}@{}", v.version);
                             false
                         }
                     })
@@ -331,7 +450,38 @@ pub trait Backend: Debug + Send + Sync {
             .await?;
         Ok(versions.clone())
     }
-    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>>;
+
+    /// Backend implementation for fetching remote versions with metadata.
+    /// Default wraps `_list_remote_versions` with no timestamps.
+    /// Override this to provide timestamp information (e.g., aqua, github backends).
+    async fn _list_remote_versions_with_info(
+        &self,
+        config: &Arc<Config>,
+    ) -> eyre::Result<Vec<VersionInfo>> {
+        Ok(self
+            ._list_remote_versions(config)
+            .await?
+            .into_iter()
+            .map(|v| VersionInfo {
+                version: v,
+                created_at: None,
+            })
+            .collect())
+    }
+
+    /// Backend implementation for fetching remote versions (without metadata).
+    /// Default delegates to `_list_remote_versions_with_info`.
+    /// Override this OR `_list_remote_versions_with_info` (not both needed).
+    /// WARNING: Implementing neither will cause infinite recursion.
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+        Ok(self
+            ._list_remote_versions_with_info(config)
+            .await?
+            .into_iter()
+            .map(|v| v.version)
+            .collect())
+    }
+
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
         self.latest_version(config, Some("latest".into())).await
     }
@@ -422,6 +572,34 @@ pub trait Backend: Debug + Send + Sync {
         let versions = self.list_remote_versions(config).await?;
         Ok(self.fuzzy_match_filter(versions, query))
     }
+
+    /// List versions matching a query, optionally filtered by release date.
+    /// Use this when you have a `before_date` from ResolveOptions.
+    async fn list_versions_matching_with_opts(
+        &self,
+        config: &Arc<Config>,
+        query: &str,
+        before_date: Option<Timestamp>,
+    ) -> eyre::Result<Vec<String>> {
+        let versions = match before_date {
+            Some(before) => {
+                // Use version info to filter by date
+                let versions_with_info = self.list_remote_versions_with_info(config).await?;
+                let filtered = VersionInfo::filter_by_date(versions_with_info, before);
+                // Warn if no versions have timestamps
+                if filtered.iter().all(|v| v.created_at.is_none()) && !filtered.is_empty() {
+                    debug!(
+                        "Backend {} does not provide release dates; --before filter may not work as expected",
+                        self.id()
+                    );
+                }
+                filtered.into_iter().map(|v| v.version).collect()
+            }
+            None => self.list_remote_versions(config).await?,
+        };
+        Ok(self.fuzzy_match_filter(versions, query))
+    }
+
     async fn latest_version(
         &self,
         config: &Arc<Config>,
@@ -436,6 +614,52 @@ pub trait Backend: Debug + Send + Sync {
                 Ok(find_match_in_list(&matches, &query))
             }
             None => self.latest_stable_version(config).await,
+        }
+    }
+
+    /// Get the latest version, optionally filtered by release date.
+    /// Use this when you have a `before_date` from ResolveOptions.
+    async fn latest_version_with_opts(
+        &self,
+        config: &Arc<Config>,
+        query: Option<String>,
+        before_date: Option<Timestamp>,
+    ) -> eyre::Result<Option<String>> {
+        match query {
+            Some(query) => {
+                let mut matches = self
+                    .list_versions_matching_with_opts(config, &query, before_date)
+                    .await?;
+                if matches.is_empty() && query == "latest" {
+                    // Fall back to all versions if no match
+                    matches = match before_date {
+                        Some(before) => {
+                            let versions_with_info =
+                                self.list_remote_versions_with_info(config).await?;
+                            VersionInfo::filter_by_date(versions_with_info, before)
+                                .into_iter()
+                                .map(|v| v.version)
+                                .collect()
+                        }
+                        None => self.list_remote_versions(config).await?,
+                    };
+                }
+                Ok(find_match_in_list(&matches, &query))
+            }
+            None => {
+                // For stable version, apply date filter if provided
+                match before_date {
+                    Some(before) => {
+                        let versions_with_info =
+                            self.list_remote_versions_with_info(config).await?;
+                        let filtered = VersionInfo::filter_by_date(versions_with_info, before);
+                        let versions: Vec<String> =
+                            filtered.into_iter().map(|v| v.version).collect();
+                        Ok(find_match_in_list(&versions, "latest"))
+                    }
+                    None => self.latest_stable_version(config).await,
+                }
+            }
         }
     }
     fn latest_installed_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
@@ -554,6 +778,10 @@ pub trait Backend: Debug + Send + Sync {
             }
         }
 
+        // Track the installation asynchronously (fire-and-forget)
+        // Do this before install so the request has time to complete during installation
+        versions_host::track_install(tv.short(), &tv.version);
+
         ctx.pr.set_message("install".into());
         let _lock = lock_file::get(&tv.install_path(), ctx.force)?;
         self.create_install_dirs(&tv)?;
@@ -600,7 +828,6 @@ pub trait Backend: Debug + Send + Sync {
             self.run_postinstall_hook(&ctx, &tv, script).await?;
         }
         ctx.pr.finish_with_message("installed".to_string());
-
         Ok(tv)
     }
 
@@ -623,6 +850,8 @@ pub trait Backend: Debug + Send + Sync {
         CmdLineRunner::new(&*env::SHELL)
             .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
+            .env("MISE_TOOL_NAME", &tv.ba().short)
+            .env("MISE_TOOL_VERSION", &tv.version)
             .with_pr(ctx.pr.as_ref())
             .arg(env::SHELL_COMMAND_FLAG)
             .arg(script)
@@ -955,6 +1184,7 @@ pub trait Backend: Debug + Send + Sync {
         _config: &Arc<Config>,
         _tv: &ToolVersion,
         _bump: bool,
+        _opts: &ResolveOptions,
     ) -> Result<Option<OutdatedInfo>> {
         Ok(None)
     }

@@ -1,5 +1,67 @@
 # Changelog
 
+## [2025.12.7](https://github.com/jdx/mise/compare/v2025.12.6..v2025.12.7) - 2025-12-14
+
+### 🚀 Features
+
+- **(java)** add created_at support to ls-remote --json by @jdx in [#7297](https://github.com/jdx/mise/pull/7297)
+- **(ls-remote)** add created_at timestamps to ls-remote --json for more backends by @jdx in [#7295](https://github.com/jdx/mise/pull/7295)
+- **(ls-remote)** add created_at timestamps to ls-remote --json for core plugins by @jdx in [#7294](https://github.com/jdx/mise/pull/7294)
+- **(registry)** add --json flag to registry command by @jdx in [#7290](https://github.com/jdx/mise/pull/7290)
+- **(ruby)** add created_at timestamps to ls-remote --json by @jdx in [#7296](https://github.com/jdx/mise/pull/7296)
+
+### 🐛 Bug Fixes
+
+- **(spm)** recursively update submodules after checkout by @JFej in [#7292](https://github.com/jdx/mise/pull/7292)
+- prioritize raw task output over task_output setting by @skorfmann in [#7286](https://github.com/jdx/mise/pull/7286)
+
+### New Contributors
+
+- @skorfmann made their first contribution in [#7286](https://github.com/jdx/mise/pull/7286)
+- @JFej made their first contribution in [#7292](https://github.com/jdx/mise/pull/7292)
+
+## [2025.12.6](https://github.com/jdx/mise/compare/v2025.12.5..v2025.12.6) - 2025-12-14
+
+### 🚀 Features
+
+- add anonymous download tracking for tool popularity stats by @jdx in [#7289](https://github.com/jdx/mise/pull/7289)
+
+### 🐛 Bug Fixes
+
+- add --compressed flag to curl for Swift GPG keys by @jdx in [7bc1273](https://github.com/jdx/mise/commit/7bc1273e78c9a1b58e0c987f5f2560f498efd2d4)
+
+### 📚 Documentation
+
+- add Versions link to nav bar by @jdx in [#7283](https://github.com/jdx/mise/pull/7283)
+- add mise-tools link to nav bar by @jdx in [#7285](https://github.com/jdx/mise/pull/7285)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (4)
+
+- [`abhimanyu003/sttr`](https://github.com/abhimanyu003/sttr)
+- [`babarot/afx`](https://github.com/babarot/afx)
+- [`becheran/mlc`](https://github.com/becheran/mlc)
+- [`maxpert/marmot`](https://github.com/maxpert/marmot)
+## [2025.12.5](https://github.com/jdx/mise/compare/v2025.12.4..v2025.12.5) - 2025-12-13
+
+### 🚀 Features
+
+- **(ls-remote)** add --json flag with created_at timestamps by @jdx in [#7279](https://github.com/jdx/mise/pull/7279)
+
+### 🐛 Bug Fixes
+
+- **(config)** respect MISE_CONFIG_DIR when set to non-default location by @jdx in [#7271](https://github.com/jdx/mise/pull/7271)
+- **(http)** move http-tarballs from cache to data directory by @jdx in [#7273](https://github.com/jdx/mise/pull/7273)
+- **(pipx)** expand wildcards in install command for backend tools by @jdx in [#7275](https://github.com/jdx/mise/pull/7275)
+- **(tasks)** position-based flag parsing for `mise run` by @jdx in [#7278](https://github.com/jdx/mise/pull/7278)
+- **(tera)** handle empty strings in path filters by @jdx in [#7276](https://github.com/jdx/mise/pull/7276)
+- **(vfox)** make mise_env and mise_path hooks optional by @jdx in [#7274](https://github.com/jdx/mise/pull/7274)
+
+### 📚 Documentation
+
+- **(ruby)** add precompiled binaries documentation by @jdx in [#7269](https://github.com/jdx/mise/pull/7269)
+
 ## [2025.12.4](https://github.com/jdx/mise/compare/v2025.12.3..v2025.12.4) - 2025-12-13
 
 ### 🚀 Features

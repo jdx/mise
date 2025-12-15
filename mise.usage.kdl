@@ -469,6 +469,10 @@ cmd install help="Install a tool version" {
     flag "-v --verbose" help="Show installation output" var=#true count=#true {
         long_help "Show installation output\n\nThis argument will print plugin output such as download, configuration, and compilation output."
     }
+    flag --before help="Only install versions released before this date" {
+        long_help "Only install versions released before this date\n\nSupports absolute dates like \"2024-06-01\" and relative durations like \"90d\" or \"1y\"."
+        arg <BEFORE>
+    }
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
     arg "[TOOL@VERSION]…" help="Tool(s) to install e.g.: node@20" required=#false var=#true
 }
@@ -544,8 +548,9 @@ cmd ls help="List installed and active tool versions" {
 cmd ls-remote help="List runtime versions available for install." {
     alias list-all list-remote hide=#true
     long_help "List runtime versions available for install.\n\nNote that the results may be cached, run `mise cache clean` to clear the cache and get fresh results."
-    after_long_help "Examples:\n\n    $ mise ls-remote node\n    18.0.0\n    20.0.0\n\n    $ mise ls-remote node@20\n    20.0.0\n    20.1.0\n\n    $ mise ls-remote node 20\n    20.0.0\n    20.1.0\n"
+    after_long_help "Examples:\n\n    $ mise ls-remote node\n    18.0.0\n    20.0.0\n\n    $ mise ls-remote node@20\n    20.0.0\n    20.1.0\n\n    $ mise ls-remote node 20\n    20.0.0\n    20.1.0\n\n    $ mise ls-remote github:cli/cli --json\n    [{\"version\":\"2.62.0\",\"created_at\":\"2024-11-14T15:40:35Z\"},{\"version\":\"2.61.0\",\"created_at\":\"2024-10-23T19:22:15Z\"}]\n"
     flag --all help="Show all installed plugins and versions"
+    flag "-J --json" help="Output in JSON format (includes version metadata like created_at timestamps when available)"
     arg "[TOOL@VERSION]" help="Tool to get versions for" required=#false
     arg "[PREFIX]" help="The version prefix to use when querying the latest version\nsame as the first argument after the \"@\"" required=#false
 }
@@ -646,6 +651,7 @@ cmd registry help="List available tools to install" {
     }
     flag --complete help="Print all tools with descriptions for shell completions" hide=#true
     flag --hide-aliased help="Hide aliased tools"
+    flag "-J --json" help="Output in JSON format"
     arg "[NAME]" help="Show only the specified tool's full name" required=#false
 }
 cmd render-help hide=#true help="internal command to generate markdown from help"
@@ -1068,6 +1074,10 @@ cmd upgrade help="Upgrades outdated tools" {
         long_help "Upgrades to the latest version available, bumping the version in mise.toml\n\nFor example, if you have `node = \"20.0.0\"` in your mise.toml but 22.1.0 is the latest available,\nthis will install 22.1.0 and set `node = \"22.1.0\"` in your config.\n\nIt keeps the same precision as what was there before, so if you instead had `node = \"20\"`, it\nwould change your config to `node = \"22\"`."
     }
     flag "-n --dry-run" help="Just print what would be done, don't actually do it"
+    flag --before help="Only upgrade to versions released before this date" {
+        long_help "Only upgrade to versions released before this date\n\nSupports absolute dates like \"2024-06-01\" and relative durations like \"90d\" or \"1y\".\nThis can be useful for reproducibility or security purposes.\n\nThis only affects fuzzy version matches like \"20\" or \"latest\".\nExplicitly pinned versions like \"22.5.0\" are not filtered."
+        arg <BEFORE>
+    }
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
     arg "[TOOL@VERSION]…" help="Tool(s) to upgrade\ne.g.: node@20 python@3.10\nIf not specified, all current tools will be upgraded" required=#false var=#true
 }
@@ -1090,6 +1100,10 @@ cmd use help="Installs a tool and adds the version to mise.toml." {
     flag "-p --path" help="Specify a path to a config file or directory" {
         long_help "Specify a path to a config file or directory\n\nIf a directory is specified, it will look for a config file in that directory following the rules above."
         arg <PATH>
+    }
+    flag --before help="Only install versions released before this date" {
+        long_help "Only install versions released before this date\n\nSupports absolute dates like \"2024-06-01\" and relative durations like \"90d\" or \"1y\"."
+        arg <BEFORE>
     }
     flag --fuzzy help="Save fuzzy version to config file" {
         long_help "Save fuzzy version to config file\n\ne.g.: `mise use --fuzzy node@20` will save 20 as the version\nthis is the default behavior unless `MISE_PIN=1`"

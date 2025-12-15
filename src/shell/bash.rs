@@ -3,6 +3,7 @@
 use std::fmt::Display;
 
 use indoc::formatdoc;
+use shell_escape::unix::escape;
 
 use crate::config::Settings;
 use crate::shell::{self, ActivateOptions, Shell};
@@ -18,7 +19,7 @@ impl Shell for Bash {
         let flags = opts.flags;
         let settings = Settings::get();
 
-        let exe = exe.to_string_lossy();
+        let exe = escape(exe.to_string_lossy());
 
         let mut out = String::new();
 
@@ -38,7 +39,7 @@ impl Shell for Bash {
               local command
               command="${{1:-}}"
               if [ "$#" = 0 ]; then
-                command '{exe}'
+                command {exe}
                 return
               fi
               shift
@@ -47,12 +48,12 @@ impl Shell for Bash {
               deactivate|shell|sh)
                 # if argv doesn't contains -h,--help
                 if [[ ! " $@ " =~ " --help " ]] && [[ ! " $@ " =~ " -h " ]]; then
-                  eval "$(command '{exe}' "$command" "$@")"
+                  eval "$(command {exe} "$command" "$@")"
                   return $?
                 fi
                 ;;
               esac
-              command '{exe}' "$command" "$@"
+              command {exe} "$command" "$@"
             }}
 
             _mise_hook() {{
@@ -85,7 +86,7 @@ impl Shell for Bash {
                 fi
 
                 command_not_found_handle() {{
-                    if [[ "$1" != "mise" && "$1" != "mise-"* ]] && '{exe}' hook-not-found -s bash -- "$1"; then
+                    if [[ "$1" != "mise" && "$1" != "mise-"* ]] && {exe} hook-not-found -s bash -- "$1"; then
                       _mise_hook
                       "$@"
                     elif [ -n "$(declare -f _command_not_found_handle)" ]; then
@@ -128,6 +129,17 @@ impl Shell for Bash {
 
     fn unset_env(&self, k: &str) -> String {
         format!("unset {k}\n", k = shell_escape::unix::escape(k.into()))
+    }
+
+    fn set_alias(&self, name: &str, cmd: &str) -> String {
+        let name = shell_escape::unix::escape(name.into());
+        let cmd = shell_escape::unix::escape(cmd.into());
+        format!("alias {name}={cmd}\n")
+    }
+
+    fn unset_alias(&self, name: &str) -> String {
+        let name = shell_escape::unix::escape(name.into());
+        format!("unalias {name} 2>/dev/null || true\n")
     }
 }
 

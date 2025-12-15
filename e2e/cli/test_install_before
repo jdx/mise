@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Test --before flag for date-based version filtering
+
+set -euo pipefail
+
+# Clean up any existing installations
+mise uninstall tiny --all 2>/dev/null || true
+rm -f mise.toml .tool-versions
+
+# Test: install --before with dry-run should show the tool
+output=$(mise install tiny@latest --before 2020-01-01 --dry-run 2>&1)
+assert_contains "echo '$output'" "tiny"
+
+# Test: install --before should install a version
+mise install tiny@latest --before 2025-01-01
+assert_contains "mise ls --installed tiny" "3.1.0"
+
+# Test: use --before with dry-run
+mise uninstall tiny --all 2>/dev/null || true
+output=$(mise use tiny@latest --before 2025-01-01 --dry-run 2>&1)
+assert_contains "echo '$output'" "tiny"
+rm -f mise.toml
+
+# Test: MISE_INSTALL_BEFORE environment variable works
+mise uninstall tiny --all 2>/dev/null || true
+export MISE_INSTALL_BEFORE="2025-01-01"
+mise install tiny@latest
+assert_contains "mise ls --installed tiny" "3.1.0"
+unset MISE_INSTALL_BEFORE
+
+# Test: upgrade --before with dry-run
+cat <<EOF >mise.toml
+[tools]
+tiny = "1"
+EOF
+mise uninstall tiny --all 2>/dev/null || true
+mise install tiny@1.0.0
+output=$(mise upgrade --before 2025-01-01 --dry-run 2>&1)
+assert_contains "echo '$output'" "tiny"
+
+# Clean up
+mise uninstall tiny --all 2>/dev/null || true
+rm -f mise.toml .tool-versions

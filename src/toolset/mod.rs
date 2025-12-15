@@ -10,7 +10,7 @@ use crate::config::settings::{Settings, SettingsStatusMissingTools};
 use crate::env::{PATH_KEY, TERM_WIDTH};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
-use crate::hooks::Hooks;
+use crate::hooks::{HookToolContext, Hooks};
 use crate::install_context::InstallContext;
 use crate::path_env::PathEnv;
 use crate::registry::tool_enabled;
@@ -249,12 +249,6 @@ impl Toolset {
         };
         mpr.init_footer(opts.dry_run, &footer_reason, versions.len());
 
-        // Skip hooks in dry-run mode
-        if !opts.dry_run {
-            // Run pre-install hook
-            hooks::run_one_hook(config, self, Hooks::Preinstall, None).await;
-        }
-
         self.init_request_options(&mut versions);
         show_python_install_hint(&versions);
 
@@ -323,12 +317,6 @@ impl Toolset {
                     debug!("[{tv}] exec_env: {env:?}");
                 }
             }
-        }
-
-        // Skip hooks in dry-run mode
-        if !opts.dry_run {
-            // Run post-install hook (ignoring errors)
-            let _ = hooks::run_one_hook(config, self, Hooks::Postinstall, None).await;
         }
 
         // Finish the global footer
@@ -468,6 +456,22 @@ impl Toolset {
                 for tr in filtered_trs {
                     let result = async {
                         let tv = tr.resolve(&config, &opts.resolve_options).await?;
+
+                        // Run per-tool preinstall hook
+                        if !opts.dry_run {
+                            let tool_ctx = HookToolContext {
+                                name: tv.ba().short.clone(),
+                                version: tv.version.clone(),
+                            };
+                            hooks::run_one_hook_with_tool(
+                                &config,
+                                &ts,
+                                Hooks::Preinstall,
+                                &tool_ctx,
+                            )
+                            .await;
+                        }
+
                         let ctx = InstallContext {
                             config: config.clone(),
                             ts: ts.clone(),
@@ -478,7 +482,26 @@ impl Toolset {
                         };
                         // Avoid wrapping the backend error here so the error location
                         // points to the backend implementation (more helpful for debugging).
-                        ba.install_version(ctx, tv).await
+                        let result = ba.install_version(ctx, tv).await;
+
+                        // Run per-tool postinstall hook (only on success)
+                        if !opts.dry_run
+                            && let Ok(ref installed_tv) = result
+                        {
+                            let tool_ctx = HookToolContext {
+                                name: installed_tv.ba().short.clone(),
+                                version: installed_tv.version.clone(),
+                            };
+                            hooks::run_one_hook_with_tool(
+                                &config,
+                                &ts,
+                                Hooks::Postinstall,
+                                &tool_ctx,
+                            )
+                            .await;
+                        }
+
+                        result
                     }
                     .await;
 
@@ -633,17 +656,18 @@ impl Toolset {
         &self,
         config: &Arc<Config>,
         bump: bool,
+        opts: &ResolveOptions,
     ) -> Vec<OutdatedInfo> {
         let versions = self
             .list_current_versions()
             .into_iter()
             // Respect per-tool os constraints set via options.os
             .filter(|(_, tv)| tv.request.is_os_supported())
-            .map(|(t, tv)| (config.clone(), t, tv, bump))
+            .map(|(t, tv)| (config.clone(), t, tv, bump, opts.clone()))
             .collect::<Vec<_>>();
-        let outdated = parallel::parallel(versions, |(config, t, tv, bump)| async move {
+        let outdated = parallel::parallel(versions, |(config, t, tv, bump, opts)| async move {
             let mut outdated = vec![];
-            match t.outdated_info(&config, &tv, bump).await {
+            match t.outdated_info(&config, &tv, bump, &opts).await {
                 Ok(Some(oi)) => outdated.push(oi),
                 Ok(None) => {}
                 Err(e) => {
@@ -655,7 +679,7 @@ impl Toolset {
                 // do not consider symlinked versions to be outdated
                 return Ok(outdated);
             }
-            match OutdatedInfo::resolve(&config, tv.clone(), bump).await {
+            match OutdatedInfo::resolve(&config, tv.clone(), bump, &opts).await {
                 Ok(Some(oi)) => outdated.push(oi),
                 Ok(None) => {}
                 Err(e) => {
@@ -688,24 +712,30 @@ impl Toolset {
         Ok(env)
     }
     pub async fn env_from_tools(&self, config: &Arc<Config>) -> Vec<(String, String, String)> {
-        let mut envs = vec![];
-        for (b, tv) in self.list_current_installed_versions(config).into_iter() {
-            if matches!(tv.request, ToolRequest::System { .. }) {
-                continue;
-            }
-            let this = Arc::new(self.clone());
-            let config = config.clone();
-            envs.push(match b.exec_env(&config, &this, &tv).await {
-                Ok(env) => env
+        let this = Arc::new(self.clone());
+        let items: Vec<_> = self
+            .list_current_installed_versions(config)
+            .into_iter()
+            .filter(|(_, tv)| !matches!(tv.request, ToolRequest::System { .. }))
+            .map(|(b, tv)| (config.clone(), this.clone(), b, tv))
+            .collect();
+
+        let envs = parallel::parallel(items, |(config, this, b, tv)| async move {
+            let backend_id = b.id().to_string();
+            match b.exec_env(&config, &this, &tv).await {
+                Ok(env) => Ok(env
                     .into_iter()
-                    .map(|(k, v)| (k, v, b.id().to_string()))
-                    .collect(),
+                    .map(|(k, v)| (k, v, backend_id.clone()))
+                    .collect::<Vec<_>>()),
                 Err(e) => {
                     warn!("Error running exec-env: {:#}", e);
-                    Vec::new()
+                    Ok(Vec::new())
                 }
-            });
-        }
+            }
+        })
+        .await
+        .unwrap_or_default();
+
         envs.into_iter()
             .flatten()
             .filter(|(k, _, _)| k.to_uppercase() != "PATH")

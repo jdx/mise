@@ -3,6 +3,7 @@
 use std::fmt::Display;
 
 use indoc::formatdoc;
+use shell_escape::unix::escape;
 
 use crate::config::Settings;
 use crate::shell::bash::Bash;
@@ -18,7 +19,7 @@ impl Shell for Zsh {
         let exe = opts.exe;
         let flags = opts.flags;
 
-        let exe = exe.to_string_lossy();
+        let exe = escape(exe.to_string_lossy());
         let mut out = String::new();
 
         out.push_str(&shell::build_deactivation_script(self));
@@ -129,6 +130,14 @@ impl Shell for Zsh {
 
     fn unset_env(&self, k: &str) -> String {
         Bash::default().unset_env(k)
+    }
+
+    fn set_alias(&self, name: &str, cmd: &str) -> String {
+        Bash::default().set_alias(name, cmd)
+    }
+
+    fn unset_alias(&self, name: &str) -> String {
+        Bash::default().unset_alias(name)
     }
 }
 

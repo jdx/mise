@@ -117,12 +117,21 @@ impl OutputHandler {
             return TaskOutput::Quiet;
         }
 
+        // CLI flags (--prefix, --interleave) override config settings
         if self.prefix {
             TaskOutput::Prefix
         } else if self.interleave {
             TaskOutput::Interleave
         } else if let Some(output) = Settings::get().task_output {
-            output
+            // Silent/quiet from config override raw (output suppression takes precedence)
+            // Other modes (prefix, etc.) allow raw to take precedence for stdin/stdout
+            if output.is_silent() || output.is_quiet() {
+                output
+            } else if self.raw(task) {
+                TaskOutput::Interleave
+            } else {
+                output
+            }
         } else if self.raw(task) || self.jobs() == 1 || self.is_linear {
             TaskOutput::Interleave
         } else {

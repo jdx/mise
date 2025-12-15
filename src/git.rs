@@ -171,6 +171,32 @@ impl Git {
         Ok(())
     }
 
+    pub fn update_submodules(&self) -> Result<()> {
+        debug!("updating submodules in {}", self.dir.display());
+
+        let exec = |cmd: Expression| match cmd.stderr_to_stdout().stdout_capture().unchecked().run()
+        {
+            Ok(res) => {
+                if res.status.success() {
+                    Ok(())
+                } else {
+                    Err(eyre!(
+                        "git failed: {cmd:?} {}",
+                        String::from_utf8(res.stdout).unwrap()
+                    ))
+                }
+            }
+            Err(err) => Err(eyre!("git failed: {cmd:?} {err:#}")),
+        };
+
+        exec(
+            git_cmd!(&self.dir, "submodule", "update", "--init", "--recursive")
+                .env("GIT_TERMINAL_PROMPT", "0"),
+        )?;
+
+        Ok(())
+    }
+
     pub fn current_branch(&self) -> Result<String> {
         let dir = &self.dir;
         if let Ok(repo) = self.repo() {

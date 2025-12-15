@@ -40,6 +40,7 @@ impl ToolVersionList {
                 ResolveOptions {
                     latest_versions: false,
                     use_locked_version: true,
+                    ..opts.clone()
                 }
             };
             match tvr.resolve(config, &request_opts).await {
@@ -79,6 +80,7 @@ mod tests {
             &ResolveOptions {
                 latest_versions: true,
                 use_locked_version: false,
+                ..Default::default()
             },
         )
         .await
@@ -101,6 +103,7 @@ mod tests {
                 &ResolveOptions {
                     latest_versions: true,
                     use_locked_version: false,
+                    ..Default::default()
                 },
             )
             .await;

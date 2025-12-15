@@ -44,19 +44,19 @@ backend = "core:bun"
 "platforms.windows-x64-baseline" = { checksum = "sha256:4e1d253078173b84aea2b1501ef7e1d4b9eb5a44d86e62eb9ee6219a95e0d210", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-windows-x64-baseline.zip"}
 
 [[tools.cargo-binstall]]
-version = "1.16.3"
+version = "1.16.4"
 backend = "aqua:cargo-bins/cargo-binstall"
-"platforms.linux-arm64" = { checksum = "sha256:5e36157edecaa41be235259a1d2ee5d08ba401aaf7b5b04ca15e69a31e8ca5c1", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.3/cargo-binstall-aarch64-unknown-linux-musl.tgz"}
-"platforms.linux-arm64-musl" = { checksum = "sha256:5e36157edecaa41be235259a1d2ee5d08ba401aaf7b5b04ca15e69a31e8ca5c1", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.3/cargo-binstall-aarch64-unknown-linux-musl.tgz"}
-"platforms.linux-x64" = { checksum = "sha256:dcd7d1d03d73fcd6825e981955263d4df08b81d73ce92eed1998dbda003a328a", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.3/cargo-binstall-x86_64-unknown-linux-musl.tgz"}
-"platforms.linux-x64-baseline" = { checksum = "sha256:dcd7d1d03d73fcd6825e981955263d4df08b81d73ce92eed1998dbda003a328a", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.3/cargo-binstall-x86_64-unknown-linux-musl.tgz"}
-"platforms.linux-x64-musl" = { checksum = "sha256:dcd7d1d03d73fcd6825e981955263d4df08b81d73ce92eed1998dbda003a328a", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.3/cargo-binstall-x86_64-unknown-linux-musl.tgz"}
-"platforms.linux-x64-musl-baseline" = { checksum = "sha256:dcd7d1d03d73fcd6825e981955263d4df08b81d73ce92eed1998dbda003a328a", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.3/cargo-binstall-x86_64-unknown-linux-musl.tgz"}
-"platforms.macos-arm64" = { checksum = "sha256:ec5f87ce4f9120bf45820da743e3be6f92dea86058505b7ac6000f8ac6a4bfda", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.3/cargo-binstall-aarch64-apple-darwin.zip"}
-"platforms.macos-x64" = { checksum = "sha256:eb8d55ddf27761f625266a9dfc75142a96d22fbafec48eb2982c3e45bc119d95", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.3/cargo-binstall-x86_64-apple-darwin.zip"}
-"platforms.macos-x64-baseline" = { checksum = "sha256:eb8d55ddf27761f625266a9dfc75142a96d22fbafec48eb2982c3e45bc119d95", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.3/cargo-binstall-x86_64-apple-darwin.zip"}
-"platforms.windows-x64" = { checksum = "sha256:8b93d53a6313e6c4e23326dc2a0f89044932768b1cc3b3592ec77a31ddb6a1a2", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.3/cargo-binstall-x86_64-pc-windows-msvc.zip"}
-"platforms.windows-x64-baseline" = { checksum = "sha256:8b93d53a6313e6c4e23326dc2a0f89044932768b1cc3b3592ec77a31ddb6a1a2", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.3/cargo-binstall-x86_64-pc-windows-msvc.zip"}
+"platforms.linux-arm64" = { checksum = "sha256:9b2f3e8790b92bd468055cb232c2fb1210e848f8905517609e69f3a7ab271084", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.4/cargo-binstall-aarch64-unknown-linux-musl.tgz"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:9b2f3e8790b92bd468055cb232c2fb1210e848f8905517609e69f3a7ab271084", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.4/cargo-binstall-aarch64-unknown-linux-musl.tgz"}
+"platforms.linux-x64" = { checksum = "sha256:6756ba74cb6523e82b5adb310aca774f4b22e290d6d9f38a8f656b1bb569c498", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.4/cargo-binstall-x86_64-unknown-linux-musl.tgz"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:6756ba74cb6523e82b5adb310aca774f4b22e290d6d9f38a8f656b1bb569c498", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.4/cargo-binstall-x86_64-unknown-linux-musl.tgz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:6756ba74cb6523e82b5adb310aca774f4b22e290d6d9f38a8f656b1bb569c498", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.4/cargo-binstall-x86_64-unknown-linux-musl.tgz"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:6756ba74cb6523e82b5adb310aca774f4b22e290d6d9f38a8f656b1bb569c498", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.4/cargo-binstall-x86_64-unknown-linux-musl.tgz"}
+"platforms.macos-arm64" = { checksum = "sha256:0aa476b62b59ed80768ec3ab403ee9c5615aad0d6b6ffb67d4c408cd3f1cf4c8", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.4/cargo-binstall-aarch64-apple-darwin.zip"}
+"platforms.macos-x64" = { checksum = "sha256:87c1904c2fef87f5ba0ebe35bcc66092897ae176d2a008e46f3a1659497757ab", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.4/cargo-binstall-x86_64-apple-darwin.zip"}
+"platforms.macos-x64-baseline" = { checksum = "sha256:87c1904c2fef87f5ba0ebe35bcc66092897ae176d2a008e46f3a1659497757ab", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.4/cargo-binstall-x86_64-apple-darwin.zip"}
+"platforms.windows-x64" = { checksum = "sha256:560bf505d087a39eb934da00bd6197aabf8f9ed3eb681e8aad9bf99eaefa326c", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.4/cargo-binstall-x86_64-pc-windows-msvc.zip"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:560bf505d087a39eb934da00bd6197aabf8f9ed3eb681e8aad9bf99eaefa326c", url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.4/cargo-binstall-x86_64-pc-windows-msvc.zip"}
 
 [[tools."cargo:cargo-edit"]]
 version = "0.13.8"
@@ -71,7 +71,7 @@ version = "0.25.22"
 backend = "cargo:cargo-release"
 
 [[tools."cargo:git-cliff"]]
-version = "2.10.1"
+version = "2.11.0"
 backend = "cargo:git-cliff"
 
 [[tools."cargo:toml-cli"]]

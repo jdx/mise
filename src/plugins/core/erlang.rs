@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::{path::PathBuf, sync::Arc};
 
 use crate::backend::Backend;
+use crate::backend::VersionInfo;
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
@@ -305,12 +306,23 @@ impl Backend for ErlangPlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
+    async fn _list_remote_versions_with_info(
+        &self,
+        _config: &Arc<Config>,
+    ) -> Result<Vec<VersionInfo>> {
         let versions = if Settings::get().erlang.compile == Some(false) {
             github::list_releases("erlef/otp_builds")
                 .await?
                 .into_iter()
-                .filter_map(|r| r.tag_name.strip_prefix("OTP-").map(|s| s.to_string()))
+                .filter_map(|r| {
+                    r.tag_name
+                        .strip_prefix("OTP-")
+                        .map(|s| (s.to_string(), Some(r.created_at)))
+                })
+                .map(|(version, created_at)| VersionInfo {
+                    version,
+                    created_at,
+                })
                 .collect()
         } else {
             self.update_kerl().await?;
@@ -321,7 +333,10 @@ impl Backend for ErlangPlugin {
                 let versions = output
                     .split('\n')
                     .filter(|s| regex!(r"^[0-9].+$").is_match(s))
-                    .map(|s| s.to_string())
+                    .map(|s| VersionInfo {
+                        version: s.to_string(),
+                        created_at: None,
+                    })
                     .collect();
                 Ok(versions)
             })?

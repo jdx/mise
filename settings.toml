@@ -529,6 +529,42 @@ Uses an exponential backoff strategy. The duration is calculated by taking the b
 env = "MISE_HTTP_RETRIES"
 type = "Integer"
 
+[hook_env.cache_ttl]
+default = "0s"
+description = "Cache hook-env directory checks for this duration. Useful for slow filesystems like NFS."
+docs = """
+On slow filesystems (like NFS with cold cache), mise's hook-env can be slow due to
+multiple filesystem stat operations. Setting this to a positive value (e.g., "5s")
+will cache the results of directory traversal and only re-check after the TTL expires.
+
+When set to "0s" (default), no caching is performed and every hook-env call will
+check the filesystem for changes. This is the safest option but slowest on NFS.
+
+Note: When caching is enabled, newly created config files may not be detected until
+the TTL expires. Use `mise hook-env --force` to bypass the cache.
+"""
+env = "MISE_HOOK_ENV_CACHE_TTL"
+type = "Duration"
+
+[hook_env.chpwd_only]
+default = false
+description = "Only run hook-env checks on directory change, not on every prompt."
+docs = """
+When enabled, mise will only perform full config file checks when the directory changes
+(chpwd), not on every shell prompt (precmd). This significantly reduces filesystem
+operations on slow filesystems like NFS.
+
+With this enabled, changes to config files will not be detected until you change
+directories. Use `mise hook-env --force` to manually trigger a full update.
+
+This setting is useful when:
+- You're working on an NFS filesystem with slow stat operations
+- Config files rarely change during a session
+- You want the fastest possible shell prompt response time
+"""
+env = "MISE_HOOK_ENV_CHPWD_ONLY"
+type = "Bool"
+
 [idiomatic_version_file]
 deprecated = "This has been replaced with the idiomatic_version_file_enable_tools setting."
 description = "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc."
@@ -580,6 +616,30 @@ env = "MISE_IGNORED_CONFIG_PATHS"
 parse_env = "list_by_colon"
 rust_type = "BTreeSet<PathBuf>"
 type = "ListPath"
+
+[install_before]
+description = "Only install versions released before this date"
+docs = """
+Filter tool versions by release date. Supports:
+
+- Absolute dates: `2024-06-01`, `2024-06-01T12:00:00Z`
+- Relative durations: `90d` (90 days ago), `1y` (1 year ago), `6m` (6 months ago)
+
+This is useful for reproducible builds or security purposes where you want to ensure
+you're only installing versions that existed before a certain point in time.
+
+Only affects backends that provide release timestamps (aqua, cargo, npm, pipx, and some core plugins).
+Versions without timestamps are included by default.
+
+**Behavior**: This filter only applies when resolving fuzzy version requests like `node@20` or `latest`.
+Explicitly pinned versions like `node@22.5.0` are not filtered, allowing you to selectively
+use newer versions for specific tools while keeping others behind the cutoff date.
+
+Can be overridden with the `--before` CLI flag.
+"""
+env = "MISE_INSTALL_BEFORE"
+optional = true
+type = "String"
 
 [jobs]
 default = 8
@@ -1473,6 +1533,24 @@ fetches public repository information.
 See [Troubleshooting](/troubleshooting.html#new-version-of-a-tool-is-not-available) for more information.
 """
 env = "MISE_USE_VERSIONS_HOST"
+type = "Bool"
+
+[use_versions_host_track]
+default = true
+description = "Send anonymous download statistics when installing tools."
+docs = """
+When enabled, mise sends anonymous download statistics to mise-versions.jdx.dev after
+successfully installing a tool. This helps show tool popularity on [mise-tools.jdx.dev](https://mise-tools.jdx.dev).
+
+Data collected:
+- Tool name and version
+- OS and architecture (from User-Agent)
+- Hashed IP address (for daily deduplication, not stored raw)
+
+This is automatically disabled if `use_versions_host` is set to false.
+Set to false to opt-out of anonymous statistics collection.
+"""
+env = "MISE_USE_VERSIONS_HOST_TRACK"
 type = "Bool"
 
 [verbose]

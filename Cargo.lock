@@ -4498,7 +4498,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2025.12.4"
+version = "2025.12.7"
 dependencies = [
  "age",
  "anyhow",
@@ -6926,9 +6926,9 @@ dependencies = [
 
 [[package]]
 name = "sigstore-verification"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e24cb0faa5df3c78fde4aaef48e84196d3fba3725781f984d3b256fa0a2175e0"
+checksum = "db10507b7d2ff109e56bfd885ce7b489a16040996516020ecfb43ced017a7a47"
 dependencies = [
  "async-trait",
  "base64 0.22.1",

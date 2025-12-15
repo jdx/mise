@@ -38,7 +38,7 @@ SWIFT_KEYS=(
 )
 for url in "${SWIFT_KEYS[@]}"; do
 	echo "Fetching Swift key: $url"
-	if ! curl -fLSs "$url" >>src/assets/gpg/swift.asc; then
+	if ! curl -fLSs --compressed "$url" >>src/assets/gpg/swift.asc; then
 		echo "ERROR: Failed to download $url" >&2
 		exit 1
 	fi

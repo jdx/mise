@@ -4,7 +4,7 @@ use std::fs::{self};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::backend::Backend;
+use crate::backend::{Backend, VersionInfo};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cli::version::OS;
@@ -301,6 +301,18 @@ impl Backend for JavaPlugin {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
+        Ok(self
+            ._list_remote_versions_with_info(config)
+            .await?
+            .into_iter()
+            .map(|v| v.version)
+            .collect())
+    }
+
+    async fn _list_remote_versions_with_info(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<Vec<VersionInfo>> {
         let release_type = config
             .get_tool_request_set()
             .await?
@@ -348,8 +360,11 @@ impl Backend for JavaPlugin {
                     v.to_string(),
                 )
             })
-            .map(|(v, _)| v.clone())
-            .unique()
+            .map(|(v, m)| VersionInfo {
+                version: v.clone(),
+                created_at: m.created_at.clone(),
+            })
+            .unique_by(|v| v.version.clone())
             .collect();
 
         Ok(versions)
@@ -530,6 +545,7 @@ struct JavaMetadata {
     // architecture: String,
     checksum: Option<String>,
     // checksum_url: Option<String>,
+    created_at: Option<String>,
     features: Option<Vec<String>>,
     file_type: Option<String>,
     // filename: String,

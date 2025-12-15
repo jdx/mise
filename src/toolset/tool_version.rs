@@ -16,6 +16,7 @@ use crate::toolset::{ToolRequest, ToolVersionOptions, tool_request};
 use console::style;
 use dashmap::DashMap;
 use eyre::Result;
+use jiff::Timestamp;
 #[cfg(windows)]
 use path_absolutize::Absolutize;
 
@@ -127,9 +128,21 @@ impl ToolVersion {
         self.request.ba().downloads_path.join(self.tv_pathname())
     }
     pub async fn latest_version(&self, config: &Arc<Config>) -> Result<String> {
+        self.latest_version_with_opts(config, &ResolveOptions::default())
+            .await
+    }
+
+    pub async fn latest_version_with_opts(
+        &self,
+        config: &Arc<Config>,
+        base_opts: &ResolveOptions,
+    ) -> Result<String> {
+        // Note: We always use latest_versions=true and use_locked_version=false for latest version lookup,
+        // but we preserve before_date from base_opts to respect date-based filtering
         let opts = ResolveOptions {
             latest_versions: true,
             use_locked_version: false,
+            before_date: base_opts.before_date,
         };
         let tv = self.request.resolve(config, &opts).await?;
         // map cargo backend specific prefixes to ref
@@ -215,7 +228,10 @@ impl ToolVersion {
             {
                 return build(v);
             }
-            if let Some(v) = backend.latest_version(config, None).await? {
+            if let Some(v) = backend
+                .latest_version_with_opts(config, None, opts.before_date)
+                .await?
+            {
                 return build(v);
             }
         }
@@ -228,9 +244,21 @@ impl ToolVersion {
                 return build(v.clone());
             }
         }
-        let matches = backend.list_versions_matching(config, &v).await?;
+        // First try with date filter (common case)
+        let matches = backend
+            .list_versions_matching_with_opts(config, &v, opts.before_date)
+            .await?;
         if matches.contains(&v) {
             return build(v);
+        }
+        // If date filter is active and exact version not found, check without filter.
+        // Explicit pinned versions like "22.5.0" should not be filtered by date.
+        if opts.before_date.is_some() {
+            let all_versions = backend.list_versions_matching(config, &v).await?;
+            if all_versions.contains(&v) {
+                // Exact match exists but was filtered by date - use it anyway
+                return build(v);
+            }
         }
         Self::resolve_prefix(config, request, &v, opts).await
     }
@@ -245,7 +273,20 @@ impl ToolVersion {
     ) -> Result<Self> {
         let backend = request.backend()?;
         let v = match v {
-            "latest" => backend.latest_version(config, None).await?.unwrap(),
+            "latest" => backend
+                .latest_version_with_opts(config, None, opts.before_date)
+                .await?
+                .ok_or_else(|| {
+                    let msg = if opts.before_date.is_some() {
+                        format!(
+                            "no versions found for {} matching date filter",
+                            backend.id()
+                        )
+                    } else {
+                        format!("no versions found for {}", backend.id())
+                    };
+                    eyre::eyre!(msg)
+                })?,
             _ => config.resolve_alias(&backend, v).await?,
         };
         let v = tool_request::version_sub(&v, sub);
@@ -264,7 +305,9 @@ impl ToolVersion {
         {
             return Ok(Self::new(request, v.to_string()));
         }
-        let matches = backend.list_versions_matching(config, prefix).await?;
+        let matches = backend
+            .list_versions_matching_with_opts(config, prefix, opts.before_date)
+            .await?;
         let v = match matches.last() {
             Some(v) => v,
             None => prefix,
@@ -343,6 +386,8 @@ impl Hash for ToolVersion {
 pub struct ResolveOptions {
     pub latest_versions: bool,
     pub use_locked_version: bool,
+    /// Only consider versions released before this timestamp
+    pub before_date: Option<Timestamp>,
 }
 
 impl Default for ResolveOptions {
@@ -350,6 +395,7 @@ impl Default for ResolveOptions {
         Self {
             latest_versions: false,
             use_locked_version: true,
+            before_date: None,
         }
     }
 }
@@ -358,10 +404,13 @@ impl Display for ResolveOptions {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         let mut opts = vec![];
         if self.latest_versions {
-            opts.push("latest_versions");
+            opts.push("latest_versions".to_string());
         }
         if self.use_locked_version {
-            opts.push("use_locked_version");
+            opts.push("use_locked_version".to_string());
+        }
+        if let Some(ts) = &self.before_date {
+            opts.push(format!("before_date={ts}"));
         }
         write!(f, "({})", opts.join(", "))
     }

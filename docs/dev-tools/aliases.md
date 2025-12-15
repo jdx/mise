@@ -1,4 +1,11 @@
-# Aliases
+# Tool Aliases
+
+::: tip
+`[alias]` has been renamed to `[tool_alias]` to distinguish it from `[shell_alias]`.
+The old `[alias]` key still works but is deprecated.
+
+For shell command aliases (like `alias ll='ls -la'`), see [Shell Aliases](/shell-aliases).
+:::
 
 ## Aliased Backends
 
@@ -6,7 +13,7 @@ Tools can be aliased so that something like `node` which normally maps to `core:
 to something like `asdf:company/our-custom-node` instead.
 
 ```toml [~/.config/mise/config.toml]
-[alias]
+[tool_alias]
 node = 'asdf:company/our-custom-node' # shorthand for https://github.com/company/our-custom-node
 erlang = 'asdf:https://github.com/company/our-custom-erlang'
 ```
@@ -17,10 +24,10 @@ mise supports aliasing the versions of runtimes. One use-case for this is to def
 versions of runtimes. For example, you may want to specify `lts-hydrogen` as the version for <node@20.x>
 so you can use set it with `node lts-hydrogen` in `mise.toml`/`.tool-versions`.
 
-User aliases can be created by adding an `alias.<PLUGIN>` section to `~/.config/mise/config.toml`:
+User aliases can be created by adding a `tool_alias.<PLUGIN>` section to `~/.config/mise/config.toml`:
 
 ```toml
-[alias.node.versions]
+[tool_alias.node.versions]
 my_custom_20 = '20'
 ```
 
@@ -45,6 +52,6 @@ plugin currently, but plugin authors can add this script without impacting asdf 
 Alias values can be templates, see [Templates](/templates) for details.
 
 ```toml
-[alias.node.versions]
+[tool_alias.node.versions]
 current = "{{exec(command='node --version')}}"
 ```

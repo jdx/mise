@@ -4,11 +4,11 @@ use std::{fmt::Debug, sync::Arc};
 use async_trait::async_trait;
 use color_eyre::Section;
 use eyre::{bail, eyre};
-use serde_json::Deserializer;
 use url::Url;
 
 use crate::Result;
 use crate::backend::Backend;
+use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::lookup_platform_key;
@@ -44,22 +44,36 @@ impl Backend for CargoBackend {
         Ok(vec!["cargo-binstall", "sccache"])
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions_with_info(
+        &self,
+        _config: &Arc<Config>,
+    ) -> eyre::Result<Vec<VersionInfo>> {
         if self.git_url().is_some() {
             // TODO: maybe fetch tags/branches from git?
-            return Ok(vec!["HEAD".into()]);
+            return Ok(vec![VersionInfo {
+                version: "HEAD".into(),
+                created_at: None,
+            }]);
         }
-        let raw = HTTP_FETCH
-            .get_text(get_crate_url(&self.tool_name())?)
-            .await?;
-        let stream = Deserializer::from_str(&raw).into_iter::<CrateVersion>();
-        let mut versions = vec![];
-        for v in stream {
-            let v = v?;
-            if !v.yanked {
-                versions.push(v.vers);
-            }
-        }
+
+        // Use crates.io API which includes created_at timestamps
+        let url = format!(
+            "https://crates.io/api/v1/crates/{}/versions",
+            self.tool_name()
+        );
+        let response: CratesIoVersionsResponse = HTTP_FETCH.json(&url).await?;
+
+        let versions = response
+            .versions
+            .into_iter()
+            .filter(|v| !v.yanked)
+            .map(|v| VersionInfo {
+                version: v.num,
+                created_at: Some(v.created_at),
+            })
+            .rev() // API returns newest first, we want oldest first
+            .collect();
+
         Ok(versions)
     }
 
@@ -208,20 +222,14 @@ impl CargoBackend {
     }
 }
 
-fn get_crate_url(n: &str) -> eyre::Result<Url> {
-    let n = n.to_lowercase();
-    let url = match n.len() {
-        1 => format!("https://index.crates.io/1/{n}"),
-        2 => format!("https://index.crates.io/2/{n}"),
-        3 => format!("https://index.crates.io/3/{}/{n}", &n[..1]),
-        _ => format!("https://index.crates.io/{}/{}/{n}", &n[..2], &n[2..4]),
-    };
-    Ok(url.parse()?)
+#[derive(Debug, serde::Deserialize)]
+struct CratesIoVersionsResponse {
+    versions: Vec<CratesIoVersion>,
 }
 
 #[derive(Debug, serde::Deserialize)]
-struct CrateVersion {
-    //name: String,
-    vers: String,
+struct CratesIoVersion {
+    num: String,
     yanked: bool,
+    created_at: String,
 }

@@ -11,7 +11,7 @@ use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{backend::Backend, config::Config};
+use crate::{backend::Backend, backend::VersionInfo, config::Config};
 use crate::{env, file, plugins};
 use async_trait::async_trait;
 use eyre::Result;
@@ -89,15 +89,29 @@ impl Backend for ElixirPlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
-        let versions: Vec<String> = HTTP_FETCH
+    async fn _list_remote_versions_with_info(
+        &self,
+        _config: &Arc<Config>,
+    ) -> Result<Vec<VersionInfo>> {
+        // Format: "version hash timestamp checksum"
+        // Example: "v1.17.3 abc123 2024-12-01T00:00:00Z def456"
+        let versions: Vec<VersionInfo> = HTTP_FETCH
             .get_text("https://builds.hex.pm/builds/elixir/builds.txt")
             .await?
             .lines()
             .unique()
-            .filter_map(|s| s.split_once(' ').map(|(v, _)| v.trim_start_matches('v')))
-            .filter(|s| regex!(r"^[0-9]+\.[0-9]+\.[0-9]").is_match(s))
-            .sorted_by_cached_key(|s| {
+            .filter_map(|s| {
+                let parts: Vec<&str> = s.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    let version = parts[0].trim_start_matches('v');
+                    let timestamp = parts[2]; // Third field is the timestamp
+                    Some((version.to_string(), timestamp.to_string()))
+                } else {
+                    None
+                }
+            })
+            .filter(|(v, _)| regex!(r"^[0-9]+\.[0-9]+\.[0-9]").is_match(v))
+            .sorted_by_cached_key(|(s, _)| {
                 (
                     Versioning::new(s.split_once('-').map(|(v, _)| v).unwrap_or(s)),
                     !VERSION_REGEX.is_match(s),
@@ -106,7 +120,10 @@ impl Backend for ElixirPlugin {
                     s.to_string(),
                 )
             })
-            .map(|s| s.to_string())
+            .map(|(version, created_at)| VersionInfo {
+                version,
+                created_at: Some(created_at),
+            })
             .collect();
         Ok(versions)
     }

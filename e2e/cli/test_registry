@@ -2,3 +2,9 @@
 
 assert "mise registry gh" "aqua:cli/cli ubi:cli/cli[exe=gh] asdf:bartlomiejdanek/asdf-github-cli"
 assert_contains "mise registry" "gh                            aqua:cli/cli ubi:cli/cli[exe=gh] asdf:bartlomiejdanek/asdf-github-cli"
+
+# --json flag tests
+assert "mise registry gh --json | jq -r '.short'" "gh"
+assert "mise registry gh --json | jq -r '.backends[0]'" "aqua:cli/cli"
+assert_contains "mise registry --json | jq -r '.[].short'" "gh"
+assert "mise registry --json | jq -r '.[] | select(.short == \"gh\") | .backends[0]'" "aqua:cli/cli"

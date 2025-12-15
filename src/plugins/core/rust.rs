@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::{collections::BTreeMap, sync::Arc};
 
 use crate::backend::Backend;
+use crate::backend::VersionInfo;
 use crate::build_time::TARGET;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -10,7 +11,7 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolSource::IdiomaticVersionFile;
 use crate::toolset::outdated_info::OutdatedInfo;
-use crate::toolset::{ToolVersion, Toolset};
+use crate::toolset::{ResolveOptions, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, github, plugins};
 use async_trait::async_trait;
@@ -73,13 +74,32 @@ impl Backend for RustPlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
-        let versions = github::list_releases("rust-lang/rust")
+    async fn _list_remote_versions_with_info(
+        &self,
+        _config: &Arc<Config>,
+    ) -> Result<Vec<VersionInfo>> {
+        let versions: Vec<VersionInfo> = github::list_releases("rust-lang/rust")
             .await?
             .into_iter()
-            .map(|r| r.tag_name)
+            .map(|r| VersionInfo {
+                version: r.tag_name,
+                created_at: Some(r.created_at),
+            })
             .rev()
-            .chain(vec!["nightly".into(), "beta".into(), "stable".into()])
+            .chain(vec![
+                VersionInfo {
+                    version: "nightly".into(),
+                    created_at: None,
+                },
+                VersionInfo {
+                    version: "beta".into(),
+                    created_at: None,
+                },
+                VersionInfo {
+                    version: "stable".into(),
+                    created_at: None,
+                },
+            ])
             .collect();
         Ok(versions)
     }
@@ -173,10 +193,11 @@ impl Backend for RustPlugin {
         config: &Arc<Config>,
         tv: &ToolVersion,
         bump: bool,
+        opts: &ResolveOptions,
     ) -> Result<Option<OutdatedInfo>> {
         let v_re = regex!(r#"Update available : (.*) -> (.*)"#);
         if regex!(r"(\d+)\.(\d+)\.(\d+)").is_match(&tv.version) {
-            let oi = OutdatedInfo::resolve(config, tv.clone(), bump).await?;
+            let oi = OutdatedInfo::resolve(config, tv.clone(), bump, opts).await?;
             Ok(oi)
         } else {
             let ts = config.get_toolset().await?;

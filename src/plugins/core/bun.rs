@@ -18,7 +18,9 @@ use crate::lockfile::PlatformInfo;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{
-    backend::{Backend, GitHubReleaseInfo, ReleaseType, platform_target::PlatformTarget},
+    backend::{
+        Backend, GitHubReleaseInfo, ReleaseType, VersionInfo, platform_target::PlatformTarget,
+    },
     config::{Config, Settings},
     platform::Platform,
 };
@@ -94,6 +96,14 @@ impl Backend for BunPlugin {
         &self.ba
     }
 
+    async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
+        use crate::backend::SecurityFeature;
+
+        vec![SecurityFeature::Checksum {
+            algorithm: Some("sha256".to_string()),
+        }]
+    }
+
     /// Override get_platform_key to include bun's compile-time variant (baseline, musl, etc.)
     /// This ensures lockfile lookups use the correct platform key that matches the variant
     fn get_platform_key(&self) -> String {
@@ -111,14 +121,24 @@ impl Backend for BunPlugin {
         }
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
+    async fn _list_remote_versions_with_info(
+        &self,
+        _config: &Arc<Config>,
+    ) -> Result<Vec<VersionInfo>> {
         let versions = github::list_releases("oven-sh/bun")
             .await?
             .into_iter()
-            .map(|r| r.tag_name)
-            .filter_map(|v| v.strip_prefix("bun-v").map(|v| v.to_string()))
-            .unique()
-            .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
+            .filter_map(|r| {
+                r.tag_name
+                    .strip_prefix("bun-v")
+                    .map(|v| (v.to_string(), r.created_at))
+            })
+            .unique_by(|(v, _)| v.clone())
+            .sorted_by_cached_key(|(s, _)| (Versioning::new(s), s.to_string()))
+            .map(|(version, created_at)| VersionInfo {
+                version,
+                created_at: Some(created_at),
+            })
             .collect();
         Ok(versions)
     }

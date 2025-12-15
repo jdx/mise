@@ -45,6 +45,7 @@ async fn list_versions(config: &Arc<Config>, args: &[String]) -> Result<()> {
             prefix: None,
             all: false,
             plugin: args.get(3).map(|s| s.parse()).transpose()?,
+            json: false,
         }
         .run()
         .await;

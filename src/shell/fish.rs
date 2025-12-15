@@ -19,7 +19,7 @@ impl Shell for Fish {
         let exe = opts.exe;
         let flags = opts.flags;
 
-        let exe = exe.to_string_lossy();
+        let exe = escape(exe.to_string_lossy());
         let description = "'Update mise environment when changing directories'";
         let mut out = String::new();
 
@@ -168,6 +168,17 @@ impl Shell for Fish {
 
     fn unset_env(&self, k: &str) -> String {
         format!("set -e {k}\n", k = escape(k.into()))
+    }
+
+    fn set_alias(&self, name: &str, cmd: &str) -> String {
+        let name = escape(name.into());
+        let cmd = escape(cmd.into());
+        format!("alias {name} {cmd}\n")
+    }
+
+    fn unset_alias(&self, name: &str) -> String {
+        let name = escape(name.into());
+        format!("functions -e {name}\n")
     }
 }
 

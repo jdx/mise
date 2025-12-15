@@ -142,6 +142,9 @@ impl SPMBackend {
         debug!("Checking out revision: {revision}");
         repo.update_tag(revision.to_string())?;
 
+        // Updates submodules ensuring they match the checked-out revision
+        repo.update_submodules()?;
+
         Ok(repo.dir)
     }
 
