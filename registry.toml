@@ -4321,7 +4321,10 @@ backends = ["github:soracom/soracom-cli", "asdf:gr1m0h/asdf-soracom"]
 description = "Provides `soracom` command, a command line tool for calling SORACOM APIs"
 
 [tools.sourcery]
-backends = ["asdf:mise-plugins/mise-sourcery"]
+backends = [
+  "github:krzysztofzablocki/Sourcery[exe=bin/sourcery]",
+  "asdf:mise-plugins/mise-sourcery",
+]
 description = "Meta-programming for Swift, stop writing boilerplate code"
 
 [tools.spacectl]
