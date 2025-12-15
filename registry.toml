@@ -4489,8 +4489,28 @@ backends = ["asdf:mise-plugins/mise-swift-package-list"]
 description = "A command-line tool to get all used Swift Package dependencies"
 
 [tools.swiftformat]
-backends = ["asdf:mise-plugins/mise-swiftformat"]
 description = "A command-line tool and Xcode Extension for formatting Swift code"
+os = ["macos", "linux"]
+test = ["swiftformat --version", "{{version}}"]
+
+[[tools.swiftformat.backends]]
+full = "github:nicklockwood/SwiftFormat"
+
+[tools.swiftformat.backends.options.platforms.macos-arm64]
+asset_pattern = "swiftformat.zip"
+
+[tools.swiftformat.backends.options.platforms.macos-x64]
+asset_pattern = "swiftformat.zip"
+
+# Linux assets have non-standard binary names (swiftformat_linux), skip github backend
+[tools.swiftformat.backends.options.platforms.linux-x64]
+asset_pattern = "SKIP_GITHUB_BACKEND"
+
+[tools.swiftformat.backends.options.platforms.linux-arm64]
+asset_pattern = "SKIP_GITHUB_BACKEND"
+
+[[tools.swiftformat.backends]]
+full = "asdf:mise-plugins/mise-swiftformat"
 
 [tools.swiftgen]
 backends = ["asdf:mise-plugins/mise-swiftgen"]
