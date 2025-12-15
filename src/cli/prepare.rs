@@ -155,7 +155,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     run = "npm run codegen"
 
     [prepare]
-    disable = ["cargo"]      # Disable specific providers at runtime
+    disable = ["npm"]        # Disable specific providers at runtime
     ```
 "#
 );
