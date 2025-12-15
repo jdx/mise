@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+# Test 1: Shell alias is set when entering directory with [shell_alias]
+cat >mise.toml <<'EOF'
+[shell_alias]
+ll = "ls -la"
+mytest = "echo hello from alias"
+EOF
+
+# First hook-env call should output alias commands (no session yet)
+# We don't call activate first to test fresh session behavior
+unset __MISE_SESSION
+unset __MISE_DIFF
+assert_contains "mise hook-env -s bash --force" "alias ll='ls -la'"
+assert_contains "mise hook-env -s bash --force" "alias mytest='echo hello from alias'"
+
+# Now eval to establish session
+eval "$(mise hook-env -s bash --force)"
+
+# Test 2: Alias change triggers new alias command
+cat >mise.toml <<'EOF'
+[shell_alias]
+ll = "ls -lah"
+mytest = "echo hello from alias"
+EOF
+
+# Changed alias should be re-emitted
+assert_contains "mise hook-env -s bash --force" "alias ll='ls -lah'"
+
+# Update session
+eval "$(mise hook-env -s bash --force)"
+
+# Test 3: Alias is unset when removed from config
+cat >mise.toml <<'EOF'
+[shell_alias]
+mytest = "echo hello from alias"
+EOF
+
+# ll was removed, should be unaliased
+assert_contains "mise hook-env -s bash --force" "unalias ll"
+
+# Update session
+eval "$(mise hook-env -s bash --force)"
+
+# Test 4: Alias with special characters in command
+cat >mise.toml <<'EOF'
+[shell_alias]
+greet = "echo 'Hello, World!'"
+EOF
+
+# New alias should be set, mytest should be unaliased
+assert_contains "mise hook-env -s bash --force" "alias greet="
+assert_contains "mise hook-env -s bash --force" "unalias mytest"
+
+# Update session
+eval "$(mise hook-env -s bash --force)"
+
+# Test 5: All aliases removed when config is empty
+cat >mise.toml <<'EOF'
+# empty config - no shell_alias section
+EOF
+
+# greet was removed, should be unaliased
+assert_contains "mise hook-env -s bash --force" "unalias greet"

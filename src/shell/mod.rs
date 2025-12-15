@@ -78,6 +78,20 @@ pub trait Shell: Display {
     fn prepend_env(&self, k: &str, v: &str) -> String;
     fn unset_env(&self, k: &str) -> String;
 
+    /// Set a shell alias. Returns empty string if not supported by this shell.
+    fn set_alias(&self, name: &str, cmd: &str) -> String {
+        // Default implementation returns empty string (unsupported)
+        let _ = (name, cmd);
+        String::new()
+    }
+
+    /// Unset a shell alias. Returns empty string if not supported by this shell.
+    fn unset_alias(&self, name: &str) -> String {
+        // Default implementation returns empty string (unsupported)
+        let _ = name;
+        String::new()
+    }
+
     fn format_activate_prelude(&self, prelude: &[ActivatePrelude]) -> String {
         prelude
             .iter()
@@ -107,6 +121,7 @@ pub fn build_deactivation_script(shell: &dyn Shell) -> String {
     }
 
     let mut out = hook_env::clear_old_env(shell);
+    out.push_str(&hook_env::clear_aliases(shell));
     out.push_str(&shell.deactivate());
     out
 }

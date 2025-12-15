@@ -131,6 +131,14 @@ impl Shell for Zsh {
     fn unset_env(&self, k: &str) -> String {
         Bash::default().unset_env(k)
     }
+
+    fn set_alias(&self, name: &str, cmd: &str) -> String {
+        Bash::default().set_alias(name, cmd)
+    }
+
+    fn unset_alias(&self, name: &str) -> String {
+        Bash::default().unset_alias(name)
+    }
 }
 
 impl Display for Zsh {

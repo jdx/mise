@@ -53,6 +53,10 @@ pub struct MiseToml {
     env_path: Vec<String>,
     #[serde(default)]
     alias: AliasMap,
+    #[serde(default)]
+    tool_alias: AliasMap,
+    #[serde(default)]
+    shell_alias: IndexMap<String, String>,
     #[serde(skip)]
     doc: Mutex<OnceCell<DocumentMut>>,
     #[serde(default)]
@@ -618,8 +622,22 @@ impl ConfigFile for MiseToml {
     }
 
     fn aliases(&self) -> eyre::Result<AliasMap> {
-        self.alias
-            .clone()
+        // Emit deprecation warning if [alias] is used
+        if !self.alias.is_empty() {
+            deprecated!(
+                "alias",
+                "[alias] is deprecated, use [tool_alias] instead in {}",
+                display_path(&self.path)
+            );
+        }
+
+        // Merge alias and tool_alias, with tool_alias taking precedence
+        let mut combined: AliasMap = self.alias.clone();
+        for (k, v) in &self.tool_alias {
+            combined.insert(k.clone(), v.clone());
+        }
+
+        combined
             .iter()
             .map(|(k, v)| {
                 let versions = v
@@ -638,6 +656,16 @@ impl ConfigFile for MiseToml {
                         versions,
                     },
                 ))
+            })
+            .collect()
+    }
+
+    fn shell_aliases(&self) -> eyre::Result<IndexMap<String, String>> {
+        self.shell_alias
+            .iter()
+            .map(|(k, v)| {
+                let v = self.parse_template(v)?;
+                Ok((k.clone(), v))
             })
             .collect()
     }
@@ -746,6 +774,8 @@ impl Clone for MiseToml {
             env: self.env.clone(),
             env_path: self.env_path.clone(),
             alias: self.alias.clone(),
+            tool_alias: self.tool_alias.clone(),
+            shell_alias: self.shell_alias.clone(),
             doc: Mutex::new(self.doc.lock().unwrap().clone()),
             hooks: self.hooks.clone(),
             tools: Mutex::new(self.tools.lock().unwrap().clone()),
