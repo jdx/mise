@@ -486,19 +486,20 @@ impl Toolset {
 
                         // Run per-tool postinstall hook (only on success)
                         if !opts.dry_run
-                            && let Ok(ref installed_tv) = result {
-                                let tool_ctx = HookToolContext {
-                                    name: installed_tv.ba().short.clone(),
-                                    version: installed_tv.version.clone(),
-                                };
-                                hooks::run_one_hook_with_tool(
-                                    &config,
-                                    &ts,
-                                    Hooks::Postinstall,
-                                    &tool_ctx,
-                                )
-                                .await;
-                            }
+                            && let Ok(ref installed_tv) = result
+                        {
+                            let tool_ctx = HookToolContext {
+                                name: installed_tv.ba().short.clone(),
+                                version: installed_tv.version.clone(),
+                            };
+                            hooks::run_one_hook_with_tool(
+                                &config,
+                                &ts,
+                                Hooks::Postinstall,
+                                &tool_ctx,
+                            )
+                            .await;
+                        }
 
                         result
                     }
