@@ -1,5 +1,30 @@
 # Changelog
 
+## [2025.12.9](https://github.com/jdx/mise/compare/v2025.12.8..v2025.12.9) - 2025-12-16
+
+### 🚀 Features
+
+- **(aqua)** add tuist aqua backend by @jdx in [#7323](https://github.com/jdx/mise/pull/7323)
+- **(ls-remote)** add release_url to VersionInfo for --json output by @jdx in [#7322](https://github.com/jdx/mise/pull/7322)
+- **(prepare)** add `mise prepare` command for dependency preparation by @jdx in [#7281](https://github.com/jdx/mise/pull/7281)
+- **(registry)** add aqua backend for zigmod by @jdx in [#7319](https://github.com/jdx/mise/pull/7319)
+
+### 🐛 Bug Fixes
+
+- **(e2e)** fix flaky test_prepare go provider test by @jdx in [0e2ef73](https://github.com/jdx/mise/commit/0e2ef73f9ae91072efd5abbbbe9d82e932472e79)
+- **(go)** restore git ls-remote for version listing by @jdx in [#7324](https://github.com/jdx/mise/pull/7324)
+
+### 📦 Registry
+
+- use github backend for sourcery by @jdx in [#7327](https://github.com/jdx/mise/pull/7327)
+- use github backend for swiftgen by @jdx in [#7326](https://github.com/jdx/mise/pull/7326)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (2)
+
+- [`nektro/zigmod`](https://github.com/nektro/zigmod)
+- [`tuist/tuist`](https://github.com/tuist/tuist)
 ## [2025.12.8](https://github.com/jdx/mise/compare/v2025.12.7..v2025.12.8) - 2025-12-15
 
 ### 🚀 Features
