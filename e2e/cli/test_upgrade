@@ -57,3 +57,22 @@ assert "mise i dummy@1.0.0"
 assert "mise up --bump"
 assert "cat mise.toml" '[tools]
 dummy = "latest"'
+
+# Test that upgrading a specific tool doesn't check other tools
+# This verifies the fix for https://github.com/jdx/mise/discussions/7328
+cat <<EOF >mise.toml
+[tools]
+dummy = "1"
+tiny = "1"
+EOF
+mise uninstall dummy tiny --all
+mise install dummy@1.0.0 tiny@1.0.0
+
+# Upgrade only dummy, should not see any warnings about tiny
+output=$(mise upgrade dummy --bump 2>&1)
+assert_not_contains "echo '$output'" "Error getting latest version for tiny"
+assert_not_contains "echo '$output'" "WARN.*tiny"
+assert_contains "mise ls --installed dummy" "2.0.0"
+# tiny should still be at 1.0.0 since we didn't upgrade it
+assert_contains "mise ls --installed tiny" "1.0.0"
+assert_not_contains "mise ls --installed tiny" "1.1.0"
