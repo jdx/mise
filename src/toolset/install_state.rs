@@ -93,8 +93,9 @@ fn migrate_to_index() -> BTreeMap<String, String> {
     let mut index = BTreeMap::new();
     if let std::result::Result::Ok(dirs) = file::dir_subdirs(&dirs::INSTALLS) {
         for dir in dirs {
-            if let Some(meta) = read_legacy_backend_meta(&dir) {
-                index.insert(meta.0, meta.1);
+            if let Some(full) = read_legacy_backend_meta(&dir) {
+                // Use dir (kebab-cased) as key to match directory naming
+                index.insert(dir, full);
             }
         }
     }
@@ -108,7 +109,8 @@ fn migrate_to_index() -> BTreeMap<String, String> {
 }
 
 /// Read a legacy .mise.backend file (for migration)
-fn read_legacy_backend_meta(dir: &str) -> Option<(String, String)> {
+/// Returns the full backend identifier (second line of the file)
+fn read_legacy_backend_meta(dir: &str) -> Option<String> {
     let path = dirs::INSTALLS.join(dir).join(".mise.backend");
 
     if path.exists() {
@@ -118,7 +120,6 @@ fn read_legacy_backend_meta(dir: &str) -> Option<(String, String)> {
             })
             .unwrap_or_default();
         let lines: Vec<&str> = body.lines().filter(|f| !f.is_empty()).collect();
-        let short = lines.first().unwrap_or(&dir).to_string();
         let full = lines.get(1).map(|s| s.to_string());
 
         // Delete the legacy file after reading
@@ -126,7 +127,7 @@ fn read_legacy_backend_meta(dir: &str) -> Option<(String, String)> {
             debug!("Failed to remove legacy .mise.backend file: {err}");
         }
 
-        full.map(|f| (short, f))
+        full
     } else {
         None
     }
@@ -282,7 +283,8 @@ fn has_backend_methods(plugin_path: &Path) -> bool {
 }
 
 pub fn get_tool_full(short: &str) -> Option<String> {
-    list_tools().get(short).and_then(|t| t.full.clone())
+    let key = short.to_kebab_case();
+    list_tools().get(&key).and_then(|t| t.full.clone())
 }
 
 pub fn get_plugin_type(short: &str) -> Option<PluginType> {
@@ -299,8 +301,9 @@ pub fn list_tools() -> Arc<BTreeMap<String, InstallStateTool>> {
 }
 
 pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
+    let key = short.to_kebab_case();
     let backend_type = list_tools()
-        .get(short)
+        .get(&key)
         .and_then(|ist| ist.full.as_ref())
         .map(|full| BackendType::guess(full));
     if let Some(BackendType::Unknown) = backend_type
@@ -313,8 +316,9 @@ pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
 }
 
 pub fn list_versions(short: &str) -> Vec<String> {
+    let key = short.to_kebab_case();
     list_tools()
-        .get(short)
+        .get(&key)
         .map(|tool| tool.versions.clone())
         .unwrap_or_default()
 }
@@ -335,8 +339,10 @@ pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
         _ => ba.full_with_opts(),
     };
     // Read current index, update it, and write back
+    // Use kebab-cased short as key to match directory naming
+    let key = ba.short.to_kebab_case();
     let mut index = read_index();
-    index.insert(ba.short.clone(), full);
+    index.insert(key, full);
     write_index(&index)?;
     Ok(())
 }
