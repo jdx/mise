@@ -94,11 +94,8 @@ pub fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
         }
     }
     // remove install dir if empty (ignore metadata files)
-    // .mise.meta.toml is the new single index file, .mise.backend* are legacy files
-    file::remove_dir_ignore(
-        installs_dir,
-        vec![".mise.backend.json", ".mise.backend", ".mise.meta.toml"],
-    )?;
+    // .mise.meta.toml is the new single index file, .mise.backend is legacy
+    file::remove_dir_ignore(installs_dir, vec![".mise.backend", ".mise.meta.toml"])?;
     Ok(())
 }
 

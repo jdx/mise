@@ -124,9 +124,6 @@ fn migrate_to_index() -> BTreeMap<String, String> {
 
 /// Read a legacy .mise.backend file (for migration)
 fn read_legacy_backend_meta(dir: &str) -> Option<(String, String)> {
-    // First try to migrate from even older .mise.backend.json format
-    migrate_backend_meta_json(dir);
-
     let path = dirs::INSTALLS.join(dir).join(".mise.backend");
 
     if path.exists() {
@@ -344,18 +341,6 @@ pub async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
         .lock()
         .expect("INSTALL_STATE_PLUGINS lock failed") = Some(Arc::new(plugins));
     Ok(())
-}
-
-/// Migrate from even older .mise.backend.json format (for read_legacy_backend_meta)
-fn migrate_backend_meta_json(dir: &str) {
-    let old = dirs::INSTALLS.join(dir).join(".mise.backend.json");
-    if old.exists() {
-        // Just delete the old JSON file - the migration will read the plain text file
-        // or fall back to directory name
-        if let Err(err) = file::remove_file(&old) {
-            debug!("Failed to remove old .mise.backend.json: {err:#}");
-        }
-    }
 }
 
 /// Update the backend index with a new tool entry
