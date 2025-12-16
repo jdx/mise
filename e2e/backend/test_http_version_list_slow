@@ -5,6 +5,10 @@
 # Test that ls-remote works with version_list_url
 assert_contains "mise ls-remote claude" "2."
 
+# Test that `mise latest` matches upstream `/latest` (regression for stale `/stable`)
+LATEST="$(curl -fsSL https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/latest)"
+assert_contains "mise latest claude" "$LATEST"
+
 # Test installation of claude-code via http backend
 mise install claude@latest
 assert "mise x claude -- claude --version"
