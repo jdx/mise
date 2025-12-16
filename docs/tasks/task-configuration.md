@@ -69,7 +69,7 @@ An alias for the task so you can run it with `mise run <alias>` instead of the f
 
 ```mise-toml
 [tasks.build]
-alias = "b" # run with `mise run b` or `mise b`
+alias = "b" # run with `mise run b`
 run = "cargo build"
 ```
 

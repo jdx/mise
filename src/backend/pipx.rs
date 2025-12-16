@@ -5,6 +5,8 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
+use crate::env;
+use crate::file;
 use crate::github;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
@@ -18,6 +20,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use regex::Regex;
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{fmt::Debug, sync::Arc};
 use versions::Versioning;
@@ -242,6 +245,12 @@ impl Backend for PIPXBackend {
             }
             cmd.execute()?;
         }
+
+        // Fix venv Python symlink to use minor version path
+        // This allows patch upgrades (3.12.1 → 3.12.2) to work without reinstalling
+        let pkg_name = self.tool_name();
+        fix_venv_python_symlink(&tv.install_path(), &pkg_name)?;
+
         Ok(tv)
     }
 
@@ -481,4 +490,103 @@ impl FromStr for PipxRequest {
             Ok(PipxRequest::Pypi(s.to_string()))
         }
     }
+}
+
+/// Check if a path is within mise's Python installs directory
+#[cfg(unix)]
+fn is_mise_managed_python(path: &Path) -> bool {
+    let installs_dir = &*env::MISE_INSTALLS_DIR;
+    path.starts_with(installs_dir.join("python"))
+}
+
+/// Convert a Python path with full version to use minor version
+/// e.g., .../python/3.12.1/bin/python → .../python/3.12/bin/python
+#[cfg(unix)]
+fn path_with_minor_version(path: &Path) -> Option<PathBuf> {
+    let path_str = path.to_str()?;
+
+    // Match pattern: /python/X.Y.Z/ and replace with /python/X.Y/
+    let re = regex!(r"/python/(\d+)\.(\d+)\.\d+/");
+    if re.is_match(path_str) {
+        let result = re.replace(path_str, "/python/$1.$2/");
+        Some(PathBuf::from(result.to_string()))
+    } else {
+        None
+    }
+}
+
+/// Fix the venv Python symlinks to use mise's minor version path
+/// This allows patch upgrades (3.12.1 → 3.12.2) to work without reinstalling
+///
+/// The venv structure typically has:
+/// - python -> python3 (relative symlink)
+/// - python3 -> /path/to/mise/installs/python/3.12.1/bin/python3 (absolute symlink)
+///
+/// We need to fix the absolute symlink to use minor version path (3.12 instead of 3.12.1)
+#[cfg(unix)]
+fn fix_venv_python_symlink(install_path: &Path, pkg_name: &str) -> Result<()> {
+    // For Git-based packages like "psf/black", the venv directory is just "black"
+    // Extract the actual package name (last component after any '/')
+    let actual_pkg_name = pkg_name.rsplit('/').next().unwrap_or(pkg_name);
+
+    // Check both possible venv locations: {pkg}/ for uvx, venvs/{pkg}/ for pipx
+    let venv_dirs = [
+        install_path.join(actual_pkg_name),
+        install_path.join("venvs").join(actual_pkg_name),
+    ];
+
+    trace!(
+        "fix_venv_python_symlink: checking venv dirs: {:?}",
+        venv_dirs
+    );
+
+    for venv_dir in &venv_dirs {
+        let bin_dir = venv_dir.join("bin");
+        if !bin_dir.exists() {
+            continue;
+        }
+
+        // Check python, python3, and python3.X symlinks for the one with absolute mise path
+        for name in &["python", "python3"] {
+            let symlink_path = bin_dir.join(name);
+            if !symlink_path.is_symlink() {
+                continue;
+            }
+
+            let target = match file::resolve_symlink(&symlink_path)? {
+                Some(t) => t,
+                None => continue,
+            };
+
+            // Skip relative symlinks (like python -> python3)
+            if !target.is_absolute() {
+                continue;
+            }
+
+            if !is_mise_managed_python(&target) {
+                continue; // Leave non-mise Python alone (homebrew, uv, etc.)
+            }
+
+            if let Some(minor_path) = path_with_minor_version(&target) {
+                // The minor version symlink (e.g., python/3.12) might not exist yet
+                // as runtime_symlinks::rebuild runs after all tools are installed.
+                // Check if the full version path exists instead (e.g., python/3.12.12/bin/python3).
+                // The symlink might be temporarily broken but will work after runtime symlinks are created.
+                if target.exists() {
+                    trace!(
+                        "Updating venv Python symlink {:?} to use minor version: {:?}",
+                        symlink_path, minor_path
+                    );
+                    file::make_symlink(&minor_path, &symlink_path)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// No-op on non-Unix platforms
+#[cfg(not(unix))]
+fn fix_venv_python_symlink(_install_path: &Path, _pkg_name: &str) -> Result<()> {
+    Ok(())
 }

@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+require_cmd python3
+
+# Create a system pipx that always fail and push it to the front of PATH
+cat >"$HOME/bin/pipx" <<'EOF'
+#!/usr/bin/env bash
+echo "CALL TO SYSTEM pipx! args: $*" >&2
+exit 1
+EOF
+chmod +x "$HOME"/bin/pipx
+export PATH="$HOME/bin:$PATH"
+
+# Just to be sure...
+assert_fail "pipx"
+
+# Use precompiled python and disable uvx to use pipx (which uses mise's Python)
+export MISE_PYTHON_COMPILE=0
+export MISE_PIPX_UVX=0
+
+# Set up mise-managed Python and pipx
+cat >.mise.toml <<EOF
+[tools]
+python = "3.12"
+pipx = "1.5.0"
+"pipx:cowsay" = "6.1"
+EOF
+
+# Install the tools
+mise install
+
+# Verify cowsay is installed
+assert_contains "mise x -- cowsay --version" "6.1"
+
+# Find the venv directory - could be cowsay/ or venvs/cowsay/
+INSTALL_DIR="$MISE_DATA_DIR/installs/pipx-cowsay/6.1"
+if [[ -d "$INSTALL_DIR/cowsay" ]]; then
+	VENV_DIR="$INSTALL_DIR/cowsay"
+elif [[ -d "$INSTALL_DIR/venvs/cowsay" ]]; then
+	VENV_DIR="$INSTALL_DIR/venvs/cowsay"
+else
+	echo "Venv directory structure:"
+	ls -la "$INSTALL_DIR"
+	fail "Could not find venv directory"
+fi
+
+# Check the venv Python symlink target (not fully resolved, just immediate target)
+# We want to verify the symlink points to the minor version path (e.g., python/3.12/)
+# not the full version path (e.g., python/3.12.12/)
+
+# Find the symlink with the absolute path (python3, not python which points to python3)
+PYTHON3_SYMLINK="$VENV_DIR/bin/python3"
+if [[ -L $PYTHON3_SYMLINK ]]; then
+	# Get immediate symlink target (not fully resolved)
+	SYMLINK_TARGET=$(readlink "$PYTHON3_SYMLINK")
+
+	# Check if the symlink target contains mise's installs directory
+	if [[ $SYMLINK_TARGET == *"/installs/python/"* ]]; then
+		# If it's mise-managed Python, verify the symlink uses minor version (e.g., 3.12 not 3.12.x)
+		# The regex matches /python/X.Y/ but not /python/X.Y.Z/
+		if [[ $SYMLINK_TARGET =~ /python/[0-9]+\.[0-9]+/bin/python ]]; then
+			ok "Venv python3 symlink uses minor version path"
+		elif [[ $SYMLINK_TARGET =~ /python/[0-9]+\.[0-9]+\.[0-9]+/bin/python ]]; then
+			fail "Venv python3 symlink uses full version path instead of minor version: $SYMLINK_TARGET"
+		else
+			ok "Venv python3 symlink path format is unexpected but accepted: $SYMLINK_TARGET"
+		fi
+	else
+		# Not mise-managed Python (could be homebrew, uv, etc.) - that's fine
+		ok "Venv python3 symlink points to non-mise Python (expected in some environments)"
+	fi
+else
+	ok "Venv python3 is not a symlink (expected on some platforms)"
+fi
