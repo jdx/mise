@@ -84,15 +84,17 @@ impl Upgrade {
             latest_versions: true,
             before_date,
         };
-        let mut outdated = ts.list_outdated_versions(&config, self.bump, &opts).await;
+        // Filter tools to check before doing expensive version lookups
+        let filter_tools = if !self.interactive && !self.tool.is_empty() {
+            Some(self.tool.as_slice())
+        } else {
+            None
+        };
+        let mut outdated = ts
+            .list_outdated_versions_filtered(&config, self.bump, &opts, filter_tools)
+            .await;
         if self.interactive && !outdated.is_empty() {
             outdated = self.get_interactive_tool_set(&outdated)?;
-        } else if !self.tool.is_empty() {
-            outdated.retain(|o| {
-                self.tool
-                    .iter()
-                    .any(|t| t.ba.as_ref() == o.tool_version.ba())
-            });
         }
         if outdated.is_empty() {
             info!("All tools are up to date");

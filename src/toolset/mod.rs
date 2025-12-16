@@ -658,11 +658,30 @@ impl Toolset {
         bump: bool,
         opts: &ResolveOptions,
     ) -> Vec<OutdatedInfo> {
+        self.list_outdated_versions_filtered(config, bump, opts, None)
+            .await
+    }
+
+    pub async fn list_outdated_versions_filtered(
+        &self,
+        config: &Arc<Config>,
+        bump: bool,
+        opts: &ResolveOptions,
+        filter_tools: Option<&[crate::cli::args::ToolArg]>,
+    ) -> Vec<OutdatedInfo> {
         let versions = self
             .list_current_versions()
             .into_iter()
             // Respect per-tool os constraints set via options.os
             .filter(|(_, tv)| tv.request.is_os_supported())
+            // Filter to only check specified tools if provided
+            .filter(|(_, tv)| {
+                if let Some(tools) = filter_tools {
+                    tools.iter().any(|t| t.ba.as_ref() == tv.ba())
+                } else {
+                    true
+                }
+            })
             .map(|(t, tv)| (config.clone(), t, tv, bump, opts.clone()))
             .collect::<Vec<_>>();
         let outdated = parallel::parallel(versions, |(config, t, tv, bump, opts)| async move {
