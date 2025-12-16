@@ -12,5 +12,11 @@ export MISE_USE_VERSIONS_HOST=0
 assert_contains "mise ls-remote claude" "2."
 
 # Test that `mise latest` matches upstream `/latest` (regression for stale `/stable`)
-LATEST="$(curl -fsSL https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/latest)"
-assert_contains "mise latest claude" "$LATEST"
+LATEST="$(curl -fsSL https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/latest | tr -d '\r\n')"
+if [[ -z ${LATEST//[[:space:]]/} ]]; then
+	fail "upstream claude-code /latest returned empty response"
+fi
+if [[ ! $LATEST =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+	fail "upstream claude-code /latest returned unexpected value: '$LATEST'"
+fi
+assert "mise latest claude" "$LATEST"
