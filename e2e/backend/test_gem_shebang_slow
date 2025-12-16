@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# Test that gem shebangs are rewritten correctly for mise-managed Ruby
+
+mise use ruby@3.3
+mise use gem:ruby-lsp@0.23.0
+
+# Get the shebang from the gem executable
+gem_exec="$MISE_DATA_DIR/installs/gem-ruby-lsp/0.23.0/libexec/bin/ruby-lsp"
+shebang=$(head -n1 "$gem_exec")
+
+# Should use minor version symlink (3.3) not full version (3.3.x)
+# Pattern: /ruby/3.3/bin/ruby (minor version), NOT /ruby/3.3.x/bin/ruby (patch version)
+assert_matches "echo '$shebang'" '/ruby/[0-9]+\.[0-9]+/bin/ruby'
+
+# Verify the gem actually works
+assert_contains "mise x gem:ruby-lsp -- ruby-lsp --version" "0.23.0"
