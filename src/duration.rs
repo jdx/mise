@@ -52,8 +52,10 @@ pub fn parse_into_timestamp(s: &str) -> Result<Timestamp> {
             bail!("duration must not be negative: {}", s);
         }
         let now = Timestamp::now();
-        let past = now.checked_sub(span)?;
-        return Ok(past);
+        // Convert to Zoned to support calendar units (days, months, years)
+        let now_zoned = now.to_zoned(jiff::tz::TimeZone::UTC);
+        let past = now_zoned.checked_sub(span)?;
+        return Ok(past.timestamp());
     }
 
     bail!(

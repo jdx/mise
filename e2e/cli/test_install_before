@@ -38,6 +38,26 @@ mise install tiny@1.0.0
 output=$(mise upgrade --before 2025-01-01 --dry-run 2>&1)
 assert_contains "echo '$output'" "tiny"
 
+# Test: install --before with relative duration "90d"
+mise uninstall tiny --all 2>/dev/null || true
+output=$(mise install tiny@latest --before 90d --dry-run 2>&1)
+assert_contains "echo '$output'" "tiny"
+
+# Test: install --before with relative duration "1y"
+output=$(mise install tiny@latest --before 1y --dry-run 2>&1)
+assert_contains "echo '$output'" "tiny"
+
+# Test: install --before with relative duration "6m"
+output=$(mise install tiny@latest --before 6m --dry-run 2>&1)
+assert_contains "echo '$output'" "tiny"
+
+# Test: MISE_INSTALL_BEFORE with relative duration
+mise uninstall tiny --all 2>/dev/null || true
+export MISE_INSTALL_BEFORE="90d"
+mise install tiny@latest
+assert_contains "mise ls --installed tiny" "3.1.0"
+unset MISE_INSTALL_BEFORE
+
 # Clean up
 mise uninstall tiny --all 2>/dev/null || true
 rm -f mise.toml .tool-versions
