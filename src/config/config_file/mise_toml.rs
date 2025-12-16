@@ -611,10 +611,29 @@ impl ConfigFile for MiseToml {
                         *v = self.parse_template_with_context(&context, v)?;
                     }
                     let mut ba = ba.clone();
+                    // Start with cached options but filter out install-time-only options
+                    // when config provides its own options. This allows:
+                    // - Changing url/asset_pattern/checksum without reinstall issues
+                    // - Preserving post-install options like bin_path for binary discovery
                     let mut ba_opts = ba.opts().clone();
+                    let install_time_keys =
+                        crate::backend::install_time_option_keys_for_type(&ba.backend_type());
+                    if !install_time_keys.is_empty() {
+                        ba_opts.opts.retain(|k, _| {
+                            // Keep option if it's NOT an install-time-only key
+                            // Also filter platform-specific variants (platforms.X.key)
+                            !install_time_keys.contains(k)
+                                && !install_time_keys.iter().any(|itk| {
+                                    k.starts_with("platforms.") && k.ends_with(&format!(".{itk}"))
+                                })
+                        });
+                    }
                     ba_opts.merge(&options.opts);
+                    // Copy os and install_env from config (not cached)
+                    ba_opts.os = options.os.clone();
+                    ba_opts.install_env = options.install_env.clone();
                     ba.set_opts(Some(ba_opts.clone()));
-                    ToolRequest::new_opts(ba.into(), &version, options, source.clone())?
+                    ToolRequest::new_opts(ba.into(), &version, ba_opts, source.clone())?
                 } else {
                     ToolRequest::new(ba.clone().into(), &version, source.clone())?
                 };

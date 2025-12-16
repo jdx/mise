@@ -182,6 +182,11 @@ impl Backend for CargoBackend {
     }
 }
 
+/// Returns install-time-only option keys for Cargo backend.
+pub fn install_time_option_keys() -> Vec<String> {
+    vec!["features".into(), "default-features".into(), "bin".into()]
+}
+
 impl CargoBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }

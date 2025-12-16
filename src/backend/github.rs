@@ -37,6 +37,15 @@ struct ReleaseAsset {
 const DEFAULT_GITHUB_API_BASE_URL: &str = "https://api.github.com";
 const DEFAULT_GITLAB_API_BASE_URL: &str = "https://gitlab.com/api/v4";
 
+/// Returns install-time-only option keys for GitHub/GitLab backend.
+pub fn install_time_option_keys() -> Vec<String> {
+    vec![
+        "asset_pattern".into(),
+        "url".into(),
+        "version_prefix".into(),
+    ]
+}
+
 #[async_trait]
 impl Backend for UnifiedGitBackend {
     fn get_type(&self) -> BackendType {

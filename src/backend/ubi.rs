@@ -446,6 +446,16 @@ impl Backend for UbiBackend {
     }
 }
 
+/// Returns install-time-only option keys for UBI backend.
+pub fn install_time_option_keys() -> Vec<String> {
+    vec![
+        "exe".into(),
+        "matching".into(),
+        "matching_regex".into(),
+        "provider".into(),
+    ]
+}
+
 impl UbiBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
