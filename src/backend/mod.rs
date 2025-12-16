@@ -1073,13 +1073,26 @@ pub trait Backend: Debug + Send + Sync {
         } else {
             &escaped_query
         };
-        let query_regex = Regex::new(&format!("^{query_pattern}([-.].+)?$")).unwrap();
+        // For numeric-ish prefixes like "1.2" we want to match "1.2.3" / "1.2-rc1" etc,
+        // but NOT "1.20". The old pattern achieved this by requiring a separator after the query.
+        // However, vendor-prefixed queries like "temurin-" need to match digits immediately after
+        // the prefix (e.g. "temurin-25.0.1").
+        let query_regex = if query != "latest" && query.ends_with('-') {
+            Regex::new(&format!("^{query_pattern}.*$")).unwrap()
+        } else {
+            Regex::new(&format!("^{query_pattern}([+\\-.].+)?$")).unwrap()
+        };
 
         // Also create a regex without the 'v' prefix if query starts with 'v'
         // This allows "v1.0.0" to match "1.0.0" in registries that don't use v-prefix
         let query_without_v_regex = if query.starts_with('v') || query.starts_with('V') {
             let without_v = regex::escape(&query[1..]);
-            Some(Regex::new(&format!("^{without_v}([-.].+)?$")).unwrap())
+            let re = if query.ends_with('-') {
+                Regex::new(&format!("^{without_v}.*$")).unwrap()
+            } else {
+                Regex::new(&format!("^{without_v}([+\\-.].+)?$")).unwrap()
+            };
+            Some(re)
         } else {
             None
         };
