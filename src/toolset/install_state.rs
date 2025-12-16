@@ -53,29 +53,14 @@ struct BackendIndex {
 /// If index doesn't exist, migrates from legacy .mise.backend files.
 /// Also cleans up entries for tools whose directories no longer exist.
 fn read_index() -> BTreeMap<String, String> {
-    let path = index_path();
-    let mut index = if path.exists() {
-        match file::read_to_string(&path) {
-            std::result::Result::Ok(content) => match toml::from_str::<BackendIndex>(&content) {
-                std::result::Result::Ok(parsed) => parsed.tools.into_iter().collect(),
-                Err(err) => {
-                    warn!("Failed to parse index file: {err}");
-                    migrate_to_index()
-                }
-            },
-            Err(err) => {
-                warn!("Failed to read index file: {err}");
-                migrate_to_index()
-            }
-        }
-    } else {
-        // Index doesn't exist - migrate from legacy files
-        migrate_to_index()
-    };
+    let mut index = file::read_to_string(index_path())
+        .ok()
+        .and_then(|content| toml::from_str::<BackendIndex>(&content).ok())
+        .map(|parsed| parsed.tools.into_iter().collect())
+        .unwrap_or_else(migrate_to_index);
 
     // Clean up entries for tools whose directories no longer exist
-    // Get directory listing once instead of calling .exists() for each tool
-    let existing_dirs: std::collections::HashSet<String> = file::dir_subdirs(&dirs::INSTALLS)
+    let existing_dirs: std::collections::HashSet<_> = file::dir_subdirs(&dirs::INSTALLS)
         .unwrap_or_default()
         .into_iter()
         .collect();
@@ -83,11 +68,8 @@ fn read_index() -> BTreeMap<String, String> {
     let original_len = index.len();
     index.retain(|short, _| existing_dirs.contains(&short.to_kebab_case()));
 
-    // Write back if we removed any stale entries
     if index.len() != original_len {
-        if let Err(err) = write_index(&index) {
-            debug!("Failed to write cleaned index: {err}");
-        }
+        let _ = write_index(&index);
     }
 
     index
