@@ -6,6 +6,7 @@ use crate::plugins::PluginType;
 use crate::{dirs, file, runtime_symlinks};
 use eyre::{Ok, Result};
 use heck::ToKebabCase;
+use indexmap::IndexMap;
 use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::ops::Deref;
@@ -35,6 +36,119 @@ pub struct InstallStateTool {
 
 static INSTALL_STATE_PLUGINS: Mutex<Option<Arc<InstallStatePlugins>>> = Mutex::new(None);
 static INSTALL_STATE_TOOLS: Mutex<Option<Arc<InstallStateTools>>> = Mutex::new(None);
+
+/// Path to the single index file that stores all backend metadata
+fn index_path() -> PathBuf {
+    dirs::INSTALLS.join(".mise.meta.toml")
+}
+
+/// Index file structure for TOML serialization
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+struct BackendIndex {
+    #[serde(default)]
+    tools: IndexMap<String, String>,
+}
+
+/// Read the backend index file. Returns map of short -> full.
+/// If index doesn't exist, migrates from legacy .mise.backend files.
+/// Also cleans up entries for tools whose directories no longer exist.
+fn read_index() -> BTreeMap<String, String> {
+    let path = index_path();
+    let mut index = if path.exists() {
+        match file::read_to_string(&path) {
+            std::result::Result::Ok(content) => match toml::from_str::<BackendIndex>(&content) {
+                std::result::Result::Ok(parsed) => parsed.tools.into_iter().collect(),
+                Err(err) => {
+                    warn!("Failed to parse index file: {err}");
+                    migrate_to_index()
+                }
+            },
+            Err(err) => {
+                warn!("Failed to read index file: {err}");
+                migrate_to_index()
+            }
+        }
+    } else {
+        // Index doesn't exist - migrate from legacy files
+        migrate_to_index()
+    };
+
+    // Clean up entries for tools whose directories no longer exist
+    let original_len = index.len();
+    index.retain(|short, _| {
+        let tool_dir = dirs::INSTALLS.join(short.to_kebab_case());
+        tool_dir.exists()
+    });
+
+    // Write back if we removed any stale entries
+    if index.len() != original_len {
+        if let Err(err) = write_index(&index) {
+            debug!("Failed to write cleaned index: {err}");
+        }
+    }
+
+    index
+}
+
+/// Write the backend index atomically using temp file + rename
+fn write_index(index: &BTreeMap<String, String>) -> Result<()> {
+    let path = index_path();
+    let tmp = path.with_extension("tmp");
+    let backend_index = BackendIndex {
+        tools: index.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+    };
+    let content = toml::to_string_pretty(&backend_index)?;
+    file::write(&tmp, &content)?;
+    std::fs::rename(&tmp, &path)?;
+    eyre::Ok(())
+}
+
+/// Migrate from legacy per-tool .mise.backend files to single index
+fn migrate_to_index() -> BTreeMap<String, String> {
+    let mut index = BTreeMap::new();
+    if let std::result::Result::Ok(dirs) = file::dir_subdirs(&dirs::INSTALLS) {
+        for dir in dirs {
+            if let Some(meta) = read_legacy_backend_meta(&dir) {
+                index.insert(meta.0, meta.1);
+            }
+        }
+    }
+    // Write the new index file (ignore errors during migration)
+    if !index.is_empty() {
+        if let Err(err) = write_index(&index) {
+            warn!("Failed to write index during migration: {err}");
+        }
+    }
+    index
+}
+
+/// Read a legacy .mise.backend file (for migration)
+fn read_legacy_backend_meta(dir: &str) -> Option<(String, String)> {
+    // First try to migrate from even older .mise.backend.json format
+    migrate_backend_meta_json(dir);
+
+    let path = dirs::INSTALLS.join(dir).join(".mise.backend");
+
+    if path.exists() {
+        let body = file::read_to_string(&path)
+            .map_err(|err| {
+                warn!("{err:?}");
+            })
+            .unwrap_or_default();
+        let lines: Vec<&str> = body.lines().filter(|f| !f.is_empty()).collect();
+        let short = lines.first().unwrap_or(&dir).to_string();
+        let full = lines.get(1).map(|s| s.to_string());
+
+        // Delete the legacy file after reading
+        if let Err(err) = file::remove_file(&path) {
+            debug!("Failed to remove legacy .mise.backend file: {err}");
+        }
+
+        full.map(|f| (short, f))
+    } else {
+        None
+    }
+}
 
 pub(crate) async fn init() -> Result<()> {
     let (plugins, tools) = tokio::join!(
@@ -92,12 +206,18 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
     {
         return Ok(tools);
     }
+    // Read the index once instead of per-tool .mise.backend files
+    let index = read_index();
     let mut jset = JoinSet::new();
     for dir in file::dir_subdirs(&dirs::INSTALLS)? {
+        let index = index.clone();
         jset.spawn(async move {
-            let backend_meta = read_backend_meta(&dir).unwrap_or_default();
-            let short = backend_meta.first().unwrap_or(&dir).to_string();
-            let full = backend_meta.get(1).cloned();
+            // Look up in index instead of reading individual .mise.backend file
+            let (short, full) = if let Some(full) = index.get(&dir) {
+                (dir.clone(), Some(full.clone()))
+            } else {
+                (dir.clone(), None)
+            };
             let dir = dirs::INSTALLS.join(&dir);
             let versions = file::dir_subdirs(&dir)
                 .unwrap_or_else(|err| {
@@ -226,63 +346,28 @@ pub async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
     Ok(())
 }
 
-fn backend_meta_path(short: &str) -> PathBuf {
-    dirs::INSTALLS
-        .join(short.to_kebab_case())
-        .join(".mise.backend")
-}
-
+/// Migrate from even older .mise.backend.json format (for read_legacy_backend_meta)
 fn migrate_backend_meta_json(dir: &str) {
     let old = dirs::INSTALLS.join(dir).join(".mise.backend.json");
-    let migrate = || {
-        let json: serde_json::Value = serde_json::from_reader(file::open(&old)?)?;
-        if let Some(full) = json.get("id").and_then(|id| id.as_str()) {
-            let short = json
-                .get("short")
-                .and_then(|short| short.as_str())
-                .unwrap_or(dir);
-            let doc = format!("{short}\n{full}");
-            file::write(backend_meta_path(dir), doc.trim())?;
-        }
-        Ok(())
-    };
     if old.exists() {
-        if let Err(err) = migrate() {
-            debug!("{err:#}");
-        }
+        // Just delete the old JSON file - the migration will read the plain text file
+        // or fall back to directory name
         if let Err(err) = file::remove_file(&old) {
-            debug!("{err:#}");
+            debug!("Failed to remove old .mise.backend.json: {err:#}");
         }
     }
 }
 
-fn read_backend_meta(short: &str) -> Option<Vec<String>> {
-    migrate_backend_meta_json(short);
-    let path = backend_meta_path(short);
-    if path.exists() {
-        let body = file::read_to_string(&path)
-            .map_err(|err| {
-                warn!("{err:?}");
-            })
-            .unwrap_or_default();
-        Some(
-            body.lines()
-                .filter(|f| !f.is_empty())
-                .map(|f| f.to_string())
-                .collect(),
-        )
-    } else {
-        None
-    }
-}
-
+/// Update the backend index with a new tool entry
 pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
     let full = match ba.full() {
         full if full.starts_with("core:") => ba.full(),
         _ => ba.full_with_opts(),
     };
-    let doc = format!("{}\n{}", ba.short, full);
-    file::write(backend_meta_path(&ba.short), doc.trim())?;
+    // Read current index, update it, and write back
+    let mut index = read_index();
+    index.insert(ba.short.clone(), full);
+    write_index(&index)?;
     Ok(())
 }
 
