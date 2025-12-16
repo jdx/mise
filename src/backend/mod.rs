@@ -1073,13 +1073,13 @@ pub trait Backend: Debug + Send + Sync {
         } else {
             &escaped_query
         };
-        let query_regex = Regex::new(&format!("^{query_pattern}([-.].+)?$")).unwrap();
+        let query_regex = Regex::new(&format!("^{query_pattern}.*$")).unwrap();
 
         // Also create a regex without the 'v' prefix if query starts with 'v'
         // This allows "v1.0.0" to match "1.0.0" in registries that don't use v-prefix
         let query_without_v_regex = if query.starts_with('v') || query.starts_with('V') {
             let without_v = regex::escape(&query[1..]);
-            Some(Regex::new(&format!("^{without_v}([-.].+)?$")).unwrap())
+            Some(Regex::new(&format!("^{without_v}.*$")).unwrap())
         } else {
             None
         };

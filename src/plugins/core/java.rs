@@ -504,7 +504,7 @@ impl Backend for JavaPlugin {
             // else; use escaped query
             _ => &query_escaped,
         };
-        let query_regex = Regex::new(&format!("^{query}([+-.].+)?$")).unwrap();
+        let query_regex = Regex::new(&format!("^{query}.*$")).unwrap();
 
         versions
             .into_iter()
