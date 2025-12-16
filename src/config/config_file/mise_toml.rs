@@ -611,7 +611,13 @@ impl ConfigFile for MiseToml {
                         *v = self.parse_template_with_context(&context, v)?;
                     }
                     let mut ba = ba.clone();
-                    let mut ba_opts = ba.opts().clone();
+                    // When config explicitly provides options, start with registry defaults only
+                    // Don't inherit cached options from .mise.backend to avoid stale config
+                    // (e.g., old 'url' option conflicting with new platform-specific URLs)
+                    let mut ba_opts = REGISTRY
+                        .get(ba.short.as_str())
+                        .map(|rt| rt.backend_options(&ba.full()))
+                        .unwrap_or_default();
                     ba_opts.merge(&options.opts);
                     ba.set_opts(Some(ba_opts.clone()));
                     ToolRequest::new_opts(ba.into(), &version, options, source.clone())?
