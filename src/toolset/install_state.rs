@@ -74,11 +74,14 @@ fn read_index() -> BTreeMap<String, String> {
     };
 
     // Clean up entries for tools whose directories no longer exist
+    // Get directory listing once instead of calling .exists() for each tool
+    let existing_dirs: std::collections::HashSet<String> = file::dir_subdirs(&dirs::INSTALLS)
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+
     let original_len = index.len();
-    index.retain(|short, _| {
-        let tool_dir = dirs::INSTALLS.join(short.to_kebab_case());
-        tool_dir.exists()
-    });
+    index.retain(|short, _| existing_dirs.contains(&short.to_kebab_case()));
 
     // Write back if we removed any stale entries
     if index.len() != original_len {
