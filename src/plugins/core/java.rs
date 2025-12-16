@@ -498,13 +498,21 @@ impl Backend for JavaPlugin {
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
+        let is_vendor_prefix = query != "latest" && query.ends_with('-');
         let query_escaped = regex::escape(query);
         let query = match query {
             "latest" => "[0-9].*",
             // else; use escaped query
             _ => &query_escaped,
         };
-        let query_regex = Regex::new(&format!("^{query}.*$")).unwrap();
+        // Same semantics as Backend::fuzzy_match_filter:
+        // - "1.2" should match "1.2.3" but not "1.20"
+        // - vendor prefixes like "temurin-" should match "temurin-25..."
+        let query_regex = if is_vendor_prefix {
+            Regex::new(&format!("^{query}.*$")).unwrap()
+        } else {
+            Regex::new(&format!("^{query}([+\\-.].+)?$")).unwrap()
+        };
 
         versions
             .into_iter()
