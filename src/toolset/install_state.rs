@@ -2,6 +2,7 @@ use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::file::display_path;
 use crate::git::Git;
+use crate::lock_file::LockFile;
 use crate::plugins::PluginType;
 use crate::{dirs, file, runtime_symlinks};
 use eyre::{Ok, Result};
@@ -338,6 +339,10 @@ pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
         full if full.starts_with("core:") => ba.full(),
         _ => ba.full_with_opts(),
     };
+    // Use file lock to prevent race conditions during parallel installs
+    let _lock = LockFile::new(&index_path())
+        .with_callback(|p| debug!("waiting for lock on {}", display_path(p)))
+        .lock()?;
     // Read current index, update it, and write back
     // Use kebab-cased short as key to match directory naming
     let key = ba.short.to_kebab_case();
