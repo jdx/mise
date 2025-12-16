@@ -102,9 +102,10 @@ fn migrate_to_index() -> BTreeMap<String, String> {
     }
     // Write the new index file (ignore errors during migration)
     if !index.is_empty()
-        && let Err(err) = write_index(&index) {
-            warn!("Failed to write index during migration: {err}");
-        }
+        && let Err(err) = write_index(&index)
+    {
+        warn!("Failed to write index during migration: {err}");
+    }
     index
 }
 
