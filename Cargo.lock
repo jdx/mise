@@ -4498,7 +4498,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2025.12.9"
+version = "2025.12.10"
 dependencies = [
  "age",
  "anyhow",

@@ -1,5 +1,22 @@
 # Changelog
 
+## [2025.12.10](https://github.com/jdx/mise/compare/v2025.12.9..v2025.12.10) - 2025-12-16
+
+### 🐛 Bug Fixes
+
+- **(backend)** fix fuzzy_match_filter regex for vendor-prefixed versions by @jdx in [#7332](https://github.com/jdx/mise/pull/7332)
+- **(backend)** use backend delegation for install-time option filtering by @jdx in [#7335](https://github.com/jdx/mise/pull/7335)
+- **(duration)** support calendar units in relative durations for --before flag by @Copilot in [#7337](https://github.com/jdx/mise/pull/7337)
+- **(gem)** improve shebang compatibility for precompiled Ruby by @jdx in [#7336](https://github.com/jdx/mise/pull/7336)
+- **(gem)** handle RubyGems polyglot shebang format by @jdx in [#7340](https://github.com/jdx/mise/pull/7340)
+- **(pipx)** use minor version symlink for venv Python by @jdx in [#7339](https://github.com/jdx/mise/pull/7339)
+- **(registry)** prefer claude-code latest over stale stable by @jdx in [#7334](https://github.com/jdx/mise/pull/7334)
+- **(upgrade)** only check specified tools when upgrading with tool args by @jdx in [#7331](https://github.com/jdx/mise/pull/7331)
+
+### 📚 Documentation
+
+- Revise alias example for task execution by @azais-corentin in [#7338](https://github.com/jdx/mise/pull/7338)
+
 ## [2025.12.9](https://github.com/jdx/mise/compare/v2025.12.8..v2025.12.9) - 2025-12-16
 
 ### 🚀 Features
