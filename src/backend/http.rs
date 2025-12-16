@@ -526,6 +526,18 @@ impl HttpBackend {
     }
 }
 
+/// Returns install-time-only option keys for HTTP backend.
+pub fn install_time_option_keys() -> Vec<String> {
+    vec![
+        "url".into(),
+        "checksum".into(),
+        "version_list_url".into(),
+        "version_regex".into(),
+        "version_json_path".into(),
+        "format".into(),
+    ]
+}
+
 #[async_trait]
 impl Backend for HttpBackend {
     fn get_type(&self) -> BackendType {

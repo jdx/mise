@@ -166,6 +166,11 @@ impl Backend for GoBackend {
     }
 }
 
+/// Returns install-time-only option keys for Go backend.
+pub fn install_time_option_keys() -> Vec<String> {
+    vec!["tags".into()]
+}
+
 impl GoBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }

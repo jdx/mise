@@ -264,6 +264,16 @@ impl Backend for PIPXBackend {
     }
 }
 
+/// Returns install-time-only option keys for PIPX backend.
+pub fn install_time_option_keys() -> Vec<String> {
+    vec![
+        "extras".into(),
+        "pipx_args".into(),
+        "uvx_args".into(),
+        "uvx".into(),
+    ]
+}
+
 impl PIPXBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self {

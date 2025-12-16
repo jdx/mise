@@ -261,6 +261,21 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
     }
 }
 
+/// Returns install-time-only option keys for a backend type.
+/// These are options that only affect installation/download, not post-install behavior.
+/// Used to filter cached options when config provides its own options.
+pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<String> {
+    match backend_type {
+        BackendType::Http => http::install_time_option_keys(),
+        BackendType::Github | BackendType::Gitlab => github::install_time_option_keys(),
+        BackendType::Ubi => ubi::install_time_option_keys(),
+        BackendType::Cargo => cargo::install_time_option_keys(),
+        BackendType::Go => go::install_time_option_keys(),
+        BackendType::Pipx => pipx::install_time_option_keys(),
+        _ => vec![],
+    }
+}
+
 #[async_trait]
 pub trait Backend: Debug + Send + Sync {
     fn id(&self) -> &str {
