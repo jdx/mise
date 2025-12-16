@@ -82,6 +82,10 @@ impl Backend for GemBackend {
         //   upgrades don't break gems, while still being pinned to a minor version
         rewrite_gem_shebangs(&tv.install_path())?;
 
+        // Create a ruby symlink in libexec/bin for polyglot script fallback
+        // RubyGems polyglot scripts have: exec "$bindir/ruby" "-x" "$0" "$@"
+        create_ruby_symlink(&tv.install_path())?;
+
         Ok(tv)
     }
 }
@@ -163,27 +167,83 @@ fn get_gem_executables(install_path: &Path) -> eyre::Result<Vec<std::path::PathB
     Ok(files)
 }
 
+/// Creates a `ruby` symlink in libexec/bin/ for RubyGems polyglot script fallback.
+///
+/// RubyGems polyglot scripts include: `exec "$bindir/ruby" "-x" "$0" "$@"`
+/// This fallback runs when the script is executed via /bin/sh instead of ruby.
+/// We create a symlink to the mise-managed Ruby (using minor version) so
+/// the fallback works correctly.
+fn create_ruby_symlink(install_path: &Path) -> eyre::Result<()> {
+    let libexec_bin = install_path.join("libexec/bin");
+    let ruby_symlink = libexec_bin.join("ruby");
+
+    // Don't overwrite if it already exists
+    if ruby_symlink.exists() || ruby_symlink.is_symlink() {
+        return Ok(());
+    }
+
+    // Find which Ruby we're using by checking an existing gem executable's shebang
+    let executables = get_gem_executables(install_path)?;
+    let Some(exec_path) = executables.first() else {
+        return Ok(());
+    };
+
+    let content = file::read_to_string(exec_path)?;
+    let lines: Vec<&str> = content.lines().collect();
+    let Some((_, shebang_line)) = find_ruby_shebang(&lines) else {
+        return Ok(());
+    };
+
+    // Extract the ruby path from the shebang
+    let ruby_path = shebang_line
+        .trim_start_matches("#!")
+        .split_whitespace()
+        .next()
+        .unwrap_or("");
+
+    if ruby_path.is_empty() {
+        return Ok(());
+    }
+
+    // Only create symlink for mise-managed Ruby
+    // For system Ruby, the shebang is #!/usr/bin/env ruby, which we can't symlink to
+    if !is_mise_ruby_path(ruby_path) {
+        return Ok(());
+    }
+
+    // Create symlink to the ruby executable
+    file::make_symlink(Path::new(ruby_path), &ruby_symlink)?;
+    Ok(())
+}
+
 /// Rewrites shebangs in gem executables to improve compatibility.
 ///
 /// For system Ruby: Uses `#!/usr/bin/env ruby` for PATH-based resolution.
 /// For mise-managed Ruby: Uses minor version symlink (e.g., `.../ruby/3.1/bin/ruby`)
 /// so that patch upgrades (3.1.0 → 3.1.1) don't break gems.
+///
+/// Handles both regular Ruby scripts and RubyGems polyglot scripts which have
+/// `#!/bin/sh` on line 1 but the actual Ruby shebang after `=end`.
 fn rewrite_gem_shebangs(install_path: &Path) -> eyre::Result<()> {
     let executables = get_gem_executables(install_path)?;
 
     for exec_path in executables {
         let content = file::read_to_string(&exec_path)?;
-        let Some(first_line) = content.lines().next() else {
-            continue;
-        };
+        let lines: Vec<&str> = content.lines().collect();
 
-        // Check if it's a Ruby shebang
-        if !first_line.starts_with("#!") || !first_line.contains("ruby") {
+        if lines.is_empty() {
             continue;
         }
 
+        // Find the Ruby shebang line - either line 1 or after =end for polyglot scripts
+        let (shebang_line_idx, shebang_line) = if let Some(info) = find_ruby_shebang(&lines) {
+            info
+        } else {
+            continue;
+        };
+
         // Extract the Ruby path and any arguments from the shebang
-        let shebang_content = first_line.trim_start_matches("#!");
+        let shebang_content = shebang_line.trim_start_matches("#!");
         let mut parts = shebang_content.split_whitespace();
         let ruby_path = parts.next().unwrap_or("");
         let shebang_args: Vec<&str> = parts.collect();
@@ -206,14 +266,47 @@ fn rewrite_gem_shebangs(install_path: &Path) -> eyre::Result<()> {
             "#!/usr/bin/env ruby".to_string()
         };
 
-        // Rewrite the file with new shebang, preserving trailing newline
-        let rest_of_file = content.lines().skip(1).collect::<Vec<_>>().join("\n");
+        // Rewrite the file with new shebang at the correct line
+        let mut new_lines: Vec<&str> = lines.clone();
+        let new_shebang_ref: &str = &new_shebang;
+        new_lines[shebang_line_idx] = new_shebang_ref;
         let trailing_newline = if content.ends_with('\n') { "\n" } else { "" };
-        let new_content = format!("{new_shebang}\n{rest_of_file}{trailing_newline}");
+        let new_content = format!("{}{trailing_newline}", new_lines.join("\n"));
         file::write(&exec_path, &new_content)?;
     }
 
     Ok(())
+}
+
+/// Finds the Ruby shebang line in a script.
+/// Returns (line_index, line_content) or None if not found.
+///
+/// For regular Ruby scripts, this is line 0 with `#!...ruby...`.
+/// For RubyGems polyglot scripts (starting with `#!/bin/sh`), the Ruby shebang
+/// is the first `#!...ruby...` line after `=end`.
+fn find_ruby_shebang<'a>(lines: &'a [&'a str]) -> Option<(usize, &'a str)> {
+    let first_line = lines.first()?;
+
+    // Check if first line is a Ruby shebang
+    if first_line.starts_with("#!") && first_line.contains("ruby") {
+        return Some((0, first_line));
+    }
+
+    // Check for polyglot format: #!/bin/sh followed by =end and then Ruby shebang
+    if first_line.starts_with("#!/bin/sh") {
+        let mut found_end = false;
+        for (idx, line) in lines.iter().enumerate().skip(1) {
+            if line.trim() == "=end" {
+                found_end = true;
+                continue;
+            }
+            if found_end && line.starts_with("#!") && line.contains("ruby") {
+                return Some((idx, line));
+            }
+        }
+    }
+
+    None
 }
 
 /// Checks if a Ruby path is within mise's installs directory.
