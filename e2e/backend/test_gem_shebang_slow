@@ -5,9 +5,17 @@
 mise use ruby@3.3
 mise use gem:ruby-lsp@0.23.0
 
-# Get the shebang from the gem executable
+# Get the Ruby shebang from the gem executable
+# RubyGems creates polyglot scripts: #!/bin/sh on line 1, Ruby shebang after =end
 gem_exec="$MISE_DATA_DIR/installs/gem-ruby-lsp/0.23.0/libexec/bin/ruby-lsp"
-shebang=$(head -n1 "$gem_exec")
+
+# Find the Ruby shebang line (after =end for polyglot scripts)
+shebang=$(awk '/^=end$/{found=1; next} found && /^#!/{print; exit}' "$gem_exec")
+
+# If no polyglot format found, check first line
+if [[ -z $shebang ]]; then
+	shebang=$(head -n1 "$gem_exec")
+fi
 
 # Should use minor version symlink (3.3) not full version (3.3.x)
 # Pattern: /ruby/3.3/bin/ruby (minor version), NOT /ruby/3.3.x/bin/ruby (patch version)
