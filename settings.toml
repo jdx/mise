@@ -702,11 +702,12 @@ The lockfiles are not created automatically. To generate them, run the following
 touch mise.lock && mise install
 ```
 
-The lockfile is named the same as the config file but with `.lock` instead of `.toml` as the extension, e.g.:
+Lockfiles are always placed in the project root directory:
 
 - `mise.toml` -> `mise.lock`
 - `mise.local.toml` -> `mise.local.lock`
-- `.config/mise.toml` -> `.config/mise.lock`
+- `.config/mise.toml` -> `mise.lock`
+- `.mise/config.toml` -> `mise.lock`
 """
 env = "MISE_LOCKFILE"
 type = "Bool"
