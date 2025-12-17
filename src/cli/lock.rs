@@ -4,9 +4,8 @@ use std::sync::Arc;
 
 use crate::backend::platform_target::PlatformTarget;
 use crate::config::Config;
-use crate::config::config_file::config_root;
 use crate::file::display_path;
-use crate::lockfile::{Lockfile, PlatformInfo};
+use crate::lockfile::{self, Lockfile, PlatformInfo};
 use crate::platform::Platform;
 use crate::toolset::Toolset;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -137,20 +136,26 @@ impl Lock {
     }
 
     fn get_lockfile_path(&self, config: &Config) -> PathBuf {
-        // Get config root from the first config file, or use current dir
-        let root = config
-            .config_files
-            .keys()
-            .next()
-            .map(|p| config_root::config_root(p))
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-
-        let lockfile_name = if self.local {
-            "mise.local.lock"
+        // Get lockfile path from the first config file
+        if let Some(config_path) = config.config_files.keys().next() {
+            let (lockfile_path, _) = lockfile::lockfile_path_for_config(config_path);
+            if self.local {
+                // Replace mise.lock with mise.local.lock
+                lockfile_path.with_file_name("mise.local.lock")
+            } else {
+                lockfile_path
+            }
         } else {
-            "mise.lock"
-        };
-        root.join(lockfile_name)
+            // Fallback to current dir
+            let lockfile_name = if self.local {
+                "mise.local.lock"
+            } else {
+                "mise.lock"
+            };
+            std::env::current_dir()
+                .unwrap_or_default()
+                .join(lockfile_name)
+        }
     }
 
     fn determine_target_platforms(&self, lockfile_path: &PathBuf) -> Result<Vec<Platform>> {
@@ -183,24 +188,39 @@ impl Lock {
         config: &Config,
         ts: &Toolset,
     ) -> Vec<(crate::cli::args::BackendArg, crate::toolset::ToolVersion)> {
-        // Calculate target config_root (same logic as get_lockfile_path)
-        let target_root = config
+        // Calculate target lockfile directory (same logic as get_lockfile_path)
+        let target_lockfile_dir = config
             .config_files
             .keys()
             .next()
-            .map(|p| config_root::config_root(p))
+            .map(|p| {
+                let (lockfile_path, _) = lockfile::lockfile_path_for_config(p);
+                lockfile_path
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_default()
+            })
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
-        // Collect tools from config files in the target config_root only
+        // Collect tools from config files that share the same lockfile directory
         let mut all_tools: Vec<_> = Vec::new();
         let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
 
+        // Helper to get lockfile directory for a config path
+        let get_lockfile_dir = |path: &std::path::Path| -> PathBuf {
+            let (lockfile_path, _) = lockfile::lockfile_path_for_config(path);
+            lockfile_path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_default()
+        };
+
         // First, get all tools from the resolved toolset (these are the "current" versions)
-        // but only if they come from a config file in the target config_root
+        // but only if they come from a config file with the same lockfile directory
         for (backend, tv) in ts.list_current_versions() {
-            // Check if this tool's source is in the target config_root
+            // Check if this tool's source shares the same lockfile directory
             if let Some(source_path) = tv.request.source().path()
-                && config_root::config_root(source_path) != target_root
+                && get_lockfile_dir(source_path) != target_lockfile_dir
             {
                 continue;
             }
@@ -210,10 +230,10 @@ impl Lock {
             }
         }
 
-        // Then, iterate config files in the target config_root to find tools that may have been overridden
+        // Then, iterate config files with the same lockfile directory to find tools that may have been overridden
         for (path, cf) in config.config_files.iter() {
-            // Skip config files not in the target config_root
-            if config_root::config_root(path) != target_root {
+            // Skip config files that don't share the same lockfile directory
+            if get_lockfile_dir(path) != target_lockfile_dir {
                 continue;
             }
             if let Ok(trs) = cf.to_tool_request_set() {

@@ -1,4 +1,3 @@
-use crate::config::config_file::config_root;
 use crate::config::{Config, Settings};
 use crate::env;
 use crate::file;
@@ -244,6 +243,12 @@ impl Lockfile {
 
 /// Determines the lockfile path for a given config file path
 /// Returns (lockfile_path, is_local)
+///
+/// Lockfiles are placed alongside their config files:
+/// - `mise.toml` -> `mise.lock`
+/// - `.config/mise.toml` -> `.config/mise.lock`
+/// - `.mise/config.toml` -> `.mise/mise.lock`
+/// - `.mise/conf.d/foo.toml` -> `.mise/mise.lock` (conf.d files share parent's lockfile)
 pub fn lockfile_path_for_config(config_path: &Path) -> (PathBuf, bool) {
     let is_local = is_local_config(config_path);
     let lockfile_name = if is_local {
@@ -252,30 +257,20 @@ pub fn lockfile_path_for_config(config_path: &Path) -> (PathBuf, bool) {
         "mise.lock"
     };
 
-    // Fast path: for simple project configs (mise.toml, mise.local.toml, etc.)
-    // just use the parent directory. This avoids the expensive config_root call.
-    if let Some(parent) = config_path.parent() {
-        let filename = config_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or_default();
-        let parent_name = parent
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or_default();
+    let parent = config_path.parent().unwrap_or(Path::new("."));
+    let parent_name = parent
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default();
 
-        // If the config is directly in a project dir (not in .mise, .config, etc.)
-        // we can skip the full config_root calculation
-        if !matches!(parent_name, ".mise" | "mise" | ".config" | "conf.d")
-            && (filename.starts_with("mise.") || filename.starts_with(".mise."))
-        {
-            return (parent.join(lockfile_name), is_local);
-        }
-    }
+    // For conf.d files, place lockfile at parent of conf.d so all conf.d files share one lockfile
+    let lockfile_dir = if parent_name == "conf.d" {
+        parent.parent().unwrap_or(parent)
+    } else {
+        parent
+    };
 
-    // Full path calculation for complex cases (.mise/, .config/mise/, etc.)
-    let root = config_root::config_root(config_path);
-    (root.join(lockfile_name), is_local)
+    (lockfile_dir.join(lockfile_name), is_local)
 }
 
 /// Checks if a config path is a "local" config (should go to mise.local.lock)
@@ -1122,5 +1117,40 @@ options = { exe = "rg" }
         assert_eq!(lockfile.tools["ripgrep"].len(), 2);
         assert_eq!(lockfile.tools["ripgrep"][0].options.len(), 2);
         assert_eq!(lockfile.tools["ripgrep"][1].options.len(), 1);
+    }
+
+    #[test]
+    fn test_lockfile_path_for_config() {
+        // Simple case: mise.toml in project root
+        let (path, is_local) = lockfile_path_for_config(Path::new("/foo/bar/mise.toml"));
+        assert_eq!(path, PathBuf::from("/foo/bar/mise.lock"));
+        assert!(!is_local);
+
+        // Local config
+        let (path, is_local) = lockfile_path_for_config(Path::new("/foo/bar/mise.local.toml"));
+        assert_eq!(path, PathBuf::from("/foo/bar/mise.local.lock"));
+        assert!(is_local);
+
+        // Config in .config directory
+        let (path, is_local) = lockfile_path_for_config(Path::new("/foo/bar/.config/mise.toml"));
+        assert_eq!(path, PathBuf::from("/foo/bar/.config/mise.lock"));
+        assert!(!is_local);
+
+        // Config in .mise directory
+        let (path, is_local) = lockfile_path_for_config(Path::new("/foo/bar/.mise/config.toml"));
+        assert_eq!(path, PathBuf::from("/foo/bar/.mise/mise.lock"));
+        assert!(!is_local);
+
+        // Config in conf.d directory - should go to parent of conf.d
+        let (path, is_local) =
+            lockfile_path_for_config(Path::new("/foo/bar/.mise/conf.d/foo.toml"));
+        assert_eq!(path, PathBuf::from("/foo/bar/.mise/mise.lock"));
+        assert!(!is_local);
+
+        // Config in .config/mise/conf.d directory
+        let (path, is_local) =
+            lockfile_path_for_config(Path::new("/foo/bar/.config/mise/conf.d/foo.toml"));
+        assert_eq!(path, PathBuf::from("/foo/bar/.config/mise/mise.lock"));
+        assert!(!is_local);
     }
 }
