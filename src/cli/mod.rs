@@ -191,7 +191,7 @@ pub struct Cli {
 #[strum(serialize_all = "kebab-case")]
 pub enum Commands {
     Activate(activate::Activate),
-    Alias(Box<alias::Alias>),
+    ToolAlias(Box<alias::Alias>),
     Asdf(asdf::Asdf),
     Backends(backends::Backends),
     BinPaths(bin_paths::BinPaths),
@@ -257,7 +257,7 @@ impl Commands {
     pub async fn run(self) -> Result<()> {
         match self {
             Self::Activate(cmd) => cmd.run(),
-            Self::Alias(cmd) => cmd.run().await,
+            Self::ToolAlias(cmd) => cmd.run().await,
             Self::Asdf(cmd) => cmd.run().await,
             Self::Backends(cmd) => cmd.run().await,
             Self::BinPaths(cmd) => cmd.run().await,

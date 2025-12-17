@@ -10,8 +10,9 @@ mod unset;
 
 #[derive(Debug, clap::Args)]
 #[clap(
-    about = "Manage version aliases.",
-    visible_alias = "a",
+    name = "tool-alias",
+    about = "Manage tool version aliases.",
+    alias = "alias",
     alias = "aliases"
 )]
 pub struct Alias {
