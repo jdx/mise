@@ -292,7 +292,7 @@ impl Backend for AquaBackend {
 
         // Determine operation count for progress reporting
         let mut op_count = 1; // download
-        if pkg.checksum.as_ref().is_some_and(|c| c.enabled()) {
+        if pkg.checksum.as_ref().is_some_and(|c| c.enabled()) || api_digest.is_some() {
             op_count += 1;
         }
         let format = pkg.format(&v, os(), arch()).unwrap_or_default();
