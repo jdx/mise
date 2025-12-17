@@ -18,7 +18,7 @@ use crate::lockfile::PlatformInfo;
 use crate::plugins::PluginSource;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{cmd, file, plugins, timeout};
+use crate::{file, plugins, timeout};
 use async_trait::async_trait;
 use eyre::{Result, WrapErr};
 use itertools::Itertools;

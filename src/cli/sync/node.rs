@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use eyre::Result;
 use itertools::sorted;
 
-use crate::{backend, cmd, config, dirs, file};
+use crate::{backend, config, dirs, file};
 use crate::{
     config::Config,
     env::{NODENV_ROOT, NVM_DIR},

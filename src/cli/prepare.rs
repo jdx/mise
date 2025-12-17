@@ -1,7 +1,6 @@
 use eyre::Result;
 
 use crate::config::Config;
-use crate::miseprintln;
 use crate::prepare::{PrepareEngine, PrepareOptions, PrepareStepResult};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 

@@ -14,7 +14,7 @@ use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{cmd, env, file, github, plugins};
+use crate::{env, file, github, plugins};
 use async_trait::async_trait;
 use itertools::Itertools;
 use tempfile::tempdir_in;
@@ -287,6 +287,7 @@ impl Backend for GoPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
+        ctx.pr.start_operations(3);
         let tarball_path = self.download(&mut tv, ctx.pr.as_ref()).await?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         self.install(&tv, ctx.pr.as_ref(), &tarball_path)?;

@@ -13,7 +13,7 @@ use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
 use crate::toolset::{ToolRequest, ToolVersion};
-use crate::{cmd, file, github, plugins};
+use crate::{file, github, plugins};
 use async_trait::async_trait;
 use eyre::Result;
 use xx::regex;

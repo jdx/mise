@@ -7,7 +7,6 @@ use gix::{self};
 use once_cell::sync::OnceCell;
 use xx::file;
 
-use crate::cmd;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::file::touch_dir;

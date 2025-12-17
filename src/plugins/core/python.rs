@@ -12,7 +12,7 @@ use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{Result, lock_file::LockFile};
-use crate::{cmd, dirs, file, plugins, sysconfig};
+use crate::{dirs, file, plugins, sysconfig};
 use async_trait::async_trait;
 use eyre::{bail, eyre};
 use flate2::read::GzDecoder;
