@@ -981,14 +981,12 @@ impl<'a> ChecksumFetcher<'a> {
                 .assets
                 .iter()
                 .find(|a| a.name.eq_ignore_ascii_case(pattern))
-            {
-                if let Some(result) = self
+                && let Some(result) = self
                     .fetch_and_parse_checksum(&checksum_asset.url, &checksum_asset.name, asset_name)
                     .await
                 {
                     return Some(result);
                 }
-            }
         }
 
         // Last resort: try any file with "checksum" in the name
@@ -996,14 +994,12 @@ impl<'a> ChecksumFetcher<'a> {
             .assets
             .iter()
             .find(|a| a.name.to_lowercase().contains("checksum"))
-        {
-            if let Some(result) = self
+            && let Some(result) = self
                 .fetch_and_parse_checksum(&checksum_asset.url, &checksum_asset.name, asset_name)
                 .await
             {
                 return Some(result);
             }
-        }
 
         None
     }
