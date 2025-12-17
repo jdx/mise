@@ -1889,7 +1889,28 @@
   "description": "config file for mise version manager (mise.toml)",
   "properties": {
     "alias": {
+      "deprecated": true,
       "description": "custom shorthands",
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "description": "where the alias goes",
+            "type": "string"
+          },
+          {
+            "description": "tool to set aliases for",
+            "type": "object",
+            "additionalProperties": {
+              "description": "version alias points to",
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "tool_alias": {
+      "description": "Tool version aliases",
       "type": "object",
       "additionalProperties": {
         "oneOf": [
