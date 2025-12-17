@@ -914,7 +914,7 @@ backends = [
   "asdf:kahun/asdf-clusterawsadm",
 ]
 description = "clusterawsadm provides helpers for bootstrapping Kubernetes Cluster API Provider AWS"
-test = ["cluster-api-provider-aws version", "clusterawsadm version:"]
+test = ["clusterawsadm version", "clusterawsadm version:"]
 
 [tools.clusterctl]
 backends = [
@@ -2595,7 +2595,7 @@ backends = [
   "asdf:xanmanning/asdf-k3kcli",
 ]
 description = "K3k, Kubernetes in Kubernetes, is a tool that empowers you to create and manage isolated K3s clusters within your existing Kubernetes environment"
-test = ["k3k --version", "k3kcli version v{{version}}"]
+test = ["k3kcli --version", "k3kcli version v{{version}}"]
 
 [tools.k3s]
 backends = ["aqua:k3s-io/k3s", "asdf:mise-plugins/mise-k3s"]
