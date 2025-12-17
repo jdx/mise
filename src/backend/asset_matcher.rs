@@ -38,6 +38,7 @@ use std::sync::LazyLock;
 use super::asset_detector::AssetPicker;
 use super::platform_target::PlatformTarget;
 use crate::config::Settings;
+use crate::http::HTTP;
 
 /// Common checksum file extensions
 static CHECKSUM_EXTENSIONS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
@@ -528,6 +529,253 @@ pub fn detect_asset_for_target(assets: &[String], target: &PlatformTarget) -> Re
         .map(|m| m.name)
 }
 
+// ========== Checksum Fetching Helpers ==========
+
+/// Represents an asset with its download URL
+#[derive(Debug, Clone)]
+pub struct Asset {
+    /// The asset filename
+    pub name: String,
+    /// The download URL for the asset
+    pub url: String,
+}
+
+impl Asset {
+    pub fn new(name: impl Into<String>, url: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            url: url.into(),
+        }
+    }
+
+    /// Create assets from names and a base URL pattern
+    pub fn from_names_with_base_url(names: &[String], base_url: &str) -> Vec<Self> {
+        names
+            .iter()
+            .map(|name| Self {
+                name: name.clone(),
+                url: format!("{}/{}", base_url.trim_end_matches('/'), name),
+            })
+            .collect()
+    }
+}
+
+/// Result of a checksum lookup
+#[derive(Debug, Clone)]
+pub struct ChecksumResult {
+    /// Algorithm used (sha256, sha512, md5, blake3)
+    pub algorithm: String,
+    /// The hash value
+    pub hash: String,
+    /// Which checksum file this came from
+    pub source_file: String,
+}
+
+impl ChecksumResult {
+    /// Format as "algorithm:hash" string for verification
+    pub fn to_string_formatted(&self) -> String {
+        format!("{}:{}", self.algorithm, self.hash)
+    }
+}
+
+/// Checksum file fetcher that finds and parses checksums from release assets
+pub struct ChecksumFetcher<'a> {
+    assets: &'a [Asset],
+}
+
+impl<'a> ChecksumFetcher<'a> {
+    /// Create a new checksum fetcher with the given assets
+    pub fn new(assets: &'a [Asset]) -> Self {
+        Self { assets }
+    }
+
+    /// Find and fetch the checksum for a specific asset
+    ///
+    /// This method:
+    /// 1. Finds a checksum file that matches the asset name
+    /// 2. Fetches the checksum file
+    /// 3. Parses it to extract the checksum for the target file
+    ///
+    /// Returns None if no checksum file is found or parsing fails.
+    pub async fn fetch_checksum_for(&self, asset_name: &str) -> Option<ChecksumResult> {
+        let asset_names: Vec<String> = self.assets.iter().map(|a| a.name.clone()).collect();
+        let matcher = AssetMatcher::new();
+
+        // First try to find an asset-specific checksum file (e.g., file.tar.gz.sha256)
+        if let Some(checksum_filename) = matcher.find_checksum_for(asset_name, &asset_names) {
+            if let Some(checksum_asset) = self.assets.iter().find(|a| a.name == checksum_filename) {
+                if let Some(result) = self
+                    .fetch_and_parse_checksum(&checksum_asset.url, &checksum_filename, asset_name)
+                    .await
+                {
+                    return Some(result);
+                }
+            }
+        }
+
+        // Try common global checksum files
+        let global_patterns = [
+            "checksums.txt",
+            "SHA256SUMS",
+            "SHASUMS256.txt",
+            "sha256sums.txt",
+        ];
+        for pattern in global_patterns {
+            if let Some(checksum_asset) = self.assets.iter().find(|a| {
+                a.name.eq_ignore_ascii_case(pattern) || a.name.to_lowercase().contains("checksum")
+            }) {
+                if let Some(result) = self
+                    .fetch_and_parse_checksum(&checksum_asset.url, &checksum_asset.name, asset_name)
+                    .await
+                {
+                    return Some(result);
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Fetch a checksum file and parse it for the target asset
+    async fn fetch_and_parse_checksum(
+        &self,
+        url: &str,
+        checksum_filename: &str,
+        target_asset: &str,
+    ) -> Option<ChecksumResult> {
+        let content = match HTTP.get_text(url).await {
+            Ok(c) => c,
+            Err(e) => {
+                debug!("Failed to fetch checksum file {}: {}", url, e);
+                return None;
+            }
+        };
+
+        // Detect algorithm from filename
+        let algorithm = detect_checksum_algorithm(checksum_filename);
+
+        // Try to parse the checksum
+        parse_checksum_content(&content, target_asset, &algorithm, checksum_filename)
+    }
+}
+
+/// Detect the checksum algorithm from the filename
+fn detect_checksum_algorithm(filename: &str) -> String {
+    let lower = filename.to_lowercase();
+    if lower.contains("sha512") || lower.ends_with(".sha512") || lower.ends_with(".sha512sum") {
+        "sha512".to_string()
+    } else if lower.contains("md5") || lower.ends_with(".md5") || lower.ends_with(".md5sum") {
+        "md5".to_string()
+    } else if lower.contains("blake3") || lower.ends_with(".b3") {
+        "blake3".to_string()
+    } else {
+        // Default to sha256 (most common)
+        "sha256".to_string()
+    }
+}
+
+/// Parse checksum content and extract the hash for a specific file
+fn parse_checksum_content(
+    content: &str,
+    target_file: &str,
+    algorithm: &str,
+    source_file: &str,
+) -> Option<ChecksumResult> {
+    let trimmed = content.trim();
+
+    // Check if this looks like a multi-line SHASUMS file (has lines with two parts)
+    let is_shasums_format = trimmed.lines().any(|line| {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        parts.len() >= 2
+    });
+
+    if is_shasums_format {
+        // Try standard SHASUMS format: "<hash>  <filename>" or "<hash> *<filename>"
+        // Parse manually to avoid panic from hash::parse_shasums
+        for line in trimmed.lines() {
+            let mut parts = line.split_whitespace();
+            if let (Some(hash_str), Some(filename)) = (parts.next(), parts.next()) {
+                // Strip leading * or . from filename if present (some formats use this)
+                let clean_filename = filename.trim_start_matches(['*', '.']);
+                if clean_filename == target_file || filename == target_file {
+                    if is_valid_hash(hash_str, algorithm) {
+                        return Some(ChecksumResult {
+                            algorithm: algorithm.to_string(),
+                            hash: hash_str.to_string(),
+                            source_file: source_file.to_string(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // If this is a single-file checksum (e.g., file.tar.gz.sha256), extract just the hash
+    // Format is typically "<hash>" or "<hash>  <filename>"
+    if let Some(first_word) = trimmed.split_whitespace().next() {
+        // Validate it looks like a hash (hex string of appropriate length)
+        if is_valid_hash(first_word, algorithm) {
+            return Some(ChecksumResult {
+                algorithm: algorithm.to_string(),
+                hash: first_word.to_string(),
+                source_file: source_file.to_string(),
+            });
+        }
+    }
+
+    None
+}
+
+/// Check if a string looks like a valid hash for the given algorithm
+fn is_valid_hash(s: &str, algorithm: &str) -> bool {
+    let expected_len = match algorithm {
+        "sha256" => 64,
+        "sha512" => 128,
+        "md5" => 32,
+        "blake3" => 64,
+        _ => return s.len() >= 32, // At least 128 bits
+    };
+    s.len() == expected_len && s.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Convenience function to find and fetch checksum for an asset
+///
+/// # Arguments
+/// * `assets` - List of assets with URLs
+/// * `asset_name` - The asset to find checksum for
+///
+/// # Returns
+/// * `Some(ChecksumResult)` if found and parsed successfully
+/// * `None` if no checksum found or parsing failed
+pub async fn fetch_checksum_for_asset(
+    assets: &[Asset],
+    asset_name: &str,
+) -> Option<ChecksumResult> {
+    ChecksumFetcher::new(assets)
+        .fetch_checksum_for(asset_name)
+        .await
+}
+
+/// Find a signature file URL for an asset
+///
+/// # Arguments
+/// * `assets` - List of assets with URLs
+/// * `asset_name` - The asset to find signature for
+///
+/// # Returns
+/// * `Some(Asset)` containing the signature file
+/// * `None` if no signature found
+pub fn find_signature_asset(assets: &[Asset], asset_name: &str) -> Option<Asset> {
+    let asset_names: Vec<String> = assets.iter().map(|a| a.name.clone()).collect();
+    let matcher = AssetMatcher::new();
+
+    if let Some(sig_filename) = matcher.find_signature_for(asset_name, &asset_names) {
+        assets.iter().find(|a| a.name == sig_filename).cloned()
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -668,5 +916,150 @@ mod tests {
 
         // This will use the current platform, so we just check it doesn't panic
         let _ = detect_best_asset(&assets);
+    }
+
+    // ========== Checksum Helper Tests ==========
+
+    #[test]
+    fn test_detect_checksum_algorithm() {
+        assert_eq!(detect_checksum_algorithm("SHA256SUMS"), "sha256");
+        assert_eq!(detect_checksum_algorithm("file.sha256"), "sha256");
+        assert_eq!(detect_checksum_algorithm("sha256sums.txt"), "sha256");
+        assert_eq!(detect_checksum_algorithm("SHA512SUMS"), "sha512");
+        assert_eq!(detect_checksum_algorithm("file.sha512"), "sha512");
+        assert_eq!(detect_checksum_algorithm("file.md5"), "md5");
+        assert_eq!(detect_checksum_algorithm("MD5SUMS"), "md5");
+        assert_eq!(detect_checksum_algorithm("checksums.b3"), "blake3");
+        assert_eq!(detect_checksum_algorithm("checksums.txt"), "sha256"); // default
+    }
+
+    #[test]
+    fn test_is_valid_hash() {
+        // SHA256 (64 chars)
+        assert!(is_valid_hash(
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "sha256"
+        ));
+        assert!(!is_valid_hash("e3b0c44298fc1c149afbf4c8996fb924", "sha256")); // too short
+
+        // SHA512 (128 chars)
+        assert!(is_valid_hash(
+            "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e",
+            "sha512"
+        ));
+
+        // MD5 (32 chars)
+        assert!(is_valid_hash("d41d8cd98f00b204e9800998ecf8427e", "md5"));
+        assert!(!is_valid_hash("d41d8cd98f00b204", "md5")); // too short
+
+        // Invalid characters
+        assert!(!is_valid_hash(
+            "g3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "sha256"
+        ));
+    }
+
+    #[test]
+    fn test_parse_checksum_content_shasums_format() {
+        let content = r#"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  tool-1.0.0-linux-x64.tar.gz
+abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-darwin-arm64.tar.gz"#;
+
+        let result = parse_checksum_content(
+            content,
+            "tool-1.0.0-linux-x64.tar.gz",
+            "sha256",
+            "SHA256SUMS",
+        );
+
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert_eq!(r.algorithm, "sha256");
+        assert_eq!(
+            r.hash,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(r.source_file, "SHA256SUMS");
+    }
+
+    #[test]
+    fn test_parse_checksum_content_single_file() {
+        let content = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+        let result = parse_checksum_content(
+            content,
+            "tool-1.0.0-linux-x64.tar.gz",
+            "sha256",
+            "tool-1.0.0-linux-x64.tar.gz.sha256",
+        );
+
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert_eq!(r.algorithm, "sha256");
+        assert_eq!(
+            r.hash,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    #[test]
+    fn test_parse_checksum_content_with_filename_suffix() {
+        // Some checksum files have format: "<hash>  filename"
+        let content =
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  tool.tar.gz";
+
+        let result = parse_checksum_content(content, "other-file.tar.gz", "sha256", "tool.sha256");
+
+        // Should still extract the hash since it's a single-file checksum
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert_eq!(
+            r.hash,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    #[test]
+    fn test_checksum_result_format() {
+        let result = ChecksumResult {
+            algorithm: "sha256".to_string(),
+            hash: "abc123".to_string(),
+            source_file: "checksums.txt".to_string(),
+        };
+
+        assert_eq!(result.to_string_formatted(), "sha256:abc123");
+    }
+
+    #[test]
+    fn test_asset_creation() {
+        let asset = Asset::new("file.tar.gz", "https://example.com/file.tar.gz");
+        assert_eq!(asset.name, "file.tar.gz");
+        assert_eq!(asset.url, "https://example.com/file.tar.gz");
+
+        let names = vec!["a.tar.gz".to_string(), "b.tar.gz".to_string()];
+        let assets = Asset::from_names_with_base_url(&names, "https://example.com/releases/");
+        assert_eq!(assets.len(), 2);
+        assert_eq!(assets[0].url, "https://example.com/releases/a.tar.gz");
+        assert_eq!(assets[1].url, "https://example.com/releases/b.tar.gz");
+    }
+
+    #[test]
+    fn test_find_signature_asset() {
+        let assets = vec![
+            Asset::new(
+                "tool-1.0.0-linux-x64.tar.gz",
+                "https://example.com/tool-1.0.0-linux-x64.tar.gz",
+            ),
+            Asset::new(
+                "tool-1.0.0-linux-x64.tar.gz.sig",
+                "https://example.com/tool-1.0.0-linux-x64.tar.gz.sig",
+            ),
+        ];
+
+        let sig = find_signature_asset(&assets, "tool-1.0.0-linux-x64.tar.gz");
+        assert!(sig.is_some());
+        assert_eq!(sig.unwrap().name, "tool-1.0.0-linux-x64.tar.gz.sig");
+
+        let no_sig = find_signature_asset(&assets, "other-file.tar.gz");
+        assert!(no_sig.is_none());
     }
 }
