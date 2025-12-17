@@ -292,7 +292,7 @@ impl Backend for AquaBackend {
 
         // Determine operation count for progress reporting
         let format = pkg.format(&v, os(), arch()).unwrap_or_default();
-        let op_count = Self::calculate_op_count(&pkg, &api_digest, &format);
+        let op_count = Self::calculate_op_count(&pkg, &api_digest, format);
         ctx.pr.start_operations(op_count);
 
         self.download(ctx, &tv, &url, &filename).await?;
