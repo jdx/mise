@@ -564,9 +564,7 @@ impl Toolset {
         measure!("toolset::list_missing_versions", {
             self.list_current_versions()
                 .into_iter()
-                .filter(|(p, tv)| {
-                    tv.request.is_os_supported() && !p.is_version_installed(config, tv, true)
-                })
+                .filter(|(p, tv)| !p.is_version_installed(config, tv, true))
                 .map(|(_, tv)| tv)
                 .collect()
         })
@@ -610,7 +608,7 @@ impl Toolset {
         self.list_versions_by_plugin()
             .iter()
             .flat_map(|(p, v)| {
-                v.iter().map(|v| {
+                v.iter().filter(|v| v.request.is_os_supported()).map(|v| {
                     // map cargo backend specific prefixes to ref
                     let tv = match v.version.split_once(':') {
                         Some((ref_type @ ("tag" | "branch" | "rev"), r)) => {
@@ -672,8 +670,6 @@ impl Toolset {
         let versions = self
             .list_current_versions()
             .into_iter()
-            // Respect per-tool os constraints set via options.os
-            .filter(|(_, tv)| tv.request.is_os_supported())
             // Filter to only check specified tools if provided
             .filter(|(_, tv)| {
                 if let Some(tools) = filter_tools {
