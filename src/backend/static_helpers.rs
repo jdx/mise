@@ -437,11 +437,30 @@ pub fn install_artifact(
         // Extract with determined strip_components
         file::untar(file_path, &install_path, &tar_opts)?;
 
+        let tool_name = tv.ba().tool_name.as_str();
+
+        // Handle bin= option for archives (renames executable to specified name)
+        if let Some(bin_name) =
+            lookup_platform_key(opts, "bin").or_else(|| opts.get("bin").cloned())
+        {
+            rename_executable_in_dir(&install_path, &bin_name, Some(tool_name))?;
+        }
+
         // Handle rename_exe option for archives
         if let Some(rename_to) =
             lookup_platform_key(opts, "rename_exe").or_else(|| opts.get("rename_exe").cloned())
         {
-            rename_executable_in_dir(&install_path, &rename_to)?;
+            // Determine search directory based on bin_path option
+            let search_dir = if let Some(bin_path_template) =
+                lookup_platform_key(opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
+            {
+                let bin_path = template_string(&bin_path_template, tv);
+                install_path.join(&bin_path)
+            } else {
+                install_path.clone()
+            };
+
+            rename_executable_in_dir(&search_dir, &rename_to, Some(tool_name))?;
         }
     }
     Ok(())
@@ -492,8 +511,15 @@ pub fn verify_checksum_str(
 }
 
 /// Renames the first executable file found in a directory to a new name.
-/// Used by the `rename_exe` option to rename binaries after archive extraction.
-fn rename_executable_in_dir(dir: &Path, new_name: &str) -> eyre::Result<()> {
+/// Used by the `rename_exe` and `bin` options to rename binaries after archive extraction.
+///
+/// # Parameters
+/// - `dir`: The directory to search for executables
+/// - `new_name`: The new name for the executable
+/// - `tool_name`: Optional hint for finding non-executable files by name matching.
+///   When provided, if no executable is found, will search for files matching the tool name
+///   and make them executable before renaming.
+fn rename_executable_in_dir(dir: &Path, new_name: &str, tool_name: Option<&str>) -> eyre::Result<()> {
     let target_path = dir.join(new_name);
 
     // Check if target already exists before iterating
@@ -502,7 +528,7 @@ fn rename_executable_in_dir(dir: &Path, new_name: &str) -> eyre::Result<()> {
         return Ok(());
     }
 
-    // Find executables in the directory (non-recursive for top level)
+    // First pass: Find executables in the directory (non-recursive for top level)
     for entry in std::fs::read_dir(dir)?.flatten() {
         let path = entry.path();
         if path.is_file() && crate::file::is_executable(&path) {
@@ -515,11 +541,49 @@ fn rename_executable_in_dir(dir: &Path, new_name: &str) -> eyre::Result<()> {
                 continue;
             }
             // Rename this executable
-            std::fs::rename(&path, &target_path)?;
+            crate::file::rename(&path, &target_path)?;
             debug!("Renamed {} to {}", path.display(), target_path.display());
             return Ok(());
         }
     }
+
+    // Second pass: Find non-executable files by name matching (for ZIP archives without exec bit)
+    if let Some(tool_name) = tool_name {
+        for entry in std::fs::read_dir(dir)?.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                let file_name = path.file_name().unwrap().to_string_lossy();
+
+                // Skip common non-binary files
+                if file_name.starts_with('.')
+                    || file_name.ends_with(".txt")
+                    || file_name.ends_with(".md")
+                    || file_name.ends_with(".json")
+                    || file_name.ends_with(".yml")
+                    || file_name.ends_with(".yaml")
+                    || file_name.to_uppercase() == "LICENSE"
+                    || file_name.to_uppercase() == "README"
+                    || file_name.to_uppercase().starts_with("README.")
+                {
+                    continue;
+                }
+
+                // Check if filename matches tool name pattern or the target name
+                if file_name.contains(tool_name) || *file_name == *new_name {
+                    // Make it executable first
+                    crate::file::make_executable(&path)?;
+                    crate::file::rename(&path, &target_path)?;
+                    debug!(
+                        "Found and renamed {} to {} (added exec permissions)",
+                        path.display(),
+                        target_path.display()
+                    );
+                    return Ok(());
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 

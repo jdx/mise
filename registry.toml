@@ -2228,7 +2228,7 @@ description = "CLI tool for linting and testing Helm charts"
 
 [tools.helm-diff]
 backends = [
-  "github:databus23/helm-diff[bin_path=bin,bin=helm-diff]",
+  "github:databus23/helm-diff[bin_path=diff/bin,rename_exe=helm-diff]",
   "ubi:databus23/helm-diff[exe=diff,rename_exe=helm-diff]",
   "asdf:mise-plugins/mise-helm-diff",
 ]
@@ -3170,8 +3170,8 @@ test = ["mdbook --version", "mdbook v{{version}}"]
 backends = [
   "github:Michael-F-Bryan/mdbook-linkcheck[bin=mdbook-linkcheck]",
   "ubi:Michael-F-Bryan/mdbook-linkcheck",
-  "asdf:mise-plugins/mise-mdbook-linkcheck",
   "cargo:mdbook-linkcheck",
+  "asdf:mise-plugins/mise-mdbook-linkcheck",
 ]
 description = "A backend for `mdbook` which will check your links for you"
 test = ["mdbook-linkcheck --version", "mdbook-linkcheck {{version}}"]
