@@ -13,7 +13,8 @@ mod unset;
     name = "tool-alias",
     about = "Manage tool version aliases.",
     alias = "alias",
-    alias = "aliases"
+    alias = "aliases",
+    hide = true
 )]
 pub struct Alias {
     #[clap(subcommand)]
