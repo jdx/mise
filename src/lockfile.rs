@@ -487,10 +487,9 @@ fn merge_tool_entries_with_env(
                         entry.1.insert(e.clone());
                     }
                 }
-            } else if existing_tool.env.is_some() {
+            } else if let Some(existing_envs) = &existing_tool.env {
                 // Check if this env is already covered by a new entry
                 // If so, the existing entry is stale and should not be preserved
-                let existing_envs = existing_tool.env.as_ref().unwrap();
                 let env_already_covered = by_key
                     .values()
                     .any(|(_, new_envs, _)| existing_envs.iter().any(|e| new_envs.contains(e)));

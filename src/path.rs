@@ -20,7 +20,7 @@ impl PathExt for Path {
     }
 
     fn mount(&self, on: &Path) -> PathBuf {
-        if self.is_empty() {
+        if PathExt::is_empty(self) {
             on.to_path_buf()
         } else {
             on.join(self)
