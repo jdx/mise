@@ -1747,9 +1747,10 @@ backends = ["asdf:mise-plugins/mise-gcc-arm-none-eabi"]
 description = "Arm GNU Toolchain"
 
 [tools.gcloud]
-backends = ["asdf:mise-plugins/mise-gcloud"]
-depends = ["python"]
+# no python dependency - gcloud bundles its own Python since v352.0.0
+backends = ["vfox:mise-plugins/vfox-gcloud", "asdf:mise-plugins/mise-gcloud"]
 description = "GCloud CLI (Google Cloud SDK)"
+test = ["gcloud version", "Google Cloud SDK {{version}}"]
 
 [tools.gdu]
 backends = ["aqua:dundee/gdu"]
