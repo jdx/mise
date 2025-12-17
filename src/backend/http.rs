@@ -287,9 +287,9 @@ impl HttpBackend {
         let file_info = FileInfo::new(file_path, opts);
 
         if file_info.is_compressed_binary {
-            self.extract_compressed_binary(dest, file_path, &file_info, opts)
+            self.extract_compressed_binary(dest, file_path, &file_info, opts, pr)
         } else if file_info.format == file::TarFormat::Raw {
-            self.extract_raw_file(dest, file_path, &file_info, opts)
+            self.extract_raw_file(dest, file_path, &file_info, opts, pr)
         } else {
             self.extract_archive(dest, file_path, &file_info, opts, pr)
         }
@@ -302,9 +302,18 @@ impl HttpBackend {
         file_path: &Path,
         file_info: &FileInfo,
         opts: &ToolVersionOptions,
+        pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
         let filename = self.dest_filename(file_path, file_info, opts);
         let dest_file = dest.join(&filename);
+
+        // Report extraction progress
+        if let Some(pr) = pr {
+            pr.set_message(format!("extract {}", file_info.file_name()));
+            if let Ok(metadata) = file_path.metadata() {
+                pr.set_length(metadata.len());
+            }
+        }
 
         match file_info.extension.as_str() {
             "gz" => file::un_gz(file_path, &dest_file)?,
@@ -312,6 +321,13 @@ impl HttpBackend {
             "bz2" => file::un_bz2(file_path, &dest_file)?,
             "zst" => file::un_zst(file_path, &dest_file)?,
             _ => unreachable!(),
+        }
+
+        // Mark extraction complete
+        if let Some(pr) = pr
+            && let Ok(metadata) = file_path.metadata()
+        {
+            pr.set_position(metadata.len());
         }
 
         file::make_executable(&dest_file)?;
@@ -325,11 +341,28 @@ impl HttpBackend {
         file_path: &Path,
         file_info: &FileInfo,
         opts: &ToolVersionOptions,
+        pr: Option<&dyn SingleReport>,
     ) -> Result<ExtractionType> {
         let filename = self.dest_filename(file_path, file_info, opts);
         let dest_file = dest.join(&filename);
 
+        // Report extraction progress
+        if let Some(pr) = pr {
+            pr.set_message(format!("extract {}", file_info.file_name()));
+            if let Ok(metadata) = file_path.metadata() {
+                pr.set_length(metadata.len());
+            }
+        }
+
         file::copy(file_path, &dest_file)?;
+
+        // Mark extraction complete
+        if let Some(pr) = pr
+            && let Ok(metadata) = file_path.metadata()
+        {
+            pr.set_position(metadata.len());
+        }
+
         file::make_executable(&dest_file)?;
         Ok(ExtractionType::RawFile { filename })
     }
@@ -582,7 +615,31 @@ impl Backend for HttpBackend {
 
         // Record URL in lock platforms
         let platform_key = self.get_platform_key();
-        tv.lock_platforms.entry(platform_key).or_default().url = Some(url.clone());
+        tv.lock_platforms
+            .entry(platform_key.clone())
+            .or_default()
+            .url = Some(url.clone());
+
+        // Determine operation count for progress reporting
+        let mut op_count = 1; // download
+        if get_opt(&opts, "checksum").is_some() {
+            op_count += 1;
+        }
+        op_count += 1; // extraction
+
+        // Account for lockfile checksum verification/generation
+        let settings = Settings::get();
+        let lockfile_enabled = settings.lockfile && settings.experimental;
+        let has_lockfile_checksum = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|p| p.checksum.as_ref())
+            .is_some();
+        if lockfile_enabled || has_lockfile_checksum {
+            op_count += 1;
+        }
+
+        ctx.pr.start_operations(op_count);
 
         ctx.pr.set_message(format!("download {filename}"));
         HTTP.download_file(&url, &file_path, Some(ctx.pr.as_ref()))
@@ -604,6 +661,9 @@ impl Backend for HttpBackend {
         // from current options if a previous extraction used different `bin` name)
         let extraction_type = if self.is_cached(&cache_key) {
             ctx.pr.set_message("using cached tarball".into());
+            // Report extraction operation as complete (instant since we're using cache)
+            ctx.pr.set_length(1);
+            ctx.pr.set_position(1);
             self.extraction_type_from_cache(&cache_key, &file_info)
         } else {
             ctx.pr.set_message("extracting to cache".into());
