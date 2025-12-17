@@ -2228,7 +2228,7 @@ description = "CLI tool for linting and testing Helm charts"
 
 [tools.helm-diff]
 backends = [
-  "github:databus23/helm-diff[rename_exe=helm-diff]",
+  "github:databus23/helm-diff[bin_path=bin,bin=helm-diff]",
   "ubi:databus23/helm-diff[exe=diff,rename_exe=helm-diff]",
   "asdf:mise-plugins/mise-helm-diff",
 ]
@@ -3168,7 +3168,7 @@ test = ["mdbook --version", "mdbook v{{version}}"]
 
 [tools.mdbook-linkcheck]
 backends = [
-  "github:Michael-F-Bryan/mdbook-linkcheck",
+  "github:Michael-F-Bryan/mdbook-linkcheck[bin=mdbook-linkcheck]",
   "ubi:Michael-F-Bryan/mdbook-linkcheck",
   "asdf:mise-plugins/mise-mdbook-linkcheck",
   "cargo:mdbook-linkcheck",
@@ -3553,7 +3553,7 @@ description = "SDK for building Kubernetes applications. Provides high level API
 
 [tools.opsgenie-lamp]
 backends = [
-  "github:opsgenie/opsgenie-lamp",
+  "github:opsgenie/opsgenie-lamp[bin=opsgenie-lamp]",
   "ubi:opsgenie/opsgenie-lamp",
   "asdf:mise-plugins/mise-opsgenie-lamp",
 ]
