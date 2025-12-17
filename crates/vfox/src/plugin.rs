@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
 
-use mlua::{AsChunk, FromLuaMulti, IntoLua, Lua, Table};
+use mlua::{AsChunk, FromLuaMulti, IntoLua, Lua, Table, Value};
 use once_cell::sync::OnceCell;
 
 use crate::config::Config;
@@ -202,9 +202,9 @@ impl Plugin {
         let package: Table = self.lua.globals().get("package")?;
         let loaded: Table = package.get("loaded")?;
 
-        // Load lib modules
+        // Load lib modules - use Value since modules can return any Lua type
         for (name, code) in embedded.lib {
-            let module: Table = self.lua.load(*code).eval()?;
+            let module: Value = self.lua.load(*code).eval()?;
             loaded.set(*name, module)?;
         }
 
