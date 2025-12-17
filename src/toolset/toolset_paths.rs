@@ -5,8 +5,8 @@ use dashmap::DashMap;
 use eyre::Result;
 use std::sync::LazyLock as Lazy;
 
-use crate::config::env_directive::EnvResults;
 use crate::config::Config;
+use crate::config::env_directive::EnvResults;
 use crate::toolset::Toolset;
 use crate::uv;
 

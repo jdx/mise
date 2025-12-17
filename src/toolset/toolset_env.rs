@@ -3,13 +3,13 @@ use std::sync::Arc;
 
 use eyre::Result;
 
-use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::Config;
+use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::env::{PATH_KEY, WARN_ON_MISSING_REQUIRED_ENV};
 use crate::env_diff::EnvMap;
 use crate::path_env::PathEnv;
-use crate::toolset::tool_request::ToolRequest;
 use crate::toolset::Toolset;
+use crate::toolset::tool_request::ToolRequest;
 use crate::{env, parallel, uv};
 
 impl Toolset {

@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
-use crate::config::settings::{Settings, SettingsStatusMissingTools};
 use crate::config::Config;
+use crate::config::settings::{Settings, SettingsStatusMissingTools};
 use crate::env::TERM_WIDTH;
 use crate::registry::tool_enabled;
 use crate::{backend, parallel};
@@ -24,15 +24,15 @@ pub use tool_request_set::{ToolRequestSet, ToolRequestSetBuilder};
 pub use tool_source::ToolSource;
 pub use tool_version::{ResolveOptions, ToolVersion};
 pub use tool_version_list::ToolVersionList;
-pub use tool_version_options::{parse_tool_options, ToolVersionOptions};
+pub use tool_version_options::{ToolVersionOptions, parse_tool_options};
 
-pub use install_options::InstallOptions;
 use helpers::TVTuple;
+pub use install_options::InstallOptions;
 
 mod builder;
 mod helpers;
-pub(crate) mod install_state;
 mod install_options;
+pub(crate) mod install_state;
 pub(crate) mod outdated_info;
 pub(crate) mod tool_request;
 mod tool_request_set;
