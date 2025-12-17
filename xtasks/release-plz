@@ -191,7 +191,8 @@ if [[ -n $PLUGINS_TO_ADD ]]; then
 	while IFS= read -r plugin; do
 		[[ -z $plugin ]] && continue
 		# Extract the org/repo from mise registry output for this plugin
-		repo_path="$(echo "$VFOX_REGISTRY" | grep "/$plugin\b" | awk '{print $2}' | sed 's|vfox:||' | head -1)"
+		# Use pattern that matches plugin name at end of URL (followed by space or EOL)
+		repo_path="$(echo "$VFOX_REGISTRY" | grep -E "/$plugin( |\$)" | awk '{print $2}' | sed 's|vfox:||' | head -1)"
 		if [[ -n $repo_path ]]; then
 			echo "Adding submodule for $plugin from https://github.com/$repo_path"
 			git submodule add "https://github.com/$repo_path.git" "$EMBEDDED_PLUGINS_DIR/$plugin" || true
