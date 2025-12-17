@@ -9,14 +9,14 @@ use crate::config::config_file::ConfigFile;
 /// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, clap::Args)]
 #[clap(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct AliasUnset {
+pub struct ToolAliasUnset {
     /// The backend/plugin to remove the alias from
     pub plugin: BackendArg,
     /// The alias to remove
     pub alias: Option<String>,
 }
 
-impl AliasUnset {
+impl ToolAliasUnset {
     pub async fn run(self) -> Result<()> {
         let mut global_config = Config::get().await?.global_config()?;
         match self.alias {
@@ -34,7 +34,7 @@ impl AliasUnset {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise alias unset maven</bold>
-    $ <bold>mise alias unset node lts-jod</bold>
+    $ <bold>mise tool-alias unset maven</bold>
+    $ <bold>mise tool-alias unset node lts-jod</bold>
 "#
 );

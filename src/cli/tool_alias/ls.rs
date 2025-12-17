@@ -6,17 +6,17 @@ use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::ui::table;
 
-/// List aliases
+/// List tool version aliases
 /// Shows the aliases that can be specified.
 /// These can come from user config or from plugins in `bin/list-aliases`.
 ///
 /// For user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 ///
-///     [alias.node.versions]
+///     [tool_alias.node.versions]
 ///     lts = "22.0.0"
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct AliasLs {
+pub struct ToolAliasLs {
     /// Show aliases for <TOOL>
     #[clap()]
     pub tool: Option<BackendArg>,
@@ -26,7 +26,7 @@ pub struct AliasLs {
     pub no_header: bool,
 }
 
-impl AliasLs {
+impl ToolAliasLs {
     pub async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let rows = config
@@ -66,7 +66,7 @@ struct Row {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise aliases</bold>
+    $ <bold>mise tool-alias ls</bold>
     node  lts-jod      22
 "#
 );

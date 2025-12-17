@@ -295,6 +295,32 @@ impl MiseToml {
         Ok(())
     }
 
+    pub fn set_shell_alias(&mut self, name: &str, command: &str) -> eyre::Result<()> {
+        self.shell_alias.insert(name.into(), command.into());
+        self.doc_mut()?
+            .get_mut()
+            .unwrap()
+            .entry("shell_alias")
+            .or_insert_with(table)
+            .as_table_like_mut()
+            .unwrap()
+            .insert(name, value(command));
+        Ok(())
+    }
+
+    pub fn remove_shell_alias(&mut self, name: &str) -> eyre::Result<()> {
+        self.shell_alias.shift_remove(name);
+        let mut doc = self.doc_mut()?;
+        let doc = doc.get_mut().unwrap();
+        if let Some(shell_alias) = doc.get_mut("shell_alias").and_then(|v| v.as_table_mut()) {
+            shell_alias.remove(name);
+            if shell_alias.is_empty() {
+                doc.as_table_mut().remove("shell_alias");
+            }
+        }
+        Ok(())
+    }
+
     pub fn update_env<V: Into<Value>>(&mut self, key: &str, value: V) -> eyre::Result<()> {
         let mut doc = self.doc_mut()?;
         let mut env_tbl = doc

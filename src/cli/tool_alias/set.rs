@@ -9,7 +9,7 @@ use crate::config::config_file::ConfigFile;
 /// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, clap::Args)]
 #[clap(visible_aliases = ["add", "create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct AliasSet {
+pub struct ToolAliasSet {
     /// The backend/plugin to set the alias for
     pub plugin: BackendArg,
     /// The alias to set
@@ -18,7 +18,7 @@ pub struct AliasSet {
     pub value: Option<String>,
 }
 
-impl AliasSet {
+impl ToolAliasSet {
     pub async fn run(self) -> Result<()> {
         let mut global_config = Config::get().await?.global_config()?;
         match &self.value {
@@ -32,7 +32,7 @@ impl AliasSet {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise alias set maven asdf:mise-plugins/mise-maven</bold>
-    $ <bold>mise alias set node lts-jod 22.0.0</bold>
+    $ <bold>mise tool-alias set maven asdf:mise-plugins/mise-maven</bold>
+    $ <bold>mise tool-alias set node lts-jod 22.0.0</bold>
 "#
 );
