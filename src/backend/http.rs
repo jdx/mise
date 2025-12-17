@@ -584,6 +584,14 @@ impl Backend for HttpBackend {
         let platform_key = self.get_platform_key();
         tv.lock_platforms.entry(platform_key).or_default().url = Some(url.clone());
 
+        // Determine operation count for progress reporting
+        let mut op_count = 1; // download
+        if get_opt(&opts, "checksum").is_some() {
+            op_count += 1;
+        }
+        op_count += 1; // extraction
+        ctx.pr.start_operations(op_count);
+
         ctx.pr.set_message(format!("download {filename}"));
         HTTP.download_file(&url, &file_path, Some(ctx.pr.as_ref()))
             .await?;
