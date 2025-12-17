@@ -1873,7 +1873,7 @@ test = ["gitsign --version", "gitsign version v{{version}}"]
 [tools.gitu]
 backends = ["aqua:altsem/gitu", "ubi:altsem/gitu", "cargo:gitu"]
 description = "A TUI Git client inspired by Magit"
-test = ["gitu --version", "gitu v{{version}}"]
+# test = ["gitu --version", "gitu v{{version}}"] # DISABLED: upstream bug - v0.40.0 binary reports as v0.39.0-21-g0d1141b
 
 [tools.gitui]
 backends = ["aqua:extrawurst/gitui", "asdf:looztra/asdf-gitui", "cargo:gitui"]
@@ -2742,7 +2742,7 @@ description = "KSOPS - A Flexible Kustomize Plugin for SOPS Encrypted Resources"
 backends = ["aqua:pinterest/ktlint", "asdf:mise-plugins/mise-ktlint"]
 depends = ["java"]
 description = "An anti-bikeshedding Kotlin linter with built-in formatter"
-test = ["ktlint --version", "ktlint version {{version}}"]
+# test = ["ktlint --version", "ktlint version {{version}}"] # DISABLED: upstream bug - release 1.7.2 not found on GitHub
 
 [tools.kube-capacity]
 backends = ["aqua:robscott/kube-capacity", "asdf:looztra/asdf-kube-capacity"]
