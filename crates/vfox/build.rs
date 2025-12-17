@@ -7,6 +7,11 @@ fn main() {
     codegen_embedded_plugins();
 }
 
+/// Convert a path to a string with forward slashes (required for include_str! on Windows)
+fn path_to_forward_slashes(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
 fn codegen_embedded_plugins() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("embedded_plugins.rs");
@@ -84,11 +89,11 @@ pub struct EmbeddedPlugin {
             "static {var_name}: EmbeddedPlugin = EmbeddedPlugin {{\n"
         ));
 
-        // Metadata - use absolute path
+        // Metadata - use absolute path with forward slashes for cross-platform include_str!
         let metadata_path = embedded_dir.join(name).join("metadata.lua");
         code.push_str(&format!(
             "    metadata: include_str!(\"{}\"),\n",
-            metadata_path.display()
+            path_to_forward_slashes(&metadata_path)
         ));
 
         // Hooks
@@ -101,7 +106,7 @@ pub struct EmbeddedPlugin {
             code.push_str(&format!(
                 "        (\"{}\", include_str!(\"{}\")),\n",
                 hook,
-                hook_path.display()
+                path_to_forward_slashes(&hook_path)
             ));
         }
         code.push_str("    ],\n");
@@ -116,7 +121,7 @@ pub struct EmbeddedPlugin {
             code.push_str(&format!(
                 "        (\"{}\", include_str!(\"{}\")),\n",
                 lib,
-                lib_path.display()
+                path_to_forward_slashes(&lib_path)
             ));
         }
         code.push_str("    ],\n");
