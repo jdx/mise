@@ -275,11 +275,10 @@ impl AssetMatcher {
         }
 
         // Try pattern matching first if patterns are specified
-        if !self.patterns.is_empty() {
-            if let Some(matched) = self.match_by_pattern(&filtered) {
+        if !self.patterns.is_empty()
+            && let Some(matched) = self.match_by_pattern(&filtered) {
                 return Ok(matched);
             }
-        }
 
         // Fall back to auto-detection
         self.match_by_auto_detection(&filtered)
@@ -406,8 +405,8 @@ impl AssetMatcher {
             }
 
             // Try regex match
-            if let Ok(re) = Regex::new(&format!("^{}$", regex::escape(pattern))) {
-                if let Some(asset) = assets.iter().find(|a| re.is_match(a)) {
+            if let Ok(re) = Regex::new(&format!("^{}$", regex::escape(pattern)))
+                && let Some(asset) = assets.iter().find(|a| re.is_match(a)) {
                     return Some(MatchedAsset {
                         name: asset.clone(),
                         url: None,
@@ -415,7 +414,6 @@ impl AssetMatcher {
                         match_type: MatchType::Pattern,
                     });
                 }
-            }
         }
 
         None
@@ -528,8 +526,6 @@ pub fn detect_asset_for_target(assets: &[String], target: &PlatformTarget) -> Re
         .map(|m| m.name)
 }
 
-/// Detect platform from a URL (re-export from asset_detector)
-pub use super::asset_detector::detect_platform_from_url;
 
 #[cfg(test)]
 mod tests {
