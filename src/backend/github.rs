@@ -1,5 +1,5 @@
 use crate::backend::VersionInfo;
-use crate::backend::asset_detector;
+use crate::backend::asset_matcher;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
@@ -516,7 +516,7 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to auto-detection for target platform
-        let asset_name = asset_detector::detect_asset_for_target(&available_assets, target)?;
+        let asset_name = asset_matcher::detect_asset_for_target(&available_assets, target)?;
         let asset = self
             .find_asset_case_insensitive(&release.assets, &asset_name, |a| &a.name)
             .ok_or_else(|| {
@@ -582,7 +582,7 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to auto-detection for target platform
-        let asset_name = asset_detector::detect_asset_for_target(&available_assets, target)?;
+        let asset_name = asset_matcher::detect_asset_for_target(&available_assets, target)?;
         let asset = self
             .find_asset_case_insensitive(&release.assets.links, &asset_name, |a| &a.name)
             .ok_or_else(|| {
