@@ -515,12 +515,13 @@ test = ["bosh --version", "version {{version}}"]
 [tools.bosh-backup-and-restore]
 aliases = ["bbr"]
 backends = [
+  "github:cloudfoundry-incubator/bosh-backup-and-restore[bin=bbr,asset_pattern=bbr-*-{darwin_os}-{amd64_arch}]",
   "ubi:cloudfoundry-incubator/bosh-backup-and-restore[matching=bbr-1]",
   "asdf:mise-plugins/tanzu-plug-in-for-asdf",
 ]
 description = "BOSH Backup and Restore is a CLI utility for orchestrating the backup and restore of BOSH deployments and BOSH directors"
 os = ["linux", "macos"]
-test = ["bosh-backup-and-restore version", "bbr version {{version}}"]
+test = ["bbr version", "bbr version {{version}}"]
 
 [tools.bottom]
 backends = [
@@ -907,11 +908,12 @@ test = ["cloudflared -v", "cloudflared version {{version}}"]
 
 [tools.clusterawsadm]
 backends = [
+  "github:kubernetes-sigs/cluster-api-provider-aws[asset_pattern=clusterawsadm-{darwin_os}-{amd64_arch}]",
   "ubi:kubernetes-sigs/cluster-api-provider-aws",
   "asdf:kahun/asdf-clusterawsadm",
 ]
 description = "clusterawsadm provides helpers for bootstrapping Kubernetes Cluster API Provider AWS"
-test = ["cluster-api-provider-aws version", "clusterawsadm version:"]
+test = ["clusterawsadm version", "clusterawsadm version:"]
 
 [tools.clusterctl]
 backends = [
@@ -2226,6 +2228,7 @@ description = "CLI tool for linting and testing Helm charts"
 
 [tools.helm-diff]
 backends = [
+  "github:databus23/helm-diff[rename_exe=helm-diff]",
   "ubi:databus23/helm-diff[exe=diff,rename_exe=helm-diff]",
   "asdf:mise-plugins/mise-helm-diff",
 ]
@@ -2584,11 +2587,12 @@ test = ["k3d --version", "k3d version v{{version}}"]
 
 [tools.k3kcli]
 backends = [
+  "github:rancher/k3k[version_prefix=v,asset_pattern=k3kcli-{darwin_os}-{amd64_arch}]",
   'ubi:rancher/k3k[tag_regex=v\\d,matching=k3kcli]',
   "asdf:xanmanning/asdf-k3kcli",
 ]
 description = "K3k, Kubernetes in Kubernetes, is a tool that empowers you to create and manage isolated K3s clusters within your existing Kubernetes environment"
-test = ["k3k --version", "k3kcli version v{{version}}"]
+test = ["k3kcli --version", "k3kcli version v{{version}}"]
 
 [tools.k3s]
 backends = ["aqua:k3s-io/k3s", "asdf:mise-plugins/mise-k3s"]
@@ -3164,6 +3168,7 @@ test = ["mdbook --version", "mdbook v{{version}}"]
 
 [tools.mdbook-linkcheck]
 backends = [
+  "github:Michael-F-Bryan/mdbook-linkcheck",
   "ubi:Michael-F-Bryan/mdbook-linkcheck",
   "asdf:mise-plugins/mise-mdbook-linkcheck",
   "cargo:mdbook-linkcheck",
@@ -3548,6 +3553,7 @@ description = "SDK for building Kubernetes applications. Provides high level API
 
 [tools.opsgenie-lamp]
 backends = [
+  "github:opsgenie/opsgenie-lamp",
   "ubi:opsgenie/opsgenie-lamp",
   "asdf:mise-plugins/mise-opsgenie-lamp",
 ]
