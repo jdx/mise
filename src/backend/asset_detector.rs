@@ -99,7 +99,9 @@ static OS_PATTERNS: LazyLock<Vec<(AssetOs, Regex)>> = LazyLock::new(|| {
     vec![
         (
             AssetOs::Linux,
-            Regex::new(r"(?i)(?:\b|_)linux(?:\b|_|32|64)").unwrap(),
+            // Include common Linux distro names that may appear in release asset names
+            Regex::new(r"(?i)(?:\b|_)(?:linux|ubuntu|debian|fedora|centos|rhel|alpine|arch)(?:\b|_|32|64|-)")
+                .unwrap(),
         ),
         (
             AssetOs::Macos,
@@ -261,7 +263,7 @@ impl AssetPicker {
                 return if os.matches_target(&self.target_os) {
                     100 // Exact OS match
                 } else {
-                    -50 // Wrong OS
+                    -100 // Wrong OS - penalty should be larger than arch bonus
                 };
             }
         }
@@ -310,6 +312,10 @@ impl AssetPicker {
         let mut penalty = 0;
         if asset.contains("debug") || asset.contains("test") {
             penalty -= 20;
+        }
+        // Swift Package Manager artifact bundles are not suitable for direct installation
+        if asset.contains(".artifactbundle") {
+            penalty -= 30;
         }
         penalty
     }
@@ -488,11 +494,11 @@ mod tests {
             );
         }
 
-        // Test that non-linux assets are not affected by libc scoring
+        // Test that non-linux assets score negatively (wrong OS penalty)
         let macos_score = picker.score_asset("ripgrep-14.1.1-x86_64-apple-darwin.tar.gz");
         assert!(
-            macos_score > 0,
-            "macOS assets should still score positively"
+            macos_score < gnu_score,
+            "macOS assets should score lower than Linux assets when using a Linux picker"
         );
     }
 
@@ -724,6 +730,81 @@ mod tests {
         assert!(
             gnu_score < no_libc_score,
             "GNU should score lower than assets without libc info on Windows"
+        );
+    }
+
+    #[test]
+    fn test_sourcery_macos_assets() {
+        // Real Sourcery assets - the plain .zip is the macOS binary,
+        // .artifactbundle.zip is a Swift Package Manager bundle (not for direct install),
+        // and Ubuntu tarballs are for Linux
+        let sourcery_assets = vec![
+            "sourcery-2.3.0-ubuntu-22.04.5-lts-jammy-x86_64.tar.xz".to_string(),
+            "sourcery-2.3.0.artifactbundle.zip".to_string(),
+            "sourcery-2.3.0.zip".to_string(),
+        ];
+
+        // macOS x86_64 should pick the plain .zip (not the artifactbundle or ubuntu)
+        let picker = AssetPicker::new("macos".to_string(), "x86_64".to_string());
+        let picked = picker.pick_best_asset(&sourcery_assets).unwrap();
+        assert_eq!(
+            picked, "sourcery-2.3.0.zip",
+            "macOS should pick the plain .zip, not artifactbundle or ubuntu"
+        );
+
+        // macOS arm64 should also pick the plain .zip
+        let picker = AssetPicker::new("macos".to_string(), "aarch64".to_string());
+        let picked = picker.pick_best_asset(&sourcery_assets).unwrap();
+        assert_eq!(
+            picked, "sourcery-2.3.0.zip",
+            "macOS arm64 should pick the plain .zip"
+        );
+
+        // Linux x86_64 should pick the ubuntu tarball
+        let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
+        let picked = picker.pick_best_asset(&sourcery_assets).unwrap();
+        assert_eq!(
+            picked, "sourcery-2.3.0-ubuntu-22.04.5-lts-jammy-x86_64.tar.xz",
+            "Linux should pick the ubuntu tarball"
+        );
+    }
+
+    #[test]
+    fn test_artifactbundle_penalty() {
+        let picker = AssetPicker::new("macos".to_string(), "x86_64".to_string());
+
+        // .artifactbundle.zip should score lower than plain .zip
+        let plain_score = picker.score_asset("tool-1.0.0.zip");
+        let artifactbundle_score = picker.score_asset("tool-1.0.0.artifactbundle.zip");
+
+        assert!(
+            plain_score > artifactbundle_score,
+            "Plain .zip ({}) should score higher than .artifactbundle.zip ({})",
+            plain_score,
+            artifactbundle_score
+        );
+    }
+
+    #[test]
+    fn test_ubuntu_detected_as_linux() {
+        let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
+
+        // Ubuntu should be detected as Linux
+        let ubuntu_score = picker.score_asset("tool-ubuntu-22.04-x86_64.tar.gz");
+        assert!(
+            ubuntu_score > 0,
+            "Ubuntu assets should score positively on Linux: {}",
+            ubuntu_score
+        );
+
+        // On macOS, ubuntu should score negatively (wrong OS)
+        let macos_picker = AssetPicker::new("macos".to_string(), "x86_64".to_string());
+        let ubuntu_score_on_macos = macos_picker.score_asset("tool-ubuntu-22.04-x86_64.tar.gz");
+        assert!(
+            ubuntu_score_on_macos < ubuntu_score,
+            "Ubuntu assets should score lower on macOS ({}) than Linux ({})",
+            ubuntu_score_on_macos,
+            ubuntu_score
         );
     }
 }
