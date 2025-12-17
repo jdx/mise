@@ -78,30 +78,29 @@ cmd activate help="Initializes mise in the current shell session" {
         choices bash elvish fish nu xonsh zsh pwsh
     }
 }
-cmd alias help="Manage version aliases." {
-    alias a
-    alias aliases hide=#true
+cmd tool-alias help="Manage tool version aliases." {
+    alias alias aliases hide=#true
     flag "-p --plugin" help="filter aliases by plugin" {
         arg <PLUGIN>
     }
     flag --no-header help="Don't show table header"
     cmd get help="Show an alias for a plugin" {
-        long_help "Show an alias for a plugin\n\nThis is the contents of an alias.<PLUGIN> entry in ~/.config/mise/config.toml"
-        after_long_help "Examples:\n\n    $ mise alias get node lts-hydrogen\n    20.0.0\n"
+        long_help "Show an alias for a plugin\n\nThis is the contents of a tool_alias.<PLUGIN> entry in ~/.config/mise/config.toml"
+        after_long_help "Examples:\n\n    $ mise tool-alias get node lts-hydrogen\n    20.0.0\n"
         arg <PLUGIN> help="The plugin to show the alias for"
         arg <ALIAS> help="The alias to show"
     }
-    cmd ls help="List aliases\nShows the aliases that can be specified.\nThese can come from user config or from plugins in `bin/list-aliases`." {
+    cmd ls help="List tool version aliases\nShows the aliases that can be specified.\nThese can come from user config or from plugins in `bin/list-aliases`." {
         alias list
-        long_help "List aliases\nShows the aliases that can be specified.\nThese can come from user config or from plugins in `bin/list-aliases`.\n\nFor user config, aliases are defined like the following in `~/.config/mise/config.toml`:\n\n    [alias.node.versions]\n    lts = \"22.0.0\""
-        after_long_help "Examples:\n\n    $ mise aliases\n    node  lts-jod      22\n"
+        long_help "List tool version aliases\nShows the aliases that can be specified.\nThese can come from user config or from plugins in `bin/list-aliases`.\n\nFor user config, aliases are defined like the following in `~/.config/mise/config.toml`:\n\n    [tool_alias.node.versions]\n    lts = \"22.0.0\""
+        after_long_help "Examples:\n\n    $ mise tool-alias ls\n    node  lts-jod      22\n"
         flag --no-header help="Don't show table header"
         arg "[TOOL]" help="Show aliases for <TOOL>" required=#false
     }
     cmd set help="Add/update an alias for a backend/plugin" {
         alias add create
         long_help "Add/update an alias for a backend/plugin\n\nThis modifies the contents of ~/.config/mise/config.toml"
-        after_long_help "Examples:\n\n    $ mise alias set maven asdf:mise-plugins/mise-maven\n    $ mise alias set node lts-jod 22.0.0\n"
+        after_long_help "Examples:\n\n    $ mise tool-alias set maven asdf:mise-plugins/mise-maven\n    $ mise tool-alias set node lts-jod 22.0.0\n"
         arg <PLUGIN> help="The backend/plugin to set the alias for"
         arg <ALIAS> help="The alias to set"
         arg "[VALUE]" help="The value to set the alias to" required=#false
@@ -109,7 +108,7 @@ cmd alias help="Manage version aliases." {
     cmd unset help="Clears an alias for a backend/plugin" {
         alias rm remove delete del
         long_help "Clears an alias for a backend/plugin\n\nThis modifies the contents of ~/.config/mise/config.toml"
-        after_long_help "Examples:\n\n    $ mise alias unset maven\n    $ mise alias unset node lts-jod\n"
+        after_long_help "Examples:\n\n    $ mise tool-alias unset maven\n    $ mise tool-alias unset node lts-jod\n"
         arg <PLUGIN> help="The backend/plugin to remove the alias from"
         arg "[ALIAS]" help="The alias to remove" required=#false
     }
@@ -834,6 +833,32 @@ cmd shell help="Sets a tool version for the current session." {
     flag "-u --unset" help="Removes a previously set version"
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
     arg <TOOL@VERSION>… help="Tool(s) to use" var=#true
+}
+cmd shell-alias help="Manage shell aliases." {
+    flag --no-header help="Don't show table header"
+    cmd get help="Show the command for a shell alias" {
+        after_long_help "Examples:\n\n    $ mise shell-alias get ll\n    ls -la\n"
+        arg <shell_alias> help="The alias to show"
+    }
+    cmd ls help="List shell aliases" {
+        alias list
+        long_help "List shell aliases\n\nShows the shell aliases that are set in the current directory.\nThese are defined in `mise.toml` under the `[shell_alias]` section."
+        after_long_help "Examples:\n\n    $ mise shell-alias ls\n    alias    command\n    ll       ls -la\n    gs       git status\n"
+        flag --no-header help="Don't show table header"
+    }
+    cmd set help="Add/update a shell alias" {
+        alias add create
+        long_help "Add/update a shell alias\n\nThis modifies the contents of ~/.config/mise/config.toml"
+        after_long_help "Examples:\n\n    $ mise shell-alias set ll \"ls -la\"\n    $ mise shell-alias set gs \"git status\"\n"
+        arg <shell_alias> help="The alias name"
+        arg <COMMAND> help="The command to run"
+    }
+    cmd unset help="Removes a shell alias" {
+        alias rm remove delete del
+        long_help "Removes a shell alias\n\nThis modifies the contents of ~/.config/mise/config.toml"
+        after_long_help "Examples:\n\n    $ mise shell-alias unset ll\n"
+        arg <shell_alias> help="The alias to remove"
+    }
 }
 cmd sync subcommand_required=#true help="Synchronize tools from other version managers with mise" {
     cmd node help="Symlinks all tool versions from an external tool into mise" {

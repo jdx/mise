@@ -50,6 +50,20 @@ const aliasGenerator: Fig.Generator = {
   },
 };
 
+const shellAliasGenerator: Fig.Generator = {
+  script: ["sh", "-c", "mise shell-alias ls --no-header"],
+  postProcess: (out) => {
+    if (!out.trim()) return [];
+    return out
+      .split("\n")
+      .filter((l) => l.trim().length > 0)
+      .map((l) => {
+        const tokens = l.split(/\s+/);
+        return { name: tokens[0], description: tokens.slice(1).join(" ") };
+      });
+  },
+};
+
 const pluginWithAlias: Fig.Generator = {
   script: "mise alias ls".split(" "),
   postProcess: (output: string) => {

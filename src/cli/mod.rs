@@ -10,7 +10,6 @@ use eyre::bail;
 use std::path::PathBuf;
 
 mod activate;
-mod alias;
 pub mod args;
 mod asdf;
 pub mod backends;
@@ -31,6 +30,7 @@ mod generate;
 mod global;
 mod hook_env;
 mod hook_not_found;
+mod tool_alias;
 
 pub use hook_env::HookReason;
 mod implode;
@@ -58,6 +58,7 @@ pub mod self_update;
 mod set;
 mod settings;
 mod shell;
+mod shell_alias;
 mod sync;
 mod tasks;
 mod test_tool;
@@ -191,7 +192,7 @@ pub struct Cli {
 #[strum(serialize_all = "kebab-case")]
 pub enum Commands {
     Activate(activate::Activate),
-    Alias(Box<alias::Alias>),
+    ToolAlias(Box<tool_alias::ToolAlias>),
     Asdf(asdf::Asdf),
     Backends(backends::Backends),
     BinPaths(bin_paths::BinPaths),
@@ -235,6 +236,7 @@ pub enum Commands {
     Set(set::Set),
     Settings(settings::Settings),
     Shell(shell::Shell),
+    ShellAlias(shell_alias::ShellAlias),
     Sync(sync::Sync),
     Tasks(tasks::Tasks),
     TestTool(test_tool::TestTool),
@@ -257,7 +259,7 @@ impl Commands {
     pub async fn run(self) -> Result<()> {
         match self {
             Self::Activate(cmd) => cmd.run(),
-            Self::Alias(cmd) => cmd.run().await,
+            Self::ToolAlias(cmd) => cmd.run().await,
             Self::Asdf(cmd) => cmd.run().await,
             Self::Backends(cmd) => cmd.run().await,
             Self::BinPaths(cmd) => cmd.run().await,
@@ -301,6 +303,7 @@ impl Commands {
             Self::Set(cmd) => cmd.run().await,
             Self::Settings(cmd) => cmd.run().await,
             Self::Shell(cmd) => cmd.run().await,
+            Self::ShellAlias(cmd) => cmd.run().await,
             Self::Sync(cmd) => cmd.run().await,
             Self::Tasks(cmd) => cmd.run().await,
             Self::TestTool(cmd) => cmd.run().await,

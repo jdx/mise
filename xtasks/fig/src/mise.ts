@@ -50,6 +50,20 @@ const aliasGenerator: Fig.Generator = {
   },
 };
 
+const shellAliasGenerator: Fig.Generator = {
+  script: ["sh", "-c", "mise shell-alias ls --no-header"],
+  postProcess: (out) => {
+    if (!out.trim()) return [];
+    return out
+      .split("\n")
+      .filter((l) => l.trim().length > 0)
+      .map((l) => {
+        const tokens = l.split(/\s+/);
+        return { name: tokens[0], description: tokens.slice(1).join(" ") };
+      });
+  },
+};
+
 const pluginWithAlias: Fig.Generator = {
   script: "mise alias ls".split(" "),
   postProcess: (output: string) => {
@@ -538,8 +552,8 @@ const completionSpec: Fig.Spec = {
       },
     },
     {
-      name: ["alias", "a"],
-      description: "Manage version aliases.",
+      name: "tool-alias",
+      description: "Manage tool version aliases.",
       subcommands: [
         {
           name: "get",
@@ -562,7 +576,7 @@ const completionSpec: Fig.Spec = {
         {
           name: ["ls", "list"],
           description:
-            "List aliases\nShows the aliases that can be specified.\nThese can come from user config or from plugins in `bin/list-aliases`.",
+            "List tool version aliases\nShows the aliases that can be specified.\nThese can come from user config or from plugins in `bin/list-aliases`.",
           options: [
             {
               name: "--no-header",
@@ -2394,6 +2408,66 @@ const completionSpec: Fig.Spec = {
       },
     },
     {
+      name: "shell-alias",
+      description: "Manage shell aliases.",
+      subcommands: [
+        {
+          name: "get",
+          description: "Show the command for a shell alias",
+          args: {
+            name: "shell_alias",
+            description: "The alias to show",
+            generators: shellAliasGenerator,
+            debounce: true,
+          },
+        },
+        {
+          name: ["ls", "list"],
+          description: "List shell aliases",
+          options: [
+            {
+              name: "--no-header",
+              description: "Don't show table header",
+              isRepeatable: false,
+            },
+          ],
+        },
+        {
+          name: ["set", "add", "create"],
+          description: "Add/update a shell alias",
+          args: [
+            {
+              name: "shell_alias",
+              description: "The alias name",
+              generators: shellAliasGenerator,
+              debounce: true,
+            },
+            {
+              name: "command",
+              description: "The command to run",
+            },
+          ],
+        },
+        {
+          name: ["unset", "rm", "remove", "delete", "del"],
+          description: "Removes a shell alias",
+          args: {
+            name: "shell_alias",
+            description: "The alias to remove",
+            generators: shellAliasGenerator,
+            debounce: true,
+          },
+        },
+      ],
+      options: [
+        {
+          name: "--no-header",
+          description: "Don't show table header",
+          isRepeatable: false,
+        },
+      ],
+    },
+    {
       name: "sync",
       description: "Synchronize tools from other version managers with mise",
       subcommands: [
@@ -2604,6 +2678,8 @@ const completionSpec: Fig.Spec = {
               "Tasks to show dependencies for\nCan specify multiple tasks by separating with spaces\ne.g.: mise tasks deps lint test check",
             isOptional: true,
             isVariadic: true,
+            generators: simpleTaskGenerator,
+            debounce: true,
           },
         },
         {
@@ -2856,6 +2932,8 @@ const completionSpec: Fig.Spec = {
               "Tasks to validate\nIf not specified, validates all tasks",
             isOptional: true,
             isVariadic: true,
+            generators: simpleTaskGenerator,
+            debounce: true,
           },
         },
       ],

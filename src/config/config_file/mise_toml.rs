@@ -209,7 +209,7 @@ impl MiseToml {
         self.doc_mut()?
             .get_mut()
             .unwrap()
-            .entry("alias")
+            .entry("tool_alias")
             .or_insert_with(table)
             .as_table_like_mut()
             .unwrap()
@@ -218,7 +218,7 @@ impl MiseToml {
     }
 
     pub fn set_alias(&mut self, fa: &BackendArg, from: &str, to: &str) -> eyre::Result<()> {
-        self.alias
+        self.tool_alias
             .entry(fa.short.to_string())
             .or_default()
             .versions
@@ -226,7 +226,7 @@ impl MiseToml {
         self.doc_mut()?
             .get_mut()
             .unwrap()
-            .entry("alias")
+            .entry("tool_alias")
             .or_insert_with(table)
             .as_table_like_mut()
             .unwrap()
@@ -245,41 +245,77 @@ impl MiseToml {
     pub fn remove_backend_alias(&mut self, fa: &BackendArg) -> eyre::Result<()> {
         let mut doc = self.doc_mut()?;
         let doc = doc.get_mut().unwrap();
-        if let Some(aliases) = doc.get_mut("alias").and_then(|v| v.as_table_mut()) {
-            aliases.remove(&fa.short);
-            if aliases.is_empty() {
-                doc.as_table_mut().remove("alias");
+        // Remove from both tool_alias and deprecated alias sections
+        for section in ["tool_alias", "alias"] {
+            if let Some(aliases) = doc.get_mut(section).and_then(|v| v.as_table_mut()) {
+                aliases.remove(&fa.short);
+                if aliases.is_empty() {
+                    doc.as_table_mut().remove(section);
+                }
             }
         }
         Ok(())
     }
 
     pub fn remove_alias(&mut self, fa: &BackendArg, from: &str) -> eyre::Result<()> {
-        if let Some(aliases) = self.alias.get_mut(&fa.short) {
-            aliases.versions.shift_remove(from);
-            if aliases.versions.is_empty() && aliases.backend.is_none() {
-                self.alias.shift_remove(&fa.short);
+        // Remove from both tool_alias and deprecated alias in memory
+        for alias_map in [&mut self.tool_alias, &mut self.alias] {
+            if let Some(aliases) = alias_map.get_mut(&fa.short) {
+                aliases.versions.shift_remove(from);
+                if aliases.versions.is_empty() && aliases.backend.is_none() {
+                    alias_map.shift_remove(&fa.short);
+                }
             }
         }
         let mut doc = self.doc_mut()?;
         let doc = doc.get_mut().unwrap();
-        if let Some(aliases) = doc.get_mut("alias").and_then(|v| v.as_table_mut()) {
-            if let Some(alias) = aliases
-                .get_mut(&fa.to_string())
-                .and_then(|v| v.as_table_mut())
-            {
-                if let Some(versions) = alias.get_mut("versions").and_then(|v| v.as_table_mut()) {
-                    versions.remove(from);
-                    if versions.is_empty() {
-                        alias.remove("versions");
+        // Remove from both tool_alias and deprecated alias sections in doc
+        for section in ["tool_alias", "alias"] {
+            if let Some(aliases) = doc.get_mut(section).and_then(|v| v.as_table_mut()) {
+                if let Some(alias) = aliases
+                    .get_mut(&fa.to_string())
+                    .and_then(|v| v.as_table_mut())
+                {
+                    if let Some(versions) = alias.get_mut("versions").and_then(|v| v.as_table_mut())
+                    {
+                        versions.remove(from);
+                        if versions.is_empty() {
+                            alias.remove("versions");
+                        }
+                    }
+                    if alias.is_empty() {
+                        aliases.remove(&fa.to_string());
                     }
                 }
-                if alias.is_empty() {
-                    aliases.remove(&fa.to_string());
+                if aliases.is_empty() {
+                    doc.as_table_mut().remove(section);
                 }
             }
-            if aliases.is_empty() {
-                doc.as_table_mut().remove("alias");
+        }
+        Ok(())
+    }
+
+    pub fn set_shell_alias(&mut self, name: &str, command: &str) -> eyre::Result<()> {
+        self.shell_alias.insert(name.into(), command.into());
+        self.doc_mut()?
+            .get_mut()
+            .unwrap()
+            .entry("shell_alias")
+            .or_insert_with(table)
+            .as_table_like_mut()
+            .unwrap()
+            .insert(name, value(command));
+        Ok(())
+    }
+
+    pub fn remove_shell_alias(&mut self, name: &str) -> eyre::Result<()> {
+        self.shell_alias.shift_remove(name);
+        let mut doc = self.doc_mut()?;
+        let doc = doc.get_mut().unwrap();
+        if let Some(shell_alias) = doc.get_mut("shell_alias").and_then(|v| v.as_table_mut()) {
+            shell_alias.remove(name);
+            if shell_alias.is_empty() {
+                doc.as_table_mut().remove("shell_alias");
             }
         }
         Ok(())
@@ -1957,7 +1993,7 @@ mod tests {
         file::write(
             &p,
             formatdoc! {r#"
-            [alias.node.versions]
+            [tool_alias.node.versions]
             16 = "16.0.0"
             18 = "18.0.0"
         "#},
@@ -1970,7 +2006,7 @@ mod tests {
         cf.set_alias(&node, "20", "20.0.0").unwrap();
         cf.set_alias(&python, "3.10", "3.10.0").unwrap();
 
-        assert_debug_snapshot!(cf.alias);
+        assert_debug_snapshot!(cf.tool_alias);
         let cf: Box<dyn ConfigFile> = Box::new(cf);
         assert_snapshot!(cf);
         file::remove_file(&p).unwrap();
