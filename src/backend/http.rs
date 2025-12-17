@@ -325,9 +325,10 @@ impl HttpBackend {
 
         // Mark extraction complete
         if let Some(pr) = pr
-            && let Ok(metadata) = file_path.metadata() {
-                pr.set_position(metadata.len());
-            }
+            && let Ok(metadata) = file_path.metadata()
+        {
+            pr.set_position(metadata.len());
+        }
 
         file::make_executable(&dest_file)?;
         Ok(ExtractionType::RawFile { filename })
@@ -357,9 +358,10 @@ impl HttpBackend {
 
         // Mark extraction complete
         if let Some(pr) = pr
-            && let Ok(metadata) = file_path.metadata() {
-                pr.set_position(metadata.len());
-            }
+            && let Ok(metadata) = file_path.metadata()
+        {
+            pr.set_position(metadata.len());
+        }
 
         file::make_executable(&dest_file)?;
         Ok(ExtractionType::RawFile { filename })
@@ -613,7 +615,10 @@ impl Backend for HttpBackend {
 
         // Record URL in lock platforms
         let platform_key = self.get_platform_key();
-        tv.lock_platforms.entry(platform_key).or_default().url = Some(url.clone());
+        tv.lock_platforms
+            .entry(platform_key.clone())
+            .or_default()
+            .url = Some(url.clone());
 
         // Determine operation count for progress reporting
         let mut op_count = 1; // download
@@ -621,6 +626,19 @@ impl Backend for HttpBackend {
             op_count += 1;
         }
         op_count += 1; // extraction
+
+        // Account for lockfile checksum verification/generation
+        let settings = Settings::get();
+        let lockfile_enabled = settings.lockfile && settings.experimental;
+        let has_lockfile_checksum = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|p| p.checksum.as_ref())
+            .is_some();
+        if lockfile_enabled || has_lockfile_checksum {
+            op_count += 1;
+        }
+
         ctx.pr.start_operations(op_count);
 
         ctx.pr.set_message(format!("download {filename}"));
