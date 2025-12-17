@@ -450,22 +450,21 @@ pub fn install_artifact(
 
         let tool_name = tv.ba().tool_name.as_str();
 
+        // Determine search directory based on bin_path option (used by both bin= and rename_exe=)
+        let search_dir = if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
+            let bin_path = template_string(&bin_path_template, tv);
+            install_path.join(&bin_path)
+        } else {
+            install_path.clone()
+        };
+
         // Handle bin= option for archives (renames executable to specified name)
         if let Some(bin_name) = lookup_with_fallback(opts, "bin") {
-            rename_executable_in_dir(&install_path, &bin_name, Some(tool_name))?;
+            rename_executable_in_dir(&search_dir, &bin_name, Some(tool_name))?;
         }
 
         // Handle rename_exe option for archives
         if let Some(rename_to) = lookup_with_fallback(opts, "rename_exe") {
-            // Determine search directory based on bin_path option
-            let search_dir = if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path")
-            {
-                let bin_path = template_string(&bin_path_template, tv);
-                install_path.join(&bin_path)
-            } else {
-                install_path.clone()
-            };
-
             rename_executable_in_dir(&search_dir, &rename_to, Some(tool_name))?;
         }
     }
