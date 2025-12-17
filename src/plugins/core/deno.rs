@@ -124,6 +124,7 @@ impl Backend for DenoPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
+        ctx.pr.start_operations(3);
         let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         self.install(&tv, ctx.pr.as_ref(), &tarball_path)?;
