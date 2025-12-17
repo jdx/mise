@@ -59,8 +59,32 @@ pub fn list_embedded_plugins() -> &'static [&'static str] {
             continue;
         }
 
-        // Tell Cargo to re-run if this plugin directory changes
+        // Tell Cargo to re-run if this plugin directory or any Lua files change
         println!("cargo:rerun-if-changed={}", path.display());
+
+        // Also track subdirectories and individual Lua files
+        let hooks_dir = path.join("hooks");
+        if hooks_dir.exists() {
+            println!("cargo:rerun-if-changed={}", hooks_dir.display());
+            for entry in fs::read_dir(&hooks_dir).unwrap().flatten() {
+                if entry.path().extension().is_some_and(|ext| ext == "lua") {
+                    println!("cargo:rerun-if-changed={}", entry.path().display());
+                }
+            }
+        }
+        let lib_dir = path.join("lib");
+        if lib_dir.exists() {
+            println!("cargo:rerun-if-changed={}", lib_dir.display());
+            for entry in fs::read_dir(&lib_dir).unwrap().flatten() {
+                if entry.path().extension().is_some_and(|ext| ext == "lua") {
+                    println!("cargo:rerun-if-changed={}", entry.path().display());
+                }
+            }
+        }
+        let metadata_file = path.join("metadata.lua");
+        if metadata_file.exists() {
+            println!("cargo:rerun-if-changed={}", metadata_file.display());
+        }
 
         let plugin = collect_plugin_files(&path);
         plugins.insert(dir_name, plugin);

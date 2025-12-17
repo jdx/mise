@@ -204,12 +204,18 @@ impl Plugin {
 
     fn load_embedded_libs(&self, embedded: &EmbeddedPlugin) -> Result<()> {
         let package: Table = self.lua.globals().get("package")?;
-        let loaded: Table = package.get("loaded")?;
+        let preload: Table = package.get("preload")?;
 
-        // Load lib modules - use Value since modules can return any Lua type
+        // Register lib modules in package.preload so require() works regardless of load order
+        // This allows lib files to require each other without alphabetical ordering issues
         for (name, code) in embedded.lib {
-            let module: Value = self.lua.load(*code).eval()?;
-            loaded.set(*name, module)?;
+            let lua = self.lua.clone();
+            let code = *code;
+            let loader = lua.create_function(move |lua, _: ()| {
+                let module: Value = lua.load(code).eval()?;
+                Ok(module)
+            })?;
+            preload.set(*name, loader)?;
         }
 
         Ok(())
