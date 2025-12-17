@@ -7,7 +7,17 @@ description = "Interface to vfox plugins"
 documentation = "https://docs.rs/vfox"
 homepage = "https://github.com/jdx/mise"
 repository = "https://github.com/jdx/mise"
-include = ["src", "lua", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE"]
+include = [
+  "src",
+  "lua",
+  "embedded-plugins",
+  "build.rs",
+  "Cargo.toml",
+  "Cargo.lock",
+  "README.md",
+  "LICENSE",
+]
+build = "build.rs"
 
 [lib]
 name = "vfox"

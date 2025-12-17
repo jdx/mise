@@ -160,14 +160,71 @@ changelog="$(echo "$changelog" | tail -n +3)"
 
 mise up
 mise lock
+
+# Update embedded vfox plugin submodules based on mise registry
+# Tools where vfox is the first backend should have embedded plugins
+EMBEDDED_PLUGINS_DIR="crates/vfox/embedded-plugins"
+
+# Get current embedded plugins (submodule directory names)
+CURRENT_EMBEDDED=""
+if [[ -d $EMBEDDED_PLUGINS_DIR ]]; then
+	CURRENT_EMBEDDED="$(find "$EMBEDDED_PLUGINS_DIR" -maxdepth 1 -type d -name 'vfox-*' -exec basename {} \; | sort)"
+fi
+
+# Get tools where vfox is the FIRST (default) backend using mise registry command
+# Output format: "toolname    backend1 backend2 ..."
+# We only want tools where the first backend starts with "vfox:"
+VFOX_REGISTRY="$(mise registry | awk '$2 ~ /^vfox:/ {print}')"
+
+# Extract just the plugin directory names (e.g., vfox-aapt2) for comparison
+DESIRED_EMBEDDED="$(echo "$VFOX_REGISTRY" | awk '{print $2}' | sed 's|vfox:||' | sed 's|.*/||' | sort | uniq)"
+
+# Find plugins to add (in desired but not in current)
+PLUGINS_TO_ADD="$(comm -23 <(echo "$DESIRED_EMBEDDED") <(echo "$CURRENT_EMBEDDED"))"
+
+# Find plugins to remove (in current but not in desired)
+PLUGINS_TO_REMOVE="$(comm -13 <(echo "$DESIRED_EMBEDDED") <(echo "$CURRENT_EMBEDDED"))"
+
+# Add new submodules
+if [[ -n $PLUGINS_TO_ADD ]]; then
+	echo "Adding embedded vfox plugins: $PLUGINS_TO_ADD"
+	while IFS= read -r plugin; do
+		[[ -z $plugin ]] && continue
+		# Extract the org/repo from mise registry output for this plugin
+		# Use pattern that matches plugin name at end of URL (followed by space or EOL)
+		repo_path="$(echo "$VFOX_REGISTRY" | grep -E "/$plugin( |\$)" | awk '{print $2}' | sed 's|vfox:||' | head -1)"
+		if [[ -n $repo_path ]]; then
+			echo "Adding submodule for $plugin from https://github.com/$repo_path"
+			git submodule add "https://github.com/$repo_path.git" "$EMBEDDED_PLUGINS_DIR/$plugin" || true
+		fi
+	done <<<"$PLUGINS_TO_ADD"
+fi
+
+# Remove old submodules
+if [[ -n $PLUGINS_TO_REMOVE ]]; then
+	echo "Removing embedded vfox plugins: $PLUGINS_TO_REMOVE"
+	while IFS= read -r plugin; do
+		[[ -z $plugin ]] && continue
+		echo "Removing submodule for $plugin"
+		git submodule deinit -f "$EMBEDDED_PLUGINS_DIR/$plugin" || true
+		git rm -f "$EMBEDDED_PLUGINS_DIR/$plugin" || true
+		rm -rf ".git/modules/$EMBEDDED_PLUGINS_DIR/$plugin" || true
+	done <<<"$PLUGINS_TO_REMOVE"
+fi
+
+# Update existing submodules to latest
+git submodule update --remote --merge "$EMBEDDED_PLUGINS_DIR" || true
+
 git status
 # cargo update
 git add \
+	.gitmodules \
 	Cargo.lock \
 	Cargo.toml \
 	CHANGELOG.md \
 	README.md \
 	crates/aqua-registry/aqua-registry \
+	crates/vfox/embedded-plugins \
 	default.nix \
 	snapcraft.yaml \
 	docs/.vitepress/stars.data.ts \

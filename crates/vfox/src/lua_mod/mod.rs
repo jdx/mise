@@ -12,6 +12,7 @@ pub use archiver::mod_archiver as archiver;
 pub use cmd::mod_cmd as cmd;
 pub use env::mod_env as env;
 pub use file::mod_file as file;
+pub use hooks::hooks_embedded;
 pub use hooks::mod_hooks as hooks;
 pub use html::mod_html as html;
 pub use http::mod_http as http;

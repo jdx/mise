@@ -32,6 +32,7 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.MISE_GH_TOKEN }}
+          submodules: true
       - uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
