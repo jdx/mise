@@ -145,6 +145,7 @@ jobs:
       - run: cargo machete --with-metadata
       - run: ./scripts/test-standalone.sh
       - run: mise run lint
+      - run: cargo clippy -- -D warnings
       - run: cargo clippy --all-features --all-targets -- -D warnings
 
   nightly:

@@ -100,8 +100,8 @@ impl TasksAdd {
             if let Some(description) = &self.description {
                 lines.push("#MISE description=\"".to_string() + description + "\"");
             }
-            if self.dir.is_some() {
-                lines.push("#MISE dir=".to_string() + &self.dir.unwrap());
+            if let Some(dir) = &self.dir {
+                lines.push("#MISE dir=".to_string() + dir);
             }
             if self.hide {
                 lines.push("#MISE hide=true".to_string());
@@ -165,8 +165,8 @@ impl TasksAdd {
                 }
                 task.insert("wait_for", Item::Value(wait_for.into()));
             }
-            if self.description.is_some() {
-                task.insert("description", self.description.unwrap().into());
+            if let Some(description) = &self.description {
+                task.insert("description", description.clone().into());
             }
             if !self.alias.is_empty() {
                 let mut alias = toml_edit::Array::new();
@@ -175,8 +175,8 @@ impl TasksAdd {
                 }
                 task.insert("alias", Item::Value(alias.into()));
             }
-            if self.dir.is_some() {
-                task.insert("dir", self.dir.unwrap().into());
+            if let Some(dir) = &self.dir {
+                task.insert("dir", dir.clone().into());
             }
             if self.hide {
                 task.insert("hide", true.into());
@@ -198,8 +198,8 @@ impl TasksAdd {
                 }
                 task.insert("outputs", Item::Value(outputs.into()));
             }
-            if self.shell.is_some() {
-                task.insert("shell", self.shell.unwrap().into());
+            if let Some(shell) = &self.shell {
+                task.insert("shell", shell.clone().into());
             }
             if self.quiet {
                 task.insert("quiet", true.into());
