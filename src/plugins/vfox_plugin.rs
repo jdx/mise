@@ -227,8 +227,8 @@ impl Plugin for VfoxPlugin {
         if !self.is_installed() {
             return Ok(());
         }
-        // Embedded plugins cannot be uninstalled - they're bundled with mise
-        if self.is_embedded() {
+        // If only embedded (no filesystem plugin), warn that it can't be uninstalled
+        if self.is_embedded() && !self.plugin_path.exists() {
             warn!(
                 "plugin:{} is embedded in mise, cannot uninstall",
                 style(&self.name).blue().for_stderr()

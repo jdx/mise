@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# Test that embedded vfox plugins can be overridden by installing a plugin
+
+# Verify embedded plugin works without installation - use the short "bfs" name
+# which goes through the versions host cache (doesn't require network to the plugin)
+assert_contains "mise ls-remote bfs" "3.4"
+
+# Install a different plugin with the same name to override
+# Using mise-tiny as a stand-in since it's a simple test plugin
+mise plugin install vfox-bfs https://github.com/mise-plugins/mise-tiny
+
+# Verify the installed plugin is used (not embedded)
+# mise-tiny returns different output than the real bfs plugin
+assert "mise x vfox:bfs@latest -- rtx-tiny" "rtx-tiny: v3.1.0 args:"
+
+# Uninstall the override
+mise plugin uninstall vfox-bfs
+
+# Verify it falls back - use short name again
+assert_contains "mise ls-remote bfs" "3.4"
