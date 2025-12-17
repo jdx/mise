@@ -99,10 +99,15 @@ impl Vfox {
     }
 
     pub fn get_sdk(&self, name: &str) -> Result<Plugin> {
-        Plugin::from_dir(&self.plugin_dir.join(name))
+        Plugin::from_name_or_dir(name, &self.plugin_dir.join(name))
     }
 
     pub fn install_plugin(&self, sdk: &str) -> Result<Plugin> {
+        // Check for embedded plugin first - no installation needed
+        if let Some(embedded) = crate::embedded_plugins::get_embedded_plugin(sdk) {
+            return Plugin::from_embedded(sdk, embedded);
+        }
+
         let plugin_dir = self.plugin_dir.join(sdk);
         if !plugin_dir.exists() {
             let url = registry::sdk_url(sdk).ok_or_else(|| format!("Unknown SDK: {sdk}"))?;

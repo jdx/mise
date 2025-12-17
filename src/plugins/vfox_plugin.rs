@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use url::Url;
 use vfox::Vfox;
+use vfox::embedded_plugins;
 use xx::regex;
 
 #[derive(Debug)]
@@ -108,6 +109,10 @@ impl VfoxPlugin {
         )?;
         Ok(())
     }
+
+    pub fn is_embedded(&self) -> bool {
+        embedded_plugins::get_embedded_plugin(&self.name).is_some()
+    }
 }
 
 #[async_trait]
@@ -144,7 +149,8 @@ impl Plugin for VfoxPlugin {
     }
 
     fn is_installed(&self) -> bool {
-        self.plugin_path.exists()
+        // Embedded plugins are always "installed"
+        self.is_embedded() || self.plugin_path.exists()
     }
 
     fn is_installed_err(&self) -> eyre::Result<()> {
@@ -162,6 +168,11 @@ impl Plugin for VfoxPlugin {
         _force: bool,
         dry_run: bool,
     ) -> Result<()> {
+        // Skip installation for embedded plugins
+        if self.is_embedded() {
+            return Ok(());
+        }
+
         if !self.plugin_path.exists() {
             let url = self.get_repo_url(config)?;
             trace!("Cloning vfox plugin: {url}");
@@ -175,6 +186,16 @@ impl Plugin for VfoxPlugin {
     }
 
     async fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> Result<()> {
+        // Embedded plugins cannot be updated - they're bundled with mise
+        if self.is_embedded() {
+            warn!(
+                "plugin:{} is embedded in mise, not updating",
+                style(&self.name).blue().for_stderr()
+            );
+            pr.finish_with_message("embedded plugin".into());
+            return Ok(());
+        }
+
         let plugin_path = self.plugin_path.to_path_buf();
         if plugin_path.is_symlink() {
             warn!(

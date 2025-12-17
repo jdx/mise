@@ -7,6 +7,7 @@ use once_cell::sync::OnceCell;
 
 use crate::config::Config;
 use crate::context::Context;
+use crate::embedded_plugins::{self, EmbeddedPlugin};
 use crate::error::Result;
 use crate::metadata::Metadata;
 use crate::runtime::Runtime;
@@ -14,9 +15,16 @@ use crate::sdk_info::SdkInfo;
 use crate::{VfoxError, config, error, lua_mod};
 
 #[derive(Debug)]
+pub enum PluginSource {
+    Filesystem(PathBuf),
+    Embedded(&'static EmbeddedPlugin),
+}
+
+#[derive(Debug)]
 pub struct Plugin {
     pub name: String,
     pub dir: PathBuf,
+    source: PluginSource,
     lua: Lua,
     metadata: OnceCell<Metadata>,
 }
@@ -31,14 +39,46 @@ impl Plugin {
         Ok(Self {
             name: dir.file_name().unwrap().to_string_lossy().to_string(),
             dir: dir.to_path_buf(),
+            source: PluginSource::Filesystem(dir.to_path_buf()),
+            lua,
+            metadata: OnceCell::new(),
+        })
+    }
+
+    pub fn from_embedded(name: &str, embedded: &'static EmbeddedPlugin) -> Result<Self> {
+        let lua = Lua::new();
+        // Use a dummy path for embedded plugins
+        let dummy_dir = PathBuf::from(format!("embedded:{}", name));
+        lua.set_named_registry_value("plugin_dir", dummy_dir.clone())?;
+        lua.set_named_registry_value("embedded_plugin", true)?;
+        Ok(Self {
+            name: name.to_string(),
+            dir: dummy_dir,
+            source: PluginSource::Embedded(embedded),
             lua,
             metadata: OnceCell::new(),
         })
     }
 
     pub fn from_name(name: &str) -> Result<Self> {
+        // Check for embedded plugin first
+        if let Some(embedded) = embedded_plugins::get_embedded_plugin(name) {
+            return Self::from_embedded(name, embedded);
+        }
         let dir = Config::get().plugin_dir.join(name);
         Self::from_dir(&dir)
+    }
+
+    pub fn from_name_or_dir(name: &str, dir: &Path) -> Result<Self> {
+        // Check for embedded plugin first
+        if let Some(embedded) = embedded_plugins::get_embedded_plugin(name) {
+            return Self::from_embedded(name, embedded);
+        }
+        Self::from_dir(dir)
+    }
+
+    pub fn is_embedded(&self) -> bool {
+        matches!(self.source, PluginSource::Embedded(_))
     }
 
     pub fn list() -> Result<Vec<String>> {
@@ -107,15 +147,21 @@ impl Plugin {
     fn load(&self) -> Result<&Metadata> {
         self.metadata.get_or_try_init(|| {
             debug!("[vfox] Getting metadata for {self}");
-            set_paths(
-                &self.lua,
-                &[
-                    self.dir.join("?.lua"), //xx
-                    self.dir.join("hooks/?.lua"),
-                    self.dir.join("lib/?.lua"),
-                ],
-            )?;
 
+            // For filesystem plugins, set Lua package paths
+            if let PluginSource::Filesystem(dir) = &self.source {
+                set_paths(
+                    &self.lua,
+                    &[
+                        dir.join("?.lua"),
+                        dir.join("hooks/?.lua"),
+                        dir.join("lib/?.lua"),
+                    ],
+                )?;
+            }
+
+            // Load standard Lua modules (http, json, etc.) FIRST
+            // These must be available before loading embedded lib files
             lua_mod::archiver(&self.lua)?;
             lua_mod::cmd(&self.lua)?;
             lua_mod::file(&self.lua)?;
@@ -125,6 +171,12 @@ impl Plugin {
             lua_mod::strings(&self.lua)?;
             lua_mod::env(&self.lua)?;
 
+            // For embedded plugins, load lib modules AFTER standard modules
+            // (lib files may require http, json, etc.)
+            if let PluginSource::Embedded(embedded) = &self.source {
+                self.load_embedded_libs(embedded)?;
+            }
+
             let metadata = self.load_metadata()?;
             self.set_global("PLUGIN", metadata.clone())?;
             self.set_global("RUNTIME", Runtime::get(self.dir.clone()))?;
@@ -133,10 +185,26 @@ impl Plugin {
 
             let mut metadata: Metadata = metadata.try_into()?;
 
-            metadata.hooks = lua_mod::hooks(&self.lua, &self.dir)?;
+            metadata.hooks = match &self.source {
+                PluginSource::Filesystem(dir) => lua_mod::hooks(&self.lua, dir)?,
+                PluginSource::Embedded(embedded) => lua_mod::hooks_embedded(&self.lua, embedded)?,
+            };
 
             Ok(metadata)
         })
+    }
+
+    fn load_embedded_libs(&self, embedded: &EmbeddedPlugin) -> Result<()> {
+        let package: Table = self.lua.globals().get("package")?;
+        let loaded: Table = package.get("loaded")?;
+
+        // Load lib modules
+        for (name, code) in embedded.lib {
+            let module: Table = self.lua.load(*code).eval()?;
+            loaded.set(*name, module)?;
+        }
+
+        Ok(())
     }
 
     fn set_global<V>(&self, name: &str, value: V) -> Result<()>
@@ -148,16 +216,26 @@ impl Plugin {
     }
 
     fn load_metadata(&self) -> Result<Table> {
-        let metadata = self
-            .lua
-            .load(
-                r#"
-                require "metadata"
-                return PLUGIN
-            "#,
-            )
-            .eval()?;
-        Ok(metadata)
+        match &self.source {
+            PluginSource::Filesystem(_) => {
+                let metadata = self
+                    .lua
+                    .load(
+                        r#"
+                        require "metadata"
+                        return PLUGIN
+                    "#,
+                    )
+                    .eval()?;
+                Ok(metadata)
+            }
+            PluginSource::Embedded(embedded) => {
+                // Load metadata from embedded string
+                self.lua.load(embedded.metadata).exec()?;
+                let metadata = self.lua.globals().get("PLUGIN")?;
+                Ok(metadata)
+            }
+        }
     }
 }
 
