@@ -12,13 +12,12 @@ use std::sync::LazyLock as Lazy;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use tokio::{sync::OnceCell, task::JoinSet};
-use walkdir::WalkDir;
 
 use crate::backend::ABackend;
 use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
-use crate::config::config_file::mise_toml::{MiseToml, Tasks};
+use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::config_file::{ConfigFile, config_trust_root};
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::tracking::Tracker;
@@ -33,6 +32,7 @@ use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shim
 pub mod config_file;
 pub mod env_directive;
 pub mod settings;
+pub mod task_loader;
 pub mod tracking;
 
 use crate::env_diff::EnvMap;
@@ -455,28 +455,7 @@ impl Config {
         ctx: Option<&crate::task::TaskLoadContext>,
     ) -> Result<BTreeMap<String, Task>> {
         let config = Config::get().await?;
-        time!("load_all_tasks");
-        let local_tasks = load_local_tasks_with_context(&config, ctx).await?;
-        let global_tasks = load_global_tasks(&config).await?;
-        let mut tasks: BTreeMap<String, Task> = local_tasks
-            .into_iter()
-            .chain(global_tasks)
-            .rev()
-            .inspect(|t| {
-                trace!(
-                    "loaded task {} – {}",
-                    &t.name,
-                    display_path(&t.config_source)
-                )
-            })
-            .map(|t| (t.name.clone(), t))
-            .collect();
-        let all_tasks = tasks.clone();
-        for task in tasks.values_mut() {
-            task.display_name = task.display_name(&all_tasks);
-        }
-        time!("load_all_tasks {count}", count = tasks.len(),);
-        Ok(tasks)
+        task_loader::load_all_tasks_with_context(&config, ctx).await
     }
 
     pub async fn get_tracked_config_files(&self) -> Result<ConfigMap> {
@@ -720,33 +699,6 @@ impl Config {
     }
 }
 
-fn configs_at_root<'a>(dir: &Path, config_files: &'a ConfigMap) -> Vec<&'a Arc<dyn ConfigFile>> {
-    let mut configs: Vec<&'a Arc<dyn ConfigFile>> = DEFAULT_CONFIG_FILENAMES
-        .iter()
-        .rev()
-        .flat_map(|f| {
-            if f.contains('*') {
-                // Handle glob patterns by matching against actual config file paths
-                glob(dir, f)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter_map(|path| config_files.get(&path))
-                    .collect::<Vec<_>>()
-            } else {
-                // Handle regular filenames
-                config_files
-                    .get(&dir.join(f))
-                    .into_iter()
-                    .collect::<Vec<_>>()
-            }
-        })
-        .collect();
-    // Remove duplicates while preserving order
-    let mut seen = std::collections::HashSet::new();
-    configs.retain(|cf| seen.insert(cf.get_path().to_path_buf()));
-    configs
-}
-
 fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
     let project_root = config_files
         .values()
@@ -756,7 +708,7 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
     project_root
 }
 
-fn find_monorepo_root(config_files: &ConfigMap) -> Option<PathBuf> {
+pub fn find_monorepo_root(config_files: &ConfigMap) -> Option<PathBuf> {
     // Find the config file that has experimental_monorepo_root = true
     // This feature requires experimental mode
     if !Settings::get().experimental {
@@ -929,7 +881,7 @@ pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
         .collect()
 }
 
-fn all_dirs() -> Result<Vec<PathBuf>> {
+pub fn all_dirs() -> Result<Vec<PathBuf>> {
     file::all_dirs(env::current_dir()?, &env::MISE_CEILING_PATHS)
 }
 
@@ -1438,16 +1390,6 @@ impl Debug for Config {
     }
 }
 
-fn default_task_includes() -> Vec<PathBuf> {
-    vec![
-        PathBuf::from("mise-tasks"),
-        PathBuf::from(".mise-tasks"),
-        PathBuf::from(".mise").join("tasks"),
-        PathBuf::from(".config").join("mise").join("tasks"),
-        PathBuf::from("mise").join("tasks"),
-    ]
-}
-
 #[async_backtrace::framed]
 pub async fn rebuild_shims_and_runtime_symlinks(
     config: &Arc<Config>,
@@ -1472,367 +1414,8 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     Ok(())
 }
 
-fn prefix_monorepo_task_names(tasks: &mut [Task], dir: &Path, monorepo_root: &Path) {
-    const MONOREPO_PATH_PREFIX: &str = "//";
-    const MONOREPO_TASK_SEPARATOR: &str = ":";
-
-    if let Ok(rel_path) = dir.strip_prefix(monorepo_root) {
-        let prefix = rel_path
-            .to_string_lossy()
-            .replace(std::path::MAIN_SEPARATOR, "/");
-        for task in tasks.iter_mut() {
-            task.name = format!(
-                "{}{}{}{}",
-                MONOREPO_PATH_PREFIX, prefix, MONOREPO_TASK_SEPARATOR, task.name
-            );
-        }
-    }
-}
-
-async fn load_local_tasks_with_context(
-    config: &Arc<Config>,
-    ctx: Option<&crate::task::TaskLoadContext>,
-) -> Result<Vec<Task>> {
-    let mut tasks = vec![];
-    let monorepo_root = find_monorepo_root(&config.config_files);
-
-    // Load tasks from parent directories (current working directory up to root)
-
-    let local_config_files = config
-        .config_files
-        .iter()
-        .filter(|(_, cf)| !is_global_config(cf.get_path()))
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect::<IndexMap<_, _>>();
-    for d in all_dirs()? {
-        if cfg!(test) && !d.starts_with(*dirs::HOME) {
-            continue;
-        }
-        let mut dir_tasks = load_tasks_in_dir(config, &d, &local_config_files).await?;
-
-        if let Some(ref monorepo_root) = monorepo_root {
-            prefix_monorepo_task_names(&mut dir_tasks, &d, monorepo_root);
-        }
-
-        tasks.extend(dir_tasks);
-    }
-
-    // Determine if we should load monorepo tasks from subdirectories
-    // We should load subdirs if:
-    // 1. load_all is true (--all flag or wildcard patterns like //...:task)
-    // 2. OR we have specific path_hints (patterns like //foo/bar:task)
-    let should_load_subdirs = ctx.is_some_and(|c| c.load_all || !c.path_hints.is_empty());
-
-    // If in a monorepo, also discover and load tasks from subdirectories
-    if let Some(monorepo_root) = &monorepo_root {
-        // By default, only load tasks from current directory hierarchy (already loaded above)
-        // With --all flag or path hints, also load tasks from matching subdirectories
-        if !should_load_subdirs {
-            // Default: don't load any additional monorepo subdirs (they're not in our hierarchy)
-            return Ok(tasks);
-        }
-
-        let subdirs = discover_monorepo_subdirs(monorepo_root, ctx)?;
-
-        // Load tasks from subdirectories in parallel
-        let subdir_tasks_futures: Vec<_> = subdirs
-            .into_iter()
-            .filter(|subdir| !cfg!(test) || subdir.starts_with(*dirs::HOME))
-            .map(|subdir| {
-                let config = config.clone();
-                let monorepo_root = monorepo_root.clone();
-                async move {
-                    let mut all_tasks = Vec::new();
-                    // Load config files from subdirectory
-                    for config_filename in DEFAULT_CONFIG_FILENAMES.iter() {
-                        let config_path = subdir.join(config_filename);
-                        if config_path.exists() {
-                            match config_file::parse(&config_path).await {
-                                Ok(cf) => {
-                                    let mut subdir_tasks =
-                                        load_config_and_file_tasks(&config, cf.clone()).await?;
-
-                                    prefix_monorepo_task_names(&mut subdir_tasks, &subdir, &monorepo_root);
-                                    for task in subdir_tasks.iter_mut() {
-                                        // Store reference to config file for later use
-                                        task.cf = Some(cf.clone());
-                                    }
-
-                                    all_tasks.extend(subdir_tasks);
-                                }
-                                Err(err) => {
-                                    let rel_path = subdir
-                                        .strip_prefix(&monorepo_root)
-                                        .unwrap_or(&subdir);
-                                    warn!(
-                                        "Failed to parse config file {} in monorepo subdirectory {}: {}. Tasks from this directory will not be loaded.",
-                                        config_path.display(),
-                                        rel_path.display(),
-                                        err
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    Ok::<Vec<Task>, eyre::Report>(all_tasks)
-                }
-            })
-            .collect();
-
-        // Wait for all subdirectory tasks to load
-        use tokio::task::JoinSet;
-        let mut join_set = JoinSet::new();
-        for future in subdir_tasks_futures {
-            join_set.spawn(future);
-        }
-
-        while let Some(result) = join_set.join_next().await {
-            tasks.extend(result??);
-        }
-    }
-
-    Ok(tasks)
-}
-
-fn discover_monorepo_subdirs(
-    root: &Path,
-    ctx: Option<&crate::task::TaskLoadContext>,
-) -> Result<Vec<PathBuf>> {
-    const DEFAULT_IGNORED_DIRS: &[&str] = &["node_modules", "target", "dist", "build"];
-
-    let mut subdirs = Vec::new();
-    let settings = Settings::get();
-    let respect_gitignore = settings.task.monorepo_respect_gitignore;
-    let max_depth = settings.task.monorepo_depth as usize;
-
-    // Build the list of excluded directories
-    // If user defined custom exclude dirs, use only those, otherwise use defaults
-    let excluded_dirs: Vec<&str> = if settings.task.monorepo_exclude_dirs.is_empty() {
-        DEFAULT_IGNORED_DIRS.to_vec()
-    } else {
-        settings
-            .task
-            .monorepo_exclude_dirs
-            .iter()
-            .map(|s| s.as_str())
-            .collect()
-    };
-
-    if respect_gitignore {
-        // Use the `ignore` crate which respects .gitignore files
-        let walker = ignore::WalkBuilder::new(root)
-            .max_depth(Some(max_depth))
-            .hidden(true) // Skip hidden files/dirs
-            .git_ignore(true) // Respect .gitignore
-            .git_global(true) // Respect global .gitignore
-            .git_exclude(true) // Respect .git/info/exclude
-            .require_git(false) // Don't require a git repo
-            .build();
-
-        for entry in walker {
-            let entry = entry?;
-            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-                let dir = entry.path();
-
-                // Skip if depth is 0 (root itself)
-                if dir == root {
-                    continue;
-                }
-
-                // Check against excluded directories
-                let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if excluded_dirs.contains(&name) {
-                    continue;
-                }
-
-                // Check if this directory has a mise config file
-                let has_config = DEFAULT_CONFIG_FILENAMES
-                    .iter()
-                    .any(|f| dir.join(f).exists());
-                if has_config {
-                    // Apply context filtering if provided
-                    if let Some(ctx) = ctx {
-                        let rel_path = dir
-                            .strip_prefix(root)
-                            .ok()
-                            .and_then(|p| p.to_str())
-                            .unwrap_or("");
-                        if ctx.should_load_subdir(rel_path, root.to_str().unwrap_or("")) {
-                            subdirs.push(dir.to_path_buf());
-                        }
-                    } else {
-                        subdirs.push(dir.to_path_buf());
-                    }
-                }
-            }
-        }
-    } else {
-        // Fall back to WalkDir for non-gitignore-aware walking
-        for entry in WalkDir::new(root)
-            .min_depth(1)
-            .max_depth(max_depth)
-            .into_iter()
-            .filter_entry(|e| {
-                // Skip hidden directories and excluded patterns
-                let name = e.file_name().to_string_lossy();
-                !name.starts_with('.') && !excluded_dirs.contains(&name.as_ref())
-            })
-        {
-            let entry = entry?;
-            if entry.file_type().is_dir() {
-                let dir = entry.path();
-                // Check if this directory has a mise config file
-                let has_config = DEFAULT_CONFIG_FILENAMES
-                    .iter()
-                    .any(|f| dir.join(f).exists());
-                if has_config {
-                    // Apply context filtering if provided
-                    if let Some(ctx) = ctx {
-                        let rel_path = dir
-                            .strip_prefix(root)
-                            .ok()
-                            .and_then(|p| p.to_str())
-                            .unwrap_or("");
-                        if ctx.should_load_subdir(rel_path, root.to_str().unwrap_or("")) {
-                            subdirs.push(dir.to_path_buf());
-                        }
-                    } else {
-                        subdirs.push(dir.to_path_buf());
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(subdirs)
-}
-
-async fn load_global_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
-    let config_files = config
-        .config_files
-        .values()
-        .filter(|cf| is_global_config(cf.get_path()))
-        .collect::<Vec<_>>();
-    let mut tasks = vec![];
-    for cf in config_files {
-        tasks.extend(load_config_and_file_tasks(config, cf.clone()).await?);
-    }
-    Ok(tasks)
-}
-
-async fn load_config_and_file_tasks(
-    config: &Arc<Config>,
-    cf: Arc<dyn ConfigFile>,
-) -> Result<Vec<Task>> {
-    let config_root = cf.config_root();
-    let tasks = load_config_tasks(config, cf.clone(), &config_root).await?;
-    let file_tasks = load_file_tasks(config, cf.clone(), &config_root).await?;
-    Ok(tasks.into_iter().chain(file_tasks).collect())
-}
-
-async fn load_config_tasks(
-    config: &Arc<Config>,
-    cf: Arc<dyn ConfigFile>,
-    config_root: &Path,
-) -> Result<Vec<Task>> {
-    let is_global = is_global_config(cf.get_path());
-    let config_root = Arc::new(config_root.to_path_buf());
-    let mut tasks = vec![];
-    for t in cf.tasks().into_iter() {
-        let config_root = config_root.clone();
-        let config = config.clone();
-        let mut t = t.clone();
-        if is_global {
-            t.global = true;
-        }
-        match t.render(&config, &config_root).await {
-            Ok(()) => {
-                tasks.push(t);
-            }
-            Err(e) => {
-                return Err(e);
-            }
-        }
-    }
-    Ok(tasks)
-}
-
-async fn load_tasks_includes(
-    config: &Arc<Config>,
-    root: &Path,
-    config_root: &Path,
-) -> Result<Vec<Task>> {
-    if root.is_file() && root.extension().map(|e| e == "toml").unwrap_or(false) {
-        load_task_file(config, root, config_root).await
-    } else if root.is_dir() {
-        let files = WalkDir::new(root)
-            .follow_links(true)
-            .into_iter()
-            // skip hidden directories (if the root is hidden that's ok)
-            .filter_entry(|e| e.path() == root || !e.file_name().to_string_lossy().starts_with('.'))
-            .filter_ok(|e| e.file_type().is_file())
-            .map_ok(|e| e.path().to_path_buf())
-            .try_collect::<_, Vec<PathBuf>, _>()?
-            .into_iter()
-            .filter(|p| file::is_executable(p))
-            .filter(|p| {
-                !Settings::get()
-                    .task_disable_paths
-                    .iter()
-                    .any(|d| p.starts_with(d))
-            })
-            .collect::<Vec<_>>();
-        let mut tasks = vec![];
-        let root = Arc::new(root.to_path_buf());
-        let config_root = Arc::new(config_root.to_path_buf());
-        for path in files {
-            let root = root.clone();
-            let config_root = config_root.clone();
-            let config = config.clone();
-            tasks.push(Task::from_path(&config, &path, &root, &config_root).await?);
-        }
-        Ok(tasks)
-    } else {
-        Ok(vec![])
-    }
-}
-
-async fn load_file_tasks(
-    config: &Arc<Config>,
-    cf: Arc<dyn ConfigFile>,
-    config_root: &Path,
-) -> Result<Vec<Task>> {
-    let includes = cf
-        .task_config()
-        .includes
-        .clone()
-        .unwrap_or_else(default_task_includes)
-        .into_iter()
-        .map(|p| cf.get_path().parent().unwrap().join(p))
-        .collect::<Vec<_>>();
-    let mut tasks = vec![];
-    let config_root = Arc::new(config_root.to_path_buf());
-    for p in includes {
-        let config_root = config_root.clone();
-        let config = config.clone();
-        tasks.extend(load_tasks_includes(&config, &p, &config_root).await?);
-    }
-    Ok(tasks)
-}
-
 pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBuf> {
-    configs_at_root(dir, config_files)
-        .iter()
-        .rev()
-        .find_map(|cf| cf.task_config().includes.clone())
-        .unwrap_or_else(default_task_includes)
-        .into_iter()
-        .map(|p| if p.is_absolute() { p } else { dir.join(p) })
-        .filter(|p| p.exists())
-        .collect::<Vec<_>>()
-        .into_iter()
-        .unique()
-        .collect::<Vec<_>>()
+    task_loader::task_includes_for_dir(dir, config_files)
 }
 
 pub async fn load_tasks_in_dir(
@@ -1840,55 +1423,7 @@ pub async fn load_tasks_in_dir(
     dir: &Path,
     config_files: &ConfigMap,
 ) -> Result<Vec<Task>> {
-    let configs = configs_at_root(dir, config_files);
-    let mut config_tasks = vec![];
-    for cf in configs {
-        let dir = dir.to_path_buf();
-        config_tasks.extend(load_config_tasks(config, cf.clone(), &dir).await?);
-    }
-    let mut file_tasks = vec![];
-    for p in task_includes_for_dir(dir, config_files) {
-        file_tasks.extend(load_tasks_includes(config, &p, dir).await?);
-    }
-    let mut tasks = file_tasks
-        .into_iter()
-        .chain(config_tasks)
-        .sorted_by_cached_key(|t| t.name.clone())
-        .collect::<Vec<_>>();
-    let all_tasks = tasks
-        .clone()
-        .into_iter()
-        .map(|t| (t.name.clone(), t))
-        .collect::<BTreeMap<_, _>>();
-    for task in tasks.iter_mut() {
-        task.display_name = task.display_name(&all_tasks);
-    }
-    Ok(tasks)
-}
-
-async fn load_task_file(
-    config: &Arc<Config>,
-    path: &Path,
-    config_root: &Path,
-) -> Result<Vec<Task>> {
-    let raw = file::read_to_string_async(path).await?;
-    let mut tasks = toml::from_str::<Tasks>(&raw)
-        .wrap_err_with(|| format!("Error parsing task file: {}", display_path(path)))?
-        .0;
-    for (name, task) in &mut tasks {
-        task.name = name.clone();
-        task.config_source = path.to_path_buf();
-        task.config_root = Some(config_root.to_path_buf());
-    }
-    let mut out = vec![];
-    for (_, mut task) in tasks {
-        let config_root = config_root.to_path_buf();
-        if let Err(err) = task.render(config, &config_root).await {
-            warn!("rendering task: {err:?}");
-        }
-        out.push(task);
-    }
-    Ok(out)
+    task_loader::load_tasks_in_dir(config, dir, config_files).await
 }
 
 #[cfg(test)]

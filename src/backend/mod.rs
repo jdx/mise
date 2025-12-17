@@ -59,9 +59,16 @@ pub mod pipx;
 pub mod platform_target;
 pub mod spm;
 pub mod static_helpers;
+pub mod traits;
 pub mod ubi;
 pub mod version_list;
 pub mod vfox;
+
+// Re-export sub-traits for convenient access
+pub use traits::{
+    BackendIdentity, BinPathProvider, DependencyManager, Installer, LockfileSupport,
+    VersionProvider,
+};
 
 pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
@@ -276,8 +283,39 @@ pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<Stri
     }
 }
 
+/// The main trait for tool backends.
+///
+/// This trait provides the complete interface for tool management including:
+/// - Identity and type information
+/// - Version discovery and listing
+/// - Installation and uninstallation
+/// - Lockfile and platform-specific metadata
+/// - Dependency management
+/// - Binary paths and execution environment
+///
+/// # Sub-trait Architecture
+///
+/// The Backend functionality is logically organized into focused sub-traits
+/// defined in the `traits` module:
+///
+/// - [`BackendIdentity`] - Core identity (id, type, plugin association)
+/// - [`VersionProvider`] - Version discovery and listing
+/// - [`Installer`] - Installation and uninstallation
+/// - [`LockfileSupport`] - Lockfile and platform metadata
+/// - [`DependencyManager`] - Dependency resolution
+/// - [`BinPathProvider`] - Binary paths and execution environment
+///
+/// These sub-traits provide:
+/// 1. Clear documentation of capabilities
+/// 2. Ability to implement backends incrementally
+/// 3. Better separation of concerns for testing
+///
+/// Backends currently implement this unified trait, but the sub-traits
+/// provide the conceptual organization for the functionality.
 #[async_trait]
 pub trait Backend: Debug + Send + Sync {
+    // ========== BackendIdentity methods ==========
+
     fn id(&self) -> &str {
         &self.ba().short
     }
@@ -288,6 +326,8 @@ pub trait Backend: Debug + Send + Sync {
         BackendType::Core
     }
     fn ba(&self) -> &Arc<BackendArg>;
+
+    // ========== LockfileSupport methods ==========
 
     /// Generates a platform key for lockfile storage.
     /// Default implementation uses os-arch format, but backends can override for more specific keys.
@@ -331,6 +371,8 @@ pub trait Backend: Debug + Send + Sync {
         vec![platform.clone()] // Default: just the base platform
     }
 
+    // ========== BinPathProvider methods ==========
+
     async fn description(&self) -> Option<String> {
         None
     }
@@ -340,6 +382,9 @@ pub trait Backend: Debug + Send + Sync {
     fn get_plugin_type(&self) -> Option<PluginType> {
         None
     }
+
+    // ========== DependencyManager methods ==========
+
     /// If any of these tools are installing in parallel, we should wait for them to finish
     /// before installing this tool.
     fn get_dependencies(&self) -> Result<Vec<&str>> {
@@ -374,6 +419,8 @@ pub trait Backend: Debug + Send + Sync {
         }
         Ok(deps)
     }
+
+    // ========== VersionProvider methods ==========
 
     async fn list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         Ok(self
@@ -747,6 +794,8 @@ pub trait Backend: Debug + Send + Sync {
     fn plugin(&self) -> Option<&PluginEnum> {
         None
     }
+
+    // ========== Installer methods ==========
 
     async fn install_version(
         &self,
