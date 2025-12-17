@@ -78,9 +78,8 @@ cmd activate help="Initializes mise in the current shell session" {
         choices bash elvish fish nu xonsh zsh pwsh
     }
 }
-cmd alias help="Manage version aliases." {
-    alias a
-    alias aliases hide=#true
+cmd tool-alias help="Manage tool version aliases." {
+    alias alias aliases hide=#true
     flag "-p --plugin" help="filter aliases by plugin" {
         arg <PLUGIN>
     }

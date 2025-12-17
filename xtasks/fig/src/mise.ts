@@ -538,8 +538,8 @@ const completionSpec: Fig.Spec = {
       },
     },
     {
-      name: ["alias", "a"],
-      description: "Manage version aliases.",
+      name: "tool-alias",
+      description: "Manage tool version aliases.",
       subcommands: [
         {
           name: "get",

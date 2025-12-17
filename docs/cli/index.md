@@ -68,11 +68,11 @@ Can also use `MISE_NO_CONFIG=1`
 ## Subcommands
 
 - [`mise activate [FLAGS] [SHELL_TYPE]`](/cli/activate.md)
-- [`mise alias [-p --plugin <PLUGIN>] [--no-header] <SUBCOMMAND>`](/cli/alias.md)
-- [`mise alias get <PLUGIN> <ALIAS>`](/cli/alias/get.md)
-- [`mise alias ls [--no-header] [TOOL]`](/cli/alias/ls.md)
-- [`mise alias set <ARGS>…`](/cli/alias/set.md)
-- [`mise alias unset <PLUGIN> [ALIAS]`](/cli/alias/unset.md)
+- [`mise tool-alias [-p --plugin <PLUGIN>] [--no-header] <SUBCOMMAND>`](/cli/tool-alias.md)
+- [`mise tool-alias get <PLUGIN> <ALIAS>`](/cli/tool-alias/get.md)
+- [`mise tool-alias ls [--no-header] [TOOL]`](/cli/tool-alias/ls.md)
+- [`mise tool-alias set <ARGS>…`](/cli/tool-alias/set.md)
+- [`mise tool-alias unset <PLUGIN> [ALIAS]`](/cli/tool-alias/unset.md)
 - [`mise backends <SUBCOMMAND>`](/cli/backends.md)
 - [`mise backends ls`](/cli/backends/ls.md)
 - [`mise bin-paths [TOOL@VERSION]…`](/cli/bin-paths.md)

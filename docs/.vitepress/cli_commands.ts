@@ -11,23 +11,6 @@ export const commands: { [key: string]: Command } = {
   activate: {
     hide: false,
   },
-  alias: {
-    hide: false,
-    subcommands: {
-      get: {
-        hide: false,
-      },
-      ls: {
-        hide: false,
-      },
-      set: {
-        hide: false,
-      },
-      unset: {
-        hide: false,
-      },
-    },
-  },
   asdf: {
     hide: true,
   },
@@ -305,6 +288,23 @@ export const commands: { [key: string]: Command } = {
   },
   tool: {
     hide: false,
+  },
+  "tool-alias": {
+    hide: false,
+    subcommands: {
+      get: {
+        hide: false,
+      },
+      ls: {
+        hide: false,
+      },
+      set: {
+        hide: false,
+      },
+      unset: {
+        hide: false,
+      },
+    },
   },
   "tool-stub": {
     hide: false,

@@ -101,28 +101,25 @@ Task arguments
 \fBactivate\fR
 Initializes mise in the current shell session
 .TP
-\fBalias\fR
-Manage version aliases.
-.RS
-\fIAliases: \fRa
-.RE
+\fBtool\-alias\fR
+Manage tool version aliases.
 .TP
-\fBalias get\fR
+\fBtool\-alias get\fR
 Show an alias for a plugin
 .TP
-\fBalias ls\fR
+\fBtool\-alias ls\fR
 List aliases
 .RS
 \fIAliases: \fRlist
 .RE
 .TP
-\fBalias set\fR
+\fBtool\-alias set\fR
 Add/update an alias for a backend/plugin
 .RS
 \fIAliases: \fRadd, create
 .RE
 .TP
-\fBalias unset\fR
+\fBtool\-alias unset\fR
 Clears an alias for a backend/plugin
 .RS
 \fIAliases: \fRrm, remove, delete, del
@@ -546,10 +543,10 @@ Show "mise: <PLUGIN>@<VERSION>" message when changing directories
 .TP
 \fB<SHELL_TYPE>\fR
 Shell type to generate the script for
-.SH "MISE ALIAS"
-Manage version aliases.
+.SH "MISE TOOL-ALIAS"
+Manage tool version aliases.
 .PP
-\fBUsage:\fR mise alias [OPTIONS] [COMMAND]
+\fBUsage:\fR mise tool\-alias [OPTIONS] [COMMAND]
 .PP
 \fBOptions:\fR
 .PP
@@ -559,12 +556,12 @@ filter aliases by plugin
 .TP
 \fB\-\-no\-header\fR
 Don't show table header
-.SH "MISE ALIAS GET"
+.SH "MISE TOOL-ALIAS GET"
 Show an alias for a plugin
 
 This is the contents of an alias.<PLUGIN> entry in ~/.config/mise/config.toml
 .PP
-\fBUsage:\fR mise alias get <PLUGIN> <ALIAS>
+\fBUsage:\fR mise tool\-alias get <PLUGIN> <ALIAS>
 .PP
 \fBArguments:\fR
 .PP
@@ -574,7 +571,7 @@ The plugin to show the alias for
 .TP
 \fB<ALIAS>\fR
 The alias to show
-.SH "MISE ALIAS LS"
+.SH "MISE TOOL-ALIAS LS"
 List aliases
 Shows the aliases that can be specified.
 These can come from user config or from plugins in `bin/list\-aliases`.
@@ -584,7 +581,7 @@ For user config, aliases are defined like the following in `~/.config/mise/confi
     [alias.node.versions]
     lts = "22.0.0"
 .PP
-\fBUsage:\fR mise alias ls [OPTIONS] [<TOOL>]
+\fBUsage:\fR mise tool\-alias ls [OPTIONS] [<TOOL>]
 .PP
 \fBOptions:\fR
 .PP
@@ -596,12 +593,12 @@ Don't show table header
 .TP
 \fB<TOOL>\fR
 Show aliases for <TOOL>
-.SH "MISE ALIAS SET"
+.SH "MISE TOOL-ALIAS SET"
 Add/update an alias for a backend/plugin
 
 This modifies the contents of ~/.config/mise/config.toml
 .PP
-\fBUsage:\fR mise alias set <PLUGIN> <ALIAS> [<VALUE>]
+\fBUsage:\fR mise tool\-alias set <PLUGIN> <ALIAS> [<VALUE>]
 .PP
 \fBArguments:\fR
 .PP
@@ -614,12 +611,12 @@ The alias to set
 .TP
 \fB<VALUE>\fR
 The value to set the alias to
-.SH "MISE ALIAS UNSET"
+.SH "MISE TOOL-ALIAS UNSET"
 Clears an alias for a backend/plugin
 
 This modifies the contents of ~/.config/mise/config.toml
 .PP
-\fBUsage:\fR mise alias unset <PLUGIN> [<ALIAS>]
+\fBUsage:\fR mise tool\-alias unset <PLUGIN> [<ALIAS>]
 .PP
 \fBArguments:\fR
 .PP
