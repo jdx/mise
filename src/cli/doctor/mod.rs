@@ -335,7 +335,6 @@ impl Doctor {
         let tools = ts
             .list_current_versions()
             .into_iter()
-            .filter(|(_, tv)| tv.request.is_os_supported())
             .map(|(f, tv)| match f.is_version_installed(&config, &tv, true) {
                 true => (tv.to_string(), style::nstyle("")),
                 false => {
