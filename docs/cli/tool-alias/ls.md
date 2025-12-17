@@ -5,14 +5,14 @@
 - **Aliases**: `list`
 - **Source code**: [`src/cli/tool_alias/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/tool_alias/ls.rs)
 
-List aliases
+List tool version aliases
 Shows the aliases that can be specified.
 These can come from user config or from plugins in `bin/list-aliases`.
 
 For user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 
 ```
-[alias.node.versions]
+[tool_alias.node.versions]
 lts = "22.0.0"
 ```
 
@@ -31,6 +31,6 @@ Don't show table header
 Examples:
 
 ```
-$ mise aliases
+$ mise tool-alias ls
 node  lts-jod      22
 ```

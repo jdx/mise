@@ -108,7 +108,7 @@ Manage tool version aliases.
 Show an alias for a plugin
 .TP
 \fBtool\-alias ls\fR
-List aliases
+List tool version aliases
 .RS
 \fIAliases: \fRlist
 .RE
@@ -398,6 +398,30 @@ Sets a tool version for the current session.
 \fIAliases: \fRsh
 .RE
 .TP
+\fBshell\-alias\fR
+Manage shell aliases.
+.TP
+\fBshell\-alias get\fR
+Show the command for a shell alias
+.TP
+\fBshell\-alias ls\fR
+List shell aliases
+.RS
+\fIAliases: \fRlist
+.RE
+.TP
+\fBshell\-alias set\fR
+Add/update a shell alias
+.RS
+\fIAliases: \fRadd, create
+.RE
+.TP
+\fBshell\-alias unset\fR
+Removes a shell alias
+.RS
+\fIAliases: \fRrm, remove, delete, del
+.RE
+.TP
 \fBsync\fR
 Synchronize tools from other version managers with mise
 .TP
@@ -559,7 +583,7 @@ Don't show table header
 .SH "MISE TOOL-ALIAS GET"
 Show an alias for a plugin
 
-This is the contents of an alias.<PLUGIN> entry in ~/.config/mise/config.toml
+This is the contents of a tool_alias.<PLUGIN> entry in ~/.config/mise/config.toml
 .PP
 \fBUsage:\fR mise tool\-alias get <PLUGIN> <ALIAS>
 .PP
@@ -572,13 +596,13 @@ The plugin to show the alias for
 \fB<ALIAS>\fR
 The alias to show
 .SH "MISE TOOL-ALIAS LS"
-List aliases
+List tool version aliases
 Shows the aliases that can be specified.
 These can come from user config or from plugins in `bin/list\-aliases`.
 
 For user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 
-    [alias.node.versions]
+    [tool_alias.node.versions]
     lts = "22.0.0"
 .PP
 \fBUsage:\fR mise tool\-alias ls [OPTIONS] [<TOOL>]
@@ -2109,6 +2133,66 @@ Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
 .TP
 \fB<TOOL@VERSION>\fR
 Tool(s) to use
+.SH "MISE SHELL-ALIAS"
+Manage shell aliases.
+.PP
+\fBUsage:\fR mise shell\-alias [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-no\-header\fR
+Don't show table header
+.SH "MISE SHELL-ALIAS GET"
+Show the command for a shell alias
+.PP
+\fBUsage:\fR mise shell\-alias get <ALIAS>
+.PP
+\fBArguments:\fR
+.PP
+.TP
+\fB<ALIAS>\fR
+The alias to show
+.SH "MISE SHELL-ALIAS LS"
+List shell aliases
+
+Shows the shell aliases that are set in the current directory.
+These are defined in `mise.toml` under the `[shell_alias]` section.
+.PP
+\fBUsage:\fR mise shell\-alias ls [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-no\-header\fR
+Don't show table header
+.SH "MISE SHELL-ALIAS SET"
+Add/update a shell alias
+
+This modifies the contents of ~/.config/mise/config.toml
+.PP
+\fBUsage:\fR mise shell\-alias set <ALIAS> <COMMAND>
+.PP
+\fBArguments:\fR
+.PP
+.TP
+\fB<ALIAS>\fR
+The alias name
+.TP
+\fB<COMMAND>\fR
+The command to run
+.SH "MISE SHELL-ALIAS UNSET"
+Removes a shell alias
+
+This modifies the contents of ~/.config/mise/config.toml
+.PP
+\fBUsage:\fR mise shell\-alias unset <ALIAS>
+.PP
+\fBArguments:\fR
+.PP
+.TP
+\fB<ALIAS>\fR
+The alias to remove
 .SH "MISE SYNC NODE"
 Symlinks all tool versions from an external tool into mise
 

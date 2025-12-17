@@ -22,6 +22,6 @@ The alias to remove
 Examples:
 
 ```
-mise alias unset maven
-mise alias unset node lts-jod
+mise tool-alias unset maven
+mise tool-alias unset node lts-jod
 ```

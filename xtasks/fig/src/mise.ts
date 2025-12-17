@@ -562,7 +562,7 @@ const completionSpec: Fig.Spec = {
         {
           name: ["ls", "list"],
           description:
-            "List aliases\nShows the aliases that can be specified.\nThese can come from user config or from plugins in `bin/list-aliases`.",
+            "List tool version aliases\nShows the aliases that can be specified.\nThese can come from user config or from plugins in `bin/list-aliases`.",
           options: [
             {
               name: "--no-header",
@@ -2392,6 +2392,66 @@ const completionSpec: Fig.Spec = {
         generators: toolVersionGenerator,
         debounce: true,
       },
+    },
+    {
+      name: "shell-alias",
+      description: "Manage shell aliases.",
+      subcommands: [
+        {
+          name: "get",
+          description: "Show the command for a shell alias",
+          args: {
+            name: "alias",
+            description: "The alias to show",
+            generators: aliasGenerator,
+            debounce: true,
+          },
+        },
+        {
+          name: ["ls", "list"],
+          description: "List shell aliases",
+          options: [
+            {
+              name: "--no-header",
+              description: "Don't show table header",
+              isRepeatable: false,
+            },
+          ],
+        },
+        {
+          name: ["set", "add", "create"],
+          description: "Add/update a shell alias",
+          args: [
+            {
+              name: "alias",
+              description: "The alias name",
+              generators: aliasGenerator,
+              debounce: true,
+            },
+            {
+              name: "command",
+              description: "The command to run",
+            },
+          ],
+        },
+        {
+          name: ["unset", "rm", "remove", "delete", "del"],
+          description: "Removes a shell alias",
+          args: {
+            name: "alias",
+            description: "The alias to remove",
+            generators: aliasGenerator,
+            debounce: true,
+          },
+        },
+      ],
+      options: [
+        {
+          name: "--no-header",
+          description: "Don't show table header",
+          isRepeatable: false,
+        },
+      ],
     },
     {
       name: "sync",

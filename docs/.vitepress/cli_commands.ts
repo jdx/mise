@@ -243,6 +243,23 @@ export const commands: { [key: string]: Command } = {
   shell: {
     hide: false,
   },
+  "shell-alias": {
+    hide: false,
+    subcommands: {
+      get: {
+        hide: false,
+      },
+      ls: {
+        hide: false,
+      },
+      set: {
+        hide: false,
+      },
+      unset: {
+        hide: false,
+      },
+    },
+  },
   sync: {
     hide: false,
     subcommands: {

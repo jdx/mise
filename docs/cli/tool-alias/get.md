@@ -6,7 +6,7 @@
 
 Show an alias for a plugin
 
-This is the contents of an alias.&lt;PLUGIN> entry in ~/.config/mise/config.toml
+This is the contents of a tool_alias.&lt;PLUGIN> entry in ~/.config/mise/config.toml
 
 ## Arguments
 
@@ -21,6 +21,6 @@ The alias to show
 Examples:
 
 ```
-$ mise alias get node lts-hydrogen
+$ mise tool-alias get node lts-hydrogen
 20.0.0
 ```
