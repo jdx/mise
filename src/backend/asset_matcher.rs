@@ -276,9 +276,10 @@ impl AssetMatcher {
 
         // Try pattern matching first if patterns are specified
         if !self.patterns.is_empty()
-            && let Some(matched) = self.match_by_pattern(&filtered) {
-                return Ok(matched);
-            }
+            && let Some(matched) = self.match_by_pattern(&filtered)
+        {
+            return Ok(matched);
+        }
 
         // Fall back to auto-detection
         self.match_by_auto_detection(&filtered)
@@ -406,14 +407,15 @@ impl AssetMatcher {
 
             // Try regex match
             if let Ok(re) = Regex::new(&format!("^{}$", regex::escape(pattern)))
-                && let Some(asset) = assets.iter().find(|a| re.is_match(a)) {
-                    return Some(MatchedAsset {
-                        name: asset.clone(),
-                        url: None,
-                        score: 900,
-                        match_type: MatchType::Pattern,
-                    });
-                }
+                && let Some(asset) = assets.iter().find(|a| re.is_match(a))
+            {
+                return Some(MatchedAsset {
+                    name: asset.clone(),
+                    url: None,
+                    score: 900,
+                    match_type: MatchType::Pattern,
+                });
+            }
         }
 
         None
@@ -525,7 +527,6 @@ pub fn detect_asset_for_target(assets: &[String], target: &PlatformTarget) -> Re
         .pick_from(assets)
         .map(|m| m.name)
 }
-
 
 #[cfg(test)]
 mod tests {
