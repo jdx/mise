@@ -27,12 +27,18 @@ pub enum TaskOutput {
     Silent,
 }
 
-/// Returns the first line of a message for display
+/// Returns the first line of a message for display unless task_show_cmd_no_trunc is true
 /// In CI mode, returns the full first line without truncation
 /// Otherwise, truncates to terminal width with ellipsis
 pub fn trunc(prefix: &str, msg: &str) -> String {
+    let settings = Settings::get();
+
+    // Skip width truncation when explicitly disabled
+    if settings.task_show_cmd_no_trunc {
+        return msg.to_string();
+    }
     let msg = msg.lines().next().unwrap_or_default();
-    if Settings::get().ci {
+    if settings.ci {
         return msg.to_string();
     }
     let prefix_len = console::measure_text_width(prefix);
