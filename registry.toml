@@ -1887,11 +1887,11 @@ description = "From git log to SemVer in no time"
 
 [tools.glab]
 backends = [
-  { full = "ubi:gitlab-org/cli[provider=gitlab,exe=glab]", platforms = [
+  { full = "gitlab:gitlab-org/cli[exe=glab]", platforms = [
     "linux",
     "macos",
   ] },
-  { full = 'ubi:gitlab-org/cli[provider=gitlab,exe=glab,matching_regex=^glab\.exe$]', platforms = [
+  { full = "gitlab:gitlab-org/cli[exe=glab]", platforms = [
     "windows",
   ] },
   "asdf:mise-plugins/mise-glab",
