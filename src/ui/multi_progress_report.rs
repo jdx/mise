@@ -5,7 +5,6 @@ use indicatif::{MultiProgress, ProgressBar};
 
 use crate::cli::version::VERSION_PLAIN;
 use crate::config::Settings;
-use crate::progress_trace;
 use crate::ui::osc::{self, ProgressState};
 use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, VerboseReport};
 use crate::ui::style;

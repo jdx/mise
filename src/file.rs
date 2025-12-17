@@ -25,7 +25,7 @@ use zip::ZipArchive;
 #[cfg(windows)]
 use crate::config::Settings;
 use crate::ui::progress_report::SingleReport;
-use crate::{cmd, dirs, env};
+use crate::{dirs, env};
 
 pub fn open<P: AsRef<Path>>(path: P) -> Result<File> {
     let path = path.as_ref();

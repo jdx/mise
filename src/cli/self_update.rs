@@ -6,7 +6,7 @@ use self_update::{Status, cargo_crate_version};
 
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
-use crate::{cmd, env};
+use crate::env;
 use std::collections::BTreeMap;
 use std::fs;
 #[cfg(target_os = "macos")]

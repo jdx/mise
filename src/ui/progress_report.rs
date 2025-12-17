@@ -10,7 +10,6 @@ use std::{
 use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::LazyLock as Lazy;
 
-use crate::progress_trace;
 use crate::ui::style;
 use crate::{backend, env, ui};
 
