@@ -848,6 +848,20 @@ impl AssetMatcher {
 
         let score = picker.score_asset(&best);
 
+        // Check if score meets minimum threshold
+        if score < self.min_score {
+            let os = self.target_os.as_deref().unwrap_or("unknown");
+            let arch = self.target_arch.as_deref().unwrap_or("unknown");
+            bail!(
+                "Best matching asset '{}' has score {} which is below minimum threshold {}\nPlatform: {}-{}",
+                best,
+                score,
+                self.min_score,
+                os,
+                arch
+            );
+        }
+
         Ok(MatchedAsset {
             name: best,
             url: None,
@@ -955,7 +969,7 @@ impl<'a> ChecksumFetcher<'a> {
             return Some(result);
         }
 
-        // Try common global checksum files
+        // Try common global checksum files by exact name match first
         let global_patterns = [
             "checksums.txt",
             "SHA256SUMS",
@@ -963,9 +977,27 @@ impl<'a> ChecksumFetcher<'a> {
             "sha256sums.txt",
         ];
         for pattern in global_patterns {
-            if let Some(checksum_asset) = self.assets.iter().find(|a| {
-                a.name.eq_ignore_ascii_case(pattern) || a.name.to_lowercase().contains("checksum")
-            }) && let Some(result) = self
+            if let Some(checksum_asset) = self
+                .assets
+                .iter()
+                .find(|a| a.name.eq_ignore_ascii_case(pattern))
+            {
+                if let Some(result) = self
+                    .fetch_and_parse_checksum(&checksum_asset.url, &checksum_asset.name, asset_name)
+                    .await
+                {
+                    return Some(result);
+                }
+            }
+        }
+
+        // Last resort: try any file with "checksum" in the name
+        if let Some(checksum_asset) = self
+            .assets
+            .iter()
+            .find(|a| a.name.to_lowercase().contains("checksum"))
+        {
+            if let Some(result) = self
                 .fetch_and_parse_checksum(&checksum_asset.url, &checksum_asset.name, asset_name)
                 .await
             {
@@ -1048,9 +1080,11 @@ fn parse_checksum_content(
                 }
             }
         }
+        // Target file not found in SHASUMS file - return None, don't fall through
+        return None;
     }
 
-    // If this is a single-file checksum (e.g., file.tar.gz.sha256), extract just the hash
+    // Only for single-file checksum (e.g., file.tar.gz.sha256), extract just the hash
     // Format is typically "<hash>" or "<hash>  <filename>"
     if let Some(first_word) = trimmed.split_whitespace().next() {
         // Validate it looks like a hash (hex string of appropriate length)
@@ -1343,18 +1377,24 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
 
     #[test]
     fn test_parse_checksum_content_with_filename_suffix() {
-        // Some checksum files have format: "<hash>  filename"
+        // Checksum file with format: "<hash>  filename" should match the filename
         let content =
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  tool.tar.gz";
 
-        let result = parse_checksum_content(content, "other-file.tar.gz", "sha256", "tool.sha256");
-
-        // Should still extract the hash since it's a single-file checksum
+        // Should return the hash when target matches the filename
+        let result = parse_checksum_content(content, "tool.tar.gz", "sha256", "tool.sha256");
         assert!(result.is_some());
         let r = result.unwrap();
         assert_eq!(
             r.hash,
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+
+        // Should return None when target doesn't match the filename
+        let result = parse_checksum_content(content, "other-file.tar.gz", "sha256", "tool.sha256");
+        assert!(
+            result.is_none(),
+            "Should not return hash for wrong target file"
         );
     }
 
@@ -1601,5 +1641,61 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
 
         let result = matcher.pick_from(&assets).unwrap();
         assert_eq!(result.name, "tool-linux-x64");
+    }
+
+    #[test]
+    fn test_min_score_respected_by_pick_from() {
+        let assets = vec![
+            "tool-unknown-platform.tar.gz".to_string(), // Low score - no OS/arch match
+        ];
+
+        // With a high min_score, should fail to match
+        let matcher = AssetMatcher::new()
+            .with_os("linux")
+            .with_arch("x86_64")
+            .min_score(100); // Require high score
+
+        let result = matcher.pick_from(&assets);
+        assert!(
+            result.is_err(),
+            "Should fail when best score is below min_score"
+        );
+    }
+
+    #[test]
+    fn test_min_score_passes_when_met() {
+        let assets = vec![
+            "tool-linux-x86_64.tar.gz".to_string(), // High score - matches OS and arch
+        ];
+
+        // With a reasonable min_score, should succeed
+        let matcher = AssetMatcher::new()
+            .with_os("linux")
+            .with_arch("x86_64")
+            .min_score(50);
+
+        let result = matcher.pick_from(&assets);
+        assert!(result.is_ok(), "Should succeed when score meets min_score");
+    }
+
+    #[test]
+    fn test_parse_checksum_content_returns_none_for_missing_file() {
+        // SHASUMS file that doesn't contain the target file
+        let content = r#"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  tool-linux.tar.gz
+abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.tar.gz"#;
+
+        // Request checksum for a file that's not in the SHASUMS
+        let result = parse_checksum_content(
+            content,
+            "tool-windows.tar.gz", // Not in the file
+            "sha256",
+            "SHA256SUMS",
+        );
+
+        // Should return None, not the first hash
+        assert!(
+            result.is_none(),
+            "Should return None when target file is not in SHASUMS"
+        );
     }
 }
