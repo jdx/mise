@@ -314,7 +314,7 @@ impl Toolset {
                 Ok(Some(_bin)) => return Some((p, tv)),
                 Ok(None) => {}
                 Err(e) => {
-                    warn!("Error running which: {:#}", e);
+                    debug!("Error running which: {:#}", e);
                 }
             }
         }
