@@ -61,11 +61,15 @@ impl Plugin {
     }
 
     pub fn from_name(name: &str) -> Result<Self> {
-        // Check for embedded plugin first
+        // Check filesystem first - allows user to override embedded plugins
+        let dir = Config::get().plugin_dir.join(name);
+        if dir.exists() {
+            return Self::from_dir(&dir);
+        }
+        // Fall back to embedded plugin if available
         if let Some(embedded) = embedded_plugins::get_embedded_plugin(name) {
             return Self::from_embedded(name, embedded);
         }
-        let dir = Config::get().plugin_dir.join(name);
         Self::from_dir(&dir)
     }
 
