@@ -40,8 +40,8 @@ pub async fn load_all_tasks_with_context(
     ctx: Option<&crate::task::TaskLoadContext>,
 ) -> Result<BTreeMap<String, Task>> {
     time!("load_all_tasks");
-    let local_tasks = load_local_tasks_with_context(&config, ctx).await?;
-    let global_tasks = load_global_tasks(&config).await?;
+    let local_tasks = load_local_tasks_with_context(config, ctx).await?;
+    let global_tasks = load_global_tasks(config).await?;
     let mut tasks: BTreeMap<String, Task> = local_tasks
         .into_iter()
         .chain(global_tasks)
