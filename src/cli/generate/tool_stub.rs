@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::backend::asset_detector::detect_platform_from_url;
+use crate::backend::asset_matcher::detect_platform_from_url;
 use crate::backend::static_helpers::get_filename_from_url;
 use crate::file::{self, TarFormat, TarOptions};
 use crate::http::HTTP;

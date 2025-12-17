@@ -1,5 +1,5 @@
 use crate::backend::VersionInfo;
-use crate::backend::asset_detector;
+use crate::backend::asset_matcher::{self, Asset, ChecksumFetcher};
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
@@ -488,6 +488,13 @@ impl UnifiedGitBackend {
         let release = github::get_release_for_url(api_url, repo, version).await?;
         let available_assets: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
 
+        // Build asset list with URLs for checksum fetching
+        let assets_with_urls: Vec<Asset> = release
+            .assets
+            .iter()
+            .map(|a| Asset::new(&a.name, &a.browser_download_url))
+            .collect();
+
         // Try explicit pattern first
         if let Some(pattern) = lookup_platform_key_for_target(opts, "asset_pattern", target)
             .or_else(|| opts.get("asset_pattern").cloned())
@@ -507,16 +514,24 @@ impl UnifiedGitBackend {
                     )
                 })?;
 
+            // Try to get checksum from API digest or fetch from release assets
+            let digest = if asset.digest.is_some() {
+                asset.digest
+            } else {
+                self.try_fetch_checksum_from_assets(&assets_with_urls, &asset.name)
+                    .await
+            };
+
             return Ok(ReleaseAsset {
                 name: asset.name,
                 url: asset.browser_download_url,
                 url_api: asset.url,
-                digest: asset.digest,
+                digest,
             });
         }
 
         // Fall back to auto-detection for target platform
-        let asset_name = asset_detector::detect_asset_for_target(&available_assets, target)?;
+        let asset_name = asset_matcher::detect_asset_for_target(&available_assets, target)?;
         let asset = self
             .find_asset_case_insensitive(&release.assets, &asset_name, |a| &a.name)
             .ok_or_else(|| {
@@ -527,11 +542,19 @@ impl UnifiedGitBackend {
                 )
             })?;
 
+        // Try to get checksum from API digest or fetch from release assets
+        let digest = if asset.digest.is_some() {
+            asset.digest.clone()
+        } else {
+            self.try_fetch_checksum_from_assets(&assets_with_urls, &asset.name)
+                .await
+        };
+
         Ok(ReleaseAsset {
             name: asset.name.clone(),
             url: asset.browser_download_url.clone(),
             url_api: asset.url.clone(),
-            digest: asset.digest.clone(),
+            digest,
         })
     }
 
@@ -551,6 +574,14 @@ impl UnifiedGitBackend {
             .links
             .iter()
             .map(|a| a.name.clone())
+            .collect();
+
+        // Build asset list with URLs for checksum fetching
+        let assets_with_urls: Vec<Asset> = release
+            .assets
+            .links
+            .iter()
+            .map(|a| Asset::new(&a.name, &a.direct_asset_url))
             .collect();
 
         // Try explicit pattern first
@@ -573,16 +604,21 @@ impl UnifiedGitBackend {
                     )
                 })?;
 
+            // GitLab doesn't provide digests, so try fetching from release assets
+            let digest = self
+                .try_fetch_checksum_from_assets(&assets_with_urls, &asset.name)
+                .await;
+
             return Ok(ReleaseAsset {
                 name: asset.name,
                 url: asset.direct_asset_url.clone(),
                 url_api: asset.url,
-                digest: None, // GitLab doesn't provide digests
+                digest,
             });
         }
 
         // Fall back to auto-detection for target platform
-        let asset_name = asset_detector::detect_asset_for_target(&available_assets, target)?;
+        let asset_name = asset_matcher::detect_asset_for_target(&available_assets, target)?;
         let asset = self
             .find_asset_case_insensitive(&release.assets.links, &asset_name, |a| &a.name)
             .ok_or_else(|| {
@@ -593,11 +629,16 @@ impl UnifiedGitBackend {
                 )
             })?;
 
+        // GitLab doesn't provide digests, so try fetching from release assets
+        let digest = self
+            .try_fetch_checksum_from_assets(&assets_with_urls, &asset.name)
+            .await;
+
         Ok(ReleaseAsset {
             name: asset.name.clone(),
             url: asset.direct_asset_url.clone(),
             url_api: asset.url.clone(),
-            digest: None, // GitLab doesn't provide digests
+            digest,
         })
     }
 
@@ -649,6 +690,35 @@ impl UnifiedGitBackend {
             tag_name.trim_start_matches('v').to_string()
         } else {
             tag_name.to_string()
+        }
+    }
+
+    /// Tries to fetch a checksum for an asset from release checksum files.
+    ///
+    /// This method looks for checksum files (SHA256SUMS, *.sha256, etc.) in the release
+    /// assets and attempts to extract the checksum for the target asset.
+    ///
+    /// Returns the checksum in "sha256:hash" format if found, None otherwise.
+    async fn try_fetch_checksum_from_assets(
+        &self,
+        assets: &[Asset],
+        asset_name: &str,
+    ) -> Option<String> {
+        let fetcher = ChecksumFetcher::new(assets);
+        match fetcher.fetch_checksum_for(asset_name).await {
+            Some(result) => {
+                debug!(
+                    "Found checksum for {} from {}: {}",
+                    asset_name,
+                    result.source_file,
+                    result.to_string_formatted()
+                );
+                Some(result.to_string_formatted())
+            }
+            None => {
+                trace!("No checksum file found for {}", asset_name);
+                None
+            }
         }
     }
 
