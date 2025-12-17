@@ -984,9 +984,9 @@ impl<'a> ChecksumFetcher<'a> {
                 && let Some(result) = self
                     .fetch_and_parse_checksum(&checksum_asset.url, &checksum_asset.name, asset_name)
                     .await
-                {
-                    return Some(result);
-                }
+            {
+                return Some(result);
+            }
         }
 
         // Last resort: try any file with "checksum" in the name
@@ -997,9 +997,9 @@ impl<'a> ChecksumFetcher<'a> {
             && let Some(result) = self
                 .fetch_and_parse_checksum(&checksum_asset.url, &checksum_asset.name, asset_name)
                 .await
-            {
-                return Some(result);
-            }
+        {
+            return Some(result);
+        }
 
         None
     }
