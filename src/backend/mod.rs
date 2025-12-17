@@ -43,7 +43,6 @@ use std::sync::LazyLock as Lazy;
 
 pub mod aqua;
 pub mod asdf;
-pub mod asset_detector;
 pub mod asset_matcher;
 pub mod backend_type;
 pub mod cargo;

@@ -35,10 +35,328 @@ use regex::Regex;
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
-use super::asset_detector::AssetPicker;
 use super::platform_target::PlatformTarget;
+use super::static_helpers::get_filename_from_url;
 use crate::config::Settings;
 use crate::http::HTTP;
+
+// ========== Platform Detection Types (from asset_detector) ==========
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AssetOs {
+    Linux,
+    Macos,
+    Windows,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AssetArch {
+    X64,
+    Arm64,
+    X86,
+    Arm,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AssetLibc {
+    Gnu,
+    Musl,
+    Msvc,
+}
+
+impl AssetOs {
+    pub fn matches_target(&self, target: &str) -> bool {
+        match self {
+            AssetOs::Linux => target == "linux",
+            AssetOs::Macos => target == "macos" || target == "darwin",
+            AssetOs::Windows => target == "windows",
+        }
+    }
+}
+
+impl AssetArch {
+    pub fn matches_target(&self, target: &str) -> bool {
+        match self {
+            AssetArch::X64 => target == "x86_64" || target == "amd64" || target == "x64",
+            AssetArch::Arm64 => target == "aarch64" || target == "arm64",
+            AssetArch::X86 => target == "x86" || target == "i386" || target == "i686",
+            AssetArch::Arm => target == "arm",
+        }
+    }
+}
+
+impl AssetLibc {
+    pub fn matches_target(&self, target: &str) -> bool {
+        match self {
+            AssetLibc::Gnu => target == "gnu",
+            AssetLibc::Musl => target == "musl",
+            AssetLibc::Msvc => target == "msvc",
+        }
+    }
+}
+
+/// Detected platform information from a URL
+#[derive(Debug, Clone)]
+pub struct DetectedPlatform {
+    pub os: AssetOs,
+    pub arch: AssetArch,
+    #[allow(unused)]
+    pub libc: Option<AssetLibc>,
+}
+
+impl DetectedPlatform {
+    /// Convert to mise's platform string format (e.g., "linux-x64", "macos-arm64")
+    pub fn to_platform_string(&self) -> String {
+        let os_str = match self.os {
+            AssetOs::Linux => "linux",
+            AssetOs::Macos => "macos",
+            AssetOs::Windows => "windows",
+        };
+
+        let arch_str = match self.arch {
+            AssetArch::X64 => "x64",
+            AssetArch::Arm64 => "arm64",
+            AssetArch::X86 => "x86",
+            AssetArch::Arm => "arm",
+        };
+
+        format!("{os_str}-{arch_str}")
+    }
+}
+
+// Platform detection patterns
+static OS_PATTERNS: LazyLock<Vec<(AssetOs, Regex)>> = LazyLock::new(|| {
+    vec![
+        (
+            AssetOs::Linux,
+            Regex::new(r"(?i)(?:\b|_)(?:linux|ubuntu|debian|fedora|centos|rhel|alpine|arch)(?:\b|_|32|64|-)")
+                .unwrap(),
+        ),
+        (
+            AssetOs::Macos,
+            Regex::new(r"(?i)(?:\b|_)(?:darwin|mac(?:osx?)?|osx)(?:\b|_)").unwrap(),
+        ),
+        (
+            AssetOs::Windows,
+            Regex::new(r"(?i)(?:\b|_)win(?:32|64|dows)?(?:\b|_)").unwrap(),
+        ),
+    ]
+});
+
+static ARCH_PATTERNS: LazyLock<Vec<(AssetArch, Regex)>> = LazyLock::new(|| {
+    vec![
+        (
+            AssetArch::X64,
+            Regex::new(r"(?i)(?:\b|_)(?:x86[_-]64|x64|amd64)(?:\b|_)").unwrap(),
+        ),
+        (
+            AssetArch::Arm64,
+            Regex::new(r"(?i)(?:\b|_)(?:aarch_?64|arm_?64)(?:\b|_)").unwrap(),
+        ),
+        (
+            AssetArch::X86,
+            Regex::new(r"(?i)(?:\b|_)(?:x86|i386|i686)(?:\b|_)").unwrap(),
+        ),
+        (
+            AssetArch::Arm,
+            Regex::new(r"(?i)(?:\b|_)arm(?:v[0-7])?(?:\b|_)").unwrap(),
+        ),
+    ]
+});
+
+static LIBC_PATTERNS: LazyLock<Vec<(AssetLibc, Regex)>> = LazyLock::new(|| {
+    vec![
+        (
+            AssetLibc::Msvc,
+            Regex::new(r"(?i)(?:\b|_)(?:msvc)(?:\b|_)").unwrap(),
+        ),
+        (
+            AssetLibc::Gnu,
+            Regex::new(r"(?i)(?:\b|_)(?:gnu|glibc)(?:\b|_)").unwrap(),
+        ),
+        (
+            AssetLibc::Musl,
+            Regex::new(r"(?i)(?:\b|_)(?:musl)(?:\b|_)").unwrap(),
+        ),
+    ]
+});
+
+static ARCHIVE_EXTENSIONS: &[&str] = &[
+    ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst", ".tgz", ".tbz2", ".txz", ".tzst", ".zip", ".7z",
+    ".tar",
+];
+
+// ========== AssetPicker (from asset_detector) ==========
+
+/// Automatically detects the best asset for the current platform
+pub struct AssetPicker {
+    target_os: String,
+    target_arch: String,
+    target_libc: String,
+}
+
+impl AssetPicker {
+    pub fn new(target_os: String, target_arch: String) -> Self {
+        let target_libc = if target_os == "windows" {
+            "msvc".to_string()
+        } else if cfg!(target_env = "musl") {
+            "musl".to_string()
+        } else {
+            "gnu".to_string()
+        };
+
+        Self {
+            target_os,
+            target_arch,
+            target_libc,
+        }
+    }
+
+    /// Picks the best asset from available options
+    pub fn pick_best_asset(&self, assets: &[String]) -> Option<String> {
+        let candidates = self.filter_archive_assets(assets);
+        let mut scored_assets = self.score_all_assets(&candidates);
+        scored_assets.sort_by(|a, b| b.0.cmp(&a.0));
+        scored_assets
+            .first()
+            .filter(|(score, _)| *score > 0)
+            .map(|(_, asset)| asset.clone())
+    }
+
+    fn filter_archive_assets(&self, assets: &[String]) -> Vec<String> {
+        let archive_assets: Vec<String> = assets
+            .iter()
+            .filter(|name| ARCHIVE_EXTENSIONS.iter().any(|ext| name.ends_with(ext)))
+            .cloned()
+            .collect();
+
+        if archive_assets.is_empty() {
+            assets.to_vec()
+        } else {
+            archive_assets
+        }
+    }
+
+    fn score_all_assets(&self, assets: &[String]) -> Vec<(i32, String)> {
+        assets
+            .iter()
+            .map(|asset| (self.score_asset(asset), asset.clone()))
+            .collect()
+    }
+
+    /// Scores a single asset based on platform compatibility
+    pub fn score_asset(&self, asset: &str) -> i32 {
+        let mut score = 0;
+        score += self.score_os_match(asset);
+        score += self.score_arch_match(asset);
+        if self.target_os == "linux" || self.target_os == "windows" {
+            score += self.score_libc_match(asset);
+        }
+        score += self.score_format_preferences(asset);
+        score += self.score_build_penalties(asset);
+        score
+    }
+
+    fn score_os_match(&self, asset: &str) -> i32 {
+        for (os, pattern) in OS_PATTERNS.iter() {
+            if pattern.is_match(asset) {
+                return if os.matches_target(&self.target_os) {
+                    100
+                } else {
+                    -100
+                };
+            }
+        }
+        0
+    }
+
+    fn score_arch_match(&self, asset: &str) -> i32 {
+        for (arch, pattern) in ARCH_PATTERNS.iter() {
+            if pattern.is_match(asset) {
+                return if arch.matches_target(&self.target_arch) {
+                    50
+                } else {
+                    -25
+                };
+            }
+        }
+        0
+    }
+
+    fn score_libc_match(&self, asset: &str) -> i32 {
+        for (libc, pattern) in LIBC_PATTERNS.iter() {
+            if pattern.is_match(asset) {
+                return if libc.matches_target(&self.target_libc) {
+                    25
+                } else {
+                    -10
+                };
+            }
+        }
+        0
+    }
+
+    fn score_format_preferences(&self, asset: &str) -> i32 {
+        if ARCHIVE_EXTENSIONS.iter().any(|ext| asset.ends_with(ext)) {
+            10
+        } else {
+            0
+        }
+    }
+
+    fn score_build_penalties(&self, asset: &str) -> i32 {
+        let mut penalty = 0;
+        if asset.contains("debug") || asset.contains("test") {
+            penalty -= 20;
+        }
+        if asset.contains(".artifactbundle") {
+            penalty -= 30;
+        }
+        penalty
+    }
+}
+
+/// Detects platform information from a URL
+pub fn detect_platform_from_url(url: &str) -> Option<DetectedPlatform> {
+    let mut detected_os = None;
+    let mut detected_arch = None;
+    let mut detected_libc = None;
+
+    let filename = get_filename_from_url(url);
+
+    for (os, pattern) in OS_PATTERNS.iter() {
+        if pattern.is_match(&filename) {
+            detected_os = Some(*os);
+            break;
+        }
+    }
+
+    for (arch, pattern) in ARCH_PATTERNS.iter() {
+        if pattern.is_match(&filename) {
+            detected_arch = Some(*arch);
+            break;
+        }
+    }
+
+    if detected_os == Some(AssetOs::Linux) || detected_os == Some(AssetOs::Windows) {
+        for (libc, pattern) in LIBC_PATTERNS.iter() {
+            if pattern.is_match(&filename) {
+                detected_libc = Some(*libc);
+                break;
+            }
+        }
+    }
+
+    if let (Some(os), Some(arch)) = (detected_os, detected_arch) {
+        Some(DetectedPlatform {
+            os,
+            arch,
+            libc: detected_libc,
+        })
+    } else {
+        None
+    }
+}
 
 /// Common checksum file extensions
 static CHECKSUM_EXTENSIONS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
@@ -1057,5 +1375,117 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
 
         let no_sig = find_signature_asset(&assets, "other-file.tar.gz");
         assert!(no_sig.is_none());
+    }
+
+    // ========== Platform Detection Tests (from asset_detector) ==========
+
+    #[test]
+    fn test_asset_picker_functionality() {
+        let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
+        let assets = vec![
+            "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
+            "tool-1.0.0-darwin-x86_64.tar.gz".to_string(),
+            "tool-1.0.0-windows-x86_64.zip".to_string(),
+        ];
+
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "tool-1.0.0-linux-x86_64.tar.gz");
+    }
+
+    #[test]
+    fn test_asset_scoring() {
+        let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
+
+        let score_linux = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
+        let score_windows = picker.score_asset("tool-1.0.0-windows-x86_64.zip");
+        let score_linux_arm = picker.score_asset("tool-1.0.0-linux-arm64.tar.gz");
+
+        assert!(
+            score_linux > score_windows,
+            "Linux should score higher than Windows"
+        );
+        assert!(
+            score_linux > score_linux_arm,
+            "x86_64 should score higher than arm64"
+        );
+    }
+
+    #[test]
+    fn test_archive_preference() {
+        let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
+        let assets = vec![
+            "tool-1.0.0-linux-x86_64".to_string(),
+            "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
+        ];
+
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "tool-1.0.0-linux-x86_64.tar.gz");
+    }
+
+    #[test]
+    fn test_platform_detection_from_url() {
+        // Test Node.js URL
+        let url = "https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz";
+        let platform = detect_platform_from_url(url).unwrap();
+        assert_eq!(platform.os, AssetOs::Macos);
+        assert_eq!(platform.arch, AssetArch::Arm64);
+        assert_eq!(platform.to_platform_string(), "macos-arm64");
+
+        // Test Linux x64 URL
+        let url = "https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz";
+        let platform = detect_platform_from_url(url).unwrap();
+        assert_eq!(platform.os, AssetOs::Linux);
+        assert_eq!(platform.arch, AssetArch::X64);
+        assert_eq!(platform.libc, Some(AssetLibc::Musl));
+        assert_eq!(platform.to_platform_string(), "linux-x64");
+
+        // Test Windows URL
+        let url =
+            "https://github.com/cli/cli/releases/download/v2.336.0/gh_2.336.0_windows_amd64.zip";
+        let platform = detect_platform_from_url(url).unwrap();
+        assert_eq!(platform.os, AssetOs::Windows);
+        assert_eq!(platform.arch, AssetArch::X64);
+        assert_eq!(platform.to_platform_string(), "windows-x64");
+
+        // Test URL without platform info
+        let url = "https://example.com/generic-tool.tar.gz";
+        let platform = detect_platform_from_url(url);
+        assert!(platform.is_none());
+    }
+
+    #[test]
+    fn test_platform_string_conversion() {
+        let platform = DetectedPlatform {
+            os: AssetOs::Linux,
+            arch: AssetArch::X64,
+            libc: Some(AssetLibc::Gnu),
+        };
+        assert_eq!(platform.to_platform_string(), "linux-x64");
+
+        let platform = DetectedPlatform {
+            os: AssetOs::Macos,
+            arch: AssetArch::Arm64,
+            libc: None,
+        };
+        assert_eq!(platform.to_platform_string(), "macos-arm64");
+
+        let platform = DetectedPlatform {
+            os: AssetOs::Windows,
+            arch: AssetArch::X86,
+            libc: None,
+        };
+        assert_eq!(platform.to_platform_string(), "windows-x86");
+    }
+
+    #[test]
+    fn test_windows_msvc_preference() {
+        let qsv_assets = vec![
+            "qsv-8.1.1-x86_64-pc-windows-gnu.zip".to_string(),
+            "qsv-8.1.1-x86_64-pc-windows-msvc.zip".to_string(),
+        ];
+
+        let picker = AssetPicker::new("windows".to_string(), "x86_64".to_string());
+        let picked = picker.pick_best_asset(&qsv_assets).unwrap();
+        assert_eq!(picked, "qsv-8.1.1-x86_64-pc-windows-msvc.zip");
     }
 }
