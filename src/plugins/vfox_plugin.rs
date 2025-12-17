@@ -135,14 +135,16 @@ impl Plugin for VfoxPlugin {
     }
 
     fn current_abbrev_ref(&self) -> eyre::Result<Option<String>> {
-        if !self.is_installed() {
+        // No git ref for embedded plugins or if plugin_path doesn't exist
+        if !self.plugin_path.exists() {
             return Ok(None);
         }
         self.repo().current_abbrev_ref().map(Some)
     }
 
     fn current_sha_short(&self) -> eyre::Result<Option<String>> {
-        if !self.is_installed() {
+        // No git sha for embedded plugins or if plugin_path doesn't exist
+        if !self.plugin_path.exists() {
             return Ok(None);
         }
         self.repo().current_sha_short().map(Some)
@@ -186,8 +188,8 @@ impl Plugin for VfoxPlugin {
     }
 
     async fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> Result<()> {
-        // Embedded plugins cannot be updated - they're bundled with mise
-        if self.is_embedded() {
+        // If only embedded (no filesystem plugin), warn that it can't be updated
+        if self.is_embedded() && !self.plugin_path.exists() {
             warn!(
                 "plugin:{} is embedded in mise, not updating",
                 style(&self.name).blue().for_stderr()
