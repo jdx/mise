@@ -227,6 +227,15 @@ impl Plugin for VfoxPlugin {
         if !self.is_installed() {
             return Ok(());
         }
+        // Embedded plugins cannot be uninstalled - they're bundled with mise
+        if self.is_embedded() {
+            warn!(
+                "plugin:{} is embedded in mise, cannot uninstall",
+                style(&self.name).blue().for_stderr()
+            );
+            pr.finish_with_message("embedded plugin".into());
+            return Ok(());
+        }
         pr.set_message("uninstall".into());
 
         let rmdir = |dir: &Path| {
