@@ -519,7 +519,11 @@ pub fn verify_checksum_str(
 /// - `tool_name`: Optional hint for finding non-executable files by name matching.
 ///   When provided, if no executable is found, will search for files matching the tool name
 ///   and make them executable before renaming.
-fn rename_executable_in_dir(dir: &Path, new_name: &str, tool_name: Option<&str>) -> eyre::Result<()> {
+fn rename_executable_in_dir(
+    dir: &Path,
+    new_name: &str,
+    tool_name: Option<&str>,
+) -> eyre::Result<()> {
     let target_path = dir.join(new_name);
 
     // Check if target already exists before iterating
