@@ -290,6 +290,17 @@ impl Backend for AquaBackend {
                 (url, v.to_string(), filename, digest)
             };
 
+        // Determine operation count for progress reporting
+        let mut op_count = 1; // download
+        if pkg.checksum.as_ref().is_some_and(|c| c.enabled()) {
+            op_count += 1;
+        }
+        let format = pkg.format(&v, os(), arch()).unwrap_or_default();
+        if !format.is_empty() && format != "raw" {
+            op_count += 1;
+        }
+        ctx.pr.start_operations(op_count);
+
         self.download(ctx, &tv, &url, &filename).await?;
 
         if existing_platform.is_none() {
