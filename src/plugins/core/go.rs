@@ -14,7 +14,7 @@ use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{cmd, env, file, github, plugins};
+use crate::{env, file, github, plugins};
 use async_trait::async_trait;
 use itertools::Itertools;
 use tempfile::tempdir_in;

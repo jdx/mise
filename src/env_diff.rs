@@ -15,7 +15,7 @@ use serde_derive::{Deserialize, Serialize};
 use std::sync::LazyLock as Lazy;
 
 use crate::env::PATH_KEY;
-use crate::{cmd, file};
+use crate::file;
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct EnvDiff {

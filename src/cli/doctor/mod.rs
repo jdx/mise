@@ -16,7 +16,7 @@ use crate::plugins::PluginType;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::{info, style};
-use crate::{backend, cmd, dirs, duration, env, file, shims};
+use crate::{backend, dirs, duration, env, file, shims};
 use console::{Alignment, pad_str, style};
 use heck::ToSnakeCase;
 use indexmap::IndexMap;

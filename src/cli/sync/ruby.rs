@@ -4,7 +4,7 @@ use eyre::Result;
 use itertools::sorted;
 
 use crate::{
-    backend, cmd,
+    backend,
     config::{self, Config},
     dirs, file,
 };
