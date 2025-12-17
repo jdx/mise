@@ -324,11 +324,10 @@ impl HttpBackend {
         }
 
         // Mark extraction complete
-        if let Some(pr) = pr {
-            if let Ok(metadata) = file_path.metadata() {
+        if let Some(pr) = pr
+            && let Ok(metadata) = file_path.metadata() {
                 pr.set_position(metadata.len());
             }
-        }
 
         file::make_executable(&dest_file)?;
         Ok(ExtractionType::RawFile { filename })
@@ -357,11 +356,10 @@ impl HttpBackend {
         file::copy(file_path, &dest_file)?;
 
         // Mark extraction complete
-        if let Some(pr) = pr {
-            if let Ok(metadata) = file_path.metadata() {
+        if let Some(pr) = pr
+            && let Ok(metadata) = file_path.metadata() {
                 pr.set_position(metadata.len());
             }
-        }
 
         file::make_executable(&dest_file)?;
         Ok(ExtractionType::RawFile { filename })
