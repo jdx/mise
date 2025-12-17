@@ -602,16 +602,14 @@ impl<'a> ChecksumFetcher<'a> {
         let matcher = AssetMatcher::new();
 
         // First try to find an asset-specific checksum file (e.g., file.tar.gz.sha256)
-        if let Some(checksum_filename) = matcher.find_checksum_for(asset_name, &asset_names) {
-            if let Some(checksum_asset) = self.assets.iter().find(|a| a.name == checksum_filename) {
-                if let Some(result) = self
+        if let Some(checksum_filename) = matcher.find_checksum_for(asset_name, &asset_names)
+            && let Some(checksum_asset) = self.assets.iter().find(|a| a.name == checksum_filename)
+                && let Some(result) = self
                     .fetch_and_parse_checksum(&checksum_asset.url, &checksum_filename, asset_name)
                     .await
                 {
                     return Some(result);
                 }
-            }
-        }
 
         // Try common global checksum files
         let global_patterns = [
@@ -623,14 +621,13 @@ impl<'a> ChecksumFetcher<'a> {
         for pattern in global_patterns {
             if let Some(checksum_asset) = self.assets.iter().find(|a| {
                 a.name.eq_ignore_ascii_case(pattern) || a.name.to_lowercase().contains("checksum")
-            }) {
-                if let Some(result) = self
+            })
+                && let Some(result) = self
                     .fetch_and_parse_checksum(&checksum_asset.url, &checksum_asset.name, asset_name)
                     .await
                 {
                     return Some(result);
                 }
-            }
         }
 
         None
@@ -697,15 +694,14 @@ fn parse_checksum_content(
             if let (Some(hash_str), Some(filename)) = (parts.next(), parts.next()) {
                 // Strip leading * or . from filename if present (some formats use this)
                 let clean_filename = filename.trim_start_matches(['*', '.']);
-                if clean_filename == target_file || filename == target_file {
-                    if is_valid_hash(hash_str, algorithm) {
+                if (clean_filename == target_file || filename == target_file)
+                    && is_valid_hash(hash_str, algorithm) {
                         return Some(ChecksumResult {
                             algorithm: algorithm.to_string(),
                             hash: hash_str.to_string(),
                             source_file: source_file.to_string(),
                         });
                     }
-                }
             }
         }
     }
