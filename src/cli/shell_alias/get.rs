@@ -7,6 +7,7 @@ use crate::config::Config;
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct ShellAliasGet {
     /// The alias to show
+    #[clap(name = "shell_alias")]
     pub alias: String,
 }
 

@@ -50,6 +50,20 @@ const aliasGenerator: Fig.Generator = {
   },
 };
 
+const shellAliasGenerator: Fig.Generator = {
+  script: ["sh", "-c", "mise shell-alias ls --no-header"],
+  postProcess: (out) => {
+    if (!out.trim()) return [];
+    return out
+      .split("\n")
+      .filter((l) => l.trim().length > 0)
+      .map((l) => {
+        const tokens = l.split(/\s+/);
+        return { name: tokens[0], description: tokens.slice(1).join(" ") };
+      });
+  },
+};
+
 const pluginWithAlias: Fig.Generator = {
   script: "mise alias ls".split(" "),
   postProcess: (output: string) => {
@@ -2401,9 +2415,9 @@ const completionSpec: Fig.Spec = {
           name: "get",
           description: "Show the command for a shell alias",
           args: {
-            name: "alias",
+            name: "shell_alias",
             description: "The alias to show",
-            generators: aliasGenerator,
+            generators: shellAliasGenerator,
             debounce: true,
           },
         },
@@ -2423,9 +2437,9 @@ const completionSpec: Fig.Spec = {
           description: "Add/update a shell alias",
           args: [
             {
-              name: "alias",
+              name: "shell_alias",
               description: "The alias name",
-              generators: aliasGenerator,
+              generators: shellAliasGenerator,
               debounce: true,
             },
             {
@@ -2438,9 +2452,9 @@ const completionSpec: Fig.Spec = {
           name: ["unset", "rm", "remove", "delete", "del"],
           description: "Removes a shell alias",
           args: {
-            name: "alias",
+            name: "shell_alias",
             description: "The alias to remove",
-            generators: aliasGenerator,
+            generators: shellAliasGenerator,
             debounce: true,
           },
         },
@@ -2664,6 +2678,8 @@ const completionSpec: Fig.Spec = {
               "Tasks to show dependencies for\nCan specify multiple tasks by separating with spaces\ne.g.: mise tasks deps lint test check",
             isOptional: true,
             isVariadic: true,
+            generators: simpleTaskGenerator,
+            debounce: true,
           },
         },
         {
@@ -2916,6 +2932,8 @@ const completionSpec: Fig.Spec = {
               "Tasks to validate\nIf not specified, validates all tasks",
             isOptional: true,
             isVariadic: true,
+            generators: simpleTaskGenerator,
+            debounce: true,
           },
         },
       ],

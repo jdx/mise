@@ -838,7 +838,7 @@ cmd shell-alias help="Manage shell aliases." {
     flag --no-header help="Don't show table header"
     cmd get help="Show the command for a shell alias" {
         after_long_help "Examples:\n\n    $ mise shell-alias get ll\n    ls -la\n"
-        arg <ALIAS> help="The alias to show"
+        arg <shell_alias> help="The alias to show"
     }
     cmd ls help="List shell aliases" {
         alias list
@@ -850,14 +850,14 @@ cmd shell-alias help="Manage shell aliases." {
         alias add create
         long_help "Add/update a shell alias\n\nThis modifies the contents of ~/.config/mise/config.toml"
         after_long_help "Examples:\n\n    $ mise shell-alias set ll \"ls -la\"\n    $ mise shell-alias set gs \"git status\"\n"
-        arg <ALIAS> help="The alias name"
+        arg <shell_alias> help="The alias name"
         arg <COMMAND> help="The command to run"
     }
     cmd unset help="Removes a shell alias" {
         alias rm remove delete del
         long_help "Removes a shell alias\n\nThis modifies the contents of ~/.config/mise/config.toml"
         after_long_help "Examples:\n\n    $ mise shell-alias unset ll\n"
-        arg <ALIAS> help="The alias to remove"
+        arg <shell_alias> help="The alias to remove"
     }
 }
 cmd sync subcommand_required=#true help="Synchronize tools from other version managers with mise" {

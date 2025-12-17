@@ -10,6 +10,7 @@ use crate::config::config_file::ConfigFile;
 #[clap(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct ShellAliasUnset {
     /// The alias to remove
+    #[clap(name = "shell_alias")]
     pub alias: String,
 }
 

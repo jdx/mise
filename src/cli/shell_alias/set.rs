@@ -10,6 +10,7 @@ use crate::config::config_file::ConfigFile;
 #[clap(visible_aliases = ["add", "create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct ShellAliasSet {
     /// The alias name
+    #[clap(name = "shell_alias")]
     pub alias: String,
     /// The command to run
     pub command: String,

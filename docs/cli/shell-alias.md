@@ -14,7 +14,7 @@ Don't show table header
 
 ## Subcommands
 
-- [`mise shell-alias get <ALIAS>`](/cli/shell-alias/get.md)
+- [`mise shell-alias get <shell_alias>`](/cli/shell-alias/get.md)
 - [`mise shell-alias ls [--no-header]`](/cli/shell-alias/ls.md)
-- [`mise shell-alias set <ALIAS> <COMMAND>`](/cli/shell-alias/set.md)
-- [`mise shell-alias unset <ALIAS>`](/cli/shell-alias/unset.md)
+- [`mise shell-alias set <shell_alias> <COMMAND>`](/cli/shell-alias/set.md)
+- [`mise shell-alias unset <shell_alias>`](/cli/shell-alias/unset.md)
