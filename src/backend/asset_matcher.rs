@@ -197,13 +197,20 @@ pub struct AssetPicker {
 
 impl AssetPicker {
     pub fn new(target_os: String, target_arch: String) -> Self {
-        let target_libc = if target_os == "windows" {
-            "msvc".to_string()
-        } else if cfg!(target_env = "musl") {
-            "musl".to_string()
-        } else {
-            "gnu".to_string()
-        };
+        Self::with_libc(target_os, target_arch, None)
+    }
+
+    /// Create an AssetPicker with an explicit libc setting
+    pub fn with_libc(target_os: String, target_arch: String, libc: Option<String>) -> Self {
+        let target_libc = libc.unwrap_or_else(|| {
+            if target_os == "windows" {
+                "msvc".to_string()
+            } else if cfg!(target_env = "musl") {
+                "musl".to_string()
+            } else {
+                "gnu".to_string()
+            }
+        });
 
         Self {
             target_os,
@@ -696,18 +703,37 @@ impl AssetMatcher {
     // ========== Internal Methods ==========
 
     fn filter_assets(&self, assets: &[String]) -> Vec<String> {
-        assets
+        let is_archive = |name: &str| ARCHIVE_EXTENSIONS.iter().any(|ext| name.ends_with(ext));
+
+        let filtered: Vec<String> = assets
             .iter()
             .filter(|a| !self.exclude.contains(*a))
             .filter(|a| self.filter.as_ref().is_none_or(|f| f(a)))
+            // If allow_binary is false, filter out non-archive files
+            .filter(|a| self.allow_binary || is_archive(a))
             .cloned()
-            .collect()
+            .collect();
+
+        // If prefer_archive is true and we have archives, return only archives
+        if self.prefer_archive {
+            let archives: Vec<String> =
+                filtered.iter().filter(|a| is_archive(a)).cloned().collect();
+            if !archives.is_empty() {
+                return archives;
+            }
+        }
+
+        filtered
     }
 
     fn create_picker(&self) -> Option<AssetPicker> {
         let os = self.target_os.as_ref()?;
         let arch = self.target_arch.as_ref()?;
-        Some(AssetPicker::new(os.clone(), arch.clone()))
+        Some(AssetPicker::with_libc(
+            os.clone(),
+            arch.clone(),
+            self.target_libc.clone(),
+        ))
     }
 
     fn match_by_pattern(&self, assets: &[String]) -> Option<MatchedAsset> {
@@ -922,12 +948,12 @@ impl<'a> ChecksumFetcher<'a> {
         // First try to find an asset-specific checksum file (e.g., file.tar.gz.sha256)
         if let Some(checksum_filename) = matcher.find_checksum_for(asset_name, &asset_names)
             && let Some(checksum_asset) = self.assets.iter().find(|a| a.name == checksum_filename)
-                && let Some(result) = self
-                    .fetch_and_parse_checksum(&checksum_asset.url, &checksum_filename, asset_name)
-                    .await
-                {
-                    return Some(result);
-                }
+            && let Some(result) = self
+                .fetch_and_parse_checksum(&checksum_asset.url, &checksum_filename, asset_name)
+                .await
+        {
+            return Some(result);
+        }
 
         // Try common global checksum files
         let global_patterns = [
@@ -939,13 +965,12 @@ impl<'a> ChecksumFetcher<'a> {
         for pattern in global_patterns {
             if let Some(checksum_asset) = self.assets.iter().find(|a| {
                 a.name.eq_ignore_ascii_case(pattern) || a.name.to_lowercase().contains("checksum")
-            })
-                && let Some(result) = self
-                    .fetch_and_parse_checksum(&checksum_asset.url, &checksum_asset.name, asset_name)
-                    .await
-                {
-                    return Some(result);
-                }
+            }) && let Some(result) = self
+                .fetch_and_parse_checksum(&checksum_asset.url, &checksum_asset.name, asset_name)
+                .await
+            {
+                return Some(result);
+            }
         }
 
         None
@@ -1013,13 +1038,14 @@ fn parse_checksum_content(
                 // Strip leading * or . from filename if present (some formats use this)
                 let clean_filename = filename.trim_start_matches(['*', '.']);
                 if (clean_filename == target_file || filename == target_file)
-                    && is_valid_hash(hash_str, algorithm) {
-                        return Some(ChecksumResult {
-                            algorithm: algorithm.to_string(),
-                            hash: hash_str.to_string(),
-                            source_file: source_file.to_string(),
-                        });
-                    }
+                    && is_valid_hash(hash_str, algorithm)
+                {
+                    return Some(ChecksumResult {
+                        algorithm: algorithm.to_string(),
+                        hash: hash_str.to_string(),
+                        source_file: source_file.to_string(),
+                    });
+                }
             }
         }
     }
@@ -1487,5 +1513,93 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
         let picker = AssetPicker::new("windows".to_string(), "x86_64".to_string());
         let picked = picker.pick_best_asset(&qsv_assets).unwrap();
         assert_eq!(picked, "qsv-8.1.1-x86_64-pc-windows-msvc.zip");
+    }
+
+    #[test]
+    fn test_with_libc_setting_respected() {
+        // Test that explicit libc setting is passed through to AssetPicker
+        let assets = vec![
+            "tool-1.0.0-linux-x86_64-gnu.tar.gz".to_string(),
+            "tool-1.0.0-linux-x86_64-musl.tar.gz".to_string(),
+        ];
+
+        // Explicitly request musl
+        let matcher = AssetMatcher::new()
+            .with_os("linux")
+            .with_arch("x86_64")
+            .with_libc("musl");
+
+        let result = matcher.pick_from(&assets).unwrap();
+        assert_eq!(result.name, "tool-1.0.0-linux-x86_64-musl.tar.gz");
+
+        // Explicitly request gnu
+        let matcher = AssetMatcher::new()
+            .with_os("linux")
+            .with_arch("x86_64")
+            .with_libc("gnu");
+
+        let result = matcher.pick_from(&assets).unwrap();
+        assert_eq!(result.name, "tool-1.0.0-linux-x86_64-gnu.tar.gz");
+    }
+
+    #[test]
+    fn test_allow_binary_false_filters_binaries() {
+        let assets = vec![
+            "tool-linux-x64".to_string(),        // binary (no extension)
+            "tool-linux-x64.tar.gz".to_string(), // archive
+        ];
+
+        // With allow_binary = false, should only get archives
+        let matcher = AssetMatcher::new()
+            .with_os("linux")
+            .with_arch("x86_64")
+            .allow_binary(false);
+
+        let result = matcher.pick_from(&assets).unwrap();
+        assert_eq!(result.name, "tool-linux-x64.tar.gz");
+
+        // Verify the binary was filtered out
+        let all = matcher.find_all(&assets);
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].name, "tool-linux-x64.tar.gz");
+    }
+
+    #[test]
+    fn test_prefer_archive_filters_when_archives_exist() {
+        let assets = vec![
+            "tool-linux-x64".to_string(),        // binary
+            "tool-linux-x64.tar.gz".to_string(), // archive
+            "tool-linux-x64.zip".to_string(),    // archive
+        ];
+
+        // With prefer_archive = true, should only consider archives
+        let matcher = AssetMatcher::new()
+            .with_os("linux")
+            .with_arch("x86_64")
+            .prefer_archive(true);
+
+        let all = matcher.find_all(&assets);
+        // Should only have the archives, not the binary
+        assert_eq!(all.len(), 2);
+        assert!(
+            all.iter()
+                .all(|m| m.name.ends_with(".tar.gz") || m.name.ends_with(".zip"))
+        );
+    }
+
+    #[test]
+    fn test_prefer_archive_allows_binary_when_no_archives() {
+        let assets = vec![
+            "tool-linux-x64".to_string(), // binary only
+        ];
+
+        // With prefer_archive = true but no archives, should still match binary
+        let matcher = AssetMatcher::new()
+            .with_os("linux")
+            .with_arch("x86_64")
+            .prefer_archive(true);
+
+        let result = matcher.pick_from(&assets).unwrap();
+        assert_eq!(result.name, "tool-linux-x64");
     }
 }
