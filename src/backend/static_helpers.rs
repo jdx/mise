@@ -448,7 +448,13 @@ pub fn install_artifact(
         // Extract with determined strip_components
         file::untar(file_path, &install_path, &tar_opts)?;
 
-        let tool_name = tv.ba().tool_name.as_str();
+        // Extract just the repo name from tool_name (e.g., "opsgenie/opsgenie-lamp" -> "opsgenie-lamp")
+        // This is needed for matching binary names in ZIP archives where exec bits are lost
+        let full_tool_name = tv.ba().tool_name.as_str();
+        let tool_name = full_tool_name
+            .rsplit('/')
+            .next()
+            .unwrap_or(full_tool_name);
 
         // Determine search directory based on bin_path option (used by both bin= and rename_exe=)
         let search_dir = if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
