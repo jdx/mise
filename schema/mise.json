@@ -649,11 +649,6 @@
             }
           }
         },
-        "github_attestations": {
-          "default": true,
-          "description": "Enable GitHub Artifact Attestations verification globally.",
-          "type": "boolean"
-        },
         "slsa": {
           "default": true,
           "description": "Enable SLSA provenance verification globally.",

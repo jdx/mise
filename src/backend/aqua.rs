@@ -101,7 +101,13 @@ impl Backend for AquaBackend {
                 .iter()
                 .filter_map(|p| p.checksum.as_ref())
                 .find_map(|c| c.algorithm.as_ref().map(|a| a.to_string()))
-                .or_else(|| if has_checksum_assets { Some("sha256".to_string()) } else { None });
+                .or_else(|| {
+                    if has_checksum_assets {
+                        Some("sha256".to_string())
+                    } else {
+                        None
+                    }
+                });
             features.push(SecurityFeature::Checksum { algorithm });
         }
 
