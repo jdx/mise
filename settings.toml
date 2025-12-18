@@ -462,6 +462,39 @@ env = "MISE_GLOBAL_CONFIG_ROOT"
 optional = true
 type = "Path"
 
+[github.github_attestations]
+default = true
+description = "Enable GitHub Artifact Attestations verification for github backend tools."
+docs = """
+Enable/disable GitHub Artifact Attestations verification for github backend tools.
+When enabled, mise will verify the authenticity and integrity of downloaded tools
+using GitHub's artifact attestation system.
+"""
+env = "MISE_GITHUB_GITHUB_ATTESTATIONS"
+type = "Bool"
+
+[github.slsa]
+default = true
+description = "Enable SLSA provenance verification for github backend tools."
+docs = """
+Enable/disable SLSA provenance verification for github backend tools.
+When enabled, mise will verify the supply-chain integrity of downloaded tools
+using SLSA provenance attestations.
+"""
+env = "MISE_GITHUB_SLSA"
+type = "Bool"
+
+[slsa]
+default = true
+description = "Enable SLSA provenance verification globally."
+docs = """
+Enable/disable SLSA provenance verification globally for all backends that support it.
+When enabled, mise will verify the supply-chain integrity of downloaded tools
+using SLSA provenance attestations.
+"""
+env = "MISE_SLSA"
+type = "Bool"
+
 [go_default_packages_file]
 default = "~/.default-go-packages"
 description = "Path to a file containing default go packages to install when installing go"

@@ -32,6 +32,7 @@ jobs:
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
           shared-key: build
+          save-if: false
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
@@ -48,31 +49,6 @@ jobs:
             ~/.cache/mise
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise i
-
-  build-macos:
-    runs-on: macos-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
-        with:
-          shared-key: build
-      - run: |
-          cargo build --all-features
-          echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - run: mise -v
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: mise-macos-latest
-          path: target/debug/mise
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
-          path: |
-            ~/.local/share/mise
-            ~/.cache/mise
-      - run: mise i
-      - run: mise x -- wait-for-gh-rate-limit
 
   build-windows:
     runs-on: windows-latest
@@ -110,26 +86,18 @@ jobs:
       matrix: { os: [macos-latest] }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    permissions:
-      contents: write
-    needs: [build-ubuntu, build-macos]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
-      - uses: taiki-e/install-action@0aa4f22591557b744fe31e55dbfcdfea74a073f7 # v2
-        with:
-          tool: cargo-deny,cargo-msrv,cargo-machete
-      - run: rustup component add llvm-tools-preview
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
-          shared-key: unit
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: mise-${{ matrix.os }}
-          path: target/debug
-      - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
+          shared-key: build
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: |
+          cargo build --all-features
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
@@ -138,15 +106,7 @@ jobs:
             ~/.cache/mise
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise install
-      - run: mise x -- bun i
       - run: mise x -- cargo test --all-features
-      - run: cargo deny check
-      - run: cargo msrv verify
-      - run: cargo machete --with-metadata
-      - run: ./scripts/test-standalone.sh
-      - run: mise run lint
-      - run: cargo clippy -- -D warnings
-      - run: cargo clippy --all-features --all-targets -- -D warnings
 
   nightly:
     runs-on: ubuntu-latest
@@ -172,6 +132,45 @@ jobs:
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise install
       - run: mise run test
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build-ubuntu]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.head_ref }}
+      - uses: rui314/setup-mold@v1
+      - uses: taiki-e/install-action@0aa4f22591557b744fe31e55dbfcdfea74a073f7 # v2
+        with:
+          tool: cargo-deny,cargo-msrv,cargo-machete
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
+        with:
+          shared-key: build
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: mise-ubuntu-latest
+          path: target/debug
+      - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
+      - run: mise install
+      - run: mise x -- bun i
+      - run: cargo deny check
+      - run: cargo msrv verify
+      - run: cargo machete --with-metadata
+      - run: ./scripts/test-standalone.sh
+      - run: mise run lint
+      - run: cargo clippy -- -D warnings
+      - run: cargo clippy --all-features --all-targets -- -D warnings
 
   coverage:
     name: coverage-${{matrix.tranche}}
@@ -275,3 +274,53 @@ jobs:
           retry_wait_seconds: 30
           max_attempts: 2
           command: pwsh e2e-win\run.ps1
+
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    needs:
+      - build-ubuntu
+      - build-windows
+      - unit
+      - nightly
+      - lint
+      - coverage
+      - windows-unit
+      - windows-e2e
+    if: always()
+    steps:
+      - name: Check CI job results
+        run: |
+          if [ "${{ needs.build-ubuntu.result }}" != "success" ]; then
+            echo "build-ubuntu failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.build-windows.result }}" != "success" ]; then
+            echo "build-windows failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.unit.result }}" != "success" ]; then
+            echo "unit failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.nightly.result }}" != "success" ]; then
+            echo "nightly failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.lint.result }}" != "success" ]; then
+            echo "lint failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.coverage.result }}" != "success" ]; then
+            echo "coverage failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.windows-unit.result }}" != "success" ]; then
+            echo "windows-unit failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.windows-e2e.result }}" != "success" ]; then
+            echo "windows-e2e failed or was skipped"
+            exit 1
+          fi
+          echo "All CI jobs completed successfully"

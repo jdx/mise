@@ -1,17 +1,22 @@
 --- Post-installation hook
 
+-- os.execute returns 0 in Lua 5.1, true in Lua 5.2+
+local function exec_success(result)
+    return result == true or result == 0
+end
+
 local function download_file(url, output_path)
     -- Detect Windows
     local is_windows = package.config:sub(1,1) == '\\'
     local stderr_redirect = is_windows and " 2>NUL" or " 2>/dev/null"
-    
+
     -- Try curl first (more likely to be available on Windows via Git Bash)
     local curl_cmd = "curl -sSL -o " .. output_path .. " " .. url .. stderr_redirect
     local wget_cmd = "wget -q -O " .. output_path .. " " .. url .. stderr_redirect
-    
-    if os.execute(curl_cmd) == 0 then
+
+    if exec_success(os.execute(curl_cmd)) then
         return true
-    elseif os.execute(wget_cmd) == 0 then
+    elseif exec_success(os.execute(wget_cmd)) then
         return true
     end
     return false

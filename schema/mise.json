@@ -633,6 +633,27 @@
           "description": "Path which is used as `{{config_root}}` for the global config file. Default is `$HOME`. This must be an env var.",
           "type": "string"
         },
+        "github": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "github_attestations": {
+              "default": true,
+              "description": "Enable GitHub Artifact Attestations verification for github backend tools.",
+              "type": "boolean"
+            },
+            "slsa": {
+              "default": true,
+              "description": "Enable SLSA provenance verification for github backend tools.",
+              "type": "boolean"
+            }
+          }
+        },
+        "slsa": {
+          "default": true,
+          "description": "Enable SLSA provenance verification globally.",
+          "type": "boolean"
+        },
         "go_default_packages_file": {
           "default": "~/.default-go-packages",
           "description": "Path to a file containing default go packages to install when installing go",
