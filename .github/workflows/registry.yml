@@ -122,6 +122,7 @@ jobs:
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-
           path: |
             ~/.local/share/mise
             ~/.cache/mise
@@ -153,6 +154,10 @@ jobs:
     steps:
       - name: Check CI job results
         run: |
+          if [ "${{ needs.check-changes.result }}" != "success" ]; then
+            echo "check-changes job failed"
+            exit 1
+          fi
           if [ "${{ needs.check-changes.outputs.registry-changed }}" != "true" ]; then
             echo "No registry changes detected, skipping registry CI checks"
             exit 0

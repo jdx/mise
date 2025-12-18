@@ -44,6 +44,7 @@ jobs:
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-
           path: |
             ~/.local/share/mise
             ~/.cache/mise
@@ -61,6 +62,7 @@ jobs:
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
           shared-key: build
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - shell: pwsh
         run: |
           cargo build
@@ -73,6 +75,7 @@ jobs:
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-
           path: |
             ~/.local/share/mise
             ~/.cache/mise
@@ -101,6 +104,7 @@ jobs:
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-
           path: |
             ~/.local/share/mise
             ~/.cache/mise
@@ -120,12 +124,14 @@ jobs:
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
           shared-key: nightly
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-
           path: |
             ~/.local/share/mise
             ~/.cache/mise
@@ -158,6 +164,7 @@ jobs:
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-
           path: |
             ~/.local/share/mise
             ~/.cache/mise
@@ -210,6 +217,7 @@ jobs:
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-
           path: |
             ~/.local/share/mise
             ~/.cache/mise
@@ -236,7 +244,8 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
-          shared-key: unit
+          shared-key: build
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: cargo test
         uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
         with:
@@ -262,6 +271,7 @@ jobs:
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-
           path: |
             ~/.local/share/mise
             ~/.cache/mise
