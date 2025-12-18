@@ -18,7 +18,7 @@ This page lists various ways to install `mise` on your system.
 | CI/Docker             | mise.run       | GitHub Releases |
 
 ::: tip Which methods auto-update?
-Package managers (apt, dnf, brew, pacman, etc.) update mise when you update system packages. The mise.run script and manual methods require re-running the install command to update.
+Package managers (apt, dnf, brew, pacman, etc.) update mise when you update system packages. Other methods can be updated with `mise self-update`.
 :::
 
 ### <https://mise.run>
