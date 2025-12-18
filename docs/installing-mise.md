@@ -164,6 +164,8 @@ dnf copr enable jdxcode/mise
 dnf install mise
 ```
 
+[COPR package page](https://copr.fedorainfracloud.org/coprs/jdxcode/mise/)
+
 ### Snap (Linux, currently in beta)
 
 ```sh
