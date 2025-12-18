@@ -266,6 +266,10 @@ impl Backend for UbiBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
+        deprecated!(
+            "ubi",
+            "The ubi backend is deprecated. Use the github backend instead (e.g., github:owner/repo)"
+        );
         // Check if lockfile has URL for this platform
         let platform_key = self.get_platform_key();
         let lockfile_url = tv
@@ -458,10 +462,6 @@ pub fn install_time_option_keys() -> Vec<String> {
 
 impl UbiBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        deprecated!(
-            "ubi",
-            "The ubi backend is deprecated. Use the github backend instead (e.g., github:owner/repo)"
-        );
         Self { ba: Arc::new(ba) }
     }
 }
