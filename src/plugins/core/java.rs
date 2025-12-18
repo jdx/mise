@@ -296,23 +296,7 @@ impl Backend for JavaPlugin {
         &self.ba
     }
 
-    async fn list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
-        self._list_remote_versions(config).await
-    }
-
-    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
-        Ok(self
-            ._list_remote_versions_with_info(config)
-            .await?
-            .into_iter()
-            .map(|v| v.version)
-            .collect())
-    }
-
-    async fn _list_remote_versions_with_info(
-        &self,
-        config: &Arc<Config>,
-    ) -> Result<Vec<VersionInfo>> {
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let release_type = config
             .get_tool_request_set()
             .await?

@@ -419,10 +419,7 @@ impl Backend for NodePlugin {
         features
     }
 
-    async fn _list_remote_versions_with_info(
-        &self,
-        _config: &Arc<Config>,
-    ) -> Result<Vec<VersionInfo>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let settings = Settings::get();
         let base = Settings::get().node.mirror_url();
         let versions = HTTP_FETCH
