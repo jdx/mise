@@ -66,8 +66,9 @@ impl Backend for AquaBackend {
 
         // Check base package and all version overrides for security features
         // This gives a complete picture of available security features across all versions
-        let all_pkgs: Vec<&AquaPackage> =
-            std::iter::once(&pkg).chain(pkg.version_overrides.iter()).collect();
+        let all_pkgs: Vec<&AquaPackage> = std::iter::once(&pkg)
+            .chain(pkg.version_overrides.iter())
+            .collect();
 
         // Checksum - check if any package version has it enabled
         if all_pkgs.iter().any(|p| {
