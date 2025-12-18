@@ -152,13 +152,6 @@ impl Backend for VfoxBackend {
         Some(&self.plugin_enum)
     }
 
-    fn symlink_path(&self, _tv: &ToolVersion) -> Option<PathBuf> {
-        // Vfox backend tools (like nix) create symlinks as part of normal installation
-        // (e.g., symlinks to /nix/store), so we should not skip them during upgrade checks.
-        // Return None to indicate these are not user-created symlinks to other versions.
-        None
-    }
-
     async fn idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
         let (vfox, _log_rx) = self.plugin.vfox();
 
