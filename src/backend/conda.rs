@@ -497,6 +497,15 @@ impl Backend for CondaBackend {
         Ok(versions)
     }
 
+    /// Override to bypass the shared remote_versions cache since conda's
+    /// channel option affects which versions are available.
+    async fn list_remote_versions_with_info(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<Vec<VersionInfo>> {
+        self._list_remote_versions(config).await
+    }
+
     async fn install_version_(
         &self,
         ctx: &InstallContext,
