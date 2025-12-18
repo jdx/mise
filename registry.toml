@@ -4148,6 +4148,11 @@ backends = ["aqua:ossf/scorecard"]
 description = "OpenSSF Scorecard - Security health metrics for Open Source"
 test = ["scorecard version", "v{{version}}"]
 
+[tools.s5cmd]
+backends = ["aqua:peak/s5cmd"]
+description = "Parallel S3 and local filesystem execution tool"
+test = ["s5cmd version", "s5cmd version {{version}}"]
+
 [tools.sd]
 backends = ["aqua:chmln/sd", "ubi:chmln/sd", "cargo:sd"]
 description = "Intuitive find & replace CLI (sed alternative)"
