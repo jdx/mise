@@ -50,15 +50,7 @@ jobs:
       - run: mv "$HOME/bin/mise-release" "$HOME/bin/mise-${{ steps.versions.outputs.release }}"
       #- run: cp "$HOME/bin/mise-${{ steps.versions.outputs.main }}" "$HOME/bin/mise-main"
       - run: cargo build --profile serious && mv target/serious/mise "$HOME/bin"
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
-          restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-
-          path: |
-            ~/.local/share/mise
-            ~/.cache/mise
-      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
-      - run: mise install
+      - uses: ./.github/actions/mise-tools
       - run: |
           set -x
           failed=false
