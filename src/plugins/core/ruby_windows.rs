@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::backend::Backend;
+use crate::backend::VersionInfo;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -153,7 +154,7 @@ impl Backend for RubyPlugin {
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         // TODO: use windows set of versions
         //  match self.core.fetch_remote_versions_from_mise() {
         //      Ok(Some(versions)) => return Ok(versions),
@@ -163,15 +164,19 @@ impl Backend for RubyPlugin {
         let releases: Vec<GithubRelease> = github::list_releases("oneclick/rubyinstaller2").await?;
         let versions = releases
             .into_iter()
-            .map(|r| r.tag_name)
-            .filter_map(|v| {
+            .filter_map(|r| {
                 regex!(r"RubyInstaller-([0-9.]+)-.*")
-                    .replace(&v, "$1")
-                    .parse()
+                    .replace(&r.tag_name, "$1")
+                    .parse::<String>()
                     .ok()
+                    .map(|version| VersionInfo {
+                        version,
+                        created_at: Some(r.created_at),
+                        ..Default::default()
+                    })
             })
-            .unique()
-            .sorted_by_cached_key(|s: &String| (Versioning::new(s), s.to_string()))
+            .unique_by(|v| v.version.clone())
+            .sorted_by_cached_key(|v| (Versioning::new(&v.version), v.version.clone()))
             .collect();
         Ok(versions)
     }

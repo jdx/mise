@@ -38,10 +38,7 @@ impl Backend for NPMBackend {
         Ok(vec!["node", "bun", "pnpm"])
     }
 
-    async fn _list_remote_versions_with_info(
-        &self,
-        config: &Arc<Config>,
-    ) -> eyre::Result<Vec<VersionInfo>> {
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         // Use npm CLI to respect custom registry configurations
         self.ensure_npm_for_version_check(config).await;
         timeout::run_with_timeout_async(

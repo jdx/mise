@@ -1,3 +1,4 @@
+use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
@@ -457,20 +458,52 @@ impl Backend for CondaBackend {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let files = self.fetch_package_files().await?;
         let subdir = Self::conda_subdir();
 
-        // Filter by current platform and extract unique versions
-        let versions: Vec<String> = files
+        // Filter by current platform and group by version to get the latest upload time per version
+        let mut version_times: std::collections::HashMap<String, Option<String>> =
+            std::collections::HashMap::new();
+
+        for f in files
             .iter()
             .filter(|f| f.attrs.subdir == subdir || f.attrs.subdir == "noarch")
-            .map(|f| f.version.clone())
-            .unique()
-            .sorted_by_cached_key(|v| Versioning::new(v))
+        {
+            version_times
+                .entry(f.version.clone())
+                .and_modify(|existing| {
+                    // Keep the latest upload time for each version
+                    if let Some(new_time) = &f.upload_time
+                        && (existing.is_none() || existing.as_ref().is_some_and(|e| new_time > e))
+                    {
+                        *existing = Some(new_time.clone());
+                    }
+                })
+                .or_insert_with(|| f.upload_time.clone());
+        }
+
+        // Convert to VersionInfo and sort by version
+        let versions: Vec<VersionInfo> = version_times
+            .into_iter()
+            .map(|(version, created_at)| VersionInfo {
+                version,
+                created_at,
+                ..Default::default()
+            })
+            .sorted_by_cached_key(|v| Versioning::new(&v.version))
             .collect();
 
         Ok(versions)
+    }
+
+    /// Override to bypass the shared remote_versions cache since conda's
+    /// channel option affects which versions are available.
+    async fn list_remote_versions_with_info(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<Vec<VersionInfo>> {
+        self._list_remote_versions(config).await
     }
 
     async fn install_version_(
@@ -623,6 +656,7 @@ struct CondaPackageFile {
     basename: String,
     download_url: String,
     sha256: Option<String>,
+    upload_time: Option<String>,
     #[serde(default)]
     attrs: CondaPackageAttrs,
 }

@@ -1,4 +1,5 @@
 use crate::backend::Backend;
+use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -43,27 +44,35 @@ impl Backend for SPMBackend {
         Ok(vec!["swift"])
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let provider = GitProvider::from_ba(&self.ba);
         let repo = SwiftPackageRepo::new(&self.tool_name(), &provider)?;
-        let releases = match provider.kind {
+        let versions = match provider.kind {
             GitProviderKind::GitLab => {
                 gitlab::list_releases_from_url(&provider.api_url, repo.shorthand.as_str())
                     .await?
                     .into_iter()
-                    .map(|r| r.tag_name)
+                    .map(|r| VersionInfo {
+                        version: r.tag_name,
+                        created_at: r.released_at,
+                        ..Default::default()
+                    })
                     .rev()
                     .collect()
             }
             _ => github::list_releases_from_url(&provider.api_url, repo.shorthand.as_str())
                 .await?
                 .into_iter()
-                .map(|r| r.tag_name)
+                .map(|r| VersionInfo {
+                    version: r.tag_name,
+                    created_at: Some(r.created_at),
+                    ..Default::default()
+                })
                 .rev()
                 .collect(),
         };
 
-        Ok(releases)
+        Ok(versions)
     }
 
     async fn install_version_(

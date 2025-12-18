@@ -174,10 +174,7 @@ impl Backend for SwiftPlugin {
         features
     }
 
-    async fn _list_remote_versions_with_info(
-        &self,
-        _config: &Arc<Config>,
-    ) -> Result<Vec<VersionInfo>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let versions = github::list_releases("swiftlang/swift")
             .await?
             .into_iter()

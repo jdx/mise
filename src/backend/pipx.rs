@@ -50,10 +50,7 @@ impl Backend for PIPXBackend {
         Ok(vec!["uv"])
     }
 
-    async fn _list_remote_versions_with_info(
-        &self,
-        _config: &Arc<Config>,
-    ) -> eyre::Result<Vec<VersionInfo>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         match self.tool_name().parse()? {
             PipxRequest::Pypi(package) => {
                 let registry_url = Self::get_registry_url()?;

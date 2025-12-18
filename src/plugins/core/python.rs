@@ -1,5 +1,5 @@
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::{Backend, VersionCacheManager};
+use crate::backend::{Backend, VersionCacheManager, VersionInfo};
 use crate::build_time::built_info;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
@@ -423,13 +423,16 @@ impl Backend for PythonPlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         if cfg!(windows) || Settings::get().python.compile == Some(false) {
             Ok(self
                 .fetch_precompiled_remote_versions()
                 .await?
                 .iter()
-                .map(|(v, _, _)| v.clone())
+                .map(|(v, _, _)| VersionInfo {
+                    version: v.clone(),
+                    ..Default::default()
+                })
                 .collect())
         } else {
             self.install_or_update_python_build(None)?;
@@ -440,8 +443,11 @@ impl Backend for PythonPlugin {
                     .split('\n')
                     // remove free-threaded pythons like 3.13t and 3.14t-dev
                     .filter(|s| !regex!(r"\dt(-dev)?$").is_match(s))
-                    .map(|s| s.to_string())
-                    .sorted_by_cached_key(|v| regex!(r"^\d+").is_match(v))
+                    .map(|s| VersionInfo {
+                        version: s.to_string(),
+                        ..Default::default()
+                    })
+                    .sorted_by_cached_key(|v| regex!(r"^\d+").is_match(&v.version))
                     .collect();
                 Ok(versions)
             })

@@ -44,10 +44,7 @@ impl Backend for CargoBackend {
         Ok(vec!["cargo-binstall", "sccache"])
     }
 
-    async fn _list_remote_versions_with_info(
-        &self,
-        _config: &Arc<Config>,
-    ) -> eyre::Result<Vec<VersionInfo>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         if self.git_url().is_some() {
             // TODO: maybe fetch tags/branches from git?
             return Ok(vec![VersionInfo {

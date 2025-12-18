@@ -1,4 +1,5 @@
 use crate::backend::Backend;
+use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
@@ -33,7 +34,7 @@ impl Backend for GoBackend {
         Ok(vec!["go"])
     }
 
-    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         // Check if go is available
         self.warn_if_dependency_missing(
             config,
@@ -83,14 +84,17 @@ impl Backend for GoBackend {
                     .read();
                     if let Ok(raw) = res {
                         let res = serde_json::from_str::<GoModInfo>(&raw);
-                        if let Ok(mut mod_info) = res {
+                        if let Ok(mod_info) = res {
                             // remove the leading v from the versions
-                            mod_info.versions = mod_info
+                            let versions = mod_info
                                 .versions
                                 .into_iter()
-                                .map(|v| v.trim_start_matches('v').to_string())
+                                .map(|v| VersionInfo {
+                                    version: v.trim_start_matches('v').to_string(),
+                                    ..Default::default()
+                                })
                                 .collect();
-                            return Ok(mod_info.versions);
+                            return Ok(versions);
                         }
                     };
                 }

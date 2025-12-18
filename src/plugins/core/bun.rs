@@ -121,10 +121,7 @@ impl Backend for BunPlugin {
         }
     }
 
-    async fn _list_remote_versions_with_info(
-        &self,
-        _config: &Arc<Config>,
-    ) -> Result<Vec<VersionInfo>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let versions = github::list_releases("oven-sh/bun")
             .await?
             .into_iter()

@@ -449,7 +449,7 @@ pub trait Backend: Debug + Send + Sync {
                     ba.to_string()
                 );
                 let versions = self
-                    ._list_remote_versions_with_info(config)
+                    ._list_remote_versions(config)
                     .await?
                     .into_iter()
                     .filter(|v| match v.version.parse::<ToolVersionType>() {
@@ -470,35 +470,9 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     /// Backend implementation for fetching remote versions with metadata.
-    /// Default wraps `_list_remote_versions` with no timestamps.
-    /// Override this to provide timestamp information (e.g., aqua, github backends).
-    async fn _list_remote_versions_with_info(
-        &self,
-        config: &Arc<Config>,
-    ) -> eyre::Result<Vec<VersionInfo>> {
-        Ok(self
-            ._list_remote_versions(config)
-            .await?
-            .into_iter()
-            .map(|v| VersionInfo {
-                version: v,
-                ..Default::default()
-            })
-            .collect())
-    }
-
-    /// Backend implementation for fetching remote versions (without metadata).
-    /// Default delegates to `_list_remote_versions_with_info`.
-    /// Override this OR `_list_remote_versions_with_info` (not both needed).
-    /// WARNING: Implementing neither will cause infinite recursion.
-    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
-        Ok(self
-            ._list_remote_versions_with_info(config)
-            .await?
-            .into_iter()
-            .map(|v| v.version)
-            .collect())
-    }
+    /// Override this to provide version listing with optional timestamp information.
+    /// Return `VersionInfo` with `created_at: None` if timestamps are not available.
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>>;
 
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
         self.latest_version(config, Some("latest".into())).await

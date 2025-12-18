@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -31,7 +32,7 @@ impl Backend for DotnetBackend {
         Ok(vec!["dotnet"])
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let feed_url = self.get_search_url().await?;
 
         let feed: NugetFeedSearch = HTTP_FETCH
@@ -57,7 +58,14 @@ impl Backend for DotnetBackend {
             return Err(eyre!("Tool {} not found", &self.tool_name()));
         }
 
-        Ok(data.versions.iter().map(|x| x.version.clone()).collect())
+        Ok(data
+            .versions
+            .iter()
+            .map(|x| VersionInfo {
+                version: x.version.clone(),
+                ..Default::default()
+            })
+            .collect())
     }
 
     async fn install_version_(

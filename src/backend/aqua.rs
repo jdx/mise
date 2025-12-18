@@ -140,10 +140,7 @@ impl Backend for AquaBackend {
         &self.ba
     }
 
-    async fn _list_remote_versions_with_info(
-        &self,
-        _config: &Arc<Config>,
-    ) -> Result<Vec<VersionInfo>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let pkg = match AQUA_REGISTRY.package(&self.id).await {
             Ok(pkg) => pkg,
             Err(e) => {
