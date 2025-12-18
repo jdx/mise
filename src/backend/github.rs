@@ -75,7 +75,6 @@ impl Backend for UnifiedGitBackend {
             return vec![];
         }
 
-        let settings = Settings::get();
         let mut features = vec![];
 
         // Get the latest release to check for security assets
@@ -83,13 +82,9 @@ impl Backend for UnifiedGitBackend {
         let opts = self.ba.opts();
         let api_url = self.get_api_url(&opts);
 
-        let releases = if self.is_gitlab() {
-            vec![]
-        } else {
-            github::list_releases_from_url(api_url.as_str(), &repo)
-                .await
-                .unwrap_or_default()
-        };
+        let releases = github::list_releases_from_url(api_url.as_str(), &repo)
+            .await
+            .unwrap_or_default();
 
         let latest_release = releases.first();
 
@@ -109,35 +104,29 @@ impl Backend for UnifiedGitBackend {
             }
         }
 
-        // Check for GitHub Attestations (via GitHub API - assets with .sigstore.json or .sigstore extension)
-        // Both global and github-specific settings must be enabled
-        if settings.github_attestations && settings.github.github_attestations {
-            if let Some(release) = latest_release {
-                let has_attestations = release.assets.iter().any(|a| {
-                    let name = a.name.to_lowercase();
-                    name.ends_with(".sigstore.json") || name.ends_with(".sigstore")
+        // Check for GitHub Attestations (assets with .sigstore.json or .sigstore extension)
+        if let Some(release) = latest_release {
+            let has_attestations = release.assets.iter().any(|a| {
+                let name = a.name.to_lowercase();
+                name.ends_with(".sigstore.json") || name.ends_with(".sigstore")
+            });
+            if has_attestations {
+                features.push(SecurityFeature::GithubAttestations {
+                    signer_workflow: None,
                 });
-                if has_attestations {
-                    features.push(SecurityFeature::GithubAttestations {
-                        signer_workflow: None,
-                    });
-                }
             }
         }
 
         // Check for SLSA provenance (intoto.jsonl files)
-        // Both global and github-specific settings must be enabled
-        if settings.slsa && settings.github.slsa {
-            if let Some(release) = latest_release {
-                let has_slsa = release.assets.iter().any(|a| {
-                    let name = a.name.to_lowercase();
-                    name.contains(".intoto.jsonl")
-                        || name.contains("provenance")
-                        || name.ends_with(".attestation")
-                });
-                if has_slsa {
-                    features.push(SecurityFeature::Slsa { level: None });
-                }
+        if let Some(release) = latest_release {
+            let has_slsa = release.assets.iter().any(|a| {
+                let name = a.name.to_lowercase();
+                name.contains(".intoto.jsonl")
+                    || name.contains("provenance")
+                    || name.ends_with(".attestation")
+            });
+            if has_slsa {
+                features.push(SecurityFeature::Slsa { level: None });
             }
         }
 

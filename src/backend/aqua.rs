@@ -906,8 +906,7 @@ impl AquaBackend {
         v: &str,
         filename: &str,
     ) -> Result<()> {
-        let settings = Settings::get();
-        if !settings.slsa || !settings.aqua.slsa {
+        if !Settings::get().aqua.minisign {
             return Ok(());
         }
         if let Some(minisign) = &pkg.minisign {
