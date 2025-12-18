@@ -64,46 +64,73 @@ impl Backend for AquaBackend {
 
         let mut features = vec![];
 
-        // Checksum
-        if let Some(checksum) = &pkg.checksum
-            && checksum.enabled()
-        {
-            features.push(SecurityFeature::Checksum {
-                algorithm: checksum.algorithm.as_ref().map(|a| a.to_string()),
-            });
+        // Check base package and all version overrides for security features
+        // This gives a complete picture of available security features across all versions
+        let all_pkgs: Vec<&AquaPackage> = std::iter::once(&pkg)
+            .chain(pkg.version_overrides.iter())
+            .collect();
+
+        // Checksum - check if any package version has it enabled
+        if all_pkgs.iter().any(|p| {
+            p.checksum
+                .as_ref()
+                .is_some_and(|checksum| checksum.enabled())
+        }) {
+            // Use the first checksum we find for algorithm info
+            let algorithm = all_pkgs
+                .iter()
+                .filter_map(|p| p.checksum.as_ref())
+                .find_map(|c| c.algorithm.as_ref().map(|a| a.to_string()));
+            features.push(SecurityFeature::Checksum { algorithm });
         }
 
         // GitHub Attestations
-        if let Some(attestations) = &pkg.github_artifact_attestations
-            && attestations.enabled.unwrap_or(false)
-        {
-            features.push(SecurityFeature::GithubAttestations {
-                signer_workflow: attestations.signer_workflow.clone(),
-            });
+        // Default to enabled if config is present (unless explicitly disabled)
+        if all_pkgs.iter().any(|p| {
+            p.github_artifact_attestations
+                .as_ref()
+                .is_some_and(|a| a.enabled.unwrap_or(true))
+        }) {
+            let signer_workflow = all_pkgs
+                .iter()
+                .filter_map(|p| p.github_artifact_attestations.as_ref())
+                .find_map(|a| a.signer_workflow.clone());
+            features.push(SecurityFeature::GithubAttestations { signer_workflow });
         }
 
         // SLSA
-        if let Some(slsa) = &pkg.slsa_provenance
-            && slsa.enabled.unwrap_or(false)
-        {
+        // Default to enabled if config is present (unless explicitly disabled)
+        if all_pkgs.iter().any(|p| {
+            p.slsa_provenance
+                .as_ref()
+                .is_some_and(|s| s.enabled.unwrap_or(true))
+        }) {
             features.push(SecurityFeature::Slsa);
         }
 
         // Cosign (nested in checksum)
-        if let Some(checksum) = &pkg.checksum
-            && let Some(cosign) = &checksum.cosign
-            && cosign.enabled.unwrap_or(false)
-        {
+        // Default to enabled if config is present (unless explicitly disabled)
+        if all_pkgs.iter().any(|p| {
+            p.checksum
+                .as_ref()
+                .and_then(|c| c.cosign.as_ref())
+                .is_some_and(|cosign| cosign.enabled.unwrap_or(true))
+        }) {
             features.push(SecurityFeature::Cosign);
         }
 
         // Minisign
-        if let Some(minisign) = &pkg.minisign
-            && minisign.enabled.unwrap_or(false)
-        {
-            features.push(SecurityFeature::Minisign {
-                public_key: minisign.public_key.clone(),
-            });
+        // Default to enabled if config is present (unless explicitly disabled)
+        if all_pkgs.iter().any(|p| {
+            p.minisign
+                .as_ref()
+                .is_some_and(|m| m.enabled.unwrap_or(true))
+        }) {
+            let public_key = all_pkgs
+                .iter()
+                .filter_map(|p| p.minisign.as_ref())
+                .find_map(|m| m.public_key.clone());
+            features.push(SecurityFeature::Minisign { public_key });
         }
 
         features
