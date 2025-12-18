@@ -113,17 +113,17 @@ backend = "aqua:cli/cli"
 "platforms.windows-x64-baseline" = { checksum = "sha256:b95bf2d953e3bf497bb2c0aed97ffcc5ed8471b80f0920d663a92a6111f05135", url = "https://github.com/cli/cli/releases/download/v2.83.2/gh_2.83.2_windows_amd64.zip"}
 
 [[tools.hk]]
-version = "1.27.0"
+version = "1.28.0"
 backend = "aqua:jdx/hk"
-"platforms.linux-arm64" = { checksum = "sha256:956cac63f0a19306c9173b817a9728376251b16dd89caeb61e96904ef04d6061", url = "https://github.com/jdx/hk/releases/download/v1.27.0/hk-aarch64-unknown-linux-gnu.tar.gz"}
-"platforms.linux-arm64-musl" = { checksum = "sha256:956cac63f0a19306c9173b817a9728376251b16dd89caeb61e96904ef04d6061", url = "https://github.com/jdx/hk/releases/download/v1.27.0/hk-aarch64-unknown-linux-gnu.tar.gz"}
-"platforms.linux-x64" = { checksum = "sha256:f5761586c544c6f43b4f3526876661710d22dbc48af9ec48985813ce1f1b7f98", url = "https://github.com/jdx/hk/releases/download/v1.27.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
-"platforms.linux-x64-baseline" = { checksum = "sha256:f5761586c544c6f43b4f3526876661710d22dbc48af9ec48985813ce1f1b7f98", url = "https://github.com/jdx/hk/releases/download/v1.27.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
-"platforms.linux-x64-musl" = { checksum = "sha256:f5761586c544c6f43b4f3526876661710d22dbc48af9ec48985813ce1f1b7f98", url = "https://github.com/jdx/hk/releases/download/v1.27.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
-"platforms.linux-x64-musl-baseline" = { checksum = "sha256:f5761586c544c6f43b4f3526876661710d22dbc48af9ec48985813ce1f1b7f98", url = "https://github.com/jdx/hk/releases/download/v1.27.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
-"platforms.macos-arm64" = { checksum = "sha256:c1b9d6483842204f78f4e51a1b9006bf40d7369b20a6f35b0c9214aa673f1acb", url = "https://github.com/jdx/hk/releases/download/v1.27.0/hk-aarch64-apple-darwin.tar.gz"}
-"platforms.windows-x64" = { checksum = "sha256:2a664cb5c85569124f1978a845f3715c73f0926e39f4cbdcdffe2923bfa067e6", url = "https://github.com/jdx/hk/releases/download/v1.27.0/hk-x86_64-pc-windows-msvc.zip"}
-"platforms.windows-x64-baseline" = { checksum = "sha256:2a664cb5c85569124f1978a845f3715c73f0926e39f4cbdcdffe2923bfa067e6", url = "https://github.com/jdx/hk/releases/download/v1.27.0/hk-x86_64-pc-windows-msvc.zip"}
+"platforms.linux-arm64" = { checksum = "sha256:d1f50df29386046b815929d2947ebd84fcd7cb0d6f3cc6db991961271b80aede", url = "https://github.com/jdx/hk/releases/download/v1.28.0/hk-aarch64-unknown-linux-gnu.tar.gz"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:d1f50df29386046b815929d2947ebd84fcd7cb0d6f3cc6db991961271b80aede", url = "https://github.com/jdx/hk/releases/download/v1.28.0/hk-aarch64-unknown-linux-gnu.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:13682c829780ccd333935f57210f1ecc02afdecb5829d99542e82cf25166ba53", url = "https://github.com/jdx/hk/releases/download/v1.28.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:13682c829780ccd333935f57210f1ecc02afdecb5829d99542e82cf25166ba53", url = "https://github.com/jdx/hk/releases/download/v1.28.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:13682c829780ccd333935f57210f1ecc02afdecb5829d99542e82cf25166ba53", url = "https://github.com/jdx/hk/releases/download/v1.28.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:13682c829780ccd333935f57210f1ecc02afdecb5829d99542e82cf25166ba53", url = "https://github.com/jdx/hk/releases/download/v1.28.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:7b0ad12e5b6efa4ca55feec2e90ef5eb166f50293d109805d4938f708713e784", url = "https://github.com/jdx/hk/releases/download/v1.28.0/hk-aarch64-apple-darwin.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:7c5c719e847637ff2477aa89b95c2c94db192894453aacc659d15056c351a3e2", url = "https://github.com/jdx/hk/releases/download/v1.28.0/hk-x86_64-pc-windows-msvc.zip"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:7c5c719e847637ff2477aa89b95c2c94db192894453aacc659d15056c351a3e2", url = "https://github.com/jdx/hk/releases/download/v1.28.0/hk-x86_64-pc-windows-msvc.zip"}
 
 [[tools.jq]]
 version = "1.8.1"
