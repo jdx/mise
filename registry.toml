@@ -4223,8 +4223,12 @@ backends = ["asdf:mise-plugins/mise-swift-package-list"]
 description = "A command-line tool to get all used Swift Package dependencies"
 
 [tools.swiftformat]
-backends = ["asdf:mise-plugins/mise-swiftformat"]
+backends = [
+  "github:nicklockwood/SwiftFormat[rename_exe=swiftformat]",
+  "asdf:mise-plugins/mise-swiftformat",
+]
 description = "A command-line tool and Xcode Extension for formatting Swift code"
+test = ["swiftformat --version", "{{version}}"]
 
 [tools.swiftgen]
 backends = [
