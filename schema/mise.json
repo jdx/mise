@@ -670,6 +670,11 @@
           "description": "Use gpg to verify all tool signatures.",
           "type": "boolean"
         },
+        "github_attestations": {
+          "default": true,
+          "description": "Enable GitHub Artifact Attestations verification for supported tools.",
+          "type": "boolean"
+        },
         "http_timeout": {
           "default": "30s",
           "description": "Timeout in seconds for all HTTP requests in mise.",
@@ -1033,6 +1038,10 @@
               "default": "jdx/ruby",
               "description": "[experimental] URL template or GitHub repo for precompiled Ruby binaries.",
               "type": "string"
+            },
+            "github_attestations": {
+              "description": "[experimental] Enable GitHub Artifact Attestations verification for precompiled Ruby binaries.",
+              "type": "boolean"
             },
             "ruby_build_opts": {
               "description": "Options to pass to ruby-build.",

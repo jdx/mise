@@ -1,16 +1,22 @@
+use std::collections::{BTreeMap, HashMap};
 use std::env::temp_dir;
 use std::path::{Path, PathBuf};
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
-use crate::backend::Backend;
+use async_trait::async_trait;
+use eyre::{Result, WrapErr, eyre};
+use itertools::Itertools;
+use xx::regex;
+
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::{Backend, VersionInfo};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
-use crate::env::PATH_KEY;
+use crate::env::{self, PATH_KEY};
 use crate::git::{CloneOptions, Git};
-use crate::github::GithubRelease;
+use crate::github::{self, GithubRelease};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
@@ -18,18 +24,11 @@ use crate::lockfile::PlatformInfo;
 use crate::plugins::PluginSource;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
-use crate::{file, plugins, timeout};
-use async_trait::async_trait;
-use eyre::{Result, WrapErr};
-use itertools::Itertools;
-use xx::regex;
-
-use crate::backend::VersionInfo;
-use crate::github;
-use crate::hash;
-use std::collections::HashMap;
+use crate::{file, hash, plugins, timeout};
 
 const RUBY_INDEX_URL: &str = "https://cache.ruby-lang.org/pub/ruby/index.txt";
+const ATTESTATION_HELP: &str = "To disable attestation verification, set MISE_RUBY_GITHUB_ATTESTATIONS=false\n\
+    or add `ruby.github_attestations = false` to your mise config";
 
 #[derive(Debug)]
 pub struct RubyPlugin {
@@ -569,6 +568,10 @@ impl RubyPlugin {
             hash::ensure_checksum(&tarball_path, hash_str, Some(ctx.pr.as_ref()), "sha256")?;
         }
 
+        // Verify GitHub attestations for precompiled binaries
+        self.verify_github_attestations(ctx, &tarball_path, &tv.version)
+            .await?;
+
         ctx.pr.set_message(format!("extract {}", filename));
         let install_path = tv.install_path();
         file::create_dir_all(&install_path)?;
@@ -585,6 +588,75 @@ impl RubyPlugin {
 
         Ok(Some(tv.clone()))
     }
+
+    /// Verify GitHub artifact attestations for precompiled Ruby binary
+    /// Returns Ok(()) if verification succeeds or is skipped (attestations unavailable)
+    /// Returns Err if verification is enabled and fails
+    async fn verify_github_attestations(
+        &self,
+        ctx: &InstallContext,
+        tarball_path: &std::path::Path,
+        version: &str,
+    ) -> Result<()> {
+        let settings = Settings::get();
+
+        // Check Ruby-specific setting, fall back to global
+        let enabled = settings
+            .ruby
+            .github_attestations
+            .unwrap_or(settings.github_attestations);
+        if !enabled {
+            debug!("GitHub attestations verification disabled for Ruby");
+            return Ok(());
+        }
+
+        let source = &settings.ruby.precompiled_url;
+
+        // Skip for custom URL templates (not GitHub repos)
+        if source.contains("://") {
+            debug!("Skipping attestation verification for custom URL template");
+            return Ok(());
+        }
+
+        let (owner, repo) = match source.split_once('/') {
+            Some((o, r)) => (o, r),
+            None => {
+                warn!("Invalid precompiled_url format: {}", source);
+                return Ok(());
+            }
+        };
+
+        ctx.pr.set_message("verify GitHub attestations".to_string());
+
+        match sigstore_verification::verify_github_attestation(
+            tarball_path,
+            owner,
+            repo,
+            env::GITHUB_TOKEN.as_deref(),
+            None, // Accept any workflow from repo
+        )
+        .await
+        {
+            Ok(true) => {
+                ctx.pr
+                    .set_message("✓ GitHub attestations verified".to_string());
+                debug!(
+                    "GitHub attestations verified successfully for ruby@{}",
+                    version
+                );
+                Ok(())
+            }
+            Ok(false) => Err(eyre!(
+                "GitHub attestations verification failed for ruby@{version}\n{ATTESTATION_HELP}"
+            )),
+            Err(sigstore_verification::AttestationError::NoAttestations) => Err(eyre!(
+                "No GitHub attestations found for ruby@{version}\n{ATTESTATION_HELP}"
+            )),
+            Err(e) => Err(eyre!(
+                "GitHub attestations verification failed for ruby@{version}: {e}\n{ATTESTATION_HELP}"
+            )),
+        }
+    }
 }
 
 #[async_trait]
@@ -595,10 +667,27 @@ impl Backend for RubyPlugin {
 
     async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
         use crate::backend::SecurityFeature;
+        let settings = Settings::get();
 
-        vec![SecurityFeature::Checksum {
+        let mut features = vec![SecurityFeature::Checksum {
             algorithm: Some("sha256".to_string()),
-        }]
+        }];
+
+        // Report GitHub attestations if enabled for precompiled binaries
+        let github_attestations_enabled = settings
+            .ruby
+            .github_attestations
+            .unwrap_or(settings.github_attestations);
+        if settings.experimental
+            && settings.ruby.compile != Some(true)
+            && github_attestations_enabled
+        {
+            features.push(SecurityFeature::GithubAttestations {
+                signer_workflow: None,
+            });
+        }
+
+        features
     }
 
     async fn _list_remote_versions_with_info(
