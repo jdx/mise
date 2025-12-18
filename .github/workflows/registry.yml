@@ -121,3 +121,28 @@ jobs:
           echo "failed_tools=$failed_tools" >> "$GITHUB_OUTPUT"
       - if: steps.test-tools.outputs.failed_tools != ''
         run: mise test-tool ${{ steps.test-tools.outputs.failed_tools }}
+
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    needs:
+      - build
+      - list-changed-tools
+      - test-tool
+    if: always()
+    steps:
+      - name: Check CI job results
+        run: |
+          if [ "${{ needs.build.result }}" != "success" ]; then
+            echo "build failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.list-changed-tools.result }}" != "success" ] && [ "${{ needs.list-changed-tools.result }}" != "skipped" ]; then
+            echo "list-changed-tools failed"
+            exit 1
+          fi
+          if [ "${{ needs.test-tool.result }}" != "success" ]; then
+            echo "test-tool failed or was skipped"
+            exit 1
+          fi
+          echo "All CI jobs completed successfully"
