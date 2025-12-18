@@ -185,6 +185,14 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
+      - name: Fetch token from pool
+        id: token
+        uses: ./.github/actions/fetch-token
+        with:
+          api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
+      - name: Set GITHUB_TOKEN from pool
+        if: steps.token.outputs.token
+        run: echo "GITHUB_TOKEN=${{ steps.token.outputs.token }}" >> "$GITHUB_ENV"
       - name: Install build and test dependencies
         run: |
           sudo apt-get update
