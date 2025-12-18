@@ -32,7 +32,7 @@ If no version is specified, it will default to @latest
 Tool options can be set with this syntax:
 
 ```
-mise use github:BurntSushi/ripgrep[exe=rg]
+mise use ubi:BurntSushi/ripgrep[exe=rg]
 ```
 
 ## Flags
