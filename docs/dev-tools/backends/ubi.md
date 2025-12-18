@@ -1,8 +1,13 @@
 # Ubi Backend
 
+::: warning
+The ubi backend is **deprecated**. Please use the [github backend](/dev-tools/backends/github) instead.
+
+To migrate, replace `ubi:owner/repo` with `github:owner/repo` in your configuration files.
+:::
+
 You may install GitHub Releases and URL packages directly using [ubi](https://github.com/houseabsolute/ubi) backend. ubi is directly compiled into
-the mise codebase so it does not need to be installed separately to be used. ubi is preferred over
-plugins for new tools since it doesn't require a plugin, supports Windows, and is really easy to use.
+the mise codebase so it does not need to be installed separately to be used.
 
 ubi doesn't require plugins or even any configuration for each tool. What it does is try to deduce what
 the proper binary/tarball is from GitHub releases and downloads the right one. As long as the vendor

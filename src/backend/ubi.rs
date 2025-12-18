@@ -458,6 +458,10 @@ pub fn install_time_option_keys() -> Vec<String> {
 
 impl UbiBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
+        deprecated!(
+            "ubi",
+            "The ubi backend is deprecated. Use the github backend instead (e.g., github:owner/repo)"
+        );
         Self { ba: Arc::new(ba) }
     }
 }

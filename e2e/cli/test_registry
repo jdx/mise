@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-assert "mise registry gh" "aqua:cli/cli ubi:cli/cli[exe=gh] asdf:bartlomiejdanek/asdf-github-cli"
-assert_contains "mise registry" "gh                            aqua:cli/cli ubi:cli/cli[exe=gh] asdf:bartlomiejdanek/asdf-github-cli"
+assert "mise registry gh" "aqua:cli/cli asdf:bartlomiejdanek/asdf-github-cli"
+assert_contains "mise registry" "gh                            aqua:cli/cli asdf:bartlomiejdanek/asdf-github-cli"
 
 # --json flag tests
 assert "mise registry gh --json | jq -r '.short'" "gh"

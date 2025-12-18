@@ -63,11 +63,15 @@ Registry-based package manager with strong security features:
 - **Sources**: Primarily GitHub but supports other sources through registry configuration
 - **Security**: Comprehensive checksums, signatures, and verification
 
-#### ubi - Universal Binary Installer
+#### ubi - Universal Binary Installer (Deprecated)
+
+::: warning
+The ubi backend is deprecated. Use the [github backend](/dev-tools/backends/github) instead.
+:::
 
 Zero-configuration installer that works with any GitHub/GitLab repository following standard conventions:
 
-- **Usage**: `ubi:BurntSushi/ripgrep`
+- **Usage**: `ubi:BurntSushi/ripgrep` → migrate to `github:BurntSushi/ripgrep`
 - **Requirements**: Repository must follow standard release tarball conventions
 - **Sources**: Primarily GitHub releases, with GitLab support (rarely used in mise)
 - **Configuration**: None required - automatically detects and downloads appropriate binaries
