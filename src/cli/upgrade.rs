@@ -247,6 +247,8 @@ impl Upgrade {
                 });
         }
 
+        Self::print_summary(&outdated, &successful_versions)?;
+
         install_error
     }
 
@@ -261,6 +263,26 @@ impl Upgrade {
             .await
             .wrap_err_with(|| format!("failed to uninstall {tv}"))?;
         pr.finish();
+        Ok(())
+    }
+
+    fn print_summary(outdated: &[OutdatedInfo], successful_versions: &[ToolVersion]) -> Result<()> {
+        let upgraded: Vec<_> = outdated
+            .iter()
+            .filter(|o| {
+                successful_versions
+                    .iter()
+                    .any(|v| v.ba() == o.tool_version.ba() && v.version == o.latest)
+            })
+            .collect();
+        if !upgraded.is_empty() {
+            let s = if upgraded.len() == 1 { "" } else { "s" };
+            miseprintln!("\nUpgraded {} tool{}:", upgraded.len(), s);
+            for o in &upgraded {
+                let from = o.current.as_deref().unwrap_or("(none)");
+                miseprintln!("  {} {} → {}", o.name, from, o.latest);
+            }
+        }
         Ok(())
     }
 
