@@ -532,7 +532,6 @@ impl HttpBackend {
                 ));
             }
         } else if lockfile_enabled {
-            ctx.pr.set_message(format!("record size {filename}"));
             platform_info.size = Some(file_path.metadata()?.len());
         }
 
