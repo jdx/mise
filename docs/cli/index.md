@@ -11,7 +11,7 @@
 
 Task to run.
 
-Shorthand for `mise task run <TASK>`.
+Shorthand for `mise tasks run <TASK>`.
 
 ## Global Flags
 

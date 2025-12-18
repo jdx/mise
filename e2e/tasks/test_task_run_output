@@ -44,7 +44,7 @@ running z"
 # now the graph isn't linear so it uses prefix
 assert_contains "mise run a ::: d" "[a] running a"
 assert_contains "mise run a ::: d" "[d] running d"
-assert "mise task deps" "a
+assert "mise tasks deps" "a
 all
 ├── c
 │   └── b

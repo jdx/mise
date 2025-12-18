@@ -36,12 +36,12 @@ depends = ["hello:*"]
 EOF
 assert_contains "mise run hello:all" "[hello:1] Hello from 1"
 assert_contains "mise run hello:all" "[hello:2] Hello from 2"
-assert "mise task deps" "hello:1
+assert "mise tasks deps" "hello:1
 hello:2
 hello:all
 ├── hello:2
 └── hello:1"
-assert "mise task hello:all" 'Task: hello:all
+assert "mise tasks hello:all" 'Task: hello:all
 Description: Hello from all
 Source: ~/workdir/mise.toml
 Depends on: hello:*
@@ -53,5 +53,5 @@ Usage Spec:
 echo '' >mise.toml
 
 mkdir -p mise-tasks && echo "" >mise-tasks/build.sh && chmod +x mise-tasks/build.sh
-assert "mise task deps build" "build"
-assert "mise task deps build.sh" "build"
+assert "mise tasks deps build" "build"
+assert "mise tasks deps build.sh" "build"

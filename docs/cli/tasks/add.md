@@ -34,7 +34,7 @@ Create a file task instead of a toml task
 
 ### `-H --hide`
 
-Hide the task from `mise task` and completions
+Hide the task from `mise tasks` and completions
 
 ### `-q --quiet`
 
@@ -79,5 +79,5 @@ Do not print the command or its output
 Examples:
 
 ```
-mise task add pre-commit --depends "test" --depends "render" -- echo pre-commit
+mise tasks add pre-commit --depends "test" --depends "render" -- echo pre-commit
 ```

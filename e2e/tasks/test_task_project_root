@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 
-mise task add a:b:c --file -- echo \$MISE_PROJECT_ROOT
+mise tasks add a:b:c --file -- echo \$MISE_PROJECT_ROOT
 assert "mise a:b:c" "$PWD"
