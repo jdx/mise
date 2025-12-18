@@ -67,7 +67,7 @@ pub async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>>
     }
 
     // Use TOML format which includes created_at timestamps
-    let url = format!("https://mise-versions.jdx.dev/{}.toml", tool);
+    let url = format!("https://mise-versions.jdx.dev/tools/{}.toml", tool);
     let versions: Vec<VersionInfo> = match HTTP_FETCH.get_text(&url).await {
         Ok(body) => {
             let response: VersionsResponse = toml::from_str(&body)?;
@@ -139,7 +139,7 @@ pub fn track_install(tool: &str, full: &str, version: &str) {
 async fn track_install_async(tool: &str, full: &str, version: &str) -> eyre::Result<()> {
     use crate::cli::version::{ARCH, OS};
 
-    let url = "https://mise-tools.jdx.dev/api/track";
+    let url = "https://mise-versions.jdx.dev/api/track";
 
     let body = serde_json::json!({
         "tool": tool,

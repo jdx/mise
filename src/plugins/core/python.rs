@@ -124,7 +124,7 @@ impl PythonPlugin {
                 let settings = Settings::get();
                 let url_path = python_precompiled_url_path(&settings);
                 let rsp = HTTP_FETCH
-                    .get_bytes(format!("https://mise-versions.jdx.dev/{url_path}"))
+                    .get_bytes(format!("https://mise-versions.jdx.dev/tools/{url_path}"))
                     .await?;
                 let mut decoder = GzDecoder::new(rsp.as_ref());
                 let mut raw = String::new();
