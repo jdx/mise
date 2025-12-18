@@ -91,6 +91,177 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
             }
         },
     );
+    tera.register_function(
+        "haiku",
+        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+            // Word lists inspired by https://github.com/nishanths/rust-haikunator
+            const ADJECTIVES: &[&str] = &[
+                "aged",
+                "ancient",
+                "autumn",
+                "billowing",
+                "bitter",
+                "black",
+                "blue",
+                "bold",
+                "broken",
+                "calm",
+                "cold",
+                "cool",
+                "crimson",
+                "damp",
+                "dark",
+                "dawn",
+                "delicate",
+                "divine",
+                "dry",
+                "empty",
+                "falling",
+                "floral",
+                "fragrant",
+                "frosty",
+                "gentle",
+                "green",
+                "hidden",
+                "holy",
+                "icy",
+                "late",
+                "lingering",
+                "little",
+                "lively",
+                "long",
+                "misty",
+                "morning",
+                "muddy",
+                "nameless",
+                "old",
+                "patient",
+                "polished",
+                "proud",
+                "purple",
+                "quiet",
+                "rapid",
+                "red",
+                "restless",
+                "rough",
+                "shy",
+                "silent",
+                "small",
+                "snowy",
+                "solitary",
+                "sparkling",
+                "spring",
+                "still",
+                "summer",
+                "twilight",
+                "wandering",
+                "weathered",
+                "white",
+                "wild",
+                "winter",
+                "wispy",
+                "withered",
+                "young",
+            ];
+            const NOUNS: &[&str] = &[
+                "bird",
+                "breeze",
+                "brook",
+                "bush",
+                "butterfly",
+                "cherry",
+                "cloud",
+                "darkness",
+                "dawn",
+                "dew",
+                "dream",
+                "dust",
+                "feather",
+                "field",
+                "fire",
+                "firefly",
+                "flower",
+                "fog",
+                "forest",
+                "frog",
+                "frost",
+                "glade",
+                "glitter",
+                "grass",
+                "haze",
+                "hill",
+                "lake",
+                "leaf",
+                "meadow",
+                "moon",
+                "morning",
+                "mountain",
+                "night",
+                "paper",
+                "pine",
+                "pond",
+                "rain",
+                "resonance",
+                "river",
+                "sea",
+                "shadow",
+                "shape",
+                "silence",
+                "sky",
+                "smoke",
+                "snow",
+                "snowflake",
+                "sound",
+                "star",
+                "sun",
+                "sunset",
+                "surf",
+                "thunder",
+                "tree",
+                "violet",
+                "voice",
+                "water",
+                "waterfall",
+                "wave",
+                "wildflower",
+                "wind",
+                "wood",
+            ];
+
+            let words = args
+                .get("words")
+                .and_then(Value::as_u64)
+                .unwrap_or(2)
+                .max(1) as usize;
+            let separator = args.get("separator").and_then(Value::as_str).unwrap_or("-");
+            let number = args.get("number").and_then(Value::as_bool).unwrap_or(true);
+            let number_max = args
+                .get("number_max")
+                .and_then(Value::as_u64)
+                .unwrap_or(99)
+                .max(1) as u32;
+
+            let mut rng = rand::rng();
+            let mut parts: Vec<String> = Vec::with_capacity(words + 1);
+
+            // Alternate between adjectives and nouns
+            for i in 0..words {
+                let word = if i % 2 == 0 {
+                    *ADJECTIVES.choose(&mut rng).unwrap()
+                } else {
+                    *NOUNS.choose(&mut rng).unwrap()
+                };
+                parts.push(word.to_string());
+            }
+
+            if number {
+                let num: u32 = rng.random_range(1..=number_max);
+                parts.push(num.to_string());
+            }
+
+            Ok(Value::String(parts.join(separator)))
+        },
+    );
     tera.register_filter(
         "hash_file",
         move |input: &Value, args: &HashMap<String, Value>| match input {
@@ -537,6 +708,24 @@ mod tests {
         let _config = Config::get().await.unwrap();
         let result = render("{{choice(n=8, alphabet=\"abcdefgh\")}}");
         assert_eq!(result.trim().len(), 8);
+    }
+
+    #[tokio::test]
+    async fn test_haiku() {
+        let _config = Config::get().await.unwrap();
+        // Default: 2 words + number
+        let result = render("{{haiku()}}");
+        let parts: Vec<&str> = result.split('-').collect();
+        assert_eq!(parts.len(), 3);
+        assert!(!parts[0].is_empty());
+        assert!(!parts[1].is_empty());
+        assert!(parts[2].parse::<u32>().is_ok());
+
+        // Custom: 3 words, no number, underscore separator
+        let result = render("{{haiku(words=3, number=false, separator=\"_\")}}");
+        let parts: Vec<&str> = result.split('_').collect();
+        assert_eq!(parts.len(), 3);
+        assert!(parts.iter().all(|p| p.parse::<u32>().is_err())); // no numbers
     }
 
     #[tokio::test]
