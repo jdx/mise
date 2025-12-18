@@ -1,5 +1,57 @@
 # Changelog
 
+## [2025.12.11](https://github.com/jdx/mise/compare/v2025.12.10..v2025.12.11) - 2025-12-18
+
+### 🚀 Features
+
+- **(alias)** rename alias to tool-alias, add shell-alias command by @jdx in [#7357](https://github.com/jdx/mise/pull/7357)
+- **(upgrade)** display summary of upgraded tools by @jdx in [#7372](https://github.com/jdx/mise/pull/7372)
+- **(vfox)** embed vfox plugin Lua code in binary by @jdx in [#7369](https://github.com/jdx/mise/pull/7369)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** add start_operations for progress reporting by @jdx in [#7354](https://github.com/jdx/mise/pull/7354)
+- **(github)** improve asset detection for distro-specific and Swift artifacts by @jdx in [#7347](https://github.com/jdx/mise/pull/7347)
+- **(github)** clean up static_helpers.rs and fix archive bin= option by @jdx in [#7366](https://github.com/jdx/mise/pull/7366)
+- **(http)** add start_operations for progress reporting by @jdx in [#7355](https://github.com/jdx/mise/pull/7355)
+- **(lockfile)** place lockfile alongside config file by @jdx in [#7360](https://github.com/jdx/mise/pull/7360)
+- **(progress)** add start_operations to core plugins by @jdx in [#7351](https://github.com/jdx/mise/pull/7351)
+- **(ruby-install)** Use ruby_install_bin to update by @calebhearth in [#7350](https://github.com/jdx/mise/pull/7350)
+- **(rust)** add release_url for rust versions by @jdx in [#7373](https://github.com/jdx/mise/pull/7373)
+- **(schema)** add `tool_alias`, mark `alias` as deprecated by @SKalt in [#7358](https://github.com/jdx/mise/pull/7358)
+- **(toolset)** filter tools by OS in list_current_versions by @jdx in [#7356](https://github.com/jdx/mise/pull/7356)
+- **(ubi)** only show deprecation warning during installation by @jdx in [#7380](https://github.com/jdx/mise/pull/7380)
+- **(ui)** remove noisy "record size" message during install by @jdx in [#7381](https://github.com/jdx/mise/pull/7381)
+- update mise-versions URL to use /tools/ prefix by @jdx in [#7378](https://github.com/jdx/mise/pull/7378)
+
+### 🚜 Refactor
+
+- **(backend)** unified AssetMatcher with checksum fetching by @jdx in [#7370](https://github.com/jdx/mise/pull/7370)
+- **(backend)** deprecate ubi backend in favor of github by @jdx in [#7374](https://github.com/jdx/mise/pull/7374)
+- **(toolset)** decompose mod.rs into smaller modules by @jdx in [#7371](https://github.com/jdx/mise/pull/7371)
+
+### 🧪 Testing
+
+- **(e2e)** fix and rename ubi and vfox_embedded_override tests by @jdx in [052ea40](https://github.com/jdx/mise/commit/052ea40b29468f05fbc425cc5a4c20ebda077253)
+
+### 📦 Registry
+
+- add vfox-gcloud backend for gcloud by @jdx in [#7349](https://github.com/jdx/mise/pull/7349)
+- convert amplify to use github backend by @jdx in [#7365](https://github.com/jdx/mise/pull/7365)
+- add github backend for djinni tool by @jdx in [#7363](https://github.com/jdx/mise/pull/7363)
+- switch glab to native gitlab backend by @jdx in [#7364](https://github.com/jdx/mise/pull/7364)
+- add s5cmd by @jdx in [#7376](https://github.com/jdx/mise/pull/7376)
+
+### Chore
+
+- **(registry)** disable flaky tests for gitu and ktlint by @jdx in [64151cb](https://github.com/jdx/mise/commit/64151cb3fb1e517b2c80aa2179b24c4bd55ff34a)
+- resolve clippy warnings and add stricter CI check by @jdx in [#7367](https://github.com/jdx/mise/pull/7367)
+- suppress dead_code warnings in asset_matcher module by @jdx in [#7377](https://github.com/jdx/mise/pull/7377)
+
+### New Contributors
+
+- @calebhearth made their first contribution in [#7350](https://github.com/jdx/mise/pull/7350)
+
 ## [2025.12.10](https://github.com/jdx/mise/compare/v2025.12.9..v2025.12.10) - 2025-12-16
 
 ### 🐛 Bug Fixes

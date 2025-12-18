@@ -22,3 +22,33 @@
 [submodule "crates/vfox/embedded-plugins/vfox-vlang"]
 	path = crates/vfox/embedded-plugins/vfox-vlang
 	url = https://github.com/mise-plugins/vfox-vlang.git
+[submodule "crates/vfox/embedded-plugins/mise-semver"]
+	path = crates/vfox/embedded-plugins/mise-semver
+	url = https://github.com/mise-plugins/mise-semver.git
+[submodule "crates/vfox/embedded-plugins/vfox-1password"]
+	path = crates/vfox/embedded-plugins/vfox-1password
+	url = https://github.com/mise-plugins/vfox-1password.git
+[submodule "crates/vfox/embedded-plugins/vfox-asciidoctorj"]
+	path = crates/vfox/embedded-plugins/vfox-asciidoctorj
+	url = https://github.com/mise-plugins/vfox-asciidoctorj.git
+[submodule "crates/vfox/embedded-plugins/vfox-azure-functions-core-tools"]
+	path = crates/vfox/embedded-plugins/vfox-azure-functions-core-tools
+	url = https://github.com/mise-plugins/vfox-azure-functions-core-tools.git
+[submodule "crates/vfox/embedded-plugins/vfox-carthage"]
+	path = crates/vfox/embedded-plugins/vfox-carthage
+	url = https://github.com/mise-plugins/vfox-carthage.git
+[submodule "crates/vfox/embedded-plugins/vfox-chezscheme"]
+	path = crates/vfox/embedded-plugins/vfox-chezscheme
+	url = https://github.com/mise-plugins/vfox-chezscheme.git
+[submodule "crates/vfox/embedded-plugins/vfox-chromedriver"]
+	path = crates/vfox/embedded-plugins/vfox-chromedriver
+	url = https://github.com/mise-plugins/vfox-chromedriver.git
+[submodule "crates/vfox/embedded-plugins/vfox-clickhouse"]
+	path = crates/vfox/embedded-plugins/vfox-clickhouse
+	url = https://github.com/mise-plugins/vfox-clickhouse.git
+[submodule "crates/vfox/embedded-plugins/vfox-gcloud"]
+	path = crates/vfox/embedded-plugins/vfox-gcloud
+	url = https://github.com/mise-plugins/vfox-gcloud.git
+[submodule "crates/vfox/embedded-plugins/vfox-yarn"]
+	path = crates/vfox/embedded-plugins/vfox-yarn
+	url = https://github.com/mise-plugins/vfox-yarn.git
