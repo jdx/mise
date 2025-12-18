@@ -86,7 +86,7 @@ impl Backend for AquaBackend {
         if let Some(slsa) = &pkg.slsa_provenance
             && slsa.enabled.unwrap_or(false)
         {
-            features.push(SecurityFeature::Slsa);
+            features.push(SecurityFeature::Slsa { level: None });
         }
 
         // Cosign (nested in checksum)
@@ -837,7 +837,8 @@ impl AquaBackend {
         v: &str,
         filename: &str,
     ) -> Result<()> {
-        if !Settings::get().aqua.slsa {
+        let settings = Settings::get();
+        if !settings.slsa || !settings.aqua.slsa {
             return Ok(());
         }
         if let Some(minisign) = &pkg.minisign {
@@ -894,7 +895,8 @@ impl AquaBackend {
         v: &str,
         filename: &str,
     ) -> Result<()> {
-        if !Settings::get().aqua.slsa {
+        let settings = Settings::get();
+        if !settings.slsa || !settings.aqua.slsa {
             return Ok(());
         }
         if let Some(slsa) = &pkg.slsa_provenance {
@@ -996,8 +998,9 @@ impl AquaBackend {
         _v: &str,
         filename: &str,
     ) -> Result<()> {
-        // Check if attestations are enabled via settings
-        if !Settings::get().aqua.github_attestations {
+        // Check if attestations are enabled via global and aqua-specific settings
+        let settings = Settings::get();
+        if !settings.github_attestations || !settings.aqua.github_attestations {
             debug!("GitHub attestations verification disabled");
             return Ok(());
         }

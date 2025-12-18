@@ -135,7 +135,10 @@ pub enum SecurityFeature {
         #[serde(skip_serializing_if = "Option::is_none")]
         signer_workflow: Option<String>,
     },
-    Slsa,
+    Slsa {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        level: Option<u8>,
+    },
     Cosign,
     Minisign {
         #[serde(skip_serializing_if = "Option::is_none")]
