@@ -1203,9 +1203,7 @@ pub trait Backend: Debug + Send + Sync {
                 );
             }
         } else if lockfile_enabled {
-            ctx.pr.set_message(format!("record size {filename}"));
-            let size = file.metadata()?.len();
-            platform_info.size = Some(size);
+            platform_info.size = Some(file.metadata()?.len());
         }
         Ok(())
     }
