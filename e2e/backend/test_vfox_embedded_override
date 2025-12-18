@@ -4,7 +4,7 @@
 
 # Verify embedded plugin works without installation - use the short "bfs" name
 # which goes through the versions host cache (doesn't require network to the plugin)
-assert_contains "mise ls-remote bfs" "3.4"
+assert_contains "mise ls-remote bfs" "4.0"
 
 # Embedded plugins don't show git info in plugins list
 assert_not_contains "mise plugins --urls" "vfox-bfs"
@@ -17,7 +17,7 @@ assert_contains "mise plugins --urls" "vfox-bfs"
 assert_contains "mise plugins --urls" "github.com/mise-plugins/vfox-bfs"
 
 # Verify it still works (now using filesystem version)
-assert_contains "mise ls-remote bfs" "3.4"
+assert_contains "mise ls-remote bfs" "4.0"
 
 # Uninstall the override
 mise plugin uninstall vfox-bfs
@@ -26,4 +26,4 @@ mise plugin uninstall vfox-bfs
 assert_not_contains "mise plugins --urls" "vfox-bfs"
 
 # Verify embedded still works after uninstall
-assert_contains "mise ls-remote bfs" "3.4"
+assert_contains "mise ls-remote bfs" "4.0"
