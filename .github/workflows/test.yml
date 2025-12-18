@@ -275,7 +275,7 @@ jobs:
           max_attempts: 2
           command: pwsh e2e-win\run.ps1
 
-  ci:
+  test-ci:
     runs-on: ubuntu-latest
     timeout-minutes: 1
     needs:
