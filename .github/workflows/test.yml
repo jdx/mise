@@ -34,6 +34,7 @@ jobs:
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
           shared-key: build
+          save-if: false
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
@@ -61,6 +62,7 @@ jobs:
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
           shared-key: build
+          save-if: false
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
@@ -115,23 +117,18 @@ jobs:
       # matrix: { os: [ubuntu-latest, macos-latest] }
       matrix: { os: [macos-latest] }
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    permissions:
-      contents: write
-    needs: [build-ubuntu, build-macos]
+    timeout-minutes: 15
+    needs: [build-macos]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
           submodules: true
-      - uses: taiki-e/install-action@0aa4f22591557b744fe31e55dbfcdfea74a073f7 # v2
-        with:
-          tool: cargo-deny,cargo-msrv,cargo-machete
-      - run: rustup component add llvm-tools-preview
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
-          shared-key: unit
+          shared-key: build
+          save-if: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: mise-${{ matrix.os }}
@@ -145,15 +142,7 @@ jobs:
             ~/.cache/mise
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise install
-      - run: mise x -- bun i
       - run: mise x -- cargo test --all-features
-      - run: cargo deny check
-      - run: cargo msrv verify
-      - run: cargo machete --with-metadata
-      - run: ./scripts/test-standalone.sh
-      - run: mise run lint
-      - run: cargo clippy -- -D warnings
-      - run: cargo clippy --all-features --all-targets -- -D warnings
 
   nightly:
     runs-on: ubuntu-latest
@@ -180,6 +169,46 @@ jobs:
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise install
       - run: mise run test
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build-ubuntu]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.head_ref }}
+          submodules: true
+      - uses: rui314/setup-mold@v1
+      - uses: taiki-e/install-action@0aa4f22591557b744fe31e55dbfcdfea74a073f7 # v2
+        with:
+          tool: cargo-deny,cargo-msrv,cargo-machete
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
+        with:
+          shared-key: build
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: mise-ubuntu-latest
+          path: target/debug
+      - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
+      - run: mise install
+      - run: mise x -- bun i
+      - run: cargo deny check
+      - run: cargo msrv verify
+      - run: cargo machete --with-metadata
+      - run: ./scripts/test-standalone.sh
+      - run: mise run lint
+      - run: cargo clippy -- -D warnings
+      - run: cargo clippy --all-features --all-targets -- -D warnings
 
   coverage:
     name: coverage-${{matrix.tranche}}
