@@ -976,19 +976,20 @@ impl UnifiedGitBackend {
         let api_url = self.get_api_url(&opts);
         let version = &tv.version;
 
-        // Try to get the release (with optional v prefix)
-        let release = match github::get_release_for_url(&api_url, &repo, version).await {
+        // Try to get the release (with version prefix support)
+        let version_prefix = opts.get("version_prefix").map(|s| s.as_str());
+        let release = match try_with_v_prefix(version, version_prefix, |candidate| {
+            let api_url = api_url.clone();
+            let repo = repo.clone();
+            async move { github::get_release_for_url(&api_url, &repo, &candidate).await }
+        })
+        .await
+        {
             Ok(r) => r,
-            Err(_) => {
-                // Try with v prefix
-                match github::get_release_for_url(&api_url, &repo, &format!("v{}", version)).await {
-                    Ok(r) => r,
-                    Err(e) => {
-                        return Err(VerificationStatus::Error(format!(
-                            "Failed to get release: {e}"
-                        )));
-                    }
-                }
+            Err(e) => {
+                return Err(VerificationStatus::Error(format!(
+                    "Failed to get release: {e}"
+                )));
             }
         };
 
