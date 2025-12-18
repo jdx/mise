@@ -12,6 +12,7 @@ use crate::cli::args::BackendArg;
 use crate::cli::prune;
 use crate::config;
 use crate::config::Config;
+use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolSource, ToolVersion, Toolset};
 use crate::ui::table::MiseTable;
 
@@ -374,7 +375,9 @@ async fn version_status_from(
     config: &Arc<Config>,
     (ls, p, tv, source): (&Ls, &dyn Backend, &ToolVersion, &ToolSource),
 ) -> VersionStatus {
-    if p.symlink_path(tv).is_some() {
+    // Check for symlinks directly for display purposes (separate from upgrade-skip logic)
+    let install_path = tv.install_path();
+    if install_path.is_symlink() && !is_runtime_symlink(&install_path) {
         VersionStatus::Symlink(tv.version.clone(), !source.is_unknown())
     } else if !p.is_version_installed(config, tv, true) {
         VersionStatus::Missing(tv.version.clone())
