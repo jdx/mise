@@ -4,6 +4,6 @@ export MISE_USE_VERSIONS_HOST=1
 # verify that cache is reused for `mise ls`
 # see https://github.com/jdx/mise/discussions/6736
 
-assert_contains "mise -v use bat 2>&1" "GET https://mise-versions.jdx.dev/bat.toml 200 OK"
+assert_contains "mise -v use bat 2>&1" "GET https://mise-versions.jdx.dev/tools/bat.toml 200 OK"
 touch -t 202001010000 "$MISE_CACHE_DIR/bat/"*
-assert_not_contains "mise -v ls bat 2>&1" "GET https://mise-versions.jdx.dev/bat.toml 200 OK"
+assert_not_contains "mise -v ls bat 2>&1" "GET https://mise-versions.jdx.dev/tools/bat.toml 200 OK"
