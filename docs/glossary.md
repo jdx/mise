@@ -23,7 +23,7 @@ This glossary defines key terms and concepts used throughout the mise documentat
 : An extension that adds functionality to mise, such as managing additional tools or setting up environment variables. See [Plugins](/plugins) for an overview.
 
 **Registry**
-: A collection of tool aliases that map user-friendly short names to their full backend specifications. For example, `aws-cli` maps to `aqua:aws/aws-cli`. See [Registry](/registry).
+: The collection of tool aliases that map user-friendly short names to their full backend specifications. For example, `aws-cli` maps to `aqua:aws/aws-cli`. See [Registry](/registry).
 
 **Tool**
 : A development tool or runtime that mise can install and manage, such as `node`, `python`, `terraform`, or `jq`.
