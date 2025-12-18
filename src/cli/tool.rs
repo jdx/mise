@@ -261,7 +261,13 @@ impl Tool {
                         SecurityFeature::GithubAttestations { .. } => {
                             "github_attestations".to_string()
                         }
-                        SecurityFeature::Slsa => "slsa".to_string(),
+                        SecurityFeature::Slsa { level } => {
+                            if let Some(l) = level {
+                                format!("slsa (level {})", l)
+                            } else {
+                                "slsa".to_string()
+                            }
+                        }
                         SecurityFeature::Cosign => "cosign".to_string(),
                         SecurityFeature::Minisign { .. } => "minisign".to_string(),
                         SecurityFeature::Gpg => "gpg".to_string(),
