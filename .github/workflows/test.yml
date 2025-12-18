@@ -29,8 +29,6 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          submodules: true
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
           shared-key: build
@@ -60,8 +58,6 @@ jobs:
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          submodules: true
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
           shared-key: build
@@ -95,7 +91,6 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
-          submodules: true
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
           shared-key: build
@@ -121,7 +116,6 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
-          submodules: true
       - run: rustup default nightly
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
@@ -148,7 +142,6 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
-          submodules: true
       - uses: rui314/setup-mold@v1
       - uses: taiki-e/install-action@0aa4f22591557b744fe31e55dbfcdfea74a073f7 # v2
         with:
@@ -192,7 +185,6 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
-          submodules: true
       - name: Install build and test dependencies
         run: |
           sudo apt-get update
@@ -242,8 +234,6 @@ jobs:
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          submodules: true
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
           shared-key: unit
@@ -263,8 +253,6 @@ jobs:
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          submodules: true
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: mise-windows-latest

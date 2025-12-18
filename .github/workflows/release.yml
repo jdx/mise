@@ -45,8 +45,6 @@ jobs:
             target: armv7-unknown-linux-musleabi
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          submodules: true
       - name: Install cross
         uses: taiki-e/install-action@0aa4f22591557b744fe31e55dbfcdfea74a073f7 # v2
         with:
@@ -98,8 +96,6 @@ jobs:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          submodules: true
       - name: cache crates
         id: cache-crates
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -142,8 +138,6 @@ jobs:
             target: x86_64-pc-windows-msvc
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          submodules: true
       - run: rustup target add ${{matrix.target}}
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
