@@ -70,27 +70,52 @@ impl Backend for AquaBackend {
             .chain(pkg.version_overrides.iter())
             .collect();
 
-        // Checksum - check if any package version has it enabled
-        if all_pkgs.iter().any(|p| {
+        // Fetch release assets to detect actual security features
+        let release_assets = if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
+            let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+            github::list_releases(&repo)
+                .await
+                .ok()
+                .and_then(|releases| releases.first().cloned())
+                .map(|r| r.assets)
+                .unwrap_or_default()
+        } else {
+            vec![]
+        };
+
+        // Checksum - check registry config OR actual release assets
+        let has_checksum_config = all_pkgs.iter().any(|p| {
             p.checksum
                 .as_ref()
                 .is_some_and(|checksum| checksum.enabled())
-        }) {
-            // Use the first checksum we find for algorithm info
+        });
+        let has_checksum_assets = release_assets.iter().any(|a| {
+            let name = a.name.to_lowercase();
+            name.contains("sha256")
+                || name.contains("checksum")
+                || name.ends_with(".sha256")
+                || name.ends_with(".sha512")
+        });
+        if has_checksum_config || has_checksum_assets {
             let algorithm = all_pkgs
                 .iter()
                 .filter_map(|p| p.checksum.as_ref())
-                .find_map(|c| c.algorithm.as_ref().map(|a| a.to_string()));
+                .find_map(|c| c.algorithm.as_ref().map(|a| a.to_string()))
+                .or_else(|| if has_checksum_assets { Some("sha256".to_string()) } else { None });
             features.push(SecurityFeature::Checksum { algorithm });
         }
 
-        // GitHub Attestations
-        // Default to enabled if config is present (unless explicitly disabled)
-        if all_pkgs.iter().any(|p| {
+        // GitHub Attestations - check registry config OR actual release assets
+        let has_attestations_config = all_pkgs.iter().any(|p| {
             p.github_artifact_attestations
                 .as_ref()
                 .is_some_and(|a| a.enabled.unwrap_or(true))
-        }) {
+        });
+        let has_attestations_assets = release_assets.iter().any(|a| {
+            let name = a.name.to_lowercase();
+            name.ends_with(".sigstore.json") || name.ends_with(".sigstore")
+        });
+        if has_attestations_config || has_attestations_assets {
             let signer_workflow = all_pkgs
                 .iter()
                 .filter_map(|p| p.github_artifact_attestations.as_ref())
@@ -98,34 +123,48 @@ impl Backend for AquaBackend {
             features.push(SecurityFeature::GithubAttestations { signer_workflow });
         }
 
-        // SLSA
-        // Default to enabled if config is present (unless explicitly disabled)
-        if all_pkgs.iter().any(|p| {
+        // SLSA - check registry config OR actual release assets
+        let has_slsa_config = all_pkgs.iter().any(|p| {
             p.slsa_provenance
                 .as_ref()
                 .is_some_and(|s| s.enabled.unwrap_or(true))
-        }) {
+        });
+        let has_slsa_assets = release_assets.iter().any(|a| {
+            let name = a.name.to_lowercase();
+            name.contains(".intoto.jsonl")
+                || name.contains("provenance")
+                || name.ends_with(".attestation")
+        });
+        if has_slsa_config || has_slsa_assets {
             features.push(SecurityFeature::Slsa { level: None });
         }
 
-        // Cosign (nested in checksum)
-        // Default to enabled if config is present (unless explicitly disabled)
-        if all_pkgs.iter().any(|p| {
+        // Cosign (nested in checksum) - check registry config OR actual release assets
+        let has_cosign_config = all_pkgs.iter().any(|p| {
             p.checksum
                 .as_ref()
                 .and_then(|c| c.cosign.as_ref())
                 .is_some_and(|cosign| cosign.enabled.unwrap_or(true))
-        }) {
+        });
+        let has_cosign_assets = release_assets.iter().any(|a| {
+            let name = a.name.to_lowercase();
+            name.ends_with(".sig") || name.contains("cosign")
+        });
+        if has_cosign_config || has_cosign_assets {
             features.push(SecurityFeature::Cosign);
         }
 
-        // Minisign
-        // Default to enabled if config is present (unless explicitly disabled)
-        if all_pkgs.iter().any(|p| {
+        // Minisign - check registry config OR actual release assets
+        let has_minisign_config = all_pkgs.iter().any(|p| {
             p.minisign
                 .as_ref()
                 .is_some_and(|m| m.enabled.unwrap_or(true))
-        }) {
+        });
+        let has_minisign_assets = release_assets.iter().any(|a| {
+            let name = a.name.to_lowercase();
+            name.ends_with(".minisig")
+        });
+        if has_minisign_config || has_minisign_assets {
             let public_key = all_pkgs
                 .iter()
                 .filter_map(|p| p.minisign.as_ref())
