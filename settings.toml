@@ -514,6 +514,19 @@ env = "MISE_GPG_VERIFY"
 optional = true
 type = "Bool"
 
+[github_attestations]
+default = true
+description = "Enable GitHub Artifact Attestations verification for supported tools."
+docs = """
+Enable/disable GitHub Artifact Attestations verification globally.
+When enabled, mise will verify the authenticity and integrity of downloaded tools
+using GitHub's artifact attestation system for tools that support it (e.g., Ruby precompiled binaries).
+
+Individual tools can override this setting with their own `<tool>.github_attestations` setting.
+"""
+env = "MISE_GITHUB_ATTESTATIONS"
+type = "Bool"
+
 [http_timeout]
 default = "30s"
 description = "Timeout in seconds for all HTTP requests in mise."
@@ -1201,6 +1214,19 @@ precompiled_url = "https://my-mirror.example.com/ruby-{version}.{platform}.tar.g
 """
 env = "MISE_RUBY_PRECOMPILED_URL"
 type = "String"
+
+[ruby.github_attestations]
+description = "[experimental] Enable GitHub Artifact Attestations verification for precompiled Ruby binaries."
+docs = """
+Override the global `github_attestations` setting for Ruby precompiled binaries.
+When enabled, mise will verify the authenticity of precompiled Ruby binaries from jdx/ruby.
+Requires `experimental = true`.
+
+Defaults to the global `github_attestations` setting if not specified.
+"""
+env = "MISE_RUBY_GITHUB_ATTESTATIONS"
+optional = true
+type = "Bool"
 
 [ruby.ruby_build_opts]
 description = "Options to pass to ruby-build."

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Test GitHub attestations verification for precompiled Ruby binaries
+
+set -euo pipefail
+
+export MISE_EXPERIMENTAL=1
+export MISE_RUBY_GITHUB_ATTESTATIONS=true
+
+echo "=== Testing Ruby GitHub Attestations Verification ==="
+
+# Test: Install Ruby with GitHub attestations verification enabled
+echo "Installing Ruby with GitHub attestations verification enabled..."
+
+output=$(mise install ruby@3.4.8 2>&1) || true
+echo "$output"
+
+# Check if attestation verification was attempted
+if echo "$output" | grep -q "verify GitHub attestations"; then
+	echo "✅ GitHub attestations verification was attempted"
+else
+	echo "❌ ERROR: Attestation verification message not found"
+	exit 1
+fi
+
+# Cleanup
+mise uninstall ruby@3.4.8 2>/dev/null || true
+
+echo ""
+echo "=== Ruby GitHub Attestations Test Passed ✓ ==="
