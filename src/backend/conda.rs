@@ -475,9 +475,10 @@ impl Backend for CondaBackend {
                 .and_modify(|existing| {
                     // Keep the latest upload time for each version
                     if let Some(new_time) = &f.upload_time
-                        && (existing.is_none() || existing.as_ref().is_some_and(|e| new_time > e)) {
-                            *existing = Some(new_time.clone());
-                        }
+                        && (existing.is_none() || existing.as_ref().is_some_and(|e| new_time > e))
+                    {
+                        *existing = Some(new_time.clone());
+                    }
                 })
                 .or_insert_with(|| f.upload_time.clone());
         }
