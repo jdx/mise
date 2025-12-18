@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::{collections::BTreeMap, sync::Arc};
 
+use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::external_plugin_cache::ExternalPluginCache;
 use crate::cache::{CacheManager, CacheManagerBuilder};
@@ -246,8 +247,15 @@ impl Backend for AsdfBackend {
         Some(PluginType::Asdf)
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
-        self.plugin.fetch_remote_versions()
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+        let versions = self.plugin.fetch_remote_versions()?;
+        Ok(versions
+            .into_iter()
+            .map(|v| VersionInfo {
+                version: v,
+                ..Default::default()
+            })
+            .collect())
     }
 
     async fn latest_stable_version(&self, config: &Arc<Config>) -> Result<Option<String>> {

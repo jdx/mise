@@ -204,10 +204,7 @@ impl Backend for GoPlugin {
         }]
     }
 
-    async fn _list_remote_versions_with_info(
-        &self,
-        _config: &Arc<Config>,
-    ) -> eyre::Result<Vec<VersionInfo>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         // Extract repo name (e.g., "golang/go") from the configured URL
         // The go_repo setting is like "https://github.com/golang/go"
         let settings = Settings::get();

@@ -10,6 +10,7 @@ use std::thread;
 use tokio::sync::RwLock;
 
 use crate::backend::Backend;
+use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::cache::{CacheManager, CacheManagerBuilder};
@@ -47,7 +48,7 @@ impl Backend for VfoxBackend {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let this = self;
         timeout::run_with_timeout_async(
             || async {
@@ -59,10 +60,17 @@ impl Backend for VfoxBackend {
                     Settings::get().ensure_experimental("custom backends")?;
                     debug!("Using backend method for plugin: {}", this.pathname);
                     let tool_name = this.get_tool_name()?;
-                    return vfox
+                    let versions = vfox
                         .backend_list_versions(&this.pathname, tool_name)
                         .await
-                        .wrap_err("Backend list versions method failed");
+                        .wrap_err("Backend list versions method failed")?;
+                    return Ok(versions
+                        .into_iter()
+                        .map(|v| VersionInfo {
+                            version: v,
+                            ..Default::default()
+                        })
+                        .collect());
                 }
 
                 // Use default vfox behavior for traditional plugins
@@ -70,8 +78,11 @@ impl Backend for VfoxBackend {
                 Ok(versions
                     .into_iter()
                     .rev()
-                    .map(|v| v.version)
-                    .collect::<Vec<String>>())
+                    .map(|v| VersionInfo {
+                        version: v.version,
+                        ..Default::default()
+                    })
+                    .collect())
             },
             Settings::get().fetch_remote_versions_timeout(),
         )

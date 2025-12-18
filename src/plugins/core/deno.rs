@@ -11,6 +11,7 @@ use serde::Deserialize;
 use versions::Versioning;
 
 use crate::backend::Backend;
+use crate::backend::VersionInfo;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::fetch_checksum_from_file;
 use crate::cli::args::BackendArg;
@@ -102,15 +103,18 @@ impl Backend for DenoPlugin {
         }]
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let versions: DenoVersions = HTTP_FETCH.json("https://deno.com/versions.json").await?;
         let versions = versions
             .cli
             .into_iter()
             .filter(|v| v.starts_with('v'))
-            .map(|v| v.trim_start_matches('v').to_string())
-            .unique()
-            .sorted_by_cached_key(|s| (Versioning::new(s), s.to_string()))
+            .map(|v| VersionInfo {
+                version: v.trim_start_matches('v').to_string(),
+                ..Default::default()
+            })
+            .unique_by(|v| v.version.clone())
+            .sorted_by_cached_key(|v| (Versioning::new(&v.version), v.version.clone()))
             .collect();
         Ok(versions)
     }

@@ -1,15 +1,22 @@
 use crate::backend::Backend;
+use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::file;
+use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::{Result, config::Config, env};
 use async_trait::async_trait;
 use indoc::formatdoc;
+use once_cell::sync::OnceCell;
+use serde::Deserialize;
 use std::path::Path;
 use std::{fmt::Debug, sync::Arc};
+
+/// Cached gem source URL, memoized globally after first successful detection
+static GEM_SOURCE: OnceCell<String> = OnceCell::new();
 
 #[derive(Debug)]
 pub struct GemBackend {
@@ -30,24 +37,25 @@ impl Backend for GemBackend {
         Ok(vec!["ruby"])
     }
 
-    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
-        // Use `gem info` to list versions, which respects configured gem sources/mirrors
-        let env = self.dependency_env(config).await.unwrap_or_default();
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
+        // Get the gem source URL using the mise-managed Ruby environment
+        let source_url = self.get_gem_source(config).await;
 
-        let output = cmd!(
-            "gem",
-            "info",
-            "--remote",
-            "--all",
-            "--exact",
-            self.tool_name(),
-        )
-        .full_env(&env)
-        .read()?;
+        // Use RubyGems-compatible API to get versions with timestamps
+        let url = format!("{}api/v1/versions/{}.json", source_url, self.tool_name());
+        let response: Vec<RubyGemsVersion> = HTTP_FETCH.json(&url).await?;
 
-        let mut versions = parse_gem_versions(&output)?;
-        // gem info returns versions newest-first, but mise expects oldest-first
+        // RubyGems API returns newest-first, mise expects oldest-first
+        let mut versions: Vec<VersionInfo> = response
+            .into_iter()
+            .map(|v| VersionInfo {
+                version: v.number,
+                created_at: v.created_at,
+                ..Default::default()
+            })
+            .collect();
         versions.reverse();
+
         Ok(versions)
     }
 
@@ -94,38 +102,66 @@ impl GemBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }
-}
 
-fn parse_gem_versions(output: &str) -> eyre::Result<Vec<String>> {
-    // Parse gem info output format:
-    // *** REMOTE GEMS ***
-    //
-    // gemname (1.2.3, 1.2.2, 1.2.1, ...)
-    //     Authors: ...
-    //     Homepage: ...
+    /// Get the primary gem source URL using the mise-managed Ruby environment.
+    /// The result is memoized globally after first successful detection.
+    async fn get_gem_source(&self, config: &Arc<Config>) -> &'static str {
+        const DEFAULT_SOURCE: &str = "https://rubygems.org/";
 
-    for line in output.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with("***") {
-            continue;
+        // Return cached source if available
+        if let Some(source) = GEM_SOURCE.get() {
+            return source.as_str();
         }
 
-        // Format: "gemname (version1, version2, ...)"
-        // Stop at first line that starts with content (the gem line)
-        // Subsequent lines will be metadata
-        if let Some(paren_start) = line.find('(')
-            && let Some(paren_end) = line.rfind(')')
-        {
-            let versions_str = &line[paren_start + 1..paren_end];
-            let versions: Vec<String> = versions_str
-                .split(',')
-                .map(|v| v.trim().to_string())
-                .collect();
-            return Ok(versions);
+        // Get the mise-managed Ruby environment
+        let env = self.dependency_env(config).await.unwrap_or_default();
+
+        // Try to initialize the source - only memoize on success
+        match GEM_SOURCE.get_or_try_init(|| {
+            let output = cmd!("gem", "sources")
+                .full_env(&env)
+                .read()
+                .map_err(|e| eyre::eyre!("failed to run `gem sources`: {e}"))?;
+
+            Ok::<_, eyre::Report>(parse_gem_source_output(&output))
+        }) {
+            Ok(source) => source.as_str(),
+            Err(e) => {
+                warn!("{e}, falling back to rubygems.org");
+                DEFAULT_SOURCE
+            }
         }
     }
+}
 
-    Err(eyre::eyre!("Gem not found"))
+/// RubyGems API response for version info
+#[derive(Debug, Deserialize)]
+struct RubyGemsVersion {
+    number: String,
+    created_at: Option<String>,
+}
+
+/// Parse gem sources output to extract the primary source URL.
+/// Output format:
+/// ```
+/// *** CURRENT SOURCES ***
+///
+/// https://rubygems.org/
+/// ```
+fn parse_gem_source_output(output: &str) -> String {
+    for line in output.lines() {
+        let line = line.trim();
+        if line.starts_with("http://") || line.starts_with("https://") {
+            // Ensure URL ends with /
+            return if line.ends_with('/') {
+                line.to_string()
+            } else {
+                format!("{}/", line)
+            };
+        }
+    }
+    // Default to rubygems.org if no source found
+    "https://rubygems.org/".to_string()
 }
 
 fn env_script_all_bin_files(install_path: &Path) -> eyre::Result<bool> {
@@ -357,42 +393,6 @@ fn extract_minor_version(version: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_parse_gem_versions() {
-        let output = r#"*** REMOTE GEMS ***
-
-rake (13.3.0, 13.2.1, 13.2.0, 13.1.0, 13.0.6, 13.0.5)
-    Authors: Hiroshi SHIBATA
-    Homepage: https://github.com/ruby/rake"#;
-
-        let versions = parse_gem_versions(output).unwrap();
-        assert_eq!(
-            versions,
-            vec!["13.3.0", "13.2.1", "13.2.0", "13.1.0", "13.0.6", "13.0.5"]
-        );
-    }
-
-    #[test]
-    fn test_parse_gem_versions_empty() {
-        let output = r#"*** REMOTE GEMS ***
-
-"#;
-
-        let result = parse_gem_versions(output);
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "Gem not found");
-    }
-
-    #[test]
-    fn test_parse_gem_versions_single() {
-        let output = r#"*** REMOTE GEMS ***
-
-bundler (2.5.4)"#;
-
-        let versions = parse_gem_versions(output).unwrap();
-        assert_eq!(versions, vec!["2.5.4"]);
-    }
 
     #[test]
     fn test_extract_minor_version() {

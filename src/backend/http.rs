@@ -1,4 +1,5 @@
 use crate::backend::Backend;
+use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::static_helpers::{
     clean_binary_name, get_filename_from_url, list_available_platforms_with_key,
@@ -580,8 +581,15 @@ impl Backend for HttpBackend {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
-        self.fetch_versions().await
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+        let versions = self.fetch_versions().await?;
+        Ok(versions
+            .into_iter()
+            .map(|v| VersionInfo {
+                version: v,
+                ..Default::default()
+            })
+            .collect())
     }
 
     async fn install_version_(

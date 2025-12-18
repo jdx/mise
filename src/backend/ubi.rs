@@ -14,7 +14,6 @@ use crate::{backend::Backend, toolset::ToolVersionOptions};
 use crate::{file, github, gitlab, hash};
 use async_trait::async_trait;
 use eyre::bail;
-use itertools::Itertools;
 use regex::Regex;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -40,80 +39,7 @@ impl Backend for UbiBackend {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
-        if name_is_url(&self.tool_name()) {
-            Ok(vec!["latest".to_string()])
-        } else {
-            let opts = self.ba.opts();
-            let forge = match opts.get("provider") {
-                Some(forge) => ForgeType::from_str(forge)?,
-                None => ForgeType::default(),
-            };
-            let api_url = match opts.get("api_url") {
-                Some(api_url) => api_url.strip_suffix("/").unwrap_or(api_url),
-                None => match forge {
-                    ForgeType::GitHub => github::API_URL,
-                    ForgeType::GitLab => gitlab::API_URL,
-                    _ => bail!("Unsupported forge type {:?}", forge),
-                },
-            };
-            let tag_regex = OnceLock::new();
-            let mut versions = match forge {
-                ForgeType::GitHub => github::list_releases_from_url(api_url, &self.tool_name())
-                    .await?
-                    .into_iter()
-                    .map(|r| r.tag_name)
-                    .collect::<Vec<String>>(),
-                ForgeType::GitLab => gitlab::list_releases_from_url(api_url, &self.tool_name())
-                    .await?
-                    .into_iter()
-                    .map(|r| r.tag_name)
-                    .collect::<Vec<String>>(),
-                _ => bail!("Unsupported forge type {:?}", forge),
-            };
-            if versions.is_empty() {
-                match forge {
-                    ForgeType::GitHub => {
-                        versions = github::list_tags_from_url(api_url, &self.tool_name())
-                            .await?
-                            .into_iter()
-                            .collect();
-                    }
-                    ForgeType::GitLab => {
-                        versions = gitlab::list_tags_from_url(api_url, &self.tool_name())
-                            .await?
-                            .into_iter()
-                            .collect();
-                    }
-                    _ => bail!("Unsupported forge type {:?}", forge),
-                }
-            }
-
-            Ok(versions
-                .into_iter()
-                .filter(|v| {
-                    if let Some(re) = opts.get("tag_regex") {
-                        let re = tag_regex.get_or_init(|| Regex::new(re).unwrap());
-                        re.is_match(v)
-                    } else {
-                        true
-                    }
-                })
-                // trim 'v' prefixes if they exist
-                .map(|t| match regex!(r"^v[0-9]").is_match(&t) {
-                    true => t[1..].to_string(),
-                    false => t,
-                })
-                .sorted_by_cached_key(|v| !regex!(r"^[0-9]").is_match(v))
-                .rev()
-                .collect())
-        }
-    }
-
-    async fn _list_remote_versions_with_info(
-        &self,
-        _config: &Arc<Config>,
-    ) -> eyre::Result<Vec<VersionInfo>> {
+    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         if name_is_url(&self.tool_name()) {
             Ok(vec![VersionInfo {
                 version: "latest".to_string(),
