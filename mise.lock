@@ -29,19 +29,19 @@ backend = "aqua:FiloSottile/age"
 "platforms.windows-x64-baseline" = { url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-windows-amd64.zip"}
 
 [[tools.bun]]
-version = "1.3.4"
+version = "1.3.5"
 backend = "core:bun"
-"platforms.linux-arm64" = { checksum = "sha256:c46e841fed85347521915b1b3904d6d175d8e2fd915e18e01c111318219115a4", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-linux-aarch64.zip"}
-"platforms.linux-arm64-musl" = { checksum = "sha256:c3dac29912b144789a2a4ee2108e595e6527f0f6c1b0f6e803bb319dc742e1de", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-linux-aarch64-musl.zip"}
-"platforms.linux-x64" = { checksum = "sha256:33c6996049e8d37e8b815959b14b05e5b6f496121352bf11bae7d047193c28bf", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-linux-x64.zip"}
-"platforms.linux-x64-baseline" = { checksum = "sha256:3d5129e19742a348fef112357be70becee596c4d32bc4dfb756cee6134e2e925", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-linux-x64-baseline.zip"}
-"platforms.linux-x64-musl" = { checksum = "sha256:9f1e0dd2c88b65f902a1fb101373704a67063bb7efa14b9c753f2fbd276100a3", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-linux-x64-musl.zip"}
-"platforms.linux-x64-musl-baseline" = { checksum = "sha256:8322c8b43b88ee626f7bf0a3ef66f1bda17900461606d273132c42b9115aabcb", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-linux-x64-musl-baseline.zip"}
-"platforms.macos-arm64" = { checksum = "sha256:8803774e4c6c55c8a517464c508f02821e6db57f94ca1bb5cc2a39f4d2326a51", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-darwin-aarch64.zip"}
-"platforms.macos-x64" = { checksum = "sha256:3390f9e6a82a9c718e187513b1c56405d0de9ed3f6b092222b15b4d4ba6e304d", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-darwin-x64.zip"}
-"platforms.macos-x64-baseline" = { checksum = "sha256:0f7956d51afed414c825a3a4f8ecc9bc613ff64e489016775e8514db5137b35f", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-darwin-x64-baseline.zip"}
-"platforms.windows-x64" = { checksum = "sha256:2a9c0a9e6ad77d0c31fd8fb1f596b61afa7f2f2f580baad597f17e7a0dbad960", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-windows-x64.zip"}
-"platforms.windows-x64-baseline" = { checksum = "sha256:4e1d253078173b84aea2b1501ef7e1d4b9eb5a44d86e62eb9ee6219a95e0d210", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.4/bun-windows-x64-baseline.zip"}
+"platforms.linux-arm64" = { checksum = "sha256:ed01000f85bd97785228ad2845dc92a1860b8054856826d7317690ac8f8ee74b", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.5/bun-linux-aarch64.zip"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:980b567beeca875b79776d60a35b178309583df3f0973b3bae62f7244dc486ad", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.5/bun-linux-aarch64-musl.zip"}
+"platforms.linux-x64" = { checksum = "sha256:7051d86a924aefea3e0b96213b5fd8f79c0793f9cae6534233e627e5c3db4669", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.5/bun-linux-x64.zip"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:6bddacd6a65855698b9816f2d74871eda4dd0b7fa921140c6445248f94a742fd", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.5/bun-linux-x64-baseline.zip"}
+"platforms.linux-x64-musl" = { checksum = "sha256:720d88e0e5f40450a1da91c0226f626b156eaa224876d794fa95f6ebf74f46b6", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.5/bun-linux-x64-musl.zip"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:57997319f8b9f72ce137363c3dfcd8d401327925108bb30dc5c3257452fba524", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.5/bun-linux-x64-musl-baseline.zip"}
+"platforms.macos-arm64" = { checksum = "sha256:db17588a4aea8804856825d4bead3f05e1f37276ca606f37e369b4f72f35d3fb", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.5/bun-darwin-aarch64.zip"}
+"platforms.macos-x64" = { checksum = "sha256:f5ffc03030fe527a86295fb5852bb08c5e99b707560011d1d509ab028902bf29", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.5/bun-darwin-x64.zip"}
+"platforms.macos-x64-baseline" = { checksum = "sha256:34b9a56b851058dafa1bc9d61233f2c383aa996889bba30b3180f5ccc2cff1b2", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.5/bun-darwin-x64-baseline.zip"}
+"platforms.windows-x64" = { checksum = "sha256:922cffdd5143cd118c6ccec6a61dfcf5d69e0068b048ea00f0a0615016530082", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.5/bun-windows-x64.zip"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:bf447dcc3b06aba9b9706a9db46fcd65e06a4d47d31439922313825d06eb47ca", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.5/bun-windows-x64-baseline.zip"}
 
 [[tools.cargo-binstall]]
 version = "1.16.4"
@@ -168,34 +168,34 @@ version = "3.7.4"
 backend = "npm:prettier"
 
 [[tools.pkl]]
-version = "0.30.1"
+version = "0.30.2"
 backend = "aqua:apple/pkl"
-"platforms.linux-arm64" = { checksum = "sha256:fe128f0deae07d8917a1589c86cb7e74477bdf1f8ee0a8e2a574b9c3ffd4554d", url = "https://github.com/apple/pkl/releases/download/0.30.1/pkl-linux-aarch64"}
-"platforms.linux-arm64-musl" = { checksum = "sha256:fe128f0deae07d8917a1589c86cb7e74477bdf1f8ee0a8e2a574b9c3ffd4554d", url = "https://github.com/apple/pkl/releases/download/0.30.1/pkl-linux-aarch64"}
-"platforms.linux-x64" = { checksum = "sha256:767a21826e0c151828a57aa42ccdce77feec3f8fd4970a7ea324a52b1773b449", url = "https://github.com/apple/pkl/releases/download/0.30.1/pkl-linux-amd64"}
-"platforms.linux-x64-baseline" = { checksum = "sha256:767a21826e0c151828a57aa42ccdce77feec3f8fd4970a7ea324a52b1773b449", url = "https://github.com/apple/pkl/releases/download/0.30.1/pkl-linux-amd64"}
-"platforms.linux-x64-musl" = { checksum = "sha256:767a21826e0c151828a57aa42ccdce77feec3f8fd4970a7ea324a52b1773b449", url = "https://github.com/apple/pkl/releases/download/0.30.1/pkl-linux-amd64"}
-"platforms.linux-x64-musl-baseline" = { checksum = "sha256:767a21826e0c151828a57aa42ccdce77feec3f8fd4970a7ea324a52b1773b449", url = "https://github.com/apple/pkl/releases/download/0.30.1/pkl-linux-amd64"}
-"platforms.macos-arm64" = { checksum = "sha256:9eb599df76dfe80b0f813180ed73f76a5feb316f2f8816714700ba5b6ab995c0", url = "https://github.com/apple/pkl/releases/download/0.30.1/pkl-macos-aarch64"}
-"platforms.macos-x64" = { checksum = "sha256:a0e0d8444015c542e44a86032ae2854be03cb89a6848465860ea83fdb82f2307", url = "https://github.com/apple/pkl/releases/download/0.30.1/pkl-macos-amd64"}
-"platforms.macos-x64-baseline" = { checksum = "sha256:a0e0d8444015c542e44a86032ae2854be03cb89a6848465860ea83fdb82f2307", url = "https://github.com/apple/pkl/releases/download/0.30.1/pkl-macos-amd64"}
-"platforms.windows-x64" = { checksum = "sha256:2ac9dcd922d5654d202eaebe52b667db3c00c523f52562dd95841347e11a65cd", url = "https://github.com/apple/pkl/releases/download/0.30.1/pkl-windows-amd64.exe"}
-"platforms.windows-x64-baseline" = { checksum = "sha256:2ac9dcd922d5654d202eaebe52b667db3c00c523f52562dd95841347e11a65cd", url = "https://github.com/apple/pkl/releases/download/0.30.1/pkl-windows-amd64.exe"}
+"platforms.linux-arm64" = { checksum = "sha256:8da3ae65104eb7058e35dc4a9fe46bd8ece2b6faf4b65d0b1054cadb2ede0246", url = "https://github.com/apple/pkl/releases/download/0.30.2/pkl-linux-aarch64"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:8da3ae65104eb7058e35dc4a9fe46bd8ece2b6faf4b65d0b1054cadb2ede0246", url = "https://github.com/apple/pkl/releases/download/0.30.2/pkl-linux-aarch64"}
+"platforms.linux-x64" = { checksum = "sha256:474e5137d60a9e2320fde19a526f42c36d8e9d3b245139d59a9b8dff85283c76", url = "https://github.com/apple/pkl/releases/download/0.30.2/pkl-linux-amd64"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:474e5137d60a9e2320fde19a526f42c36d8e9d3b245139d59a9b8dff85283c76", url = "https://github.com/apple/pkl/releases/download/0.30.2/pkl-linux-amd64"}
+"platforms.linux-x64-musl" = { checksum = "sha256:474e5137d60a9e2320fde19a526f42c36d8e9d3b245139d59a9b8dff85283c76", url = "https://github.com/apple/pkl/releases/download/0.30.2/pkl-linux-amd64"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:474e5137d60a9e2320fde19a526f42c36d8e9d3b245139d59a9b8dff85283c76", url = "https://github.com/apple/pkl/releases/download/0.30.2/pkl-linux-amd64"}
+"platforms.macos-arm64" = { checksum = "sha256:f1db44c0f6f859aee88c9d7d272f2371ae40ac95ec9957ae78eff51665158e04", url = "https://github.com/apple/pkl/releases/download/0.30.2/pkl-macos-aarch64"}
+"platforms.macos-x64" = { checksum = "sha256:5f62ae7a7a34c15b3a83af17bda8e6b98516953f383a492340d4aa090caaa6d9", url = "https://github.com/apple/pkl/releases/download/0.30.2/pkl-macos-amd64"}
+"platforms.macos-x64-baseline" = { checksum = "sha256:5f62ae7a7a34c15b3a83af17bda8e6b98516953f383a492340d4aa090caaa6d9", url = "https://github.com/apple/pkl/releases/download/0.30.2/pkl-macos-amd64"}
+"platforms.windows-x64" = { checksum = "sha256:19e92aa59bcf4e54963b6e3b419af7e1b939f5793b44f4a08d60bab1217106f4", url = "https://github.com/apple/pkl/releases/download/0.30.2/pkl-windows-amd64.exe"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:19e92aa59bcf4e54963b6e3b419af7e1b939f5793b44f4a08d60bab1217106f4", url = "https://github.com/apple/pkl/releases/download/0.30.2/pkl-windows-amd64.exe"}
 
 [[tools.pre-commit]]
-version = "4.5.0"
+version = "4.5.1"
 backend = "aqua:pre-commit/pre-commit"
-"platforms.linux-arm64" = { checksum = "sha256:fbbfa47d19b98e03eb11963094ac3644a97cba105a8c660d8dab4c409c89cebe", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.0/pre-commit-4.5.0.pyz"}
-"platforms.linux-arm64-musl" = { checksum = "sha256:fbbfa47d19b98e03eb11963094ac3644a97cba105a8c660d8dab4c409c89cebe", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.0/pre-commit-4.5.0.pyz"}
-"platforms.linux-x64" = { checksum = "sha256:fbbfa47d19b98e03eb11963094ac3644a97cba105a8c660d8dab4c409c89cebe", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.0/pre-commit-4.5.0.pyz"}
-"platforms.linux-x64-baseline" = { checksum = "sha256:fbbfa47d19b98e03eb11963094ac3644a97cba105a8c660d8dab4c409c89cebe", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.0/pre-commit-4.5.0.pyz"}
-"platforms.linux-x64-musl" = { checksum = "sha256:fbbfa47d19b98e03eb11963094ac3644a97cba105a8c660d8dab4c409c89cebe", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.0/pre-commit-4.5.0.pyz"}
-"platforms.linux-x64-musl-baseline" = { checksum = "sha256:fbbfa47d19b98e03eb11963094ac3644a97cba105a8c660d8dab4c409c89cebe", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.0/pre-commit-4.5.0.pyz"}
-"platforms.macos-arm64" = { checksum = "sha256:fbbfa47d19b98e03eb11963094ac3644a97cba105a8c660d8dab4c409c89cebe", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.0/pre-commit-4.5.0.pyz"}
-"platforms.macos-x64" = { checksum = "sha256:fbbfa47d19b98e03eb11963094ac3644a97cba105a8c660d8dab4c409c89cebe", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.0/pre-commit-4.5.0.pyz"}
-"platforms.macos-x64-baseline" = { checksum = "sha256:fbbfa47d19b98e03eb11963094ac3644a97cba105a8c660d8dab4c409c89cebe", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.0/pre-commit-4.5.0.pyz"}
-"platforms.windows-x64" = { checksum = "sha256:fbbfa47d19b98e03eb11963094ac3644a97cba105a8c660d8dab4c409c89cebe", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.0/pre-commit-4.5.0.pyz"}
-"platforms.windows-x64-baseline" = { checksum = "sha256:fbbfa47d19b98e03eb11963094ac3644a97cba105a8c660d8dab4c409c89cebe", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.0/pre-commit-4.5.0.pyz"}
+"platforms.linux-arm64" = { checksum = "sha256:19d00ba35cbf9c04dc3736cd8bb641e8633f3eddd4cedde71809574ae68a2cd1", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.1/pre-commit-4.5.1.pyz"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:19d00ba35cbf9c04dc3736cd8bb641e8633f3eddd4cedde71809574ae68a2cd1", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.1/pre-commit-4.5.1.pyz"}
+"platforms.linux-x64" = { checksum = "sha256:19d00ba35cbf9c04dc3736cd8bb641e8633f3eddd4cedde71809574ae68a2cd1", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.1/pre-commit-4.5.1.pyz"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:19d00ba35cbf9c04dc3736cd8bb641e8633f3eddd4cedde71809574ae68a2cd1", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.1/pre-commit-4.5.1.pyz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:19d00ba35cbf9c04dc3736cd8bb641e8633f3eddd4cedde71809574ae68a2cd1", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.1/pre-commit-4.5.1.pyz"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:19d00ba35cbf9c04dc3736cd8bb641e8633f3eddd4cedde71809574ae68a2cd1", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.1/pre-commit-4.5.1.pyz"}
+"platforms.macos-arm64" = { checksum = "sha256:19d00ba35cbf9c04dc3736cd8bb641e8633f3eddd4cedde71809574ae68a2cd1", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.1/pre-commit-4.5.1.pyz"}
+"platforms.macos-x64" = { checksum = "sha256:19d00ba35cbf9c04dc3736cd8bb641e8633f3eddd4cedde71809574ae68a2cd1", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.1/pre-commit-4.5.1.pyz"}
+"platforms.macos-x64-baseline" = { checksum = "sha256:19d00ba35cbf9c04dc3736cd8bb641e8633f3eddd4cedde71809574ae68a2cd1", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.1/pre-commit-4.5.1.pyz"}
+"platforms.windows-x64" = { checksum = "sha256:19d00ba35cbf9c04dc3736cd8bb641e8633f3eddd4cedde71809574ae68a2cd1", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.1/pre-commit-4.5.1.pyz"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:19d00ba35cbf9c04dc3736cd8bb641e8633f3eddd4cedde71809574ae68a2cd1", url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.1/pre-commit-4.5.1.pyz"}
 
 [[tools.ripgrep]]
 version = "15.1.0"
