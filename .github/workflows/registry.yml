@@ -120,7 +120,7 @@ jobs:
       - if: steps.test-tools.outputs.failed_tools != ''
         run: mise test-tool ${{ steps.test-tools.outputs.failed_tools }}
 
-  ci:
+  registry-ci:
     runs-on: ubuntu-latest
     timeout-minutes: 1
     needs:
