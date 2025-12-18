@@ -115,7 +115,7 @@ mise supports multiple backends for installing tools from different sources:
 : Global mise configuration options stored in `~/.config/mise/settings.toml` that define behavior across all projects. See [Settings](/configuration/settings).
 
 **Templates**
-: Dynamic values in configuration using Tera template syntax, like `{{env.HOME}}` or `{{arch()}}`. See [Templates](/templates).
+: Dynamic values in configuration using Tera template syntax, like <span v-pre>`{{env.HOME}}`</span> or <span v-pre>`{{arch()}}`</span>. See [Templates](/templates).
 
 ## Environment Variables
 
