@@ -355,6 +355,15 @@ impl Backend for JavaPlugin {
         Ok(versions)
     }
 
+    /// Override to bypass the shared remote_versions cache since Java has separate
+    /// caches for GA and EA release types in fetch_java_metadata.
+    async fn list_remote_versions_with_info(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<Vec<VersionInfo>> {
+        self._list_remote_versions(config).await
+    }
+
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
         let versions = self.list_installed_versions();
         self.fuzzy_match_filter(versions, query)
