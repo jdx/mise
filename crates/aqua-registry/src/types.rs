@@ -50,7 +50,7 @@ pub struct AquaPackage {
     pub github_artifact_attestations: Option<AquaGithubArtifactAttestations>,
     overrides: Vec<AquaOverride>,
     version_constraint: String,
-    version_overrides: Vec<AquaPackage>,
+    pub version_overrides: Vec<AquaPackage>,
     pub no_asset: bool,
     pub error_message: Option<String>,
     pub path: Option<String>,
