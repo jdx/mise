@@ -10,9 +10,13 @@ use crate::toolset::ToolVersion;
 use crate::{Result, config::Config, env};
 use async_trait::async_trait;
 use indoc::formatdoc;
+use once_cell::sync::OnceCell;
 use serde::Deserialize;
 use std::path::Path;
 use std::{fmt::Debug, sync::Arc};
+
+/// Cached gem source URL, memoized globally after first successful detection
+static GEM_SOURCE: OnceCell<String> = OnceCell::new();
 
 #[derive(Debug)]
 pub struct GemBackend {
@@ -99,33 +103,34 @@ impl GemBackend {
         Self { ba: Arc::new(ba) }
     }
 
-    /// Get the primary gem source URL using the mise-managed Ruby environment
-    async fn get_gem_source(&self, config: &Arc<Config>) -> String {
-        let env = self.dependency_env(config).await.unwrap_or_default();
+    /// Get the primary gem source URL using the mise-managed Ruby environment.
+    /// The result is memoized globally after first successful detection.
+    async fn get_gem_source(&self, config: &Arc<Config>) -> &'static str {
+        const DEFAULT_SOURCE: &str = "https://rubygems.org/";
 
-        let output = cmd!("gem", "sources")
-            .full_env(&env)
-            .read()
-            .unwrap_or_default();
-
-        // Parse gem sources output:
-        // *** CURRENT SOURCES ***
-        //
-        // https://rubygems.org/
-        for line in output.lines() {
-            let line = line.trim();
-            if line.starts_with("http://") || line.starts_with("https://") {
-                // Ensure URL ends with /
-                return if line.ends_with('/') {
-                    line.to_string()
-                } else {
-                    format!("{}/", line)
-                };
-            }
+        // Return cached source if available
+        if let Some(source) = GEM_SOURCE.get() {
+            return source.as_str();
         }
 
-        // Default to rubygems.org if no source found
-        "https://rubygems.org/".to_string()
+        // Get the mise-managed Ruby environment
+        let env = self.dependency_env(config).await.unwrap_or_default();
+
+        // Try to initialize the source - only memoize on success
+        match GEM_SOURCE.get_or_try_init(|| {
+            let output = cmd!("gem", "sources")
+                .full_env(&env)
+                .read()
+                .map_err(|e| eyre::eyre!("failed to run `gem sources`: {e}"))?;
+
+            Ok::<_, eyre::Report>(parse_gem_source_output(&output))
+        }) {
+            Ok(source) => source.as_str(),
+            Err(e) => {
+                warn!("{e}, falling back to rubygems.org");
+                DEFAULT_SOURCE
+            }
+        }
     }
 }
 
@@ -134,6 +139,29 @@ impl GemBackend {
 struct RubyGemsVersion {
     number: String,
     created_at: Option<String>,
+}
+
+/// Parse gem sources output to extract the primary source URL.
+/// Output format:
+/// ```
+/// *** CURRENT SOURCES ***
+///
+/// https://rubygems.org/
+/// ```
+fn parse_gem_source_output(output: &str) -> String {
+    for line in output.lines() {
+        let line = line.trim();
+        if line.starts_with("http://") || line.starts_with("https://") {
+            // Ensure URL ends with /
+            return if line.ends_with('/') {
+                line.to_string()
+            } else {
+                format!("{}/", line)
+            };
+        }
+    }
+    // Default to rubygems.org if no source found
+    "https://rubygems.org/".to_string()
 }
 
 fn env_script_all_bin_files(install_path: &Path) -> eyre::Result<bool> {
