@@ -1,0 +1,24 @@
+[submodule "crates/vfox/embedded-plugins/vfox-aapt2"]
+	path = crates/vfox/embedded-plugins/vfox-aapt2
+	url = https://github.com/mise-plugins/vfox-aapt2.git
+[submodule "crates/vfox/embedded-plugins/vfox-ag"]
+	path = crates/vfox/embedded-plugins/vfox-ag
+	url = https://github.com/mise-plugins/vfox-ag.git
+[submodule "crates/vfox/embedded-plugins/vfox-android-sdk"]
+	path = crates/vfox/embedded-plugins/vfox-android-sdk
+	url = https://github.com/mise-plugins/vfox-android-sdk.git
+[submodule "crates/vfox/embedded-plugins/vfox-ant"]
+	path = crates/vfox/embedded-plugins/vfox-ant
+	url = https://github.com/mise-plugins/vfox-ant.git
+[submodule "crates/vfox/embedded-plugins/vfox-bfs"]
+	path = crates/vfox/embedded-plugins/vfox-bfs
+	url = https://github.com/mise-plugins/vfox-bfs.git
+[submodule "crates/vfox/embedded-plugins/vfox-bpkg"]
+	path = crates/vfox/embedded-plugins/vfox-bpkg
+	url = https://github.com/mise-plugins/vfox-bpkg.git
+[submodule "crates/vfox/embedded-plugins/vfox-chicken"]
+	path = crates/vfox/embedded-plugins/vfox-chicken
+	url = https://github.com/mise-plugins/vfox-chicken.git
+[submodule "crates/vfox/embedded-plugins/vfox-vlang"]
+	path = crates/vfox/embedded-plugins/vfox-vlang
+	url = https://github.com/mise-plugins/vfox-vlang.git

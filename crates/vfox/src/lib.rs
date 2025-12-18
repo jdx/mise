@@ -13,6 +13,7 @@ pub use vfox::Vfox;
 
 mod config;
 mod context;
+pub mod embedded_plugins;
 mod error;
 mod hooks;
 mod http;

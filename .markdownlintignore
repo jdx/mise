@@ -1,6 +1,7 @@
 /registry/
 /target/
 CHANGELOG.md
+crates/vfox/embedded-plugins/
 docs/node_modules/
 docs/cli/watch.md
 node_modules/

@@ -231,5 +231,5 @@ For further reading:
 - [Configuration](/configuration) – More information on `mise.toml` files
 - [Settings](/configuration/settings) – All the configuration settings available in mise
 - [Backends](/dev-tools/backends/) – An index of all the backends available in mise
-- [Registry](/registry) – Every "shorthand" available for tools in mise like `node`, `terraform`, or `watchexec` which point to `core:node`, `asdf:asdf-community/asdf-hashicorp`, and `ubi:watchexec/watchexec` respectively
+- [Registry](/registry) – Every "shorthand" available for tools in mise like `node`, `terraform`, or `watchexec` which point to `core:node`, `asdf:asdf-community/asdf-hashicorp`, and `aqua:watchexec/watchexec` respectively
 - [CLI](/cli/) – The full list of commands available in mise

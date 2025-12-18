@@ -529,7 +529,7 @@ enum ChildProcessOutput {
 mod tests {
     use pretty_assertions::assert_eq;
 
-    use crate::{cmd, config::Config};
+    use crate::config::Config;
 
     #[tokio::test]
     async fn test_cmd() {

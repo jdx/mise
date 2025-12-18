@@ -9,6 +9,11 @@ use crate::ui::progress_report::SingleReport;
 use eyre::{Result, bail};
 use indexmap::IndexSet;
 use std::path::Path;
+use std::sync::LazyLock;
+
+/// Regex pattern for matching version suffixes like -v1.2.3, _1.2.3, etc.
+static VERSION_PATTERN: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"[-_]v?\d+(\.\d+)*(-[a-zA-Z0-9]+(\.\d+)?)?$").unwrap());
 
 // ========== Checksum Fetching Helpers ==========
 
@@ -216,6 +221,20 @@ pub fn lookup_platform_key(opts: &ToolVersionOptions, key_type: &str) -> Option<
     None
 }
 
+/// Looks up an option value with platform-specific fallback.
+/// First tries platform-specific lookup, then falls back to the base key.
+///
+/// # Arguments
+/// * `opts` - The tool version options to search
+/// * `key` - The option key to look up (e.g., "bin_path", "checksum")
+///
+/// # Returns
+/// * `Some(value)` if found in platform-specific or base options
+/// * `None` if not found
+pub fn lookup_with_fallback(opts: &ToolVersionOptions, key: &str) -> Option<String> {
+    lookup_platform_key(opts, key).or_else(|| opts.get(key).cloned())
+}
+
 /// Returns all possible aliases for a given platform target (os, arch).
 fn target_platform_aliases(target: &PlatformTarget) -> Vec<(String, String)> {
     let os = target.os_name();
@@ -361,16 +380,12 @@ pub fn install_artifact(
         // Handle compressed single binary
         let decompressed_name = file_name.trim_end_matches(&format!(".{}", ext));
         // Determine the destination path with support for bin_path
-        let dest = if let Some(bin_path_template) =
-            lookup_platform_key(opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
-        {
+        let dest = if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
             let bin_path = template_string(&bin_path_template, tv);
             let bin_dir = install_path.join(&bin_path);
             file::create_dir_all(&bin_dir)?;
             bin_dir.join(decompressed_name)
-        } else if let Some(bin_name) =
-            lookup_platform_key(opts, "bin").or_else(|| opts.get("bin").cloned())
-        {
+        } else if let Some(bin_name) = lookup_with_fallback(opts, "bin") {
             install_path.join(&bin_name)
         } else {
             // Auto-clean binary names by removing OS/arch suffixes
@@ -389,18 +404,14 @@ pub fn install_artifact(
         file::make_executable(&dest)?;
     } else if format == file::TarFormat::Raw {
         // Copy the file directly to the bin_path directory or install_path
-        if let Some(bin_path_template) =
-            lookup_platform_key(opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
-        {
+        if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
             let bin_path = template_string(&bin_path_template, tv);
             let bin_dir = install_path.join(&bin_path);
             file::create_dir_all(&bin_dir)?;
             let dest = bin_dir.join(file_path.file_name().unwrap());
             file::copy(file_path, &dest)?;
             file::make_executable(&dest)?;
-        } else if let Some(bin_name) =
-            lookup_platform_key(opts, "bin").or_else(|| opts.get("bin").cloned())
-        {
+        } else if let Some(bin_name) = lookup_with_fallback(opts, "bin") {
             // If bin is specified, rename the file to this name
             let dest = install_path.join(&bin_name);
             file::copy(file_path, &dest)?;
@@ -437,11 +448,27 @@ pub fn install_artifact(
         // Extract with determined strip_components
         file::untar(file_path, &install_path, &tar_opts)?;
 
+        // Extract just the repo name from tool_name (e.g., "opsgenie/opsgenie-lamp" -> "opsgenie-lamp")
+        // This is needed for matching binary names in ZIP archives where exec bits are lost
+        let full_tool_name = tv.ba().tool_name.as_str();
+        let tool_name = full_tool_name.rsplit('/').next().unwrap_or(full_tool_name);
+
+        // Determine search directory based on bin_path option (used by both bin= and rename_exe=)
+        let search_dir = if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
+            let bin_path = template_string(&bin_path_template, tv);
+            install_path.join(&bin_path)
+        } else {
+            install_path.clone()
+        };
+
+        // Handle bin= option for archives (renames executable to specified name)
+        if let Some(bin_name) = lookup_with_fallback(opts, "bin") {
+            rename_executable_in_dir(&search_dir, &bin_name, Some(tool_name))?;
+        }
+
         // Handle rename_exe option for archives
-        if let Some(rename_to) =
-            lookup_platform_key(opts, "rename_exe").or_else(|| opts.get("rename_exe").cloned())
-        {
-            rename_executable_in_dir(&install_path, &rename_to)?;
+        if let Some(rename_to) = lookup_with_fallback(opts, "rename_exe") {
+            rename_executable_in_dir(&search_dir, &rename_to, Some(tool_name))?;
         }
     }
     Ok(())
@@ -454,14 +481,14 @@ pub fn verify_artifact(
     pr: Option<&dyn SingleReport>,
 ) -> Result<()> {
     // Check platform-specific checksum first, then fall back to generic
-    let checksum = lookup_platform_key(opts, "checksum").or_else(|| opts.get("checksum").cloned());
+    let checksum = lookup_with_fallback(opts, "checksum");
 
     if let Some(checksum) = checksum {
         verify_checksum_str(file_path, &checksum, pr)?;
     }
 
     // Check platform-specific size first, then fall back to generic
-    let size_str = lookup_platform_key(opts, "size").or_else(|| opts.get("size").cloned());
+    let size_str = lookup_with_fallback(opts, "size");
 
     if let Some(size_str) = size_str {
         let expected_size: u64 = size_str.parse()?;
@@ -491,35 +518,102 @@ pub fn verify_checksum_str(
     Ok(())
 }
 
+/// File extensions that indicate non-binary files.
+const SKIP_EXTENSIONS: &[&str] = &[".txt", ".md", ".json", ".yml", ".yaml"];
+
+/// File names (case-insensitive) that should be skipped when looking for executables.
+const SKIP_FILE_NAMES: &[&str] = &["LICENSE", "README"];
+
+/// Checks if a file should be skipped when searching for executables.
+///
+/// # Arguments
+/// * `file_name` - The file name to check
+/// * `strict` - If true, also checks against SKIP_FILE_NAMES and README.* patterns
+///
+/// # Returns
+/// * `true` if the file should be skipped (not a binary)
+/// * `false` if the file might be a binary
+fn should_skip_file(file_name: &str, strict: bool) -> bool {
+    // Skip hidden files
+    if file_name.starts_with('.') {
+        return true;
+    }
+
+    // Skip known non-binary extensions
+    if SKIP_EXTENSIONS.iter().any(|ext| file_name.ends_with(ext)) {
+        return true;
+    }
+
+    // In strict mode, also skip LICENSE/README files
+    if strict {
+        let upper = file_name.to_uppercase();
+        if SKIP_FILE_NAMES.iter().any(|name| upper == *name) || upper.starts_with("README.") {
+            return true;
+        }
+    }
+
+    false
+}
+
 /// Renames the first executable file found in a directory to a new name.
-/// Used by the `rename_exe` option to rename binaries after archive extraction.
-fn rename_executable_in_dir(dir: &Path, new_name: &str) -> eyre::Result<()> {
+/// Used by the `rename_exe` and `bin` options to rename binaries after archive extraction.
+///
+/// # Parameters
+/// - `dir`: The directory to search for executables
+/// - `new_name`: The new name for the executable
+/// - `tool_name`: Optional hint for finding non-executable files by name matching.
+///   When provided, if no executable is found, will search for files matching the tool name
+///   and make them executable before renaming.
+fn rename_executable_in_dir(
+    dir: &Path,
+    new_name: &str,
+    tool_name: Option<&str>,
+) -> eyre::Result<()> {
     let target_path = dir.join(new_name);
 
     // Check if target already exists before iterating
     // (read_dir order is non-deterministic, so we must check first)
-    if target_path.is_file() && crate::file::is_executable(&target_path) {
+    if target_path.is_file() && file::is_executable(&target_path) {
         return Ok(());
     }
 
-    // Find executables in the directory (non-recursive for top level)
-    for entry in std::fs::read_dir(dir)?.flatten() {
-        let path = entry.path();
-        if path.is_file() && crate::file::is_executable(&path) {
+    // First pass: Find executables in the directory (non-recursive for top level)
+    for path in file::ls(dir)? {
+        if path.is_file() && file::is_executable(&path) {
             let file_name = path.file_name().unwrap().to_string_lossy();
-            // Skip common non-binary files
-            if file_name.starts_with('.')
-                || file_name.ends_with(".txt")
-                || file_name.ends_with(".md")
-            {
+            if should_skip_file(&file_name, false) {
                 continue;
             }
-            // Rename this executable
-            std::fs::rename(&path, &target_path)?;
+            file::rename(&path, &target_path)?;
             debug!("Renamed {} to {}", path.display(), target_path.display());
             return Ok(());
         }
     }
+
+    // Second pass: Find non-executable files by name matching (for ZIP archives without exec bit)
+    if let Some(tool_name) = tool_name {
+        for path in file::ls(dir)? {
+            if path.is_file() {
+                let file_name = path.file_name().unwrap().to_string_lossy();
+                if should_skip_file(&file_name, true) {
+                    continue;
+                }
+
+                // Check if filename matches tool name pattern or the target name
+                if file_name.contains(tool_name) || *file_name == *new_name {
+                    file::make_executable(&path)?;
+                    file::rename(&path, &target_path)?;
+                    debug!(
+                        "Found and renamed {} to {} (added exec permissions)",
+                        path.display(),
+                        target_path.display()
+                    );
+                    return Ok(());
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -558,6 +652,14 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
         (name, None)
     };
 
+    // Helper to add extension back to a cleaned name
+    let with_ext = |s: String| -> String {
+        match extension {
+            Some(ext) => format!("{}{}", s, ext),
+            None => s,
+        }
+    };
+
     // Try to find and remove platform suffixes
     let mut cleaned = name_without_ext.to_string();
 
@@ -579,12 +681,7 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
                     cleaned = cleaned[..pos].to_string();
                     // Continue processing to also remove version numbers
                     let result = clean_version_suffix(&cleaned, tool_name);
-                    // Add the extension back if we had one
-                    if let Some(ext) = extension {
-                        return format!("{}{}", result, ext);
-                    } else {
-                        return result;
-                    }
+                    return with_ext(result);
                 }
             }
         }
@@ -604,11 +701,7 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
                         cleaned = before.to_string();
                         let result = clean_version_suffix(&cleaned, tool_name);
                         // Add the extension back if we had one
-                        if let Some(ext) = extension {
-                            return format!("{}{}", result, ext);
-                        } else {
-                            return result;
-                        }
+                        return with_ext(result);
                     }
                 }
             }
@@ -629,11 +722,7 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
                         cleaned = before.to_string();
                         let result = clean_version_suffix(&cleaned, tool_name);
                         // Add the extension back if we had one
-                        if let Some(ext) = extension {
-                            return format!("{}{}", result, ext);
-                        } else {
-                            return result;
-                        }
+                        return with_ext(result);
                     }
                 }
             }
@@ -644,11 +733,7 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
     let cleaned = clean_version_suffix(&cleaned, tool_name);
 
     // Add the extension back if we had one
-    if let Some(ext) = extension {
-        format!("{}{}", cleaned, ext)
-    } else {
-        cleaned
-    }
+    with_ext(cleaned)
 }
 
 /// Remove version suffixes from binary names.
@@ -661,13 +746,9 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
 /// while ensuring we don't leave an empty or invalid result.
 fn clean_version_suffix(name: &str, tool_name: Option<&str>) -> String {
     // Common version patterns to remove
-    // Matches: -v1.2.3, _v1.2.3, -1.2.3, _1.2.3, etc.
-    // Also handles pre-release versions like -v1.2.3-alpha, -2.0.0-rc1
-    let version_pattern = regex::Regex::new(r"[-_]v?\d+(\.\d+)*(-[a-zA-Z0-9]+(\.\d+)?)?$").unwrap();
-
     if let Some(tool) = tool_name {
         // If we have a tool name, only remove version if what remains matches the tool
-        if let Some(m) = version_pattern.find(name) {
+        if let Some(m) = VERSION_PATTERN.find(name) {
             let without_version = &name[..m.start()];
             if without_version == tool
                 || tool.contains(without_version)
@@ -679,7 +760,7 @@ fn clean_version_suffix(name: &str, tool_name: Option<&str>) -> String {
     } else {
         // No tool name hint, be more conservative
         // Only remove if it looks like a clear version pattern at the end
-        if let Some(m) = version_pattern.find(name) {
+        if let Some(m) = VERSION_PATTERN.find(name) {
             let without_version = &name[..m.start()];
             // Make sure we're not left with nothing or just a dash/underscore
             if !without_version.is_empty()
@@ -887,8 +968,7 @@ size = "5120"
         // Test that generic fallback works when no platform-specific values exist
         let checksum = lookup_platform_key(&tool_opts, "checksum")
             .or_else(|| tool_opts.get("checksum").cloned());
-        let size =
-            lookup_platform_key(&tool_opts, "size").or_else(|| tool_opts.get("size").cloned());
+        let size = lookup_with_fallback(&tool_opts, "size");
 
         assert_eq!(checksum, Some("blake3:generic123".to_string()));
         assert_eq!(size, Some("512".to_string()));
@@ -987,7 +1067,7 @@ bin = "tool.exe"
         };
 
         // Test that platform-specific bin takes precedence, or falls back to generic
-        let bin = lookup_platform_key(&tool_opts, "bin").or_else(|| tool_opts.get("bin").cloned());
+        let bin = lookup_with_fallback(&tool_opts, "bin");
 
         assert!(bin.is_some());
         let bin_value = bin.unwrap();
