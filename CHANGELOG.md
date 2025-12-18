@@ -1,5 +1,27 @@
 # Changelog
 
+## [2025.12.12](https://github.com/jdx/mise/compare/v2025.12.11..v2025.12.12) - 2025-12-18
+
+### 🚀 Features
+
+- **(backend)** add version timestamps for spm, conda, and gem backends by @jdx in [#7383](https://github.com/jdx/mise/pull/7383)
+- **(backend)** add security features to github backend by @jdx in [#7387](https://github.com/jdx/mise/pull/7387)
+- **(ruby)** add GitHub attestation verification for precompiled binaries by @jdx in [#7382](https://github.com/jdx/mise/pull/7382)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** improve security feature detection by @jdx in [#7385](https://github.com/jdx/mise/pull/7385)
+- **(github)** use version_prefix when fetching release for SLSA verification by @jdx in [#7391](https://github.com/jdx/mise/pull/7391)
+
+### 🚜 Refactor
+
+- **(vfox)** remove submodules, embed plugins directly by @jdx in [#7389](https://github.com/jdx/mise/pull/7389)
+
+### 🧪 Testing
+
+- **(registry)** add final ci job as merge gate by @jdx in [#7390](https://github.com/jdx/mise/pull/7390)
+- split unit job to speed up macOS CI by @jdx in [#7388](https://github.com/jdx/mise/pull/7388)
+
 ## [2025.12.11](https://github.com/jdx/mise/compare/v2025.12.10..v2025.12.11) - 2025-12-18
 
 ### 🚀 Features
