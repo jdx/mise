@@ -26,7 +26,7 @@ export default withMermaid(
       logo: "/logo.svg",
       outline: "deep",
       nav: [
-        { text: "mise-tools", link: "https://mise-tools.jdx.dev/" },
+        { text: "mise-versions", link: "https://mise-versions.jdx.dev/" },
         { text: "Dev Tools", link: "/dev-tools/" },
         { text: "Environments", link: "/environments/" },
         { text: "Tasks", link: "/tasks/" },

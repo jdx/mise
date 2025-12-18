@@ -1605,7 +1605,7 @@ default = true
 description = "Send anonymous download statistics when installing tools."
 docs = """
 When enabled, mise sends anonymous download statistics to mise-versions.jdx.dev after
-successfully installing a tool. This helps show tool popularity on [mise-tools.jdx.dev](https://mise-tools.jdx.dev).
+successfully installing a tool. This helps show tool popularity on [mise-versions.jdx.dev](https://mise-versions.jdx.dev).
 
 Data collected:
 - Tool name and version
