@@ -82,12 +82,13 @@ impl Backend for RustPlugin {
             .await?
             .into_iter()
             .map(|r| VersionInfo {
+                release_url: Some(format!("https://releases.rs/docs/{}/", r.tag_name)),
                 version: r.tag_name,
                 created_at: Some(r.created_at),
-                ..Default::default()
             })
             .rev()
             .chain(vec![
+                // Special channels don't have release URLs since they're not actual releases
                 VersionInfo {
                     version: "nightly".into(),
                     ..Default::default()
