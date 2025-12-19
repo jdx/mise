@@ -919,8 +919,26 @@ backends = [
 description = "The Codefresh CLI provides a full and flexible interface to interact with Codefresh"
 
 [tools.codeql]
-backends = ["asdf:mise-plugins/mise-codeql"]
 description = "CodeQL CLI"
+test = ["codeql --version", "CodeQL command-line toolchain release {{version}}"]
+
+[[tools.codeql.backends]]
+full = "github:github/codeql-cli-binaries[bin_path=codeql]"
+
+[tools.codeql.backends.options.platforms.macos-x64]
+asset_pattern = "codeql-osx64.zip"
+
+[tools.codeql.backends.options.platforms.macos-arm64]
+asset_pattern = "codeql-osx64.zip"
+
+[tools.codeql.backends.options.platforms.linux-x64]
+asset_pattern = "codeql-linux64.zip"
+
+[tools.codeql.backends.options.platforms.windows-x64]
+asset_pattern = "codeql-win64.zip"
+
+[[tools.codeql.backends]]
+full = "asdf:mise-plugins/mise-codeql"
 
 [tools.coder]
 backends = ["aqua:coder/coder", "asdf:mise-plugins/asdf-coder"]
