@@ -3926,7 +3926,7 @@ description = "A command line utility to work with Sentry"
 test = ["sentry-cli --version", "sentry-cli {{version}}"]
 
 [tools.serverless]
-backends = ["asdf:mise-plugins/mise-serverless"]
+backends = ["npm:serverless", "asdf:mise-plugins/mise-serverless"]
 description = "Serverless Framework"
 
 [tools.setup-envtest]
