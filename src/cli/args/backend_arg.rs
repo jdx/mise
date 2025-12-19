@@ -417,8 +417,8 @@ mod tests {
 
         #[cfg(unix)]
         {
-            asdf("asdf:poetry", "asdf:poetry", "poetry");
-            asdf("poetry", "asdf:mise-plugins/mise-poetry", "poetry");
+            asdf("asdf:clojure", "asdf:clojure", "clojure");
+            asdf("clojure", "asdf:mise-plugins/mise-clojure", "clojure");
         }
         cargo("cargo:eza", "cargo:eza", "eza");
         // core("node", "node", "node");
