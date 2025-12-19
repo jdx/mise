@@ -4849,8 +4849,10 @@ description = "A little beautifier tool for xcodebuild"
 test = ["which xcbeautify", "xcbeautify"]
 
 [tools.xchtmlreport]
-backends = ["asdf:mise-plugins/mise-xchtmlreport"]
+backends = ["github:XCTestHTMLReport/XCTestHTMLReport"]
 description = "Xcode-like HTML report for Unit and UI Tests"
+os = ["macos"]
+test = ["xchtmlreport --version", "{{version}}"]
 
 [tools.xcodegen]
 backends = ["github:yonaskolb/XcodeGen"]
