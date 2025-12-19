@@ -781,10 +781,9 @@ pub trait Backend: Debug + Send + Sync {
         let _lock = lock_file::get(&tv.install_path(), ctx.force)?;
 
         // Double-checked (locking) that it wasn't installed while we were waiting for the lock
-        if self.is_version_installed(&ctx.config, &tv, true)
-            && !ctx.force {
-                return Ok(tv);
-            }
+        if self.is_version_installed(&ctx.config, &tv, true) && !ctx.force {
+            return Ok(tv);
+        }
 
         self.create_install_dirs(&tv)?;
 
