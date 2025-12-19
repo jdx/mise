@@ -3423,7 +3423,8 @@ backends = ["asdf:mise-plugins/mise-pipelight"]
 description = "Tiny automation pipelines. Bring CI/CD to the smallest projects. Self-hosted, Lightweight, CLI only"
 
 [tools.pipenv]
-backends = ["pipx:pipenv"]
+backends = ["vfox:mise-plugins/vfox-pipenv", "pipx:pipenv"]
+depends = ["python"]
 description = "Python Development Workflow for Humans"
 test = ["pipenv --version", "pipenv, version {{version}}"]
 
