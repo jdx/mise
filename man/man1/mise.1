@@ -447,7 +447,7 @@ Create a new task
 Display a tree visualization of a dependency graph
 .TP
 \fBtasks edit\fR
-Edit a tasks with $EDITOR
+Edit a task with $EDITOR
 .TP
 \fBtasks info\fR
 Get information about a task
@@ -1732,9 +1732,9 @@ Removes all shims before reshimming
 .SH "MISE RUN"
 Run task(s)
 
-This command will run a tasks, or multiple tasks in parallel.
+This command will run a task, or multiple tasks in parallel.
 Tasks may have dependencies on other tasks or on source files.
-If source is configured on a tasks, it will only run if the source
+If source is configured on a task, it will only run if the source
 files have changed.
 
 Tasks can be defined in mise.toml or as standalone scripts.
@@ -1781,7 +1781,7 @@ Number of tasks to run in parallel
 Configure with `jobs` config or `MISE_JOBS` env var
 .TP
 \fB\-n, \-\-dry\-run\fR
-Don't actually run the tasks(s), just print them in order of execution
+Don't actually run the task(s), just print them in order of execution
 .TP
 \fB\-o, \-\-output\fR \fI<OUTPUT>\fR
 Change how tasks information is output when running tasks
@@ -2363,9 +2363,9 @@ Tasks to show dependencies for
 Can specify multiple tasks by separating with spaces
 e.g.: mise tasks deps lint test check
 .SH "MISE TASKS EDIT"
-Edit a tasks with $EDITOR
+Edit a task with $EDITOR
 
-The tasks will be created as a standalone script if it does not already exist.
+The task will be created as a standalone script if it does not already exist.
 .PP
 \fBUsage:\fR mise tasks edit [OPTIONS] <TASK>
 .PP
@@ -2373,12 +2373,12 @@ The tasks will be created as a standalone script if it does not already exist.
 .PP
 .TP
 \fB\-p, \-\-path\fR
-Display the path to the tasks instead of editing it
+Display the path to the task instead of editing it
 \fBArguments:\fR
 .PP
 .TP
 \fB<TASK>\fR
-Tasks to edit
+Task to edit
 .SH "MISE TASKS INFO"
 Get information about a task
 .PP
@@ -2443,9 +2443,9 @@ Sort order. Default is asc.
 .SH "MISE TASKS RUN"
 Run task(s)
 
-This command will run a tasks, or multiple tasks in parallel.
+This command will run a task, or multiple tasks in parallel.
 Tasks may have dependencies on other tasks or on source files.
-If source is configured on a tasks, it will only run if the source
+If source is configured on a task, it will only run if the source
 files have changed.
 
 Tasks can be defined in mise.toml or as standalone scripts.
@@ -2492,7 +2492,7 @@ Number of tasks to run in parallel
 Configure with `jobs` config or `MISE_JOBS` env var
 .TP
 \fB\-n, \-\-dry\-run\fR
-Don't actually run the tasks(s), just print them in order of execution
+Don't actually run the task(s), just print them in order of execution
 .TP
 \fB\-o, \-\-output\fR \fI<OUTPUT>\fR
 Change how tasks information is output when running tasks
@@ -2952,7 +2952,7 @@ Tasks to run
 .TP
 \fB\-g, \-\-glob\fR \fI<GLOB>\fR
 Files to watch
-Defaults to sources from the tasks(s)
+Defaults to sources from the task(s)
 .TP
 \fB\-\-skip\-deps\fR
 Run only the specified tasks skipping all dependencies

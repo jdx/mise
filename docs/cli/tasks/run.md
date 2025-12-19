@@ -7,9 +7,9 @@
 
 Run task(s)
 
-This command will run a tasks, or multiple tasks in parallel.
+This command will run a task, or multiple tasks in parallel.
 Tasks may have dependencies on other tasks or on source files.
-If source is configured on a tasks, it will only run if the source
+If source is configured on a task, it will only run if the source
 files have changed.
 
 Tasks can be defined in mise.toml or as standalone scripts.
@@ -71,7 +71,7 @@ Configure with `jobs` config or `MISE_JOBS` env var
 
 ### `-n --dry-run`
 
-Don't actually run the tasks(s), just print them in order of execution
+Don't actually run the task(s), just print them in order of execution
 
 ### `-o --output <OUTPUT>`
 

@@ -24,9 +24,9 @@ use tokio::sync::Mutex;
 
 /// Run task(s)
 ///
-/// This command will run a tasks, or multiple tasks in parallel.
+/// This command will run a task, or multiple tasks in parallel.
 /// Tasks may have dependencies on other tasks or on source files.
-/// If source is configured on a tasks, it will only run if the source
+/// If source is configured on a task, it will only run if the source
 /// files have changed.
 ///
 /// Tasks can be defined in mise.toml or as standalone scripts.
@@ -98,7 +98,7 @@ pub struct Run {
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
-    /// Don't actually run the tasks(s), just print them in order of execution
+    /// Don't actually run the task(s), just print them in order of execution
     #[clap(long, short = 'n', verbatim_doc_comment)]
     pub dry_run: bool,
 

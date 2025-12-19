@@ -146,7 +146,7 @@ alias = 'b' # `mise run b`
 ```shell
 ❯ mise run
 Tasks
-# Select a tasks to run
+# Select a task to run
 # > build  Build the CLI
 #   test   Run the tests
 ```

@@ -5,17 +5,17 @@ use eyre::Result;
 use indoc::formatdoc;
 use std::path::MAIN_SEPARATOR_STR;
 
-/// Edit a tasks with $EDITOR
+/// Edit a task with $EDITOR
 ///
-/// The tasks will be created as a standalone script if it does not already exist.
+/// The task will be created as a standalone script if it does not already exist.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TasksEdit {
-    /// Tasks to edit
+    /// Task to edit
     #[clap()]
     task: String,
 
-    /// Display the path to the tasks instead of editing it
+    /// Display the path to the task instead of editing it
     #[clap(long, short, verbatim_doc_comment)]
     path: bool,
 }
