@@ -26,24 +26,36 @@ function PLUGIN:PostInstall(ctx)
     local temp_path = root_path .. "-temp"
     local target_path = file.join_path(root_path, "cmdline-tools", version)
 
-    -- Move current rootPath to temp location
-    os.execute("mv " .. root_path .. " " .. temp_path)
+    local os_type = RUNTIME.osType
+    if os_type == "windows" then
+        local robocopy = file.join_path(os.getenv("SystemRoot"), "System32", "robocopy.exe")
+        os.execute("move " .. root_path .. " " .. temp_path)
+        os.execute(robocopy .. " /e /move /ndl /nfl " .. temp_path .. " " .. target_path)
 
-    -- Recreate rootPath with proper structure
-    os.execute("mkdir -p " .. target_path)
+        local sdkmanager_path = file.join_path(target_path, "bin", "sdkmanager.bat")
+        if not file.exists(sdkmanager_path) then
+            error("Installation verification failed: sdkmanager not found at " .. sdkmanager_path)
+        end
+    else
+        -- Move current rootPath to temp location
+        os.execute("mv " .. root_path .. " " .. temp_path)
 
-    -- Move contents from temp to target
-    os.execute("mv " .. temp_path .. "/* " .. target_path .. "/")
+        -- Recreate rootPath with proper structure
+        os.execute("mkdir -p " .. target_path)
 
-    -- Clean up temp
-    os.execute("rm -rf " .. temp_path)
+        -- Move contents from temp to target
+        os.execute("mv " .. temp_path .. "/* " .. target_path .. "/")
 
-    -- Verify installation
-    local sdkmanager_path = file.join_path(target_path, "bin", "sdkmanager")
-    if not file.exists(sdkmanager_path) then
-        error("Installation verification failed: sdkmanager not found at " .. sdkmanager_path)
+        -- Clean up temp
+        os.execute("rm -rf " .. temp_path)
+
+        -- Verify installation
+        local sdkmanager_path = file.join_path(target_path, "bin", "sdkmanager")
+        if not file.exists(sdkmanager_path) then
+            error("Installation verification failed: sdkmanager not found at " .. sdkmanager_path)
+        end
+
+        -- Make sure binaries are executable (for Unix systems)
+        os.execute("chmod +x " .. file.join_path(target_path, "bin", "*") .. " 2>/dev/null || true")
     end
-
-    -- Make sure binaries are executable (for Unix systems)
-    os.execute("chmod +x " .. file.join_path(target_path, "bin", "*") .. " 2>/dev/null || true")
 end
