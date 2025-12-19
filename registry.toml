@@ -5014,5 +5014,19 @@ description = "A smarter cd command. Supports all major shells"
 test = ["zoxide --version", "zoxide {{version}}"]
 
 [tools.zprint]
-backends = ["asdf:mise-plugins/mise-zprint"]
 description = "Executables, uberjar, and library to beautifully format Clojure and Clojurescript source code and s-expressions"
+
+[[tools.zprint.backends]]
+full = "github:kkinnear/zprint[bin=zprint]"
+
+[tools.zprint.backends.options.platforms.macos-arm64]
+asset_pattern = "zprintma-{version}"
+
+[tools.zprint.backends.options.platforms.macos-x64]
+asset_pattern = "zprintm-{version}"
+
+[tools.zprint.backends.options.platforms.linux-x64]
+asset_pattern = "zprintl-{version}"
+
+[[tools.zprint.backends]]
+full = "asdf:mise-plugins/mise-zprint"
