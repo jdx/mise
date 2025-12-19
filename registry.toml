@@ -3422,9 +3422,9 @@ backends = ["asdf:mise-plugins/mise-pipelight"]
 description = "Tiny automation pipelines. Bring CI/CD to the smallest projects. Self-hosted, Lightweight, CLI only"
 
 [tools.pipenv]
-backends = ["asdf:mise-plugins/mise-pipenv"]
-depends = ["python"]
+backends = ["pipx:pipenv"]
 description = "Python Development Workflow for Humans"
+test = ["pipenv --version", "pipenv, version {{version}}"]
 
 [tools.pipx]
 backends = ["aqua:pypa/pipx", "asdf:mise-plugins/mise-pipx"]
