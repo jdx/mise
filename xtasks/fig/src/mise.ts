@@ -2689,13 +2689,13 @@ const completionSpec: Fig.Spec = {
             {
               name: ["-p", "--path"],
               description:
-                "Display the path to the tasks instead of editing it",
+                "Display the path to the task instead of editing it",
               isRepeatable: false,
             },
           ],
           args: {
             name: "task",
-            description: "Tasks to edit",
+            description: "Task to edit",
             generators: simpleTaskGenerator,
             debounce: true,
           },

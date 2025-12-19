@@ -6,19 +6,19 @@
 
 Edit a task with $EDITOR
 
-The tasks will be created as a standalone script if it does not already exist.
+The task will be created as a standalone script if it does not already exist.
 
 ## Arguments
 
 ### `<TASK>`
 
-Tasks to edit
+Task to edit
 
 ## Flags
 
 ### `-p --path`
 
-Display the path to the tasks instead of editing it
+Display the path to the task instead of editing it
 
 Examples:
 

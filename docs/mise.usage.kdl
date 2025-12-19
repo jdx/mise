@@ -1004,14 +1004,14 @@ cmd "tasks" help="[experimental] Manage tasks" {
     cmd "edit" help="[experimental] Edit a task with $EDITOR" {
         long_help r"[experimental] Edit a task with $EDITOR
 
-The tasks will be created as a standalone script if it does not already exist."
+The task will be created as a standalone script if it does not already exist."
         after_long_help r"Examples:
 
     $ mise tasks edit build
     $ mise tasks edit test
 "
-        flag "-p --path" help="Display the path to the tasks instead of editing it"
-        arg "<TASK>" help="Tasks to edit"
+        flag "-p --path" help="Display the path to the task instead of editing it"
+        arg "<TASK>" help="Task to edit"
     }
     cmd "ls" help="[experimental] List available tasks to execute\nThese may be included from the config file or from the project's .mise/tasks directory\nmise will merge all tasks from all parent directories into this list." {
         long_help r"[experimental] List available tasks to execute
