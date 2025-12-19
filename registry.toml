@@ -3926,7 +3926,7 @@ backends = ["asdf:mise-plugins/mise-hashicorp"]
 description = "Serf is a decentralized solution for service discovery and orchestration that is lightweight, highly available, and fault tolerant"
 
 [tools.serverless]
-backends = ["asdf:mise-plugins/mise-serverless"]
+backends = ["npm:serverless", "asdf:mise-plugins/mise-serverless"]
 description = "Serverless Framework"
 
 [tools.setup-envtest]
