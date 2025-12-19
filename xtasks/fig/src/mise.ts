@@ -2688,8 +2688,7 @@ const completionSpec: Fig.Spec = {
           options: [
             {
               name: ["-p", "--path"],
-              description:
-                "Display the path to the task instead of editing it",
+              description: "Display the path to the task instead of editing it",
               isRepeatable: false,
             },
           ],
