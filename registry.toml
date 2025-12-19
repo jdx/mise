@@ -1931,7 +1931,10 @@ backends = ["asdf:mise-plugins/mise-gradle-profiler"]
 description = "A tool for gathering profiling and benchmarking information for Gradle builds"
 
 [tools.grails]
-backends = ["asdf:mise-plugins/mise-grails"]
+backends = [
+  "asdf:mise-plugins/mise-grails",
+  "github:apache/grails-core[asset_pattern=apache-grails-{version}-bin.zip,bin_path=apache-grails-{version}-bin/bin]",
+]
 description = "A powerful Groovy-based web application framework for the JVM built on top of Spring Boot"
 
 [tools.grain]
