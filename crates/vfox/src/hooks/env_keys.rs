@@ -1,5 +1,5 @@
 use mlua::prelude::LuaError;
-use mlua::{FromLua, IntoLua, Lua, Value};
+use mlua::{FromLua, IntoLua, Lua, LuaSerdeExt, Value};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -14,16 +14,20 @@ pub struct EnvKey {
 }
 
 #[derive(Debug)]
-pub struct EnvKeysContext {
+pub struct EnvKeysContext<T: serde::Serialize> {
     pub args: Vec<String>,
     pub version: String,
     pub path: PathBuf,
     pub main: SdkInfo,
     pub sdk_info: BTreeMap<String, SdkInfo>,
+    pub options: T,
 }
 
 impl Plugin {
-    pub async fn env_keys(&self, ctx: EnvKeysContext) -> Result<Vec<EnvKey>> {
+    pub async fn env_keys<T: serde::Serialize>(
+        &self,
+        ctx: EnvKeysContext<T>,
+    ) -> Result<Vec<EnvKey>> {
         debug!("[vfox:{}] env_keys", &self.name);
         let env_keys = self
             .eval_async(chunk! {
@@ -36,13 +40,14 @@ impl Plugin {
     }
 }
 
-impl IntoLua for EnvKeysContext {
+impl<T: serde::Serialize> IntoLua for EnvKeysContext<T> {
     fn into_lua(self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.set("version", self.version)?;
         table.set("path", self.path.to_string_lossy().to_string())?;
         table.set("sdkInfo", self.sdk_info)?;
         table.set("main", self.main)?;
+        table.set("options", lua.to_value(&self.options)?)?;
         Ok(Value::Table(table))
     }
 }

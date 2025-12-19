@@ -271,7 +271,9 @@ impl VfoxBackend {
                         .await
                         .wrap_err("Backend exec env method failed")?
                 } else {
-                    vfox.env_keys(&self.pathname, &tv.version).await?
+                    let opts = tv.request.options();
+                    vfox.env_keys(&self.pathname, &tv.version, &opts.opts)
+                        .await?
                 };
 
                 Ok(env_keys
