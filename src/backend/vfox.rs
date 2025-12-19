@@ -245,12 +245,20 @@ impl VfoxBackend {
         config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
-        let key = tv.to_string();
+        let opts = tv.request.options();
+        let opts_hash = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            opts.hash(&mut hasher);
+            hasher.finish()
+        };
+        let key = format!("{}:{:x}", tv, opts_hash);
+        let cache_file = format!("exec_env_{:x}.msgpack.z", opts_hash);
         if !self.exec_env_cache.read().await.contains_key(&key) {
             let mut caches = self.exec_env_cache.write().await;
             caches.insert(
                 key.clone(),
-                CacheManagerBuilder::new(tv.cache_path().join("exec_env.msgpack.z"))
+                CacheManagerBuilder::new(tv.cache_path().join(&cache_file))
                     .with_fresh_file(dirs::DATA.to_path_buf())
                     .with_fresh_file(self.plugin.plugin_path.to_path_buf())
                     .with_fresh_file(self.ba().installs_path.to_path_buf())
@@ -271,7 +279,8 @@ impl VfoxBackend {
                         .await
                         .wrap_err("Backend exec env method failed")?
                 } else {
-                    vfox.env_keys(&self.pathname, &tv.version).await?
+                    vfox.env_keys(&self.pathname, &tv.version, &opts.opts)
+                        .await?
                 };
 
                 Ok(env_keys

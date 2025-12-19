@@ -197,7 +197,12 @@ impl Vfox {
         self.get_sdk(sdk)?.get_metadata()
     }
 
-    pub async fn env_keys(&self, sdk: &str, version: &str) -> Result<Vec<EnvKey>> {
+    pub async fn env_keys<T: serde::Serialize>(
+        &self,
+        sdk: &str,
+        version: &str,
+        options: T,
+    ) -> Result<Vec<EnvKey>> {
         debug!("Getting env keys for {sdk} version {version}");
         let sdk = self.get_sdk(sdk)?;
         let sdk_info = sdk.sdk_info(
@@ -210,6 +215,7 @@ impl Vfox {
             path: sdk_info.path.clone(),
             sdk_info: BTreeMap::from([(sdk_info.name.clone(), sdk_info.clone())]),
             main: sdk_info,
+            options,
         };
         sdk.env_keys(ctx).await
     }
@@ -445,7 +451,14 @@ mod tests {
     async fn test_env_keys() {
         let vfox = Vfox::test();
         // dummy plugin already exists in plugins/dummy, no need to install
-        let keys = vfox.env_keys("dummy", "1.0.0").await.unwrap();
+        let keys = vfox
+            .env_keys(
+                "dummy",
+                "1.0.0",
+                serde_json::Value::Object(Default::default()),
+            )
+            .await
+            .unwrap();
         let output = format!("{keys:?}").replace(
             &vfox.install_dir.to_string_lossy().to_string(),
             "<INSTALL_DIR>",
