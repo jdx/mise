@@ -3564,7 +3564,7 @@ backends = [
 description = "Podman: A tool for managing OCI containers and pods"
 
 [tools.poetry]
-backends = ["pipx:poetry"]
+backends = ["vfox:mise-plugins/vfox-poetry", "pipx:poetry"]
 description = "Python packaging and dependency management made easy"
 test = ["poetry --version", "Poetry (version {{version}})"]
 
