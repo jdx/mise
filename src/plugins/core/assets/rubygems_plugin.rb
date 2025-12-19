@@ -8,7 +8,7 @@ if defined?(RbConfig::CONFIG)
   ruby_pkgconfig = File.join(RbConfig::CONFIG["prefix"], "lib", "pkgconfig")
   if File.directory?(ruby_pkgconfig)
     current = ENV["PKG_CONFIG_PATH"]
-    ENV["PKG_CONFIG_PATH"] = current ? "#{ruby_pkgconfig}:#{current}" : ruby_pkgconfig
+    ENV["PKG_CONFIG_PATH"] = current ? "#{ruby_pkgconfig}#{File::PATH_SEPARATOR}#{current}" : ruby_pkgconfig
   end
 end
 
