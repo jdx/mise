@@ -1579,8 +1579,9 @@ backends = ["aqua:superfly/flyctl", "asdf:chessmango/asdf-flyctl"]
 description = "Command line tools for fly.io services"
 
 [tools.flyway]
-backends = ["asdf:mise-plugins/mise-flyway"]
+backends = ["github:flyway/flyway"]
 description = "Flyway by Redgate • Database Migrations Made Easy"
+test = ["flyway --version", "{{version}}"]
 
 [tools.foundry]
 backends = ["aqua:foundry-rs/foundry"]
