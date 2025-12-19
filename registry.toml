@@ -2938,8 +2938,10 @@ description = "Apache Maven core"
 test = ["mvn --version", "Apache Maven {{version}}"]
 
 [tools.mc]
-backends = ["asdf:mise-plugins/mise-mc"]
+aliases = ["minio-client"]
+backends = ["aqua:minio/mc"]
 description = "Unix like utilities for object store (minio)"
+test = ["mc --version", "mc version RELEASE"]
 
 [tools.mdbook]
 backends = [
