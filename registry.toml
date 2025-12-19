@@ -2101,8 +2101,9 @@ test = ["helmwave version", "{{version}}"]
 
 [tools.heroku]
 aliases = ["heroku-cli"]
-backends = ["asdf:mise-plugins/mise-heroku-cli"]
+backends = ["npm:heroku"]
 description = "The Heroku Command Line Interface (CLI) is an essential part of using Heroku. With it, you can create and manage Heroku apps directly from the terminal"
+test = ["heroku --version", "heroku/{{version}}"]
 
 [tools.hexyl]
 backends = ["aqua:sharkdp/hexyl", "cargo:hexyl"]
