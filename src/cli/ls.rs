@@ -12,6 +12,7 @@ use crate::cli::args::BackendArg;
 use crate::cli::prune;
 use crate::config;
 use crate::config::Config;
+use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolSource, ToolVersion, Toolset};
 use crate::ui::table::MiseTable;
 
@@ -339,9 +340,15 @@ impl Row {
 async fn json_tool_version_from(config: &Arc<Config>, row: RuntimeRow<'_>) -> JSONToolVersion {
     let (ls, p, tv, source) = row;
     let vs: VersionStatus = version_status_from(config, (ls, p.as_ref(), &tv, &source)).await;
+    let install_path = tv.install_path();
     JSONToolVersion {
-        symlinked_to: p.symlink_path(&tv),
-        install_path: tv.install_path(),
+        // Check for symlinks directly (separate from upgrade-skip logic in symlink_path)
+        symlinked_to: if install_path.is_symlink() && !is_runtime_symlink(&install_path) {
+            Some(install_path.clone())
+        } else {
+            None
+        },
+        install_path,
         version: tv.version.clone(),
         requested_version: if source.is_unknown() {
             None
@@ -374,7 +381,9 @@ async fn version_status_from(
     config: &Arc<Config>,
     (ls, p, tv, source): (&Ls, &dyn Backend, &ToolVersion, &ToolSource),
 ) -> VersionStatus {
-    if p.symlink_path(tv).is_some() {
+    // Check for symlinks directly for display purposes (separate from upgrade-skip logic)
+    let install_path = tv.install_path();
+    if install_path.is_symlink() && !is_runtime_symlink(&install_path) {
         VersionStatus::Symlink(tv.version.clone(), !source.is_unknown())
     } else if !p.is_version_installed(config, tv, true) {
         VersionStatus::Missing(tv.version.clone())
