@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 
-# Test that concurrent processes installing the same tool doesn't corrupt 
+# Test that concurrent processes installing the same tool doesn't corrupt
 # the other ongoing `exec`s.
 # This tests the race condition fix where Process B would wipe Process A's install
 
 set -euo pipefail
-
 
 mise use dummy@2.0.0
 
@@ -13,8 +12,8 @@ mise use dummy@2.0.0
 mise uninstall dummy --all 2>/dev/null || true
 
 # Launch multiple processes trying to install the same tool concurrently
-for i in {1..4}; do
-    mise x -- dummy --version &
+for _ in {1..4}; do
+	mise x -- dummy --version &
 done
 
 # Wait for all background processes to complete
