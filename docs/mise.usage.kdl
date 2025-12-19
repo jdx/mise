@@ -805,7 +805,7 @@ The name of the script will be the name of the tasks.
     $ mise run lint ::: test ::: check
 
     # Execute multiple tasks each with their own arguments.
-    $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+    $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 "#
     flag "-C --cd" help="Change to this directory before executing the command" {
         arg "<CD>"
@@ -1079,7 +1079,7 @@ The name of the script will be the name of the tasks.
     $ mise run lint ::: test ::: check
 
     # Execute multiple tasks each with their own arguments.
-    $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+    $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 "#
         flag "-C --cd" help="Change to this directory before executing the command" {
             arg "<CD>"

@@ -152,5 +152,5 @@ $ mise run test --raw
 $ mise run lint ::: test ::: check
 
 # Execute multiple tasks each with their own arguments.
-$ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+$ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 ```

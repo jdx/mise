@@ -37,4 +37,5 @@ _mise_hook
 
 # assert
 assert "poetry --version" "Poetry (version 1.7.1)"
-assert "poetry run -- python3 -V" "Python 3.12.0"
+# Use assert_contains because older Poetry versions may print deprecation warnings
+assert_contains "poetry run -- python3 -V" "Python 3.12.0"
