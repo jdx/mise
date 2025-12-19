@@ -894,8 +894,10 @@ description = "A distributed SQL database designed for speed, scale, and surviva
 test = ["cockroach version", "v{{version}}"]
 
 [tools.cocoapods]
-backends = ["asdf:mise-plugins/mise-cocoapods"]
+backends = ["gem:cocoapods"]
 description = "CocoaPods is a dependency manager for Swift and Objective-C Cocoa projects"
+os = ["macos"]
+test = ["pod --version", "{{version}}"]
 
 [tools.cocogitto]
 backends = ["aqua:cocogitto/cocogitto"]
