@@ -23,14 +23,20 @@ runs:
         fi
         response=$(curl -sf -H "Authorization: Bearer ${{ inputs.api-secret }}" \
           "https://mise-versions.jdx.dev/api/token" || true)
-        if [ -n "$response" ]; then
-          token=$(echo "$response" | jq -r '.token')
-          # Validate token looks like a GitHub token (starts with gh and has reasonable length)
-          if [[ "$token" =~ ^gh[a-z]_[A-Za-z0-9_]+$ ]] && [ ${#token} -ge 20 ]; then
-            echo "::add-mask::$token"
-            echo "token=$token" >> "$GITHUB_OUTPUT"
-            echo "token_id=$(echo "$response" | jq -r '.token_id')" >> "$GITHUB_OUTPUT"
-          else
-            echo "Invalid or missing token in response, skipping"
-          fi
+        if [ -z "$response" ]; then
+          exit 0
         fi
+        token=$(echo "$response" | jq -r '.token')
+        echo "::add-mask::$token"
+        # Validate token looks like a GitHub token (starts with gh and has reasonable length)
+        if ! [[ "$token" =~ ^gh[a-z]_[A-Za-z0-9_]+$ ]] || [ ${#token} -lt 20 ]; then
+          echo "Invalid or missing token in response, skipping"
+          exit 0
+        fi
+        # Validate the token works by calling GitHub API
+        if ! curl -sf -H "Authorization: token $token" "https://api.github.com/rate_limit" > /dev/null; then
+          echo "Token failed GitHub API validation, skipping"
+          exit 0
+        fi
+        echo "token=$token" >> "$GITHUB_OUTPUT"
+        echo "token_id=$(echo "$response" | jq -r '.token_id')" >> "$GITHUB_OUTPUT"
