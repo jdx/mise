@@ -1608,7 +1608,7 @@ description = ":cherry_blossom: A command-line fuzzy finder"
 test = ["fzf --version", "{{version}}"]
 
 [tools.gallery-dl]
-backends = ["asdf:mise-plugins/mise-gallery-dl"]
+backends = ["pipx:gallery-dl"]
 description = "Command-line program to download image galleries and collections from several image hosting sites"
 
 [tools.gam]
