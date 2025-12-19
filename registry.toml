@@ -3711,8 +3711,9 @@ backends = [
 description = "A strongly-typed language that compiles to JavaScript"
 
 [tools.purty]
-backends = ["asdf:mise-plugins/mise-purty"]
+backends = ["npm:purty"]
 description = "PureScript pretty-printer"
+test = ["purty version", "Purty version: {{version}}"]
 
 [tools.python]
 backends = ["core:python"]
