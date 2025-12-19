@@ -150,7 +150,7 @@ jobs:
       - build
       - list-changed-tools
       - test-tool
-    if: always()
+    if: ${{ !cancelled() }}
     steps:
       - name: Check CI job results
         run: |
