@@ -1,5 +1,17 @@
 # frozen_string_literal: true
 
+# Set PKG_CONFIG_PATH to include Ruby's bundled pkg-config files
+# This allows native gem extensions (openssl, psych, etc.) to find
+# headers and libraries from precompiled Ruby binaries
+# See: https://github.com/jdx/mise/discussions/7268
+if defined?(RbConfig::CONFIG)
+  ruby_pkgconfig = File.join(RbConfig::CONFIG["prefix"], "lib", "pkgconfig")
+  if File.directory?(ruby_pkgconfig)
+    current = ENV["PKG_CONFIG_PATH"]
+    ENV["PKG_CONFIG_PATH"] = current ? "#{ruby_pkgconfig}#{File::PATH_SEPARATOR}#{current}" : ruby_pkgconfig
+  end
+end
+
 module ReshimInstaller
   class << self
     def debug?
