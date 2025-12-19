@@ -1317,8 +1317,30 @@ description = ":dog: Command-line DNS Client for Humans. Written in Golang"
 test = ["doggo --version | awk '{print $1}'", "v{{version}}"]
 
 [tools.dome]
-backends = ["asdf:mise-plugins/mise-dome"]
 description = "DOME is a framework for making 2D games using the Wren programming language which can be played across platforms"
+os = ["linux", "macos", "windows"]
+
+[[tools.dome.backends]]
+full = "github:domeengine/dome"
+
+[tools.dome.backends.options.platforms.macos-x64]
+asset_pattern = "dome-v{version}-macosx-all.zip"
+bin_path = "dome-macosx-all"
+
+[tools.dome.backends.options.platforms.macos-arm64]
+asset_pattern = "dome-v{version}-macosx-all.zip"
+bin_path = "dome-macosx-all"
+
+[tools.dome.backends.options.platforms.linux-x64]
+asset_pattern = "dome-v{version}-linux-x64.zip"
+bin_path = "dome-linux-x64"
+
+[tools.dome.backends.options.platforms.windows-x64]
+asset_pattern = "dome-v{version}-windows-x64.zip"
+bin_path = "dome-windows-x64"
+
+[[tools.dome.backends]]
+full = "asdf:mise-plugins/mise-dome"
 
 [tools.doppler]
 backends = [
@@ -1500,8 +1522,9 @@ description = "Pulumi ESC is a centralized, secure service for environments, sec
 test = ["esc version", "v{{version}}"]
 
 [tools.esy]
-backends = ["asdf:mise-plugins/mise-esy"]
+backends = ["npm:esy"]
 description = "Easy package management for native Reason, OCaml and more"
+test = ["esy --version", "{{version}}"]
 
 [tools.etcd]
 backends = [
@@ -1989,7 +2012,10 @@ backends = ["asdf:mise-plugins/mise-gradle-profiler"]
 description = "A tool for gathering profiling and benchmarking information for Gradle builds"
 
 [tools.grails]
-backends = ["asdf:mise-plugins/mise-grails"]
+backends = [
+  "asdf:mise-plugins/mise-grails",
+  "github:apache/grails-core[asset_pattern=apache-grails-{version}-bin.zip,bin_path=apache-grails-{version}-bin/bin]",
+]
 description = "A powerful Groovy-based web application framework for the JVM built on top of Spring Boot"
 
 [tools.grain]
@@ -3044,7 +3070,10 @@ backends = ["asdf:mise-plugins/mise-meson"]
 description = "Meson is an open source build system meant to be both extremely fast, and, even more importantly, as user friendly as possible"
 
 [tools.micronaut]
-backends = ["asdf:mise-plugins/mise-micronaut"]
+backends = [
+  "github:micronaut-projects/micronaut-starter[exe=mn]",
+  "asdf:mise-plugins/mise-micronaut",
+]
 description = "A modern, JVM-based, full-stack framework for building modular, easily testable microservice and serverless applications"
 
 [tools.mill]
@@ -3481,7 +3510,8 @@ backends = ["asdf:mise-plugins/mise-pipelight"]
 description = "Tiny automation pipelines. Bring CI/CD to the smallest projects. Self-hosted, Lightweight, CLI only"
 
 [tools.pipenv]
-backends = ["pipx:pipenv"]
+backends = ["vfox:mise-plugins/vfox-pipenv", "pipx:pipenv"]
+depends = ["python"]
 description = "Python Development Workflow for Humans"
 test = ["pipenv --version", "pipenv, version {{version}}"]
 
@@ -3535,7 +3565,7 @@ backends = [
 description = "Podman: A tool for managing OCI containers and pods"
 
 [tools.poetry]
-backends = ["pipx:poetry"]
+backends = ["vfox:mise-plugins/vfox-poetry", "pipx:poetry"]
 description = "Python packaging and dependency management made easy"
 test = ["poetry --version", "Poetry (version {{version}})"]
 
