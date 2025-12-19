@@ -656,6 +656,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise run lint ::: test ::: check</bold>
 
     # Execute multiple tasks each with their own arguments.
-    $ <bold>mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2</bold>
+    $ <bold>mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2</bold>
 "#
 );
