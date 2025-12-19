@@ -4850,8 +4850,10 @@ backends = ["asdf:mise-plugins/mise-xchtmlreport"]
 description = "Xcode-like HTML report for Unit and UI Tests"
 
 [tools.xcodegen]
-backends = ["asdf:mise-plugins/mise-xcodegen"]
+backends = ["github:yonaskolb/XcodeGen"]
 description = "A Swift command line tool for generating your Xcode project"
+os = ["macos"]
+test = ["xcodegen --version", "Version: {{version}}"]
 
 [tools.xcodes]
 backends = ["aqua:XcodesOrg/xcodes"]
