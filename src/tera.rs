@@ -91,6 +91,26 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
             }
         },
     );
+    tera.register_function(
+        "haiku",
+        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+            let words = args
+                .get("words")
+                .and_then(Value::as_u64)
+                .unwrap_or(2)
+                .max(1) as usize;
+            let separator = args.get("separator").and_then(Value::as_str).unwrap_or("-");
+            let digits = args.get("digits").and_then(Value::as_u64).unwrap_or(2) as usize;
+
+            let result = xx::rand::haiku(&xx::rand::HaikuOptions {
+                words,
+                separator,
+                digits,
+            });
+
+            Ok(Value::String(result))
+        },
+    );
     tera.register_filter(
         "hash_file",
         move |input: &Value, args: &HashMap<String, Value>| match input {
@@ -537,6 +557,24 @@ mod tests {
         let _config = Config::get().await.unwrap();
         let result = render("{{choice(n=8, alphabet=\"abcdefgh\")}}");
         assert_eq!(result.trim().len(), 8);
+    }
+
+    #[tokio::test]
+    async fn test_haiku() {
+        let _config = Config::get().await.unwrap();
+        // Default: 2 words + number
+        let result = render("{{haiku()}}");
+        let parts: Vec<&str> = result.split('-').collect();
+        assert_eq!(parts.len(), 3);
+        assert!(!parts[0].is_empty());
+        assert!(!parts[1].is_empty());
+        assert!(parts[2].parse::<u32>().is_ok());
+
+        // Custom: 3 words, no digits, underscore separator
+        let result = render("{{haiku(words=3, digits=0, separator=\"_\")}}");
+        let parts: Vec<&str> = result.split('_').collect();
+        assert_eq!(parts.len(), 3);
+        assert!(parts.iter().all(|p| p.parse::<u32>().is_err())); // no numbers
     }
 
     #[tokio::test]

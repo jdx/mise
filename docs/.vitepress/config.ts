@@ -172,6 +172,7 @@ export default withMermaid(
           text: "About",
           items: [
             { text: "About mise", link: "/about" },
+            { text: "Glossary", link: "/glossary" },
             { text: "FAQs", link: "/faq" },
             { text: "Troubleshooting", link: "/troubleshooting" },
             { text: "Tips & Tricks", link: "/tips-and-tricks" },

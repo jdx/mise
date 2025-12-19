@@ -6,10 +6,6 @@ on:
       - release
   pull_request:
     branches: [main]
-    paths:
-      - registry.toml
-      - .github/workflows/registry.yml
-      - src/cli/test_tool.rs
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.pull_request.number || github.event.pull_request.number || 'push' }}
@@ -25,9 +21,33 @@ env:
   GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
 
 jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      registry-changed: ${{ steps.check.outputs.registry-changed }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - id: check
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] || [ "${{ github.event_name }}" == "push" ]; then
+            echo "registry-changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Check if relevant files changed
+          if git diff --name-only ${{ github.event.pull_request.base.sha }} HEAD | grep -qE '^(registry\.toml|\.github/workflows/registry\.yml|src/cli/test_tool\.rs)$'; then
+            echo "registry-changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "registry-changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
     timeout-minutes: 20
     runs-on: ubuntu-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.registry-changed == 'true'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
@@ -43,7 +63,8 @@ jobs:
   list-changed-tools:
     timeout-minutes: 10
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    needs: check-changes
+    if: github.event_name == 'pull_request' && needs.check-changes.outputs.registry-changed == 'true'
     outputs:
       tools: ${{ steps.diff.outputs.tools }}
     steps:
@@ -106,17 +127,10 @@ jobs:
         with:
           name: mise
           path: target/debug
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
-          path: |
-            ~/.local/share/mise
-            ~/.cache/mise
       - run: echo target/debug >> "$GITHUB_PATH"
       - run: chmod +x target/debug/mise
       - run: mise -v
-      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
-      - run: mise i
+      - uses: ./.github/actions/mise-tools
       - id: test-tools
         env:
           TEST_TRANCHE: ${{ matrix.tranche }}
@@ -132,6 +146,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 1
     needs:
+      - check-changes
       - build
       - list-changed-tools
       - test-tool
@@ -139,6 +154,14 @@ jobs:
     steps:
       - name: Check CI job results
         run: |
+          if [ "${{ needs.check-changes.result }}" != "success" ]; then
+            echo "check-changes job failed"
+            exit 1
+          fi
+          if [ "${{ needs.check-changes.outputs.registry-changed }}" != "true" ]; then
+            echo "No registry changes detected, skipping registry CI checks"
+            exit 0
+          fi
           if [ "${{ needs.build.result }}" != "success" ]; then
             echo "build failed or was skipped"
             exit 1
