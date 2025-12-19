@@ -3699,7 +3699,7 @@ description = "Blazing-fast Data-Wrangling toolkit"
 test = ["qsv --version", "qsv {{version}}"]
 
 [tools.quarkus]
-backends = ["asdf:mise-plugins/mise-quarkus"]
+backends = ["github:quarkusio/quarkus", "asdf:mise-plugins/mise-quarkus"]
 description = "The quarkus command lets you create projects, manage extensions and do essential build and development tasks using the underlying project build tool"
 
 [tools.r]
