@@ -4171,7 +4171,7 @@ description = "SSH CA Client/Server"
 test = ["sshi version", "local: {{version}}"]
 
 [tools.sshuttle]
-backends = ["asdf:mise-plugins/mise-sshuttle"]
+backends = ["pipx:sshuttle", "asdf:mise-plugins/mise-sshuttle"]
 description = "sshuttle: where transparent proxy meets VPN meets ssh"
 
 [tools.sst]
