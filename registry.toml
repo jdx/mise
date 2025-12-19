@@ -1147,8 +1147,9 @@ backends = ["aqua:datreeio/datree", "asdf:lukeab/asdf-datree"]
 description = "Prevent Kubernetes misconfigurations from reaching production (again  )! From code to cloud, Datree provides an E2E policy enforcement solution to run automatic checks for rule violations. See our docs: https://hub.datree.io"
 
 [tools.daytona]
-backends = ["asdf:mise-plugins/mise-daytona"]
+backends = ["github:daytonaio/daytona"]
 description = "Daytona is a Secure and Elastic Infrastructure for Running AI-Generated Code"
+test = ["daytona version", "Daytona version {{version}}"]
 
 [tools.dbmate]
 backends = ["aqua:amacneil/dbmate", "asdf:juusujanar/asdf-dbmate"]
