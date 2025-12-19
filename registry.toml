@@ -4865,8 +4865,10 @@ os = ["macos"]
 test = ["xcodes version", "{{version}}"]
 
 [tools.xcresultparser]
-backends = ["asdf:mise-plugins/mise-xcresultparser"]
+backends = ["github:a7ex/xcresultparser"]
 description = "Parse the binary xcresult bundle from Xcode builds and testruns"
+os = ["macos"]
+test = ["xcresultparser --help", "OVERVIEW: xcresultparser"]
 
 [tools.xcsift]
 backends = ["github:ldomaradzki/xcsift"]
