@@ -98,7 +98,7 @@ pub struct Run {
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
-    /// Don't actually run the tasks(s), just print them in order of execution
+    /// Don't actually run the task(s), just print them in order of execution
     #[clap(long, short = 'n', verbatim_doc_comment)]
     pub dry_run: bool,
 

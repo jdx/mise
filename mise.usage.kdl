@@ -689,7 +689,7 @@ cmd run help="Run task(s)" {
     flag "-j --jobs" help="Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var" {
         arg <JOBS>
     }
-    flag "-n --dry-run" help="Don't actually run the tasks(s), just print them in order of execution"
+    flag "-n --dry-run" help="Don't actually run the task(s), just print them in order of execution"
     flag "-o --output" help="Change how tasks information is output when running tasks" {
         long_help "Change how tasks information is output when running tasks\n\n- `prefix` - Print stdout/stderr by line, prefixed with the task's label\n- `interleave` - Print directly to stdout/stderr instead of by line\n- `replacing` - Stdout is replaced each time, stderr is printed as is\n- `timed` - Only show stdout lines if they are displayed for more than 1 second\n- `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output\n- `quiet` - Don't show extra output\n- `silent` - Don't show any output including stdout and stderr from the task except for errors"
         arg <OUTPUT>
@@ -996,7 +996,7 @@ cmd tasks help="Manage tasks" {
         flag "-j --jobs" help="Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var" {
             arg <JOBS>
         }
-        flag "-n --dry-run" help="Don't actually run the tasks(s), just print them in order of execution"
+        flag "-n --dry-run" help="Don't actually run the task(s), just print them in order of execution"
         flag "-o --output" help="Change how tasks information is output when running tasks" {
             long_help "Change how tasks information is output when running tasks\n\n- `prefix` - Print stdout/stderr by line, prefixed with the task's label\n- `interleave` - Print directly to stdout/stderr instead of by line\n- `replacing` - Stdout is replaced each time, stderr is printed as is\n- `timed` - Only show stdout lines if they are displayed for more than 1 second\n- `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output\n- `quiet` - Don't show extra output\n- `silent` - Don't show any output including stdout and stderr from the task except for errors"
             arg <OUTPUT>
@@ -1172,7 +1172,7 @@ cmd watch help="Run task(s) and watch for changes to rerun it" {
     flag "-t --task-flag" help="Tasks to run" var=#true hide=#true {
         arg <TASK_FLAG>
     }
-    flag "-g --glob" help="Files to watch\nDefaults to sources from the tasks(s)" var=#true hide=#true {
+    flag "-g --glob" help="Files to watch\nDefaults to sources from the task(s)" var=#true hide=#true {
         arg <GLOB>
     }
     flag --skip-deps help="Run only the specified tasks skipping all dependencies"

@@ -810,7 +810,7 @@ The name of the script will be the name of the tasks.
     flag "-C --cd" help="Change to this directory before executing the command" {
         arg "<CD>"
     }
-    flag "-n --dry-run" help="Don't actually run the tasks(s), just print them in order of execution"
+    flag "-n --dry-run" help="Don't actually run the task(s), just print them in order of execution"
     flag "-f --force" help="Force the tasks to run even if outputs are up to date"
     flag "-p --prefix" help="Print stdout/stderr by line, prefixed with the tasks's label\nDefaults to true if --jobs > 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var"
     flag "-i --interleave" help="Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var"
@@ -1084,7 +1084,7 @@ The name of the script will be the name of the tasks.
         flag "-C --cd" help="Change to this directory before executing the command" {
             arg "<CD>"
         }
-        flag "-n --dry-run" help="Don't actually run the tasks(s), just print them in order of execution"
+        flag "-n --dry-run" help="Don't actually run the task(s), just print them in order of execution"
         flag "-f --force" help="Force the tasks to run even if outputs are up to date"
         flag "-p --prefix" help="Print stdout/stderr by line, prefixed with the tasks's label\nDefaults to true if --jobs > 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var"
         flag "-i --interleave" help="Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var"
@@ -1222,7 +1222,7 @@ cmd "watch" help="[experimental] Run a tasks watching for changes" {
     flag "-t --task" help="Tasks to run" var=true {
         arg "<TASK>"
     }
-    flag "-g --glob" help="Files to watch\nDefaults to sources from the tasks(s)" var=true {
+    flag "-g --glob" help="Files to watch\nDefaults to sources from the task(s)" var=true {
         arg "<GLOB>"
     }
     arg "[ARGS]..." help="Extra arguments" var=true

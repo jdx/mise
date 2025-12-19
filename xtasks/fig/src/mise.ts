@@ -1995,7 +1995,7 @@ const completionSpec: Fig.Spec = {
         {
           name: ["-n", "--dry-run"],
           description:
-            "Don't actually run the tasks(s), just print them in order of execution",
+            "Don't actually run the task(s), just print them in order of execution",
           isRepeatable: false,
         },
         {
@@ -2814,7 +2814,7 @@ const completionSpec: Fig.Spec = {
             {
               name: ["-n", "--dry-run"],
               description:
-                "Don't actually run the tasks(s), just print them in order of execution",
+                "Don't actually run the task(s), just print them in order of execution",
               isRepeatable: false,
             },
             {

@@ -71,7 +71,7 @@ Configure with `jobs` config or `MISE_JOBS` env var
 
 ### `-n --dry-run`
 
-Don't actually run the tasks(s), just print them in order of execution
+Don't actually run the task(s), just print them in order of execution
 
 ### `-o --output <OUTPUT>`
 
