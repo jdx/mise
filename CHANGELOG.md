@@ -1,5 +1,89 @@
 # Changelog
 
+## [2025.12.13](https://github.com/jdx/mise/compare/v2025.12.12..v2025.12.13) - 2025-12-19
+
+### 🚀 Features
+
+- **(ruby)** set PKG_CONFIG_PATH for native gem extensions by @jdx in [#7457](https://github.com/jdx/mise/pull/7457)
+- **(tera)** add haiku() function for random name generation by @jdx in [#7399](https://github.com/jdx/mise/pull/7399)
+- **(vfox)** pass tool options to EnvKeys hook by @jdx in [#7447](https://github.com/jdx/mise/pull/7447)
+- implement independent versioning for subcrates by @jdx in [#7402](https://github.com/jdx/mise/pull/7402)
+
+### 🐛 Bug Fixes
+
+- **(ci)** improve GHA cache efficiency and fix registry-ci bug by @jdx in [#7404](https://github.com/jdx/mise/pull/7404)
+- **(ci)** use !cancelled() instead of always() for registry-ci by @jdx in [#7435](https://github.com/jdx/mise/pull/7435)
+- **(e2e)** use explicit asdf backend for zprint in plugin_install test by @jdx in [#7440](https://github.com/jdx/mise/pull/7440)
+- **(github)** use GITHUB_TOKEN for attestation verification by @jdx in [#7446](https://github.com/jdx/mise/pull/7446)
+- **(schema)** add shell_alias definition by @anp in [#7441](https://github.com/jdx/mise/pull/7441)
+- **(test)** update backend_arg test to use clojure instead of poetry by @jdx in [#7436](https://github.com/jdx/mise/pull/7436)
+- use vfox backend for poetry and fix related tests by @jdx in [#7445](https://github.com/jdx/mise/pull/7445)
+
+### 📚 Documentation
+
+- add link to COPR package page for Fedora/RHEL by @jdx in [bc8ac73](https://github.com/jdx/mise/commit/bc8ac732e3bdecfd12affd7b8c54cdebcdb87da1)
+- improve installation documentation by @jdx in [#7403](https://github.com/jdx/mise/pull/7403)
+- add comprehensive glossary by @jdx in [#7401](https://github.com/jdx/mise/pull/7401)
+- use `mise run` uniformly in its examples by @muzimuzhi in [#7444](https://github.com/jdx/mise/pull/7444)
+
+### 🧪 Testing
+
+- rename duplicate 'ci' job names for clarity by @jdx in [#7398](https://github.com/jdx/mise/pull/7398)
+- add token pool integration for rate limit distribution by @jdx in [#7397](https://github.com/jdx/mise/pull/7397)
+
+### 📦️ Dependency Updates
+
+- replace dependency @tsconfig/node18 with @tsconfig/node20 by @renovate[bot] in [#7450](https://github.com/jdx/mise/pull/7450)
+- pin rui314/setup-mold action to 725a879 by @renovate[bot] in [#7449](https://github.com/jdx/mise/pull/7449)
+
+### 📦 Registry
+
+- add github backend for swiftformat by @jdx in [#7396](https://github.com/jdx/mise/pull/7396)
+- use pipx backend for azure-cli by @jdx in [#7406](https://github.com/jdx/mise/pull/7406)
+- use pipx backend for dvc by @jdx in [#7413](https://github.com/jdx/mise/pull/7413)
+- add github backend for zprint by @jdx in [#7410](https://github.com/jdx/mise/pull/7410)
+- use gem backend for cocoapods by @jdx in [#7411](https://github.com/jdx/mise/pull/7411)
+- use pipx backend for gallery-dl by @jdx in [#7409](https://github.com/jdx/mise/pull/7409)
+- add aqua backends for HashiCorp tools by @jdx in [#7408](https://github.com/jdx/mise/pull/7408)
+- use npm backend for danger-js by @jdx in [#7407](https://github.com/jdx/mise/pull/7407)
+- use pipx backend for pipenv by @jdx in [#7415](https://github.com/jdx/mise/pull/7415)
+- use pipx backend for poetry by @jdx in [#7416](https://github.com/jdx/mise/pull/7416)
+- add github backend for xcodegen ([github:yonaskolb/XcodeGen](https://github.com/yonaskolb/XcodeGen)) by @jdx in [#7417](https://github.com/jdx/mise/pull/7417)
+- use npm backend for heroku by @jdx in [#7418](https://github.com/jdx/mise/pull/7418)
+- add aqua backend for setup-envtest by @jdx in [#7421](https://github.com/jdx/mise/pull/7421)
+- add github backend for xcresultparser ([github:a7ex/xcresultparser](https://github.com/a7ex/xcresultparser)) by @jdx in [#7422](https://github.com/jdx/mise/pull/7422)
+- add aqua backend for tomcat by @jdx in [#7423](https://github.com/jdx/mise/pull/7423)
+- use npm backend for serverless by @jdx in [#7424](https://github.com/jdx/mise/pull/7424)
+- add github backend for daytona ([github:daytonaio/daytona](https://github.com/daytonaio/daytona)) by @jdx in [#7412](https://github.com/jdx/mise/pull/7412)
+- add github backend for flyway ([github:flyway/flyway](https://github.com/flyway/flyway)) by @jdx in [#7414](https://github.com/jdx/mise/pull/7414)
+- add github backend for schemacrawler ([github:schemacrawler/SchemaCrawler](https://github.com/schemacrawler/SchemaCrawler)) by @jdx in [#7419](https://github.com/jdx/mise/pull/7419)
+- add github backend for codeql by @jdx in [#7420](https://github.com/jdx/mise/pull/7420)
+- use pipx backend for mitmproxy by @jdx in [#7425](https://github.com/jdx/mise/pull/7425)
+- use pipx backend for sshuttle by @jdx in [#7426](https://github.com/jdx/mise/pull/7426)
+- add github backend for quarkus by @jdx in [#7428](https://github.com/jdx/mise/pull/7428)
+- add github backend for smithy by @jdx in [#7430](https://github.com/jdx/mise/pull/7430)
+- add github backend for xchtmlreport ([github:XCTestHTMLReport/XCTestHTMLReport](https://github.com/XCTestHTMLReport/XCTestHTMLReport)) by @jdx in [#7431](https://github.com/jdx/mise/pull/7431)
+- add github backend for grails by @jdx in [#7429](https://github.com/jdx/mise/pull/7429)
+- use npm backend for esy by @jdx in [#7434](https://github.com/jdx/mise/pull/7434)
+- add github backend for micronaut by @jdx in [#7433](https://github.com/jdx/mise/pull/7433)
+- add github backend for dome by @jdx in [#7432](https://github.com/jdx/mise/pull/7432)
+- use vfox backend for poetry by @jdx in [#7438](https://github.com/jdx/mise/pull/7438)
+- add vfox backend for pipenv by @jdx in [#7439](https://github.com/jdx/mise/pull/7439)
+- use github backend for xchtmlreport by @jdx in [#7442](https://github.com/jdx/mise/pull/7442)
+- use npm backend for purty by @jdx in [#7443](https://github.com/jdx/mise/pull/7443)
+
+### Chore
+
+- **(docker)** add Node LTS to mise Docker image by @jdx in [#7405](https://github.com/jdx/mise/pull/7405)
+- rename mise-tools to mise-versions by @jdx in [ab3e1b8](https://github.com/jdx/mise/commit/ab3e1b8e64c2aa881c43af7636d6b492c6001e6f)
+- s/mise task/mise tasks/g in docs and tests by @muzimuzhi in [#7400](https://github.com/jdx/mise/pull/7400)
+- update singular/plural forms for word "task" by @muzimuzhi in [#7448](https://github.com/jdx/mise/pull/7448)
+
+### New Contributors
+
+- @muzimuzhi made their first contribution in [#7448](https://github.com/jdx/mise/pull/7448)
+- @anp made their first contribution in [#7441](https://github.com/jdx/mise/pull/7441)
+
 ## [2025.12.12](https://github.com/jdx/mise/compare/v2025.12.11..v2025.12.12) - 2025-12-18
 
 ### 🚀 Features
