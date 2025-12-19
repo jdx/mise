@@ -2941,7 +2941,7 @@ description = "Apache Maven core"
 test = ["mvn --version", "Apache Maven {{version}}"]
 
 [tools.mc]
-backends = ["asdf:mise-plugins/mise-mc"]
+backends = ["aqua:minio/mc", "asdf:mise-plugins/mise-mc"]
 description = "Unix like utilities for object store (minio)"
 
 [tools.mdbook]
@@ -3167,7 +3167,7 @@ backends = ["aqua:hashicorp/nomad", "asdf:mise-plugins/mise-hashicorp"]
 description = "Nomad is an easy-to-use, flexible, and performant workload orchestrator that can deploy a mix of microservice, batch, containerized, and non-containerized applications. Nomad is easy to operate and scale and has native Consul and Vault integrations"
 
 [tools.nomad-pack]
-backends = ["asdf:mise-plugins/mise-hashicorp"]
+backends = ["aqua:hashicorp/nomad-pack", "asdf:mise-plugins/mise-hashicorp"]
 description = "Nomad Pack is a templating and packaging tool used with HashiCorp Nomad"
 
 [tools.notation]
@@ -3915,7 +3915,7 @@ description = "semver bash implementation"
 test = ["semver --version", "semver: {{version}}"]
 
 [tools.sentinel]
-backends = ["asdf:mise-plugins/mise-hashicorp"]
+backends = ["aqua:hashicorp/sentinel", "asdf:mise-plugins/mise-hashicorp"]
 description = "Sentinel is a policy as code tool that lets you control what users of HashiCorp products are allowed to do. It enforces policies proactively, preventing end users from deploying changes that are not allowed"
 
 [tools.sentry]
@@ -3923,10 +3923,6 @@ aliases = ["sentry-cli"]
 backends = ["aqua:getsentry/sentry-cli"]
 description = "A command line utility to work with Sentry"
 test = ["sentry-cli --version", "sentry-cli {{version}}"]
-
-[tools.serf]
-backends = ["asdf:mise-plugins/mise-hashicorp"]
-description = "Serf is a decentralized solution for service discovery and orchestration that is lightweight, highly available, and fault tolerant"
 
 [tools.serverless]
 backends = ["asdf:mise-plugins/mise-serverless"]
@@ -4395,7 +4391,7 @@ backends = ["aqua:dineshba/tf-summarize", "asdf:adamcrews/asdf-tf-summarize"]
 description = "A command-line utility to print the summary of the terraform plan"
 
 [tools.tfc-agent]
-backends = ["asdf:mise-plugins/mise-hashicorp"]
+backends = ["aqua:hashicorp/tfc-agent", "asdf:mise-plugins/mise-hashicorp"]
 description = "HCP Terraform Agents allow HCP Terraform to communicate with isolated, private, or on-premises infrastructure"
 
 [tools.tfctl]
