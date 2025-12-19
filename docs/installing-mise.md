@@ -194,7 +194,7 @@ sudo snap install mise --classic --beta
 ### Docker
 
 ```sh
-docker run jdxcode/mise x node@20 -- node -v
+docker run jdxcode/mise x node@24 -- node -v
 ```
 
 [Docker Hub](https://hub.docker.com/r/jdxcode/mise)
