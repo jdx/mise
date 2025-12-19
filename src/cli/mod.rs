@@ -151,6 +151,13 @@ pub struct Cli {
     /// Sets log level to debug
     #[clap(long, global = true, hide = true, overrides_with_all = &["quiet", "trace", "verbose", "silent", "log_level"])]
     pub debug: bool,
+    /// Require lockfile URLs to be present during installation
+    ///
+    /// Fails if tools don't have pre-resolved URLs in the lockfile for the current platform.
+    /// This prevents API calls to GitHub, aqua registry, etc.
+    /// Can also be enabled via MISE_LOCKED=1 or settings.locked=true
+    #[clap(long, global = true, verbatim_doc_comment)]
+    pub locked: bool,
     #[clap(long, global = true, hide = true, value_name = "LEVEL", value_enum, overrides_with_all = &["quiet", "trace", "verbose", "silent", "debug"])]
     pub log_level: Option<LevelFilter>,
     /// Do not load any config files
@@ -168,13 +175,6 @@ pub struct Cli {
     /// Read/write directly to stdin/stdout/stderr instead of by line
     #[clap(long, global = true)]
     pub raw: bool,
-    /// Require lockfile URLs to be present during installation
-    ///
-    /// Fails if tools don't have pre-resolved URLs in the lockfile for the current platform.
-    /// This prevents API calls to GitHub, aqua registry, etc.
-    /// Can also be enabled via MISE_LOCKED=1 or settings.locked=true
-    #[clap(long, global = true, verbatim_doc_comment)]
-    pub locked: bool,
     /// Suppress all task output and mise non-error messages
     #[clap(long, global = true, overrides_with_all = &["quiet", "trace", "verbose", "debug", "log_level"])]
     pub silent: bool,
@@ -192,7 +192,6 @@ pub struct Cli {
 #[strum(serialize_all = "kebab-case")]
 pub enum Commands {
     Activate(activate::Activate),
-    ToolAlias(Box<tool_alias::ToolAlias>),
     Asdf(asdf::Asdf),
     Backends(backends::Backends),
     BinPaths(bin_paths::BinPaths),
@@ -241,6 +240,7 @@ pub enum Commands {
     Tasks(tasks::Tasks),
     TestTool(test_tool::TestTool),
     Tool(tool::Tool),
+    ToolAlias(Box<tool_alias::ToolAlias>),
     ToolStub(tool_stub::ToolStub),
     Trust(trust::Trust),
     Uninstall(uninstall::Uninstall),
@@ -259,7 +259,6 @@ impl Commands {
     pub async fn run(self) -> Result<()> {
         match self {
             Self::Activate(cmd) => cmd.run(),
-            Self::ToolAlias(cmd) => cmd.run().await,
             Self::Asdf(cmd) => cmd.run().await,
             Self::Backends(cmd) => cmd.run().await,
             Self::BinPaths(cmd) => cmd.run().await,
@@ -308,6 +307,7 @@ impl Commands {
             Self::Tasks(cmd) => cmd.run().await,
             Self::TestTool(cmd) => cmd.run().await,
             Self::Tool(cmd) => cmd.run().await,
+            Self::ToolAlias(cmd) => cmd.run().await,
             Self::ToolStub(cmd) => cmd.run().await,
             Self::Trust(cmd) => cmd.run().await,
             Self::Uninstall(cmd) => cmd.run().await,
@@ -753,6 +753,14 @@ mod tests {
     #[test]
     fn test_subcommands_are_sorted() {
         let cmd = Cli::command();
+        // Check top-level subcommands are sorted alphabetically
+        let subcommands: Vec<_> = cmd.get_subcommands().map(|s| s.get_name()).collect();
+        let mut sorted = subcommands.clone();
+        sorted.sort();
+        assert_eq!(
+            subcommands, sorted,
+            "Top-level subcommands are not sorted!\nActual: {subcommands:?}\nExpected: {sorted:?}"
+        );
         // Check all subcommands except watch (which has many watchexec passthrough args)
         for subcmd in cmd.get_subcommands() {
             if subcmd.get_name() != "watch" {
