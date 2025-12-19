@@ -9,6 +9,7 @@ use crate::backend::static_helpers::{
 };
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::{Config, Settings};
+use crate::env;
 use crate::file;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -939,7 +940,10 @@ impl UnifiedGitBackend {
         let (owner, repo_name) = (parts[0], parts[1]);
 
         match sigstore_verification::verify_github_attestation(
-            file_path, owner, repo_name, None, // No token - use public API
+            file_path,
+            owner,
+            repo_name,
+            env::GITHUB_TOKEN.as_deref(),
             None, // We don't know the expected workflow
         )
         .await
