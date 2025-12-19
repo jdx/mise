@@ -43,14 +43,7 @@ jobs:
           shared-key: build
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
       - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
-          path: |
-            ~/.local/share/mise
-            ~/.cache/mise
-      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
-      - run: mise install
+      - uses: ./.github/actions/mise-tools
       - run: mise x -- bun i
       - run: mise run release-plz
         env:

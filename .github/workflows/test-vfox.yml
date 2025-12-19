@@ -25,6 +25,8 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
+        with:
+          save-if: false
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
@@ -33,6 +35,7 @@ jobs:
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-vfox-${{ hashFiles('crates/vfox/mise.toml') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-vfox-
           path: |
             ~/.local/share/mise
             ~/.cache/mise
