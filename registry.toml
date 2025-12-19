@@ -1117,7 +1117,7 @@ description = "Yet another cron alternative with a Web UI, but with much more ca
 test = ["dagu version 2>&1", "{{version}}"]
 
 [tools.danger-js]
-backends = ["asdf:mise-plugins/mise-danger-js"]
+backends = ["npm:danger"]
 description = "Danger runs during your CI process, and gives teams the chance to automate common code review chores"
 
 [tools.danger-swift]
