@@ -3476,9 +3476,9 @@ backends = [
 description = "Podman: A tool for managing OCI containers and pods"
 
 [tools.poetry]
-backends = ["asdf:mise-plugins/mise-poetry"]
-depends = ["python"]
+backends = ["pipx:poetry"]
 description = "Python packaging and dependency management made easy"
+test = ["poetry --version", "Poetry (version {{version}})"]
 
 [tools.polaris]
 backends = ["aqua:FairwindsOps/polaris", "asdf:particledecay/asdf-polaris"]
