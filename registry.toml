@@ -1369,8 +1369,9 @@ description = "A more intuitive version of du in rust"
 test = ["dust --version", "Dust {{version}}"]
 
 [tools.dvc]
-backends = ["asdf:mise-plugins/mise-dvc"]
+backends = ["pipx:dvc"]
 description = "Data Versioning and ML Experiments"
+test = ["dvc version", "{{version}}"]
 
 [tools.dyff]
 backends = ["aqua:homeport/dyff", "asdf:https://gitlab.com/wt0f/asdf-dyff"]
