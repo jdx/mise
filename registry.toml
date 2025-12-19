@@ -1317,8 +1317,30 @@ description = ":dog: Command-line DNS Client for Humans. Written in Golang"
 test = ["doggo --version | awk '{print $1}'", "v{{version}}"]
 
 [tools.dome]
-backends = ["asdf:mise-plugins/mise-dome"]
 description = "DOME is a framework for making 2D games using the Wren programming language which can be played across platforms"
+os = ["linux", "macos", "windows"]
+
+[[tools.dome.backends]]
+full = "github:domeengine/dome"
+
+[tools.dome.backends.options.platforms.macos-x64]
+asset_pattern = "dome-v{version}-macosx-all.zip"
+bin_path = "dome-macosx-all"
+
+[tools.dome.backends.options.platforms.macos-arm64]
+asset_pattern = "dome-v{version}-macosx-all.zip"
+bin_path = "dome-macosx-all"
+
+[tools.dome.backends.options.platforms.linux-x64]
+asset_pattern = "dome-v{version}-linux-x64.zip"
+bin_path = "dome-linux-x64"
+
+[tools.dome.backends.options.platforms.windows-x64]
+asset_pattern = "dome-v{version}-windows-x64.zip"
+bin_path = "dome-windows-x64"
+
+[[tools.dome.backends]]
+full = "asdf:mise-plugins/mise-dome"
 
 [tools.doppler]
 backends = [
