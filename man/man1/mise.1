@@ -447,7 +447,7 @@ Create a new task
 Display a tree visualization of a dependency graph
 .TP
 \fBtasks edit\fR
-Edit a tasks with $EDITOR
+Edit a task with $EDITOR
 .TP
 \fBtasks info\fR
 Get information about a task
@@ -1732,9 +1732,9 @@ Removes all shims before reshimming
 .SH "MISE RUN"
 Run task(s)
 
-This command will run a tasks, or multiple tasks in parallel.
+This command will run a task, or multiple tasks in parallel.
 Tasks may have dependencies on other tasks or on source files.
-If source is configured on a tasks, it will only run if the source
+If source is configured on a task, it will only run if the source
 files have changed.
 
 Tasks can be defined in mise.toml or as standalone scripts.
@@ -2363,7 +2363,7 @@ Tasks to show dependencies for
 Can specify multiple tasks by separating with spaces
 e.g.: mise tasks deps lint test check
 .SH "MISE TASKS EDIT"
-Edit a tasks with $EDITOR
+Edit a task with $EDITOR
 
 The tasks will be created as a standalone script if it does not already exist.
 .PP
@@ -2443,9 +2443,9 @@ Sort order. Default is asc.
 .SH "MISE TASKS RUN"
 Run task(s)
 
-This command will run a tasks, or multiple tasks in parallel.
+This command will run a task, or multiple tasks in parallel.
 Tasks may have dependencies on other tasks or on source files.
-If source is configured on a tasks, it will only run if the source
+If source is configured on a task, it will only run if the source
 files have changed.
 
 Tasks can be defined in mise.toml or as standalone scripts.

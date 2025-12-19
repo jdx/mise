@@ -2684,7 +2684,7 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: "edit",
-          description: "Edit a tasks with $EDITOR",
+          description: "Edit a task with $EDITOR",
           options: [
             {
               name: ["-p", "--path"],

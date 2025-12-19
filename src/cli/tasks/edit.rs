@@ -5,7 +5,7 @@ use eyre::Result;
 use indoc::formatdoc;
 use std::path::MAIN_SEPARATOR_STR;
 
-/// Edit a tasks with $EDITOR
+/// Edit a task with $EDITOR
 ///
 /// The tasks will be created as a standalone script if it does not already exist.
 #[derive(Debug, clap::Args)]

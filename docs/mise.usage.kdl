@@ -762,13 +762,13 @@ npm() {
     arg "[PLUGIN]" hide=true
     arg "[VERSION]" hide=true
 }
-cmd "run" help="[experimental] Run a tasks" {
+cmd "run" help="[experimental] Run a task" {
     alias "r"
-    long_help r#"[experimental] Run a tasks
+    long_help r#"[experimental] Run a task
 
-This command will run a tasks, or multiple tasks in parallel.
+This command will run a task, or multiple tasks in parallel.
 Tasks may have dependencies on other tasks or on source files.
-If source is configured on a tasks, it will only run if the source
+If source is configured on a task, it will only run if the source
 files have changed.
 
 Tasks can be defined in .mise.toml or as standalone scripts.
@@ -1001,8 +1001,8 @@ cmd "tasks" help="[experimental] Manage tasks" {
         flag "--dot" help="Display dependencies in DOT format"
         arg "[TASKS]..." help="Tasks to show dependencies for\nCan specify multiple tasks by separating with spaces\ne.g.: mise tasks deps lint test check" var=true
     }
-    cmd "edit" help="[experimental] Edit a tasks with $EDITOR" {
-        long_help r"[experimental] Edit a tasks with $EDITOR
+    cmd "edit" help="[experimental] Edit a task with $EDITOR" {
+        long_help r"[experimental] Edit a task with $EDITOR
 
 The tasks will be created as a standalone script if it does not already exist."
         after_long_help r"Examples:
@@ -1036,13 +1036,13 @@ tasks will override the global ones if they have the same name."
         }
         flag "-J --json" help="Output in JSON format"
     }
-    cmd "run" help="[experimental] Run a tasks" {
+    cmd "run" help="[experimental] Run a task" {
         alias "r"
-        long_help r#"[experimental] Run a tasks
+        long_help r#"[experimental] Run a task
 
-This command will run a tasks, or multiple tasks in parallel.
+This command will run a task, or multiple tasks in parallel.
 Tasks may have dependencies on other tasks or on source files.
-If source is configured on a tasks, it will only run if the source
+If source is configured on a task, it will only run if the source
 files have changed.
 
 Tasks can be defined in .mise.toml or as standalone scripts.
@@ -1205,7 +1205,7 @@ This replaces asdf's `local` and `global` commands, however those are still avai
 cmd "version" help="Show mise version" {
     alias "v" hide=true
 }
-cmd "watch" help="[experimental] Run a tasks watching for changes" {
+cmd "watch" help="[experimental] Run a task watching for changes" {
     alias "w"
     after_long_help r#"Examples:
     $ mise watch -t build

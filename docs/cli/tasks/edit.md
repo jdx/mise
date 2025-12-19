@@ -4,7 +4,7 @@
 - **Usage**: `mise tasks edit [-p --path] <TASK>`
 - **Source code**: [`src/cli/tasks/edit.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/edit.rs)
 
-Edit a tasks with $EDITOR
+Edit a task with $EDITOR
 
 The tasks will be created as a standalone script if it does not already exist.
 
