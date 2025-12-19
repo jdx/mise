@@ -20,8 +20,8 @@ EDITOR_EOF
 chmod +x fake-editor
 
 # Test 1: Create a task with nested colons using task edit
-echo "Running: mise task edit foo:bar:baz --path"
-TASK_PATH=$(mise task edit foo:bar:baz --path 2>&1)
+echo "Running: mise tasks edit foo:bar:baz --path"
+TASK_PATH=$(mise tasks edit foo:bar:baz --path 2>&1)
 
 # Verify the file was created
 if [ ! -f "$TASK_PATH" ]; then
@@ -48,7 +48,7 @@ assert_contains "mise run foo:bar:baz" "nested task executed"
 assert_contains "mise tasks ls" "foo:bar:baz"
 
 # Test 3: Try editing an existing nested task (should not create duplicates)
-TASK_PATH2=$(mise task edit foo:bar:baz --path 2>&1)
+TASK_PATH2=$(mise tasks edit foo:bar:baz --path 2>&1)
 
 if [ "$TASK_PATH" != "$TASK_PATH2" ]; then
 	echo "ERROR: Editing the same task twice gave different paths"
@@ -58,7 +58,7 @@ if [ "$TASK_PATH" != "$TASK_PATH2" ]; then
 fi
 
 # Test 4: Create a task with multiple levels of nesting
-TASK_PATH3=$(mise task edit deploy:prod:backend:api --path 2>&1)
+TASK_PATH3=$(mise tasks edit deploy:prod:backend:api --path 2>&1)
 
 if [ ! -f "$TASK_PATH3" ]; then
 	echo "ERROR: Deeply nested task file was not created at $TASK_PATH3"

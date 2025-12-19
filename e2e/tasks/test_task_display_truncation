@@ -23,10 +23,10 @@ run = 'echo "Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam n
 EOF
 
 # Test task listing shows full names (not truncated at 60 chars)
-assert_contains "mise task ls" "short"
-assert_contains "mise task ls" "medium-length-task-name"
-assert_contains "mise task ls" "very-long-task-name-that-exceeds-sixty-characters-to-test-truncation"
-assert_contains "mise task ls" "super-duper-ultra-mega-extremely-long-task-name-that-definitely-exceeds-the-old-sixty-character-hard-limit"
+assert_contains "mise tasks ls" "short"
+assert_contains "mise tasks ls" "medium-length-task-name"
+assert_contains "mise tasks ls" "very-long-task-name-that-exceeds-sixty-characters-to-test-truncation"
+assert_contains "mise tasks ls" "super-duper-ultra-mega-extremely-long-task-name-that-definitely-exceeds-the-old-sixty-character-hard-limit"
 
 # Test that we can still run tasks with long names
 assert_succeed "mise run short"

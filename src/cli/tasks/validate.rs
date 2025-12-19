@@ -683,16 +683,16 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     # Validate all tasks
-    $ <bold>mise task validate</bold>
+    $ <bold>mise tasks validate</bold>
 
     # Validate specific tasks
-    $ <bold>mise task validate build test</bold>
+    $ <bold>mise tasks validate build test</bold>
 
     # Output results as JSON
-    $ <bold>mise task validate --json</bold>
+    $ <bold>mise tasks validate --json</bold>
 
     # Only show errors (skip warnings)
-    $ <bold>mise task validate --errors-only</bold>
+    $ <bold>mise tasks validate --errors-only</bold>
 
 <bold><underline>Validation Checks:</underline></bold>
 

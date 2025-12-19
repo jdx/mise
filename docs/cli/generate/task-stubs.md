@@ -28,7 +28,7 @@ Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate boot
 Examples:
 
 ```
-$ mise task add test -- echo 'running tests'
+$ mise tasks add test -- echo 'running tests'
 $ mise generate task-stubs
 $ ./bin/test
 running tests

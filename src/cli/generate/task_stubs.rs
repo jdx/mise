@@ -57,7 +57,7 @@ exec {mise_bin} run {display_name} "$@"
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise task add test -- echo 'running tests'</bold>
+    $ <bold>mise tasks add test -- echo 'running tests'</bold>
     $ <bold>mise generate task-stubs</bold>
     $ <bold>./bin/test</bold>
     running tests

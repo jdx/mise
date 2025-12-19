@@ -55,7 +55,7 @@ flag --timings help="Shows elapsed time after each task completes" hide=#true {
     long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
 }
 flag --trace help="Sets log level to trace" hide=#true global=#true
-arg "[TASK]" help="Task to run" help_long="Task to run.\n\nShorthand for `mise task run <TASK>`." required=#false
+arg "[TASK]" help="Task to run" help_long="Task to run.\n\nShorthand for `mise tasks run <TASK>`." required=#false
 arg "[TASK_ARGS]…" help="Task arguments" required=#false var=#true hide=#true
 arg "[-- TASK_ARGS_LAST]…" required=#false var=#true hide=#true
 cmd activate help="Initializes mise in the current shell session" {
@@ -370,7 +370,7 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
     }
     cmd task-stubs help="Generates shims to run mise tasks" {
         long_help "Generates shims to run mise tasks\n\nBy default, this will build shims like ./bin/<task>. These can be paired with `mise generate bootstrap`\nso contributors to a project can execute mise tasks without installing mise into their system."
-        after_long_help "Examples:\n\n    $ mise task add test -- echo 'running tests'\n    $ mise generate task-stubs\n    $ ./bin/test\n    running tests\n"
+        after_long_help "Examples:\n\n    $ mise tasks add test -- echo 'running tests'\n    $ mise generate task-stubs\n    $ ./bin/test\n    running tests\n"
         flag "-d --dir" help="Directory to create task stubs inside of" default=bin {
             arg <DIR>
         }
@@ -904,7 +904,7 @@ cmd tasks help="Manage tasks" {
     flag --usage hide=#true global=#true
     arg "[TASK]" help="Task name to get info of" required=#false
     cmd add help="Create a new task" {
-        after_long_help "Examples:\n\n    $ mise task add pre-commit --depends \"test\" --depends \"render\" -- echo pre-commit\n"
+        after_long_help "Examples:\n\n    $ mise tasks add pre-commit --depends \"test\" --depends \"render\" -- echo pre-commit\n"
         flag "-a --alias" help="Other names for the task" var=#true {
             arg <ALIAS>
         }
@@ -915,7 +915,7 @@ cmd tasks help="Manage tasks" {
             arg <DIR>
         }
         flag "-f --file" help="Create a file task instead of a toml task"
-        flag "-H --hide" help="Hide the task from `mise task` and completions"
+        flag "-H --hide" help="Hide the task from `mise tasks` and completions"
         flag "-q --quiet" help="Do not print the command before running"
         flag "-r --raw" help="Directly connect stdin/stdout/stderr"
         flag "-s --sources" help="Glob patterns of files this task uses as input" var=#true {
@@ -1030,7 +1030,7 @@ cmd tasks help="Manage tasks" {
         mount run="mise tasks --usage"
     }
     cmd validate help="Validate tasks for common errors and issues" {
-        after_long_help "Examples:\n\n    # Validate all tasks\n    $ mise task validate\n\n    # Validate specific tasks\n    $ mise task validate build test\n\n    # Output results as JSON\n    $ mise task validate --json\n\n    # Only show errors (skip warnings)\n    $ mise task validate --errors-only\n\nValidation Checks:\n\nThe validate command performs the following checks:\n\n  • Circular Dependencies: Detects dependency cycles\n  • Missing References: Finds references to non-existent tasks\n  • Usage Spec Parsing: Validates #USAGE directives and specs\n  • Timeout Format: Checks timeout values are valid durations\n  • Alias Conflicts: Detects duplicate aliases across tasks\n  • File Existence: Verifies file-based tasks exist\n  • Directory Templates: Validates directory paths and templates\n  • Shell Commands: Checks shell executables exist\n  • Glob Patterns: Validates source and output patterns\n  • Run Entries: Ensures tasks reference valid dependencies\n"
+        after_long_help "Examples:\n\n    # Validate all tasks\n    $ mise tasks validate\n\n    # Validate specific tasks\n    $ mise tasks validate build test\n\n    # Output results as JSON\n    $ mise tasks validate --json\n\n    # Only show errors (skip warnings)\n    $ mise tasks validate --errors-only\n\nValidation Checks:\n\nThe validate command performs the following checks:\n\n  • Circular Dependencies: Detects dependency cycles\n  • Missing References: Finds references to non-existent tasks\n  • Usage Spec Parsing: Validates #USAGE directives and specs\n  • Timeout Format: Checks timeout values are valid durations\n  • Alias Conflicts: Detects duplicate aliases across tasks\n  • File Existence: Verifies file-based tasks exist\n  • Directory Templates: Validates directory paths and templates\n  • Shell Commands: Checks shell executables exist\n  • Glob Patterns: Validates source and output patterns\n  • Run Entries: Ensures tasks reference valid dependencies\n"
         flag --errors-only help="Only show errors (skip warnings)"
         flag --json help="Output validation results in JSON format"
         arg "[TASKS]…" help="Tasks to validate\nIf not specified, validates all tasks" required=#false var=#true

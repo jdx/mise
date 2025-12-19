@@ -2566,7 +2566,7 @@ const completionSpec: Fig.Spec = {
             },
             {
               name: ["-H", "--hide"],
-              description: "Hide the task from `mise task` and completions",
+              description: "Hide the task from `mise tasks` and completions",
               isRepeatable: false,
             },
             {

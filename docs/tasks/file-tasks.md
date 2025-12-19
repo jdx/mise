@@ -96,7 +96,7 @@ Write-Host "Hello from Powershell, current directory is $current_directory"
 
 ## Editing tasks
 
-This script can be edited with by running `mise task edit build` (using `$EDITOR`). If it doesn't exist it will be created.
+This script can be edited by running `mise tasks edit build` (using `$EDITOR`). If it doesn't exist it will be created.
 This is convenient for quickly editing or creating new scripts.
 
 ## Task Grouping
