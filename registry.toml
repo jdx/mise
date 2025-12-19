@@ -1500,8 +1500,9 @@ description = "Pulumi ESC is a centralized, secure service for environments, sec
 test = ["esc version", "v{{version}}"]
 
 [tools.esy]
-backends = ["asdf:mise-plugins/mise-esy"]
+backends = ["npm:esy"]
 description = "Easy package management for native Reason, OCaml and more"
+test = ["esy --version", "{{version}}"]
 
 [tools.etcd]
 backends = [
