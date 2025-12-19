@@ -2,9 +2,9 @@
 
 See available tasks with `mise tasks`. To show tasks hidden with property `hide=true`, use the option `--hidden`.
 
-List dependencies of tasks with `mise task deps [tasks]...`.
+List dependencies of tasks with `mise tasks deps [tasks]...`.
 
-Run a task with `mise task run <task>`, `mise run <task>`, `mise r <task>`, or just `mise <task>`—however
+Run a task with `mise tasks run <task>`, `mise run <task>`, `mise r <task>`, or just `mise <task>`—however
 that last one you should never put into scripts or documentation because if mise ever adds a command with that name in a
 future mise version, the task will be shadowed and must be run with one of the other forms.
 

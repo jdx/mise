@@ -679,7 +679,7 @@ const LONG_ABOUT: &str =
 
 const LONG_TASK_ABOUT: &str = r#"Task to run.
 
-Shorthand for `mise task run <TASK>`."#;
+Shorthand for `mise tasks run <TASK>`."#;
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>

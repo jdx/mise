@@ -9,7 +9,7 @@ run = "echo valid"
 depends = ["valid"]
 EOF
 
-assert_contains "mise task validate" "✓ All 2 task(s) validated successfully"
+assert_contains "mise tasks validate" "✓ All 2 task(s) validated successfully"
 
 # Test circular dependency detection
 cat <<EOF >mise.toml
@@ -22,9 +22,9 @@ run = "echo b"
 depends = ["a"]
 EOF
 
-assert_contains "mise task validate 2>&1 || true" "Circular dependency detected"
-assert_contains "mise task validate 2>&1 || true" "circular-dependency"
-assert_contains "mise task validate 2>&1 || true" "a -> b -> a"
+assert_contains "mise tasks validate 2>&1 || true" "Circular dependency detected"
+assert_contains "mise tasks validate 2>&1 || true" "circular-dependency"
+assert_contains "mise tasks validate 2>&1 || true" "a -> b -> a"
 
 # Test missing dependency
 cat <<EOF >mise.toml
@@ -36,8 +36,8 @@ run = "echo invalid"
 depends = ["non-existent"]
 EOF
 
-assert_contains "mise task validate 2>&1 || true" "Dependency 'non-existent' not found"
-assert_contains "mise task validate 2>&1 || true" "missing-dependency"
+assert_contains "mise tasks validate 2>&1 || true" "Dependency 'non-existent' not found"
+assert_contains "mise tasks validate 2>&1 || true" "missing-dependency"
 
 # Test invalid timeout
 cat <<EOF >mise.toml
@@ -46,8 +46,8 @@ run = "echo test"
 timeout = "not-a-duration"
 EOF
 
-assert_contains "mise task validate 2>&1 || true" "Invalid timeout format"
-assert_contains "mise task validate 2>&1 || true" "invalid-timeout"
+assert_contains "mise tasks validate 2>&1 || true" "Invalid timeout format"
+assert_contains "mise tasks validate 2>&1 || true" "invalid-timeout"
 
 # Test valid timeout formats
 cat <<EOF >mise.toml
@@ -64,7 +64,7 @@ run = "echo test"
 timeout = "1h"
 EOF
 
-assert_contains "mise task validate" "✓ All 3 task(s) validated successfully"
+assert_contains "mise tasks validate" "✓ All 3 task(s) validated successfully"
 
 # Test duplicate aliases (should only report once, not for each task)
 cat <<EOF >mise.toml
@@ -77,10 +77,10 @@ run = "echo 2"
 alias = "myalias"
 EOF
 
-assert_contains "mise task validate 2>&1 || true" "Alias 'myalias' is used by multiple tasks"
-assert_contains "mise task validate 2>&1 || true" "alias-conflict"
+assert_contains "mise tasks validate 2>&1 || true" "Alias 'myalias' is used by multiple tasks"
+assert_contains "mise tasks validate 2>&1 || true" "alias-conflict"
 # Verify the error is only reported once (not duplicated for each task)
-error_count=$(mise task validate 2>&1 | grep -c "Alias 'myalias' is used by multiple tasks" || true)
+error_count=$(mise tasks validate 2>&1 | grep -c "Alias 'myalias' is used by multiple tasks" || true)
 [ "$error_count" = "1" ] || (echo "Expected 1 alias conflict error, got $error_count" && exit 1)
 
 # Test empty task
@@ -89,8 +89,8 @@ cat <<EOF >mise.toml
 description = "empty task"
 EOF
 
-assert_contains "mise task validate 2>&1 || true" "Task has no executable content"
-assert_contains "mise task validate 2>&1 || true" "no-execution"
+assert_contains "mise tasks validate 2>&1 || true" "Task has no executable content"
+assert_contains "mise tasks validate 2>&1 || true" "no-execution"
 
 # Test invalid glob pattern
 cat <<EOF >mise.toml
@@ -99,8 +99,8 @@ run = "echo test"
 sources = ["[invalid-glob"]
 EOF
 
-assert_contains "mise task validate 2>&1 || true" "Invalid source glob pattern"
-assert_contains "mise task validate 2>&1 || true" "invalid-glob-pattern"
+assert_contains "mise tasks validate 2>&1 || true" "Invalid source glob pattern"
+assert_contains "mise tasks validate 2>&1 || true" "invalid-glob-pattern"
 
 # Test JSON output
 cat <<EOF >mise.toml
@@ -112,9 +112,9 @@ run = "echo invalid"
 depends = ["missing"]
 EOF
 
-assert_contains "mise task validate --json 2>&1 || true" '"tasks_validated": 2'
-assert_contains "mise task validate --json 2>&1 || true" '"errors": 1'
-assert_contains "mise task validate --json 2>&1 || true" '"category": "missing-dependency"'
+assert_contains "mise tasks validate --json 2>&1 || true" '"tasks_validated": 2'
+assert_contains "mise tasks validate --json 2>&1 || true" '"errors": 1'
+assert_contains "mise tasks validate --json 2>&1 || true" '"category": "missing-dependency"'
 
 # Test errors-only flag
 cat <<EOF >mise.toml
@@ -126,8 +126,8 @@ file = "./non-executable.sh"
 EOF
 
 touch non-executable.sh
-assert_contains "mise task validate --errors-only 2>&1 || true" "error-task"
-assert_not_contains "mise task validate --errors-only 2>&1 || true" "warning-task"
+assert_contains "mise tasks validate --errors-only 2>&1 || true" "error-task"
+assert_not_contains "mise tasks validate --errors-only 2>&1 || true" "warning-task"
 
 # Test specific task validation
 cat <<EOF >mise.toml
@@ -138,8 +138,8 @@ run = "echo good"
 depends = ["missing"]
 EOF
 
-assert_contains "mise task validate good" "✓ All 1 task(s) validated successfully"
-assert_contains "mise task validate bad 2>&1 || true" "Dependency 'missing' not found"
+assert_contains "mise tasks validate good" "✓ All 1 task(s) validated successfully"
+assert_contains "mise tasks validate bad 2>&1 || true" "Dependency 'missing' not found"
 
 # Test validation with file-based tasks
 mkdir -p mise-tasks
@@ -156,7 +156,7 @@ cat <<EOF >mise.toml
 run = "echo valid"
 EOF
 
-assert_contains "mise task validate filetask" "✓ All 1 task(s) validated successfully"
+assert_contains "mise tasks validate filetask" "✓ All 1 task(s) validated successfully"
 
 # Test missing file
 cat <<EOF >mise.toml
@@ -164,8 +164,8 @@ cat <<EOF >mise.toml
 file = "./does-not-exist.sh"
 EOF
 
-assert_contains "mise task validate 2>&1 || true" "Task file not found"
-assert_contains "mise task validate 2>&1 || true" "missing-file"
+assert_contains "mise tasks validate 2>&1 || true" "Task file not found"
+assert_contains "mise tasks validate 2>&1 || true" "missing-file"
 
 # Clean up before next test
 rm -rf mise-tasks non-executable.sh
@@ -182,8 +182,8 @@ run = [
 ]
 EOF
 
-assert_contains "mise task validate" "✓ All 2 task(s) validated successfully"
+assert_contains "mise tasks validate" "✓ All 2 task(s) validated successfully"
 
 # Test that command-line validation can use task aliases
-assert_contains "mise task validate b" "✓ All 1 task(s) validated successfully"
-assert_contains "mise task validate build" "✓ All 1 task(s) validated successfully"
+assert_contains "mise tasks validate b" "✓ All 1 task(s) validated successfully"
+assert_contains "mise tasks validate build" "✓ All 1 task(s) validated successfully"

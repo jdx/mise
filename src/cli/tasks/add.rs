@@ -28,7 +28,7 @@ pub struct TasksAdd {
     /// Create a file task instead of a toml task
     #[clap(long, short)]
     file: bool,
-    /// Hide the task from `mise task` and completions
+    /// Hide the task from `mise tasks` and completions
     #[clap(long, short = 'H')]
     hide: bool,
     /// Do not print the command before running
@@ -222,6 +222,6 @@ impl TasksAdd {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise task add pre-commit --depends "test" --depends "render" -- echo pre-commit</bold>
+    $ <bold>mise tasks add pre-commit --depends "test" --depends "render" -- echo pre-commit</bold>
 "#
 );

@@ -762,13 +762,13 @@ npm() {
     arg "[PLUGIN]" hide=true
     arg "[VERSION]" hide=true
 }
-cmd "run" help="[experimental] Run a tasks" {
+cmd "run" help="[experimental] Run a task" {
     alias "r"
-    long_help r#"[experimental] Run a tasks
+    long_help r#"[experimental] Run a task
 
-This command will run a tasks, or multiple tasks in parallel.
+This command will run a task, or multiple tasks in parallel.
 Tasks may have dependencies on other tasks or on source files.
-If source is configured on a tasks, it will only run if the source
+If source is configured on a task, it will only run if the source
 files have changed.
 
 Tasks can be defined in .mise.toml or as standalone scripts.
@@ -805,12 +805,12 @@ The name of the script will be the name of the tasks.
     $ mise run lint ::: test ::: check
 
     # Execute multiple tasks each with their own arguments.
-    $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+    $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 "#
     flag "-C --cd" help="Change to this directory before executing the command" {
         arg "<CD>"
     }
-    flag "-n --dry-run" help="Don't actually run the tasks(s), just print them in order of execution"
+    flag "-n --dry-run" help="Don't actually run the task(s), just print them in order of execution"
     flag "-f --force" help="Force the tasks to run even if outputs are up to date"
     flag "-p --prefix" help="Print stdout/stderr by line, prefixed with the tasks's label\nDefaults to true if --jobs > 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var"
     flag "-i --interleave" help="Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var"
@@ -1001,17 +1001,17 @@ cmd "tasks" help="[experimental] Manage tasks" {
         flag "--dot" help="Display dependencies in DOT format"
         arg "[TASKS]..." help="Tasks to show dependencies for\nCan specify multiple tasks by separating with spaces\ne.g.: mise tasks deps lint test check" var=true
     }
-    cmd "edit" help="[experimental] Edit a tasks with $EDITOR" {
-        long_help r"[experimental] Edit a tasks with $EDITOR
+    cmd "edit" help="[experimental] Edit a task with $EDITOR" {
+        long_help r"[experimental] Edit a task with $EDITOR
 
-The tasks will be created as a standalone script if it does not already exist."
+The task will be created as a standalone script if it does not already exist."
         after_long_help r"Examples:
 
     $ mise tasks edit build
     $ mise tasks edit test
 "
-        flag "-p --path" help="Display the path to the tasks instead of editing it"
-        arg "<TASK>" help="Tasks to edit"
+        flag "-p --path" help="Display the path to the task instead of editing it"
+        arg "<TASK>" help="Task to edit"
     }
     cmd "ls" help="[experimental] List available tasks to execute\nThese may be included from the config file or from the project's .mise/tasks directory\nmise will merge all tasks from all parent directories into this list." {
         long_help r"[experimental] List available tasks to execute
@@ -1036,13 +1036,13 @@ tasks will override the global ones if they have the same name."
         }
         flag "-J --json" help="Output in JSON format"
     }
-    cmd "run" help="[experimental] Run a tasks" {
+    cmd "run" help="[experimental] Run a task" {
         alias "r"
-        long_help r#"[experimental] Run a tasks
+        long_help r#"[experimental] Run a task
 
-This command will run a tasks, or multiple tasks in parallel.
+This command will run a task, or multiple tasks in parallel.
 Tasks may have dependencies on other tasks or on source files.
-If source is configured on a tasks, it will only run if the source
+If source is configured on a task, it will only run if the source
 files have changed.
 
 Tasks can be defined in .mise.toml or as standalone scripts.
@@ -1079,12 +1079,12 @@ The name of the script will be the name of the tasks.
     $ mise run lint ::: test ::: check
 
     # Execute multiple tasks each with their own arguments.
-    $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+    $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 "#
         flag "-C --cd" help="Change to this directory before executing the command" {
             arg "<CD>"
         }
-        flag "-n --dry-run" help="Don't actually run the tasks(s), just print them in order of execution"
+        flag "-n --dry-run" help="Don't actually run the task(s), just print them in order of execution"
         flag "-f --force" help="Force the tasks to run even if outputs are up to date"
         flag "-p --prefix" help="Print stdout/stderr by line, prefixed with the tasks's label\nDefaults to true if --jobs > 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var"
         flag "-i --interleave" help="Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var"
@@ -1205,7 +1205,7 @@ This replaces asdf's `local` and `global` commands, however those are still avai
 cmd "version" help="Show mise version" {
     alias "v" hide=true
 }
-cmd "watch" help="[experimental] Run a tasks watching for changes" {
+cmd "watch" help="[experimental] Run a task watching for changes" {
     alias "w"
     after_long_help r#"Examples:
     $ mise watch -t build
@@ -1222,7 +1222,7 @@ cmd "watch" help="[experimental] Run a tasks watching for changes" {
     flag "-t --task" help="Tasks to run" var=true {
         arg "<TASK>"
     }
-    flag "-g --glob" help="Files to watch\nDefaults to sources from the tasks(s)" var=true {
+    flag "-g --glob" help="Files to watch\nDefaults to sources from the task(s)" var=true {
         arg "<GLOB>"
     }
     arg "[ARGS]..." help="Extra arguments" var=true

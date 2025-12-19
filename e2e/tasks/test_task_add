@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 
-mise task add pre-commit --depends "test" --depends "render" -- echo pre-commit
+mise tasks add pre-commit --depends "test" --depends "render" -- echo pre-commit
 assert "cat mise.toml" '[tasks.pre-commit]
 depends = ["test", "render"]
 run = "echo pre-commit"'
 
-mise task add --file pre-commit --depends "test" --depends "render" -- echo pre-commit
+mise tasks add --file pre-commit --depends "test" --depends "render" -- echo pre-commit
 assert "cat mise-tasks/pre-commit" '#!/usr/bin/env bash
 #MISE depends=["test", "render"]
 set -euxo pipefail

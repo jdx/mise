@@ -24,24 +24,159 @@ exists_on_crates() {
 	return 1
 }
 
+# Check if a subcrate has changes since its last tagged release
+# Returns 0 if changes exist (should publish), 1 if no changes
+has_crate_changes() {
+	local crate_name="$1"
+	local crate_dir="$2"
+
+	# Get the latest tag for this crate
+	local latest_tag
+	latest_tag=$(git tag --list "${crate_name}-v*" --sort=-v:refname | head -1)
+
+	if [[ -z $latest_tag ]]; then
+		echo "No previous tag found for $crate_name, will publish"
+		return 0
+	fi
+
+	# Check if there are changes in the crate directory since the tag
+	if git diff --quiet "$latest_tag" -- "$crate_dir"; then
+		echo "No changes in $crate_name since $latest_tag"
+		return 1
+	else
+		echo "Changes detected in $crate_name since $latest_tag"
+		return 0
+	fi
+}
+
+# Get the latest published version of a crate from crates.io
+get_latest_crates_version() {
+	local crate="$1"
+	cargo info --registry "crates-io" --color never --quiet "$crate" 2>/dev/null | grep "^version:" | cut -d' ' -f2 || echo ""
+}
+
+# Check if a directory has uncommitted changes (staged or unstaged)
+has_uncommitted_changes() {
+	local dir="$1"
+	# Check for any changes (staged or unstaged) in the directory
+	if git diff --quiet HEAD -- "$dir" 2>/dev/null && git diff --quiet --cached -- "$dir" 2>/dev/null; then
+		# Also check for untracked files
+		if [[ -z $(git ls-files --others --exclude-standard -- "$dir") ]]; then
+			return 1 # No changes
+		fi
+	fi
+	return 0 # Has changes
+}
+
+# Bump subcrate version if it has uncommitted changes (for prep phase)
+bump_subcrate_if_changed() {
+	local crate_name="$1"
+	local crate_dir="$2"
+
+	if ! has_uncommitted_changes "$crate_dir"; then
+		echo "No uncommitted changes in $crate_name, keeping current version"
+		return
+	fi
+
+	echo "Uncommitted changes detected in $crate_name, bumping version"
+	local cur_version
+	cur_version="$(cargo pkgid -p "$crate_name" | cut -d# -f2)"
+
+	# Use calver: YYYY.M.PATCH
+	local year month
+	year="$(date +%Y)"
+	month="$(date +%-m)"
+
+	if echo "$cur_version" | grep -qE "^$year\.$month\."; then
+		cargo set-version --bump patch -p "$crate_name"
+	elif echo "$cur_version" | grep -qE "^$year\."; then
+		cargo set-version --bump minor -p "$crate_name"
+	else
+		cargo set-version "$year.1.0" -p "$crate_name"
+	fi
+
+	local new_version
+	new_version="$(cargo pkgid -p "$crate_name" | cut -d# -f2)"
+	echo "Bumped $crate_name from $cur_version to $new_version"
+}
+
+# Bump and publish a subcrate if it has changes
+# Sets PUBLISHED_<CRATE>_VERSION variable with the version to use
+bump_and_publish_subcrate() {
+	local crate_name="$1"
+	local crate_dir="$2"
+	local var_name="$3" # Variable name to set (e.g., VFOX_VERSION)
+
+	local cur_version
+	cur_version="$(cargo pkgid -p "$crate_name" | cut -d# -f2)"
+
+	if ! has_crate_changes "$crate_name" "$crate_dir"; then
+		# No changes - use the current published version
+		local published_version
+		published_version=$(get_latest_crates_version "$crate_name")
+		if [[ -n $published_version ]]; then
+			echo "Using existing $crate_name@$published_version (no changes)"
+			eval "$var_name=$published_version"
+		else
+			echo "Warning: $crate_name not found on crates.io, using current version"
+			eval "$var_name=$cur_version"
+		fi
+		return
+	fi
+
+	# Has changes - bump version and publish
+	# Use calver: YYYY.M.PATCH
+	local year month
+	year="$(date +%Y)"
+	month="$(date +%-m)"
+
+	if echo "$cur_version" | grep -qE "^$year\.$month\."; then
+		# Same year.month, bump patch
+		cargo set-version --bump patch -p "$crate_name"
+	elif echo "$cur_version" | grep -qE "^$year\."; then
+		# Same year, bump minor (month)
+		cargo set-version --bump minor -p "$crate_name"
+	else
+		# New year
+		cargo set-version "$year.1.0" -p "$crate_name"
+	fi
+
+	local new_version
+	new_version="$(cargo pkgid -p "$crate_name" | cut -d# -f2)"
+
+	if exists_on_crates "$crate_name" "$new_version"; then
+		echo "$crate_name@$new_version already on crates.io, skipping publish"
+	else
+		echo "Publishing $crate_name@$new_version"
+		cargo publish --allow-dirty -p "$crate_name"
+	fi
+
+	# Create tag for this subcrate release
+	local tag_name="${crate_name}-v${new_version}"
+	if git rev-parse -q --verify "refs/tags/$tag_name" >/dev/null ||
+		git ls-remote --exit-code --tags origin "$tag_name" >/dev/null 2>&1; then
+		echo "Tag $tag_name already exists, skipping tag creation"
+	else
+		git tag "$tag_name" -s -m "Release $crate_name $new_version"
+	fi
+
+	eval "$var_name=$new_version"
+}
+
 cur_version="$(cargo pkgid mise | cut -d# -f2)"
 latest_version="$(cargo info --registry "crates-io" --color never --quiet mise | grep "^version:" | cut -d' ' -f2)"
 if [[ $cur_version != "$latest_version" ]]; then
-	echo "Releasing $cur_version"
-	cargo set-version "$cur_version" --workspace
-	if exists_on_crates vfox "$cur_version"; then
-		echo "vfox@$cur_version already on crates.io, skipping publish"
-	else
-		cargo publish --allow-dirty -p vfox
-	fi
-	cargo add "vfox@$cur_version"
+	echo "Releasing mise $cur_version"
 
-	if exists_on_crates aqua-registry "$cur_version"; then
-		echo "aqua-registry@$cur_version already on crates.io, skipping publish"
-	else
-		cargo publish --allow-dirty -p aqua-registry
-	fi
-	cargo add "aqua-registry@$cur_version"
+	# Handle subcrates with independent versioning
+	VFOX_VERSION=""
+	AQUA_REGISTRY_VERSION=""
+
+	bump_and_publish_subcrate "vfox" "crates/vfox" "VFOX_VERSION"
+	cargo add "vfox@$VFOX_VERSION"
+
+	bump_and_publish_subcrate "aqua-registry" "crates/aqua-registry" "AQUA_REGISTRY_VERSION"
+	cargo add "aqua-registry@$AQUA_REGISTRY_VERSION"
 
 	if exists_on_crates mise "$cur_version"; then
 		echo "mise@$cur_version already on crates.io, skipping publish"
@@ -56,8 +191,10 @@ if [[ $cur_version != "$latest_version" ]]; then
 		echo "Tag v$cur_version already exists, skipping tag creation"
 	else
 		git tag "v$cur_version" -s -m "$changelog"
-		git push --tags
 	fi
+
+	# Push all tags (mise + any subcrate tags)
+	git push --tags
 	exit 0
 fi
 
@@ -182,6 +319,10 @@ mise registry | awk '$2 ~ /^vfox:/ {print $2}' | sed 's|vfox:||' | sort -u | whi
 	rm -rf "$TEMP_DIR"
 done
 
+# Bump subcrate versions if they have changes (from aqua-registry/vfox updates)
+bump_subcrate_if_changed "aqua-registry" "crates/aqua-registry"
+bump_subcrate_if_changed "vfox" "crates/vfox"
+
 git status
 # cargo update
 git add \
@@ -190,7 +331,9 @@ git add \
 	CHANGELOG.md \
 	README.md \
 	crates/aqua-registry/aqua-registry \
+	crates/aqua-registry/Cargo.toml \
 	crates/vfox/embedded-plugins \
+	crates/vfox/Cargo.toml \
 	default.nix \
 	snapcraft.yaml \
 	docs/.vitepress/stars.data.ts \

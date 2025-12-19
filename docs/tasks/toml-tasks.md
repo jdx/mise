@@ -74,7 +74,7 @@ run = './scripts/test-e2e.sh {{vars.e2e_args}} $VERBOSE_ARGS'
 You can edit the `mise.toml` file directly or using [`mise tasks add`](/cli/tasks/add)
 
 ```shell
-mise task add pre-commit --depends "test" --depends "render" -- echo pre-commit
+mise tasks add pre-commit --depends "test" --depends "render" -- echo pre-commit
 ```
 
 will add the following to `mise.toml`:
@@ -146,7 +146,7 @@ alias = 'b' # `mise run b`
 ```shell
 ❯ mise run
 Tasks
-# Select a tasks to run
+# Select a task to run
 # > build  Build the CLI
 #   test   Run the tests
 ```

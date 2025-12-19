@@ -3,7 +3,7 @@
 assert "mise generate bootstrap -w"
 assert "./bin/mise version"
 
-assert "mise task add xxx -- echo 'running xxx'"
+assert "mise tasks add xxx -- echo 'running xxx'"
 assert "mise generate task-stubs --mise-bin ./bin/mise"
 assert "./bin/xxx" "running xxx"
 

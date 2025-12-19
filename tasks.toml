@@ -6,7 +6,7 @@ run = 'cargo clean'
 
 [release]
 description = 'Release the project'
-run = 'cargo release'
+run = 'cargo release --exclude-unchanged'
 
 [signal-test]
 description = 'Test signal handling in Node.js'

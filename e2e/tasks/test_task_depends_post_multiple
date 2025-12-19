@@ -15,7 +15,7 @@ EOF
 
 # Test that task dependencies are resolved correctly
 # With depends_post, the dependencies appear as children in the tree
-assert "mise task deps" "bar
+assert "mise tasks deps" "bar
 └── baz
 baz
 foo
@@ -40,7 +40,7 @@ run = "echo main"
 depends_post = ["one", "two", "three"]
 EOF
 
-assert "mise task deps" "main
+assert "mise tasks deps" "main
 one
 └── main
 three

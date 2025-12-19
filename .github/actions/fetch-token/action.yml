@@ -1,0 +1,36 @@
+name: "Fetch GitHub Token from Pool"
+description: "Fetches a token from mise-versions token pool"
+inputs:
+  api-secret:
+    description: "API secret for mise-versions"
+    required: true
+outputs:
+  token:
+    description: "The GitHub token"
+    value: ${{ steps.fetch.outputs.token }}
+  token-id:
+    description: "Token ID for rate-limit reporting"
+    value: ${{ steps.fetch.outputs.token_id }}
+runs:
+  using: "composite"
+  steps:
+    - id: fetch
+      shell: bash
+      run: |
+        if [ -z "${{ inputs.api-secret }}" ]; then
+          echo "No API secret provided, skipping token fetch"
+          exit 0
+        fi
+        response=$(curl -sf -H "Authorization: Bearer ${{ inputs.api-secret }}" \
+          "https://mise-versions.jdx.dev/api/token" || true)
+        if [ -n "$response" ]; then
+          token=$(echo "$response" | jq -r '.token')
+          # Validate token looks like a GitHub token (starts with gh and has reasonable length)
+          if [[ "$token" =~ ^gh[a-z]_[A-Za-z0-9_]+$ ]] && [ ${#token} -ge 20 ]; then
+            echo "::add-mask::$token"
+            echo "token=$token" >> "$GITHUB_OUTPUT"
+            echo "token_id=$(echo "$response" | jq -r '.token_id')" >> "$GITHUB_OUTPUT"
+          else
+            echo "Invalid or missing token in response, skipping"
+          fi
+        fi

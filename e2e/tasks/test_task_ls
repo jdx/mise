@@ -41,21 +41,21 @@ cat <<'EOF' >.config/mise/conf.d/confdtask-config.toml
 run = 'echo "confdtask"'
 EOF
 
-assert "mise task ls" "confdtask
+assert "mise tasks ls" "confdtask
 filetask2
 filetask3
 lint
 test
 test-with-args"
 
-assert "mise task -x ls" "confdtask          ./.config/mise/conf.d/confdtask-config.toml
+assert "mise tasks -x ls" "confdtask          ./.config/mise/conf.d/confdtask-config.toml
 filetask2          ./mytasks/filetask2
 filetask3          ./mytasks/filetask3.sh
 lint               ./mise.toml
 test               ./tasks.toml
 test-with-args     ./tasks.toml"
 
-assert_json "mise task ls --json" "$(
+assert_json "mise tasks ls --json" "$(
 	cat <<EOF
 [
  {

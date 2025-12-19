@@ -26,7 +26,7 @@ export default withMermaid(
       logo: "/logo.svg",
       outline: "deep",
       nav: [
-        { text: "mise-tools", link: "https://mise-tools.jdx.dev/" },
+        { text: "mise-versions", link: "https://mise-versions.jdx.dev/" },
         { text: "Dev Tools", link: "/dev-tools/" },
         { text: "Environments", link: "/environments/" },
         { text: "Tasks", link: "/tasks/" },
@@ -172,6 +172,7 @@ export default withMermaid(
           text: "About",
           items: [
             { text: "About mise", link: "/about" },
+            { text: "Glossary", link: "/glossary" },
             { text: "FAQs", link: "/faq" },
             { text: "Troubleshooting", link: "/troubleshooting" },
             { text: "Tips & Tricks", link: "/tips-and-tricks" },

@@ -341,7 +341,7 @@ test = ["awsweeper --version", "version: {{version}}"]
 
 [tools.azure]
 aliases = ["azure-cli"]
-backends = ["asdf:mise-plugins/mise-azure-cli"]
+backends = ["pipx:azure-cli[uvx_args=--prerelease=allow]"]
 description = "azure-cli (az)"
 test = ["az --version", "azure-cli                         {{version}}"]
 
@@ -894,8 +894,10 @@ description = "A distributed SQL database designed for speed, scale, and surviva
 test = ["cockroach version", "v{{version}}"]
 
 [tools.cocoapods]
-backends = ["asdf:mise-plugins/mise-cocoapods"]
+backends = ["gem:cocoapods"]
 description = "CocoaPods is a dependency manager for Swift and Objective-C Cocoa projects"
+os = ["macos"]
+test = ["pod --version", "{{version}}"]
 
 [tools.cocogitto]
 backends = ["aqua:cocogitto/cocogitto"]
@@ -919,8 +921,26 @@ backends = [
 description = "The Codefresh CLI provides a full and flexible interface to interact with Codefresh"
 
 [tools.codeql]
-backends = ["asdf:mise-plugins/mise-codeql"]
 description = "CodeQL CLI"
+test = ["codeql --version", "CodeQL command-line toolchain release {{version}}"]
+
+[[tools.codeql.backends]]
+full = "github:github/codeql-cli-binaries[bin_path=codeql]"
+
+[tools.codeql.backends.options.platforms.macos-x64]
+asset_pattern = "codeql-osx64.zip"
+
+[tools.codeql.backends.options.platforms.macos-arm64]
+asset_pattern = "codeql-osx64.zip"
+
+[tools.codeql.backends.options.platforms.linux-x64]
+asset_pattern = "codeql-linux64.zip"
+
+[tools.codeql.backends.options.platforms.windows-x64]
+asset_pattern = "codeql-win64.zip"
+
+[[tools.codeql.backends]]
+full = "asdf:mise-plugins/mise-codeql"
 
 [tools.coder]
 backends = ["aqua:coder/coder", "asdf:mise-plugins/asdf-coder"]
@@ -1117,7 +1137,7 @@ description = "Yet another cron alternative with a Web UI, but with much more ca
 test = ["dagu version 2>&1", "{{version}}"]
 
 [tools.danger-js]
-backends = ["asdf:mise-plugins/mise-danger-js"]
+backends = ["npm:danger"]
 description = "Danger runs during your CI process, and gives teams the chance to automate common code review chores"
 
 [tools.danger-swift]
@@ -1147,8 +1167,26 @@ backends = ["aqua:datreeio/datree", "asdf:lukeab/asdf-datree"]
 description = "Prevent Kubernetes misconfigurations from reaching production (again  )! From code to cloud, Datree provides an E2E policy enforcement solution to run automatic checks for rule violations. See our docs: https://hub.datree.io"
 
 [tools.daytona]
-backends = ["asdf:mise-plugins/mise-daytona"]
 description = "Daytona is a Secure and Elastic Infrastructure for Running AI-Generated Code"
+test = ["daytona version", "Daytona CLI version v{{version}}"]
+
+[[tools.daytona.backends]]
+full = "github:daytonaio/daytona[bin=daytona]"
+
+[tools.daytona.backends.options.platforms.macos-arm64]
+asset_pattern = "daytona-darwin-arm64"
+
+[tools.daytona.backends.options.platforms.macos-x64]
+asset_pattern = "daytona-darwin-amd64"
+
+[tools.daytona.backends.options.platforms.linux-x64]
+asset_pattern = "daytona-linux-amd64"
+
+[tools.daytona.backends.options.platforms.linux-arm64]
+asset_pattern = "daytona-linux-arm64"
+
+[[tools.daytona.backends]]
+full = "asdf:mise-plugins/mise-daytona"
 
 [tools.dbmate]
 backends = ["aqua:amacneil/dbmate", "asdf:juusujanar/asdf-dbmate"]
@@ -1279,8 +1317,30 @@ description = ":dog: Command-line DNS Client for Humans. Written in Golang"
 test = ["doggo --version | awk '{print $1}'", "v{{version}}"]
 
 [tools.dome]
-backends = ["asdf:mise-plugins/mise-dome"]
 description = "DOME is a framework for making 2D games using the Wren programming language which can be played across platforms"
+os = ["linux", "macos", "windows"]
+
+[[tools.dome.backends]]
+full = "github:domeengine/dome"
+
+[tools.dome.backends.options.platforms.macos-x64]
+asset_pattern = "dome-v{version}-macosx-all.zip"
+bin_path = "dome-macosx-all"
+
+[tools.dome.backends.options.platforms.macos-arm64]
+asset_pattern = "dome-v{version}-macosx-all.zip"
+bin_path = "dome-macosx-all"
+
+[tools.dome.backends.options.platforms.linux-x64]
+asset_pattern = "dome-v{version}-linux-x64.zip"
+bin_path = "dome-linux-x64"
+
+[tools.dome.backends.options.platforms.windows-x64]
+asset_pattern = "dome-v{version}-windows-x64.zip"
+bin_path = "dome-windows-x64"
+
+[[tools.dome.backends]]
+full = "asdf:mise-plugins/mise-dome"
 
 [tools.doppler]
 backends = [
@@ -1369,8 +1429,9 @@ description = "A more intuitive version of du in rust"
 test = ["dust --version", "Dust {{version}}"]
 
 [tools.dvc]
-backends = ["asdf:mise-plugins/mise-dvc"]
+backends = ["pipx:dvc"]
 description = "Data Versioning and ML Experiments"
+test = ["dvc version", "{{version}}"]
 
 [tools.dyff]
 backends = ["aqua:homeport/dyff", "asdf:https://gitlab.com/wt0f/asdf-dyff"]
@@ -1461,8 +1522,9 @@ description = "Pulumi ESC is a centralized, secure service for environments, sec
 test = ["esc version", "v{{version}}"]
 
 [tools.esy]
-backends = ["asdf:mise-plugins/mise-esy"]
+backends = ["npm:esy"]
 description = "Easy package management for native Reason, OCaml and more"
+test = ["esy --version", "{{version}}"]
 
 [tools.etcd]
 backends = [
@@ -1579,8 +1641,30 @@ backends = ["aqua:superfly/flyctl", "asdf:chessmango/asdf-flyctl"]
 description = "Command line tools for fly.io services"
 
 [tools.flyway]
-backends = ["asdf:mise-plugins/mise-flyway"]
 description = "Flyway by Redgate • Database Migrations Made Easy"
+test = ["flyway --version", "{{version}}"]
+
+[[tools.flyway.backends]]
+full = "github:flyway/flyway[version_prefix=flyway-]"
+
+[tools.flyway.backends.options.platforms.macos-arm64]
+asset_pattern = "flyway-commandline-{version}-macosx-arm64.tar.gz"
+bin_path = "flyway-{version}"
+
+[tools.flyway.backends.options.platforms.macos-x64]
+asset_pattern = "flyway-commandline-{version}-macosx-x64.tar.gz"
+bin_path = "flyway-{version}"
+
+[tools.flyway.backends.options.platforms.linux-x64]
+asset_pattern = "flyway-commandline-{version}-linux-x64.tar.gz"
+bin_path = "flyway-{version}"
+
+[tools.flyway.backends.options.platforms.windows-x64]
+asset_pattern = "flyway-commandline-{version}-windows-x64.zip"
+bin_path = "flyway-{version}"
+
+[[tools.flyway.backends]]
+full = "asdf:mise-plugins/mise-flyway"
 
 [tools.foundry]
 backends = ["aqua:foundry-rs/foundry"]
@@ -1608,7 +1692,7 @@ description = ":cherry_blossom: A command-line fuzzy finder"
 test = ["fzf --version", "{{version}}"]
 
 [tools.gallery-dl]
-backends = ["asdf:mise-plugins/mise-gallery-dl"]
+backends = ["pipx:gallery-dl"]
 description = "Command-line program to download image galleries and collections from several image hosting sites"
 
 [tools.gam]
@@ -1928,7 +2012,10 @@ backends = ["asdf:mise-plugins/mise-gradle-profiler"]
 description = "A tool for gathering profiling and benchmarking information for Gradle builds"
 
 [tools.grails]
-backends = ["asdf:mise-plugins/mise-grails"]
+backends = [
+  "asdf:mise-plugins/mise-grails",
+  "github:apache/grails-core[asset_pattern=apache-grails-{version}-bin.zip,bin_path=apache-grails-{version}-bin/bin]",
+]
 description = "A powerful Groovy-based web application framework for the JVM built on top of Spring Boot"
 
 [tools.grain]
@@ -2101,8 +2188,9 @@ test = ["helmwave version", "{{version}}"]
 
 [tools.heroku]
 aliases = ["heroku-cli"]
-backends = ["asdf:mise-plugins/mise-heroku-cli"]
+backends = ["npm:heroku"]
 description = "The Heroku Command Line Interface (CLI) is an essential part of using Heroku. With it, you can create and manage Heroku apps directly from the terminal"
+test = ["heroku --version", "heroku/{{version}}"]
 
 [tools.hexyl]
 backends = ["aqua:sharkdp/hexyl", "cargo:hexyl"]
@@ -2938,7 +3026,7 @@ description = "Apache Maven core"
 test = ["mvn --version", "Apache Maven {{version}}"]
 
 [tools.mc]
-backends = ["asdf:mise-plugins/mise-mc"]
+backends = ["aqua:minio/mc", "asdf:mise-plugins/mise-mc"]
 description = "Unix like utilities for object store (minio)"
 
 [tools.mdbook]
@@ -2982,7 +3070,10 @@ backends = ["asdf:mise-plugins/mise-meson"]
 description = "Meson is an open source build system meant to be both extremely fast, and, even more importantly, as user friendly as possible"
 
 [tools.micronaut]
-backends = ["asdf:mise-plugins/mise-micronaut"]
+backends = [
+  "github:micronaut-projects/micronaut-starter[exe=mn]",
+  "asdf:mise-plugins/mise-micronaut",
+]
 description = "A modern, JVM-based, full-stack framework for building modular, easily testable microservice and serverless applications"
 
 [tools.mill]
@@ -3028,7 +3119,7 @@ description = "Connect your local process and your cloud environment, and run lo
 test = ["mirrord --version", "mirrord {{version}}"]
 
 [tools.mitmproxy]
-backends = ["asdf:mise-plugins/mise-mitmproxy"]
+backends = ["pipx:mitmproxy", "asdf:mise-plugins/mise-mitmproxy"]
 description = "mitmproxy is a free and open source interactive HTTPS proxy"
 
 [tools.mkcert]
@@ -3164,7 +3255,7 @@ backends = ["aqua:hashicorp/nomad", "asdf:mise-plugins/mise-hashicorp"]
 description = "Nomad is an easy-to-use, flexible, and performant workload orchestrator that can deploy a mix of microservice, batch, containerized, and non-containerized applications. Nomad is easy to operate and scale and has native Consul and Vault integrations"
 
 [tools.nomad-pack]
-backends = ["asdf:mise-plugins/mise-hashicorp"]
+backends = ["aqua:hashicorp/nomad-pack", "asdf:mise-plugins/mise-hashicorp"]
 description = "Nomad Pack is a templating and packaging tool used with HashiCorp Nomad"
 
 [tools.notation]
@@ -3419,9 +3510,10 @@ backends = ["asdf:mise-plugins/mise-pipelight"]
 description = "Tiny automation pipelines. Bring CI/CD to the smallest projects. Self-hosted, Lightweight, CLI only"
 
 [tools.pipenv]
-backends = ["asdf:mise-plugins/mise-pipenv"]
+backends = ["vfox:mise-plugins/vfox-pipenv", "pipx:pipenv"]
 depends = ["python"]
 description = "Python Development Workflow for Humans"
+test = ["pipenv --version", "pipenv, version {{version}}"]
 
 [tools.pipx]
 backends = ["aqua:pypa/pipx", "asdf:mise-plugins/mise-pipx"]
@@ -3473,9 +3565,9 @@ backends = [
 description = "Podman: A tool for managing OCI containers and pods"
 
 [tools.poetry]
-backends = ["asdf:mise-plugins/mise-poetry"]
-depends = ["python"]
+backends = ["vfox:mise-plugins/vfox-poetry", "pipx:poetry"]
 description = "Python packaging and dependency management made easy"
+test = ["poetry --version", "Poetry (version {{version}})"]
 
 [tools.polaris]
 backends = ["aqua:FairwindsOps/polaris", "asdf:particledecay/asdf-polaris"]
@@ -3620,8 +3712,9 @@ backends = [
 description = "A strongly-typed language that compiles to JavaScript"
 
 [tools.purty]
-backends = ["asdf:mise-plugins/mise-purty"]
+backends = ["npm:purty"]
 description = "PureScript pretty-printer"
+test = ["purty version", "Purty version: {{version}}"]
 
 [tools.python]
 backends = ["core:python"]
@@ -3637,7 +3730,7 @@ description = "Blazing-fast Data-Wrangling toolkit"
 test = ["qsv --version", "qsv {{version}}"]
 
 [tools.quarkus]
-backends = ["asdf:mise-plugins/mise-quarkus"]
+backends = ["github:quarkusio/quarkus", "asdf:mise-plugins/mise-quarkus"]
 description = "The quarkus command lets you create projects, manage extensions and do essential build and development tasks using the underlying project build tool"
 
 [tools.r]
@@ -3862,8 +3955,9 @@ description = "sccache is ccache with cloud storage"
 test = ["sccache --version", "sccache {{version}}"]
 
 [tools.schemacrawler]
-backends = ["asdf:mise-plugins/mise-schemacrawler"]
+backends = ["github:schemacrawler/SchemaCrawler[exe=schemacrawler.sh]"]
 description = "Free database schema discovery and comprehension tool"
+test = ["schemacrawler.sh --version", "SchemaCrawler {{version}}"]
 
 [tools.scie-pants]
 backends = ["github:pantsbuild/scie-pants", "asdf:robzr/asdf-scie-pants"]
@@ -3912,7 +4006,7 @@ description = "semver bash implementation"
 test = ["semver --version", "semver: {{version}}"]
 
 [tools.sentinel]
-backends = ["asdf:mise-plugins/mise-hashicorp"]
+backends = ["aqua:hashicorp/sentinel", "asdf:mise-plugins/mise-hashicorp"]
 description = "Sentinel is a policy as code tool that lets you control what users of HashiCorp products are allowed to do. It enforces policies proactively, preventing end users from deploying changes that are not allowed"
 
 [tools.sentry]
@@ -3921,16 +4015,15 @@ backends = ["aqua:getsentry/sentry-cli"]
 description = "A command line utility to work with Sentry"
 test = ["sentry-cli --version", "sentry-cli {{version}}"]
 
-[tools.serf]
-backends = ["asdf:mise-plugins/mise-hashicorp"]
-description = "Serf is a decentralized solution for service discovery and orchestration that is lightweight, highly available, and fault tolerant"
-
 [tools.serverless]
-backends = ["asdf:mise-plugins/mise-serverless"]
+backends = ["npm:serverless", "asdf:mise-plugins/mise-serverless"]
 description = "Serverless Framework"
 
 [tools.setup-envtest]
-backends = ["asdf:mise-plugins/mise-setup-envtest"]
+backends = [
+  "aqua:kubernetes-sigs/controller-runtime/setup-envtest",
+  "asdf:mise-plugins/mise-setup-envtest",
+]
 description = "This is a small tool that manages binaries for envtest. It can be used to download new binaries, list currently installed and available ones, and clean up versions"
 
 [tools.shell2http]
@@ -4003,8 +4096,34 @@ description = "Verify provenance from SLSA compliant builders"
 test = ["slsa-verifier version", "{{version}}"]
 
 [tools.smithy]
-backends = ["asdf:mise-plugins/mise-smithy"]
 description = "Smithy is a language for defining services and SDKs"
+test = ["smithy --version", "{{version}}"]
+
+[[tools.smithy.backends]]
+full = "github:smithy-lang/smithy"
+
+[tools.smithy.backends.options.platforms.macos-arm64]
+asset_pattern = "smithy-cli-darwin-aarch64.zip"
+bin_path = "smithy-cli-darwin-aarch64/bin"
+
+[tools.smithy.backends.options.platforms.macos-x64]
+asset_pattern = "smithy-cli-darwin-x86_64.zip"
+bin_path = "smithy-cli-darwin-x86_64/bin"
+
+[tools.smithy.backends.options.platforms.linux-arm64]
+asset_pattern = "smithy-cli-linux-aarch64.zip"
+bin_path = "smithy-cli-linux-aarch64/bin"
+
+[tools.smithy.backends.options.platforms.linux-x64]
+asset_pattern = "smithy-cli-linux-x86_64.zip"
+bin_path = "smithy-cli-linux-x86_64/bin"
+
+[tools.smithy.backends.options.platforms.windows-x64]
+asset_pattern = "smithy-cli-windows-x64.zip"
+bin_path = "smithy-cli-windows-x64/bin"
+
+[[tools.smithy.backends]]
+full = "asdf:mise-plugins/mise-smithy"
 
 [tools.smlnj]
 backends = ["asdf:mise-plugins/mise-smlnj"]
@@ -4109,7 +4228,7 @@ description = "SSH CA Client/Server"
 test = ["sshi version", "local: {{version}}"]
 
 [tools.sshuttle]
-backends = ["asdf:mise-plugins/mise-sshuttle"]
+backends = ["pipx:sshuttle", "asdf:mise-plugins/mise-sshuttle"]
 description = "sshuttle: where transparent proxy meets VPN meets ssh"
 
 [tools.sst]
@@ -4223,8 +4342,12 @@ backends = ["asdf:mise-plugins/mise-swift-package-list"]
 description = "A command-line tool to get all used Swift Package dependencies"
 
 [tools.swiftformat]
-backends = ["asdf:mise-plugins/mise-swiftformat"]
+backends = [
+  "github:nicklockwood/SwiftFormat[rename_exe=swiftformat]",
+  "asdf:mise-plugins/mise-swiftformat",
+]
 description = "A command-line tool and Xcode Extension for formatting Swift code"
+test = ["swiftformat --version", "{{version}}"]
 
 [tools.swiftgen]
 backends = [
@@ -4388,7 +4511,7 @@ backends = ["aqua:dineshba/tf-summarize", "asdf:adamcrews/asdf-tf-summarize"]
 description = "A command-line utility to print the summary of the terraform plan"
 
 [tools.tfc-agent]
-backends = ["asdf:mise-plugins/mise-hashicorp"]
+backends = ["aqua:hashicorp/tfc-agent", "asdf:mise-plugins/mise-hashicorp"]
 description = "HCP Terraform Agents allow HCP Terraform to communicate with isolated, private, or on-premises infrastructure"
 
 [tools.tfctl]
@@ -4493,7 +4616,7 @@ description = "TOML Formatter / Linter / Language Server"
 test = ["tombi --version", "tombi {{version}}"]
 
 [tools.tomcat]
-backends = ["asdf:mise-plugins/mise-tomcat"]
+backends = ["aqua:apache/tomcat", "asdf:mise-plugins/mise-tomcat"]
 description = "The Apache Tomcat® software is an open source implementation of the Jakarta Servlet, Jakarta Pages, Jakarta Expression Language, Jakarta WebSocket, Jakarta Annotations and Jakarta Authentication specifications. These specifications are part of the Jakarta EE platform"
 
 [tools.tonnage]
@@ -4842,12 +4965,16 @@ description = "A little beautifier tool for xcodebuild"
 test = ["which xcbeautify", "xcbeautify"]
 
 [tools.xchtmlreport]
-backends = ["asdf:mise-plugins/mise-xchtmlreport"]
+backends = ["github:XCTestHTMLReport/XCTestHTMLReport"]
 description = "Xcode-like HTML report for Unit and UI Tests"
+os = ["macos"]
+test = ["xchtmlreport --version", "{{version}}"]
 
 [tools.xcodegen]
-backends = ["asdf:mise-plugins/mise-xcodegen"]
+backends = ["github:yonaskolb/XcodeGen"]
 description = "A Swift command line tool for generating your Xcode project"
+os = ["macos"]
+test = ["xcodegen --version", "Version: {{version}}"]
 
 [tools.xcodes]
 backends = ["aqua:XcodesOrg/xcodes"]
@@ -4856,8 +4983,10 @@ os = ["macos"]
 test = ["xcodes version", "{{version}}"]
 
 [tools.xcresultparser]
-backends = ["asdf:mise-plugins/mise-xcresultparser"]
+backends = ["github:a7ex/xcresultparser"]
 description = "Parse the binary xcresult bundle from Xcode builds and testruns"
+os = ["macos"]
+test = ["xcresultparser --help", "OVERVIEW: xcresultparser"]
 
 [tools.xcsift]
 backends = ["github:ldomaradzki/xcsift"]
@@ -5009,5 +5138,19 @@ description = "A smarter cd command. Supports all major shells"
 test = ["zoxide --version", "zoxide {{version}}"]
 
 [tools.zprint]
-backends = ["asdf:mise-plugins/mise-zprint"]
 description = "Executables, uberjar, and library to beautifully format Clojure and Clojurescript source code and s-expressions"
+
+[[tools.zprint.backends]]
+full = "github:kkinnear/zprint[bin=zprint]"
+
+[tools.zprint.backends.options.platforms.macos-arm64]
+asset_pattern = "zprintma-{version}"
+
+[tools.zprint.backends.options.platforms.macos-x64]
+asset_pattern = "zprintm-{version}"
+
+[tools.zprint.backends.options.platforms.linux-x64]
+asset_pattern = "zprintl-{version}"
+
+[[tools.zprint.backends]]
+full = "asdf:mise-plugins/mise-zprint"

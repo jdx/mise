@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: hashicorp
+    repo_name: sentinel
+    url: https://releases.hashicorp.com/sentinel/{{trimV .Version}}/sentinel_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+    description: Sentinel is a policy as code tool that lets you control what users of HashiCorp products are allowed to do
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    checksum:
+      type: http
+      url: https://releases.hashicorp.com/sentinel/{{trimV .Version}}/sentinel_{{trimV .Version}}_SHA256SUMS
+      algorithm: sha256

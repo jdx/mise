@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 
 # tests that "test.sh" gets mapped to "test" except when an existing task is there named "test"
-assert "mise task add --file test.sh --description sh"
-assert "mise task ls" "test  sh"
-assert_json_partial_array "mise task ls --json" "name,description,source" "[
+assert "mise tasks add --file test.sh --description sh"
+assert "mise tasks ls" "test  sh"
+assert_json_partial_array "mise tasks ls --json" "name,description,source" "[
   {
     \"name\": \"test\",
     \"description\": \"sh\",
     \"source\": \"$PWD/mise-tasks/test.sh\"
   }
 ]"
-assert "mise task ls --usage" 'cmd test help=sh'
+assert "mise tasks ls --usage" 'cmd test help=sh'
 
-assert "mise task add --file test --description no-sh"
-assert "mise task ls" "test     no-sh
+assert "mise tasks add --file test --description no-sh"
+assert "mise tasks ls" "test     no-sh
 test.sh  sh"
-assert_json_partial_array "mise task ls --json" "name,description,source" "[
+assert_json_partial_array "mise tasks ls --json" "name,description,source" "[
   {
     \"name\": \"test\",
     \"description\": \"no-sh\",
@@ -28,7 +28,7 @@ assert_json_partial_array "mise task ls --json" "name,description,source" "[
   }
 ]"
 
-assert_json_partial_array "mise task ls --json" "name,description,source" "$(
+assert_json_partial_array "mise tasks ls --json" "name,description,source" "$(
 	cat <<EOF
 [
   {
@@ -45,7 +45,7 @@ assert_json_partial_array "mise task ls --json" "name,description,source" "$(
 EOF
 )"
 
-assert "mise task ls --usage" 'cmd test help=no-sh
+assert "mise tasks ls --usage" 'cmd test help=no-sh
 cmd test.sh help=sh'
 
 touch script.sh

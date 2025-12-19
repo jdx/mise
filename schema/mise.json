@@ -1959,6 +1959,14 @@
         ]
       }
     },
+    "shell_alias": {
+      "description": "shell aliases",
+      "type": "object",
+      "additionalProperties": {
+        "description": "command to run",
+        "type": "string"
+      }
+    },
     "env": {
       "oneOf": [
         {

@@ -1995,7 +1995,7 @@ const completionSpec: Fig.Spec = {
         {
           name: ["-n", "--dry-run"],
           description:
-            "Don't actually run the tasks(s), just print them in order of execution",
+            "Don't actually run the task(s), just print them in order of execution",
           isRepeatable: false,
         },
         {
@@ -2566,7 +2566,7 @@ const completionSpec: Fig.Spec = {
             },
             {
               name: ["-H", "--hide"],
-              description: "Hide the task from `mise task` and completions",
+              description: "Hide the task from `mise tasks` and completions",
               isRepeatable: false,
             },
             {
@@ -2684,18 +2684,17 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: "edit",
-          description: "Edit a tasks with $EDITOR",
+          description: "Edit a task with $EDITOR",
           options: [
             {
               name: ["-p", "--path"],
-              description:
-                "Display the path to the tasks instead of editing it",
+              description: "Display the path to the task instead of editing it",
               isRepeatable: false,
             },
           ],
           args: {
             name: "task",
-            description: "Tasks to edit",
+            description: "Task to edit",
             generators: simpleTaskGenerator,
             debounce: true,
           },
@@ -2814,7 +2813,7 @@ const completionSpec: Fig.Spec = {
             {
               name: ["-n", "--dry-run"],
               description:
-                "Don't actually run the tasks(s), just print them in order of execution",
+                "Don't actually run the task(s), just print them in order of execution",
               isRepeatable: false,
             },
             {

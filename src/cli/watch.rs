@@ -36,7 +36,7 @@ pub struct Watch {
     args: Vec<String>,
 
     /// Files to watch
-    /// Defaults to sources from the tasks(s)
+    /// Defaults to sources from the task(s)
     #[clap(short, long, verbatim_doc_comment, hide = true)]
     glob: Vec<String>,
 
@@ -1090,7 +1090,7 @@ pub struct WatchexecArgs {
     // #[clap(short = 'C', long, value_hint = ValueHint::DirPath, long)]
     // pub cd: Option<PathBuf>,
     //
-    // /// Don't actually run the tasks(s), just print them in order of execution
+    // /// Don't actually run the task(s), just print them in order of execution
     // #[clap(long, short = 'n', verbatim_doc_comment)]
     // pub dry_run: bool,
     //
