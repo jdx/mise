@@ -3,7 +3,7 @@
 cat <<EOF >.tool-versions
 tiny latest
 shfmt latest
-zprint latest
+asdf:mise-plugins/mise-zprint latest
 EOF
 
 # install/uninstall multiple
