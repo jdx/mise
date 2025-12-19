@@ -63,7 +63,7 @@ version = "0.13.8"
 backend = "cargo:cargo-edit"
 
 [[tools."cargo:cargo-insta"]]
-version = "1.44.3"
+version = "1.45.0"
 backend = "cargo:cargo-insta"
 
 [[tools."cargo:cargo-release"]]
@@ -79,7 +79,7 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [[tools."cargo:usage-cli"]]
-version = "2.9.0"
+version = "2.10.0"
 backend = "cargo:usage-cli"
 
 [[tools.fd]]
