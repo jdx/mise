@@ -1364,14 +1364,14 @@ env = "MISE_AGE_STRICT"
 type = "Bool"
 
 [sops.age_key]
-description = "The age private key to use for sops secret decryption."
+description = "The age private key to use for sops secret decryption. Takes precedence over standard SOPS_AGE_KEY environment variable."
 env = "MISE_SOPS_AGE_KEY"
 optional = true
 type = "String"
 
 [sops.age_key_file]
 default_docs = "~/.config/mise/age.txt"
-description = "Path to the age private key file to use for sops secret decryption."
+description = "Path to the age private key file for sops secret decryption. Takes precedence over standard SOPS_AGE_KEY_FILE environment variable."
 env = "MISE_SOPS_AGE_KEY_FILE"
 optional = true
 type = "Path"
