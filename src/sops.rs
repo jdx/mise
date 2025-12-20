@@ -22,9 +22,50 @@ where
     F: rops::file::format::FileFormat,
 {
     static AGE_KEY: OnceCell<Option<String>> = OnceCell::const_new();
+    static AGE_KEY_FILE: OnceCell<Option<std::path::PathBuf>> = OnceCell::const_new();
     static MUTEX: Mutex<()> = Mutex::const_new(());
+    
     let age = AGE_KEY
         .get_or_init(async || {
+            // 1. Check standard SOPS_AGE_KEY_FILE environment variable first
+            if let Ok(key_file_path) = env::var("SOPS_AGE_KEY_FILE") {
+                let p = replace_path(match parse_template(key_file_path.clone()) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        warn!("failed to parse SOPS_AGE_KEY_FILE: {}", e);
+                        return None;
+                    }
+                });
+                // Always store the expanded path for later use by sops CLI (even if file doesn't exist yet)
+                let _ = AGE_KEY_FILE.get_or_init(|| async { Some(p.clone()) }).await;
+                if p.exists() {
+                    if let Ok(raw) = file::read_to_string(&p) {
+                        let key = raw
+                            .trim()
+                            .lines()
+                            .filter(|l| !l.starts_with('#'))
+                            .collect::<String>();
+                        if !key.trim().is_empty() {
+                            return Some(key);
+                        }
+                    }
+                }
+            }
+
+            // 2. Check standard SOPS_AGE_KEY environment variable (direct key content)
+            if let Ok(key) = env::var("SOPS_AGE_KEY") {
+                if !key.trim().is_empty() {
+                    return Some(key.trim().to_string());
+                }
+            }
+
+            // 3. Fall back to mise-specific settings
+            if let Some(age_key) = &Settings::get().sops.age_key
+                && !age_key.is_empty()
+            {
+                return Some(age_key.clone());
+            }
+
             let p = Settings::get()
                 .sops
                 .age_key_file
@@ -37,13 +78,8 @@ where
                     return None;
                 }
             });
-            if let Some(age_key) = &Settings::get().sops.age_key
-                && !age_key.is_empty()
-            {
-                return Some(age_key.clone());
-            }
             if p.exists()
-                && let Ok(raw) = file::read_to_string(p)
+                && let Ok(raw) = file::read_to_string(p.clone())
             {
                 let key = raw
                     .trim()
@@ -51,6 +87,8 @@ where
                     .filter(|l| !l.starts_with('#'))
                     .collect::<String>();
                 if !key.trim().is_empty() {
+                    // Store the path for later use by sops CLI
+                    let _ = AGE_KEY_FILE.get_or_init(|| async { Some(p.clone()) }).await;
                     return Some(key);
                 }
             }
@@ -70,6 +108,13 @@ where
         "SOPS_AGE_KEY"
     };
     let prev_age = env::var(age_env_key).ok();
+    let prev_age_key_file = env::var("SOPS_AGE_KEY_FILE").ok();
+    
+    // Set SOPS_AGE_KEY_FILE with expanded path if we found one, so sops CLI can use it
+    if let Some(expanded_path) = AGE_KEY_FILE.get().and_then(|f| f.as_ref()) {
+        env::set_var("SOPS_AGE_KEY_FILE", expanded_path.to_string_lossy().to_string());
+    }
+    
     if let Some(age) = &age {
         env::set_var(age_env_key, age.trim());
     }
@@ -163,6 +208,11 @@ where
         env::set_var(age_env_key, age);
     } else {
         env::remove_var(age_env_key);
+    }
+    if let Some(age_key_file) = prev_age_key_file {
+        env::set_var("SOPS_AGE_KEY_FILE", age_key_file);
+    } else {
+        env::remove_var("SOPS_AGE_KEY_FILE");
     }
     Ok(output.unwrap_or_default())
 }
