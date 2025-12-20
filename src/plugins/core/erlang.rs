@@ -61,9 +61,13 @@ impl ErlangPlugin {
             return Ok(());
         }
         self.install_kerl().await?;
-        cmd!(self.kerl_path(), "update", "releases")
+        let output = cmd!(self.kerl_path(), "update", "releases")
             .env("KERL_BASE_DIR", self.kerl_base_dir())
+            .stdout_capture()
+            .stderr_capture()
             .run()?;
+        trace!("kerl stdout: {}", String::from_utf8_lossy(&output.stdout));
+        trace!("kerl stderr: {}", String::from_utf8_lossy(&output.stderr));
         Ok(())
     }
 
