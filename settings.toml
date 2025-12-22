@@ -1691,6 +1691,21 @@ server list inside `mise cache path`, folder `zig` as `community-mirrors.txt`.
 env = "MISE_ZIG_USE_COMMUNITY_MIRRORS"
 type = "Bool"
 
+[task.disable_spec_from_run_scripts]
+default = false
+description = "Opt out of parsing task run scripts to infer the usage spec (arguments and flags). When enabled, mise will derive the usage spec only from the `usage` field, ignoring any `arg()`, `option()`, or `flag()` templates used in run scripts. This can restore previous behavior and avoid the extra template pass over run scripts when collecting specs."
+docs = """
+When enabled, `arg()`, `option()`, and `flag()` Tera functions in run scripts will not contribute 
+to the task's usage spec—only the explicit `usage` field is used.
+
+This is useful for:
+- Skipping the extra template pass over run scripts (performance)
+- Avoiding two-pass parsing quirks where template functions return empty strings during spec collection
+- Early opt-out before Tera template arguments are removed in 2026.11.0
+"""
+env = "MISE_TASK_DISABLE_SPEC_FROM_RUN_SCRIPTS"
+type = "Bool"
+
 [task.monorepo_depth]
 default = 5
 description = "Maximum depth to search for task files in monorepo subdirectories."
