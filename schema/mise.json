@@ -1268,6 +1268,10 @@
           "description": "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`.",
           "type": "boolean"
         },
+        "task_show_full_cmd": {
+          "description": "Disable truncation of command lines in task execution output. When true, the full command line will be shown.",
+          "type": "boolean"
+        },
         "trace": {
           "description": "Sets log level to trace",
           "type": "boolean"

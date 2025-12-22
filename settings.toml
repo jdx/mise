@@ -1537,6 +1537,11 @@ env = "MISE_TASK_TIMINGS"
 optional = true
 type = "Bool"
 
+[task_show_full_cmd]
+description = "Disable truncation of command lines in task execution output. When true, the full command line will be shown."
+env = "MISE_TASK_SHOW_CMD_NO_TRUNC"
+type = "Bool"
+
 [trace]
 description = "Sets log level to trace"
 env = "MISE_TRACE"
