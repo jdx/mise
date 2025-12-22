@@ -573,6 +573,10 @@ impl TaskScriptParser {
         let rendered_usage = Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?;
         let spec_from_field: usage::Spec = rendered_usage.parse()?;
 
+        if Settings::get().task.disable_spec_from_run_scripts {
+            return Ok(spec_from_field);
+        }
+
         // Make the arg/flag names available as snake_case in the template context, using
         // default values from the spec (or sensible fallbacks when no default is provided).
         let usage_ctx = Self::make_usage_ctx_from_spec_defaults(&spec_from_field);
