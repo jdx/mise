@@ -94,4 +94,3 @@ EOF
 
 # Without the setting, tera args should appear again
 assert_contains "mise tasks info restored-test --json" '"name": "restoredarg"'
-
