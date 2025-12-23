@@ -46,6 +46,7 @@ mod exit;
 #[cfg_attr(windows, path = "fake_asdf_windows.rs")]
 mod fake_asdf;
 mod file;
+pub(crate) mod forgejo;
 mod git;
 pub(crate) mod github;
 pub(crate) mod gitlab;

@@ -101,6 +101,7 @@ export default withMermaid(
                 { text: "cargo", link: "/dev-tools/backends/cargo" },
                 { text: "conda", link: "/dev-tools/backends/conda" },
                 { text: "dotnet", link: "/dev-tools/backends/dotnet" },
+                { text: "forgejo", link: "/dev-tools/backends/forgejo" },
                 { text: "gem", link: "/dev-tools/backends/gem" },
                 { text: "github", link: "/dev-tools/backends/github" },
                 { text: "gitlab", link: "/dev-tools/backends/gitlab" },
