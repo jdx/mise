@@ -2,7 +2,7 @@
 # Verify task completion output includes monorepo tasks when using // paths
 
 # Root config marks repo as monorepo
-cat <<'CONFIG' > mise.toml
+cat <<'CONFIG' >mise.toml
 experimental_monorepo_root = true
 
 [tasks.root-task]
@@ -11,11 +11,11 @@ CONFIG
 
 # App subproject task that should appear in completions
 mkdir -p apps/web
-cat <<'CONFIG' > apps/web/mise.toml
+cat <<'CONFIG' >apps/web/mise.toml
 [tasks.update-snapshots]
 description = "Update monorepo snapshots"
 run = 'echo updating snapshots'
 CONFIG
 
 # Completion output should include the //-prefixed task path with escaped colon
-assert_contains "mise task ls --complete" "//apps/web\\:update-snapshots:Update monorepo snapshots"
+assert_contains "mise task ls --complete" '//apps/web\:update-snapshots:Update monorepo snapshots'
