@@ -3070,12 +3070,9 @@ backends = ["asdf:mise-plugins/mise-meson"]
 description = "Meson is an open source build system meant to be both extremely fast, and, even more importantly, as user friendly as possible"
 
 [tools.micromamba]
-backends = [
-  "github:mamba-org/micromamba-releases",
-  "asdf:ueisele/asdf-micromamba",
-]
+backends = ["github:mamba-org/micromamba-releases"]
 description = "Lightweight conda-compatible package manager"
-test = ["micromamba --version", ""]
+test = ["micromamba --version", "{{ version | split(pat=\"-\") | first }}"]
 
 [tools.micronaut]
 backends = [
