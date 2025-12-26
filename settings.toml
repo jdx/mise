@@ -1167,7 +1167,7 @@ description = "Enable terminal progress indicators (OSC 9;4) for compatible term
 docs = """
 Enable terminal progress indicators using OSC 9;4 escape sequences. This provides
 native progress bars in the terminal window chrome for terminals that support it,
-including Ghostty, VS Code's integrated terminal, Windows Terminal, and VTE-based
+including Ghostty, iTerm2, VS Code's integrated terminal, Windows Terminal, and VTE-based
 terminals (GNOME Terminal, Ptyxis, etc.).
 
 When enabled, mise will send progress updates to the terminal during operations like
