@@ -44,9 +44,9 @@ fn terminal_supports_osc_9_4() -> bool {
             match term_program.as_str() {
                 // Supported terminals
                 "ghostty" => return true,
+                "iTerm.app" => return true,
                 "vscode" => return true,
                 // Unsupported terminals
-                "iTerm.app" => return false, // iTerm2 uses OSC 9 for notifications, not OSC 9;4
                 "WezTerm" => return false,
                 "Alacritty" => return false,
                 _ => {}
