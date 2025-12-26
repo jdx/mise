@@ -119,7 +119,7 @@ jobs:
       - uses: rui314/setup-mold@725a8794d15fc7563f59595bd9556495c0564878 # v1
       - uses: taiki-e/install-action@0aa4f22591557b744fe31e55dbfcdfea74a073f7 # v2
         with:
-          tool: cargo-deny,cargo-msrv,cargo-machete
+          tool: cargo-deny@0.18.9,cargo-msrv@0.18.4,cargo-machete@0.9.1
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
           shared-key: build
