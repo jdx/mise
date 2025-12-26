@@ -1175,7 +1175,7 @@ tool installations. The progress bar appears in the terminal's window UI, separa
 from the text output.
 
 mise automatically detects whether your terminal supports OSC 9;4 and will only send
-these sequences if supported. Terminals like Alacritty, iTerm2, WezTerm, and kitty
+these sequences if supported. Terminals like Alacritty, WezTerm, and kitty
 do not support OSC 9;4 and will not receive these sequences.
 
 Set to false to disable this feature if you prefer not to see these indicators.
