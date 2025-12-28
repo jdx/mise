@@ -4732,6 +4732,11 @@ test = [
   "{{version}}",
 ]
 
+[tools.ty]
+backends = ["github:astral-sh/ty"]
+description = "An extremely fast Python type checker and language server, written in Rust"
+test = ["ty --version", "ty {{version}}"]
+
 [tools.uaa]
 aliases = ["uaa-cli"]
 backends = [
