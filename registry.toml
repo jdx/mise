@@ -3891,6 +3891,11 @@ backends = ["aqua:astral-sh/ruff", "asdf:simhem/asdf-ruff"]
 description = "An extremely fast Python linter and code formatter, written in Rust"
 test = ["ruff --version", "ruff {{version}}"]
 
+[tools.rumdl]
+backends = ["github:rvben/rumdl"]
+description = "Markdown Linter and Formatter written in Rust"
+test = ["rumdl --version", "rumdl {{version}}"]
+
 [tools.rust]
 backends = ["core:rust", "asdf:code-lever/asdf-rust"]
 description = "Rust language"
