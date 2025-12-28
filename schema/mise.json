@@ -1913,6 +1913,65 @@
           }
         }
       }
+    },
+    "prepare_provider": {
+      "type": "object",
+      "properties": {
+        "auto": {
+          "type": "boolean",
+          "default": false,
+          "description": "Auto-run before `mise x` and `mise run`"
+        },
+        "sources": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ],
+          "description": "Files/patterns to check for changes"
+        },
+        "outputs": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ],
+          "description": "Files/directories that should be newer than sources"
+        },
+        "run": {
+          "type": "string",
+          "description": "Command to run when stale"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Environment variables to set"
+        },
+        "dir": {
+          "type": "string",
+          "description": "Working directory for the command"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description shown in output"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Prepare provider configuration"
     }
   },
   "additionalProperties": false,
@@ -2022,6 +2081,52 @@
       },
       "description": "plugins to use",
       "type": "object"
+    },
+    "prepare": {
+      "type": "object",
+      "properties": {
+        "disable": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Disable specific prepare providers"
+        },
+        "npm": {
+          "$ref": "#/$defs/prepare_provider"
+        },
+        "yarn": {
+          "$ref": "#/$defs/prepare_provider"
+        },
+        "pnpm": {
+          "$ref": "#/$defs/prepare_provider"
+        },
+        "bun": {
+          "$ref": "#/$defs/prepare_provider"
+        },
+        "go": {
+          "$ref": "#/$defs/prepare_provider"
+        },
+        "pip": {
+          "$ref": "#/$defs/prepare_provider"
+        },
+        "poetry": {
+          "$ref": "#/$defs/prepare_provider"
+        },
+        "uv": {
+          "$ref": "#/$defs/prepare_provider"
+        },
+        "bundler": {
+          "$ref": "#/$defs/prepare_provider"
+        },
+        "composer": {
+          "$ref": "#/$defs/prepare_provider"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/prepare_provider"
+      },
+      "description": "configure prepare providers"
     },
     "settings": {
       "$ref": "#/$defs/settings",
