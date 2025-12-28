@@ -27,16 +27,16 @@ Examples:
 
 ```
 # Validate all tasks
-$ mise task validate
+$ mise tasks validate
 
 # Validate specific tasks
-$ mise task validate build test
+$ mise tasks validate build test
 
 # Output results as JSON
-$ mise task validate --json
+$ mise tasks validate --json
 
 # Only show errors (skip warnings)
-$ mise task validate --errors-only
+$ mise tasks validate --errors-only
 ```
 
 Validation Checks:
