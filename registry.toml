@@ -3072,7 +3072,7 @@ description = "Meson is an open source build system meant to be both extremely f
 [tools.micromamba]
 backends = ["github:mamba-org/micromamba-releases"]
 description = "Lightweight conda-compatible package manager"
-test = ["micromamba --version", "{{ version | split(pat=\"-\") | first }}"]
+test = ["micromamba --version", "{{ version | split(pat='-') | first }}"]
 
 [tools.micronaut]
 backends = [
