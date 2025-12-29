@@ -9,7 +9,6 @@ use tokio::{sync::Semaphore, task::JoinSet};
 use crate::config::Config;
 use crate::config::settings::Settings;
 use crate::errors::Error;
-use crate::hooks::Hooks;
 use crate::install_context::InstallContext;
 use crate::toolset::Toolset;
 use crate::toolset::helpers::{get_leaf_dependencies, show_python_install_hint};
@@ -18,7 +17,7 @@ use crate::toolset::tool_request::ToolRequest;
 use crate::toolset::tool_source::ToolSource;
 use crate::toolset::tool_version::ToolVersion;
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{config, hooks};
+use crate::config;
 
 impl Toolset {
     #[async_backtrace::framed]
