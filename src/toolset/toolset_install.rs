@@ -9,6 +9,7 @@ use tokio::{sync::Semaphore, task::JoinSet};
 use crate::config::Config;
 use crate::config::settings::Settings;
 use crate::errors::Error;
+use crate::hooks::Hooks;
 use crate::install_context::InstallContext;
 use crate::toolset::Toolset;
 use crate::toolset::helpers::{get_leaf_dependencies, show_python_install_hint};
@@ -17,7 +18,7 @@ use crate::toolset::tool_request::ToolRequest;
 use crate::toolset::tool_source::ToolSource;
 use crate::toolset::tool_version::ToolVersion;
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::config;
+use crate::{config, hooks};
 
 impl Toolset {
     #[async_backtrace::framed]
@@ -99,6 +100,12 @@ impl Toolset {
         };
         mpr.init_footer(opts.dry_run, &footer_reason, versions.len());
 
+        // Skip hooks in dry-run mode
+        if !opts.dry_run {
+            // Run pre-install hook
+            hooks::run_one_hook(config, self, Hooks::Preinstall, None).await;
+        }
+
         self.init_request_options(&mut versions);
         show_python_install_hint(&versions);
 
@@ -167,6 +174,12 @@ impl Toolset {
                     debug!("[{tv}] exec_env: {env:?}");
                 }
             }
+        }
+
+        // Skip hooks in dry-run mode
+        if !opts.dry_run {
+            // Run post-install hook (ignoring errors)
+            let _ = hooks::run_one_hook(config, self, Hooks::Postinstall, None).await;
         }
 
         // Finish the global footer
