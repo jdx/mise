@@ -45,8 +45,8 @@ where
                         }
                     },
                 );
-                if p.exists() {
-                    if let Ok(raw) = file::read_to_string(&p) {
+                if p.exists()
+                    && let Ok(raw) = file::read_to_string(&p) {
                         let key = raw
                             .trim()
                             .lines()
@@ -58,7 +58,6 @@ where
                             return Some(key);
                         }
                     }
-                }
             }
 
             // 3. Check standard SOPS_AGE_KEY_FILE environment variable
@@ -70,8 +69,8 @@ where
                         return None;
                     }
                 });
-                if p.exists() {
-                    if let Ok(raw) = file::read_to_string(&p) {
+                if p.exists()
+                    && let Ok(raw) = file::read_to_string(&p) {
                         let key = raw
                             .trim()
                             .lines()
@@ -83,15 +82,13 @@ where
                             return Some(key);
                         }
                     }
-                }
             }
 
             // 4. Check standard SOPS_AGE_KEY environment variable (direct key content)
-            if let Ok(key) = env::var("SOPS_AGE_KEY") {
-                if !key.trim().is_empty() {
+            if let Ok(key) = env::var("SOPS_AGE_KEY")
+                && !key.trim().is_empty() {
                     return Some(key.trim().to_string());
                 }
-            }
 
             // 5. Fall back to default path ~/.config/mise/age.txt
             let p = dirs::CONFIG.join("age.txt");

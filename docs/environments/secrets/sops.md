@@ -60,14 +60,17 @@ Now `mise env` exposes the values.
 mise supports both mise-specific environment variables and standard SOPS ones:
 
 **Mise-specific variables (highest priority):**
+
 - `MISE_SOPS_AGE_KEY` - Age private key content directly
 - `MISE_SOPS_AGE_KEY_FILE` - Path to age private key file
 
 **Standard SOPS variables (fallback):**
+
 - `SOPS_AGE_KEY_FILE` - Path to age private key file
 - `SOPS_AGE_KEY` - Age private key content directly
 
 **Precedence order:**
+
 1. `MISE_SOPS_AGE_KEY` (mise setting or env var, checked first)
 2. `MISE_SOPS_AGE_KEY_FILE` or `sops.age_key_file` (mise setting or env var)
 3. `SOPS_AGE_KEY_FILE` (standard)
