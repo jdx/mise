@@ -9,7 +9,7 @@ use tokio::{sync::Semaphore, task::JoinSet};
 use crate::config::Config;
 use crate::config::settings::Settings;
 use crate::errors::Error;
-use crate::hooks::{HookToolContext, Hooks};
+use crate::hooks::Hooks;
 use crate::install_context::InstallContext;
 use crate::toolset::Toolset;
 use crate::toolset::helpers::{get_leaf_dependencies, show_python_install_hint};
@@ -100,6 +100,12 @@ impl Toolset {
         };
         mpr.init_footer(opts.dry_run, &footer_reason, versions.len());
 
+        // Skip hooks in dry-run mode
+        if !opts.dry_run {
+            // Run pre-install hook
+            hooks::run_one_hook(config, self, Hooks::Preinstall, None).await;
+        }
+
         self.init_request_options(&mut versions);
         show_python_install_hint(&versions);
 
@@ -168,6 +174,12 @@ impl Toolset {
                     debug!("[{tv}] exec_env: {env:?}");
                 }
             }
+        }
+
+        // Skip hooks in dry-run mode
+        if !opts.dry_run {
+            // Run post-install hook (ignoring errors)
+            let _ = hooks::run_one_hook(config, self, Hooks::Postinstall, None).await;
         }
 
         // Finish the global footer
@@ -308,21 +320,6 @@ impl Toolset {
                     let result = async {
                         let tv = tr.resolve(&config, &opts.resolve_options).await?;
 
-                        // Run per-tool preinstall hook
-                        if !opts.dry_run {
-                            let tool_ctx = HookToolContext {
-                                name: tv.ba().short.clone(),
-                                version: tv.version.clone(),
-                            };
-                            hooks::run_one_hook_with_tool(
-                                &config,
-                                &ts,
-                                Hooks::Preinstall,
-                                &tool_ctx,
-                            )
-                            .await;
-                        }
-
                         let ctx = InstallContext {
                             config: config.clone(),
                             ts: ts.clone(),
@@ -333,26 +330,7 @@ impl Toolset {
                         };
                         // Avoid wrapping the backend error here so the error location
                         // points to the backend implementation (more helpful for debugging).
-                        let result = ba.install_version(ctx, tv).await;
-
-                        // Run per-tool postinstall hook (only on success)
-                        if !opts.dry_run
-                            && let Ok(ref installed_tv) = result
-                        {
-                            let tool_ctx = HookToolContext {
-                                name: installed_tv.ba().short.clone(),
-                                version: installed_tv.version.clone(),
-                            };
-                            hooks::run_one_hook_with_tool(
-                                &config,
-                                &ts,
-                                Hooks::Postinstall,
-                                &tool_ctx,
-                            )
-                            .await;
-                        }
-
-                        result
+                        ba.install_version(ctx, tv).await
                     }
                     .await;
 
