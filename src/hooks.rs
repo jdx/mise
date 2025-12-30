@@ -222,9 +222,10 @@ async fn execute(
     }
     // Add installed tools info for postinstall hooks
     if let Some(tools) = installed_tools
-        && let Ok(json) = serde_json::to_string(tools) {
-            env.insert("MISE_INSTALLED_TOOLS".to_string(), json);
-        }
+        && let Ok(json) = serde_json::to_string(tools)
+    {
+        env.insert("MISE_INSTALLED_TOOLS".to_string(), json);
+    }
     // TODO: this should be different but I don't have easy access to it
     // env.insert("MISE_CONFIG_ROOT".to_string(), root.to_string_lossy().to_string());
     cmd(&shell[0], args)
