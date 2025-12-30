@@ -5,7 +5,7 @@ cat <<EOF >mise.toml
 version = "1.2.0"
 asset_pattern = "edit-1.2.0-aarch64-linux-gnu.tar.zst"
 
-[alias]
+[tool_alias]
 test-edit = "github:microsoft/edit"
 EOF
 assert "mise install test-edit"
