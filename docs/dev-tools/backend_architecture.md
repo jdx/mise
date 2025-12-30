@@ -112,7 +112,7 @@ The [registry](../registry.md) (`mise registry`) maps short names to full backen
 
 ```toml
 # ~/.config/mise/config.toml
-[aliases]
+[tool_alias]
 go = "core:go"                    # Use core backend
 terraform = "aqua:hashicorp/terraform"  # Use aqua backend
 ```
