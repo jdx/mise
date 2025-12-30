@@ -1,6 +1,6 @@
 # Changelog
 
-## [2025.12.13](https://github.com/jdx/mise/compare/v2025.12.12..v2025.12.13) - 2025-12-19
+## [2025.12.13](https://github.com/jdx/mise/compare/v2025.12.12..v2025.12.13) - 2025-12-30
 
 ### 🚀 Features
 
@@ -8,26 +8,35 @@
 - **(tera)** add haiku() function for random name generation by @jdx in [#7399](https://github.com/jdx/mise/pull/7399)
 - **(vfox)** pass tool options to EnvKeys hook by @jdx in [#7447](https://github.com/jdx/mise/pull/7447)
 - implement independent versioning for subcrates by @jdx in [#7402](https://github.com/jdx/mise/pull/7402)
+- Move iTerm to OSC9;4 supported terminals by @Maks3w in [#7485](https://github.com/jdx/mise/pull/7485)
 
 ### 🐛 Bug Fixes
 
 - **(ci)** improve GHA cache efficiency and fix registry-ci bug by @jdx in [#7404](https://github.com/jdx/mise/pull/7404)
 - **(ci)** use !cancelled() instead of always() for registry-ci by @jdx in [#7435](https://github.com/jdx/mise/pull/7435)
+- **(ci)** bump taiki-e/install-action 2.61.10 to 2.65.5 by @kvokka in [#7496](https://github.com/jdx/mise/pull/7496)
 - **(e2e)** use explicit asdf backend for zprint in plugin_install test by @jdx in [#7440](https://github.com/jdx/mise/pull/7440)
 - **(github)** use GITHUB_TOKEN for attestation verification by @jdx in [#7446](https://github.com/jdx/mise/pull/7446)
+- **(go)** filter out go pre-release versions in ls-remote by @roele in [#7488](https://github.com/jdx/mise/pull/7488)
+- **(hooks)** revert per-tool hook execution by @just-be-dev in [#7509](https://github.com/jdx/mise/pull/7509)
+- **(release)** sync subcrate versions and use YYYY.MM.0 calver by @jdx in [#7516](https://github.com/jdx/mise/pull/7516)
 - **(schema)** add shell_alias definition by @anp in [#7441](https://github.com/jdx/mise/pull/7441)
+- **(schema)** add prepare config by @risu729 in [#7497](https://github.com/jdx/mise/pull/7497)
 - **(test)** update backend_arg test to use clojure instead of poetry by @jdx in [#7436](https://github.com/jdx/mise/pull/7436)
 - use vfox backend for poetry and fix related tests by @jdx in [#7445](https://github.com/jdx/mise/pull/7445)
 
 ### 📚 Documentation
 
+- **(prepare)** add all source files to sources by @risu729 in [#7498](https://github.com/jdx/mise/pull/7498)
 - add link to COPR package page for Fedora/RHEL by @jdx in [bc8ac73](https://github.com/jdx/mise/commit/bc8ac732e3bdecfd12affd7b8c54cdebcdb87da1)
 - improve installation documentation by @jdx in [#7403](https://github.com/jdx/mise/pull/7403)
 - add comprehensive glossary by @jdx in [#7401](https://github.com/jdx/mise/pull/7401)
 - use `mise run` uniformly in its examples by @muzimuzhi in [#7444](https://github.com/jdx/mise/pull/7444)
+- update source file for asset autodetection by @muzimuzhi in [#7513](https://github.com/jdx/mise/pull/7513)
 
 ### 🧪 Testing
 
+- **(ci)** validate GitHub token from pool with API call by @jdx in [#7459](https://github.com/jdx/mise/pull/7459)
 - rename duplicate 'ci' job names for clarity by @jdx in [#7398](https://github.com/jdx/mise/pull/7398)
 - add token pool integration for rate limit distribution by @jdx in [#7397](https://github.com/jdx/mise/pull/7397)
 
@@ -71,6 +80,11 @@
 - add vfox backend for pipenv by @jdx in [#7439](https://github.com/jdx/mise/pull/7439)
 - use github backend for xchtmlreport by @jdx in [#7442](https://github.com/jdx/mise/pull/7442)
 - use npm backend for purty by @jdx in [#7443](https://github.com/jdx/mise/pull/7443)
+- add micromamba tool definition by @x9xhack in [#7475](https://github.com/jdx/mise/pull/7475)
+- add github backend for rumdl by @kvokka in [#7494](https://github.com/jdx/mise/pull/7494)
+- add github backend for ty by @kvokka in [#7495](https://github.com/jdx/mise/pull/7495)
+- add kopia by @ldrouard in [#7501](https://github.com/jdx/mise/pull/7501)
+- add d2 by @icholy in [#7514](https://github.com/jdx/mise/pull/7514)
 
 ### Chore
 
@@ -81,7 +95,12 @@
 
 ### New Contributors
 
-- @muzimuzhi made their first contribution in [#7448](https://github.com/jdx/mise/pull/7448)
+- @icholy made their first contribution in [#7514](https://github.com/jdx/mise/pull/7514)
+- @Maks3w made their first contribution in [#7485](https://github.com/jdx/mise/pull/7485)
+- @muzimuzhi made their first contribution in [#7513](https://github.com/jdx/mise/pull/7513)
+- @just-be-dev made their first contribution in [#7509](https://github.com/jdx/mise/pull/7509)
+- @kvokka made their first contribution in [#7495](https://github.com/jdx/mise/pull/7495)
+- @x9xhack made their first contribution in [#7475](https://github.com/jdx/mise/pull/7475)
 - @anp made their first contribution in [#7441](https://github.com/jdx/mise/pull/7441)
 
 ## [2025.12.12](https://github.com/jdx/mise/compare/v2025.12.11..v2025.12.12) - 2025-12-18
