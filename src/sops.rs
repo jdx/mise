@@ -46,18 +46,19 @@ where
                     },
                 );
                 if p.exists()
-                    && let Ok(raw) = file::read_to_string(&p) {
-                        let key = raw
-                            .trim()
-                            .lines()
-                            .filter(|l| !l.starts_with('#'))
-                            .collect::<String>();
-                        if !key.trim().is_empty() {
-                            // Store the path for later use by sops CLI
-                            let _ = AGE_KEY_FILE.get_or_init(|| async { Some(p.clone()) }).await;
-                            return Some(key);
-                        }
+                    && let Ok(raw) = file::read_to_string(&p)
+                {
+                    let key = raw
+                        .trim()
+                        .lines()
+                        .filter(|l| !l.starts_with('#'))
+                        .collect::<String>();
+                    if !key.trim().is_empty() {
+                        // Store the path for later use by sops CLI
+                        let _ = AGE_KEY_FILE.get_or_init(|| async { Some(p.clone()) }).await;
+                        return Some(key);
                     }
+                }
             }
 
             // 3. Check standard SOPS_AGE_KEY_FILE environment variable
@@ -70,25 +71,27 @@ where
                     }
                 });
                 if p.exists()
-                    && let Ok(raw) = file::read_to_string(&p) {
-                        let key = raw
-                            .trim()
-                            .lines()
-                            .filter(|l| !l.starts_with('#'))
-                            .collect::<String>();
-                        if !key.trim().is_empty() {
-                            // Store the path for later use by sops CLI
-                            let _ = AGE_KEY_FILE.get_or_init(|| async { Some(p.clone()) }).await;
-                            return Some(key);
-                        }
+                    && let Ok(raw) = file::read_to_string(&p)
+                {
+                    let key = raw
+                        .trim()
+                        .lines()
+                        .filter(|l| !l.starts_with('#'))
+                        .collect::<String>();
+                    if !key.trim().is_empty() {
+                        // Store the path for later use by sops CLI
+                        let _ = AGE_KEY_FILE.get_or_init(|| async { Some(p.clone()) }).await;
+                        return Some(key);
                     }
+                }
             }
 
             // 4. Check standard SOPS_AGE_KEY environment variable (direct key content)
             if let Ok(key) = env::var("SOPS_AGE_KEY")
-                && !key.trim().is_empty() {
-                    return Some(key.trim().to_string());
-                }
+                && !key.trim().is_empty()
+            {
+                return Some(key.trim().to_string());
+            }
 
             // 5. Fall back to default path ~/.config/mise/age.txt
             let p = dirs::CONFIG.join("age.txt");
