@@ -1,7 +1,7 @@
 use crate::cmd::cmd;
 use crate::config::{Config, Settings, config_file};
 use crate::shell::Shell;
-use crate::toolset::Toolset;
+use crate::toolset::{ToolVersion, Toolset};
 use crate::{dirs, hook_env};
 use eyre::{Result, eyre};
 use indexmap::IndexSet;
@@ -11,6 +11,22 @@ use std::sync::LazyLock as Lazy;
 use std::sync::Mutex;
 use std::{iter::once, sync::Arc};
 use tokio::sync::OnceCell;
+
+/// Represents installed tool info for hooks
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct InstalledToolInfo {
+    pub name: String,
+    pub version: String,
+}
+
+impl From<&ToolVersion> for InstalledToolInfo {
+    fn from(tv: &ToolVersion) -> Self {
+        Self {
+            name: tv.ba().short.clone(),
+            version: tv.version.clone(),
+        }
+    }
+}
 
 #[derive(
     Debug,
@@ -85,6 +101,18 @@ pub async fn run_one_hook(
     hook: Hooks,
     shell: Option<&dyn Shell>,
 ) {
+    run_one_hook_with_context(config, ts, hook, shell, None).await;
+}
+
+/// Run a hook with optional installed tools context (for postinstall hooks)
+#[async_backtrace::framed]
+pub async fn run_one_hook_with_context(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    hook: Hooks,
+    shell: Option<&dyn Shell>,
+    installed_tools: Option<&[InstalledToolInfo]>,
+) {
     for (root, h) in all_hooks(config).await {
         if hook != h.hook || (h.shell.is_some() && h.shell != shell.map(|s| s.to_string())) {
             continue;
@@ -116,7 +144,7 @@ pub async fn run_one_hook(
         }
         if h.shell.is_some() {
             println!("{}", h.script);
-        } else if let Err(e) = execute(config, ts, root, h).await {
+        } else if let Err(e) = execute(config, ts, root, h, installed_tools).await {
             warn!("error executing hook: {e}");
         }
     }
@@ -159,7 +187,13 @@ impl Hook {
     }
 }
 
-async fn execute(config: &Arc<Config>, ts: &Toolset, root: &Path, hook: &Hook) -> Result<()> {
+async fn execute(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    root: &Path,
+    hook: &Hook,
+    installed_tools: Option<&[InstalledToolInfo]>,
+) -> Result<()> {
     Settings::get().ensure_experimental("hooks")?;
     let shell = Settings::get().default_inline_shell()?;
 
@@ -185,6 +219,12 @@ async fn execute(config: &Arc<Config>, ts: &Toolset, root: &Path, hook: &Hook) -
             "MISE_PREVIOUS_DIR".to_string(),
             old.to_string_lossy().to_string(),
         );
+    }
+    // Add installed tools info for postinstall hooks
+    if let Some(tools) = installed_tools
+        && let Ok(json) = serde_json::to_string(tools)
+    {
+        env.insert("MISE_INSTALLED_TOOLS".to_string(), json);
     }
     // TODO: this should be different but I don't have easy access to it
     // env.insert("MISE_CONFIG_ROOT".to_string(), root.to_string_lossy().to_string());
