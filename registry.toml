@@ -1127,6 +1127,11 @@ description = "CycloneDX CLI tool for SBOM analysis, merging, diffs and format c
 # TODO: re-enable test when aqua-registry is updated to use gnu instead of musl
 # test = ["cyclonedx --version", "{{version}}"]
 
+[tools.d2]
+backends = ["aqua:terrastruct/d2", "github:terrastruct/d2[strip_components=1]"]
+description = "Modern diagram scripting language that turns text to diagrams"
+test = ["d2 --version", "v{{version}}"]
+
 [tools.dagger]
 backends = ["aqua:dagger/dagger", "asdf:virtualstaticvoid/asdf-dagger"]
 description = "A portable devkit for CI/CD pipelines"
