@@ -9,7 +9,7 @@ use tokio::{sync::Semaphore, task::JoinSet};
 use crate::config::Config;
 use crate::config::settings::Settings;
 use crate::errors::Error;
-use crate::hooks::Hooks;
+use crate::hooks::{Hooks, InstalledToolInfo};
 use crate::install_context::InstallContext;
 use crate::toolset::Toolset;
 use crate::toolset::helpers::{get_leaf_dependencies, show_python_install_hint};
@@ -178,8 +178,17 @@ impl Toolset {
 
         // Skip hooks in dry-run mode
         if !opts.dry_run {
-            // Run post-install hook (ignoring errors)
-            let _ = hooks::run_one_hook(config, self, Hooks::Postinstall, None).await;
+            // Run post-install hook with installed tools info (ignoring errors)
+            let installed_tools: Vec<InstalledToolInfo> =
+                installed.iter().map(InstalledToolInfo::from).collect();
+            let _ = hooks::run_one_hook_with_context(
+                config,
+                self,
+                Hooks::Postinstall,
+                None,
+                Some(&installed_tools),
+            )
+            .await;
         }
 
         // Finish the global footer

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# Test that global postinstall hooks receive MISE_INSTALLED_TOOLS JSON array
+
+cat <<EOF >mise.toml
+[tools]
+dummy = "latest"
+
+[hooks]
+postinstall = "echo INSTALLED_TOOLS=\$MISE_INSTALLED_TOOLS"
+EOF
+
+# Remove any existing dummy installation to force reinstall
+rm -rf ~/.mise/installs/dummy
+
+# Run install and capture output
+output=$(mise install dummy 2>&1)
+
+# Check that MISE_INSTALLED_TOOLS is set and contains JSON
+if [[ $output == *'INSTALLED_TOOLS=[{"name":"dummy"'* ]]; then
+	echo "✓ MISE_INSTALLED_TOOLS contains JSON with tool info"
+else
+	echo "✗ MISE_INSTALLED_TOOLS is NOT set correctly"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Check that it includes the version field
+if [[ $output == *'"version":'* ]]; then
+	echo "✓ MISE_INSTALLED_TOOLS includes version field"
+else
+	echo "✗ MISE_INSTALLED_TOOLS does NOT include version field"
+	echo "Output: $output"
+	exit 1
+fi

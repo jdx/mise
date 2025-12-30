@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# Test that tool-level postinstall hooks receive MISE_TOOL_NAME and MISE_TOOL_VERSION
+
+cat <<EOF >mise.toml
+[tools]
+dummy = { version = "latest", postinstall = "echo TOOL_NAME=\$MISE_TOOL_NAME TOOL_VERSION=\$MISE_TOOL_VERSION INSTALL_PATH=\$MISE_TOOL_INSTALL_PATH" }
+EOF
+
+# Remove any existing dummy installation to force reinstall
+rm -rf ~/.mise/installs/dummy
+
+# Run install and capture output
+output=$(mise install dummy 2>&1)
+
+# Check that MISE_TOOL_NAME is set
+if [[ $output == *"TOOL_NAME=dummy"* ]]; then
+	echo "✓ MISE_TOOL_NAME is set correctly"
+else
+	echo "✗ MISE_TOOL_NAME is NOT set correctly"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Check that MISE_TOOL_VERSION is set (should be a version string)
+if [[ $output == *"TOOL_VERSION="* ]] && [[ $output != *"TOOL_VERSION= "* ]]; then
+	echo "✓ MISE_TOOL_VERSION is set"
+else
+	echo "✗ MISE_TOOL_VERSION is NOT set"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Check that MISE_TOOL_INSTALL_PATH is set (contains mise/installs/dummy)
+if [[ $output == *"INSTALL_PATH="* ]] && [[ $output == *"/mise/installs/dummy"* ]]; then
+	echo "✓ MISE_TOOL_INSTALL_PATH is set"
+else
+	echo "✗ MISE_TOOL_INSTALL_PATH is NOT set correctly"
+	echo "Output: $output"
+	exit 1
+fi
