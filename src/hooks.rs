@@ -12,13 +12,6 @@ use std::sync::Mutex;
 use std::{iter::once, sync::Arc};
 use tokio::sync::OnceCell;
 
-/// Context for tool-specific hooks (preinstall/postinstall)
-#[derive(Debug, Clone)]
-pub struct HookToolContext {
-    pub name: String,
-    pub version: String,
-}
-
 #[derive(
     Debug,
     Clone,
@@ -92,38 +85,6 @@ pub async fn run_one_hook(
     hook: Hooks,
     shell: Option<&dyn Shell>,
 ) {
-    run_one_hook_with_shell(config, ts, hook, shell).await;
-}
-
-/// Run a hook with optional tool context for preinstall/postinstall hooks (used during installation)
-/// This version doesn't take a shell parameter and can be used in spawned async tasks.
-#[async_backtrace::framed]
-pub async fn run_one_hook_with_tool(
-    config: &Arc<Config>,
-    ts: &Toolset,
-    hook: Hooks,
-    tool_ctx: &HookToolContext,
-) {
-    for (root, h) in all_hooks(config).await {
-        if hook != h.hook || h.shell.is_some() {
-            // Skip shell-specific hooks during installation
-            continue;
-        }
-        trace!("running hook {hook} in {root:?}");
-        if let Err(e) = execute(config, ts, root, h, Some(tool_ctx)).await {
-            warn!("error executing hook: {e}");
-        }
-    }
-}
-
-/// Run a hook with optional shell context (used during activate)
-#[async_backtrace::framed]
-async fn run_one_hook_with_shell(
-    config: &Arc<Config>,
-    ts: &Toolset,
-    hook: Hooks,
-    shell: Option<&dyn Shell>,
-) {
     for (root, h) in all_hooks(config).await {
         if hook != h.hook || (h.shell.is_some() && h.shell != shell.map(|s| s.to_string())) {
             continue;
@@ -155,7 +116,7 @@ async fn run_one_hook_with_shell(
         }
         if h.shell.is_some() {
             println!("{}", h.script);
-        } else if let Err(e) = execute(config, ts, root, h, None).await {
+        } else if let Err(e) = execute(config, ts, root, h).await {
             warn!("error executing hook: {e}");
         }
     }
@@ -198,13 +159,7 @@ impl Hook {
     }
 }
 
-async fn execute(
-    config: &Arc<Config>,
-    ts: &Toolset,
-    root: &Path,
-    hook: &Hook,
-    tool_ctx: Option<&HookToolContext>,
-) -> Result<()> {
+async fn execute(config: &Arc<Config>, ts: &Toolset, root: &Path, hook: &Hook) -> Result<()> {
     Settings::get().ensure_experimental("hooks")?;
     let shell = Settings::get().default_inline_shell()?;
 
@@ -230,11 +185,6 @@ async fn execute(
             "MISE_PREVIOUS_DIR".to_string(),
             old.to_string_lossy().to_string(),
         );
-    }
-    // Add tool context for preinstall/postinstall hooks
-    if let Some(ctx) = tool_ctx {
-        env.insert("MISE_TOOL_NAME".to_string(), ctx.name.clone());
-        env.insert("MISE_TOOL_VERSION".to_string(), ctx.version.clone());
     }
     // TODO: this should be different but I don't have easy access to it
     // env.insert("MISE_CONFIG_ROOT".to_string(), root.to_string_lossy().to_string());
