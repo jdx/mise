@@ -1,25 +1,27 @@
 # Forgejo Backend
 
-You may install Forgejo release assets directly using the `forgejo` backend. This backend downloads release assets from Forgejo repositories and is ideal for tools that distribute pre-built binaries through Forgejo releases.
+You may install Codeberg and other Forgejo compatible release assets directly using the `forgejo` backend. This backend downloads release assets from Forgejo repositories and is ideal for tools that distribute pre-built binaries through Forgejo releases.
+
+By default, the Forgejo backend uses the public Codeberg instance at [https://codeberg.org](https://codeberg.org). For other or self-hosted Forgejo instances, you can specify a custom API URL using the `api_url` tool option.
 
 The code for this is inside of the mise repository at [`./src/backend/forgejo.rs`](https://github.com/jdx/mise/blob/main/src/backend/forgejo.rs).
 
 ## Usage
 
-The following installs the latest version of ripgrep from Forgejo releases
+The following installs the latest version of a tool from Forgejo releases
 and sets it as the active version on PATH:
 
 ```sh
-$ mise use -g forgejo:BurntSushi/ripgrep
-$ rg --version
-ripgrep 14.1.1
+$ mise use -g forgejo:forgejo/runner[api_url=https://code.forgejo.org/api/v1,bin=forgejo-runner,bin=forgejo-runner]
+$ forgejo-runner -v
+forgejo-runner version v12.4.0
 ```
 
 The version will be set in `~/.config/mise/config.toml` with the following format:
 
 ```toml
 [tools]
-"forgejo:BurntSushi/ripgrep" = "latest"
+"forgejo:forgejo/runner" = { version = "latest", api_url = "https://code.forgejo.org/api/v1", bin = "forgejo-runner" }
 ```
 
 ## Tool Options
@@ -53,7 +55,7 @@ Specifies the pattern to match against release asset names. This is useful when 
 
 ```toml
 [tools]
-"forgejo:cli/cli" = { version = "latest", asset_pattern = "gh_*_linux_x64.tar.gz" }
+"forgejo:user/repo" = { version = "latest", asset_pattern = "tool_*_linux_x64.tar.gz" }
 ```
 
 ### `version_prefix`
@@ -85,12 +87,12 @@ When `version_prefix` is configured, mise will:
 For different asset patterns per platform:
 
 ```toml
-[tools."forgejo:cli/cli"]
+[tools."forgejo:user/repo"]
 version = "latest"
 
-[tools."forgejo:cli/cli".platforms]
-linux-x64 = { asset_pattern = "gh_*_linux_x64.tar.gz" }
-macos-arm64 = { asset_pattern = "gh_*_macOS_arm64.tar.gz" }
+[tools."forgejo:user/repo".platforms]
+linux-x64 = { asset_pattern = "tool_*_linux_x64.tar.gz" }
+macos-arm64 = { asset_pattern = "tool_*_macOS_arm64.tar.gz" }
 ```
 
 ### `checksum`
@@ -109,12 +111,12 @@ _Instead of specifying the checksum here, you can use [mise.lock](/dev-tools/mis
 ### Platform-specific Checksums
 
 ```toml
-[tools."forgejo:cli/cli"]
+[tools."forgejo:user/repo"]
 version = "latest"
 
-[tools."forgejo:cli/cli".platforms]
-linux-x64 = { asset_pattern = "gh_*_linux_x64.tar.gz", checksum = "sha256:a1b2c3d4e5f6789..." }
-macos-arm64 = { asset_pattern = "gh_*_macOS_arm64.tar.gz", checksum = "sha256:b2c3d4e5f6789..." }
+[tools."forgejo:user/repo".platforms]
+linux-x64 = { asset_pattern = "tool_*_linux_x64.tar.gz", checksum = "sha256:a1b2c3d4e5f6789..." }
+macos-arm64 = { asset_pattern = "tool_*_macOS_arm64.tar.gz", checksum = "sha256:b2c3d4e5f6789..." }
 ```
 
 ### `size`
@@ -123,7 +125,7 @@ Verify the downloaded asset size:
 
 ```toml
 [tools]
-"forgejo:cli/cli" = { version = "latest", size = "12345678" }
+"forgejo:user/repo" = { version = "latest", size = "12345678" }
 ```
 
 ### `strip_components`
@@ -132,11 +134,11 @@ Number of directory components to strip when extracting archives:
 
 ```toml
 [tools]
-"forgejo:cli/cli" = { version = "latest", strip_components = 1 }
+"forgejo:user/repo" = { version = "latest", strip_components = 1 }
 ```
 
 ::: info
-If `strip_components` is not explicitly set, mise will automatically detect when to apply `strip_components = 1`. This happens when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). The auto-detection ensures the binary is placed directly in the install path where mise expects it.
+If `strip_components` is not explicitly set, mise will automatically detect when to apply `strip_components = 1`. This happens when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `mytool-14.1.0-x86_64-unknown-linux-musl/mytool`). The auto-detection ensures the binary is placed directly in the install path where mise expects it.
 :::
 
 ### `bin`
@@ -144,9 +146,9 @@ If `strip_components` is not explicitly set, mise will automatically detect when
 Rename the downloaded binary to a specific name. This is useful when downloading single binaries that have platform-specific names:
 
 ```toml
-[tools."forgejo:docker/compose"]
+[tools."forgejo:user/repo"]
 version = "2.29.1"
-bin = "docker-compose"  # Rename the downloaded binary to docker-compose
+bin = "my-tool"  # Rename the downloaded binary to my-tool
 ```
 
 ::: info
@@ -158,10 +160,10 @@ When downloading single binaries (not archives), mise automatically removes OS/a
 Rename the executable after extraction from an archive. This is useful when the archive contains a binary with a platform-specific name that you want to rename:
 
 ```toml
-[tools."forgejo:yt-dlp/yt-dlp"]
+[tools."forgejo:user/repo"]
 version = "latest"
-asset_pattern = "yt-dlp_linux.zip"
-rename_exe = "yt-dlp"  # Rename the extracted binary to yt-dlp
+asset_pattern = "tool_linux.zip"
+rename_exe = "tool"  # Rename the extracted binary to tool
 ```
 
 ::: tip
@@ -173,9 +175,9 @@ Use `rename_exe` for archives where the binary inside has a different name than 
 Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports templating with `{name}`, `{version}`, `{os}`, `{arch}`, and `{ext}`:
 
 ```toml
-[tools."forgejo:cli/cli"]
+[tools."forgejo:user/repo"]
 version = "latest"
-bin_path = "{name}-{version}/bin" # expands to cli-1.0.0/bin
+bin_path = "{name}-{version}/bin" # expands to tool-1.0.0/bin
 ```
 
 **Binary path lookup order:**
@@ -193,21 +195,21 @@ Comma-separated list of binaries to symlink into a filtered `.mise-bins` directo
 
 ```toml
 [tools]
-"forgejo:jgm/pandoc" = { version = "latest", filter_bins = "pandoc" }
+"forgejo:user/repo" = { version = "latest", filter_bins = "tool" }
 ```
 
 When enabled:
 
 - A `.mise-bins` subdirectory is created with symlinks only to the specified binaries
-- Other binaries (like `pandoc-lua` or `pandoc-server`) are not exposed on PATH
+- Other binaries (like `tool-helper` or `tool-server`) are not exposed on PATH
 
 ### `api_url`
 
-For Forgejo Enterprise or self-hosted Forgejo instances, specify the API URL:
+For other Forgejo compatible or self-hosted instances, specify the API URL:
 
 ```toml
 [tools]
-"forgejo:myorg/mytool" = { version = "latest", api_url = "https://forgejo.mycompany.com/api/v1" }
+"forgejo:user/repo" = { version = "latest", api_url = "https://forgejo.mycompany.com/api/v1" }
 ```
 
 ## Self-hosted Forgejo
@@ -220,8 +222,8 @@ export MISE_FORGEJO_ENTERPRISE_TOKEN="your-token"
 
 ## Supported Forgejo Syntax
 
-- **Forgejo shorthand for latest release version:** `forgejo:cli/cli`
-- **Forgejo shorthand for specific release version:** `forgejo:cli/cli@2.40.1`
+- **Forgejo shorthand for latest release version:** `forgejo:user/repo`
+- **Forgejo shorthand for specific release version:** `forgejo:user/repo@2.40.1`
 
 ## Settings
 

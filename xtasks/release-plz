@@ -88,11 +88,11 @@ bump_subcrate_if_changed() {
 	month="$(date +%-m)"
 
 	if echo "$cur_version" | grep -qE "^$year\.$month\."; then
+		# Same year.month, bump patch (e.g., 2025.12.0 -> 2025.12.1)
 		cargo set-version --bump patch -p "$crate_name"
-	elif echo "$cur_version" | grep -qE "^$year\."; then
-		cargo set-version --bump minor -p "$crate_name"
 	else
-		cargo set-version "$year.1.0" -p "$crate_name"
+		# New month or new year, start fresh at YYYY.MM.0
+		cargo set-version "$year.$month.0" -p "$crate_name"
 	fi
 
 	local new_version
@@ -131,14 +131,11 @@ bump_and_publish_subcrate() {
 	month="$(date +%-m)"
 
 	if echo "$cur_version" | grep -qE "^$year\.$month\."; then
-		# Same year.month, bump patch
+		# Same year.month, bump patch (e.g., 2025.12.0 -> 2025.12.1)
 		cargo set-version --bump patch -p "$crate_name"
-	elif echo "$cur_version" | grep -qE "^$year\."; then
-		# Same year, bump minor (month)
-		cargo set-version --bump minor -p "$crate_name"
 	else
-		# New year
-		cargo set-version "$year.1.0" -p "$crate_name"
+		# New month or new year, start fresh at YYYY.MM.0
+		cargo set-version "$year.$month.0" -p "$crate_name"
 	fi
 
 	local new_version

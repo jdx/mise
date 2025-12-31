@@ -44,7 +44,7 @@ mise install github:user/repo
 ```
 
 ::: tip
-The autodetection logic is implemented in [`src/backend/asset_detector.rs`](https://github.com/jdx/mise/blob/main/src/backend/asset_detector.rs), which is shared by both the GitHub and GitLab backends.
+The autodetection logic is implemented in [`src/backend/asset_matcher.rs`](https://github.com/jdx/mise/blob/main/src/backend/asset_matcher.rs), which is shared by both the GitHub and GitLab backends.
 :::
 
 ### `asset_pattern`

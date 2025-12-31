@@ -1167,7 +1167,7 @@ description = "Enable terminal progress indicators (OSC 9;4) for compatible term
 docs = """
 Enable terminal progress indicators using OSC 9;4 escape sequences. This provides
 native progress bars in the terminal window chrome for terminals that support it,
-including Ghostty, VS Code's integrated terminal, Windows Terminal, and VTE-based
+including Ghostty, iTerm2, VS Code's integrated terminal, Windows Terminal, and VTE-based
 terminals (GNOME Terminal, Ptyxis, etc.).
 
 When enabled, mise will send progress updates to the terminal during operations like
@@ -1175,7 +1175,7 @@ tool installations. The progress bar appears in the terminal's window UI, separa
 from the text output.
 
 mise automatically detects whether your terminal supports OSC 9;4 and will only send
-these sequences if supported. Terminals like Alacritty, iTerm2, WezTerm, and kitty
+these sequences if supported. Terminals like Alacritty, WezTerm, and kitty
 do not support OSC 9;4 and will not receive these sequences.
 
 Set to false to disable this feature if you prefer not to see these indicators.
@@ -1364,14 +1364,14 @@ env = "MISE_AGE_STRICT"
 type = "Bool"
 
 [sops.age_key]
-description = "The age private key to use for sops secret decryption."
+description = "The age private key to use for sops secret decryption. Takes precedence over standard SOPS_AGE_KEY environment variable."
 env = "MISE_SOPS_AGE_KEY"
 optional = true
 type = "String"
 
 [sops.age_key_file]
 default_docs = "~/.config/mise/age.txt"
-description = "Path to the age private key file to use for sops secret decryption."
+description = "Path to the age private key file for sops secret decryption. Takes precedence over standard SOPS_AGE_KEY_FILE environment variable."
 env = "MISE_SOPS_AGE_KEY_FILE"
 optional = true
 type = "Path"
@@ -1537,6 +1537,11 @@ env = "MISE_TASK_TIMINGS"
 optional = true
 type = "Bool"
 
+[task_show_full_cmd]
+description = "Disable truncation of command lines in task execution output. When true, the full command line will be shown."
+env = "MISE_TASK_SHOW_CMD_NO_TRUNC"
+type = "Bool"
+
 [trace]
 description = "Sets log level to trace"
 env = "MISE_TRACE"
@@ -1689,6 +1694,21 @@ If you don't have the mirror list cached locally, you can place the newline-sepa
 server list inside `mise cache path`, folder `zig` as `community-mirrors.txt`.
 """
 env = "MISE_ZIG_USE_COMMUNITY_MIRRORS"
+type = "Bool"
+
+[task.disable_spec_from_run_scripts]
+default = false
+description = "Opt out of parsing task run scripts to infer the usage spec (arguments and flags). When enabled, mise will derive the usage spec only from the `usage` field, ignoring any `arg()`, `option()`, or `flag()` templates used in run scripts. This can restore previous behavior and avoid the extra template pass over run scripts when collecting specs."
+docs = """
+When enabled, `arg()`, `option()`, and `flag()` Tera functions in run scripts will not contribute 
+to the task's usage spec—only the explicit `usage` field is used.
+
+This is useful for:
+- Skipping the extra template pass over run scripts (performance)
+- Avoiding two-pass parsing quirks where template functions return empty strings during spec collection
+- Early opt-out before Tera template arguments are removed in 2026.11.0
+"""
+env = "MISE_TASK_DISABLE_SPEC_FROM_RUN_SCRIPTS"
 type = "Bool"
 
 [task.monorepo_depth]

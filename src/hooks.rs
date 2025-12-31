@@ -1,7 +1,7 @@
 use crate::cmd::cmd;
 use crate::config::{Config, Settings, config_file};
 use crate::shell::Shell;
-use crate::toolset::Toolset;
+use crate::toolset::{ToolVersion, Toolset};
 use crate::{dirs, hook_env};
 use eyre::{Result, eyre};
 use indexmap::IndexSet;
@@ -12,11 +12,20 @@ use std::sync::Mutex;
 use std::{iter::once, sync::Arc};
 use tokio::sync::OnceCell;
 
-/// Context for tool-specific hooks (preinstall/postinstall)
-#[derive(Debug, Clone)]
-pub struct HookToolContext {
+/// Represents installed tool info for hooks
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct InstalledToolInfo {
     pub name: String,
     pub version: String,
+}
+
+impl From<&ToolVersion> for InstalledToolInfo {
+    fn from(tv: &ToolVersion) -> Self {
+        Self {
+            name: tv.ba().short.clone(),
+            version: tv.version.clone(),
+        }
+    }
 }
 
 #[derive(
@@ -92,37 +101,17 @@ pub async fn run_one_hook(
     hook: Hooks,
     shell: Option<&dyn Shell>,
 ) {
-    run_one_hook_with_shell(config, ts, hook, shell).await;
+    run_one_hook_with_context(config, ts, hook, shell, None).await;
 }
 
-/// Run a hook with optional tool context for preinstall/postinstall hooks (used during installation)
-/// This version doesn't take a shell parameter and can be used in spawned async tasks.
+/// Run a hook with optional installed tools context (for postinstall hooks)
 #[async_backtrace::framed]
-pub async fn run_one_hook_with_tool(
-    config: &Arc<Config>,
-    ts: &Toolset,
-    hook: Hooks,
-    tool_ctx: &HookToolContext,
-) {
-    for (root, h) in all_hooks(config).await {
-        if hook != h.hook || h.shell.is_some() {
-            // Skip shell-specific hooks during installation
-            continue;
-        }
-        trace!("running hook {hook} in {root:?}");
-        if let Err(e) = execute(config, ts, root, h, Some(tool_ctx)).await {
-            warn!("error executing hook: {e}");
-        }
-    }
-}
-
-/// Run a hook with optional shell context (used during activate)
-#[async_backtrace::framed]
-async fn run_one_hook_with_shell(
+pub async fn run_one_hook_with_context(
     config: &Arc<Config>,
     ts: &Toolset,
     hook: Hooks,
     shell: Option<&dyn Shell>,
+    installed_tools: Option<&[InstalledToolInfo]>,
 ) {
     for (root, h) in all_hooks(config).await {
         if hook != h.hook || (h.shell.is_some() && h.shell != shell.map(|s| s.to_string())) {
@@ -155,7 +144,7 @@ async fn run_one_hook_with_shell(
         }
         if h.shell.is_some() {
             println!("{}", h.script);
-        } else if let Err(e) = execute(config, ts, root, h, None).await {
+        } else if let Err(e) = execute(config, ts, root, h, installed_tools).await {
             warn!("error executing hook: {e}");
         }
     }
@@ -203,7 +192,7 @@ async fn execute(
     ts: &Toolset,
     root: &Path,
     hook: &Hook,
-    tool_ctx: Option<&HookToolContext>,
+    installed_tools: Option<&[InstalledToolInfo]>,
 ) -> Result<()> {
     Settings::get().ensure_experimental("hooks")?;
     let shell = Settings::get().default_inline_shell()?;
@@ -231,10 +220,11 @@ async fn execute(
             old.to_string_lossy().to_string(),
         );
     }
-    // Add tool context for preinstall/postinstall hooks
-    if let Some(ctx) = tool_ctx {
-        env.insert("MISE_TOOL_NAME".to_string(), ctx.name.clone());
-        env.insert("MISE_TOOL_VERSION".to_string(), ctx.version.clone());
+    // Add installed tools info for postinstall hooks
+    if let Some(tools) = installed_tools
+        && let Ok(json) = serde_json::to_string(tools)
+    {
+        env.insert("MISE_INSTALLED_TOOLS".to_string(), json);
     }
     // TODO: this should be different but I don't have easy access to it
     // env.insert("MISE_CONFIG_ROOT".to_string(), root.to_string_lossy().to_string());

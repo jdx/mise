@@ -43,7 +43,7 @@ sops encrypt -i --age "<public key>" .env.json
 ```
 
 :::: tip
-The `-i` overwrites the file. The encrypted file is safe to commit. Set `SOPS_AGE_KEY_FILE=~/.config/mise/age.txt` to decrypt/edit with sops.
+The `-i` overwrites the file. The encrypted file is safe to commit. Set `SOPS_AGE_KEY_FILE=~/.config/mise/age.txt` or `MISE_SOPS_AGE_KEY_FILE=~/.config/mise/age.txt` to decrypt/edit with sops.
 ::::
 
 4. Reference it in config:
@@ -54,6 +54,30 @@ _.file = ".env.json"
 ```
 
 Now `mise env` exposes the values.
+
+## Environment Variables
+
+mise supports both mise-specific environment variables and standard SOPS ones:
+
+**Mise-specific variables (highest priority):**
+
+- `MISE_SOPS_AGE_KEY` - Age private key content directly
+- `MISE_SOPS_AGE_KEY_FILE` - Path to age private key file
+
+**Standard SOPS variables (fallback):**
+
+- `SOPS_AGE_KEY_FILE` - Path to age private key file
+- `SOPS_AGE_KEY` - Age private key content directly
+
+**Precedence order:**
+
+1. `MISE_SOPS_AGE_KEY` (mise setting or env var, checked first)
+2. `MISE_SOPS_AGE_KEY_FILE` or `sops.age_key_file` (mise setting or env var)
+3. `SOPS_AGE_KEY_FILE` (standard)
+4. `SOPS_AGE_KEY` (standard, direct key content)
+5. Default: `~/.config/mise/age.txt`
+
+This allows you to override SOPS settings specifically for mise while keeping your standard SOPS configuration intact for other tools.
 
 ## Redaction
 

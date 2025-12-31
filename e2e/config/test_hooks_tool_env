@@ -1,20 +1,41 @@
 #!/usr/bin/env bash
 
-# Test that MISE_TOOL_NAME and MISE_TOOL_VERSION are set in preinstall/postinstall hooks
+# Test that tool-level postinstall hooks receive MISE_TOOL_NAME and MISE_TOOL_VERSION
 
 cat <<EOF >mise.toml
 [tools]
-dummy = 'latest'
-
-[hooks]
-preinstall = 'echo "PREINSTALL: name=\$MISE_TOOL_NAME version=\$MISE_TOOL_VERSION"'
-postinstall = 'echo "POSTINSTALL: name=\$MISE_TOOL_NAME version=\$MISE_TOOL_VERSION"'
+dummy = { version = "latest", postinstall = "echo TOOL_NAME=\$MISE_TOOL_NAME TOOL_VERSION=\$MISE_TOOL_VERSION INSTALL_PATH=\$MISE_TOOL_INSTALL_PATH" }
 EOF
 
-# Install dummy tool and check that env vars are set
-assert_contains "mise i dummy@1.0.0 2>&1" "PREINSTALL: name=dummy version=1.0.0"
-assert_contains "mise i dummy@1.0.0 2>&1" "POSTINSTALL: name=dummy version=1.0.0"
+# Remove any existing dummy installation to force reinstall
+rm -rf ~/.mise/installs/dummy
 
-# Test with a different version
-assert_contains "mise i dummy@2.0.0 2>&1" "PREINSTALL: name=dummy version=2.0.0"
-assert_contains "mise i dummy@2.0.0 2>&1" "POSTINSTALL: name=dummy version=2.0.0"
+# Run install and capture output
+output=$(mise install dummy 2>&1)
+
+# Check that MISE_TOOL_NAME is set
+if [[ $output == *"TOOL_NAME=dummy"* ]]; then
+	echo "✓ MISE_TOOL_NAME is set correctly"
+else
+	echo "✗ MISE_TOOL_NAME is NOT set correctly"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Check that MISE_TOOL_VERSION is set (should be a version string)
+if [[ $output == *"TOOL_VERSION="* ]] && [[ $output != *"TOOL_VERSION= "* ]]; then
+	echo "✓ MISE_TOOL_VERSION is set"
+else
+	echo "✗ MISE_TOOL_VERSION is NOT set"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Check that MISE_TOOL_INSTALL_PATH is set (contains mise/installs/dummy)
+if [[ $output == *"INSTALL_PATH="* ]] && [[ $output == *"/mise/installs/dummy"* ]]; then
+	echo "✓ MISE_TOOL_INSTALL_PATH is set"
+else
+	echo "✗ MISE_TOOL_INSTALL_PATH is NOT set correctly"
+	echo "Output: $output"
+	exit 1
+fi

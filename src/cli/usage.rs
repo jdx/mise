@@ -14,19 +14,26 @@ impl Usage {
     pub fn run(self) -> Result<()> {
         let cli = Cli::command().version(Resettable::Reset);
         let mut spec: usage::Spec = cli.into();
+
+        // Enable "naked" task completions: `mise foo` completes like `mise run foo`
+        spec.default_subcommand = Some("run".to_string());
+
         let run = spec.cmd.subcommands.get_mut("run").unwrap();
         run.args = vec![];
         run.mounts.push(usage::SpecMount {
             run: "mise tasks --usage".to_string(),
         });
+        // Enable completions after ::: separator for multi-task invocations
+        run.restart_token = Some(":::".to_string());
 
         let tasks = spec.cmd.subcommands.get_mut("tasks").unwrap();
         let tasks_run = tasks.subcommands.get_mut("run").unwrap();
         tasks_run.mounts.push(usage::SpecMount {
             run: "mise tasks --usage".to_string(),
         });
+        tasks_run.restart_token = Some(":::".to_string());
 
-        let min_version = r#"min_usage_version "1.3""#;
+        let min_version = r#"min_usage_version "2.11""#;
         let extra = include_str!("../assets/mise-extra.usage.kdl").trim();
         println!("{min_version}\n{}\n{extra}", spec.to_string().trim());
         Ok(())

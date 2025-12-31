@@ -339,6 +339,8 @@ impl TaskScriptParser {
                     long,
                     default,
                     var,
+                    var_min: None,
+                    var_max: None,
                     hide,
                     global,
                     count,
@@ -461,6 +463,8 @@ impl TaskScriptParser {
                     long,
                     default,
                     var,
+                    var_min: None,
+                    var_max: None,
                     hide,
                     global,
                     count,
@@ -572,6 +576,10 @@ impl TaskScriptParser {
         // First render the usage field to collect the spec
         let rendered_usage = Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?;
         let spec_from_field: usage::Spec = rendered_usage.parse()?;
+
+        if Settings::get().task.disable_spec_from_run_scripts {
+            return Ok(spec_from_field);
+        }
 
         // Make the arg/flag names available as snake_case in the template context, using
         // default values from the spec (or sensible fallbacks when no default is provided).

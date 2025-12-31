@@ -33,27 +33,39 @@ leave = "echo 'I left the project'"
 
 ## Preinstall/postinstall hook
 
-These hooks are run before and after each tool is installed (respectively). Unlike other hooks, these hooks do not require `mise activate`.
-
-The hooks run once per tool being installed, with `MISE_TOOL_NAME` and `MISE_TOOL_VERSION` environment variables set to the tool being processed.
+These hooks are run before and after tools are installed (respectively). Unlike other hooks, these hooks do not require `mise activate`.
 
 ```toml
 [hooks]
-preinstall = "echo 'About to install $MISE_TOOL_NAME@$MISE_TOOL_VERSION'"
-postinstall = "echo 'Finished installing $MISE_TOOL_NAME@$MISE_TOOL_VERSION'"
+preinstall = "echo 'I am about to install tools'"
+postinstall = "echo 'I just installed tools'"
 ```
 
-You can use these variables to run conditional logic based on the tool:
+The `postinstall` hook receives a `MISE_INSTALLED_TOOLS` environment variable containing a JSON array of the tools that were just installed:
 
 ```toml
 [hooks]
 postinstall = '''
-if [ "$MISE_TOOL_NAME" = "node" ]; then
-  echo "Node.js $MISE_TOOL_VERSION installed, running npm setup..."
-  npm config set prefix ~/.npm-global
-fi
+echo "Installed: $MISE_INSTALLED_TOOLS"
+# Example output: [{"name":"node","version":"20.10.0"},{"name":"python","version":"3.12.0"}]
 '''
 ```
+
+## Tool-level postinstall
+
+Individual tools can define their own postinstall scripts using the `postinstall` option. These run immediately after each tool is installed (before other tools in the same session are installed):
+
+```toml
+[tools]
+node = { version = "20", postinstall = "npm install -g pnpm" }
+python = { version = "3.12", postinstall = "pip install pipx" }
+```
+
+Tool-level postinstall scripts receive the following environment variables:
+
+- `MISE_TOOL_NAME`: The short name of the tool (e.g., "node", "python")
+- `MISE_TOOL_VERSION`: The version that was installed (e.g., "20.10.0", "3.12.0")
+- `MISE_TOOL_INSTALL_PATH`: The path where the tool was installed
 
 ## Watch files hook
 
@@ -76,15 +88,7 @@ Hooks are executed with the following environment variables set:
 - `MISE_ORIGINAL_CWD`: The directory that the user is in.
 - `MISE_PROJECT_ROOT`: The root directory of the project.
 - `MISE_PREVIOUS_DIR`: The directory that the user was in before the directory change (only if a directory change occurred).
-
-For `preinstall` and `postinstall` hooks, the following additional environment variables are set:
-
-- `MISE_TOOL_NAME`: The short name of the tool being installed (e.g., `node`, `python`, `go`).
-- `MISE_TOOL_VERSION`: The version of the tool being installed (e.g., `20.10.0`, `3.12.0`).
-
-For tool-level postinstall hooks (defined on the tool itself), an additional variable is available:
-
-- `MISE_TOOL_INSTALL_PATH`: The installation path of the tool.
+- `MISE_INSTALLED_TOOLS`: A JSON array of tools that were installed (only for `postinstall` hooks).
 
 ## Shell hooks
 

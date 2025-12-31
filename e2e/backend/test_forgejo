@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Test basic GitLab backend functionality with real tools
+# Test basic Forgejo backend functionality with real tools
 cat <<EOF >mise.toml
 [tools]
 "forgejo:roele/mise-test-fixtures" = { version = "1.0.0", asset_pattern = "hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
@@ -10,7 +10,7 @@ mise install
 assert_contains "mise x -- hello-world" "hello world"
 mise uninstall forgejo:roele/mise-test-fixtures
 
-# Test GitLab backend with platform-specific URLs
+# Test Forgejo backend with platform-specific URLs
 cat <<EOF >mise.toml
 [tools."forgejo:roele/mise-test-fixtures"]
 platform_darwin_arm64_url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
@@ -26,7 +26,7 @@ mise install
 assert_contains "mise x -- hello-world" "hello world"
 mise uninstall forgejo:roele/mise-test-fixtures
 
-# Test GitLab backend with mise.lock checksum generation
+# Test Forgejo backend with mise.lock checksum generation
 export MISE_LOCKFILE=1
 export MISE_EXPERIMENTAL=1
 

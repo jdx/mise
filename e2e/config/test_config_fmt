@@ -11,7 +11,7 @@ min_version = "0"
 [task_config]
 [tasks.b]
 [_]
-[alias]
+[tool_alias]
 [env]
 [hooks]
 [plugins]
@@ -38,6 +38,6 @@ env_path = "."
 [tasks.c]
 [task_config]
 [redactions]
-[alias]
+[tool_alias]
 [plugins]
 [settings]'
