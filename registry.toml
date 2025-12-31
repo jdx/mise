@@ -310,7 +310,7 @@ description = "A powerful tool for using AWS Identity Center for the CLI and web
 test = ["aws-sso version", "AWS SSO CLI Version {{version}}"]
 
 [tools.aws-vault]
-backends = ["aqua:ByteNess/aws-vault", "asdf:karancode/asdf-aws-vault"]
+backends = ["aqua:ByteNess/aws-vault"]
 description = "A vault for securely storing and accessing AWS credentials in development environments"
 test = ["aws-vault --version 2>&1", "v{{version}}"]
 
