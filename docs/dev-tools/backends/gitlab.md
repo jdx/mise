@@ -2,7 +2,7 @@
 
 You may install GitLab release assets directly using the `gitlab` backend. This backend downloads release assets from GitLab repositories and is ideal for tools that distribute pre-built binaries through GitLab releases.
 
-The code for this is inside of the mise repository at [`./src/gitlab.rs`](https://github.com/jdx/mise/blob/main/src/gitlab.rs).
+The code for this is inside of the mise repository at [`./src/backend/github.rs`](https://github.com/jdx/mise/blob/main/src/backend/github.rs).
 
 ## Usage
 
