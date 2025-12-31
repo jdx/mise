@@ -5105,6 +5105,11 @@ backends = ["aqua:carvel-dev/ytt", "asdf:vmware-tanzu/asdf-carvel"]
 description = "YAML templating tool that works on YAML structure instead of text"
 test = ["ytt --version", "ytt version {{version}}"]
 
+[tools.zarf]
+backends = ["aqua:zarf-dev/zarf"]
+description = "The Airgap Native Packager Manager for Kubernetes"
+test = ["zarf version", "v{{version | trim_start_matches(pat='v')}}"]
+
 [tools.zbctl]
 backends = ["npm:zbctl"]
 description = "zbctl is a command line interface designed to create and read resources inside zeebe broker."
