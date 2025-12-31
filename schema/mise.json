@@ -1148,11 +1148,11 @@
           "additionalProperties": false,
           "properties": {
             "age_key": {
-              "description": "The age private key to use for sops secret decryption.",
+              "description": "The age private key to use for sops secret decryption. Takes precedence over standard SOPS_AGE_KEY environment variable.",
               "type": "string"
             },
             "age_key_file": {
-              "description": "Path to the age private key file to use for sops secret decryption.",
+              "description": "Path to the age private key file for sops secret decryption. Takes precedence over standard SOPS_AGE_KEY_FILE environment variable.",
               "type": "string"
             },
             "age_recipients": {
