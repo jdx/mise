@@ -1148,11 +1148,11 @@
           "additionalProperties": false,
           "properties": {
             "age_key": {
-              "description": "The age private key to use for sops secret decryption.",
+              "description": "The age private key to use for sops secret decryption. Takes precedence over standard SOPS_AGE_KEY environment variable.",
               "type": "string"
             },
             "age_key_file": {
-              "description": "Path to the age private key file to use for sops secret decryption.",
+              "description": "Path to the age private key file for sops secret decryption. Takes precedence over standard SOPS_AGE_KEY_FILE environment variable.",
               "type": "string"
             },
             "age_recipients": {
@@ -1268,6 +1268,10 @@
           "description": "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`.",
           "type": "boolean"
         },
+        "task_show_full_cmd": {
+          "description": "Disable truncation of command lines in task execution output. When true, the full command line will be shown.",
+          "type": "boolean"
+        },
         "trace": {
           "description": "Sets log level to trace",
           "type": "boolean"
@@ -1363,6 +1367,11 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "disable_spec_from_run_scripts": {
+              "default": false,
+              "description": "Opt out of parsing task run scripts to infer the usage spec (arguments and flags). When enabled, mise will derive the usage spec only from the `usage` field, ignoring any `arg()`, `option()`, or `flag()` templates used in run scripts. This can restore previous behavior and avoid the extra template pass over run scripts when collecting specs.",
+              "type": "boolean"
+            },
             "monorepo_depth": {
               "default": 5,
               "description": "Maximum depth to search for task files in monorepo subdirectories.",
@@ -1913,6 +1922,65 @@
           }
         }
       }
+    },
+    "prepare_provider": {
+      "type": "object",
+      "properties": {
+        "auto": {
+          "type": "boolean",
+          "default": false,
+          "description": "Auto-run before `mise x` and `mise run`"
+        },
+        "sources": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ],
+          "description": "Files/patterns to check for changes"
+        },
+        "outputs": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ],
+          "description": "Files/directories that should be newer than sources"
+        },
+        "run": {
+          "type": "string",
+          "description": "Command to run when stale"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Environment variables to set"
+        },
+        "dir": {
+          "type": "string",
+          "description": "Working directory for the command"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description shown in output"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Prepare provider configuration"
     }
   },
   "additionalProperties": false,
@@ -2022,6 +2090,52 @@
       },
       "description": "plugins to use",
       "type": "object"
+    },
+    "prepare": {
+      "type": "object",
+      "properties": {
+        "disable": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Disable specific prepare providers"
+        },
+        "npm": {
+          "$ref": "#/$defs/prepare_provider"
+        },
+        "yarn": {
+          "$ref": "#/$defs/prepare_provider"
+        },
+        "pnpm": {
+          "$ref": "#/$defs/prepare_provider"
+        },
+        "bun": {
+          "$ref": "#/$defs/prepare_provider"
+        },
+        "go": {
+          "$ref": "#/$defs/prepare_provider"
+        },
+        "pip": {
+          "$ref": "#/$defs/prepare_provider"
+        },
+        "poetry": {
+          "$ref": "#/$defs/prepare_provider"
+        },
+        "uv": {
+          "$ref": "#/$defs/prepare_provider"
+        },
+        "bundler": {
+          "$ref": "#/$defs/prepare_provider"
+        },
+        "composer": {
+          "$ref": "#/$defs/prepare_provider"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/prepare_provider"
+      },
+      "description": "configure prepare providers"
     },
     "settings": {
       "$ref": "#/$defs/settings",

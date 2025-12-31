@@ -1127,6 +1127,11 @@ description = "CycloneDX CLI tool for SBOM analysis, merging, diffs and format c
 # TODO: re-enable test when aqua-registry is updated to use gnu instead of musl
 # test = ["cyclonedx --version", "{{version}}"]
 
+[tools.d2]
+backends = ["aqua:terrastruct/d2", "github:terrastruct/d2[strip_components=1]"]
+description = "Modern diagram scripting language that turns text to diagrams"
+test = ["d2 --version", "v{{version}}"]
+
 [tools.dagger]
 backends = ["aqua:dagger/dagger", "asdf:virtualstaticvoid/asdf-dagger"]
 description = "A portable devkit for CI/CD pipelines"
@@ -2577,6 +2582,11 @@ backends = ["aqua:kubernetes/kompose", "asdf:technikhil314/asdf-kompose"]
 description = "Go from Docker Compose to Kubernetes"
 test = ["kompose version", "{{version}}"]
 
+[tools.kopia]
+backends = ["aqua:kopia/kopia", "github:kopia/kopia"]
+description = "Kopia is a fast and secure open-source backup/restore tool that allows you to create encrypted snapshots of your data and save the snapshots to remote or cloud storage of your choice, to network-attached storage or server, or locally on your machine"
+test = ["kopia --version", "{{version}}"]
+
 [tools.kops]
 backends = ["aqua:kubernetes/kops", "asdf:Antiarchitect/asdf-kops"]
 description = "Kubernetes Operations (kops) - Production Grade K8s Installation, Upgrades, and Management"
@@ -3068,6 +3078,11 @@ description = "Mercury is a logic/functional programming language which combines
 [tools.meson]
 backends = ["asdf:mise-plugins/mise-meson"]
 description = "Meson is an open source build system meant to be both extremely fast, and, even more importantly, as user friendly as possible"
+
+[tools.micromamba]
+backends = ["github:mamba-org/micromamba-releases"]
+description = "Lightweight conda-compatible package manager"
+test = ["micromamba --version", "{{ version | split(pat='-') | first }}"]
 
 [tools.micronaut]
 backends = [
@@ -3885,6 +3900,11 @@ description = "Ruby language"
 backends = ["aqua:astral-sh/ruff", "asdf:simhem/asdf-ruff"]
 description = "An extremely fast Python linter and code formatter, written in Rust"
 test = ["ruff --version", "ruff {{version}}"]
+
+[tools.rumdl]
+backends = ["github:rvben/rumdl"]
+description = "Markdown Linter and Formatter written in Rust"
+test = ["rumdl --version", "rumdl {{version}}"]
 
 [tools.rust]
 backends = ["core:rust", "asdf:code-lever/asdf-rust"]
@@ -4722,6 +4742,11 @@ test = [
   "{{version}}",
 ]
 
+[tools.ty]
+backends = ["github:astral-sh/ty"]
+description = "An extremely fast Python type checker and language server, written in Rust"
+test = ["ty --version", "ty {{version}}"]
+
 [tools.uaa]
 aliases = ["uaa-cli"]
 backends = [
@@ -5079,6 +5104,11 @@ test = ["yt-dlp --version", "{{version}}"]
 backends = ["aqua:carvel-dev/ytt", "asdf:vmware-tanzu/asdf-carvel"]
 description = "YAML templating tool that works on YAML structure instead of text"
 test = ["ytt --version", "ytt version {{version}}"]
+
+[tools.zarf]
+backends = ["aqua:zarf-dev/zarf"]
+description = "The Airgap Native Packager Manager for Kubernetes"
+test = ["zarf version", "v{{version | trim_start_matches(pat='v')}}"]
 
 [tools.zbctl]
 backends = ["npm:zbctl"]

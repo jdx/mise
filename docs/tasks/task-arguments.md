@@ -514,6 +514,18 @@ The Tera template method for defining task arguments is **deprecated** and will 
 - **Poor user experience**: Mixes argument definitions with script logic
 
 **Migration required:** Please migrate to the [usage field](#usage-field) method before 2026.11.0.
+
+**Opt-out setting:** If you want to disable the two-pass parsing behavior immediately (before removal), you can set:
+
+```toml
+# ~/.config/mise/config.toml
+[settings]
+task.disable_spec_from_run_scripts = true
+```
+
+Or via environment variable: `MISE_TASK_DISABLE_SPEC_FROM_RUN_SCRIPTS=1`
+
+When enabled, mise will only use the `usage` field for spec generation, ignoring any `arg()`, `option()`, or `flag()` functions in run scripts. See [Settings](/configuration/settings) for more details.
 :::
 
 <details>

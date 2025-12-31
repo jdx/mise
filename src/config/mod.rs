@@ -1544,9 +1544,11 @@ async fn load_local_tasks_with_context(
                 async move {
                     let mut all_tasks = Vec::new();
                     // Load config files from subdirectory
+                    let mut found_config = false;
                     for config_filename in DEFAULT_CONFIG_FILENAMES.iter() {
                         let config_path = subdir.join(config_filename);
                         if config_path.exists() {
+                            found_config = true;
                             match config_file::parse(&config_path).await {
                                 Ok(cf) => {
                                     let mut subdir_tasks =
@@ -1574,6 +1576,17 @@ async fn load_local_tasks_with_context(
                             }
                         }
                     }
+
+                    // If no config file exists, still load default task include dirs
+                    if !found_config {
+                        let includes = task_includes_for_dir(&subdir, &config.config_files);
+                        for include in includes {
+                            let mut subdir_tasks =
+                                load_tasks_includes(&config, &include, &subdir).await?;
+                            prefix_monorepo_task_names(&mut subdir_tasks, &subdir, &monorepo_root);
+                            all_tasks.extend(subdir_tasks);
+                        }
+                    }
                     Ok::<Vec<Task>, eyre::Report>(all_tasks)
                 }
             })
@@ -1599,6 +1612,11 @@ fn discover_monorepo_subdirs(
     ctx: Option<&crate::task::TaskLoadContext>,
 ) -> Result<Vec<PathBuf>> {
     const DEFAULT_IGNORED_DIRS: &[&str] = &["node_modules", "target", "dist", "build"];
+    let has_task_includes = |dir: &Path| {
+        default_task_includes()
+            .into_iter()
+            .any(|include| dir.join(include).exists())
+    };
 
     let mut subdirs = Vec::new();
     let settings = Settings::get();
@@ -1649,7 +1667,8 @@ fn discover_monorepo_subdirs(
                 let has_config = DEFAULT_CONFIG_FILENAMES
                     .iter()
                     .any(|f| dir.join(f).exists());
-                if has_config {
+                let has_task_includes = has_task_includes(dir);
+                if has_config || has_task_includes {
                     // Apply context filtering if provided
                     if let Some(ctx) = ctx {
                         let rel_path = dir
@@ -1685,7 +1704,8 @@ fn discover_monorepo_subdirs(
                 let has_config = DEFAULT_CONFIG_FILENAMES
                     .iter()
                     .any(|f| dir.join(f).exists());
-                if has_config {
+                let has_task_includes = has_task_includes(dir);
+                if has_config || has_task_includes {
                     // Apply context filtering if provided
                     if let Some(ctx) = ctx {
                         let rel_path = dir

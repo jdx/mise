@@ -8,13 +8,13 @@ tools.python = "1.0.0-python"
 tools.mytool = "2"
 tools.mytool-lts = "lts"
 
-[alias]
+[tool_alias]
 erlang = 'asdf:https://github.com/jdx/mise-tiny'
 node = "asdf:tiny"
 corenode = "core:node"
 python = 'asdf:jdx/mise-tiny'
 mytool = "asdf:tiny"
-[alias.mytool-lts]
+[tool_alias.mytool-lts]
 backend = "asdf:tiny"
 versions = {lts = "1.0.1"}
 EOF
