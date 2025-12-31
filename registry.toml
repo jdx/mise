@@ -312,7 +312,7 @@ test = ["aws-sso version", "AWS SSO CLI Version {{version}}"]
 [tools.aws-vault]
 backends = ["aqua:ByteNess/aws-vault"]
 description = "A vault for securely storing and accessing AWS credentials in development environments"
-test = ["aws-vault --version 2>&1", "v{{version}}"]
+# test = ["aws-vault --version 2>&1", "v{{version}}"] # TODO: re-enable after versions host update
 
 [tools.awscli-local]
 backends = ["pipx:awscli-local"]
