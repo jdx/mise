@@ -310,9 +310,9 @@ description = "A powerful tool for using AWS Identity Center for the CLI and web
 test = ["aws-sso version", "AWS SSO CLI Version {{version}}"]
 
 [tools.aws-vault]
-backends = ["aqua:99designs/aws-vault", "asdf:karancode/asdf-aws-vault"]
+backends = ["aqua:ByteNess/aws-vault"]
 description = "A vault for securely storing and accessing AWS credentials in development environments"
-test = ["aws-vault --version 2>&1", "v{{version}}"]
+# test = ["aws-vault --version 2>&1", "v{{version}}"] # TODO: re-enable after versions host update
 
 [tools.awscli-local]
 backends = ["pipx:awscli-local"]
@@ -5104,6 +5104,11 @@ test = ["yt-dlp --version", "{{version}}"]
 backends = ["aqua:carvel-dev/ytt", "asdf:vmware-tanzu/asdf-carvel"]
 description = "YAML templating tool that works on YAML structure instead of text"
 test = ["ytt --version", "ytt version {{version}}"]
+
+[tools.zarf]
+backends = ["aqua:zarf-dev/zarf"]
+description = "The Airgap Native Packager Manager for Kubernetes"
+test = ["zarf version", "v{{version | trim_start_matches(pat='v')}}"]
 
 [tools.zbctl]
 backends = ["npm:zbctl"]
