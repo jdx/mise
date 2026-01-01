@@ -799,8 +799,8 @@ url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d
 url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{version}/linux-x64/claude"
 
 [tools.claude.backends.options.platforms.windows-x64]
-url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{version}/win32-x64/claude.exe"
 bin = "claude.exe"
+url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{version}/win32-x64/claude.exe"
 
 [[tools.claude.backends]]
 full = "npm:@anthropic-ai/claude-code"
