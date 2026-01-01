@@ -92,6 +92,7 @@ pub static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| {
 pub static MISE_TOOL_STUB: Lazy<bool> =
     Lazy::new(|| ARGS.read().unwrap().get(1).map(|s| s.as_str()) == Some("tool-stub"));
 pub static MISE_NO_CONFIG: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_CONFIG"));
+pub static MISE_NO_ENV: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_ENV"));
 pub static MISE_PROGRESS_TRACE: Lazy<bool> = Lazy::new(|| var_is_true("MISE_PROGRESS_TRACE"));
 pub static MISE_CACHE_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_CACHE_DIR").unwrap_or_else(|| XDG_CACHE_HOME.join("mise")));

@@ -814,6 +814,10 @@
           "description": "Path to the netrc file to use for HTTP Basic authentication.",
           "type": "string"
         },
+        "no_env": {
+          "description": "Do not load environment variables from config files.",
+          "type": "boolean"
+        },
         "node": {
           "type": "object",
           "additionalProperties": false,

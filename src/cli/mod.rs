@@ -158,6 +158,11 @@ pub struct Cli {
     /// Can also use `MISE_NO_CONFIG=1`
     #[clap(long)]
     pub no_config: bool,
+    /// Do not load environment variables from config files
+    ///
+    /// Can also use `MISE_NO_ENV=1`
+    #[clap(long)]
+    pub no_env: bool,
     /// Hides elapsed time after each task completes
     ///
     /// Default to always hide with `MISE_TASK_TIMINGS=0`
