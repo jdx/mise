@@ -163,6 +163,11 @@ pub struct Cli {
     /// Can also use `MISE_NO_ENV=1`
     #[clap(long)]
     pub no_env: bool,
+    /// Do not execute hooks from config files
+    ///
+    /// Can also use `MISE_NO_HOOKS=1`
+    #[clap(long)]
+    pub no_hooks: bool,
     /// Hides elapsed time after each task completes
     ///
     /// Default to always hide with `MISE_TASK_TIMINGS=0`

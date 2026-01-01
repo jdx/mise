@@ -65,6 +65,9 @@ pub fn schedule_hook(hook: Hooks) {
 }
 
 pub async fn run_all_hooks(config: &Arc<Config>, ts: &Toolset, shell: &dyn Shell) {
+    if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
+        return;
+    }
     let hooks = {
         let mut mu = SCHEDULED_HOOKS.lock().unwrap();
         mu.drain(..).collect::<Vec<_>>()
@@ -113,6 +116,9 @@ pub async fn run_one_hook_with_context(
     shell: Option<&dyn Shell>,
     installed_tools: Option<&[InstalledToolInfo]>,
 ) {
+    if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
+        return;
+    }
     for (root, h) in all_hooks(config).await {
         if hook != h.hook || (h.shell.is_some() && h.shell != shell.map(|s| s.to_string())) {
             continue;

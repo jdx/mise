@@ -1820,3 +1820,9 @@ description = "Do not load environment variables from config files."
 env = "MISE_NO_ENV"
 optional = true
 type = "Bool"
+
+[no_hooks]
+description = "Do not execute hooks from config files."
+env = "MISE_NO_HOOKS"
+optional = true
+type = "Bool"
