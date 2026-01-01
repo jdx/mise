@@ -1399,6 +1399,10 @@
               "type": "boolean"
             }
           }
+        },
+        "no_env": {
+          "description": "Do not load environment variables from config files.",
+          "type": "boolean"
         }
       }
     },

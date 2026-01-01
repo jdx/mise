@@ -63,6 +63,12 @@ Do not load any config files
 
 Can also use `MISE_NO_CONFIG=1`
 
+### `--no-env`
+
+Do not load environment variables from config files
+
+Can also use `MISE_NO_ENV=1`
+
 ### `--output <OUTPUT>`
 
 ## Subcommands
