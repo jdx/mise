@@ -8,7 +8,7 @@ Describe 'backend_http' {
     }
 
     AfterAll {
-        $env:MISE_EXPERIMENTAL = ""
+        Remove-Item -Path Env:\MISE_EXPERIMENTAL -ErrorAction SilentlyContinue
         Remove-Item "mise.toml" -ErrorAction SilentlyContinue
     }
 
