@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tools]
+dummy = 'latest'
+[hooks]
+preinstall = 'echo PREINSTALL'
+EOF
+
+export 	MISE_TRUSTED_CONFIG_PATHS=$MISE_TRUSTED_CONFIG_PATHS:/
+
+assert_contains "mise i dummy 2>&1" "PREINSTALL"
+assert_not_contains "mise --no-hooks i dummy 2>&1" "PREINSTALL"
+
+assert_not_contains "MISE_NO_HOOKS=1 mise --no-hooks i dummy 2>&1" "PREINSTALL"
+
+rm -f mise.toml

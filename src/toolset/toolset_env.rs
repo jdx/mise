@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use eyre::Result;
 
-use crate::config::Config;
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{Config, Settings};
 use crate::env::{PATH_KEY, WARN_ON_MISSING_REQUIRED_ENV};
