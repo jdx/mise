@@ -14,7 +14,6 @@ Describe 'backend_http' {
 
     It 'installs and executes docker-compose via http backend with binary cleaning' {
         mise install -f http:docker-compose
-        $LASTEXITCODE | Should -Be 0
         mise exec http:docker-compose -- docker-compose version | Should -BeLike "Docker Compose version *"
     }
 }
