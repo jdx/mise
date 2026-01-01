@@ -867,6 +867,12 @@ env = "MISE_NO_ENV"
 optional = true
 type = "Bool"
 
+[no_hooks]
+description = "Do not execute hooks from config files."
+env = "MISE_NO_HOOKS"
+optional = true
+type = "Bool"
+
 [node.compile]
 description = "Compile node from source."
 env = "MISE_NODE_COMPILE"
@@ -1820,4 +1826,3 @@ when discovering tasks in a monorepo.
 """
 env = "MISE_TASK_MONOREPO_RESPECT_GITIGNORE"
 type = "Bool"
-

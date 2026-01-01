@@ -3850,6 +3850,11 @@ const completionSpec: Fig.Spec = {
       isRepeatable: false,
     },
     {
+      name: "--no-hooks",
+      description: "Do not execute hooks from config files",
+      isRepeatable: false,
+    },
+    {
       name: "--output",
       isRepeatable: false,
       args: {

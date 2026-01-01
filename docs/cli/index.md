@@ -69,6 +69,12 @@ Do not load environment variables from config files
 
 Can also use `MISE_NO_ENV=1`
 
+### `--no-hooks`
+
+Do not execute hooks from config files
+
+Can also use `MISE_NO_HOOKS=1`
+
 ### `--output <OUTPUT>`
 
 ## Subcommands
