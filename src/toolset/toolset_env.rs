@@ -5,6 +5,7 @@ use eyre::Result;
 
 use crate::config::Config;
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
+use crate::config::{Config, Settings};
 use crate::env::{PATH_KEY, WARN_ON_MISSING_REQUIRED_ENV};
 use crate::env_diff::EnvMap;
 use crate::path_env::PathEnv;
@@ -134,6 +135,9 @@ impl Toolset {
         ctx: tera::Context,
         env: &EnvMap,
     ) -> Result<EnvResults> {
+        if Settings::no_env() {
+            return Ok(EnvResults::default());
+        }
         let entries = config
             .config_files
             .iter()
