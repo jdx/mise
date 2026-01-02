@@ -879,6 +879,11 @@ cmake version {{version}}
 
 CMake suite maintained and supported by Kitware (kitware.com/cmake)."""]
 
+[tools.cmakelang]
+backends = ["pipx:cmakelang"]
+description = "Language tools for cmake (format, lint, etc)"
+test = ["cmake-format --version", "{{version}}"]
+
 [tools.cmctl]
 backends = ["aqua:cert-manager/cmctl", "asdf:asdf-community/asdf-cmctl"]
 description = "the command line utility that makes cert-manager'ing easier"
