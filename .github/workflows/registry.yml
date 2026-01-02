@@ -68,7 +68,7 @@ jobs:
     outputs:
       # If the workflow file itself was modified, return an empty string to signal "run all tools";
       # otherwise, return only the list of modified tools from registry-diff.
-      tools: ${{ steps.workflow-check.outputs.modified == 'true' && '' || steps.registry-diff.outputs.modified-tools }}
+      tools: ${{ steps.workflow-check.outputs.modified == 'true' && '' || steps.registry-diff.outputs.modified_tools }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
