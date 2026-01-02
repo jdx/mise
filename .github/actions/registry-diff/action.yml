@@ -1,0 +1,37 @@
+name: "List modified registry tools"
+description: "List tools in registry.toml that have been modified between commits"
+
+inputs:
+  base_sha:
+    description: "The base commit SHA to compare against"
+    required: true
+outputs:
+  modified_tools:
+    description: "Space-separated list of all modified tools"
+    value: ${{ steps.diff.outputs.modified_tools }}
+  new_tools:
+    description: "Space-separated list of only new tools"
+    value: ${{ steps.diff.outputs.new_tools }}
+
+runs:
+  using: "composite"
+  steps:
+    - uses: jdx/mise-action@v2
+    - id: diff
+      shell: bash
+      run: |
+        git show ${{ inputs.base_sha }}:registry.toml | mise x yj -- yj -t > old.json
+        mise x yj -- yj -t < registry.toml > new.json
+
+        changed=$(jq -r -s '
+           (.[0].tools) as $old | (.[1].tools) as $new |
+           [ ($new | keys[]) | select($new[.] != $old[.]) ] | join(" ")
+        ' old.json new.json)
+
+        new=$(jq -r -s '
+           (.[0].tools) as $old | (.[1].tools) as $new |
+           [ ($new | keys[]) | select($old[.] == null) ] | join(" ")
+        ' old.json new.json)
+
+        echo "modified_tools=$changed" >> "$GITHUB_OUTPUT"
+        echo "new_tools=$new" >> "$GITHUB_OUTPUT"
