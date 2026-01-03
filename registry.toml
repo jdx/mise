@@ -3285,6 +3285,11 @@ description = "A CLI tool to sign and verify artifacts"
 backends = ["aqua:FairwindsOps/nova", "asdf:elementalvoid/asdf-nova"]
 description = "Find outdated or deprecated Helm charts running in your cluster"
 
+[tools.npm]
+backends = ["npm:npm"]
+description = "the package manager for JavaScript"
+test = ["npm --version", "{{version}}"]
+
 [tools.nsc]
 backends = ["github:nats-io/nsc", "asdf:dex4er/asdf-nsc"]
 description = "Tool for creating nkey/jwt based configurations"
