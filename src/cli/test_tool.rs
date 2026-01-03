@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::file::display_path;
 use crate::registry::{REGISTRY, RegistryTool};
 use crate::tera::get_tera;
-use crate::toolset::{InstallOptions, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ResolveOptions, ToolsetBuilder};
 use crate::ui::time;
 use crate::{dirs, env, file};
 use eyre::{Result, bail, eyre};
@@ -204,15 +204,22 @@ impl TestTool {
                 .map(|ba| ba.to_string().parse())
                 .collect::<Result<Vec<ToolArg>>>()?,
         );
+        let resolve_options = ResolveOptions {
+            use_locked_version: false,
+            ..Default::default()
+        };
+
         let mut ts = ToolsetBuilder::new()
             .with_args(&args)
             .with_default_to_latest(true)
+            .with_resolve_options(resolve_options.clone())
             .build(config)
             .await?;
         let opts = InstallOptions {
             missing_args_only: false,
             jobs: self.jobs,
             raw: self.raw,
+            resolve_options,
             ..Default::default()
         };
         ts.install_missing_versions(config, &opts).await?;
