@@ -104,7 +104,8 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
     let mise_bin = file::which("mise").unwrap_or(env::MISE_BIN.clone());
     let mise_bin = mise_bin.absolutize()?; // relative paths don't work as shims
 
-    if force {
+    let is_windows_hardlink = cfg!(windows) && Settings::get().windows_shim_mode.eq("hardlink");
+    if force || is_windows_hardlink {
         file::remove_all(*dirs::SHIMS)?;
     }
     file::create_dir_all(*dirs::SHIMS)?;
