@@ -42,16 +42,14 @@ impl Toolset {
             let id_a = a.id();
             let id_b = b.id();
 
-            if let Some(tool_a) = REGISTRY.get(id_a) {
-                if tool_a.overrides.contains(&id_b) {
+            if let Some(tool_a) = REGISTRY.get(id_a)
+                && tool_a.overrides.contains(&id_b) {
                     return std::cmp::Ordering::Less;
                 }
-            }
-            if let Some(tool_b) = REGISTRY.get(id_b) {
-                if tool_b.overrides.contains(&id_a) {
+            if let Some(tool_b) = REGISTRY.get(id_b)
+                && tool_b.overrides.contains(&id_a) {
                     return std::cmp::Ordering::Greater;
                 }
-            }
             std::cmp::Ordering::Equal
         });
 
