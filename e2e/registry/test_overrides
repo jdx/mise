@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# Test 1: node defined before npm
+cat >mise.toml <<EOF
+[tools]
+node = "25.2.1"
+npm = "11.7.0"
+EOF
+
+mise install
+assert_contains "mise x -- npm --version" "11.7.0"
+
+# Test 2: npm defined before node
+cat >mise.toml <<EOF
+[tools]
+npm = "11.7.0"
+node = "25.2.1"
+EOF
+
+mise install
+assert_contains "mise x -- npm --version" "11.7.0"
