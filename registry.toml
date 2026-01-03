@@ -774,7 +774,7 @@ test = ["clarinet --version", "clarinet {{version}}"]
 [tools.claude]
 aliases = ["claude-code"]
 description = "Claude Code is an agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster by executing routine tasks, explaining complex code, and handling git workflows -- all through natural language commands"
-os = ["linux", "macos"]
+os = ["linux", "macos", "windows"]
 test = ["claude --version", "{{version}} (Claude Code)"]
 
 [[tools.claude.backends]]
@@ -797,6 +797,10 @@ url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d
 
 [tools.claude.backends.options.platforms.linux-x64]
 url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{version}/linux-x64/claude"
+
+[tools.claude.backends.options.platforms.windows-x64]
+bin = "claude.exe"
+url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{version}/win32-x64/claude.exe"
 
 [[tools.claude.backends]]
 full = "npm:@anthropic-ai/claude-code"
