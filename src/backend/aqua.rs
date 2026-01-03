@@ -1453,8 +1453,12 @@ impl AquaBackend {
                     .into_iter()
                     .flatten()
                     .map(|src| tv.install_path().join(src))
-                    .map(|src| {
-                        let dst = src.parent().unwrap().join(f.name.as_str());
+                    .map(|mut src| {
+                        let mut dst = src.parent().unwrap().join(f.name.as_str());
+                        if cfg!(windows) && pkg.complete_windows_ext {
+                            src = src.with_extension("exe");
+                            dst = dst.with_extension("exe");
+                        }
                         (src, dst)
                     }))
             })
