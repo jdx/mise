@@ -15,6 +15,11 @@ use std::sync::LazyLock;
 static VERSION_PATTERN: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"[-_]v?\d+(\.\d+)*(-[a-zA-Z0-9]+(\.\d+)?)?$").unwrap());
 
+/// Regex pattern for detecting full release tags (e.g., "name@v1.0.0", "tool@2.0.0", "tool@beta")
+/// Matches @ followed by any non-whitespace characters, indicating a scoped/tagged version
+static FULL_TAG_PATTERN: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"@\S+").unwrap());
+
 // ========== Checksum Fetching Helpers ==========
 
 /// Fetches a checksum for a specific file from a SHASUMS256.txt-style file.
@@ -119,6 +124,27 @@ impl VerifiableError for anyhow::Error {
     }
 }
 
+/// Returns true if the version looks like a complete release tag.
+///
+/// A full tag contains a scoped version pattern like `@v1.0.0` or `@1.2.3`,
+/// indicating it's already a complete GitHub/GitLab tag name rather than
+/// a simple version number. When detected, mise will use the tag as-is
+/// without adding any `v` prefix.
+///
+/// # Examples
+/// - `protoc-gen-elixir-grpc@v0.4.0` → true
+/// - `tool-name@1.2.3` → true
+/// - `package@v123` → true
+/// - `tool-name@beta` → true
+/// - `tool-name@latest` → true
+/// - `1.0.0` → false
+/// - `v1.0.0` → false
+/// - `latest` → false
+fn looks_like_full_tag(version: &str) -> bool {
+    // Check for @ followed by any non-whitespace characters, which indicates a scoped/tagged version
+    FULL_TAG_PATTERN.is_match(version)
+}
+
 /// Helper to try both prefixed and non-prefixed tags for a resolver function
 pub async fn try_with_v_prefix<F, Fut, T, E>(
     version: &str,
@@ -148,6 +174,10 @@ where
             version.to_string(),
             version.trim_start_matches('v').to_string(),
         ]
+    } else if looks_like_full_tag(version) {
+        // Version already contains version-like patterns (e.g., "name@v1.0.0")
+        // Don't add v prefix - the tag is already complete as specified
+        vec![version.to_string()]
     } else {
         vec![format!("v{version}"), version.to_string()]
     };
@@ -164,9 +194,15 @@ where
             }
         }
     }
-    Err(errors
-        .pop()
-        .unwrap_or_else(|| eyre::eyre!("No matching release found for {version}")))
+    Err(errors.pop().unwrap_or_else(|| {
+        if looks_like_full_tag(version) {
+            eyre::eyre!(
+                "No matching release found for {version} (tag was tried as-is without modification)"
+            )
+        } else {
+            eyre::eyre!("No matching release found for {version}")
+        }
+    }))
 }
 
 /// Returns all possible aliases for the current platform (os, arch),
@@ -1104,5 +1140,106 @@ bin = "tool.exe"
                 b
             );
         }
+    }
+
+    #[test]
+    fn test_looks_like_full_tag() {
+        // Test monorepo-style versions with @v pattern
+        assert!(looks_like_full_tag("protoc-gen-elixir-grpc@v0.4.0"));
+        assert!(looks_like_full_tag("tool-name@v1.2.3"));
+        assert!(looks_like_full_tag("package@v0.1.0"));
+
+        // Test versions with @[digit] pattern
+        assert!(looks_like_full_tag("package@1.2.3"));
+        assert!(looks_like_full_tag("tool@2.0.0"));
+
+        // Test non-numeric tags (e.g., beta, alpha, latest)
+        assert!(looks_like_full_tag("tool-name@beta"));
+        assert!(looks_like_full_tag("tool-name@alpha"));
+        assert!(looks_like_full_tag("tool-name@latest"));
+        assert!(looks_like_full_tag("package@rc1"));
+
+        // Test that simple versions don't match
+        assert!(!looks_like_full_tag("1.0.0"));
+        assert!(!looks_like_full_tag("v1.0.0"));
+        assert!(!looks_like_full_tag("latest"));
+
+        // Test edge cases
+        assert!(!looks_like_full_tag(""));
+        assert!(!looks_like_full_tag("@"));
+        assert!(!looks_like_full_tag("package@"));
+    }
+
+    #[tokio::test]
+    async fn test_try_with_v_prefix_full_tag_ordering() {
+        // Test that full-tag versions are tried as-is first
+        let version = "protoc-gen-elixir-grpc@v0.4.0";
+
+        // Create a resolver that succeeds only for the exact version (no v prefix)
+        let resolver = |candidate: String| async move {
+            if candidate == version {
+                Ok(())
+            } else {
+                Err(eyre::eyre!("404 Not Found"))
+            }
+        };
+
+        // This should succeed because the correct version is tried first
+        let result = try_with_v_prefix(version, None, resolver).await;
+        assert!(
+            result.is_ok(),
+            "Full-tag version should be tried as-is first"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_try_with_v_prefix_simple_version_ordering() {
+        // Test that simple versions still get v prefix tried first
+        let version = "1.0.0";
+
+        let resolver = |candidate: String| async move {
+            if candidate == "v1.0.0" {
+                Ok(())
+            } else {
+                Err(eyre::eyre!("404 Not Found"))
+            }
+        };
+
+        // This should succeed because v1.0.0 is tried first
+        let result = try_with_v_prefix(version, None, resolver).await;
+        assert!(result.is_ok(), "Simple version should try v prefix first");
+    }
+
+    #[tokio::test]
+    async fn test_try_with_v_prefix_full_tag_no_fallback() {
+        // Test that full tags don't fall back to v-prefixed version
+        // This ensures we respect the tag as-is without modification
+        let version = "nonexistent-package@v1.0.0";
+        let candidates_tried = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        let candidates_tried_clone = candidates_tried.clone();
+        let resolver = move |candidate: String| {
+            let candidates_tried = candidates_tried_clone.clone();
+            async move {
+                candidates_tried.lock().unwrap().push(candidate.clone());
+                // Should only try the exact version, not "vnonexistent-package@v1.0.0"
+                Err::<String, _>(eyre::eyre!("404 Not Found"))
+            }
+        };
+
+        let result: Result<String, _> = try_with_v_prefix(version, None, resolver).await;
+        assert!(result.is_err(), "Should fail when tag doesn't exist");
+
+        // Verify only the correct tag was tried (no v prefix fallback)
+        let tried = candidates_tried.lock().unwrap();
+        assert_eq!(tried.len(), 1, "Should only try one candidate for full tag");
+        assert_eq!(
+            tried[0], version,
+            "Should try the exact version as specified"
+        );
+        assert!(
+            !tried[0].starts_with("vnonexistent"),
+            "Should not add v prefix to full tag"
+        );
     }
 }

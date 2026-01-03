@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# Test GitHub backend with monorepo-style version tags
+# This test verifies the fix for the bug where mise incorrectly prepended 'v' to
+# versions like "protoc-gen-elixir-grpc@v0.4.0", resulting in "vprotoc-gen-elixir-grpc@v0.4.0"
+#
+# Before the fix, mise incorrectly added a 'v' prefix, trying "vprotoc-gen-elixir-grpc@v0.4.0"
+# (wrong) instead of "protoc-gen-elixir-grpc@v0.4.0" (correct), causing a 404 error.
+
+# Test the exact scenario from the bug report
+cat <<EOF >mise.toml
+[tools]
+"github:TrogonStack/protoc-gen" = "protoc-gen-elixir-grpc@v0.4.0"
+EOF
+
+# Enable lockfile generation to verify version is recorded correctly
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+touch mise.lock
+mise install
+
+assert "mise which protoc-gen-elixir-grpc"
+assert_contains "cat mise.lock" 'version = "protoc-gen-elixir-grpc@v0.4.0"'
