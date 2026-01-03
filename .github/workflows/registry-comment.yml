@@ -1,4 +1,4 @@
-name: registry_comment
+name: registry-comment
 on:
   pull_request_target:
     branches: [main]
@@ -107,7 +107,7 @@ jobs:
           fi
           echo "✅ PR title format is valid and mentions new tool(s)"
 
-  build:
+  comment:
     timeout-minutes: 20
     runs-on: ubuntu-latest
     permissions:
