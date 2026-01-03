@@ -542,6 +542,9 @@ impl Config {
     }
 
     async fn load_env(self: &Arc<Self>) -> Result<EnvResults> {
+        if Settings::no_env() {
+            return Ok(EnvResults::default());
+        }
         time!("load_env start");
         let entries = self
             .config_files
