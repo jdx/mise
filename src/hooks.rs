@@ -117,7 +117,7 @@ pub async fn run_one_hook_with_context(
     installed_tools: Option<&[InstalledToolInfo]>,
 ) {
     if Settings::no_hooks() {
-      return;
+        return;
     }
     for (root, h) in all_hooks(config).await {
         if hook != h.hook || (h.shell.is_some() && h.shell != shell.map(|s| s.to_string())) {
