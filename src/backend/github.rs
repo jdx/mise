@@ -16,7 +16,7 @@ use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
 use crate::toolset::ToolVersionOptions;
 use crate::toolset::{ToolRequest, ToolVersion};
-use crate::{backend::Backend, github, gitlab};
+use crate::{backend::Backend, forgejo, github, gitlab};
 use async_trait::async_trait;
 use eyre::Result;
 use regex::Regex;
@@ -38,6 +38,7 @@ struct ReleaseAsset {
 
 const DEFAULT_GITHUB_API_BASE_URL: &str = "https://api.github.com";
 const DEFAULT_GITLAB_API_BASE_URL: &str = "https://gitlab.com/api/v4";
+const DEFAULT_FORGEJO_API_BASE_URL: &str = "https://codeberg.org/api/v1";
 
 /// Status returned from verification attempts
 enum VerificationStatus {
@@ -61,6 +62,8 @@ impl Backend for UnifiedGitBackend {
     fn get_type(&self) -> BackendType {
         if self.is_gitlab() {
             BackendType::Gitlab
+        } else if self.is_forgejo() {
+            BackendType::Forgejo
         } else {
             BackendType::Github
         }
@@ -72,7 +75,7 @@ impl Backend for UnifiedGitBackend {
 
     async fn security_info(&self) -> Vec<SecurityFeature> {
         // Only report security features for GitHub (not GitLab yet)
-        if self.is_gitlab() {
+        if self.is_gitlab() || self.is_forgejo() {
             return vec![];
         }
 
@@ -150,6 +153,14 @@ impl Backend for UnifiedGitBackend {
                 let web_url = api_url.replace("/api/v4", "");
                 format!("{}/{}", web_url, repo)
             }
+        } else if self.is_forgejo() {
+            if api_url == DEFAULT_FORGEJO_API_BASE_URL {
+                format!("https://codeberg.org/{}", repo)
+            } else {
+                // Enterprise Forgejo - derive web URL from API URL
+                let web_url = api_url.replace("/api/v1", "");
+                format!("{}/{}", web_url, repo)
+            }
         } else if api_url == DEFAULT_GITHUB_API_BASE_URL {
             format!("https://github.com/{}", repo)
         } else {
@@ -168,6 +179,17 @@ impl Backend for UnifiedGitBackend {
                     version: self.strip_version_prefix(&r.tag_name),
                     created_at: r.released_at,
                     release_url: Some(format!("{}/-/releases/{}", web_url_base, r.tag_name)),
+                })
+                .collect()
+        } else if self.is_forgejo() {
+            forgejo::list_releases_from_url(api_url.as_str(), &repo)
+                .await?
+                .into_iter()
+                .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
+                .map(|r| VersionInfo {
+                    version: self.strip_version_prefix(&r.tag_name),
+                    created_at: Some(r.created_at),
+                    release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
                 })
                 .collect()
         } else {
@@ -312,6 +334,10 @@ impl UnifiedGitBackend {
         self.ba.backend_type() == BackendType::Gitlab
     }
 
+    fn is_forgejo(&self) -> bool {
+        self.ba.backend_type() == BackendType::Forgejo
+    }
+
     fn repo(&self) -> String {
         // Use tool_name() method to properly resolve aliases
         // This ensures that when an alias like "test-edit = github:microsoft/edit" is used,
@@ -332,6 +358,8 @@ impl UnifiedGitBackend {
             .map(|s| s.as_str())
             .unwrap_or(if self.is_gitlab() {
                 DEFAULT_GITLAB_API_BASE_URL
+            } else if self.is_forgejo() {
+                DEFAULT_FORGEJO_API_BASE_URL
             } else {
                 DEFAULT_GITHUB_API_BASE_URL
             })
@@ -413,6 +441,8 @@ impl UnifiedGitBackend {
 
         let headers = if self.is_gitlab() {
             gitlab::get_headers(&url)
+        } else if self.is_forgejo() {
+            forgejo::get_headers(&url)
         } else {
             github::get_headers(&url)
         };
@@ -535,6 +565,14 @@ impl UnifiedGitBackend {
         if self.is_gitlab() {
             try_with_v_prefix(version, version_prefix, |candidate| async move {
                 self.resolve_gitlab_asset_url_for_target(
+                    tv, opts, repo, api_url, &candidate, target,
+                )
+                .await
+            })
+            .await
+        } else if self.is_forgejo() {
+            try_with_v_prefix(version, version_prefix, |candidate| async move {
+                self.resolve_forgejo_asset_url_for_target(
                     tv, opts, repo, api_url, &candidate, target,
                 )
                 .await
@@ -718,6 +756,92 @@ impl UnifiedGitBackend {
         })
     }
 
+    /// Resolves Forgejo asset URL for a specific target platform
+    async fn resolve_forgejo_asset_url_for_target(
+        &self,
+        tv: &ToolVersion,
+        opts: &ToolVersionOptions,
+        repo: &str,
+        api_url: &str,
+        version: &str,
+        target: &PlatformTarget,
+    ) -> Result<ReleaseAsset> {
+        let release = forgejo::get_release_for_url(api_url, repo, version).await?;
+        let available_assets: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
+
+        // Build asset list with URLs for checksum fetching
+        let assets_with_urls: Vec<Asset> = release
+            .assets
+            .iter()
+            .map(|a| Asset::new(&a.name, &a.browser_download_url))
+            .collect();
+
+        // Helper to build API attachment URL
+        let asset_url_api = |asset_uuid: &str| {
+            format!(
+                "{}/attachments/{}",
+                api_url.replace("/api/v1", ""),
+                asset_uuid
+            )
+        };
+
+        // Try explicit pattern first
+        if let Some(pattern) = lookup_platform_key_for_target(opts, "asset_pattern", target)
+            .or_else(|| opts.get("asset_pattern").cloned())
+        {
+            // Template the pattern for the target platform
+            let templated_pattern = template_string_for_target(&pattern, tv, target);
+
+            let asset = release
+                .assets
+                .into_iter()
+                .find(|a| self.matches_pattern(&a.name, &templated_pattern))
+                .ok_or_else(|| {
+                    eyre::eyre!(
+                        "No matching asset found for pattern: {}\nAvailable assets: {}",
+                        templated_pattern,
+                        Self::format_asset_list(available_assets.iter())
+                    )
+                })?;
+
+            // Try to get checksum from API digest or fetch from release assets
+            let digest = self
+                .try_fetch_checksum_from_assets(&assets_with_urls, &asset.name)
+                .await;
+
+            return Ok(ReleaseAsset {
+                name: asset.name,
+                url: asset.browser_download_url,
+                url_api: asset_url_api(&asset.uuid),
+                digest,
+            });
+        }
+
+        // Fall back to auto-detection for target platform
+        let asset_name = asset_matcher::detect_asset_for_target(&available_assets, target)?;
+        let asset = self
+            .find_asset_case_insensitive(&release.assets, &asset_name, |a| &a.name)
+            .ok_or_else(|| {
+                eyre::eyre!(
+                    "Auto-detected asset not found: {}\nAvailable assets: {}",
+                    asset_name,
+                    Self::format_asset_list(available_assets.iter())
+                )
+            })?;
+
+        // Try to get checksum from API digest or fetch from release assets
+        let digest = self
+            .try_fetch_checksum_from_assets(&assets_with_urls, &asset.name)
+            .await;
+
+        Ok(ReleaseAsset {
+            name: asset.name.clone(),
+            url: asset.browser_download_url.clone(),
+            url_api: asset_url_api(&asset.uuid),
+            digest,
+        })
+    }
+
     fn find_asset_case_insensitive<'a, T>(
         &self,
         assets: &'a [T],
@@ -864,7 +988,7 @@ impl UnifiedGitBackend {
         let settings = Settings::get();
 
         // Only verify for GitHub repos (not GitLab)
-        if self.is_gitlab() {
+        if self.is_gitlab() || self.is_forgejo() {
             return Ok(());
         }
 
@@ -972,6 +1096,10 @@ impl UnifiedGitBackend {
         tv: &ToolVersion,
         file_path: &std::path::Path,
     ) -> std::result::Result<bool, VerificationStatus> {
+        if self.is_gitlab() || self.is_forgejo() {
+            return Err(VerificationStatus::NoAttestations);
+        }
+
         ctx.pr.set_message("verify SLSA provenance".to_string());
 
         // Get the release to find provenance assets
