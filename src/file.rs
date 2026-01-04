@@ -694,6 +694,8 @@ pub enum TarFormat {
     TarBz2,
     #[strum(serialize = "tar.zst")]
     TarZst,
+    #[strum(serialize = "tar")]
+    Tar,
     #[strum(serialize = "zip")]
     Zip,
     #[strum(serialize = "7z")]
@@ -705,6 +707,7 @@ pub enum TarFormat {
 impl TarFormat {
     pub fn from_ext(ext: &str) -> Self {
         match ext {
+            "tar" => TarFormat::Tar,
             "gz" | "tgz" => TarFormat::TarGz,
             "xz" | "txz" => TarFormat::TarXz,
             "bz2" | "tbz2" => TarFormat::TarBz2,
@@ -877,12 +880,14 @@ fn open_tar(format: TarFormat, archive: &Path) -> Result<Box<dyn std::io::Read>>
         TarFormat::TarXz => Box::new(xz2::read::XzDecoder::new(f)),
         TarFormat::TarBz2 => Box::new(BzDecoder::new(f)),
         TarFormat::TarZst => Box::new(zstd::stream::read::Decoder::new(f)?),
+        TarFormat::Tar => Box::new(f),
         TarFormat::Zip => bail!("zip format not supported"),
         TarFormat::SevenZip => bail!("7z format not supported"),
         TarFormat::Auto => match archive.extension().and_then(|s| s.to_str()) {
             Some("xz") => open_tar(TarFormat::TarXz, archive)?,
             Some("bz2") => open_tar(TarFormat::TarBz2, archive)?,
             Some("zst") => open_tar(TarFormat::TarZst, archive)?,
+            Some("tar") => open_tar(TarFormat::Tar, archive)?,
             Some("zip") => bail!("zip format not supported"),
             _ => open_tar(TarFormat::TarGz, archive)?,
         },
