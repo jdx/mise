@@ -17,7 +17,7 @@
 //!     .pick_from(&assets)?;
 //! ```
 
-use eyre::{Result, bail};
+use eyre::Result;
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -202,27 +202,12 @@ impl AssetPicker {
 
     /// Picks the best asset from available options
     pub fn pick_best_asset(&self, assets: &[String]) -> Option<String> {
-        let candidates = self.filter_archive_assets(assets);
-        let mut scored_assets = self.score_all_assets(&candidates);
+        let mut scored_assets = self.score_all_assets(assets);
         scored_assets.sort_by(|a, b| b.0.cmp(&a.0));
         scored_assets
             .first()
             .filter(|(score, _)| *score > 0)
             .map(|(_, asset)| asset.clone())
-    }
-
-    fn filter_archive_assets(&self, assets: &[String]) -> Vec<String> {
-        let archive_assets: Vec<String> = assets
-            .iter()
-            .filter(|name| ARCHIVE_EXTENSIONS.iter().any(|ext| name.ends_with(ext)))
-            .cloned()
-            .collect();
-
-        if archive_assets.is_empty() {
-            assets.to_vec()
-        } else {
-            archive_assets
-        }
     }
 
     fn score_all_assets(&self, assets: &[String]) -> Vec<(i32, String)> {
@@ -413,13 +398,7 @@ impl AssetMatcher {
 
     /// Pick the best matching asset from a list of names
     pub fn pick_from(&self, assets: &[String]) -> Result<MatchedAsset> {
-        let filtered = self.filter_assets(assets);
-
-        if filtered.is_empty() {
-            bail!("No assets available after filtering");
-        }
-
-        self.match_by_auto_detection(&filtered)
+        self.match_by_auto_detection(assets)
     }
 
     /// Find checksum file for a given asset
@@ -456,18 +435,6 @@ impl AssetMatcher {
     }
 
     // ========== Internal Methods ==========
-
-    fn filter_assets(&self, assets: &[String]) -> Vec<String> {
-        let is_archive = |name: &str| ARCHIVE_EXTENSIONS.iter().any(|ext| name.ends_with(ext));
-
-        // Prefer archives when available
-        let archives: Vec<String> = assets.iter().filter(|a| is_archive(a)).cloned().collect();
-        if !archives.is_empty() {
-            return archives;
-        }
-
-        assets.to_vec()
-    }
 
     fn create_picker(&self) -> Option<AssetPicker> {
         let os = self.target_os.as_ref()?;
@@ -888,6 +855,28 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
 
         let picked = picker.pick_best_asset(&assets).unwrap();
         assert_eq!(picked, "tool-1.0.0-linux-x86_64.tar.gz");
+    }
+
+    #[test]
+    fn test_asset_picker_functionality_mixed() {
+        // mixed archive/binary formats like in babs/multiping
+        let assets = vec![
+            "tool-1.0.0-linux-x86_64.xz".to_string(),
+            "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
+            "tool-1.0.0-darwin-x86_64.xz".to_string(),
+            "tool-1.0.0-darwin-aarch64.xz".to_string(),
+            "tool-1.0.0-windows-x86_64.zip".to_string(),
+        ];
+
+        let picked = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "tool-1.0.0-linux-x86_64.tar.gz");
+
+        let picked = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "tool-1.0.0-darwin-aarch64.xz");
     }
 
     #[test]
