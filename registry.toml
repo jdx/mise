@@ -1074,7 +1074,7 @@ test = ["crane version", "{{version}}"]
 [tools.crc]
 backends = ["asdf:mise-plugins/mise-crc"]
 description = "CRC is a tool to help you run containers. It manages local VMs to run a OpenShift 4.x cluster, Microshift or Podman optimized for testing and development purposes"
-# test = ["crc version", "CRC version: {{version}}"] # TODO: enable after removing "latest" version from crc
+test = ["crc version", "CRC version: {{version}}"]
 
 [tools.credhub]
 backends = [
