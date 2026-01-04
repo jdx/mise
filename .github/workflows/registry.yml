@@ -95,8 +95,13 @@ jobs:
               join(" ")
             ' || true \
           )
-          echo "$changed_tools"
-          echo "tools=$changed_tools" >> "$GITHUB_OUTPUT"
+          if [ $(echo "$changed_tools" | wc -w) -gt 30 ]; then
+            echo "More than 30 tools changed. Running all tests."
+            echo "tools=" >> "$GITHUB_OUTPUT"
+          else
+            echo "$changed_tools"
+            echo "tools=$changed_tools" >> "$GITHUB_OUTPUT"
+          fi
 
   test-tool:
     name: test-tool-${{ matrix.tranche }}
@@ -112,7 +117,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tranche: ${{ fromJson(needs.list-changed-tools.outputs.tools == '' && '[0,1,2,3,4,5,6,7]' || '[0]') }}
+        tranche: ${{ fromJson(needs.list-changed-tools.outputs.tools == '' && '[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]' || '[0]') }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Fetch token from pool
@@ -134,7 +139,7 @@ jobs:
       - id: test-tools
         env:
           TEST_TRANCHE: ${{ matrix.tranche }}
-          TEST_TRANCHE_COUNT: ${{ needs.list-changed-tools.outputs.tools == '' && 8 || 1 }}
+          TEST_TRANCHE_COUNT: ${{ needs.list-changed-tools.outputs.tools == '' && 16 || 1 }}
         run: |
           mise test-tool ${{ needs.list-changed-tools.outputs.tools == '' && '--all' || needs.list-changed-tools.outputs.tools }} || true
           failed_tools=$(grep "Failed Tools" "$GITHUB_STEP_SUMMARY" | sed 's/\*\*Failed Tools\*\*: //' | tr ',' ' ')
