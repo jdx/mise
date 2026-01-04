@@ -368,6 +368,7 @@ impl UnifiedGitBackend {
             || filename.ends_with(".tar.xz")
             || filename.ends_with(".tar.bz2")
             || filename.ends_with(".tar.zst")
+            || filename.ends_with(".tar")
             || filename.ends_with(".tgz")
             || filename.ends_with(".txz")
             || filename.ends_with(".tbz2")
