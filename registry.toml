@@ -860,7 +860,7 @@ backends = [
   "asdf:kahun/asdf-clusterawsadm",
 ]
 description = "clusterawsadm provides helpers for bootstrapping Kubernetes Cluster API Provider AWS"
-test = ["cluster-api-provider-aws version--output short", "{{version}}"]
+test = ["cluster-api-provider-aws version --output short", "{{version}}"]
 
 [tools.clusterctl]
 backends = [
@@ -1826,7 +1826,7 @@ test = ["ghorg version", "v{{version}}"]
 [tools.ghq]
 backends = ["aqua:x-motemen/ghq", "asdf:kajisha/asdf-ghq"]
 description = "Remote repository management made easy"
-test = ["ghq --version", "ghq version {{version}} (rev:406c7dc)"]
+test = ["ghq --version", "ghq version {{version}}"]
 
 [tools.ginkgo]
 backends = [
@@ -4457,7 +4457,7 @@ description = "SQLite is a C-language library that implements a small, fast, sel
 [tools.sqlite3def]
 backends = ["aqua:sqldef/sqldef/sqlite3def"]
 description = "The easiest idempotent SQLite3 Server schema management by SQL"
-test = ["sqlite3def --version", "{{version}} (e1c1354)"]
+test = ["sqlite3def --version", "{{version}}"]
 
 [tools.sshi]
 backends = ["aqua:aakso/ssh-inscribe/sshi"]
@@ -4951,7 +4951,7 @@ test = ["tsuru --version || true", "Client version: {{version}}."]
 [tools.ttyd]
 backends = ["aqua:tsl0922/ttyd", "asdf:ivanvc/asdf-ttyd"]
 description = "Share your terminal over the web"
-test = ["ttyd--version ", "ttyd version {{version}}"]
+test = ["ttyd --version", "ttyd version {{version}}"]
 
 [tools.tuist]
 backends = ["aqua:tuist/tuist", "asdf:mise-plugins/mise-tuist"]
@@ -5158,6 +5158,7 @@ test = ["vultr-cli version", "Vultr-CLI v{{version}}"]
 [tools.wait-for-gh-rate-limit]
 backends = ["github:jdx/wait-for-gh-rate-limit"]
 description = "CLI to wait for github rate limits to reset if they are expired"
+test = ["wait-for-gh-rate-limit", "GitHub rate limit:"]
 
 [tools.wash]
 backends = ["aqua:wasmCloud/wasmCloud/wash"]
