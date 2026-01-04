@@ -286,12 +286,48 @@ impl AssetPicker {
 
     fn score_build_penalties(&self, asset: &str) -> i32 {
         let mut penalty = 0;
+        let asset = asset.to_lowercase();
         if asset.contains("debug") || asset.contains("test") {
             penalty -= 20;
         }
-        if asset.contains(".artifactbundle") {
+        if asset.ends_with(".artifactbundle") {
             penalty -= 30;
         }
+
+        // Penalize metadata/checksum/signature files
+        if asset.ends_with(".asc")
+            || asset.ends_with(".sig")
+            || asset.ends_with(".sign")
+            || asset.ends_with(".sha256")
+            || asset.ends_with(".sha512")
+            || asset.ends_with(".sha1")
+            || asset.ends_with(".md5")
+            || asset.ends_with(".json")
+            || asset.ends_with(".txt")
+            || asset.ends_with(".xml")
+            || asset.ends_with(".sbom")
+            || asset.ends_with(".spdx")
+            || asset.ends_with(".intoto")
+            || asset.ends_with(".attestation")
+            || asset.ends_with(".pem")
+            || asset.ends_with(".crt")
+            || asset.ends_with(".key")
+            || asset.ends_with(".pub")
+            || asset.ends_with(".manifest")
+        {
+            penalty -= 100;
+        }
+
+        // Penalize common non-binary filenames
+        if asset.contains("release")
+            || asset.contains("changelog")
+            || asset.contains("license")
+            || asset.contains("readme")
+            || asset.contains("changes")
+        {
+            penalty -= 50;
+        }
+
         penalty
     }
 }
@@ -1059,4 +1095,46 @@ fn test_zip_scoring() {
         score_linux_zip,
         score_linux_tar
     );
+}
+
+#[test]
+fn test_metadata_penalty() {
+    let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+    let assets = vec![
+        "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
+        "tool-1.0.0-linux-x86_64.tar.gz.asc".to_string(),
+        "tool-1.0.0-linux-x86_64.tar.gz.sha256".to_string(),
+        "release-notes.txt".to_string(),
+        "LICENSE".to_string(),
+    ];
+
+    let picked = picker.pick_best_asset(&assets).unwrap();
+    assert_eq!(picked, "tool-1.0.0-linux-x86_64.tar.gz");
+
+    // Ensure penalties are applied
+    let score_tar = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
+    let score_asc = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.asc");
+    let score_sha = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.sha256");
+    let score_txt = picker.score_asset("release-notes.txt");
+    let score_lic = picker.score_asset("LICENSE");
+
+    assert!(
+        score_tar > score_asc,
+        "Tarball should score higher than signature"
+    );
+    assert!(
+        score_tar > score_sha,
+        "Tarball should score higher than checksum"
+    );
+    assert!(
+        score_tar > score_txt,
+        "Tarball should score higher than text file"
+    );
+    assert!(
+        score_tar > score_lic,
+        "Tarball should score higher than license"
+    );
+
+    // Metadata should have negative score contribution from penalties
+    assert!(score_asc < 0 || score_asc < score_tar - 50);
 }
