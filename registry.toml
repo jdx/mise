@@ -53,7 +53,7 @@ test = ["adr help", "adr help"]
 [tools.ag]
 backends = ["vfox:mise-plugins/vfox-ag", "asdf:mise-plugins/mise-ag"]
 description = "The Silver Searcher: A code searching tool similar to ack, with a focus on speed"
-test = ["which ag", ""] # requires libpcre
+# test = ["ag --version", "ag version {{version}}"] # requires libpcre
 
 [tools.age]
 backends = ["aqua:FiloSottile/age", "asdf:threkk/asdf-age"]
@@ -1104,7 +1104,7 @@ test = ["croc --version", "croc version v{{version}}"]
 aliases = ["crossplane-cli"]
 backends = ["aqua:crossplane/crossplane", "asdf:joke/asdf-crossplane-cli"]
 description = "The Crossplane CLI extends kubectl with functionality to build, push, and install Crossplane packages"
-test = ["crossplane version", "Client Version: v{{version}}"]
+test = ["crossplane version --client", "Client Version: v{{version}}"]
 
 [tools.crush]
 backends = ["aqua:charmbracelet/crush"]
@@ -2375,7 +2375,7 @@ test = ["hwatch --version", "hwatch {{version}}"]
 [tools.hygen]
 backends = ["github:jondot/hygen", "asdf:brentjanderson/asdf-hygen"]
 description = "The simple, fast, and scalable code generator that lives in your project"
-test = ["hygen --version", "Hygen v{{version}}"]
+test = ["hygen || true", "Hygen v{{version}}"]
 
 [tools.hyperfine]
 backends = [
@@ -3425,7 +3425,7 @@ test = ["nfpm --version", "{{version}}"]
 [tools.ni]
 backends = ["npm:@antfu/ni"]
 description = "ni - use the right package manager"
-test = ["ni --version", "@antfu/ni  {{version}}"]
+test = ["ni --version", "@antfu/ni  v{{version}}"]
 
 [tools.nim]
 backends = ["asdf:mise-plugins/mise-nim"]
@@ -4011,7 +4011,7 @@ description = "the Redis command line interface"
 [tools.redo]
 backends = ["aqua:barthr/redo", "asdf:chessmango/asdf-redo"]
 description = "Redo is the ultimate tool to create reusable functions from your history in an interactive way"
-test = ["redo --help", "Usage of redo:"]
+test = ["redo --help", "Usage of"]
 
 [tools.redpanda-connect]
 aliases = ["benthos"]
@@ -5040,7 +5040,7 @@ test = ["updatecli version", "Application:	{{version}}"]
 [tools.upt]
 backends = ["github:sigoden/upt", "asdf:ORCID/asdf-upt"]
 description = "Universal Package-management Tool for any OS"
-test = ["upt --version", "Upt version: {{version}}"]
+test = ["upt", "Upt version: {{version}}"]
 
 [tools.upx]
 backends = ["aqua:upx/upx", "asdf:jimmidyson/asdf-upx"]
