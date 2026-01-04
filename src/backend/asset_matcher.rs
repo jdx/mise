@@ -1068,73 +1068,72 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             "Should return None when target file is not in SHASUMS"
         );
     }
-}
+    #[test]
+    fn test_zip_scoring() {
+        // Test Windows preference for .zip
+        let picker_win = AssetPicker::with_libc("windows".to_string(), "x86_64".to_string(), None);
+        let score_win_zip = picker_win.score_asset("tool-1.0.0-windows-x86_64.zip");
+        let score_win_tar = picker_win.score_asset("tool-1.0.0-windows-x86_64.tar.gz");
 
-#[test]
-fn test_zip_scoring() {
-    // Test Windows preference for .zip
-    let picker_win = AssetPicker::with_libc("windows".to_string(), "x86_64".to_string(), None);
-    let score_win_zip = picker_win.score_asset("tool-1.0.0-windows-x86_64.zip");
-    let score_win_tar = picker_win.score_asset("tool-1.0.0-windows-x86_64.tar.gz");
+        assert!(
+            score_win_zip > score_win_tar,
+            "Windows should prefer .zip (zip: {}, tar: {})",
+            score_win_zip,
+            score_win_tar
+        );
 
-    assert!(
-        score_win_zip > score_win_tar,
-        "Windows should prefer .zip (zip: {}, tar: {})",
-        score_win_zip,
-        score_win_tar
-    );
+        // Test Linux penalty for .zip
+        let picker_linux = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let score_linux_zip = picker_linux.score_asset("tool-1.0.0-linux-x86_64.zip");
+        let score_linux_tar = picker_linux.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
 
-    // Test Linux penalty for .zip
-    let picker_linux = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
-    let score_linux_zip = picker_linux.score_asset("tool-1.0.0-linux-x86_64.zip");
-    let score_linux_tar = picker_linux.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
+        assert!(
+            score_linux_tar > score_linux_zip,
+            "Linux should prefer .tar.gz over .zip (zip: {}, tar: {})",
+            score_linux_zip,
+            score_linux_tar
+        );
+    }
 
-    assert!(
-        score_linux_tar > score_linux_zip,
-        "Linux should prefer .tar.gz over .zip (zip: {}, tar: {})",
-        score_linux_zip,
-        score_linux_tar
-    );
-}
+    #[test]
+    fn test_metadata_penalty() {
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let assets = vec![
+            "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
+            "tool-1.0.0-linux-x86_64.tar.gz.asc".to_string(),
+            "tool-1.0.0-linux-x86_64.tar.gz.sha256".to_string(),
+            "release-notes.txt".to_string(),
+            "LICENSE".to_string(),
+        ];
 
-#[test]
-fn test_metadata_penalty() {
-    let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
-    let assets = vec![
-        "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
-        "tool-1.0.0-linux-x86_64.tar.gz.asc".to_string(),
-        "tool-1.0.0-linux-x86_64.tar.gz.sha256".to_string(),
-        "release-notes.txt".to_string(),
-        "LICENSE".to_string(),
-    ];
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "tool-1.0.0-linux-x86_64.tar.gz");
 
-    let picked = picker.pick_best_asset(&assets).unwrap();
-    assert_eq!(picked, "tool-1.0.0-linux-x86_64.tar.gz");
+        // Ensure penalties are applied
+        let score_tar = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
+        let score_asc = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.asc");
+        let score_sha = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.sha256");
+        let score_txt = picker.score_asset("release-notes.txt");
+        let score_lic = picker.score_asset("LICENSE");
 
-    // Ensure penalties are applied
-    let score_tar = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
-    let score_asc = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.asc");
-    let score_sha = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.sha256");
-    let score_txt = picker.score_asset("release-notes.txt");
-    let score_lic = picker.score_asset("LICENSE");
+        assert!(
+            score_tar > score_asc,
+            "Tarball should score higher than signature"
+        );
+        assert!(
+            score_tar > score_sha,
+            "Tarball should score higher than checksum"
+        );
+        assert!(
+            score_tar > score_txt,
+            "Tarball should score higher than text file"
+        );
+        assert!(
+            score_tar > score_lic,
+            "Tarball should score higher than license"
+        );
 
-    assert!(
-        score_tar > score_asc,
-        "Tarball should score higher than signature"
-    );
-    assert!(
-        score_tar > score_sha,
-        "Tarball should score higher than checksum"
-    );
-    assert!(
-        score_tar > score_txt,
-        "Tarball should score higher than text file"
-    );
-    assert!(
-        score_tar > score_lic,
-        "Tarball should score higher than license"
-    );
-
-    // Metadata should have negative score contribution from penalties
-    assert!(score_asc < 0 || score_asc < score_tar - 50);
+        // Metadata should have negative score contribution from penalties
+        assert!(score_asc < 0 || score_asc < score_tar - 50);
+    }
 }
