@@ -270,6 +270,13 @@ impl AssetPicker {
     }
 
     fn score_format_preferences(&self, asset: &str) -> i32 {
+        if asset.ends_with(".zip") {
+            if self.target_os == "windows" {
+                return 15;
+            } else {
+                return -5;
+            }
+        }
         if ARCHIVE_EXTENSIONS.iter().any(|ext| asset.ends_with(ext)) {
             10
         } else {
@@ -1025,4 +1032,31 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             "Should return None when target file is not in SHASUMS"
         );
     }
+}
+
+#[test]
+fn test_zip_scoring() {
+    // Test Windows preference for .zip
+    let picker_win = AssetPicker::with_libc("windows".to_string(), "x86_64".to_string(), None);
+    let score_win_zip = picker_win.score_asset("tool-1.0.0-windows-x86_64.zip");
+    let score_win_tar = picker_win.score_asset("tool-1.0.0-windows-x86_64.tar.gz");
+
+    assert!(
+        score_win_zip > score_win_tar,
+        "Windows should prefer .zip (zip: {}, tar: {})",
+        score_win_zip,
+        score_win_tar
+    );
+
+    // Test Linux penalty for .zip
+    let picker_linux = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+    let score_linux_zip = picker_linux.score_asset("tool-1.0.0-linux-x86_64.zip");
+    let score_linux_tar = picker_linux.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
+
+    assert!(
+        score_linux_tar > score_linux_zip,
+        "Linux should prefer .tar.gz over .zip (zip: {}, tar: {})",
+        score_linux_zip,
+        score_linux_tar
+    );
 }
