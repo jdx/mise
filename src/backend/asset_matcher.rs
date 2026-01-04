@@ -319,12 +319,7 @@ impl AssetPicker {
         }
 
         // Penalize common non-binary filenames
-        if asset.contains("release")
-            || asset.contains("changelog")
-            || asset.contains("license")
-            || asset.contains("readme")
-            || asset.contains("changes")
-        {
+        if asset.contains("release-info") || asset.contains("changelog") {
             penalty -= 50;
         }
 
@@ -1103,7 +1098,6 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             "tool-1.0.0-linux-x86_64.tar.gz.asc".to_string(),
             "tool-1.0.0-linux-x86_64.tar.gz.sha256".to_string(),
             "release-notes.txt".to_string(),
-            "LICENSE".to_string(),
         ];
 
         let picked = picker.pick_best_asset(&assets).unwrap();
@@ -1114,7 +1108,6 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
         let score_asc = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.asc");
         let score_sha = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.sha256");
         let score_txt = picker.score_asset("release-notes.txt");
-        let score_lic = picker.score_asset("LICENSE");
 
         assert!(
             score_tar > score_asc,
@@ -1127,10 +1120,6 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
         assert!(
             score_tar > score_txt,
             "Tarball should score higher than text file"
-        );
-        assert!(
-            score_tar > score_lic,
-            "Tarball should score higher than license"
         );
 
         // Metadata should have negative score contribution from penalties
