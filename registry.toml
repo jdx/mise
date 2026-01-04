@@ -755,10 +755,7 @@ backends = [
   "vfox:mise-plugins/vfox-clang",
 ]
 description = "Clang is an 'LLVM native' C/C++/Objective-C compiler, which aims to deliver amazingly fast compiles, extremely useful error and warning messages and to provide a platform for building great source level tools"
-test = [
-  "clang --version",
-  "clang version {{version}}",
-]
+test = ["clang --version", "clang version {{version}}"]
 
 [tools.clang-format]
 backends = ["asdf:mise-plugins/mise-llvm"]
@@ -2201,10 +2198,7 @@ test = ["has --version", "v{{version}}"]
 [tools.hasura-cli]
 backends = ["aqua:hasura/graphql-engine", "asdf:gurukulkarni/asdf-hasura"]
 description = "Hasura GraphQL Engine CLI"
-test = [
-  "hasura version",
-  '"version":"v{{version}}"',
-]
+test = ["hasura version", '"version":"v{{version}}"']
 
 [tools.hatch]
 backends = ["pipx:hatch"]
