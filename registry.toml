@@ -755,10 +755,15 @@ backends = [
   "vfox:mise-plugins/vfox-clang",
 ]
 description = "Clang is an 'LLVM native' C/C++/Objective-C compiler, which aims to deliver amazingly fast compiles, extremely useful error and warning messages and to provide a platform for building great source level tools"
+test = [
+  "clang --version",
+  "clang version {{version}}",
+]
 
 [tools.clang-format]
 backends = ["asdf:mise-plugins/mise-llvm"]
 description = "format C/C++/Java/JavaScript/JSON/Objective-C/Protobuf/C# code"
+test = ["clang-format --version", "clang-format version {{version}}"]
 
 [tools.clangd]
 backends = ["asdf:mise-plugins/mise-llvm"]
@@ -1072,6 +1077,7 @@ test = ["crane version", "{{version}}"]
 [tools.crc]
 backends = ["asdf:mise-plugins/mise-crc"]
 description = "CRC is a tool to help you run containers. It manages local VMs to run a OpenShift 4.x cluster, Microshift or Podman optimized for testing and development purposes"
+# test = ["crc version", "CRC version: {{version}}"] # TODO: enable after removing "latest" version from crc
 
 [tools.credhub]
 backends = [
@@ -1483,6 +1489,7 @@ backends = [
   "asdf:nsaputro/asdf-monaco",
 ]
 description = "Monaco—This is the native Dynatrace Configuration as Code tool. Monaco is also the recommended tool for migrating from Dynatrace Managed to Dynatrace SaaS"
+test = ["monaco version", "monaco version {{version}}"]
 
 [tools.e1s]
 backends = ["aqua:keidarcy/e1s", "asdf:tbobm/asdf-e1s"]
@@ -1530,6 +1537,7 @@ description = "Elasticsearch is an open source, distributed search and analytics
 backends = ["core:elixir"]
 depends = ["erlang"]
 description = "Elixir is a dynamic, functional language for building scalable and maintainable applications"
+test = ["elixir --version", "Elixir {{version}}"]
 
 [tools.elixir-ls]
 backends = ["asdf:mise-plugins/mise-elixir-ls"]
@@ -1982,6 +1990,7 @@ backends = [
   "asdf:mise-plugins/mise-goconvey",
 ]
 description = "Go testing in the browser. Integrates with `go test`. Write behavioral tests in Go"
+test = ["goconvey -help", "Usage of goconvey:"]
 
 [tools.gocryptfs]
 backends = ["aqua:rfjakob/gocryptfs"]
@@ -2192,6 +2201,10 @@ test = ["has --version", "v{{version}}"]
 [tools.hasura-cli]
 backends = ["aqua:hasura/graphql-engine", "asdf:gurukulkarni/asdf-hasura"]
 description = "Hasura GraphQL Engine CLI"
+test = [
+  "hasura version",
+  '"version":"v{{version}}"',
+]
 
 [tools.hatch]
 backends = ["pipx:hatch"]
@@ -2384,6 +2397,7 @@ test = ["iam-policy-json-to-terraform --version", "{{version}}"]
 [tools.iamlive]
 backends = ["aqua:iann0036/iamlive", "asdf:chessmango/asdf-iamlive"]
 description = "Generate an IAM policy from AWS calls using client-side monitoring (CSM) or embedded proxy"
+test = ["iamlive -help", "Usage of iamlive:"]
 
 [tools.ibmcloud]
 backends = ["asdf:mise-plugins/mise-ibmcloud"]
@@ -2548,6 +2562,7 @@ test = ["jules version", "Version: v{{version}}"]
 [tools.julia]
 backends = ["asdf:mise-plugins/mise-julia"]
 description = "The Julia Programming Language"
+test = ["julia --version", "julia version {{version}}"]
 
 [tools.just]
 backends = ["aqua:casey/just", "asdf:olofvndrhr/asdf-just", "cargo:just"]
@@ -3016,6 +3031,7 @@ test = ["levant --version", "Levant v{{version}}"]
 [tools.lfe]
 backends = ["asdf:mise-plugins/mise-lfe"]
 description = "Lisp Flavoured Erlang (LFE)"
+test = ["lfe --version", "Erlang"] # outputs version of erlang
 
 [tools.libsql-server]
 backends = [
