@@ -78,35 +78,9 @@ packages:
             asset: micro-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
           - goos: windows
             format: zip
-      - version_constraint: semver("<= 2.0.13")
-        asset: micro-{{trimV .Version}}-{{.OS}}.{{.Format}}
-        format: tar.gz
-        files:
-          - name: micro
-            src: micro-{{trimV .Version}}/micro
-        replacements:
-          windows: win64
-        overrides:
-          - goos: linux
-            goarch: amd64
-            asset: micro-{{trimV .Version}}-{{.OS}}64-static.{{.Format}}
-          - goos: linux
-            goarch: arm64
-            asset: micro-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-          - goos: darwin
-            goarch: amd64
-            replacements:
-              darwin: osx
-          - goos: darwin
-            goarch: arm64
-            asset: micro-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-            replacements:
-              darwin: macos
-          - goos: windows
-            format: zip
       - version_constraint: "true"
         asset: micro-{{trimV .Version}}-{{.OS}}.{{.Format}}
-        format: tgz
+        format: tar.gz
         files:
           - name: micro
             src: micro-{{trimV .Version}}/micro

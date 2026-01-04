@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: github
+    repo_name: copilot-cli
+    description: GitHub Copilot CLI brings the power of Copilot coding agent directly to your terminal
+    files:
+      - name: copilot
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.366-3")
+        no_asset: true
+      - version_constraint: Version == "v0.0.366-5"
+        asset: copilot-copilot-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: copilot
+        replacements:
+          amd64: x64
+          windows: win32
+      - version_constraint: semver("<= 0.0.370-0")
+        asset: copilot-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: copilot
+        replacements:
+          amd64: x64
+          windows: win32
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: copilot-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: copilot
+        replacements:
+          amd64: x64
+          windows: win32
+        overrides:
+          - goos: windows
+            format: zip
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256

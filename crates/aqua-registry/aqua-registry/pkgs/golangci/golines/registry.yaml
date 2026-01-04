@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: golangci
+    repo_name: golines
+    description: A golang formatter that fixes long lines
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: golines-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: golines
+            src: "{{.AssetWithoutExt}}/golines"
+        checksum:
+          type: github_release
+          asset: golines_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: golines-{{trimV .Version}}-{{.OS}}-all.{{.Format}}
+          - goos: windows
+            format: zip

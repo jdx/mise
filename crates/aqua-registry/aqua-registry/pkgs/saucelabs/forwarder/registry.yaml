@@ -114,7 +114,7 @@ packages:
             asset: forwarder-{{trimV .Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
           - goos: windows
             asset: forwarder-{{trimV .Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
-      - version_constraint: "true"
+      - version_constraint: semver("<= 1.4.0")
         asset: forwarder-{{trimV .Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
         format: zip
         replacements:
@@ -129,3 +129,18 @@ packages:
             format: tar.gz
           - goos: darwin
             asset: forwarder-{{trimV .Version}}_{{.OS}}-signed.all.{{.Format}}
+      - version_constraint: "true"
+        asset: forwarder-{{trimV .Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        checksum:
+          type: github_release
+          asset: checksums
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: forwarder-{{trimV .Version}}_{{.OS}}.all.{{.Format}}
+          - goos: linux
+            format: tar.gz

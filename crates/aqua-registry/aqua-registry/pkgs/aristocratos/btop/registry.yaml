@@ -132,7 +132,7 @@ packages:
         supported_envs:
           - linux
           - darwin
-      - version_constraint: "true"
+      - version_constraint: semver("<= 1.4.5")
         asset: btop-{{.Arch}}-{{.OS}}-musl.{{.Format}}
         format: tbz
         files:
@@ -141,5 +141,17 @@ packages:
         replacements:
           amd64: x86_64
           arm64: aarch64
+        supported_envs:
+          - linux
+      - version_constraint: "true"
+        asset: btop-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tbz
+        files:
+          - name: btop
+            src: btop/bin/btop
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          linux: unknown-linux-musl
         supported_envs:
           - linux

@@ -60,6 +60,7 @@ packages:
       - version_constraint: "true"
         asset: restish-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
+        windows_arm_emulation: true
         checksum:
           type: github_release
           asset: checksums.txt
