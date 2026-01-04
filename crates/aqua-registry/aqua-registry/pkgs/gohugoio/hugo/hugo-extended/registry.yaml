@@ -1,63 +1,174 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
 packages:
-  - type: github_release
-    name: gohugoio/hugo/hugo-extended
+  - name: gohugoio/hugo/hugo-extended
+    type: github_release
     repo_owner: gohugoio
     repo_name: hugo
     description: The world’s fastest framework for building websites
     files:
       - name: hugo
-    format: tar.gz
-    asset: hugo_extended_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
-    supported_envs:
-      - linux
-      - amd64
-      - darwin
-    checksum:
-      type: github_release
-      asset: hugo_{{trimV .Version}}_checksums.txt
-      algorithm: sha256
-    version_constraint: semver(">= 0.103.0")
-    # Since v0.103.0, replacements was changed.
-    overrides:
-      - goos: windows
-        format: zip
-      - goos: darwin
-        asset: hugo_extended_{{trimV .Version}}_{{.OS}}-universal.tar.gz
+    version_constraint: "false"
     version_overrides:
-      - version_constraint: semver(">= 0.102.0")
-        # Since v0.102.0, macOS archives have replaced with universal binaries, and linux/arm64 has been supported
-        replacements: &hugo_extended_replacements_1
+      - version_constraint: Version == "v0.139.5"
+        no_asset: true
+      - version_constraint: Version == "v0.88.0"
+        asset: hugo_extended_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
           amd64: 64bit
-          arm64: ARM64
           darwin: macOS
           linux: Linux
           windows: Windows
-      - version_constraint: semver("= 0.88.0")
-        # In v0.88.0, macOS/arm64 was missing
+        checksum:
+          type: github_release
+          asset: hugo_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.88.1"
+        asset: hugo_extended_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: 64bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: hugo_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: ARM64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.89.0"
+        asset: hugo_extended_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: 64bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: hugo_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: hugo_extended_{{trimV .Version}}_{{.OS}}-all.{{.Format}}
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.80.0")
+        asset: hugo_extended_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
         rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: 64bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: hugo_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
         overrides:
           - goos: windows
             format: zip
-        replacements: *hugo_extended_replacements_1
         supported_envs:
-          - amd64
           - darwin
-      - version_constraint: semver(">= 0.81.0")
-        # Since v0.81.0, macOS/arm64 has been supported
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.101.0")
+        asset: hugo_extended_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: 64bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: hugo_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
         overrides:
+          - goos: darwin
+            replacements:
+              arm64: ARM64
           - goos: windows
             format: zip
-        replacements: *hugo_extended_replacements_1
         supported_envs:
-          - amd64
           - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.102.3")
+        asset: hugo_extended_{{trimV .Version}}_{{.OS}}-universal.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: 64bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: hugo_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            asset: hugo_extended_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+            replacements:
+              arm64: ARM64
+          - goos: windows
+            format: zip
+            asset: hugo_extended_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+      - version_constraint: semver("<= 0.152.2")
+        asset: hugo_extended_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: hugo_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: hugo_extended_{{trimV .Version}}_{{.OS}}-universal.{{.Format}}
+          - goos: windows
+            format: zip
       - version_constraint: "true"
-        rosetta2: true
-        replacements: *hugo_extended_replacements_1
+        asset: hugo_extended_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: hugo_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
         overrides:
+          - goos: darwin
+            format: pkg
+            asset: hugo_extended_{{trimV .Version}}_{{.OS}}-universal.{{.Format}}
+            files:
+              - name: hugo
+                src: Payload/hugo
           - goos: windows
             format: zip
-        supported_envs:
-          - amd64
-          - darwin

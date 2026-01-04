@@ -58,24 +58,30 @@ packages:
             - --signature
             - https://github.com/fission/fission/releases/download/{{.Version}}/{{.Asset}}.sig
       - version_constraint: "true"
-        asset: fission-cli-{{.OS}}
+        asset: fission-{{.Version}}-{{.OS}}-{{.Arch}}
         format: raw
-        replacements:
-          darwin: osx
-        slsa_provenance:
+        windows_arm_emulation: true
+        checksum:
           type: github_release
-          asset: fission_{{.Version}}.intoto.jsonl
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sig.bundle
+            opts:
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --certificate-identity
+              - https://github.com/fission/fission/.github/workflows/release.yaml@refs/tags/{{.Version}}
         cosign:
+          bundle:
+            type: github_release
+            asset: "{{.Asset}}.sig.bundle"
           opts:
-            - --certificate
-            - https://github.com/fission/fission/releases/download/{{.Version}}/{{.Asset}}.pem
-            - --certificate-identity
-            - https://github.com/fission/fission/.github/workflows/release.yaml@refs/tags/{{.Version}}
             - --certificate-oidc-issuer
             - https://token.actions.githubusercontent.com
-            - --signature
-            - https://github.com/fission/fission/releases/download/{{.Version}}/{{.Asset}}.sig
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
+            - --certificate-identity
+            - https://github.com/fission/fission/.github/workflows/release.yaml@refs/tags/{{.Version}}
+        github_artifact_attestations:
+          signer_workflow: fission/fission/.github/workflows/release.yaml

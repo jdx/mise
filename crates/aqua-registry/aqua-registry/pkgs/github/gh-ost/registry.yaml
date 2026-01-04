@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: github
+    repo_name: gh-ost
+    description: GitHub's Online Schema-migration Tool for MySQL
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.48")
+        error_message: "Versions <= 1.0.48 are not supported. Please use version >= v1.0.49"
+      - version_constraint: Version == "v1.0.49"
+        asset: gh-ost-binary-{{.OS}}-20200209110835.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: osx
+        overrides:
+          - goos: darwin
+            asset: gh-ost-binary-{{.OS}}-20200209114711.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v1.1.0"
+        asset: gh-ost-binary-{{.OS}}-20200828160625.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: osx
+        overrides:
+          - goos: linux
+            asset: gh-ost-binary-{{.OS}}-20200828140552.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v1.1.1"
+        asset: gh-ost-binary-{{.OS}}-20210503150942.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: osx
+        overrides:
+          - goos: darwin
+            asset: gh-ost-binary-{{.OS}}-20210503171035.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v1.1.2"
+        asset: gh-ost-binary-{{.OS}}-20210617134741.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: osx
+        overrides:
+          - goos: darwin
+            asset: gh-ost-binary-{{.OS}}-20210617155835.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v1.1.3"
+        asset: gh-ost-binary-{{.OS}}-20220225143057.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: osx
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v1.1.4"
+        asset: gh-ost-binary-{{.OS}}-{{.Arch}}-20220225143506.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: osx
+        overrides:
+          - goos: linux
+            asset: gh-ost-binary-{{.OS}}-20220225143506.{{.Format}}
+          - goos: darwin
+            goarch: arm64
+            asset: gh-ost-binary-{{.OS}}-{{.Arch}}-20220311164158.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v1.1.5"
+        asset: gh-ost-binary-{{.OS}}-{{.Arch}}-20220707162303.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: osx
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: Version == "v1.1.6"
+        asset: gh-ost-binary-{{.OS}}-{{.Arch}}-20231207144046.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: osx
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: gh-ost-binary-{{.OS}}-{{.Arch}}-20241219160321.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: osx
+        supported_envs:
+          - linux
+          - darwin

@@ -29,7 +29,7 @@ packages:
             src: mas_components.pkg/Payload/mas
         supported_envs:
           - darwin
-      - version_constraint: "true"
+      - version_constraint: semver("<= 3.1.0")
         asset: mas-{{trimV .Version}}-{{.Arch}}.{{.Format}}
         format: pkg
         replacements:
@@ -38,5 +38,24 @@ packages:
           - name: mas
             src: mas_components.pkg/Payload/mas
         supported_envs:
-          - darwin/amd64
-          - darwin/arm64
+          - darwin
+      - version_constraint: semver("<= 4.1.0")
+        asset: mas-{{trimV .Version}}-{{.Arch}}.{{.Format}}
+        format: pkg
+        replacements:
+          amd64: x86_64
+        files:
+          - name: mas
+            src: mas_components.pkg/Payload/usr/local/opt/mas/bin/mas
+        supported_envs:
+          - darwin
+      - version_constraint: "true"
+        asset: mas-{{trimV .Version}}-{{.Arch}}.{{.Format}}
+        format: pkg
+        replacements:
+          amd64: x86_64
+        files:
+          - name: mas
+            src: mas.pkg/Payload/usr/local/opt/mas/bin/mas
+        supported_envs:
+          - darwin

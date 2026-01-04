@@ -129,7 +129,7 @@ packages:
           - darwin
           - windows
           - amd64
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.22.3")
         asset: csv2parquet-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.xz
         windows_arm_emulation: true
@@ -157,3 +157,24 @@ packages:
           - darwin
           - windows
           - amd64
+      - version_constraint: "true"
+        asset: csv2parquet-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        files:
+          - name: csv2parquet
+            src: "{{.AssetWithoutExt}}/csv2parquet"
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+        replacements:
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux
+          - darwin/arm64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
