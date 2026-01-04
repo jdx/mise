@@ -245,7 +245,7 @@ impl TestTool {
         } else {
             cmd!("sh", "-c", cmd)
         };
-        cmd = cmd.stdout_capture();
+        cmd = cmd.stderr_to_stdout().stdout_capture();
         for (k, v) in env.iter() {
             cmd = cmd.env(k, v);
         }

@@ -14,7 +14,7 @@ test = ["op --version", "{{version}}"]
 backends = ["vfox:mise-plugins/vfox-aapt2"]
 description = "Android Asset Packaging Tool (aapt)"
 test = [
-  "aapt2 version 2>&1",
+  "aapt2 version",
   "Android Asset Packaging Tool (aapt)",
 ] # version doesn't match
 
@@ -72,7 +72,7 @@ test = ["which age-plugin-yubikey", ""] # requires libpcsclite
 [tools.agebox]
 backends = ["aqua:slok/agebox", "asdf:slok/asdf-agebox"]
 description = "Age based repository file encryption gitops tool"
-test = ["agebox --version 2>&1", "v{{version}}"]
+test = ["agebox --version", "v{{version}}"]
 
 [tools.aichat]
 backends = ["aqua:sigoden/aichat"]
@@ -107,7 +107,7 @@ test = ["alp --version", "{{version}}"]
 [tools.amass]
 backends = ["github:owasp-amass/amass", "asdf:dhoeric/asdf-amass"]
 description = "In-depth attack surface mapping and asset discovery"
-test = ["amass -version 2>&1", "v"] # version is wrong from the CLI
+test = ["amass -version", "v"] # version is wrong from the CLI
 
 [tools.amazon-ecr-credential-helper]
 backends = [
@@ -312,7 +312,7 @@ test = ["aws-sso version", "AWS SSO CLI Version {{version}}"]
 [tools.aws-vault]
 backends = ["aqua:ByteNess/aws-vault"]
 description = "A vault for securely storing and accessing AWS credentials in development environments"
-# test = ["aws-vault --version 2>&1", "v{{version}}"] # TODO: re-enable after versions host update
+# test = ["aws-vault --version", "v{{version}}"] # TODO: re-enable after versions host update
 
 [tools.awscli-local]
 backends = ["pipx:awscli-local"]
@@ -407,7 +407,7 @@ test = ["bazel --version", "bazel {{version}}"]
 [tools.bazel-watcher]
 backends = ["aqua:bazelbuild/bazel-watcher"]
 description = "Tools for building Bazel targets when source files change"
-test = ["ibazel version 2>&1", "iBazel - Version v{{version}}"]
+test = ["ibazel version", "iBazel - Version v{{version}}"]
 
 [tools.bazelisk]
 backends = [
@@ -478,7 +478,7 @@ test = ["boilerplate --version", "boilerplate version v{{version}}"]
 [tools.bombardier]
 backends = ["aqua:codesenberg/bombardier", "asdf:NeoHsu/asdf-bombardier"]
 description = "Fast cross-platform HTTP benchmarking tool written in Go"
-test = ["bombardier --version 2>&1", "bombardier version"] # shows "unspecified"
+test = ["bombardier --version", "bombardier version"] # shows "unspecified"
 
 [tools.borg]
 backends = ["aqua:borgbackup/borg", "asdf:lwiechec/asdf-borg"]
@@ -589,7 +589,7 @@ test = ["calicoctl version", "Client Version:    v{{version}}"]
 [tools.carapace]
 backends = ["aqua:carapace-sh/carapace-bin"]
 description = "A multi-shell completion binary"
-test = ["carapace --version 2>&1", "carapace-bin {{version}}"]
+test = ["carapace --version", "carapace-bin {{version}}"]
 
 [tools.cargo-binstall]
 backends = ["aqua:cargo-bins/cargo-binstall", "cargo:cargo-binstall"]
@@ -725,7 +725,7 @@ test = ["chromedriver --version", "ChromeDriver {{version}}"]
 [tools.cidr-merger]
 backends = ["github:zhanhb/cidr-merger", "asdf:ORCID/asdf-cidr-merger"]
 description = "A simple command line tool to merge ip/ip cidr/ip range, supports IPv4/IPv6"
-test = ["cidr-merger --version 2>&1", "cidr merger {{version}}"]
+test = ["cidr-merger --version", "cidr merger {{version}}"]
 
 [tools.cidrchk]
 backends = ["github:mhausenblas/cidrchk", "asdf:ORCID/asdf-cidrchk"]
@@ -1153,7 +1153,7 @@ test = ["dagger version", "dagger v{{version}}"]
 [tools.dagu]
 backends = ["aqua:dagu-org/dagu"]
 description = "Yet another cron alternative with a Web UI, but with much more capabilities. It aims to solve greater problems"
-test = ["dagu version 2>&1", "{{version}}"]
+test = ["dagu version", "{{version}}"]
 
 [tools.danger-js]
 backends = ["npm:danger"]
@@ -2034,7 +2034,7 @@ test = ["golines --version", "golines v{{version}}"]
 [tools.gomigrate]
 backends = ["aqua:golang-migrate/migrate", "asdf:joschi/asdf-gomigrate"]
 description = "Database migrations. CLI and Golang library"
-test = ["migrate --version 2>&1", "{{version}}"]
+test = ["migrate --version", "{{version}}"]
 
 [tools.gomplate]
 backends = ["aqua:hairyhenderson/gomplate", "asdf:sneakybeaky/asdf-gomplate"]
@@ -2325,7 +2325,7 @@ test = ["htmlq --version", "htmlq {{version}}"]
 backends = ["aqua:nojima/httpie-go", "asdf:abatilo/asdf-httpie-go"]
 description = "httpie-like HTTP client written in Go"
 os = ["linux", "macos"]
-test = ["ht --version 2>&1", "httpie-go {{version}}"]
+test = ["ht --version", "httpie-go {{version}}"]
 
 [tools.hub]
 backends = ["aqua:mislav/hub", "asdf:mise-plugins/asdf-hub"]
@@ -2533,7 +2533,7 @@ test = ["json5 --version", "{{version}}"]
 aliases = ["jb"]
 backends = ["aqua:jsonnet-bundler/jsonnet-bundler", "asdf:beardix/asdf-jb"]
 description = "A jsonnet package manager"
-test = ["jb --version 2>&1", "v{{version}}"]
+test = ["jb --version", "v{{version}}"]
 
 [tools.jsonschema]
 backends = ["aqua:sourcemeta/jsonschema"]
@@ -2720,7 +2720,7 @@ os = ["linux", "macos"]
 [tools.krab]
 backends = ["aqua:ohkrab/krab", "asdf:ohkrab/asdf-krab"]
 description = "Krab is a migration and automation tool for PostgreSQL based on HCL syntax"
-test = ["krab --version 2>&1", "{{version}}"]
+test = ["krab --version", "{{version}}"]
 
 [tools.krew]
 backends = ["aqua:kubernetes-sigs/krew", "asdf:bjw-s/asdf-krew"]
@@ -2881,7 +2881,7 @@ backends = [
   "asdf:virtualstaticvoid/asdf-kubent",
 ]
 description = "Easily check your clusters for use of deprecated APIs"
-test = ["kubent --version 2>&1", "version {{version}}"]
+test = ["kubent --version", "version {{version}}"]
 
 [tools.kubeone]
 backends = ["aqua:kubermatic/kubeone", "aqua:kubermatic/kubeone"]
@@ -3466,7 +3466,7 @@ test = ["oapi-codegen --version", "v{{version}}"]
 [tools.oauth2c]
 backends = ["aqua:cloudentity/oauth2c"]
 description = "User-friendly OAuth2 CLI"
-test = ["oauth2c version 2>&1", "oauth2c version {{version}}"]
+test = ["oauth2c version", "oauth2c version {{version}}"]
 
 [tools.oc]
 backends = ["asdf:mise-plugins/mise-oc"]
@@ -4130,7 +4130,7 @@ test = ["saml2aws --version", "{{version}}"]
 [tools.sampler]
 backends = ["aqua:sqshq/sampler"]
 description = "Tool for shell commands execution, visualization and alerting. Configured with a simple YAML file"
-test = ["sampler --version 2>&1", "{{version}}"]
+test = ["sampler --version", "{{version}}"]
 
 [tools.sbcl]
 backends = ["asdf:mise-plugins/mise-sbcl"]
@@ -4423,7 +4423,7 @@ test = ["spago --version", "{{version}}"]
 backends = ["aqua:apache/spark", "asdf:mise-plugins/mise-spark"]
 depends = ["java"]
 description = "Apache Spark - A unified analytics engine for large-scale data processing"
-test = ["spark-shell --version 2>&1", "version {{version}}"]
+test = ["spark-shell --version", "version {{version}}"]
 
 [tools.specstory]
 backends = ["aqua:specstoryai/getspecstory"]
@@ -4560,7 +4560,7 @@ test = ["spf --version", "superfile version v{{version}}"]
 [tools.superhtml]
 backends = ["github:kristoff-it/superhtml"]
 description = "HTML Validator, Formatter, LSP, and Templating Language Library"
-test = ["superhtml version 2>&1", "{{version}}"]
+test = ["superhtml version", "{{version}}"]
 
 [tools.sver]
 backends = ["aqua:mitoma/sver", "asdf:robzr/asdf-sver"]
@@ -4938,7 +4938,7 @@ test = [
 aliases = ["tssh"]
 backends = ["aqua:trzsz/trzsz-ssh", "go:github.com/trzsz/trzsz-ssh/cmd/tssh"]
 description = "trzsz-ssh ( tssh ) is an ssh client designed as a drop-in replacement for the openssh client. It aims to provide complete compatibility with openssh, mirroring all its features, while also offering additional useful features. Such as login prompt, batch login, remember password, automated interaction, trzsz, zmodem(rz/sz), udp mode like mosh, etc."
-test = ["tssh --version 2>&1", "trzsz ssh {{version}}"]
+test = ["tssh --version", "trzsz ssh {{version}}"]
 
 [tools.tsuru]
 backends = [
