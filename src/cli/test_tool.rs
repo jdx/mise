@@ -278,7 +278,8 @@ impl TestTool {
         let expected = tera.render_str(expected, &ctx)?;
         let stdout = String::from_utf8(res.stdout)?;
         miseprintln!("{}", stdout.trim_end());
-        if !stdout.contains(&expected) {
+        let clean_stdout = console::strip_ansi_codes(&stdout);
+        if !clean_stdout.contains(&expected) {
             return Err(eyre!(
                 "expected output not found: {expected}, got: {stdout}"
             ));
