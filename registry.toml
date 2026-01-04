@@ -4362,7 +4362,10 @@ description = "Swift Lang (Core)"
 os = ["linux", "macos"]
 
 [tools.swift-package-list]
-backends = ["spm:FelixHerrmann/swift-package-list", "asdf:mise-plugins/mise-swift-package-list"]
+backends = [
+  "spm:FelixHerrmann/swift-package-list",
+  "asdf:mise-plugins/mise-swift-package-list",
+]
 description = "A command-line tool to get all used Swift Package dependencies"
 
 [tools.swiftformat]
