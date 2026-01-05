@@ -305,7 +305,7 @@ description = "CLI tool to build, test, debug, and deploy Serverless application
 test = ["sam --version", "SAM CLI, version {{version}}"]
 
 [tools.aws-sso]
-backends = ["aqua:synfinatic/aws-sso-cli", "asdf:adamcrews/asdf-aws-sso-cli"]
+backends = ["aqua:synfinatic/aws-sso-cli", "asdf:adamcrews/asdf-aws-sso-cli", "vfox:carlosjgp/mise-aws-sso-cli"]
 description = "A powerful tool for using AWS Identity Center for the CLI and web console"
 test = ["aws-sso version", "AWS SSO CLI Version {{version}}"]
 
