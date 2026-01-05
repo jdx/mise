@@ -14,8 +14,8 @@ test = ["op --version", "{{version}}"]
 backends = ["vfox:mise-plugins/vfox-aapt2"]
 description = "Android Asset Packaging Tool (aapt)"
 test = [
-  "aapt2 version 2>&1",
-  "Android Asset Packaging Tool (aapt)",
+    "aapt2 version 2>&1",
+    "Android Asset Packaging Tool (aapt)",
 ] # version doesn't match
 
 [tools.act]
@@ -25,9 +25,9 @@ test = ["act --version", "act version {{version}}"]
 
 [tools.action-validator]
 backends = [
-  "aqua:mpalmer/action-validator",
-  "asdf:mpalmer/action-validator",
-  "cargo:action-validator",
+    "aqua:mpalmer/action-validator",
+    "asdf:mpalmer/action-validator",
+    "cargo:action-validator",
 ]
 description = "Tool to validate GitHub Action and Workflow YAML files"
 os = ["linux", "macos"]
@@ -35,17 +35,17 @@ test = ["action-validator --version", "action-validator {{version}}"]
 
 [tools.actionlint]
 backends = [
-  "aqua:rhysd/actionlint",
-  "asdf:crazy-matt/asdf-actionlint",
-  "go:github.com/rhysd/actionlint/cmd/actionlint",
+    "aqua:rhysd/actionlint",
+    "asdf:crazy-matt/asdf-actionlint",
+    "go:github.com/rhysd/actionlint/cmd/actionlint",
 ]
 description = ":octocat: Static checker for GitHub Actions workflow files"
 test = ["actionlint --version", "{{version}}"]
 
 [tools.adr-tools]
 backends = [
-  "aqua:npryce/adr-tools",
-  "asdf:https://gitlab.com/td7x/asdf/adr-tools",
+    "aqua:npryce/adr-tools",
+    "asdf:https://gitlab.com/td7x/asdf/adr-tools",
 ]
 description = "Command-line tools for working with Architecture Decision Records"
 test = ["adr help", "adr help"]
@@ -62,9 +62,9 @@ test = ["age --version", "v{{version}}"]
 
 [tools.age-plugin-yubikey]
 backends = [
-  "github:str4d/age-plugin-yubikey",
-  "asdf:joke/asdf-age-plugin-yubikey",
-  "cargo:age-plugin-yubikey",
+    "github:str4d/age-plugin-yubikey",
+    "asdf:joke/asdf-age-plugin-yubikey",
+    "cargo:age-plugin-yubikey",
 ]
 description = "age-plugin-yubikey is a plugin for age clients like age and rage, which enables files to be encrypted to age identities stored on YubiKeys"
 test = ["which age-plugin-yubikey", ""] # libpcsclite.so.1 is missing in CI
@@ -111,13 +111,13 @@ test = ["amass -version 2>&1", "v"] # version is wrong from the CLI
 
 [tools.amazon-ecr-credential-helper]
 backends = [
-  "aqua:awslabs/amazon-ecr-credential-helper",
-  "asdf:dex4er/asdf-amazon-ecr-credential-helper",
+    "aqua:awslabs/amazon-ecr-credential-helper",
+    "asdf:dex4er/asdf-amazon-ecr-credential-helper",
 ]
 description = "Automatically gets credentials for Amazon ECR on docker push/docker pull"
 test = [
-  "docker-credential-ecr-login version",
-  "docker-credential-ecr-login (github.com/awslabs/amazon-ecr-credential-helper/ecr-login) {{version}}",
+    "docker-credential-ecr-login version",
+    "docker-credential-ecr-login (github.com/awslabs/amazon-ecr-credential-helper/ecr-login) {{version}}",
 ]
 
 [tools.amazon-ecs-cli]
@@ -207,8 +207,8 @@ test = ["argocd version --client", "argocd: v{{version}}"]
 
 [tools.asciidoctorj]
 backends = [
-  "vfox:mise-plugins/vfox-asciidoctorj",
-  "asdf:mise-plugins/mise-asciidoctorj",
+    "vfox:mise-plugins/vfox-asciidoctorj",
+    "asdf:mise-plugins/mise-asciidoctorj",
 ]
 description = "AsciidoctorJ is the official library for running Asciidoctor on the JVM. Using AsciidoctorJ, you can convert AsciiDoc content or analyze the structure of a parsed AsciiDoc document from Java and other JVM languages"
 test = ["asciidoctorj --version", "AsciidoctorJ {{version}}"]
@@ -220,10 +220,10 @@ test = ["assh --version", "assh version "] # 2.16.0 reports version n/a
 
 [tools.ast-grep]
 backends = [
-  "aqua:ast-grep/ast-grep",
-  "cargo:ast-grep",
-  "npm:@ast-grep/cli",
-  "pipx:ast-grep-cli",
+    "aqua:ast-grep/ast-grep",
+    "cargo:ast-grep",
+    "npm:@ast-grep/cli",
+    "pipx:ast-grep-cli",
 ]
 description = "A CLI tool for code structural search, lint and rewriting. Written in Rust"
 test = ["sg --version", "ast-grep {{version}}"]
@@ -257,8 +257,8 @@ test = ["auto-doc --help", "auto-doc [flags]"]
 [tools.aws-amplify]
 aliases = ["amplify"]
 backends = [
-  "github:aws-amplify/amplify-cli[rename_exe=amplify]",
-  "asdf:LozanoMatheus/asdf-aws-amplify-cli",
+    "github:aws-amplify/amplify-cli[rename_exe=amplify]",
+    "asdf:LozanoMatheus/asdf-aws-amplify-cli",
 ]
 description = "The AWS Amplify CLI is a toolchain for simplifying serverless web and mobile development"
 # test = ["amplify --version", "{{version}}"]  # hangs in CI
@@ -266,8 +266,8 @@ description = "The AWS Amplify CLI is a toolchain for simplifying serverless web
 [tools.aws-cli]
 aliases = ["aws", "awscli"]
 backends = [
-  { full = "aqua:aws/aws-cli", options = { symlink_bins = "true" } },
-  "asdf:MetricMike/asdf-awscli",
+    { full = "aqua:aws/aws-cli", options = { symlink_bins = "true" } },
+    "asdf:MetricMike/asdf-awscli",
 ]
 description = "The AWS Command Line Interface (AWS CLI v2) is a unified tool that provides a consistent interface for interacting with all parts of Amazon Web Services"
 os = ["linux", "macos"]
@@ -280,8 +280,8 @@ test = ["copilot --version", "copilot version: v{{version}}"]
 
 [tools.aws-iam-authenticator]
 backends = [
-  "aqua:kubernetes-sigs/aws-iam-authenticator",
-  "asdf:zekker6/asdf-aws-iam-authenticator",
+    "aqua:kubernetes-sigs/aws-iam-authenticator",
+    "asdf:zekker6/asdf-aws-iam-authenticator",
 ]
 description = "A tool to use AWS IAM credentials to authenticate to a Kubernetes cluster"
 test = ["aws-iam-authenticator version", '"Version":"{{version}}"']
@@ -294,12 +294,12 @@ test = ["aws-nuke --version", "aws-nuke version v{{version}}"]
 [tools.aws-sam]
 aliases = ["aws-sam-cli"]
 backends = [
-  { full = "aqua:aws/aws-sam-cli", platforms = [
-    "linux",
-    "macos",
-  ], options = { symlink_bins = "true" } },
-  "pipx:aws-sam-cli",
-  "asdf:mise-plugins/mise-pyapp",
+    { full = "aqua:aws/aws-sam-cli", platforms = [
+        "linux",
+        "macos",
+    ], options = { symlink_bins = "true" } },
+    "pipx:aws-sam-cli",
+    "asdf:mise-plugins/mise-pyapp",
 ]
 description = "CLI tool to build, test, debug, and deploy Serverless applications using AWS SAM"
 test = ["sam --version", "SAM CLI, version {{version}}"]
@@ -347,8 +347,8 @@ test = ["az --version", "azure-cli                         {{version}}"]
 
 [tools.azure-functions-core-tools]
 backends = [
-  "vfox:mise-plugins/vfox-azure-functions-core-tools",
-  "asdf:mise-plugins/mise-azure-functions-core-tools",
+    "vfox:mise-plugins/vfox-azure-functions-core-tools",
+    "asdf:mise-plugins/mise-azure-functions-core-tools",
 ]
 description = "Command line tools for Azure Functions"
 
@@ -381,9 +381,9 @@ description = "Bashly is a command line application (written in Ruby) that lets 
 
 [tools.bat]
 backends = [
-  "aqua:sharkdp/bat",
-  "cargo:bat",
-  "asdf:https://gitlab.com/wt0f/asdf-bat",
+    "aqua:sharkdp/bat",
+    "cargo:bat",
+    "asdf:https://gitlab.com/wt0f/asdf-bat",
 ]
 description = "A cat(1) clone with wings"
 test = ["bat --version", "bat {{version}}"]
@@ -411,14 +411,14 @@ test = ["ibazel version 2>&1", "iBazel - Version v{{version}}"]
 
 [tools.bazelisk]
 backends = [
-  "aqua:bazelbuild/bazelisk",
-  "npm:@bazel/bazelisk",
-  "asdf:josephtate/asdf-bazelisk",
+    "aqua:bazelbuild/bazelisk",
+    "npm:@bazel/bazelisk",
+    "asdf:josephtate/asdf-bazelisk",
 ]
 description = "A user-friendly launcher for Bazel"
 test = [
-  "bazelisk --version",
-  "bazel",
+    "bazelisk --version",
+    "bazel",
 ] # shows bazel version, not bazelisk version
 
 [tools.bbr-s3-config-validator]
@@ -449,8 +449,8 @@ test = ["bw --version", "{{version}}"]
 
 [tools.bitwarden-secrets-manager]
 backends = [
-  "github:bitwarden/sdk[version_prefix=bws-v]",
-  "asdf:asdf-community/asdf-bitwarden-secrets-manager",
+    "github:bitwarden/sdk[version_prefix=bws-v]",
+    "asdf:asdf-community/asdf-bitwarden-secrets-manager",
 ]
 description = "CLI for interacting with the Bitwarden Secrets Manager"
 test = ["bws --version", "bws {{version}}"]
@@ -487,8 +487,8 @@ test = ["borg --version", "borg {{version}}"]
 
 [tools.bosh]
 backends = [
-  "aqua:cloudfoundry/bosh-cli",
-  "asdf:mise-plugins/tanzu-plug-in-for-asdf",
+    "aqua:cloudfoundry/bosh-cli",
+    "asdf:mise-plugins/tanzu-plug-in-for-asdf",
 ]
 description = "The bosh CLI is the command line tool used for interacting with all things BOSH, from deployment operations to software release management"
 test = ["bosh --version", "version {{version}}"]
@@ -496,8 +496,8 @@ test = ["bosh --version", "version {{version}}"]
 [tools.bosh-backup-and-restore]
 aliases = ["bbr"]
 backends = [
-  "github:cloudfoundry-incubator/bosh-backup-and-restore[bin=bosh-backup-and-restore,asset_pattern=bbr-*-{darwin_os}-{amd64_arch}]",
-  "asdf:mise-plugins/tanzu-plug-in-for-asdf",
+    "github:cloudfoundry-incubator/bosh-backup-and-restore[bin=bosh-backup-and-restore,asset_pattern=bbr-*-{darwin_os}-{amd64_arch}]",
+    "asdf:mise-plugins/tanzu-plug-in-for-asdf",
 ]
 description = "BOSH Backup and Restore is a CLI utility for orchestrating the backup and restore of BOSH deployments and BOSH directors"
 os = ["linux", "macos"]
@@ -505,9 +505,9 @@ test = ["bosh-backup-and-restore version", "bbr version {{version}}"]
 
 [tools.bottom]
 backends = [
-  "aqua:ClementTsang/bottom",
-  "asdf:carbonteq/asdf-btm",
-  "cargo:bottom",
+    "aqua:ClementTsang/bottom",
+    "asdf:carbonteq/asdf-btm",
+    "cargo:bottom",
 ]
 description = "Yet another cross-platform graphical process/system monitor"
 test = ["btm --version", "bottom {{version}}"]
@@ -531,8 +531,8 @@ test = ["brig version", "Brigade client: version v{{version}}"]
 backends = ["aqua:aristocratos/btop"]
 description = "A monitor of resources"
 test = [
-  '''btop --version | sed -e 's/\x1b\[[0-9;]*m//g'''',
-  "btop version: {{version}}",
+    '''btop --version | sed -e 's/\x1b\[[0-9;]*m//g'''',
+    "btop version: {{version}}",
 ]
 
 [tools.btrace]
@@ -583,8 +583,8 @@ test = ["CalendarSync --version", "Version: {{version}}"]
 
 [tools.calicoctl]
 backends = [
-  "aqua:projectcalico/calico/calicoctl",
-  "asdf:TheCubicleJockey/asdf-calicoctl",
+    "aqua:projectcalico/calico/calicoctl",
+    "asdf:TheCubicleJockey/asdf-calicoctl",
 ]
 description = "Cloud native networking and network security"
 test = ["calicoctl version", "Client Version:    v{{version}}"]
@@ -606,9 +606,9 @@ test = ["cargo insta --version", "cargo-insta {{version}}"]
 
 [tools.cargo-make]
 backends = [
-  "aqua:sagiegurari/cargo-make",
-  "asdf:mise-plugins/asdf-cargo-make",
-  "cargo:cargo-make",
+    "aqua:sagiegurari/cargo-make",
+    "asdf:mise-plugins/asdf-cargo-make",
+    "cargo:cargo-make",
 ]
 description = "Rust task runner and build tool"
 test = ["makers --version", "cargo-make {{version}}"]
@@ -620,8 +620,8 @@ test = ["which carp", ""] # hangs in non-interactive shells
 
 [tools.carthage]
 backends = [
-  "vfox:mise-plugins/vfox-carthage",
-  "asdf:mise-plugins/mise-carthage",
+    "vfox:mise-plugins/vfox-carthage",
+    "asdf:mise-plugins/mise-carthage",
 ]
 description = "A simple, decentralized dependency manager for Cocoa"
 os = ["macos"]
@@ -686,8 +686,8 @@ test = ["chezmoi --version", "chezmoi version v{{version}}"]
 
 [tools.chezscheme]
 backends = [
-  "vfox:mise-plugins/vfox-chezscheme",
-  "asdf:mise-plugins/mise-chezscheme",
+    "vfox:mise-plugins/vfox-chezscheme",
+    "asdf:mise-plugins/mise-chezscheme",
 ]
 description = "Chez Scheme is both a programming language and an implementation of that language, with supporting tools and documentation"
 
@@ -699,26 +699,26 @@ test = ["csi -version", "Version"]
 
 [tools.chisel]
 backends = [
-  "aqua:jpillora/chisel",
-  "go:github.com/jpillora/chisel",
-  "asdf:lwiechec/asdf-chisel",
+    "aqua:jpillora/chisel",
+    "go:github.com/jpillora/chisel",
+    "asdf:lwiechec/asdf-chisel",
 ]
 description = "A fast TCP/UDP tunnel over HTTP"
 test = ["chisel --version", "{{version}}"]
 
 [tools.choose]
 backends = [
-  "aqua:theryangeary/choose",
-  "cargo:choose",
-  "asdf:carbonteq/asdf-choose",
+    "aqua:theryangeary/choose",
+    "cargo:choose",
+    "asdf:carbonteq/asdf-choose",
 ]
 description = "A human-friendly and fast alternative to cut (and sometimes awk)"
 test = ["choose --version", "{{version}}"]
 
 [tools.chromedriver]
 backends = [
-  "vfox:mise-plugins/vfox-chromedriver",
-  "asdf:mise-plugins/mise-chromedriver",
+    "vfox:mise-plugins/vfox-chromedriver",
+    "asdf:mise-plugins/mise-chromedriver",
 ]
 description = "ChromeDriver is a standalone server that implements the W3C WebDriver and WebDriver BiDi standards"
 test = ["chromedriver --version", "ChromeDriver {{version}}"]
@@ -751,9 +751,9 @@ test = ["circleci version", "{{version}}"]
 
 [tools.clang]
 backends = [
-  "conda:clang",
-  "asdf:mise-plugins/mise-llvm",
-  "vfox:mise-plugins/vfox-clang",
+    "conda:clang",
+    "asdf:mise-plugins/mise-llvm",
+    "vfox:mise-plugins/vfox-clang",
 ]
 description = "Clang is an 'LLVM native' C/C++/Objective-C compiler, which aims to deliver amazingly fast compiles, extremely useful error and warning messages and to provide a platform for building great source level tools"
 
@@ -819,13 +819,13 @@ test = ["cli53 --version", "cli53 version {{version}}"]
 
 [tools.clickhouse]
 backends = [
-  "vfox:mise-plugins/vfox-clickhouse",
-  "asdf:mise-plugins/mise-clickhouse",
+    "vfox:mise-plugins/vfox-clickhouse",
+    "asdf:mise-plugins/mise-clickhouse",
 ]
 description = "ClickHouse® is a high-performance, column-oriented SQL database management system (DBMS) for online analytical processing (OLAP)"
 test = [
-  "clickhouse --version",
-  "ClickHouse local version {{version | trim_end_matches(pat='-lts') | trim_end_matches(pat='-stable')}}",
+    "clickhouse --version",
+    "ClickHouse local version {{version | trim_end_matches(pat='-lts') | trim_end_matches(pat='-stable')}}",
 ]
 
 [tools.clj-kondo]
@@ -845,8 +845,8 @@ description = "The Clojure Programming Language"
 
 [tools.cloud-sql-proxy]
 backends = [
-  "aqua:GoogleCloudPlatform/cloud-sql-proxy",
-  "asdf:pbr0ck3r/asdf-cloud-sql-proxy",
+    "aqua:GoogleCloudPlatform/cloud-sql-proxy",
+    "asdf:pbr0ck3r/asdf-cloud-sql-proxy",
 ]
 description = "A utility for connecting securely to your Cloud SQL instances"
 
@@ -857,25 +857,25 @@ test = ["cloudflared -v", "cloudflared version {{version}}"]
 
 [tools.clusterawsadm]
 backends = [
-  "github:kubernetes-sigs/cluster-api-provider-aws[bin=cluster-api-provider-aws,asset_pattern=clusterawsadm-{darwin_os}-{amd64_arch}]",
-  "asdf:kahun/asdf-clusterawsadm",
+    "github:kubernetes-sigs/cluster-api-provider-aws[bin=cluster-api-provider-aws,asset_pattern=clusterawsadm-{darwin_os}-{amd64_arch}]",
+    "asdf:kahun/asdf-clusterawsadm",
 ]
 description = "clusterawsadm provides helpers for bootstrapping Kubernetes Cluster API Provider AWS"
 test = ["cluster-api-provider-aws version", "clusterawsadm version:"]
 
 [tools.clusterctl]
 backends = [
-  "aqua:kubernetes-sigs/cluster-api",
-  "asdf:pfnet-research/asdf-clusterctl",
+    "aqua:kubernetes-sigs/cluster-api",
+    "asdf:pfnet-research/asdf-clusterctl",
 ]
 description = "Home for Cluster API, a subproject of sig-cluster-lifecycle"
 test = ["clusterctl version", "{{version}}"]
 
 [tools.cmake]
 backends = [
-  "aqua:Kitware/CMake",
-  "asdf:mise-plugins/mise-cmake",
-  "vfox:mise-plugins/vfox-cmake",
+    "aqua:Kitware/CMake",
+    "asdf:mise-plugins/mise-cmake",
+    "vfox:mise-plugins/vfox-cmake",
 ]
 description = "CMake is a tool to manage building of source code. Originally, CMake was designed as a generator for various dialects of Makefile, today CMake generates modern buildsystems such as Ninja as well as project files for IDEs such as Visual Studio and Xcode"
 test = ["cmake --version", """
@@ -919,8 +919,8 @@ description = "Codebuff is a CLI tool that writes code for you"
 
 [tools.codefresh]
 backends = [
-  "github:codefresh-io/cli[exe=codefresh]",
-  "asdf:gurukulkarni/asdf-codefresh",
+    "github:codefresh-io/cli[exe=codefresh]",
+    "asdf:gurukulkarni/asdf-codefresh",
 ]
 description = "The Codefresh CLI provides a full and flexible interface to interact with Codefresh"
 
@@ -971,8 +971,8 @@ test = ["conan --version", "Conan version {{version}}"]
 
 [tools.concourse]
 backends = [
-  "aqua:concourse/concourse/concourse",
-  "asdf:mattysweeps/asdf-concourse",
+    "aqua:concourse/concourse/concourse",
+    "asdf:mattysweeps/asdf-concourse",
 ]
 description = "Concourse is a container-based automation system written in Go"
 
@@ -1003,8 +1003,8 @@ test = ["container --version", "container CLI version {{version}}"]
 
 [tools.container-structure-test]
 backends = [
-  "aqua:GoogleContainerTools/container-structure-test",
-  "asdf:FeryET/asdf-container-structure-test",
+    "aqua:GoogleContainerTools/container-structure-test",
+    "asdf:FeryET/asdf-container-structure-test",
 ]
 description = "validate the structure of your container images"
 
@@ -1050,8 +1050,8 @@ test = ["cosign version", "v{{version}}"]
 
 [tools.coursier]
 backends = [
-  "github:coursier/coursier[exe=cs]",
-  "asdf:jiahuili430/asdf-coursier",
+    "github:coursier/coursier[exe=cs]",
+    "asdf:jiahuili430/asdf-coursier",
 ]
 description = "Pure Scala Artifact Fetching"
 
@@ -1070,16 +1070,16 @@ description = "CRC is a tool to help you run containers. It manages local VMs to
 
 [tools.credhub]
 backends = [
-  "aqua:cloudfoundry/credhub-cli",
-  "asdf:mise-plugins/tanzu-plug-in-for-asdf",
+    "aqua:cloudfoundry/credhub-cli",
+    "asdf:mise-plugins/tanzu-plug-in-for-asdf",
 ]
 description = "CredHub CLI provides a command line interface to interact with CredHub servers"
 test = ["credhub --version", "CLI Version: {{version}}"]
 
 [tools.crictl]
 backends = [
-  "aqua:kubernetes-sigs/cri-tools/crictl",
-  "asdf:FairwindsOps/asdf-crictl",
+    "aqua:kubernetes-sigs/cri-tools/crictl",
+    "asdf:FairwindsOps/asdf-crictl",
 ]
 description = "crictl is a command-line interface for CRI-compatible container runtimes. You can use it to inspect and debug container runtimes and applications on a Kubernetes node"
 
@@ -1207,9 +1207,9 @@ description = "decK: Configuration management and drift detection for Kong"
 
 [tools.delta]
 backends = [
-  "aqua:dandavison/delta",
-  "asdf:andweeb/asdf-delta",
-  "cargo:git-delta",
+    "aqua:dandavison/delta",
+    "asdf:andweeb/asdf-delta",
+    "cargo:git-delta",
 ]
 description = "A syntax-highlighting pager for git, diff, and grep output"
 test = ["delta --version", "delta {{version}}"]
@@ -1250,9 +1250,9 @@ test = ["diffoci --version", "diffoci version v{{version}}"]
 
 [tools.difftastic]
 backends = [
-  "aqua:Wilfred/difftastic",
-  "asdf:volf52/asdf-difftastic",
-  "cargo:difftastic",
+    "aqua:Wilfred/difftastic",
+    "asdf:volf52/asdf-difftastic",
+    "cargo:difftastic",
 ]
 description = "a structural diff that understands syntax"
 test = ["difft --version", "Difftastic {{version}}"]
@@ -1272,8 +1272,8 @@ test = ["dive --version", "dive {{version}}"]
 
 [tools.djinni]
 backends = [
-  "github:cross-language-cpp/djinni-generator[bin=djinni,asset_pattern=djinni]",
-  "asdf:cross-language-cpp/asdf-djinni",
+    "github:cross-language-cpp/djinni-generator[bin=djinni,asset_pattern=djinni]",
+    "asdf:cross-language-cpp/asdf-djinni",
 ]
 description = "Command-line tool that generates gluecode from a djinni-IDL file"
 test = ["djinni --version", "djinni generator version {{version}}"]
@@ -1313,9 +1313,9 @@ description = "a AsciiDoc Toolchain for technical Software Documentation, focuse
 
 [tools.docuum]
 backends = [
-  "aqua:stepchowfun/docuum",
-  "cargo:docuum",
-  "asdf:bradym/asdf-docuum",
+    "aqua:stepchowfun/docuum",
+    "cargo:docuum",
+    "asdf:bradym/asdf-docuum",
 ]
 description = "Docuum performs least recently used (LRU) eviction of Docker images"
 test = ["docuum --version", "Docuum {{version}}"]
@@ -1353,17 +1353,17 @@ full = "asdf:mise-plugins/mise-dome"
 
 [tools.doppler]
 backends = [
-  "github:DopplerHQ/cli[exe=doppler]",
-  "asdf:takutakahashi/asdf-doppler",
+    "github:DopplerHQ/cli[exe=doppler]",
+    "asdf:takutakahashi/asdf-doppler",
 ]
 description = "The official CLI for interacting with your Doppler secrets and configuration"
 test = ["doppler --version", "v{{version}}"]
 
 [tools.dotenv-linter]
 backends = [
-  "aqua:dotenv-linter/dotenv-linter",
-  "asdf:wesleimp/asdf-dotenv-linter",
-  "cargo:dotenv-linter",
+    "aqua:dotenv-linter/dotenv-linter",
+    "asdf:wesleimp/asdf-dotenv-linter",
+    "cargo:dotenv-linter",
 ]
 description = "Lightning-fast linter for .env files. Written in Rust"
 test = ["dotenv-linter --version", "dotenv-linter {{version}}"]
@@ -1413,8 +1413,8 @@ description = "dt - duct tape for your unix pipes"
 
 [tools.dtm]
 backends = [
-  "github:devstream-io/devstream[exe=dtm]",
-  "asdf:zhenyuanlau/asdf-dtm",
+    "github:devstream-io/devstream[exe=dtm]",
+    "asdf:zhenyuanlau/asdf-dtm",
 ]
 description = "DevStream: the open-source DevOps toolchain manager (DTM)"
 
@@ -1448,8 +1448,8 @@ description = "A diff tool for YAML files, and sometimes JSON"
 
 [tools.dynatrace-monaco]
 backends = [
-  "github:Dynatrace/dynatrace-configuration-as-code[exe=monaco]",
-  "asdf:nsaputro/asdf-monaco",
+    "github:Dynatrace/dynatrace-configuration-as-code[exe=monaco]",
+    "asdf:nsaputro/asdf-monaco",
 ]
 description = "Monaco—This is the native Dynatrace Configuration as Code tool. Monaco is also the recommended tool for migrating from Dynatrace Managed to Dynatrace SaaS"
 
@@ -1472,8 +1472,8 @@ description = "We all edit"
 
 [tools.editorconfig-checker]
 backends = [
-  "aqua:editorconfig-checker/editorconfig-checker",
-  "asdf:gabitchov/asdf-editorconfig-checker",
+    "aqua:editorconfig-checker/editorconfig-checker",
+    "asdf:gabitchov/asdf-editorconfig-checker",
 ]
 description = "A tool to verify that your files are in harmony with your .editorconfig"
 test = ["ec --version", "v{{version}}"]
@@ -1537,9 +1537,9 @@ test = ["esy --version", "{{version}}"]
 
 [tools.etcd]
 backends = [
-  "aqua:etcd-io/etcd",
-  "asdf:particledecay/asdf-etcd",
-  "vfox:mise-plugins/vfox-etcd",
+    "aqua:etcd-io/etcd",
+    "asdf:particledecay/asdf-etcd",
+    "vfox:mise-plugins/vfox-etcd",
 ]
 description = "Distributed reliable key-value store for the most critical data of a distributed system"
 test = ["etcd --version", "etcd Version: {{version}}"]
@@ -1550,11 +1550,11 @@ description = "Evans: more expressive universal gRPC client"
 
 [tools.eza]
 backends = [
-  { full = "aqua:eza-community/eza", platforms = [
-    "linux",
-  ] },
-  "asdf:mise-plugins/mise-eza",
-  "cargo:eza",
+    { full = "aqua:eza-community/eza", platforms = [
+        "linux",
+    ] },
+    "asdf:mise-plugins/mise-eza",
+    "cargo:eza",
 ]
 description = "A modern, maintained replacement for ls"
 test = ["eza --version", "v{{version}}"]
@@ -1566,9 +1566,9 @@ test = ["fastfetch --version | awk '{print $1, $2}'", "fastfetch {{version}}"]
 
 [tools.fd]
 backends = [
-  "aqua:sharkdp/fd",
-  "asdf:https://gitlab.com/wt0f/asdf-fd",
-  "cargo:fd-find",
+    "aqua:sharkdp/fd",
+    "asdf:https://gitlab.com/wt0f/asdf-fd",
+    "cargo:fd-find",
 ]
 description = "A simple, fast and user-friendly alternative to 'find'"
 test = ["fd --version", "fd {{version}}"]
@@ -1579,8 +1579,8 @@ description = "A complete, cross-platform solution to record, convert and stream
 
 [tools.figma-export]
 backends = [
-  "github:RedMadRobot/figma-export[bin_path=Release]",
-  "asdf:younke/asdf-figma-export",
+    "github:RedMadRobot/figma-export[bin_path=Release]",
+    "asdf:younke/asdf-figma-export",
 ]
 description = "Command line utility to export colors, typography, icons and images from Figma to Xcode / Android Studio project"
 os = ["macos"]
@@ -1606,16 +1606,16 @@ test = ["flamingo -v", "flamingo version {{version}}"]
 
 [tools.flarectl]
 backends = [
-  "github:cloudflare/cloudflare-go[exe=flarectl]",
-  "asdf:mise-plugins/asdf-flarectl",
+    "github:cloudflare/cloudflare-go[exe=flarectl]",
+    "asdf:mise-plugins/asdf-flarectl",
 ]
 description = "A CLI application for interacting with a Cloudflare account. Powered by cloudflare-go"
 # test = ["flarectl --version", "flarectl version {{version}}"] # flarectl removed since v4
 
 [tools.flatc]
 backends = [
-  "github:google/flatbuffers[exe=flatc]",
-  "asdf:TheOpenDictionary/asdf-flatc",
+    "github:google/flatbuffers[exe=flatc]",
+    "asdf:TheOpenDictionary/asdf-flatc",
 ]
 description = "The main compiler for FlatBuffers is called flatc and is used to convert schema definitions into generated code files for a variety of languages"
 test = ["flatc --version", "flatc version {{version}}"]
@@ -1626,8 +1626,8 @@ description = "Flutter is an open source framework for building beautiful, nativ
 
 [tools.fluttergen]
 backends = [
-  "github:FlutterGen/flutter_gen[exe=fluttergen]",
-  "asdf:FlutterGen/asdf-fluttergen",
+    "github:FlutterGen/flutter_gen[exe=fluttergen]",
+    "asdf:FlutterGen/asdf-fluttergen",
 ]
 description = "The Flutter code generator for your assets, fonts, colors, … — Get rid of all String-based APIs"
 os = ["linux", "macos"]
@@ -1640,8 +1640,8 @@ test = ["flux --version", "flux version {{version}}"]
 
 [tools.fly]
 backends = [
-  "aqua:concourse/concourse/fly",
-  "asdf:mise-plugins/tanzu-plug-in-for-asdf",
+    "aqua:concourse/concourse/fly",
+    "asdf:mise-plugins/tanzu-plug-in-for-asdf",
 ]
 description = "fly cli for concourse ci"
 
@@ -1739,8 +1739,8 @@ test = ["gemini --version", "{{version}}"]
 
 [tools.getenvoy]
 backends = [
-  "github:tetratelabs-attic/getenvoy",
-  "asdf:mise-plugins/mise-getenvoy",
+    "github:tetratelabs-attic/getenvoy",
+    "asdf:mise-plugins/mise-getenvoy",
 ]
 description = "historical CLI of getenvoy"
 test = ["getenvoy --version", "getenvoy version {{version}}"]
@@ -1759,8 +1759,8 @@ test = ["ghalint version", "{{version}}"]
 backends = ["asdf:mise-plugins/mise-ghcup"]
 description = "The Glorious Glasgow Haskell Compiler."
 test = [
-  "ghc --version",
-  "The Glorious Glasgow Haskell Compilation System, version {{version}}",
+    "ghc --version",
+    "The Glorious Glasgow Haskell Compilation System, version {{version}}",
 ]
 
 [tools.ghcup]
@@ -1783,8 +1783,8 @@ description = "Remote repository management made easy"
 
 [tools.ginkgo]
 backends = [
-  "go:github.com/onsi/ginkgo/v2/ginkgo",
-  "asdf:mise-plugins/mise-ginkgo",
+    "go:github.com/onsi/ginkgo/v2/ginkgo",
+    "asdf:mise-plugins/mise-ginkgo",
 ]
 description = "A Modern Testing Framework for Go"
 test = ["ginkgo version", "Ginkgo Version {{version}}"]
@@ -1816,8 +1816,8 @@ test = ["gh --version", "gh version {{version}}"]
 
 [tools.github-markdown-toc]
 backends = [
-  "aqua:ekalinin/github-markdown-toc",
-  "asdf:skyzyx/asdf-github-markdown-toc",
+    "aqua:ekalinin/github-markdown-toc",
+    "asdf:skyzyx/asdf-github-markdown-toc",
 ]
 description = "Easy TOC creation for GitHub README.md"
 test = ["gh-md-toc --version", "{{version}}"]
@@ -1848,14 +1848,14 @@ description = "From git log to SemVer in no time"
 
 [tools.glab]
 backends = [
-  { full = "gitlab:gitlab-org/cli[exe=glab]", platforms = [
-    "linux",
-    "macos",
-  ] },
-  { full = "gitlab:gitlab-org/cli[exe=glab]", platforms = [
-    "windows",
-  ] },
-  "asdf:mise-plugins/mise-glab",
+    { full = "gitlab:gitlab-org/cli[exe=glab]", platforms = [
+        "linux",
+        "macos",
+    ] },
+    { full = "gitlab:gitlab-org/cli[exe=glab]", platforms = [
+        "windows",
+    ] },
+    "asdf:mise-plugins/mise-glab",
 ]
 description = "gitlab cli"
 test = ["glab version", "glab {{version}}"]
@@ -1884,8 +1884,8 @@ description = "go lang (Builtin plugin)"
 
 [tools.go-containerregistry]
 backends = [
-  "aqua:google/go-containerregistry",
-  "asdf:dex4er/asdf-go-containerregistry",
+    "aqua:google/go-containerregistry",
+    "asdf:dex4er/asdf-go-containerregistry",
 ]
 description = "Go library and CLIs for working with container registries"
 
@@ -1900,15 +1900,15 @@ description = "simple jira command line client in Go"
 
 [tools.go-jsonnet]
 backends = [
-  "aqua:google/go-jsonnet",
-  "asdf:https://gitlab.com/craigfurman/asdf-go-jsonnet",
+    "aqua:google/go-jsonnet",
+    "asdf:https://gitlab.com/craigfurman/asdf-go-jsonnet",
 ]
 description = "This an implementation of Jsonnet in pure Go"
 
 [tools.go-junit-report]
 backends = [
-  "aqua:jstemmer/go-junit-report",
-  "asdf:jwillker/asdf-go-junit-report",
+    "aqua:jstemmer/go-junit-report",
+    "asdf:jwillker/asdf-go-junit-report",
 ]
 description = "Convert Go test output to JUnit XML"
 test = ["go-junit-report --version", "{{version}}"]
@@ -1925,8 +1925,8 @@ test = ["swagger version", "version: v{{version}}"]
 
 [tools.goconvey]
 backends = [
-  "go:github.com/smartystreets/goconvey",
-  "asdf:mise-plugins/mise-goconvey",
+    "go:github.com/smartystreets/goconvey",
+    "asdf:mise-plugins/mise-goconvey",
 ]
 description = "Go testing in the browser. Integrates with `go test`. Write behavioral tests in Go"
 
@@ -1941,9 +1941,9 @@ test = ["gofumpt --version", "v{{version}}"]
 
 [tools.gojq]
 backends = [
-  "aqua:itchyny/gojq",
-  "asdf:jimmidyson/asdf-gojq",
-  "go:github.com/itchyny/gojq/cmd/gojq",
+    "aqua:itchyny/gojq",
+    "asdf:jimmidyson/asdf-gojq",
+    "go:github.com/itchyny/gojq/cmd/gojq",
 ]
 description = "Pure Go implementation of jq"
 test = ["gojq --version", "gojq {{version}}"]
@@ -1959,19 +1959,19 @@ description = "Fast linters Runner for Go"
 
 [tools.golangci-lint-langserver]
 backends = [
-  "aqua:nametake/golangci-lint-langserver",
-  "go:github.com/nametake/golangci-lint-langserver",
+    "aqua:nametake/golangci-lint-langserver",
+    "go:github.com/nametake/golangci-lint-langserver",
 ]
 description = "golangci-lint language server"
 test = ["which golangci-lint-langserver", "golangci-lint-langserver"]
 
 [tools.golines]
 backends = [
-  { full = "aqua:segmentio/golines", platforms = [
-    "linux",
-    "macos",
-  ] },
-  "go:github.com/segmentio/golines",
+    { full = "aqua:segmentio/golines", platforms = [
+        "linux",
+        "macos",
+    ] },
+    "go:github.com/segmentio/golines",
 ]
 description = "A golang formatter that fixes long lines"
 test = ["golines --version", "golines v{{version}}"]
@@ -2022,15 +2022,15 @@ description = "A tool for gathering profiling and benchmarking information for G
 
 [tools.grails]
 backends = [
-  "asdf:mise-plugins/mise-grails",
-  "github:apache/grails-core[asset_pattern=apache-grails-{version}-bin.zip,bin_path=apache-grails-{version}-bin/bin]",
+    "asdf:mise-plugins/mise-grails",
+    "github:apache/grails-core[asset_pattern=apache-grails-{version}-bin.zip,bin_path=apache-grails-{version}-bin/bin]",
 ]
 description = "A powerful Groovy-based web application framework for the JVM built on top of Spring Boot"
 
 [tools.grain]
 backends = [
-  "github:grain-lang/grain[version_prefix=grain-v]",
-  "asdf:mise-plugins/mise-grain",
+    "github:grain-lang/grain[version_prefix=grain-v]",
+    "asdf:mise-plugins/mise-grain",
 ]
 description = "The Grain compiler toolchain and CLI. Home of the modern web staple"
 test = ["grain --version", "{{version}}"]
@@ -2041,8 +2041,8 @@ description = "The easiest way to access AWS"
 
 [tools.graphite]
 backends = [
-  "github:withgraphite/homebrew-tap[exe=gt]",
-  "npm:@withgraphite/graphite-cli",
+    "github:withgraphite/homebrew-tap[exe=gt]",
+    "npm:@withgraphite/graphite-cli",
 ]
 description = "Code review for the age of AI"
 test = ["gt --version", "{{version}}"]
@@ -2063,8 +2063,8 @@ description = "A flexible and extensible Java-like language for the JVM"
 
 [tools.grpc-health-probe]
 backends = [
-  "aqua:grpc-ecosystem/grpc-health-probe",
-  "asdf:zufardhiyaulhaq/asdf-grpc-health-probe",
+    "aqua:grpc-ecosystem/grpc-health-probe",
+    "asdf:zufardhiyaulhaq/asdf-grpc-health-probe",
 ]
 description = "A command-line tool to perform health-checks for gRPC applications in Kubernetes and elsewhere"
 os = ["linux", "macos"]
@@ -2163,8 +2163,8 @@ description = "CLI tool for linting and testing Helm charts"
 
 [tools.helm-diff]
 backends = [
-  "github:databus23/helm-diff[bin_path=diff/bin,rename_exe=helm-diff]",
-  "asdf:mise-plugins/mise-helm-diff",
+    "github:databus23/helm-diff[bin_path=diff/bin,rename_exe=helm-diff]",
+    "asdf:mise-plugins/mise-helm-diff",
 ]
 description = "A helm plugin that shows a diff explaining what a helm upgrade would change"
 test = ["helm-diff version", "{{version}}"]
@@ -2177,8 +2177,8 @@ description = "A tool for automatically generating markdown documentation for he
 backends = ["aqua:mrjosh/helm-ls"]
 description = "Helm-ls is a helm language server protocol LSP implementation"
 test = [
-  "helm_ls version",
-  "Helm-ls version: master",
+    "helm_ls version",
+    "Helm-ls version: master",
 ] # helm_ls version returns always "master" - https://github.com/mrjosh/helm-ls/issues/179
 
 [tools.helmfile]
@@ -2257,9 +2257,9 @@ description = "A command-line tool that makes git easier to use with GitHub"
 
 [tools.hugo]
 backends = [
-  "aqua:gohugoio/hugo",
-  "asdf:NeoHsu/asdf-hugo",
-  "asdf:nklmilojevic/asdf-hugo",
+    "aqua:gohugoio/hugo",
+    "asdf:NeoHsu/asdf-hugo",
+    "asdf:nklmilojevic/asdf-hugo",
 ]
 description = "The world’s fastest framework for building websites"
 
@@ -2269,9 +2269,9 @@ description = "The world’s fastest framework for building websites"
 
 [tools.hurl]
 backends = [
-  "aqua:Orange-OpenSource/hurl",
-  "asdf:raimon49/asdf-hurl",
-  "cargo:hurl",
+    "aqua:Orange-OpenSource/hurl",
+    "asdf:raimon49/asdf-hurl",
+    "cargo:hurl",
 ]
 description = "Hurl, run and test HTTP requests with plain text"
 
@@ -2286,16 +2286,16 @@ description = "The simple, fast, and scalable code generator that lives in your 
 
 [tools.hyperfine]
 backends = [
-  "aqua:sharkdp/hyperfine",
-  "asdf:volf52/asdf-hyperfine",
-  "cargo:hyperfine",
+    "aqua:sharkdp/hyperfine",
+    "asdf:volf52/asdf-hyperfine",
+    "cargo:hyperfine",
 ]
 description = "A command-line benchmarking tool"
 
 [tools.iam-policy-json-to-terraform]
 backends = [
-  "aqua:flosell/iam-policy-json-to-terraform",
-  "asdf:carlduevel/asdf-iam-policy-json-to-terraform",
+    "aqua:flosell/iam-policy-json-to-terraform",
+    "asdf:carlduevel/asdf-iam-policy-json-to-terraform",
 ]
 description = "Small tool to convert an IAM Policy in JSON format into a Terraform aws_iam_policy_document"
 test = ["iam-policy-json-to-terraform --version", "{{version}}"]
@@ -2399,9 +2399,9 @@ test = ["jjui --version", "{{version}}"]
 
 [tools.jless]
 backends = [
-  "aqua:PaulJuliusMartinez/jless",
-  "asdf:jc00ke/asdf-jless",
-  "cargo:jless",
+    "aqua:PaulJuliusMartinez/jless",
+    "asdf:jc00ke/asdf-jless",
+    "cargo:jless",
 ]
 description = "jless is a command-line JSON viewer designed for reading, exploring, and searching through JSON data"
 
@@ -2491,8 +2491,8 @@ test = ["k3d --version", "k3d version v{{version}}"]
 
 [tools.k3kcli]
 backends = [
-  "github:rancher/k3k[bin=k3k,version_prefix=v,asset_pattern=k3kcli-{darwin_os}-{amd64_arch}]",
-  "asdf:xanmanning/asdf-k3kcli",
+    "github:rancher/k3k[bin=k3k,version_prefix=v,asset_pattern=k3kcli-{darwin_os}-{amd64_arch}]",
+    "asdf:xanmanning/asdf-k3kcli",
 ]
 description = "K3k, Kubernetes in Kubernetes, is a tool that empowers you to create and manage isolated K3s clusters within your existing Kubernetes environment"
 test = ["k3k --version", "k3kcli version v{{version}}"]
@@ -2602,8 +2602,8 @@ description = "Kotlin is a modern but already mature programming language design
 [tools.kpack]
 aliases = ["kp"]
 backends = [
-  "github:vmware-tanzu/kpack-cli[exe=kp]",
-  "asdf:asdf-community/asdf-kpack-cli",
+    "github:vmware-tanzu/kpack-cli[exe=kp]",
+    "asdf:asdf-community/asdf-kpack-cli",
 ]
 description = "A command line interface for interacting with kpack"
 test = ["kp version", "{{version}}"]
@@ -2624,8 +2624,8 @@ description = "Find and install kubectl plugins"
 
 [tools.kscript]
 backends = [
-  "github:kscripting/kscript[bin_path=bin]",
-  "asdf:edgelevel/asdf-kscript",
+    "github:kscripting/kscript[bin_path=bin]",
+    "asdf:edgelevel/asdf-kscript",
 ]
 description = "Scripting enhancements for Kotlin"
 
@@ -2649,15 +2649,15 @@ description = "Generators for kube-like API types"
 
 [tools.kube-controller-tools]
 backends = [
-  "github:kubernetes-sigs/controller-tools[exe=controller-gen]",
-  "asdf:jimmidyson/asdf-kube-controller-tools",
+    "github:kubernetes-sigs/controller-tools[exe=controller-gen]",
+    "asdf:jimmidyson/asdf-kube-controller-tools",
 ]
 description = "Tools to use with the controller-runtime libraries"
 
 [tools.kube-credential-cache]
 backends = [
-  "aqua:ryodocx/kube-credential-cache",
-  "asdf:ryodocx/kube-credential-cache",
+    "aqua:ryodocx/kube-credential-cache",
+    "asdf:ryodocx/kube-credential-cache",
 ]
 description = "Accelerator cache for kubernetes access"
 
@@ -2671,8 +2671,8 @@ description = "Kubernetes object analysis with recommendations for improved reli
 
 [tools.kubebuilder]
 backends = [
-  "aqua:kubernetes-sigs/kubebuilder",
-  "asdf:virtualstaticvoid/asdf-kubebuilder",
+    "aqua:kubernetes-sigs/kubebuilder",
+    "asdf:virtualstaticvoid/asdf-kubebuilder",
 ]
 description = "Kubebuilder - SDK for building Kubernetes APIs using CRDs"
 
@@ -2692,16 +2692,16 @@ description = "A FAST Kubernetes manifests validator, with support for Custom Re
 
 [tools.kubectl]
 backends = [
-  "aqua:kubernetes/kubernetes/kubectl",
-  "asdf:asdf-community/asdf-kubectl",
+    "aqua:kubernetes/kubernetes/kubectl",
+    "asdf:asdf-community/asdf-kubectl",
 ]
 description = "kubectl cli"
 test = ["kubectl version --client", "Client Version: v{{version}}"]
 
 [tools.kubectl-convert]
 backends = [
-  "aqua:kubernetes/kubernetes/kubectl-convert",
-  "asdf:iul1an/asdf-kubectl-convert",
+    "aqua:kubernetes/kubernetes/kubectl-convert",
+    "asdf:iul1an/asdf-kubectl-convert",
 ]
 description = "A plugin for Kubernetes command-line tool kubectl, which allows you to convert manifests between different API versions. This can be particularly helpful to migrate manifests to a non-deprecated api version with newer Kubernetes release"
 
@@ -2720,8 +2720,8 @@ test = ["kubectl-kuttl --version", "kubectl-kuttl version {{version}}"]
 [tools.kubectl-rolesum]
 aliases = ["kubectl-bindrole"]
 backends = [
-  "aqua:Ladicle/kubectl-rolesum",
-  "asdf:looztra/asdf-kubectl-bindrole",
+    "aqua:Ladicle/kubectl-rolesum",
+    "asdf:looztra/asdf-kubectl-bindrole",
 ]
 description = "Summarize Kubernetes RBAC roles for the specified subjects"
 
@@ -2733,8 +2733,8 @@ description = "Faster way to switch between clusters and namespaces in kubectl"
 backends = ["aqua:kubernetes-retired/kubefed", "asdf:kvokka/asdf-kubefedctl"]
 description = "kubefedctl controls a Kubernetes Cluster Federation"
 test = [
-  "kubefedctl version",
-  "kubefedctl version:",
+    "kubefedctl version",
+    "kubefedctl version:",
 ] # may not have version in output
 
 [tools.kubefirst]
@@ -2755,8 +2755,8 @@ description = "Faster way to switch between clusters and namespaces in kubectl"
 
 [tools.kubent]
 backends = [
-  "aqua:doitintl/kube-no-trouble",
-  "asdf:virtualstaticvoid/asdf-kubent",
+    "aqua:doitintl/kube-no-trouble",
+    "asdf:virtualstaticvoid/asdf-kubent",
 ]
 description = "Easily check your clusters for use of deprecated APIs"
 test = ["kubent --version 2>&1", "version {{version}}"]
@@ -2772,8 +2772,8 @@ description = "Kubergrunt is a standalone go binary with a collection of command
 
 [tools.kubeseal]
 backends = [
-  "aqua:bitnami-labs/sealed-secrets",
-  "asdf:stefansedich/asdf-kubeseal",
+    "aqua:bitnami-labs/sealed-secrets",
+    "asdf:stefansedich/asdf-kubeseal",
 ]
 description = "A Kubernetes controller and tool for one-way encrypted Secrets"
 test = ["kubeseal --version", "kubeseal version: {{version}}"]
@@ -2824,8 +2824,8 @@ description = "Kubernetes Workstation Tools CLI"
 
 [tools.kyverno]
 backends = [
-  "aqua:kyverno/kyverno",
-  "asdf:https://github.com/hobaen/asdf-kyverno-cli.git",
+    "aqua:kyverno/kyverno",
+    "asdf:https://github.com/hobaen/asdf-kyverno-cli.git",
 ]
 description = "Cloud Native Policy Management"
 
@@ -2862,10 +2862,10 @@ description = "Lean is a theorem prover and programming language that enables co
 
 [tools.lefthook]
 backends = [
-  "aqua:evilmartians/lefthook",
-  "npm:lefthook",
-  "asdf:jtzero/asdf-lefthook",
-  "go:github.com/evilmartians/lefthook",
+    "aqua:evilmartians/lefthook",
+    "npm:lefthook",
+    "asdf:jtzero/asdf-lefthook",
+    "go:github.com/evilmartians/lefthook",
 ]
 description = "Fast and powerful Git hooks manager for any type of projects"
 test = ["lefthook version", "{{version}}"]
@@ -2884,8 +2884,8 @@ description = "Lisp Flavoured Erlang (LFE)"
 
 [tools.libsql-server]
 backends = [
-  "github:tursodatabase/libsql[version_prefix=libsql-server-v]",
-  "asdf:jonasb/asdf-libsql-server",
+    "github:tursodatabase/libsql[version_prefix=libsql-server-v]",
+    "asdf:jonasb/asdf-libsql-server",
 ]
 description = "server mode of libSQL, which is a fork of SQLite that is both Open Source, and Open Contributions"
 os = ["linux", "macos"]
@@ -2946,9 +2946,9 @@ description = "LogCLI is a command-line tool for querying and exploring logs in 
 
 [tools.ls-lint]
 backends = [
-  "aqua:loeffel-io/ls-lint",
-  "npm:@ls-lint/ls-lint",
-  "asdf:Ameausoone/asdf-ls-lint",
+    "aqua:loeffel-io/ls-lint",
+    "npm:@ls-lint/ls-lint",
+    "asdf:Ameausoone/asdf-ls-lint",
 ]
 description = "An extremely fast directory and filename linter - Bring some structure to your project filesystem"
 test = ["ls-lint --version", "ls-lint v{{version}}"]
@@ -2963,8 +2963,8 @@ description = "Lua language"
 
 [tools.lua-language-server]
 backends = [
-  "aqua:LuaLS/lua-language-server",
-  "asdf:bellini666/asdf-lua-language-server",
+    "aqua:LuaLS/lua-language-server",
+    "asdf:bellini666/asdf-lua-language-server",
 ]
 description = "A language server that offers Lua language support - programmed in Lua"
 
@@ -3010,8 +3010,8 @@ description = "Sync your markdown files with Confluence pages"
 
 [tools.markdownlint-cli2]
 backends = [
-  "npm:markdownlint-cli2",
-  "asdf:paulo-ferraz-oliveira/asdf-markdownlint-cli2",
+    "npm:markdownlint-cli2",
+    "asdf:paulo-ferraz-oliveira/asdf-markdownlint-cli2",
 ]
 description = "A fast, flexible, configuration-based command-line interface for linting Markdown/CommonMark files with the markdownlint library"
 test = ["markdownlint-cli2 --version", "markdownlint-cli2 v{{version}}"]
@@ -3032,9 +3032,9 @@ test = ["mask --version", "mask {{version}}"]
 
 [tools.maven]
 backends = [
-  "aqua:apache/maven",
-  "asdf:mise-plugins/mise-maven",
-  "vfox:mise-plugins/vfox-maven",
+    "aqua:apache/maven",
+    "asdf:mise-plugins/mise-maven",
+    "vfox:mise-plugins/vfox-maven",
 ]
 description = "Apache Maven core"
 test = ["mvn --version", "Apache Maven {{version}}"]
@@ -3045,18 +3045,18 @@ description = "Unix like utilities for object store (minio)"
 
 [tools.mdbook]
 backends = [
-  "aqua:rust-lang/mdBook",
-  "asdf:cipherstash/asdf-mdbook",
-  "cargo:mdbook",
+    "aqua:rust-lang/mdBook",
+    "asdf:cipherstash/asdf-mdbook",
+    "cargo:mdbook",
 ]
 description = "Create book from markdown files. Like Gitbook but implemented in Rust"
 test = ["mdbook --version", "mdbook v{{version}}"]
 
 [tools.mdbook-linkcheck]
 backends = [
-  "github:Michael-F-Bryan/mdbook-linkcheck[bin=mdbook-linkcheck]",
-  "cargo:mdbook-linkcheck",
-  "asdf:mise-plugins/mise-mdbook-linkcheck",
+    "github:Michael-F-Bryan/mdbook-linkcheck[bin=mdbook-linkcheck]",
+    "cargo:mdbook-linkcheck",
+    "asdf:mise-plugins/mise-mdbook-linkcheck",
 ]
 description = "A backend for `mdbook` which will check your links for you"
 test = ["mdbook-linkcheck --version", "mdbook-linkcheck {{version}}"]
@@ -3090,8 +3090,8 @@ test = ["micromamba --version", "{{ version | split(pat='-') | first }}"]
 
 [tools.micronaut]
 backends = [
-  "github:micronaut-projects/micronaut-starter[exe=mn]",
-  "asdf:mise-plugins/mise-micronaut",
+    "github:micronaut-projects/micronaut-starter[exe=mn]",
+    "asdf:mise-plugins/mise-micronaut",
 ]
 description = "A modern, JVM-based, full-stack framework for building modular, easily testable microservice and serverless applications"
 
@@ -3101,8 +3101,8 @@ description = "Mill is a build tool for Java, Scala and Kotlin: 3-6x faster than
 
 [tools.mimirtool]
 backends = [
-  "aqua:grafana/mimir/mimirtool",
-  "asdf:asdf-community/asdf-mimirtool",
+    "aqua:grafana/mimir/mimirtool",
+    "asdf:asdf-community/asdf-mimirtool",
 ]
 description = "Mimirtool is a command-line tool that operators and tenants can use to execute a number of common tasks that involve Grafana Mimir or Grafana Cloud Metrics"
 os = ["linux", "macos"]
@@ -3296,8 +3296,8 @@ test = ["numbat --version", "numbat {{version}}"]
 
 [tools.oapi-codegen]
 backends = [
-  "go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen",
-  "asdf:dylanrayboss/asdf-oapi-codegen",
+    "go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen",
+    "asdf:dylanrayboss/asdf-oapi-codegen",
 ]
 description = "oapi-codegen is a command-line tool and library to convert OpenAPI specifications to Go code, be it server-side implementations, API clients, or simply HTTP models"
 
@@ -3334,8 +3334,8 @@ description = "A fast, and iterative CLI tool for container-based application de
 [tools.okta-aws]
 aliases = ["okta-aws-cli"]
 backends = [
-  "aqua:okta/okta-aws-cli",
-  "asdf:bennythejudge/asdf-plugin-okta-aws-cli",
+    "aqua:okta/okta-aws-cli",
+    "asdf:bennythejudge/asdf-plugin-okta-aws-cli",
 ]
 description = "A CLI for having Okta as the IdP for AWS CLI operations"
 
@@ -3367,8 +3367,8 @@ description = "Open Policy Agent (OPA) is an open source, general-purpose policy
 
 [tools.opam]
 backends = [
-  "github:ocaml/opam[asset_pattern=opam-*-{gnu_arch}-{os}]",
-  "asdf:asdf-community/asdf-opam",
+    "github:ocaml/opam[asset_pattern=opam-*-{gnu_arch}-{os}]",
+    "asdf:asdf-community/asdf-opam",
 ]
 description = "(ocaml) opam is a source-based package manager. It supports multiple simultaneous compiler installations, flexible package constraints, and a Git-friendly development workflow"
 test = ["opam --version", "{{version}}"]
@@ -3378,7 +3378,7 @@ backends = ["github:openbao/openbao[exe=bao]"]
 description = "OpenBao exists to provide a software solution to manage, store, and distribute sensitive data including secrets, certificates, and keys"
 
 [tools.opencode]
-backends = ["aqua:sst/opencode"]
+backends = ["aqua:anomalyco/opencode"]
 description = "AI coding agent, built for the terminal"
 test = ["opencode --version", "{{version}}"]
 
@@ -3401,8 +3401,8 @@ description = "Open source distributed and RESTful search engine"
 
 [tools.opensearch-cli]
 backends = [
-  "github:opensearch-project/opensearch-cli",
-  "asdf:mise-plugins/mise-opensearch-cli",
+    "github:opensearch-project/opensearch-cli",
+    "asdf:mise-plugins/mise-opensearch-cli",
 ]
 description = "A full-featured command line interface (CLI) for OpenSearch"
 test = ["opensearch-cli --version", "opensearch-cli version {{version}}"]
@@ -3419,15 +3419,15 @@ test = ["tofu --version", "OpenTofu v{{version}}"]
 
 [tools.operator-sdk]
 backends = [
-  "aqua:operator-framework/operator-sdk",
-  "asdf:Medium/asdf-operator-sdk",
+    "aqua:operator-framework/operator-sdk",
+    "asdf:Medium/asdf-operator-sdk",
 ]
 description = "SDK for building Kubernetes applications. Provides high level APIs, useful abstractions, and project scaffolding"
 
 [tools.opsgenie-lamp]
 backends = [
-  "github:opsgenie/opsgenie-lamp[bin=opsgenie-lamp]",
-  "asdf:mise-plugins/mise-opsgenie-lamp",
+    "github:opsgenie/opsgenie-lamp[bin=opsgenie-lamp]",
+    "asdf:mise-plugins/mise-opsgenie-lamp",
 ]
 description = "OpsGenie Lamp with Go SDK"
 test = ["opsgenie-lamp --version", "lamp version "] # 3.1.4 reports 3.2.0
@@ -3470,8 +3470,8 @@ description = "This is the linter for oxc."
 backends = ["aqua:pachyderm/pachyderm", "asdf:abatilo/asdf-pachctl"]
 description = "Data-Centric Pipelines and Data Versioning"
 test = [
-  "pachctl help",
-  "",
+    "pachctl help",
+    "",
 ] # version subcommand fails with invalid configuration
 
 [tools.packer]
@@ -3546,8 +3546,8 @@ test = ["pitchfork --version", "pitchfork {{version}}"]
 
 [tools.pivnet]
 backends = [
-  "aqua:pivotal-cf/pivnet-cli",
-  "asdf:mise-plugins/tanzu-plug-in-for-asdf",
+    "aqua:pivotal-cf/pivnet-cli",
+    "asdf:mise-plugins/tanzu-plug-in-for-asdf",
 ]
 description = "CLI to interact with Tanzu Network API V2 interface"
 test = ["pivnet version", "{{version}}"]
@@ -3578,8 +3578,8 @@ test = ["pnpm --version", "{{version}}"]
 
 [tools.podman]
 backends = [
-  "github:containers/podman[matching=podman-remote]",
-  "asdf:tvon/asdf-podman",
+    "github:containers/podman[matching=podman-remote]",
+    "asdf:tvon/asdf-podman",
 ]
 description = "Podman: A tool for managing OCI containers and pods"
 
@@ -3615,17 +3615,17 @@ description = "Powerpipe: Dashboards for DevOps. Visualize cloud configurations.
 [tools.powershell-core]
 aliases = ["powershell"]
 backends = [
-  "aqua:PowerShell/PowerShell",
-  "asdf:daveneeley/asdf-powershell-core",
+    "aqua:PowerShell/PowerShell",
+    "asdf:daveneeley/asdf-powershell-core",
 ]
 description = "PowerShell for every system"
 test = ["pwsh --version", "PowerShell {{version}}"]
 
 [tools.pre-commit]
 backends = [
-  "aqua:pre-commit/pre-commit",
-  "asdf:jonathanmorley/asdf-pre-commit",
-  "pipx:pre-commit",
+    "aqua:pre-commit/pre-commit",
+    "asdf:jonathanmorley/asdf-pre-commit",
+    "pipx:pre-commit",
 ]
 description = "A framework for managing and maintaining multi-language pre-commit hooks"
 test = ["pre-commit --version", "pre-commit {{version}}"]
@@ -3652,29 +3652,29 @@ test = ["promtool --version", "promtool, version {{version}}"]
 [tools.protoc]
 aliases = ["protobuf"]
 backends = [
-  "aqua:protocolbuffers/protobuf/protoc",
-  "asdf:paxosglobal/asdf-protoc",
+    "aqua:protocolbuffers/protobuf/protoc",
+    "asdf:paxosglobal/asdf-protoc",
 ]
 description = "Protocol Buffers Compiler - Google's data interchange format"
 
 [tools.protoc-gen-connect-go]
 backends = [
-  "go:connectrpc.com/connect/cmd/protoc-gen-connect-go",
-  "asdf:dylanrayboss/asdf-protoc-gen-connect-go",
+    "go:connectrpc.com/connect/cmd/protoc-gen-connect-go",
+    "asdf:dylanrayboss/asdf-protoc-gen-connect-go",
 ]
 description = "The Go implementation of Connect: Protobuf RPC that works"
 
 [tools.protoc-gen-go]
 backends = [
-  "aqua:protocolbuffers/protobuf-go/protoc-gen-go",
-  "asdf:pbr0ck3r/asdf-protoc-gen-go",
+    "aqua:protocolbuffers/protobuf-go/protoc-gen-go",
+    "asdf:pbr0ck3r/asdf-protoc-gen-go",
 ]
 description = "protoc-gen-go is a plugin for the Google protocol buffer compiler to generate Go code"
 
 [tools.protoc-gen-go-grpc]
 backends = [
-  "aqua:grpc/grpc-go/protoc-gen-go-grpc",
-  "asdf:pbr0ck3r/asdf-protoc-gen-go-grpc",
+    "aqua:grpc/grpc-go/protoc-gen-go-grpc",
+    "asdf:pbr0ck3r/asdf-protoc-gen-go-grpc",
 ]
 description = "This tool generates Go language bindings of services in protobuf definition files for gRPC"
 test = ["protoc-gen-go-grpc --version", "protoc-gen-go-grpc {{version}}"]
@@ -3685,15 +3685,15 @@ description = "A JavaScript implementation of gRPC for browser clients"
 
 [tools.protoc-gen-js]
 backends = [
-  "github:protocolbuffers/protobuf-javascript[exe=protoc-gen-js]",
-  "asdf:pbr0ck3r/asdf-protoc-gen-js",
+    "github:protocolbuffers/protobuf-javascript[exe=protoc-gen-js]",
+    "asdf:pbr0ck3r/asdf-protoc-gen-js",
 ]
 description = "This directory contains the JavaScript Protocol Buffers runtime library"
 
 [tools.protoc-gen-validate]
 backends = [
-  "aqua:bufbuild/protoc-gen-validate",
-  "go:github.com/envoyproxy/protoc-gen-validate",
+    "aqua:bufbuild/protoc-gen-validate",
+    "go:github.com/envoyproxy/protoc-gen-validate",
 ]
 description = "Protocol Buffer Validation - Being replaced by github.com/bufbuild/protovalidate"
 test = ["which protoc-gen-validate", "protoc-gen-validate"]
@@ -3725,8 +3725,8 @@ description = "Erlang backend for the PureScript compiler"
 
 [tools.purescript]
 backends = [
-  "github:purescript/purescript[exe=purs]",
-  "asdf:jrrom/asdf-purescript",
+    "github:purescript/purescript[exe=purs]",
+    "asdf:jrrom/asdf-purescript",
 ]
 description = "A strongly-typed language that compiles to JavaScript"
 
@@ -3857,9 +3857,9 @@ description = "Enrich `go test` outputs with text decorations"
 [tools.ripgrep]
 aliases = ["rg"]
 backends = [
-  "aqua:BurntSushi/ripgrep",
-  "asdf:https://gitlab.com/wt0f/asdf-ripgrep",
-  "cargo:ripgrep",
+    "aqua:BurntSushi/ripgrep",
+    "asdf:https://gitlab.com/wt0f/asdf-ripgrep",
+    "cargo:ripgrep",
 ]
 description = "ripgrep recursively searches directories for a regex pattern while respecting your gitignore"
 test = ["rg --version", "ripgrep {{version}}"]
@@ -3871,8 +3871,8 @@ test = ["rga --version", "ripgrep-all {{version}}"]
 
 [tools.ripsecrets]
 backends = [
-  "aqua:sirwart/ripsecrets",
-  "asdf:https://github.com/boris-smidt-klarrio/asdf-ripsecrets",
+    "aqua:sirwart/ripsecrets",
+    "asdf:https://github.com/boris-smidt-klarrio/asdf-ripsecrets",
 ]
 description = "A command-line tool to prevent committing secret keys into your source code"
 test = ["ripsecrets --version", "ripsecrets {{version}}"]
@@ -3956,8 +3956,8 @@ description = "Scala CLI is a command-line tool to interact with the Scala langu
 [tools.scaleway]
 aliases = ["scaleway-cli"]
 backends = [
-  "aqua:scaleway/scaleway-cli",
-  "asdf:albarralnunez/asdf-plugin-scaleway-cli",
+    "aqua:scaleway/scaleway-cli",
+    "asdf:albarralnunez/asdf-plugin-scaleway-cli",
 ]
 description = "Command Line Interface for Scaleway"
 
@@ -3971,9 +3971,9 @@ description = "The Cairo package manager"
 
 [tools.sccache]
 backends = [
-  "aqua:mozilla/sccache",
-  "asdf:emersonmx/asdf-sccache",
-  "cargo:sccache",
+    "aqua:mozilla/sccache",
+    "asdf:emersonmx/asdf-sccache",
+    "cargo:sccache",
 ]
 description = "sccache is ccache with cloud storage"
 test = ["sccache --version", "sccache {{version}}"]
@@ -4022,9 +4022,9 @@ description = "Semantic Tagging Script for Git"
 
 [tools.semver]
 backends = [
-  # "aqua:fsaintjacques/semver-tool", # see https://github.com/jdx/mise/discussions/5833
-  "vfox:mise-plugins/vfox-semver",
-  "asdf:mathew-fleisch/asdf-semver",
+    # "aqua:fsaintjacques/semver-tool", # see https://github.com/jdx/mise/discussions/5833
+    "vfox:mise-plugins/vfox-semver",
+    "asdf:mathew-fleisch/asdf-semver",
 ]
 description = "semver bash implementation"
 test = ["semver --version", "semver: {{version}}"]
@@ -4045,8 +4045,8 @@ description = "Serverless Framework"
 
 [tools.setup-envtest]
 backends = [
-  "aqua:kubernetes-sigs/controller-runtime/setup-envtest",
-  "asdf:mise-plugins/mise-setup-envtest",
+    "aqua:kubernetes-sigs/controller-runtime/setup-envtest",
+    "asdf:mise-plugins/mise-setup-envtest",
 ]
 description = "This is a small tool that manages binaries for envtest. It can be used to download new binaries, list currently installed and available ones, and clean up versions"
 
@@ -4066,9 +4066,9 @@ description = "A full-featured BDD unit testing framework for bash, ksh, zsh, da
 
 [tools.shfmt]
 backends = [
-  "aqua:mvdan/sh",
-  "asdf:luizm/asdf-shfmt",
-  "go:mvdan.cc/sh/v3/cmd/shfmt",
+    "aqua:mvdan/sh",
+    "asdf:luizm/asdf-shfmt",
+    "go:mvdan.cc/sh/v3/cmd/shfmt",
 ]
 description = "A shell parser, formatter, and interpreter with bash support; includes shfmt"
 os = ["linux", "macos"]
@@ -4089,8 +4089,8 @@ description = "A tool to sync images from one container registry to another"
 
 [tools.skaffold]
 backends = [
-  "aqua:GoogleContainerTools/skaffold",
-  "asdf:nklmilojevic/asdf-skaffold",
+    "aqua:GoogleContainerTools/skaffold",
+    "asdf:nklmilojevic/asdf-skaffold",
 ]
 description = "Easy and Repeatable Kubernetes Development"
 
@@ -4102,8 +4102,8 @@ description = "A personal key value store"
 backends = ["aqua:skeema/skeema"]
 description = "Declarative pure-SQL schema management for MySQL and MariaDB (Community Edition)"
 test = [
-  "skeema version | awk -F, '{print $1}'",
-  "skeema version {{version}}-community",
+    "skeema version | awk -F, '{print $1}'",
+    "skeema version {{version}}-community",
 ]
 
 [tools.sloth]
@@ -4112,9 +4112,9 @@ description = "Easy and simple Prometheus SLO (service level objectives) generat
 
 [tools.slsa-verifier]
 backends = [
-  "aqua:slsa-framework/slsa-verifier",
-  "github:slsa-framework/slsa-verifier",
-  "go:github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier",
+    "aqua:slsa-framework/slsa-verifier",
+    "github:slsa-framework/slsa-verifier",
+    "go:github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier",
 ]
 description = "Verify provenance from SLSA compliant builders"
 test = ["slsa-verifier version", "{{version}}"]
@@ -4159,22 +4159,22 @@ description = "Snyk CLI scans and monitors your projects for security vulnerabil
 
 [tools.soft-serve]
 backends = [
-  "github:charmbracelet/soft-serve[exe=soft]",
-  "asdf:chessmango/asdf-soft-serve",
+    "github:charmbracelet/soft-serve[exe=soft]",
+    "asdf:chessmango/asdf-soft-serve",
 ]
 description = "The mighty, self-hostable Git server for the command line"
 
 [tools.solidity]
 backends = [
-  "github:ethereum/solidity[exe=solc]",
-  "asdf:diegodorado/asdf-solidity",
+    "github:ethereum/solidity[exe=solc]",
+    "asdf:diegodorado/asdf-solidity",
 ]
 description = "Solidity, the Smart Contract Programming Language"
 
 [tools.sonar-scanner-cli]
 backends = [
-  "aqua:SonarSource/sonar-scanner-cli",
-  "asdf:virtualstaticvoid/asdf-sonarscanner",
+    "aqua:SonarSource/sonar-scanner-cli",
+    "asdf:virtualstaticvoid/asdf-sonarscanner",
 ]
 description = "Scanner CLI for SonarQube (Server, Cloud)"
 test = ["sonar-scanner --version", "SonarScanner CLI {{version}}"]
@@ -4197,8 +4197,8 @@ description = "Provides `soracom` command, a command line tool for calling SORAC
 
 [tools.sourcery]
 backends = [
-  "github:krzysztofzablocki/Sourcery[exe=bin/sourcery]",
-  "asdf:mise-plugins/mise-sourcery",
+    "github:krzysztofzablocki/Sourcery[exe=bin/sourcery]",
+    "asdf:mise-plugins/mise-sourcery",
 ]
 description = "Meta-programming for Swift, stop writing boilerplate code"
 
@@ -4267,8 +4267,8 @@ test = ["stack --version", "Version {{version}}"]
 
 [tools.starboard]
 backends = [
-  "aqua:aquasecurity/starboard",
-  "asdf:zufardhiyaulhaq/asdf-starboard",
+    "aqua:aquasecurity/starboard",
+    "asdf:zufardhiyaulhaq/asdf-starboard",
 ]
 description = "Kubernetes-native security toolkit"
 
@@ -4282,18 +4282,18 @@ description = "All-in-one tool for interacting with Starknet smart contracts, se
 
 [tools.starship]
 backends = [
-  "aqua:starship/starship",
-  "asdf:gr1m0h/asdf-starship",
-  "cargo:starship",
+    "aqua:starship/starship",
+    "asdf:gr1m0h/asdf-starship",
+    "cargo:starship",
 ]
 description = "The minimal, blazing-fast, and infinitely customizable prompt for any shell"
 test = ["starship --version", "starship {{version}}"]
 
 [tools.staticcheck]
 backends = [
-  "aqua:dominikh/go-tools/staticcheck",
-  "asdf:pbr0ck3r/asdf-staticcheck",
-  "go:honnef.co/go/tools/cmd/staticcheck",
+    "aqua:dominikh/go-tools/staticcheck",
+    "asdf:pbr0ck3r/asdf-staticcheck",
+    "go:honnef.co/go/tools/cmd/staticcheck",
 ]
 description = "Staticcheck - The advanced Go linter"
 test = ["staticcheck --version", "staticcheck {{version}}"]
@@ -4318,9 +4318,9 @@ description = "A command-line tool for Stripe"
 
 [tools.stylua]
 backends = [
-  "aqua:JohnnyMorganz/StyLua",
-  "asdf:jc00ke/asdf-stylua",
-  "cargo:stylua",
+    "aqua:JohnnyMorganz/StyLua",
+    "asdf:jc00ke/asdf-stylua",
+    "cargo:stylua",
 ]
 description = "A Lua code formatter"
 test = ["stylua --version", "stylua {{version}}"]
@@ -4367,16 +4367,16 @@ description = "A command-line tool to get all used Swift Package dependencies"
 
 [tools.swiftformat]
 backends = [
-  "github:nicklockwood/SwiftFormat[rename_exe=swiftformat]",
-  "asdf:mise-plugins/mise-swiftformat",
+    "github:nicklockwood/SwiftFormat[rename_exe=swiftformat]",
+    "asdf:mise-plugins/mise-swiftformat",
 ]
 description = "A command-line tool and Xcode Extension for formatting Swift code"
 test = ["swiftformat --version", "{{version}}"]
 
 [tools.swiftgen]
 backends = [
-  "github:SwiftGen/SwiftGen[exe=swiftgen/bin/swiftgen]",
-  "asdf:mise-plugins/mise-swiftgen",
+    "github:SwiftGen/SwiftGen[exe=swiftgen/bin/swiftgen]",
+    "asdf:mise-plugins/mise-swiftgen",
 ]
 description = "The Swift code generator for your assets, storyboards, Localizable.strings, … — Get rid of all String-based APIs!"
 
@@ -4451,8 +4451,8 @@ description = "Teleport provides connectivity, authentication, access controls a
 
 [tools.telepresence]
 backends = [
-  "aqua:telepresenceio/telepresence",
-  "asdf:pirackr/asdf-telepresence",
+    "aqua:telepresenceio/telepresence",
+    "asdf:pirackr/asdf-telepresence",
 ]
 description = "Local development against a remote Kubernetes or OpenShift cluster"
 
@@ -4475,9 +4475,9 @@ description = "Terraform destroy without configuration files"
 
 [tools.terraform]
 backends = [
-  "aqua:hashicorp/terraform",
-  "asdf:mise-plugins/mise-hashicorp",
-  "vfox:mise-plugins/vfox-terraform",
+    "aqua:hashicorp/terraform",
+    "asdf:mise-plugins/mise-hashicorp",
+    "vfox:mise-plugins/vfox-terraform",
 ]
 description = "Terraform enables you to safely and predictably create, change, and improve infrastructure. It is an open source tool that codifies APIs into declarative configuration files that can be shared amongst team members, treated as code, edited, reviewed, and versioned"
 idiomatic_files = [".terraform-version"]
@@ -4485,8 +4485,8 @@ test = ["terraform version", "Terraform v{{version}}"]
 
 [tools.terraform-docs]
 backends = [
-  "aqua:terraform-docs/terraform-docs",
-  "asdf:looztra/asdf-terraform-docs",
+    "aqua:terraform-docs/terraform-docs",
+    "asdf:looztra/asdf-terraform-docs",
 ]
 description = "Generate documentation from Terraform modules in various output formats"
 
@@ -4496,22 +4496,22 @@ description = "Terraform Language Server"
 
 [tools.terraform-lsp]
 backends = [
-  "aqua:juliosueiras/terraform-lsp",
-  "asdf:bartlomiejdanek/asdf-terraform-lsp",
+    "aqua:juliosueiras/terraform-lsp",
+    "asdf:bartlomiejdanek/asdf-terraform-lsp",
 ]
 description = "Language Server Protocol for Terraform"
 
 [tools.terraform-validator]
 backends = [
-  "aqua:thazelart/terraform-validator",
-  "asdf:looztra/asdf-terraform-validator",
+    "aqua:thazelart/terraform-validator",
+    "asdf:looztra/asdf-terraform-validator",
 ]
 description = "A norms and conventions validator for Terraform"
 
 [tools.terraformer]
 backends = [
-  "aqua:GoogleCloudPlatform/terraformer",
-  "asdf:gr1m0h/asdf-terraformer",
+    "aqua:GoogleCloudPlatform/terraformer",
+    "asdf:gr1m0h/asdf-terraformer",
 ]
 description = "CLI tool to generate terraform files from existing infrastructure (reverse Terraform). Infrastructure to Code"
 
@@ -4565,15 +4565,15 @@ description = "Security scanner for your Terraform code"
 
 [tools.tfstate-lookup]
 backends = [
-  "aqua:fujiwara/tfstate-lookup",
-  "asdf:carnei-ro/asdf-tfstate-lookup",
+    "aqua:fujiwara/tfstate-lookup",
+    "asdf:carnei-ro/asdf-tfstate-lookup",
 ]
 description = "Lookup resource attributes in tfstate"
 
 [tools.tfswitch]
 backends = [
-  "github:warrensbox/terraform-switcher[exe=tfswitch]",
-  "asdf:iul1an/asdf-tfswitch",
+    "github:warrensbox/terraform-switcher[exe=tfswitch]",
+    "asdf:iul1an/asdf-tfswitch",
 ]
 description = "A command line tool to switch between different versions of terraform (install with homebrew and more)"
 
@@ -4601,10 +4601,10 @@ description = "rtx-tiny is mostly a fake plugin to check mise in CI"
 backends = ["aqua:Myriad-Dreamin/tinymist", "cargo:tinymist"]
 description = "Tinymist is an integrated language service for Typst."
 test = [
-  "tinymist --version",
-  "",
-  # 0.14.4 doesn't print version
-  # "Build Git Describe:  v{{version}}"
+    "tinymist --version",
+    "",
+    # 0.14.4 doesn't print version
+    # "Build Git Describe:  v{{version}}"
 ]
 
 [tools.tinytex]
@@ -4626,10 +4626,10 @@ description = "tmux is a terminal multiplexer. It lets you switch easily between
 
 [tools.tokei]
 backends = [
-  # v13.0.0 doesn't have binaries
-  "cargo:tokei",
-  "aqua:XAMPPRocky/tokei",
-  "asdf:gasuketsu/asdf-tokei",
+    # v13.0.0 doesn't have binaries
+    "cargo:tokei",
+    "aqua:XAMPPRocky/tokei",
+    "asdf:gasuketsu/asdf-tokei",
 ]
 description = "Count your code, quickly"
 test = ["tokei --version", "tokei {{version}}"]
@@ -4665,8 +4665,8 @@ description = "An incremental parsing system for programming tools"
 
 [tools.tridentctl]
 backends = [
-  "aqua:NetApp/trident/tridentctl",
-  "asdf:asdf-community/asdf-tridentctl",
+    "aqua:NetApp/trident/tridentctl",
+    "asdf:asdf-community/asdf-tridentctl",
 ]
 depends = ["kubectl"]
 description = "Storage orchestrator for containers"
@@ -4679,8 +4679,8 @@ description = "Find vulnerabilities, misconfigurations, secrets, SBOM in contain
 
 [tools.trufflehog]
 backends = [
-  "aqua:trufflesecurity/trufflehog",
-  "github:trufflesecurity/trufflehog",
+    "aqua:trufflesecurity/trufflehog",
+    "github:trufflesecurity/trufflehog",
 ]
 test = ["trufflehog --version", "trufflehog {{version}}"]
 
@@ -4688,8 +4688,8 @@ test = ["trufflehog --version", "trufflehog {{version}}"]
 backends = ["npm:@trunkio/launcher"]
 description = "Trunk is a comprehensive code quality tool that runs linters, formatters, and security scanners to help maintain high-quality codebases (https://trunk.io)"
 test = [
-  "trunk --help",
-  "trunk [flags] [subcommand]",
+    "trunk --help",
+    "trunk [flags] [subcommand]",
 ] # --version can't be used because we know the launcher version, but we get the binary version
 
 [tools.trzsz-ssh]
@@ -4700,8 +4700,8 @@ test = ["tssh --version 2>&1", "trzsz ssh {{version}}"]
 
 [tools.tsuru]
 backends = [
-  "github:tsuru/tsuru-client[exe=tsuru]",
-  "asdf:virtualstaticvoid/asdf-tsuru",
+    "github:tsuru/tsuru-client[exe=tsuru]",
+    "asdf:virtualstaticvoid/asdf-tsuru",
 ]
 description = "tsuru-client is a tsuru command line tool for application developers"
 
@@ -4722,18 +4722,18 @@ test = ["tusd --version | head -n1", "Version: v{{version}}"]
 
 [tools.typos]
 backends = [
-  "aqua:crate-ci/typos",
-  "asdf:aschiavon91/asdf-typos",
-  "cargo:typos-cli",
+    "aqua:crate-ci/typos",
+    "asdf:aschiavon91/asdf-typos",
+    "cargo:typos-cli",
 ]
 description = "Source code spell checker"
 test = ["typos --version", "typos-cli {{version}}"]
 
 [tools.typst]
 backends = [
-  "aqua:typst/typst",
-  "asdf:stephane-klein/asdf-typst",
-  "cargo:typst-cli",
+    "aqua:typst/typst",
+    "asdf:stephane-klein/asdf-typst",
+    "cargo:typst-cli",
 ]
 description = "A new markup-based typesetting system that is powerful and easy to learn"
 test = ["typst --version", "typst {{version}}"]
@@ -4742,8 +4742,8 @@ test = ["typst --version", "typst {{version}}"]
 backends = ["aqua:Enter-tainer/typstyle", "cargo:typstyle"]
 description = "Beautiful and reliable typst code formatter"
 test = [
-  "typstyle --version | grep 'Version:' | awk '{print $2}'",
-  "{{version}}",
+    "typstyle --version | grep 'Version:' | awk '{print $2}'",
+    "{{version}}",
 ]
 
 [tools.ty]
@@ -4754,8 +4754,8 @@ test = ["ty --version", "ty {{version}}"]
 [tools.uaa]
 aliases = ["uaa-cli"]
 backends = [
-  "aqua:cloudfoundry/uaa-cli",
-  "asdf:mise-plugins/tanzu-plug-in-for-asdf",
+    "aqua:cloudfoundry/uaa-cli",
+    "asdf:mise-plugins/tanzu-plug-in-for-asdf",
 ]
 description = "CLI for UAA written in Go"
 test = ["uaa version", "{{version}}"]
@@ -4788,15 +4788,15 @@ description = "UPX - the Ultimate Packer for eXecutables"
 
 [tools.usage]
 backends = [
-  { full = "aqua:jdx/usage", platforms = [
-    "linux",
-    "macos",
-  ] },
-  { full = "asdf:mise-plugins/mise-usage", platforms = [
-    "linux",
-    "macos",
-  ] },
-  "cargo:usage-cli",
+    { full = "aqua:jdx/usage", platforms = [
+        "linux",
+        "macos",
+    ] },
+    { full = "asdf:mise-plugins/mise-usage", platforms = [
+        "linux",
+        "macos",
+    ] },
+    "cargo:usage-cli",
 ]
 description = "A specification for CLIs"
 os = ["linux", "macos", "freebsd"]
@@ -4835,8 +4835,8 @@ test = ["vault version", "Vault v{{version}}"]
 
 [tools.vcluster]
 backends = [
-  "aqua:loft-sh/vcluster",
-  "asdf:https://gitlab.com/wt0f/asdf-vcluster",
+    "aqua:loft-sh/vcluster",
+    "asdf:https://gitlab.com/wt0f/asdf-vcluster",
 ]
 description = "vCluster - Create fully functional virtual Kubernetes clusters - Each vcluster runs inside a namespace of the underlying k8s cluster. It's cheaper than creating separate full-blown clusters and it offers better multi-tenancy and isolation than regular namespaces"
 
@@ -4930,8 +4930,8 @@ description = "The leading WebAssembly Runtime supporting WASI and Emscripten"
 
 [tools.wasmtime]
 backends = [
-  "aqua:bytecodealliance/wasmtime",
-  "asdf:tachyonicbytes/asdf-wasmtime",
+    "aqua:bytecodealliance/wasmtime",
+    "asdf:tachyonicbytes/asdf-wasmtime",
 ]
 description = "A lightweight WebAssembly runtime that is fast, secure, and standards-compliant"
 
@@ -4946,16 +4946,16 @@ description = "A tool to build, deploy, and release any application on any platf
 
 [tools.weave-gitops]
 backends = [
-  "github:weaveworks/weave-gitops[exe=gitops]",
-  "asdf:deas/asdf-weave-gitops",
+    "github:weaveworks/weave-gitops[exe=gitops]",
+    "asdf:deas/asdf-weave-gitops",
 ]
 description = "Command line utility for managing Kubernetes applications via GitOps"
 
 [tools.websocat]
 backends = [
-  "aqua:vi/websocat",
-  "asdf:bdellegrazie/asdf-websocat",
-  "cargo:websocat",
+    "aqua:vi/websocat",
+    "asdf:bdellegrazie/asdf-websocat",
+    "cargo:websocat",
 ]
 description = "Command-line client for WebSockets, like netcat (or curl) for ws:// with advanced socat-like functions"
 
@@ -5039,9 +5039,9 @@ description = "Yet Another Dotfiles Manager"
 
 [tools.yamlfmt]
 backends = [
-  "aqua:google/yamlfmt",
-  "asdf:mise-plugins/asdf-yamlfmt",
-  "go:github.com/google/yamlfmt/cmd/yamlfmt",
+    "aqua:google/yamlfmt",
+    "asdf:mise-plugins/asdf-yamlfmt",
+    "go:github.com/google/yamlfmt/cmd/yamlfmt",
 ]
 description = "An extensible command line tool or library to format yaml files"
 test = ["yamlfmt --version", "yamlfmt {{version}}"]
@@ -5058,10 +5058,10 @@ test = ["ys --version", "{{version}}"]
 
 [tools.yarn]
 backends = [
-  "vfox:mise-plugins/vfox-yarn",
-  "asdf:mise-plugins/mise-yarn",
-  "aqua:yarnpkg/berry",
-  "npm:@yarnpkg/cli-dist",
+    "vfox:mise-plugins/vfox-yarn",
+    "asdf:mise-plugins/mise-yarn",
+    "aqua:yarnpkg/berry",
+    "npm:@yarnpkg/cli-dist",
 ]
 description = "Yarn is a package manager that doubles down as project manager. Whether you work on simple projects or industry monorepos, whether you're an open source developer or an enterprise user, Yarn has your back"
 test = ["yarn --version", "{{version}}"]
@@ -5092,9 +5092,9 @@ test = ["youtube-dl --version", "{{version}}"]
 
 [tools.yq]
 backends = [
-  "aqua:mikefarah/yq",
-  "asdf:sudermanjr/asdf-yq",
-  "go:github.com/mikefarah/yq/v4",
+    "aqua:mikefarah/yq",
+    "asdf:sudermanjr/asdf-yq",
+    "go:github.com/mikefarah/yq/v4",
 ]
 description = "yq is a portable command-line YAML processor"
 test = ["yq --version", "version v{{version}}"]
@@ -5121,9 +5121,9 @@ test = ["zbctl version", "zbctl {{version}}"]
 
 [tools.zellij]
 backends = [
-  "aqua:zellij-org/zellij",
-  "asdf:chessmango/asdf-zellij",
-  "cargo:zellij",
+    "aqua:zellij-org/zellij",
+    "asdf:chessmango/asdf-zellij",
+    "cargo:zellij",
 ]
 description = "A terminal workspace with batteries included"
 test = ["zellij --version", "zellij {{version}}"]
@@ -5144,9 +5144,9 @@ test = ["fnox --version", "fnox {{version}}"]
 
 [tools.zigmod]
 backends = [
-  "aqua:nektro/zigmod",
-  "github:nektro/zigmod",
-  "asdf:mise-plugins/asdf-zigmod",
+    "aqua:nektro/zigmod",
+    "github:nektro/zigmod",
+    "asdf:mise-plugins/asdf-zigmod",
 ]
 description = "A package manager for the Zig programming language"
 test = ["zigmod version", "{{version}}"]
