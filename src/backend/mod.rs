@@ -1320,10 +1320,24 @@ pub trait Backend: Debug + Send + Sync {
 }
 
 fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
-    match list.contains(&query.to_string()) {
-        true => Some(query.to_string()),
-        false => list.last().map(|s| s.to_string()),
+    if list.contains(&query.to_string()) {
+        return Some(query.to_string());
     }
+
+    // For "latest", return the highest semantic version rather than the most recently
+    // published. This correctly handles tools that backport patches to older release
+    // branches after publishing newer major/minor versions.
+    if query == "latest"
+        && let Some(v) = list
+            .iter()
+            .filter_map(|v| versions::Versioning::new(v).map(|ver| (v, ver)))
+            .max_by(|(_, a), (_, b)| a.cmp(b))
+            .map(|(v, _)| v.to_string())
+    {
+        return Some(v);
+    }
+
+    list.last().map(|s| s.to_string())
 }
 
 fn rmdir(dir: &Path, pr: &dyn SingleReport) -> eyre::Result<()> {
