@@ -49,9 +49,11 @@ impl Backend for NPMBackend {
                 let versions_raw =
                     cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
                         .full_env(&env)
+                        .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                         .read()?;
                 let time_raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "time", "--json")
                     .full_env(&env)
+                    .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                     .read()?;
 
                 let versions: Vec<String> = serde_json::from_str(&versions_raw)?;
@@ -91,6 +93,7 @@ impl Backend for NPMBackend {
                         let raw =
                             cmd!(NPM_PROGRAM, "view", this.tool_name(), "dist-tags", "--json")
                                 .full_env(this.dependency_env(config).await?)
+                                .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                                 .read()?;
                         let dist_tags: Value = serde_json::from_str(&raw)?;
                         match dist_tags["latest"] {
@@ -115,6 +118,10 @@ impl Backend for NPMBackend {
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
                     .arg("--global")
                     .arg("--trust")
+                    // Isolated linker does not symlink binaries into BUN_INSTALL_BIN properly.
+                    // https://github.com/jdx/mise/discussions/7541
+                    .arg("--linker")
+                    .arg("hoisted")
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path(&ctx.config).await?)
                     .env("BUN_INSTALL_GLOBAL_DIR", tv.install_path())

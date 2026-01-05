@@ -21,7 +21,7 @@
   },
   "devDependencies": {
     "@fig/eslint-config-autocomplete": "^2.0.0",
-    "@tsconfig/node20": "^20.1.0",
+    "@tsconfig/node22": "^22.0.0",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^22.18.12",
     "@withfig/autocomplete-tools": "^2.11.0",
