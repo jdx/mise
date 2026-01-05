@@ -35,7 +35,7 @@ impl Backend for NPMBackend {
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
-        Ok(vec!["node", "bun", "pnpm"])
+        Ok(vec!["node", "npm", "bun", "pnpm"])
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
