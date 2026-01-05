@@ -115,6 +115,10 @@ impl Backend for NPMBackend {
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
                     .arg("--global")
                     .arg("--trust")
+                    // Isolated linker does not symlink binaries into BUN_INSTALL_BIN properly.
+                    // https://github.com/jdx/mise/discussions/7541
+                    .arg("--linker")
+                    .arg("hoisted")
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path(&ctx.config).await?)
                     .env("BUN_INSTALL_GLOBAL_DIR", tv.install_path())
