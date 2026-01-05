@@ -270,6 +270,7 @@ impl AssetPicker {
     }
 
     fn score_format_preferences(&self, asset: &str) -> i32 {
+        let asset = asset.to_lowercase();
         if asset.ends_with(".zip") {
             if self.target_os == "windows" {
                 return 15;
