@@ -4238,6 +4238,11 @@ description = "Spring Boot CLI"
 backends = ["aqua:geofffranks/spruce", "asdf:woneill/asdf-spruce"]
 description = "Standalone, daemon-less, unprivileged Dockerfile and OCI compatible container image builder"
 
+[tools.sqlc]
+backends = ["github:sqlc-dev/sqlc"]
+description = "Generate type-safe code from SQL"
+test = ["sqlc version", "{{version}}"]
+
 [tools.sqlite]
 backends = ["asdf:mise-plugins/mise-sqlite"]
 description = "SQLite is a C-language library that implements a small, fast, self-contained, high-reliability, full-featured, SQL database engine. SQLite is the most used database engine in the world"
