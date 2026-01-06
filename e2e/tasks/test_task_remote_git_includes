@@ -135,4 +135,3 @@ assert_succeed "mise run local_task"
 assert_succeed "mise run ripgrep"
 
 echo "All tests passed!"
-

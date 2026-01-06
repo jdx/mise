@@ -1823,7 +1823,7 @@ async fn resolve_git_url_to_path(git_url: &str) -> Result<PathBuf> {
     let task_file_providers = TaskFileProvidersBuilder::new()
         .with_cache(!no_cache)
         .build();
-    
+
     match task_file_providers.get_provider(git_url) {
         Some(provider) => provider.get_local_path(git_url).await,
         None => bail!("No provider found for git URL: {}", git_url),
@@ -1840,10 +1840,10 @@ async fn load_file_tasks(
         .includes
         .clone()
         .unwrap_or_else(default_task_includes);
-    
+
     let mut tasks = vec![];
     let config_root = Arc::new(config_root.to_path_buf());
-    
+
     for include in includes {
         let path = if include.starts_with("git::") {
             resolve_git_url_to_path(&include).await?
@@ -1868,7 +1868,11 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBu
                 None
             } else {
                 let path = PathBuf::from(p);
-                let resolved = if path.is_absolute() { path } else { dir.join(path) };
+                let resolved = if path.is_absolute() {
+                    path
+                } else {
+                    dir.join(path)
+                };
                 if resolved.exists() {
                     Some(resolved)
                 } else {
@@ -1886,7 +1890,7 @@ pub async fn load_tasks_in_dir(
     config_files: &ConfigMap,
 ) -> Result<Vec<Task>> {
     let configs = configs_at_root(dir, config_files);
-    
+
     let git_includes: Vec<String> = configs
         .iter()
         .rev()
@@ -1895,23 +1899,23 @@ pub async fn load_tasks_in_dir(
         .into_iter()
         .filter(|p| p.starts_with("git::"))
         .collect();
-    
+
     let mut config_tasks = vec![];
     for cf in &configs {
         let dir = dir.to_path_buf();
         config_tasks.extend(load_config_tasks(config, (*cf).clone(), &dir).await?);
     }
-    
+
     let mut file_tasks = vec![];
     for p in task_includes_for_dir(dir, config_files) {
         file_tasks.extend(load_tasks_includes(config, &p, dir).await?);
     }
-    
+
     for include in git_includes {
         let resolved = resolve_git_url_to_path(&include).await?;
         file_tasks.extend(load_tasks_includes(config, &resolved, dir).await?);
     }
-    
+
     let mut tasks = file_tasks
         .into_iter()
         .chain(config_tasks)
