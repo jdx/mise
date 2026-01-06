@@ -26,6 +26,7 @@ use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENA
 use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::Task;
+use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::toolset::{ToolRequestSet, ToolRequestSetBuilder, ToolVersion, Toolset, install_state};
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
@@ -1438,13 +1439,13 @@ impl Debug for Config {
     }
 }
 
-fn default_task_includes() -> Vec<PathBuf> {
+fn default_task_includes() -> Vec<String> {
     vec![
-        PathBuf::from("mise-tasks"),
-        PathBuf::from(".mise-tasks"),
-        PathBuf::from(".mise").join("tasks"),
-        PathBuf::from(".config").join("mise").join("tasks"),
-        PathBuf::from("mise").join("tasks"),
+        "mise-tasks".to_string(),
+        ".mise-tasks".to_string(),
+        ".mise/tasks".to_string(),
+        ".config/mise/tasks".to_string(),
+        "mise/tasks".to_string(),
     ]
 }
 
@@ -1817,6 +1818,18 @@ async fn load_tasks_includes(
     }
 }
 
+async fn resolve_git_url_to_path(git_url: &str) -> Result<PathBuf> {
+    let no_cache = Settings::get().task_remote_no_cache.unwrap_or(false);
+    let task_file_providers = TaskFileProvidersBuilder::new()
+        .with_cache(!no_cache)
+        .build();
+    
+    match task_file_providers.get_provider(git_url) {
+        Some(provider) => provider.get_local_path(git_url).await,
+        None => bail!("No provider found for git URL: {}", git_url),
+    }
+}
+
 async fn load_file_tasks(
     config: &Arc<Config>,
     cf: Arc<dyn ConfigFile>,
@@ -1826,16 +1839,18 @@ async fn load_file_tasks(
         .task_config()
         .includes
         .clone()
-        .unwrap_or_else(default_task_includes)
-        .into_iter()
-        .map(|p| cf.get_path().parent().unwrap().join(p))
-        .collect::<Vec<_>>();
+        .unwrap_or_else(default_task_includes);
+    
     let mut tasks = vec![];
     let config_root = Arc::new(config_root.to_path_buf());
-    for p in includes {
-        let config_root = config_root.clone();
-        let config = config.clone();
-        tasks.extend(load_tasks_includes(&config, &p, &config_root).await?);
+    
+    for include in includes {
+        let path = if include.starts_with("git::") {
+            resolve_git_url_to_path(&include).await?
+        } else {
+            cf.get_path().parent().unwrap().join(&include)
+        };
+        tasks.extend(load_tasks_includes(config, &path, &config_root).await?);
     }
     Ok(tasks)
 }
@@ -1847,10 +1862,20 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBu
         .find_map(|cf| cf.task_config().includes.clone())
         .unwrap_or_else(default_task_includes)
         .into_iter()
-        .map(|p| if p.is_absolute() { p } else { dir.join(p) })
-        .filter(|p| p.exists())
-        .collect::<Vec<_>>()
-        .into_iter()
+        .filter_map(|p| {
+            // Git URLs will be handled by load_file_tasks
+            if p.starts_with("git::") {
+                None
+            } else {
+                let path = PathBuf::from(p);
+                let resolved = if path.is_absolute() { path } else { dir.join(path) };
+                if resolved.exists() {
+                    Some(resolved)
+                } else {
+                    None
+                }
+            }
+        })
         .unique()
         .collect::<Vec<_>>()
 }
@@ -1861,15 +1886,32 @@ pub async fn load_tasks_in_dir(
     config_files: &ConfigMap,
 ) -> Result<Vec<Task>> {
     let configs = configs_at_root(dir, config_files);
+    
+    let git_includes: Vec<String> = configs
+        .iter()
+        .rev()
+        .find_map(|cf| cf.task_config().includes.clone())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| p.starts_with("git::"))
+        .collect();
+    
     let mut config_tasks = vec![];
-    for cf in configs {
+    for cf in &configs {
         let dir = dir.to_path_buf();
-        config_tasks.extend(load_config_tasks(config, cf.clone(), &dir).await?);
+        config_tasks.extend(load_config_tasks(config, (*cf).clone(), &dir).await?);
     }
+    
     let mut file_tasks = vec![];
     for p in task_includes_for_dir(dir, config_files) {
         file_tasks.extend(load_tasks_includes(config, &p, dir).await?);
     }
+    
+    for include in git_includes {
+        let resolved = resolve_git_url_to_path(&include).await?;
+        file_tasks.extend(load_tasks_includes(config, &resolved, dir).await?);
+    }
+    
     let mut tasks = file_tasks
         .into_iter()
         .chain(config_tasks)
