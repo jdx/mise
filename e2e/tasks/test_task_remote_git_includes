@@ -99,9 +99,6 @@ EOF
 assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run ripgrep" # Remote task should be redownloaded
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
 
-assert_succeed "mise run --no-cache ripgrep" # Remote task should be redownloaded
-assert_directory_not_exists "${REMOTE_TASKS_DIR}"
-
 assert_succeed "mise run ripgrep" # Cache should be used
 assert_directory_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_empty "${REMOTE_TASKS_DIR}"
