@@ -7,8 +7,10 @@ use std::sync::LazyLock as Lazy;
 
 use crate::config::Config;
 use crate::config::env_directive::EnvResults;
+use crate::registry::REGISTRY;
 use crate::toolset::Toolset;
 use crate::uv;
+use itertools::Itertools;
 
 // Cache Toolset::list_paths results across identical toolsets within a process.
 // Keyed by project_root plus sorted list of backend@version pairs currently installed.
@@ -21,21 +23,40 @@ impl Toolset {
         if let Some(root) = &config.project_root {
             key_parts.push(root.to_string_lossy().to_string());
         }
-        let mut installed: Vec<String> = self
-            .list_current_installed_versions(config)
-            .into_iter()
+        let mut installed = self.list_current_installed_versions(config);
+
+        let installed_strs: Vec<String> = installed
+            .iter()
             .map(|(p, tv)| format!("{}@{}", p.id(), tv.version))
+            .sorted()
             .collect();
-        installed.sort();
-        key_parts.extend(installed);
+        key_parts.extend(installed_strs);
+
         let cache_key = key_parts.join("|");
         if let Some(entry) = LIST_PATHS_CACHE.get(&cache_key) {
             trace!("toolset.list_paths hit cache");
             return entry.clone();
         }
 
+        installed.sort_by(|(a, _), (b, _)| {
+            let id_a = a.id();
+            let id_b = b.id();
+
+            if let Some(tool_a) = REGISTRY.get(id_a)
+                && tool_a.overrides.contains(&id_b)
+            {
+                return std::cmp::Ordering::Less;
+            }
+            if let Some(tool_b) = REGISTRY.get(id_b)
+                && tool_b.overrides.contains(&id_a)
+            {
+                return std::cmp::Ordering::Greater;
+            }
+            std::cmp::Ordering::Equal
+        });
+
         let mut paths: Vec<PathBuf> = Vec::new();
-        for (p, tv) in self.list_current_installed_versions(config).into_iter() {
+        for (p, tv) in installed {
             let start = std::time::Instant::now();
             let new_paths = p.list_bin_paths(config, &tv).await.unwrap_or_else(|e| {
                 warn!("Error listing bin paths for {tv}: {e:#}");

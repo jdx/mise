@@ -3288,6 +3288,7 @@ description = "Find outdated or deprecated Helm charts running in your cluster"
 [tools.npm]
 backends = ["npm:npm"]
 description = "the package manager for JavaScript"
+overrides = ["node"]
 test = ["npm --version", "{{version}}"]
 
 [tools.nsc]

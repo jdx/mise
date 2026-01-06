@@ -24,6 +24,7 @@ pub struct RegistryTool {
     pub backends: &'static [RegistryBackend],
     #[allow(unused)]
     pub aliases: &'static [&'static str],
+    pub overrides: &'static [&'static str],
     pub test: &'static Option<(&'static str, &'static str)>,
     pub os: &'static [&'static str],
     pub depends: &'static [&'static str],
