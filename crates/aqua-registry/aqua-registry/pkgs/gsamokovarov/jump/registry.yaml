@@ -47,7 +47,7 @@ packages:
         format: raw
         supported_envs:
           - linux/amd64
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.51.0")
         asset: jump_{{.OS}}_{{.Arch}}_binary
         format: raw
         replacements:
@@ -65,3 +65,12 @@ packages:
           - darwin
           - windows
           - amd64
+      - version_constraint: "true"
+        asset: jump_{{.OS}}_{{.Arch}}_binary
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          arm64: arm
+        supported_envs:
+          - linux
+          - windows/amd64

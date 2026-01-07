@@ -1,5 +1,134 @@
 # Changelog
 
+## [2026.1.0](https://github.com/jdx/mise/compare/v2025.12.13..v2026.1.0) - 2026-01-07
+
+### 🚀 Features
+
+- **(hooks)** add tool context env vars to postinstall hooks by @jdx in [#7521](https://github.com/jdx/mise/pull/7521)
+- **(sops)** support standard SOPS environment variables by @yordis in [#7461](https://github.com/jdx/mise/pull/7461)
+- **(tasks)** Add disable_spec_from_run_scripts setting by @iamkroot in [#7471](https://github.com/jdx/mise/pull/7471)
+- **(tasks)** Add task_show_full_cmd setting by @iamkroot in [#7344](https://github.com/jdx/mise/pull/7344)
+- **(tasks)** enable naked task completions and ::: separator by @jdx in [#7524](https://github.com/jdx/mise/pull/7524)
+- add Forgejo backend by @roele in [#7469](https://github.com/jdx/mise/pull/7469)
+- override node bundled npm by specified version of npm by @risu729 in [#7559](https://github.com/jdx/mise/pull/7559)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** fix tree-sitter bin path regression by @risu729 in [#7535](https://github.com/jdx/mise/pull/7535)
+- **(ci)** exclude subcrate tags from release workflow by @jdx in [#7517](https://github.com/jdx/mise/pull/7517)
+- **(e2e)** remove hardcoded year from version check by @jdx in [#7584](https://github.com/jdx/mise/pull/7584)
+- **(github)** asset matcher does not handle mixed archive/binary assets properly by @roele in [#7566](https://github.com/jdx/mise/pull/7566)
+- **(github)** prioritize .zip on windows by @risu729 in [#7568](https://github.com/jdx/mise/pull/7568)
+- **(github)** prefer .zip over non-archive extensions on linux by @risu729 in [#7587](https://github.com/jdx/mise/pull/7587)
+- **(npm)** always use hoisted installs of bun by @sushichan044 in [#7542](https://github.com/jdx/mise/pull/7542)
+- **(npm)** suppress NPM_CONFIG_UPDATE_NOTIFIER by @risu729 in [#7556](https://github.com/jdx/mise/pull/7556)
+- **(registry)** fix biome test to handle version prefix by @jdx in [#7585](https://github.com/jdx/mise/pull/7585)
+- **(tasks)** load monorepo task dirs without config by @matixlol in [#7478](https://github.com/jdx/mise/pull/7478)
+- force reshim when windows_shim_mode is hardlink by @roele in [#7537](https://github.com/jdx/mise/pull/7537)
+- simple .tar files are not extracted properly by @roele in [#7567](https://github.com/jdx/mise/pull/7567)
+- quiet kerl update output by @iloveitaly in [#7467](https://github.com/jdx/mise/pull/7467)
+
+### 📚 Documentation
+
+- **(registry)** remove ubi backend from preferred backends list by @risu729 in [#7555](https://github.com/jdx/mise/pull/7555)
+- **(tasks)** remove advanced usage specs sections from toml-tasks.md by @risu729 in [#7538](https://github.com/jdx/mise/pull/7538)
+- fix invalid config section `[aliases]` by @muzimuzhi in [#7518](https://github.com/jdx/mise/pull/7518)
+- Fix path to GitLab backend source by @henrebotha in [#7529](https://github.com/jdx/mise/pull/7529)
+- Fix path to GitLab backend source by @henrebotha in [#7531](https://github.com/jdx/mise/pull/7531)
+- update `mise --version` output by @muzimuzhi in [#7530](https://github.com/jdx/mise/pull/7530)
+
+### 🧪 Testing
+
+- **(win)** use pester in backend tests by @risu729 in [#7536](https://github.com/jdx/mise/pull/7536)
+- update e2e tests to use `[tool_alias]` instead of `[alias]` by @muzimuzhi in [#7520](https://github.com/jdx/mise/pull/7520)
+
+### 📦️ Dependency Updates
+
+- update alpine:edge docker digest to ea71a03 by @renovate[bot] in [#7545](https://github.com/jdx/mise/pull/7545)
+- update docker/setup-buildx-action digest to 8d2750c by @renovate[bot] in [#7546](https://github.com/jdx/mise/pull/7546)
+- update ghcr.io/jdx/mise:copr docker digest to 23f4277 by @renovate[bot] in [#7548](https://github.com/jdx/mise/pull/7548)
+- update ghcr.io/jdx/mise:alpine docker digest to 0adc211 by @renovate[bot] in [#7547](https://github.com/jdx/mise/pull/7547)
+- lock file maintenance by @renovate[bot] in [#7211](https://github.com/jdx/mise/pull/7211)
+- lock file maintenance by @renovate[bot] in [#7572](https://github.com/jdx/mise/pull/7572)
+- replace dependency @tsconfig/node18 with @tsconfig/node20 by @renovate[bot] in [#7543](https://github.com/jdx/mise/pull/7543)
+- replace dependency @tsconfig/node20 with @tsconfig/node22 by @renovate[bot] in [#7544](https://github.com/jdx/mise/pull/7544)
+
+### 📦 Registry
+
+- add zarf by @joonas in [#7525](https://github.com/jdx/mise/pull/7525)
+- update aws-vault to maintained fork by @h3y6e in [#7527](https://github.com/jdx/mise/pull/7527)
+- fix claude backend http for windows-x64 by @granstrand in [#7540](https://github.com/jdx/mise/pull/7540)
+- add sqlc by @phm07 in [#7570](https://github.com/jdx/mise/pull/7570)
+- use spm backend for swift-package-list by @risu729 in [#7569](https://github.com/jdx/mise/pull/7569)
+- add npm (npm:npm) by @risu729 in [#7557](https://github.com/jdx/mise/pull/7557)
+- add github backend for tmux by @ll-nick in [#7472](https://github.com/jdx/mise/pull/7472)
+
+### Chore
+
+- **(release)** update Changelog for v2025.12.13 by @muzimuzhi in [#7522](https://github.com/jdx/mise/pull/7522)
+
+### New Contributors
+
+- @ll-nick made their first contribution in [#7472](https://github.com/jdx/mise/pull/7472)
+- @sushichan044 made their first contribution in [#7542](https://github.com/jdx/mise/pull/7542)
+- @phm07 made their first contribution in [#7570](https://github.com/jdx/mise/pull/7570)
+- @granstrand made their first contribution in [#7540](https://github.com/jdx/mise/pull/7540)
+- @h3y6e made their first contribution in [#7527](https://github.com/jdx/mise/pull/7527)
+- @matixlol made their first contribution in [#7478](https://github.com/jdx/mise/pull/7478)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (9)
+
+- [`anomalyco/opencode`](https://github.com/anomalyco/opencode)
+- [`astral-sh/ty`](https://github.com/astral-sh/ty)
+- [`github/copilot-cli`](https://github.com/github/copilot-cli)
+- [`github/gh-ost`](https://github.com/github/gh-ost)
+- [`golangci/golines`](https://github.com/golangci/golines)
+- [`jamf/Notifier`](https://github.com/jamf/Notifier)
+- [`microsoft/vscode/code`](https://github.com/microsoft/vscode/code)
+- [`pranshuparmar/witr`](https://github.com/pranshuparmar/witr)
+- [`spinel-coop/rv`](https://github.com/spinel-coop/rv)
+
+#### Updated Packages (37)
+
+- [`FiloSottile/age`](https://github.com/FiloSottile/age)
+- [`alvinunreal/tmuxai`](https://github.com/alvinunreal/tmuxai)
+- [`aquasecurity/starboard`](https://github.com/aquasecurity/starboard)
+- [`aristocratos/btop`](https://github.com/aristocratos/btop)
+- [`biomejs/biome`](https://github.com/biomejs/biome)
+- [`bootandy/dust`](https://github.com/bootandy/dust)
+- [`borgbackup/borg`](https://github.com/borgbackup/borg)
+- [`bvaisvil/zenith`](https://github.com/bvaisvil/zenith)
+- [`cri-o/cri-o`](https://github.com/cri-o/cri-o)
+- [`cubefs/cubefs`](https://github.com/cubefs/cubefs)
+- [`domoritz/arrow-tools/csv2arrow`](https://github.com/domoritz/arrow-tools/csv2arrow)
+- [`domoritz/arrow-tools/csv2parquet`](https://github.com/domoritz/arrow-tools/csv2parquet)
+- [`domoritz/arrow-tools/json2arrow`](https://github.com/domoritz/arrow-tools/json2arrow)
+- [`domoritz/arrow-tools/json2parquet`](https://github.com/domoritz/arrow-tools/json2parquet)
+- [`fission/fission`](https://github.com/fission/fission)
+- [`folbricht/desync`](https://github.com/folbricht/desync)
+- [`go-acme/lego`](https://github.com/go-acme/lego)
+- [`gohugoio/hugo`](https://github.com/gohugoio/hugo)
+- [`gohugoio/hugo/hugo-extended`](https://github.com/gohugoio/hugo/hugo-extended)
+- [`golang.org/x/perf/cmd/benchstat`](https://github.com/golang.org/x/perf/cmd/benchstat)
+- [`gsamokovarov/jump`](https://github.com/gsamokovarov/jump)
+- [`haskell/cabal/cabal-install`](https://github.com/haskell/cabal/cabal-install)
+- [`kptdev/kpt`](https://github.com/kptdev/kpt)
+- [`kubescape/kubescape`](https://github.com/kubescape/kubescape)
+- [`mas-cli/mas`](https://github.com/mas-cli/mas)
+- [`maxpert/marmot`](https://github.com/maxpert/marmot)
+- [`mistakenelf/fm`](https://github.com/mistakenelf/fm)
+- [`psf/black`](https://github.com/psf/black)
+- [`redpanda-data/connect`](https://github.com/redpanda-data/connect)
+- [`rest-sh/restish`](https://github.com/rest-sh/restish)
+- [`saucelabs/forwarder`](https://github.com/saucelabs/forwarder)
+- [`sethvargo/ratchet`](https://github.com/sethvargo/ratchet)
+- [`stackrox/kube-linter`](https://github.com/stackrox/kube-linter)
+- [`steveyegge/beads`](https://github.com/steveyegge/beads)
+- [`suzuki-shunsuke/rgo`](https://github.com/suzuki-shunsuke/rgo)
+- [`txn2/kubefwd`](https://github.com/txn2/kubefwd)
+- [`zyedidia/micro`](https://github.com/zyedidia/micro)
 ## [2025.12.13](https://github.com/jdx/mise/compare/v2025.12.12..v2025.12.13) - 2025-12-30
 
 ### 🚀 Features

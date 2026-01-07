@@ -6,7 +6,7 @@ packages:
     description: KubeLinter is a static analysis tool that checks Kubernetes YAML files and Helm charts to ensure the applications represented in them adhere to best practices
     version_constraint: "false"
     version_overrides:
-      - version_constraint: Version == "0.0.1"
+      - version_constraint: Version in ["0.0.1", "v0.8.0"]
         no_asset: true
       - version_constraint: Version == "v0.6.8"
         asset: kube-linter-{{.OS}}
@@ -53,7 +53,7 @@ packages:
             - https://raw.githubusercontent.com/stackrox/kube-linter/refs/tags/{{.Version}}/kubelinter-cosign.pub
             - --signature
             - https://github.com/stackrox/kube-linter/releases/download/{{.Version}}/{{.Asset}}.sig
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.7.6")
         asset: kube-linter-{{.OS}}
         format: raw
         overrides:
@@ -75,3 +75,26 @@ packages:
             - https://raw.githubusercontent.com/stackrox/kube-linter/refs/tags/{{.Version}}/kubelinter-cosign.pub
             - --signature
             - https://github.com/stackrox/kube-linter/releases/download/{{.Version}}/{{.Asset}}.sig
+      - version_constraint: "true"
+        asset: kube-linter-{{.OS}}
+        format: raw
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: kube-linter-{{.OS}}_{{.Arch}}
+          - goos: darwin
+            goarch: arm64
+            asset: kube-linter-{{.OS}}_{{.Arch}}
+          - goos: windows
+            goarch: amd64
+            asset: kube-linter
+          - goos: windows
+            goarch: arm64
+            asset: kube-linter_{{.Arch}}
+        cosign:
+          bundle:
+            type: github_release
+            asset: "{{.Asset}}.sigstore.json"
+          opts:
+            - --key
+            - https://raw.githubusercontent.com/stackrox/kube-linter/refs/tags/{{.Version}}/kubelinter-cosign.pub

@@ -7,7 +7,7 @@ export SOME_VAR_WITH_UNICODE="Ü Ä Ö ß à é"
 export HOMEBREW_INSTALL_BADGE="✅"
 
 # Basic commands should work without panicking
-assert_contains "mise --version" "2025"
+assert "mise --version"
 assert "mise env"
 
 # Test 2: MISE_*_VERSION variables with Unicode should work
