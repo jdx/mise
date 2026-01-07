@@ -153,7 +153,7 @@ as this feature can redirect tool downloads to arbitrary locations.
 ## Authentication
 
 Can be used with `~/.netrc` (or `~/_netrc` on Windows) to authenticate with the replaced URL.
-Replacements are applied *before* the netrc lookup, so you should use the hostname of the *replaced* URL in your netrc file.
+Replacements are applied _before_ the netrc lookup, so you should use the hostname of the _replaced_ URL in your netrc file.
 
 For example, if you have this in `mise.toml`:
 
