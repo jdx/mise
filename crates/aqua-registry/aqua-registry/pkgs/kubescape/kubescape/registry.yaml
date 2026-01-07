@@ -159,7 +159,7 @@ packages:
           - linux/amd64
           - darwin
           - windows
-      - version_constraint: "true"
+      - version_constraint: semver("<= 3.0.46")
         asset: kubescape-{{.OS}}-latest.{{.Format}}
         format: tar.gz
         complete_windows_ext: false
@@ -176,3 +176,10 @@ packages:
           - linux/amd64
           - darwin
           - windows
+      - version_constraint: "true"
+        asset: kubescape_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.sha256
+          algorithm: sha256
