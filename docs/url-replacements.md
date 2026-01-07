@@ -13,15 +13,15 @@ In mise.toml (single line):
 
 ```toml
 [settings]
-url_replacements = { "github.com" = "nexus.mycompany.net" }
+url_replacements = { "example.com" = "mirror.example.com" }
 ```
 
 In mise.toml (multiline):
 
 ```toml
 [settings.url_replacements]
-"github.com" = "nexus.mycompany.net"
-"releases.hashicorp.com" = "artifactory.xmpl.com"
+"example.com" = "mirror.example.com"
+"releases.hashicorp.com" = "hashicorp.example.com"
 ```
 
 RegEx example:
@@ -29,7 +29,7 @@ RegEx example:
 ```toml
 [settings.url_replacements]
 "regex:^http://(.+)" = "https://$1"
-"regex:https://github\\.com/([^/]+)/([^/]+)/releases/download/(.+)" = "https://hub.corp.com/artifactory/github/$1/$2/$3"
+"regex:^https://github\\.com/([^/]+)/([^/]+)/releases/download/(.+)" = "https://hub.example.com/artifactory/github/$1/$2/$3"
 ```
 
 ## Simple Hostname Replacement
@@ -40,10 +40,12 @@ the pattern anywhere in the full URL string (including protocol, hostname, path,
 
 Examples:
 
-- `github.com` -> `nexus.mycompany.net` replaces GitHub hostnames
-- `https://github.com` -> `https://nexus.mycompany.net` with protocol excludes e.g. 'api.github.com'
-- `https://github.com` -> `https://proxy.corp.com/github-mirror` replaces GitHub with corporate proxy
-- `http://host.net` -> `https://host.net` replaces protocol from HTTP to HTTPS
+- `github.com` -> `mirror.example.com` replaces GitHub hostnames
+- `https://github.com` -> `https://mirror.example.com` with protocol excludes e.g. 'api.github.com'
+- `https://github.com` -> `https://proxy.example.com/github-mirror` replaces GitHub with corporate proxy
+- `http://example.net` -> `https://example.net` replaces protocol from HTTP to HTTPS
+
+See [Security Considerations](#security-considerations) for important warnings about credential handling.
 
 ## Advanced Regex Replacement
 
@@ -69,21 +71,21 @@ This converts any HTTP URL to HTTPS by capturing everything after "http://" and 
 ```toml
 [settings]
 url_replacements = {
-  "regex:https://github\\.com/([^/]+)/([^/]+)/releases/download/(.+)" =
-    "https://hub.corp.com/artifactory/github/$1/$2/$3"
+  "regex:^https://github\\.com/([^/]+)/([^/]+)/releases/download/(.+)" =
+    "https://hub.example.com/artifactory/github/$1/$2/$3"
 }
 ```
 
 Transforms `https://github.com/owner/repo/releases/download/v1.0.0/file.tar.gz`
-to `https://hub.corp.com/artifactory/github/owner/repo/v1.0.0/file.tar.gz`
+to `https://hub.example.com/artifactory/github/owner/repo/v1.0.0/file.tar.gz`
 
 #### 3. Subdomain to Path Conversion
 
 ```toml
 [settings]
 url_replacements = {
-  "regex:https://([^.]+)\\.cdn\\.example\\.com/(.+)" =
-    "https://unified-cdn.com/$1/$2"
+  "regex:^https://([^.]+)\\.cdn\\.example\\.com/(.+)" =
+    "https://unified-cdn.example.com/$1/$2"
 }
 ```
 
@@ -94,11 +96,11 @@ Converts subdomain-based URLs to path-based URLs on a unified CDN.
 ```toml
 [settings]
 url_replacements = {
-  "regex:https://github\\.com/microsoft/(.+)" =
-    "https://internal-mirror.com/microsoft/$1",
-  "regex:https://github\\.com/(.+)" =
-    "https://public-mirror.com/github/$1",
-  "releases.hashicorp.com" = "hashicorp-mirror.internal.com"
+  "regex:^https://github\\.com/microsoft/(.+)" =
+    "https://internal.example.org/microsoft/$1",
+  "regex:^https://github\\.com/(.+)" =
+    "https://public.example.org/github/$1",
+  "releases.hashicorp.com" = "hashicorp.example.net"
 }
 ```
 
@@ -137,3 +139,36 @@ Full regex syntax documentation: <https://docs.rs/regex/latest/regex/#syntax>
 
 When using regex patterns, ensure your replacement URLs point to trusted sources,
 as this feature can redirect tool downloads to arbitrary locations.
+
+> [!WARNING]
+> **Credential Leaking**: When using `url_replacements`, any authentication headers (like `Authorization: Bearer <TOKEN>`) generated for the original URL (e.g., `api.github.com`) are **preserved** and sent to the replaced URL.
+>
+> This is by design to allow authentication with internal proxies that forward requests to upstream services (GitHub, GitLab, Forgejo, etc.). However, it means you must **only** replace URLs with trusted servers. Redirecting to an untrusted server will leak your credentials to that server.
+>
+> **Best Practice**: Use the `^` anchor in your regex patterns to ensure you are matching the start of the URL.
+>
+> **Bad**: `"regex:github\\.com"` (matches `evil-github.com`)
+> **Good**: `"regex:^https://github\\.com"` (only matches actual GitHub URLs)
+
+## Authentication
+
+Can be used with `~/.netrc` (or `~/_netrc` on Windows) to authenticate with the replaced URL.
+Replacements are applied *before* the netrc lookup, so you should use the hostname of the *replaced* URL in your netrc file.
+
+For example, if you have this in `mise.toml`:
+
+```toml
+[settings]
+url_replacements = { "regex:^https://github\\.com" = "https://nexus.example.com" }
+```
+
+> [!NOTE]
+> Credentials from `.netrc` take precedence over and will **overwrite** any default authentication headers (such as those from `MISE_GITHUB_TOKEN` or other environment variables).
+
+You should have this in `~/.netrc`:
+
+```netrc
+machine nexus.example.com
+  login myusername
+  password mypassword
+```
