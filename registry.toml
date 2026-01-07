@@ -440,7 +440,7 @@ test = ["binnacle --version", "binnacle version {{version}}"]
 [tools.biome]
 backends = ["aqua:biomejs/biome", "npm:@biomejs/biome"]
 description = "A toolchain for web projects, aimed to provide functionalities to maintain them. Biome offers formatter and linter, usable via CLI and LSP"
-test = ["biome --version", "Version: {{version | split(pat=\"@\") | last}}"]
+test = ["biome --version", "Version: {{version}}"]
 
 [tools.bitwarden]
 backends = ["aqua:bitwarden/clients", "asdf:vixus0/asdf-bitwarden"]
