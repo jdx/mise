@@ -249,6 +249,11 @@ backends = ["aqua:atuinsh/atuin", "cargo:atuin"]
 description = "✨ Magical shell history"
 test = ["atuin --version", "atuin {{version}}"]
 
+[tools.authsock-filter]
+backends = ["aqua:kawaz/authsock-filter", "github:kawaz/authsock-filter", "cargo:authsock-filter"]
+description = "SSH agent proxy with filtering and logging"
+test = ["authsock-filter --version", "authsock-filter {{version}}"]
+
 [tools.auto-doc]
 backends = ["github:tj-actions/auto-doc", "asdf:mise-plugins/mise-auto-doc"]
 description = "Github action that turns your reusable workflows and custom actions into easy to read markdown tables"
