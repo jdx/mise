@@ -1764,9 +1764,9 @@
           "type": "string"
         },
         "includes": {
-          "description": "files/directories to include searching for tasks",
+          "description": "files/directories to include searching for tasks. Can be local paths or git repository URLs using git:: prefix (e.g., git::https://github.com/org/repo.git//path?ref=branch)",
           "items": {
-            "description": "file/directory root to include in task execution",
+            "description": "file/directory root to include in task execution. Supports local paths and git URLs (git::https://github.com/org/repo.git//path?ref=branch)",
             "type": "string"
           },
           "type": "array"
