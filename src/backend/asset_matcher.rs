@@ -275,7 +275,7 @@ impl AssetPicker {
             if self.target_os == "windows" {
                 return 15;
             } else {
-                return -5;
+                return 5;
             }
         }
         if ARCHIVE_EXTENSIONS.iter().any(|ext| asset.ends_with(ext)) {
