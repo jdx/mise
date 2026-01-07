@@ -566,7 +566,7 @@ impl Hash for dyn ConfigFile {
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct TaskConfig {
-    pub includes: Option<Vec<PathBuf>>,
+    pub includes: Option<Vec<String>>,
     pub dir: Option<String>,
 }
 

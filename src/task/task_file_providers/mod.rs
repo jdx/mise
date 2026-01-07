@@ -10,7 +10,7 @@ use remote_task_git::RemoteTaskGitBuilder;
 use remote_task_http::RemoteTaskHttpBuilder;
 
 #[async_trait]
-pub trait TaskFileProvider: Debug {
+pub trait TaskFileProvider: Debug + Send + Sync {
     fn is_match(&self, file: &str) -> bool;
     async fn get_local_path(&self, file: &str) -> Result<PathBuf>;
 }

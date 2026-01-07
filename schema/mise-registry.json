@@ -125,6 +125,13 @@
             "type": "string"
           },
           "description": "Files that indicate this tool should be used in a project"
+        },
+        "overrides": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of tool IDs that this tool overrides. When a tool overrides another, its installation directory is placed earlier in PATH so its binaries take precedence over the overridden tools' binaries."
         }
       },
       "required": ["backends"],

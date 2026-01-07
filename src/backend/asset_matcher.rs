@@ -270,6 +270,14 @@ impl AssetPicker {
     }
 
     fn score_format_preferences(&self, asset: &str) -> i32 {
+        let asset = asset.to_lowercase();
+        if asset.ends_with(".zip") {
+            if self.target_os == "windows" {
+                return 15;
+            } else {
+                return 5;
+            }
+        }
         if ARCHIVE_EXTENSIONS.iter().any(|ext| asset.ends_with(ext)) {
             10
         } else {
@@ -279,12 +287,43 @@ impl AssetPicker {
 
     fn score_build_penalties(&self, asset: &str) -> i32 {
         let mut penalty = 0;
+        let asset = asset.to_lowercase();
         if asset.contains("debug") || asset.contains("test") {
             penalty -= 20;
         }
-        if asset.contains(".artifactbundle") {
+        if asset.ends_with(".artifactbundle") {
             penalty -= 30;
         }
+
+        // Penalize metadata/checksum/signature files
+        if asset.ends_with(".asc")
+            || asset.ends_with(".sig")
+            || asset.ends_with(".sign")
+            || asset.ends_with(".sha256")
+            || asset.ends_with(".sha512")
+            || asset.ends_with(".sha1")
+            || asset.ends_with(".md5")
+            || asset.ends_with(".json")
+            || asset.ends_with(".txt")
+            || asset.ends_with(".xml")
+            || asset.ends_with(".sbom")
+            || asset.ends_with(".spdx")
+            || asset.ends_with(".intoto")
+            || asset.ends_with(".attestation")
+            || asset.ends_with(".pem")
+            || asset.ends_with(".crt")
+            || asset.ends_with(".key")
+            || asset.ends_with(".pub")
+            || asset.ends_with(".manifest")
+        {
+            penalty -= 100;
+        }
+
+        // Penalize common non-binary filenames
+        if asset.contains("release-info") || asset.contains("changelog") {
+            penalty -= 50;
+        }
+
         penalty
     }
 }
@@ -1024,5 +1063,67 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             result.is_none(),
             "Should return None when target file is not in SHASUMS"
         );
+    }
+    #[test]
+    fn test_zip_scoring() {
+        // Test Windows preference for .zip
+        let picker_win = AssetPicker::with_libc("windows".to_string(), "x86_64".to_string(), None);
+        let score_win_zip = picker_win.score_asset("tool-1.0.0-windows-x86_64.zip");
+        let score_win_tar = picker_win.score_asset("tool-1.0.0-windows-x86_64.tar.gz");
+
+        assert!(
+            score_win_zip > score_win_tar,
+            "Windows should prefer .zip (zip: {}, tar: {})",
+            score_win_zip,
+            score_win_tar
+        );
+
+        // Test Linux penalty for .zip
+        let picker_linux = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let score_linux_zip = picker_linux.score_asset("tool-1.0.0-linux-x86_64.zip");
+        let score_linux_tar = picker_linux.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
+
+        assert!(
+            score_linux_tar > score_linux_zip,
+            "Linux should prefer .tar.gz over .zip (zip: {}, tar: {})",
+            score_linux_zip,
+            score_linux_tar
+        );
+    }
+
+    #[test]
+    fn test_metadata_penalty() {
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let assets = vec![
+            "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
+            "tool-1.0.0-linux-x86_64.tar.gz.asc".to_string(),
+            "tool-1.0.0-linux-x86_64.tar.gz.sha256".to_string(),
+            "release-notes.txt".to_string(),
+        ];
+
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "tool-1.0.0-linux-x86_64.tar.gz");
+
+        // Ensure penalties are applied
+        let score_tar = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
+        let score_asc = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.asc");
+        let score_sha = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.sha256");
+        let score_txt = picker.score_asset("release-notes.txt");
+
+        assert!(
+            score_tar > score_asc,
+            "Tarball should score higher than signature"
+        );
+        assert!(
+            score_tar > score_sha,
+            "Tarball should score higher than checksum"
+        );
+        assert!(
+            score_tar > score_txt,
+            "Tarball should score higher than text file"
+        );
+
+        // Metadata should have negative score contribution from penalties
+        assert!(score_asc < 0 || score_asc < score_tar - 50);
     }
 }

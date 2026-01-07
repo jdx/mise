@@ -3288,6 +3288,7 @@ description = "Find outdated or deprecated Helm charts running in your cluster"
 [tools.npm]
 backends = ["npm:npm"]
 description = "the package manager for JavaScript"
+overrides = ["node"]
 test = ["npm --version", "{{version}}"]
 
 [tools.nsc]
@@ -4762,7 +4763,7 @@ test = [
 ]
 
 [tools.ty]
-backends = ["github:astral-sh/ty"]
+backends = ["aqua:astral-sh/ty", "github:astral-sh/ty"]
 description = "An extremely fast Python type checker and language server, written in Rust"
 test = ["ty --version", "ty {{version}}"]
 
