@@ -7,7 +7,7 @@ packages:
       - name: GoogleContainerTools/kpt
     description: Automate Kubernetes Configuration Editing
     version_filter: |
-      not (Version startsWith "porch/")
+      not (Version startsWith "porch/" or Version startsWith "package-examples/")
     version_constraint: "false"
     version_overrides:
       - version_constraint: semver("<= 0.33.0")
