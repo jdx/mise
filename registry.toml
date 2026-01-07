@@ -250,7 +250,11 @@ description = "✨ Magical shell history"
 test = ["atuin --version", "atuin {{version}}"]
 
 [tools.authsock-filter]
-backends = ["aqua:kawaz/authsock-filter", "github:kawaz/authsock-filter", "cargo:authsock-filter"]
+backends = [
+  "aqua:kawaz/authsock-filter",
+  "github:kawaz/authsock-filter",
+  "cargo:authsock-filter",
+]
 description = "SSH agent proxy with filtering and logging"
 test = ["authsock-filter --version", "authsock-filter {{version}}"]
 
