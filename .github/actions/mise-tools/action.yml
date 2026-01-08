@@ -15,3 +15,5 @@ runs:
       shell: bash
     - run: mise install
       shell: bash
+    - run: mise ls
+      shell: bash
