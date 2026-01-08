@@ -229,7 +229,7 @@ description = "A CLI tool for code structural search, lint and rewriting. Writte
 test = ["sg --version", "ast-grep {{version}}"]
 
 [tools.astro]
-backends = ["github:astronomer/astro-cli[exe=astro]"]
+backends = ["github:astronomer/astro-cli[bin=astro]"]
 description = "CLI that makes it easy to create, test and deploy Airflow DAGs to Astronomer"
 test = ["astro version", "Astro CLI Version: {{version}}"]
 
@@ -358,7 +358,7 @@ description = "A Kubernetes credential (exec) plugin implementing azure authenti
 test = ["kubelogin --version", "git hash: v{{version}}"]
 
 [tools.babashka]
-backends = ["github:babashka/babashka[exe=bb]", "asdf:pitch-io/asdf-babashka"]
+backends = ["github:babashka/babashka[bin=bb]", "asdf:pitch-io/asdf-babashka"]
 description = "Native, fast starting Clojure interpreter for scripting"
 test = ["bb --version", "babashka v{{version}}"]
 
@@ -614,7 +614,7 @@ description = "Rust task runner and build tool"
 test = ["makers --version", "cargo-make {{version}}"]
 
 [tools.carp]
-backends = ["github:carp-lang/Carp[exe=carp]", "asdf:susurri/asdf-carp"]
+backends = ["github:carp-lang/Carp[bin=carp]", "asdf:susurri/asdf-carp"]
 description = "Carp Language"
 test = ["which carp", ""] # hangs in non-interactive shells
 
@@ -919,7 +919,7 @@ description = "Codebuff is a CLI tool that writes code for you"
 
 [tools.codefresh]
 backends = [
-  "github:codefresh-io/cli[exe=codefresh]",
+  "github:codefresh-io/cli[bin=codefresh]",
   "asdf:gurukulkarni/asdf-codefresh",
 ]
 description = "The Codefresh CLI provides a full and flexible interface to interact with Codefresh"
@@ -1050,7 +1050,7 @@ test = ["cosign version", "v{{version}}"]
 
 [tools.coursier]
 backends = [
-  "github:coursier/coursier[exe=cs]",
+  "github:coursier/coursier[bin=cs]",
   "asdf:jiahuili430/asdf-coursier",
 ]
 description = "Pure Scala Artifact Fetching"
@@ -1167,7 +1167,7 @@ backends = ["aqua:TomWright/dasel", "asdf:asdf-community/asdf-dasel"]
 description = "Select, put and delete data from JSON, TOML, YAML, XML and CSV files with a single tool. Supports conversion between formats and can be used as a Go package"
 
 [tools.databricks-cli]
-backends = ["github:databricks/cli[exe=databricks]"]
+backends = ["github:databricks/cli[bin=databricks]"]
 description = "Databricks CLI"
 test = ["databricks --version", "Databricks CLI v{{version}}"]
 
@@ -1219,7 +1219,7 @@ backends = ["core:deno"]
 description = "A modern runtime for JavaScript and TypeScript (Builtin plugin)"
 
 [tools.depot]
-backends = ["github:depot/cli[exe=depot]", "asdf:depot/asdf-depot"]
+backends = ["github:depot/cli[bin=depot]", "asdf:depot/asdf-depot"]
 description = "Depot CLI, build your Docker images in the cloud"
 test = ["depot --version", "depot version {{version}}"]
 
@@ -1353,7 +1353,7 @@ full = "asdf:mise-plugins/mise-dome"
 
 [tools.doppler]
 backends = [
-  "github:DopplerHQ/cli[exe=doppler]",
+  "github:DopplerHQ/cli[bin=doppler]",
   "asdf:takutakahashi/asdf-doppler",
 ]
 description = "The official CLI for interacting with your Doppler secrets and configuration"
@@ -1413,7 +1413,7 @@ description = "dt - duct tape for your unix pipes"
 
 [tools.dtm]
 backends = [
-  "github:devstream-io/devstream[exe=dtm]",
+  "github:devstream-io/devstream[bin=dtm]",
   "asdf:zhenyuanlau/asdf-dtm",
 ]
 description = "DevStream: the open-source DevOps toolchain manager (DTM)"
@@ -1448,7 +1448,7 @@ description = "A diff tool for YAML files, and sometimes JSON"
 
 [tools.dynatrace-monaco]
 backends = [
-  "github:Dynatrace/dynatrace-configuration-as-code[exe=monaco]",
+  "github:Dynatrace/dynatrace-configuration-as-code[bin=monaco]",
   "asdf:nsaputro/asdf-monaco",
 ]
 description = "Monaco—This is the native Dynatrace Configuration as Code tool. Monaco is also the recommended tool for migrating from Dynatrace Managed to Dynatrace SaaS"
@@ -1606,7 +1606,7 @@ test = ["flamingo -v", "flamingo version {{version}}"]
 
 [tools.flarectl]
 backends = [
-  "github:cloudflare/cloudflare-go[exe=flarectl]",
+  "github:cloudflare/cloudflare-go[bin=flarectl]",
   "asdf:mise-plugins/asdf-flarectl",
 ]
 description = "A CLI application for interacting with a Cloudflare account. Powered by cloudflare-go"
@@ -1614,7 +1614,7 @@ description = "A CLI application for interacting with a Cloudflare account. Powe
 
 [tools.flatc]
 backends = [
-  "github:google/flatbuffers[exe=flatc]",
+  "github:google/flatbuffers[bin=flatc]",
   "asdf:TheOpenDictionary/asdf-flatc",
 ]
 description = "The main compiler for FlatBuffers is called flatc and is used to convert schema definitions into generated code files for a variety of languages"
@@ -1626,7 +1626,7 @@ description = "Flutter is an open source framework for building beautiful, nativ
 
 [tools.fluttergen]
 backends = [
-  "github:FlutterGen/flutter_gen[exe=fluttergen]",
+  "github:FlutterGen/flutter_gen[bin=fluttergen]",
   "asdf:FlutterGen/asdf-fluttergen",
 ]
 description = "The Flutter code generator for your assets, fonts, colors, … — Get rid of all String-based APIs"
@@ -1705,7 +1705,7 @@ backends = ["pipx:gallery-dl"]
 description = "Command-line program to download image galleries and collections from several image hosting sites"
 
 [tools.gam]
-backends = ["github:GAM-team/GAM[exe=gam]", "asdf:offbyone/asdf-gam"]
+backends = ["github:GAM-team/GAM[bin=gam]", "asdf:offbyone/asdf-gam"]
 description = "command line management for Google Workspace"
 
 [tools.gator]
@@ -1848,11 +1848,11 @@ description = "From git log to SemVer in no time"
 
 [tools.glab]
 backends = [
-  { full = "gitlab:gitlab-org/cli[exe=glab]", platforms = [
+  { full = "gitlab:gitlab-org/cli[bin=glab]", platforms = [
     "linux",
     "macos",
   ] },
-  { full = "gitlab:gitlab-org/cli[exe=glab]", platforms = [
+  { full = "gitlab:gitlab-org/cli[bin=glab]", platforms = [
     "windows",
   ] },
   "asdf:mise-plugins/mise-glab",
@@ -2041,7 +2041,7 @@ description = "The easiest way to access AWS"
 
 [tools.graphite]
 backends = [
-  "github:withgraphite/homebrew-tap[exe=gt]",
+  "github:withgraphite/homebrew-tap[bin=gt]",
   "npm:@withgraphite/graphite-cli",
 ]
 description = "Code review for the age of AI"
@@ -2467,7 +2467,7 @@ description = "A super fast CLI tool to decode and encode JWTs built in Rust"
 test = ["jwt --version", "jwt {{version}}"]
 
 [tools.jwtui]
-backends = ["github:jwt-rs/jwt-ui[exe=jwtui]", "cargo:jwt-ui"]
+backends = ["github:jwt-rs/jwt-ui[bin=jwtui]", "cargo:jwt-ui"]
 description = "A command line UI for decoding/encoding JSON Web Tokens"
 
 [tools.jx]
@@ -2602,7 +2602,7 @@ description = "Kotlin is a modern but already mature programming language design
 [tools.kpack]
 aliases = ["kp"]
 backends = [
-  "github:vmware-tanzu/kpack-cli[exe=kp]",
+  "github:vmware-tanzu/kpack-cli[bin=kp]",
   "asdf:asdf-community/asdf-kpack-cli",
 ]
 description = "A command line interface for interacting with kpack"
@@ -2649,7 +2649,7 @@ description = "Generators for kube-like API types"
 
 [tools.kube-controller-tools]
 backends = [
-  "github:kubernetes-sigs/controller-tools[exe=controller-gen]",
+  "github:kubernetes-sigs/controller-tools[bin=controller-gen]",
   "asdf:jimmidyson/asdf-kube-controller-tools",
 ]
 description = "Tools to use with the controller-runtime libraries"
@@ -2932,7 +2932,7 @@ description = "Log file navigator"
 test = ["lnav --version", "lnav {{version}}"]
 
 [tools.localstack]
-backends = ["github:localstack/localstack-cli[exe=localstack]"]
+backends = ["github:localstack/localstack-cli[bin=localstack]"]
 description = "The LocalStack CLI packaged using pyinstaller"
 test = ["localstack --version", "LocalStack CLI {{version}}"]
 
@@ -3090,7 +3090,7 @@ test = ["micromamba --version", "{{ version | split(pat='-') | first }}"]
 
 [tools.micronaut]
 backends = [
-  "github:micronaut-projects/micronaut-starter[exe=mn]",
+  "github:micronaut-projects/micronaut-starter[bin=mn]",
   "asdf:mise-plugins/mise-micronaut",
 ]
 description = "A modern, JVM-based, full-stack framework for building modular, easily testable microservice and serverless applications"
@@ -3330,7 +3330,7 @@ description = "OctoSQL is a query tool that allows you to join, analyse and tran
 test = ["octosql --version", "octosql version {{version}}"]
 
 [tools.odin]
-backends = ["github:odin-lang/Odin[exe=odin]", "asdf:jtakakura/asdf-odin"]
+backends = ["github:odin-lang/Odin[bin=odin]", "asdf:jtakakura/asdf-odin"]
 description = "Odin Programming Language"
 
 [tools.odo]
@@ -3380,7 +3380,7 @@ description = "(ocaml) opam is a source-based package manager. It supports multi
 test = ["opam --version", "{{version}}"]
 
 [tools.openbao]
-backends = ["github:openbao/openbao[exe=bao]"]
+backends = ["github:openbao/openbao[bin=bao]"]
 description = "OpenBao exists to provide a software solution to manage, store, and distribute sensitive data including secrets, certificates, and keys"
 
 [tools.opencode]
@@ -3691,7 +3691,7 @@ description = "A JavaScript implementation of gRPC for browser clients"
 
 [tools.protoc-gen-js]
 backends = [
-  "github:protocolbuffers/protobuf-javascript[exe=protoc-gen-js]",
+  "github:protocolbuffers/protobuf-javascript[bin=protoc-gen-js]",
   "asdf:pbr0ck3r/asdf-protoc-gen-js",
 ]
 description = "This directory contains the JavaScript Protocol Buffers runtime library"
@@ -3731,7 +3731,7 @@ description = "Erlang backend for the PureScript compiler"
 
 [tools.purescript]
 backends = [
-  "github:purescript/purescript[exe=purs]",
+  "github:purescript/purescript[bin=purs]",
   "asdf:jrrom/asdf-purescript",
 ]
 description = "A strongly-typed language that compiles to JavaScript"
@@ -3771,7 +3771,7 @@ backends = ["asdf:mise-plugins/mise-racket"]
 description = "Racket, the Programming Language"
 
 [tools.railway]
-backends = ["github:railwayapp/cli[exe=railway]", "cargo:railwayapp"]
+backends = ["github:railwayapp/cli[bin=railway]", "cargo:railwayapp"]
 description = "Railway CLI"
 test = ["railway --version", "railway {{version}}"]
 
@@ -3985,7 +3985,7 @@ description = "sccache is ccache with cloud storage"
 test = ["sccache --version", "sccache {{version}}"]
 
 [tools.schemacrawler]
-backends = ["github:schemacrawler/SchemaCrawler[exe=schemacrawler.sh]"]
+backends = ["github:schemacrawler/SchemaCrawler[bin=schemacrawler.sh]"]
 description = "Free database schema discovery and comprehension tool"
 test = ["schemacrawler.sh --version", "SchemaCrawler {{version}}"]
 
@@ -4085,7 +4085,7 @@ backends = ["asdf:mise-plugins/mise-shorebird"]
 description = "Code Push for Flutter and other tools for Flutter businesses"
 
 [tools.signadot]
-backends = ["github:signadot/cli[exe=signadot]"]
+backends = ["github:signadot/cli[bin=signadot]"]
 description = "Command-line interface for Signadot"
 test = ["signadot --version", "signadot version v{{version}}"]
 
@@ -4165,14 +4165,14 @@ description = "Snyk CLI scans and monitors your projects for security vulnerabil
 
 [tools.soft-serve]
 backends = [
-  "github:charmbracelet/soft-serve[exe=soft]",
+  "github:charmbracelet/soft-serve[bin=soft]",
   "asdf:chessmango/asdf-soft-serve",
 ]
 description = "The mighty, self-hostable Git server for the command line"
 
 [tools.solidity]
 backends = [
-  "github:ethereum/solidity[exe=solc]",
+  "github:ethereum/solidity[bin=solc]",
   "asdf:diegodorado/asdf-solidity",
 ]
 description = "Solidity, the Smart Contract Programming Language"
@@ -4203,7 +4203,7 @@ description = "Provides `soracom` command, a command line tool for calling SORAC
 
 [tools.sourcery]
 backends = [
-  "github:krzysztofzablocki/Sourcery[exe=bin/sourcery]",
+  "github:krzysztofzablocki/Sourcery[bin=bin/sourcery]",
   "asdf:mise-plugins/mise-sourcery",
 ]
 description = "Meta-programming for Swift, stop writing boilerplate code"
@@ -4284,11 +4284,11 @@ backends = [
 description = "Kubernetes-native security toolkit"
 
 [tools.starknet-foundry]
-backends = ["github:foundry-rs/starknet-foundry[exe=snforge]"]
+backends = ["github:foundry-rs/starknet-foundry[bin=snforge]"]
 description = "Starknet testing framework (like Truffle, Hardhat and DappTools but for Starknet)"
 
 [tools.starknet-foundry-sncast]
-backends = ["github:foundry-rs/starknet-foundry[exe=sncast]"]
+backends = ["github:foundry-rs/starknet-foundry[bin=sncast]"]
 description = "All-in-one tool for interacting with Starknet smart contracts, sending transactions and getting chain data"
 
 [tools.starship]
@@ -4389,7 +4389,7 @@ test = ["swiftformat --version", "{{version}}"]
 
 [tools.swiftgen]
 backends = [
-  "github:SwiftGen/SwiftGen[exe=swiftgen/bin/swiftgen]",
+  "github:SwiftGen/SwiftGen[bin=swiftgen/bin/swiftgen]",
   "asdf:mise-plugins/mise-swiftgen",
 ]
 description = "The Swift code generator for your assets, storyboards, Localizable.strings, … — Get rid of all String-based APIs!"
@@ -4586,7 +4586,7 @@ description = "Lookup resource attributes in tfstate"
 
 [tools.tfswitch]
 backends = [
-  "github:warrensbox/terraform-switcher[exe=tfswitch]",
+  "github:warrensbox/terraform-switcher[bin=tfswitch]",
   "asdf:iul1an/asdf-tfswitch",
 ]
 description = "A command line tool to switch between different versions of terraform (install with homebrew and more)"
@@ -4668,7 +4668,7 @@ backends = ["github:traefik/traefik", "asdf:Dabolus/asdf-traefik"]
 description = "The Cloud Native Application Proxy"
 
 [tools.transifex]
-backends = ["github:transifex/cli[exe=tx]", "asdf:ORCID/asdf-transifex"]
+backends = ["github:transifex/cli[bin=tx]", "asdf:ORCID/asdf-transifex"]
 description = "The Transifex command-line client"
 
 [tools.trdsql]
@@ -4716,7 +4716,7 @@ test = ["tssh --version 2>&1", "trzsz ssh {{version}}"]
 
 [tools.tsuru]
 backends = [
-  "github:tsuru/tsuru-client[exe=tsuru]",
+  "github:tsuru/tsuru-client[bin=tsuru]",
   "asdf:virtualstaticvoid/asdf-tsuru",
 ]
 description = "tsuru-client is a tsuru command line tool for application developers"
@@ -4962,7 +4962,7 @@ description = "A tool to build, deploy, and release any application on any platf
 
 [tools.weave-gitops]
 backends = [
-  "github:weaveworks/weave-gitops[exe=gitops]",
+  "github:weaveworks/weave-gitops[bin=gitops]",
   "asdf:deas/asdf-weave-gitops",
 ]
 description = "Command line utility for managing Kubernetes applications via GitOps"
