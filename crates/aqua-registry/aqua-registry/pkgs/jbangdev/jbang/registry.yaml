@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jbangdev
+    repo_name: jbang
+    description: "Unleash the power of Java - JBang Lets Students, Educators and Professional Developers create, edit and run self-contained source-only Java programs with unprecedented ease"
+    link: https://jbang.dev/
+    search_words:
+      - java
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.48.0")
+        error_message: Use version >= 0.48.0. Older versions are not supported.
+      - version_constraint: "true"
+        asset: jbang.zip
+        files:
+          - name: jbang
+            src: jbang/bin/jbang
+        overrides:
+          - goos: windows
+            files:
+              - name: jbang
+                src: jbang/bin/jbang.cmd
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256

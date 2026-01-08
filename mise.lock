@@ -271,6 +271,6 @@ backend = "aqua:tamasfe/taplo"
 "platforms.windows-x64-baseline" = { url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x86_64.zip"}
 
 [[tools.wait-for-gh-rate-limit]]
-version = "1.1.0"
+version = "1.1.1"
 backend = "ubi:jdx/wait-for-gh-rate-limit"
-"platforms.linux-x64-wait-for-gh-rate-limit" = { checksum = "blake3:f1e4b634efae6f40a795dfb7418cb02218d499c808c8f5b94c721ccced13b3a1"}
+"platforms.linux-x64-wait-for-gh-rate-limit" = { checksum = "blake3:35c2fa30b45ee4a1437624f21c36b3a0b03f57c286429f45f7a4f31d83a15ee9"}
