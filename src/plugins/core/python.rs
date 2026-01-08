@@ -58,8 +58,15 @@ fn python_version_sort_key(
         (0u8, v)
     } else {
         // Not miniconda - put non-digit-starting first, then digit-starting
+        // Use is_miniconda=false to separate from miniconda versions
         let starts_with_digit = regex!(r"^\d").is_match(version);
-        return (starts_with_digit, 0, false, None, None);
+        return (
+            false,
+            if starts_with_digit { 1 } else { 0 },
+            false,
+            None,
+            None,
+        );
     };
 
     // Handle "latest" specially - put first in each miniconda group
