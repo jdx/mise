@@ -741,7 +741,7 @@ cmd self-update help="Updates mise itself." {
 }
 cmd set help="Set environment variables in mise.toml" {
     alias ev env-vars hide=#true
-    long_help "Set environment variables in mise.toml\n\nBy default, this command modifies `mise.toml` in the current directory.\nUse `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`."
+    long_help "Set environment variables in mise.toml\n\nBy default, this command modifies `mise.toml` in the current directory.\nIf multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),\nthe lowest precedence file (`mise.toml`) will be used.\nSee https://mise.jdx.dev/configuration.html#target-file-for-write-operations\n\nUse `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`."
     after_long_help "Examples:\n\n    $ mise set NODE_ENV=production\n\n    $ mise set NODE_ENV\n    production\n\n    $ mise set -E staging NODE_ENV=staging\n    # creates or modifies mise.staging.toml\n\n    $ mise set\n    key       value       source\n    NODE_ENV  production  ~/.config/mise/config.toml\n\n    $ mise set --prompt PASSWORD\n    Enter value for PASSWORD: [hidden input]\n\n    [experimental] Age Encryption:\n\n    $ mise set --age-encrypt API_KEY=secret\n\n    $ mise set --age-encrypt --prompt API_KEY\n    Enter value for API_KEY: [hidden input]\n"
     flag "-E --env" help="Create/modify an environment-specific config file like .mise.<env>.toml" {
         arg <ENV>
@@ -810,7 +810,7 @@ cmd settings help="Manage settings" {
     }
     cmd set help="Add/update a setting" {
         alias create
-        long_help "Add/update a setting\n\nThis modifies the contents of ~/.config/mise/config.toml"
+        long_help "Add/update a setting\n\nThis modifies the contents of ~/.config/mise/config.toml by default.\nWith `--local`, modifies the local config file instead.\nSee https://mise.jdx.dev/configuration.html#target-file-for-write-operations"
         after_long_help "Examples:\n\n    $ mise settings idiomatic_version_file=true\n"
         flag "-l --local" help="Use the local config file instead of the global one"
         arg <SETTING> help="The setting to set"
@@ -905,6 +905,7 @@ cmd tasks help="Manage tasks" {
     flag --usage hide=#true global=#true
     arg "[TASK]" help="Task name to get info of" required=#false
     cmd add help="Create a new task" {
+        long_help "Create a new task\n\nAdds a task to the local mise.toml file.\nSee https://mise.jdx.dev/configuration.html#target-file-for-write-operations"
         after_long_help "Examples:\n\n    $ mise tasks add pre-commit --depends \"test\" --depends \"render\" -- echo pre-commit\n"
         flag "-a --alias" help="Other names for the task" var=#true {
             arg <ALIAS>
@@ -1092,7 +1093,7 @@ cmd unset help="Remove environment variable(s) from the config file." {
 }
 cmd unuse help="Removes installed tool versions from mise.toml" {
     alias rm remove
-    long_help "Removes installed tool versions from mise.toml\n\nBy default, this will use the `mise.toml` file that has the tool defined.\n\nIn the following order:\n  - If `--global` is set, it will use the global config file.\n  - If `--path` is set, it will use the config file at the given path.\n  - If `--env` is set, it will use `mise.<env>.toml`.\n  - If `MISE_DEFAULT_CONFIG_FILENAME` is set, it will use that instead.\n  - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.\n  - Otherwise just \"mise.toml\" or global config if cwd is home directory.\n\nWill also prune the installed version if no other configurations are using it."
+    long_help "Removes installed tool versions from mise.toml\n\nBy default, this will use the `mise.toml` file that has the tool defined.\nIf multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),\nthe lowest precedence file (`mise.toml`) will be used.\nSee https://mise.jdx.dev/configuration.html#target-file-for-write-operations\n\nIn the following order:\n  - If `--global` is set, it will use the global config file.\n  - If `--path` is set, it will use the config file at the given path.\n  - If `--env` is set, it will use `mise.<env>.toml`.\n  - If `MISE_DEFAULT_CONFIG_FILENAME` is set, it will use that instead.\n  - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.\n  - Otherwise just \"mise.toml\" or global config if cwd is home directory.\n\nWill also prune the installed version if no other configurations are using it."
     after_long_help "Examples:\n\n    # will uninstall specific version\n    $ mise unuse node@18.0.0\n\n    # will uninstall specific version from global config\n    $ mise unuse -g node@18.0.0\n\n    # will uninstall specific version from .mise.local.toml\n    $ mise unuse --env local node@20\n\n    # will uninstall specific version from .mise.staging.toml\n    $ mise unuse --env staging node@20\n"
     flag "-e --env" help="Create/modify an environment-specific config file like .mise.<env>.toml" {
         arg <ENV>
@@ -1129,7 +1130,7 @@ cmd usage hide=#true help="Generate a usage CLI spec" {
 }
 cmd use help="Installs a tool and adds the version to mise.toml." {
     alias u
-    long_help "Installs a tool and adds the version to mise.toml.\n\nThis will install the tool version if it is not already installed.\nBy default, this will use a `mise.toml` file in the current directory.\n\nIn the following order:\n  - If `--global` is set, it will use the global config file.\n  - If `--path` is set, it will use the config file at the given path.\n  - If `--env` is set, it will use `mise.<env>.toml`.\n  - If `MISE_DEFAULT_CONFIG_FILENAME` is set, it will use that instead.\n  - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.\n  - Otherwise just \"mise.toml\" or global config if cwd is home directory.\n\nUse the `--global` flag to use the global config file instead."
+    long_help "Installs a tool and adds the version to mise.toml.\n\nThis will install the tool version if it is not already installed.\nBy default, this will use a `mise.toml` file in the current directory.\nIf multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),\nthe lowest precedence file (`mise.toml`) will be used.\nSee https://mise.jdx.dev/configuration.html#target-file-for-write-operations\n\nIn the following order:\n  - If `--global` is set, it will use the global config file.\n  - If `--path` is set, it will use the config file at the given path.\n  - If `--env` is set, it will use `mise.<env>.toml`.\n  - If `MISE_DEFAULT_CONFIG_FILENAME` is set, it will use that instead.\n  - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.\n  - Otherwise just \"mise.toml\" or global config if cwd is home directory.\n\nUse the `--global` flag to use the global config file instead."
     after_long_help "Examples:\n    \n    # run with no arguments to use the interactive selector\n    $ mise use\n\n    # set the current version of node to 20.x in mise.toml of current directory\n    # will write the fuzzy version (e.g.: 20)\n    $ mise use node@20\n\n    # set the current version of node to 20.x in ~/.config/mise/config.toml\n    # will write the precise version (e.g.: 20.0.0)\n    $ mise use -g --pin node@20\n\n    # sets .mise.local.toml (which is intended not to be committed to a project)\n    $ mise use --env local node@20\n\n    # sets .mise.staging.toml (which is used if MISE_ENV=staging)\n    $ mise use --env staging node@20\n"
     flag "-e --env" help="Create/modify an environment-specific config file like .mise.<env>.toml" {
         arg <ENV>

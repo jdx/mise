@@ -1,4 +1,5 @@
 use crate::Result;
+use crate::config::miserc;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches, EnvMap};
 use crate::file::replace_path;
 use crate::shell::ShellType;
@@ -141,12 +142,16 @@ pub static MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES: Lazy<Option<IndexSet<String>>>
     Lazy::new(|| match var("MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES") {
         Ok(v) if v == "none" => Some([].into()),
         Ok(v) => Some(v.split(':').map(|s| s.to_string()).collect()),
-        Err(_) => Default::default(),
+        Err(_) => {
+            miserc::get_override_tool_versions_filenames().map(|v| v.iter().cloned().collect())
+        }
     });
 pub static MISE_OVERRIDE_CONFIG_FILENAMES: Lazy<IndexSet<String>> =
     Lazy::new(|| match var("MISE_OVERRIDE_CONFIG_FILENAMES") {
         Ok(v) => v.split(':').map(|s| s.to_string()).collect(),
-        Err(_) => Default::default(),
+        Err(_) => miserc::get_override_config_filenames()
+            .map(|v| v.iter().cloned().collect())
+            .unwrap_or_default(),
     });
 pub static MISE_ENV: Lazy<Vec<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
 pub static MISE_GLOBAL_CONFIG_FILE: Lazy<Option<PathBuf>> =
@@ -165,6 +170,10 @@ pub static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
                 .map(replace_path)
                 .collect()
         })
+        .or_else(|| {
+            miserc::get_ignored_config_paths()
+                .map(|paths| paths.iter().cloned().map(replace_path).collect())
+        })
         .unwrap_or_default()
 });
 pub static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {
@@ -175,6 +184,10 @@ pub static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {
                 .filter(|p| !p.as_os_str().is_empty())
                 .map(replace_path)
                 .collect()
+        })
+        .or_else(|| {
+            miserc::get_ceiling_paths()
+                .map(|paths| paths.iter().cloned().map(replace_path).collect())
         })
         .unwrap_or_default()
 });
@@ -589,6 +602,7 @@ fn environment(args: &[String]) -> Vec<String> {
     let arg_defs = HashSet::from(["--profile", "-P", "--env", "-E"]);
 
     // Get environment value from args or env vars
+    // Precedence: CLI args > env vars > .miserc.toml
     if *IS_RUNNING_AS_SHIM {
         // When running as shim, ignore command line args and use env vars only
         None
@@ -604,14 +618,26 @@ fn environment(args: &[String]) -> Vec<String> {
                 }
             })
     }
-    .or_else(|| var("MISE_ENV").ok())
-    .or_else(|| var("MISE_PROFILE").ok())
-    .or_else(|| var("MISE_ENVIRONMENT").ok())
+    .map(|s| {
+        s.split(',')
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect()
+    })
+    .or_else(|| {
+        var("MISE_ENV")
+            .ok()
+            .or_else(|| var("MISE_PROFILE").ok())
+            .or_else(|| var("MISE_ENVIRONMENT").ok())
+            .map(|s| {
+                s.split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .collect()
+            })
+    })
+    .or_else(|| miserc::get_env().cloned())
     .unwrap_or_default()
-    .split(',')
-    .filter(|s| !s.is_empty())
-    .map(String::from)
-    .collect()
 }
 
 fn log_file_level() -> Option<LevelFilter> {

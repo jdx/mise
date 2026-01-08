@@ -23,3 +23,15 @@ assert_not_contains "mise set -E production" "STAGING_VAR"
 # Test that regular set doesn't show env-specific vars
 assert_not_contains "mise set" "STAGING_VAR"
 assert_not_contains "mise set" "PROD_VAR"
+
+# Test that mise set writes to mise.toml (lowest precedence) instead of mise.local.toml
+# when both exist. See: https://github.com/jdx/mise/discussions/6475
+rm -f mise.toml mise.local.toml
+echo '[env]' >mise.toml
+echo 'BASE_VAR = "base"' >>mise.toml
+echo '[env]' >mise.local.toml
+echo 'LOCAL_VAR = "local"' >>mise.local.toml
+assert "mise set NEW_VAR=new_value" ""
+assert_contains "cat mise.toml" "NEW_VAR"
+assert_not_contains "cat mise.local.toml" "NEW_VAR"
+rm -f mise.toml mise.local.toml

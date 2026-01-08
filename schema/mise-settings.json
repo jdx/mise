@@ -99,6 +99,10 @@
           ],
           "description": "How to parse the environment variable value"
         },
+        "rc": {
+          "type": "boolean",
+          "description": "Whether this setting can be set in .miserc.toml for early initialization"
+        },
         "rust_type": {
           "type": "string",
           "description": "Rust type used internally for this setting"

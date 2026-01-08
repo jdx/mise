@@ -9,6 +9,9 @@ Installs a tool and adds the version to mise.toml.
 
 This will install the tool version if it is not already installed.
 By default, this will use a `mise.toml` file in the current directory.
+If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
+the lowest precedence file (`mise.toml`) will be used.
+See <https://mise.jdx.dev/configuration.html#target-file-for-write-operations>
 
 In the following order:
 - If `--global` is set, it will use the global config file.

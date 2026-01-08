@@ -33,6 +33,7 @@ use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shim
 
 pub mod config_file;
 pub mod env_directive;
+pub mod miserc;
 pub mod settings;
 pub mod tracking;
 
@@ -939,12 +940,30 @@ fn all_dirs_from(start_dir: &Path) -> Result<Vec<PathBuf>> {
     file::all_dirs(start_dir, &env::MISE_CEILING_PATHS)
 }
 
+/// Returns true if a path is a .tool-versions file (lower priority for writes)
+fn is_tool_versions_file(p: &Path) -> bool {
+    p.file_name()
+        .is_some_and(|f| f.to_string_lossy().ends_with(".tool-versions"))
+}
+
+/// Get the first (lowest precedence) config file, but skip .tool-versions unless
+/// it's the only option. This ensures commands like `mise use` write to mise.toml
+/// instead of mise.local.toml or .tool-versions when multiple configs exist.
+/// See: https://github.com/jdx/mise/discussions/6475
+fn first_config_file(files: &IndexSet<PathBuf>) -> Option<&PathBuf> {
+    files
+        .iter()
+        .find(|p| !is_tool_versions_file(p))
+        .or_else(|| files.first())
+}
+
 pub fn config_file_from_dir(p: &Path) -> PathBuf {
     if !p.is_dir() {
         return p.to_path_buf();
     }
     for dir in all_dirs().unwrap_or_default() {
-        if let Some(cf) = self::config_files_in_dir(&dir).last()
+        let files = self::config_files_in_dir(&dir);
+        if let Some(cf) = first_config_file(&files)
             && !is_global_config(cf)
         {
             return cf.clone();
@@ -1155,12 +1174,15 @@ pub fn local_toml_config_paths() -> Vec<&'static PathBuf> {
         .collect()
 }
 
-/// either the top local mise.toml or the path to where it should be written to
+/// The last (lowest precedence) local mise.toml or the path to where it should be written to.
+/// This ensures commands write to mise.toml instead of mise.local.toml when both exist.
+/// Note: local_toml_config_paths() returns files in highest-to-lowest precedence order,
+/// so we use .last() to get the lowest precedence file.
 pub fn local_toml_config_path() -> PathBuf {
     static CWD: Lazy<PathBuf> = Lazy::new(|| PathBuf::from("."));
     local_toml_config_paths()
         .into_iter()
-        .next_back()
+        .last()
         .cloned()
         .unwrap_or_else(|| {
             dirs::CWD

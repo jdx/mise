@@ -13,6 +13,7 @@ type Props = {
   default?: unknown;
   deprecated?: string;
   enum?: [string, ...string[]][];
+  rc?: boolean;
 };
 
 type SettingsToml = Record<string, Props | Record<string, Props>>;
@@ -141,3 +142,28 @@ child_process.execSync(
 );
 child_process.execSync("prettier --write schema/mise-task.json");
 fs.unlinkSync("schema/mise-task.json.tmp");
+
+// Generate .miserc.toml schema with only rc=true settings
+const misercSettings: Record<string, Element> = {};
+
+for (const key in doc) {
+  const props = doc[key];
+  if (hasSubkeys(props) && props.rc === true) {
+    misercSettings[key] = buildElement(key, props);
+  }
+}
+
+const misercSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  title: "mise rc config",
+  description:
+    "Early initialization settings for mise. These settings are loaded before the main config files.",
+  type: "object",
+  additionalProperties: false,
+  properties: misercSettings,
+};
+
+fs.writeFileSync("schema/miserc.json.tmp", JSON.stringify(misercSchema));
+child_process.execSync("jq . < schema/miserc.json.tmp > schema/miserc.json");
+child_process.execSync("prettier --write schema/miserc.json");
+fs.unlinkSync("schema/miserc.json.tmp");

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mise rc config",
+  "description": "Early initialization settings for mise. These settings are loaded before the main config files.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "ceiling_paths": {
+      "default": [],
+      "description": "Directories where mise stops searching for config files.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "env": {
+      "default": [],
+      "description": "Env to use for mise.<MISE_ENV>.toml files.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "ignored_config_paths": {
+      "default": [],
+      "description": "This is a list of config paths that mise will ignore.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "override_config_filenames": {
+      "default": [],
+      "description": "If set, mise will ignore default config files like `mise.toml` and use these filenames instead.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "override_tool_versions_filenames": {
+      "default": [],
+      "description": "If set, mise will ignore .tool-versions files and use these filenames instead. Can be set to `none` to disable .tool-versions.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

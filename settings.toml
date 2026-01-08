@@ -233,6 +233,27 @@ hide = true
 optional = true
 type = "Path"
 
+[ceiling_paths]
+default = []
+description = "Directories where mise stops searching for config files."
+docs = """
+Directories where mise stops searching for config files. By default, mise
+will search from the current directory up to the root of the filesystem.
+
+Setting this to a list of directories will stop the search when one of
+those directories is reached. This is useful to prevent mise from searching
+outside of a project directory.
+
+This is an early-init setting: it must be set in `.miserc.toml`, environment
+variables, or CLI flags. Setting it in `mise.toml` will have no effect because
+config file discovery has already occurred by the time `mise.toml` is read.
+"""
+env = "MISE_CEILING_PATHS"
+parse_env = "list_by_colon"
+rc = true
+rust_type = "BTreeSet<PathBuf>"
+type = "ListPath"
+
 [ci]
 default = "false"
 description = "Set to true if running in a CI environment"
@@ -373,9 +394,14 @@ to use this feature.
 
 Multiple envs can be set by separating them with a comma, e.g. `MISE_ENV=ci,test`.
 They will be read in order, with the last one taking precedence.
+
+This is an early-init setting: it must be set in `.miserc.toml`, environment
+variables, or CLI flags (`-E`/`--env`). Setting it in `mise.toml` will have no
+effect because `MISE_ENV` determines which config files to load.
 """
 env = "MISE_ENV"
 parse_env = "list_by_comma"
+rc = true
 type = "ListString"
 
 [env_file]
@@ -658,8 +684,16 @@ type = "SetString"
 [ignored_config_paths]
 default = []
 description = "This is a list of config paths that mise will ignore."
+docs = """
+This is a list of config paths that mise will ignore.
+
+This is an early-init setting: it must be set in `.miserc.toml`, environment
+variables, or CLI flags. Setting it in `mise.toml` will have no effect because
+config file discovery has already occurred by the time `mise.toml` is read.
+"""
 env = "MISE_IGNORED_CONFIG_PATHS"
 parse_env = "list_by_colon"
+rc = true
 rust_type = "BTreeSet<PathBuf>"
 type = "ListPath"
 
@@ -907,16 +941,34 @@ type = "String"
 
 [override_config_filenames]
 default = []
-description = "If set, mise will ignore default config files like `mise.toml` and use these filenames instead. This must be an env var."
+description = "If set, mise will ignore default config files like `mise.toml` and use these filenames instead."
+docs = """
+If set, mise will ignore default config files like `mise.toml` and use these
+filenames instead.
+
+This is an early-init setting: it must be set in `.miserc.toml`, environment
+variables, or CLI flags. Setting it in `mise.toml` will have no effect because
+config file discovery has already occurred by the time `mise.toml` is read.
+"""
 env = "MISE_OVERRIDE_CONFIG_FILENAMES"
 parse_env = "list_by_colon"
+rc = true
 type = "ListString"
 
 [override_tool_versions_filenames]
 default = []
-description = "If set, mise will ignore .tool-versions files and use these filenames instead. Can be set to `none` to disable .tool-versions. This must be an env var."
+description = "If set, mise will ignore .tool-versions files and use these filenames instead. Can be set to `none` to disable .tool-versions."
+docs = """
+If set, mise will ignore .tool-versions files and use these filenames instead.
+Can be set to `none` to disable .tool-versions entirely.
+
+This is an early-init setting: it must be set in `.miserc.toml`, environment
+variables, or CLI flags. Setting it in `mise.toml` will have no effect because
+config file discovery has already occurred by the time `mise.toml` is read.
+"""
 env = "MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES"
 parse_env = "list_by_colon"
+rc = true
 type = "ListString"
 
 [paranoid]
