@@ -13,6 +13,9 @@ use path_absolutize::Absolutize;
 /// Removes installed tool versions from mise.toml
 ///
 /// By default, this will use the `mise.toml` file that has the tool defined.
+/// If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
+/// the lowest precedence file (`mise.toml`) will be used.
+/// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 ///
 /// In the following order:
 ///   - If `--global` is set, it will use the global config file.

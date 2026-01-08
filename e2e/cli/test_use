@@ -49,7 +49,18 @@ mise use dummy@1 --path .
 assert "cat mise.toml" '[tools]
 dummy = "1"'
 
-mise use dummy@1
+# mise use should write to mise.toml (lowest precedence) instead of mise.local.toml
+# See: https://github.com/jdx/mise/discussions/6475
+mise use dummy@2
+assert "cat mise.toml" '[tools]
+dummy = "2"'
+
+# When both mise.toml and mise.local.toml exist, mise use should still write to mise.toml
+echo '[tools]' >mise.local.toml
+echo 'dummy = "1"' >>mise.local.toml
+mise use dummy@3
+assert "cat mise.toml" '[tools]
+dummy = "3"'
 assert "cat mise.local.toml" '[tools]
 dummy = "1"'
 
@@ -58,7 +69,15 @@ echo "dummy 1.0.0" >.tool-versions
 mise use dummy@2
 assert "cat .tool-versions" "dummy 2"
 
-rm -f .tool-versions
+# When both .tool-versions and mise.toml exist, mise use should prefer mise.toml
+echo '[tools]' >mise.toml
+echo 'dummy = "1"' >>mise.toml
+mise use dummy@3
+assert "cat mise.toml" '[tools]
+dummy = "3"'
+assert "cat .tool-versions" "dummy 2"
+
+rm -f .tool-versions mise.toml
 
 mise use -g dummy@1
 assert "cat ~/.config/mise/config.toml" '[tools]
