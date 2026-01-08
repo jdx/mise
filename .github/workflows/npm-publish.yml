@@ -10,20 +10,27 @@ on:
         required: false
         default: true
         type: boolean
+      version:
+        description: "Version to publish (e.g., v2026.1.1). Defaults to latest release."
+        required: false
+        type: string
 
 concurrency:
   group: npm-publish-${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
 
 env:
-  DRY_RUN: ${{ github.event_name == 'release' && '0' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.dry_run && '1' || '0')) || '1' }}
+  DRY_RUN: ${{ github.event_name == 'release' && '0' || (inputs.dry_run && '1' || '0') }}
 
 jobs:
   npm-publish:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
     if: |
-      (github.event_name == 'release' && 
-       startsWith(github.event.release.tag_name, 'v') && 
+      (github.event_name == 'release' &&
+       startsWith(github.event.release.tag_name, 'v') &&
        !github.event.release.prerelease) ||
       github.event_name == 'workflow_dispatch'
     steps:
@@ -32,7 +39,11 @@ jobs:
 
       - name: Download release artifacts
         run: |
-          VERSION="$(./scripts/get-version.sh)"
+          if [[ -n "${{ inputs.version }}" ]]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="$(./scripts/get-version.sh)"
+          fi
           mkdir -p "releases/$VERSION"
 
           # Download release artifacts from GitHub release
@@ -60,12 +71,14 @@ jobs:
       - name: Publish npm packages
         run: |
           if [[ ${DRY_RUN:-0} != 1 ]]; then
-            MISE_VERSION="$(./scripts/get-version.sh)"
+            if [[ -n "${{ inputs.version }}" ]]; then
+              MISE_VERSION="${{ inputs.version }}"
+            else
+              MISE_VERSION="$(./scripts/get-version.sh)"
+            fi
             export MISE_VERSION
             export RELEASE_DIR="releases"
             NPM_PREFIX=@jdxcode/mise ./scripts/release-npm.sh
           else
             echo "DRY RUN: Would publish npm packages"
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

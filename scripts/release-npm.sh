@@ -6,11 +6,6 @@ error() {
 	exit 1
 }
 
-if [[ -z ${NODE_AUTH_TOKEN:-} ]]; then
-	echo "NODE_AUTH_TOKEN must be set" >&2
-	exit 0
-fi
-
 mkdir -p "$RELEASE_DIR/npm"
 
 dist_tag_from_version() {
@@ -68,12 +63,12 @@ for platform in "${platforms[@]}"; do
 EOF
 	pushd "$RELEASE_DIR/npm"
 	tree || true
-	if [ "$DRY_RUN" != "0" ]; then
+	if [ "${DRY_RUN:-0}" != "0" ]; then
 		echo DRY_RUN
-		echo npm publish --access public --tag "$dist_tag"
+		echo npm publish --access public --tag "$dist_tag" --provenance
 		echo DRY_RUN
 	else
-		npm publish --access public --tag "$dist_tag" || true
+		npm publish --access public --tag "$dist_tag" --provenance
 	fi
 	popd
 done
@@ -165,11 +160,11 @@ cat <<EOF >"$RELEASE_DIR/npm/package.json"
 }
 EOF
 pushd "$RELEASE_DIR/npm"
-if [ "$DRY_RUN" != "0" ]; then
+if [ "${DRY_RUN:-0}" != "0" ]; then
 	echo DRY_RUN
-	echo npm publish --access public --tag "$dist_tag"
+	echo npm publish --access public --tag "$dist_tag" --provenance
 	echo DRY_RUN
 else
-	npm publish --access public --tag "$dist_tag" || true
+	npm publish --access public --tag "$dist_tag" --provenance
 fi
 popd
