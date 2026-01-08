@@ -231,7 +231,6 @@ description = "Path to change to after launching mise"
 env = "MISE_CD"
 hide = true
 optional = true
-rc = true
 type = "Path"
 
 [ceiling_paths]

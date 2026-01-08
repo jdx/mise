@@ -5,10 +5,6 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "cd": {
-      "description": "Path to change to after launching mise",
-      "type": "string"
-    },
     "ceiling_paths": {
       "default": [],
       "description": "Directories where mise stops searching for config files.",

@@ -89,9 +89,6 @@ fn merge_settings(target: &mut MisercSettings, source: MisercSettings) {
     if source.env.is_some() {
         target.env = source.env;
     }
-    if source.cd.is_some() {
-        target.cd = source.cd;
-    }
     if source.ceiling_paths.is_some() {
         target.ceiling_paths = source.ceiling_paths;
     }
@@ -153,26 +150,17 @@ mod tests {
     fn test_merge_settings() {
         let mut target = MisercSettings {
             env: Some(vec!["base".to_string()]),
-            cd: None,
-            ceiling_paths: None,
-            ignored_config_paths: None,
-            override_config_filenames: None,
-            override_tool_versions_filenames: None,
+            ..Default::default()
         };
 
         let source = MisercSettings {
             env: Some(vec!["override".to_string()]),
-            cd: Some(PathBuf::from("/tmp")),
-            ceiling_paths: None,
-            ignored_config_paths: None,
-            override_config_filenames: None,
-            override_tool_versions_filenames: None,
+            ..Default::default()
         };
 
         merge_settings(&mut target, source);
 
         assert_eq!(target.env, Some(vec!["override".to_string()]));
-        assert_eq!(target.cd, Some(PathBuf::from("/tmp")));
     }
 
     #[test]
