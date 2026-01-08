@@ -308,6 +308,7 @@ impl Task {
                 {
                     deprecated!(
                         "file_task_headers_old_syntax",
+                        true,
                         "The `# mise ...` syntax for task headers is deprecated and will be removed in mise 2026.3.0. Use the new `#MISE ...` syntax instead."
                     );
                     Some(captures)

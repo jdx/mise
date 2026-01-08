@@ -114,6 +114,7 @@ pub async fn local(
 ) -> Result<()> {
     deprecated!(
         "local",
+        true,
         "mise local/global are deprecated. Use `mise use` instead."
     );
     let settings = Settings::try_get()?;

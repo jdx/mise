@@ -681,13 +681,12 @@ impl ConfigFile for MiseToml {
 
     fn aliases(&self) -> eyre::Result<AliasMap> {
         // Emit deprecation warning if [alias] is used
-        if !self.alias.is_empty() {
-            deprecated!(
-                "alias",
-                "[alias] is deprecated, use [tool_alias] instead in {}",
-                display_path(&self.path)
-            );
-        }
+        deprecated!(
+            "alias",
+            !self.alias.is_empty(),
+            "[alias] is deprecated, use [tool_alias] instead in {}",
+            display_path(&self.path)
+        );
 
         // Merge alias and tool_alias, with tool_alias taking precedence
         let mut combined: AliasMap = self.alias.clone();
@@ -1760,6 +1759,7 @@ impl<'de> de::Deserialize<'de> for Alias {
                         _ => {
                             deprecated!(
                                 "TOOL_VERSION_ALIASES",
+                                true,
                                 "tool version aliases should be `alias.<TOOL>.versions.<FROM> = <TO>`, not `alias.<TOOL>.<FROM> = <TO>`"
                             );
                             versions.insert(key, map.next_value()?);

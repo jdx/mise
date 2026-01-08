@@ -1388,6 +1388,11 @@ description = "Suppress all `mise run|watch` output except errors—including wh
 env = "MISE_SILENT"
 type = "Bool"
 
+[suppress_deprecation_warnings]
+description = "Suppress deprecation warnings."
+env = "MISE_SUPPRESS_DEPRECATION_WARNINGS"
+type = "Bool"
+
 [age.identity_files]
 description = "[experimental] List of age identity files to use for decryption."
 env = "MISE_AGE_IDENTITY_FILES"

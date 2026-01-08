@@ -72,17 +72,16 @@ impl TaskScriptParser {
 
         // Show deprecation warning for versions >= 2026.5.0
         let deprecation_version = Versioning::new("2026.5.0").unwrap();
-        if *V >= deprecation_version {
-            deprecated!(
-                "tera_template_task_args",
-                "Task '{}' uses deprecated Tera template functions (arg(), option(), flag()) in run scripts. \
-                 This will be removed in mise 2026.11.0. The template functions require two-pass parsing which \
-                 causes unexpected behavior - they return empty strings during spec collection and have complex \
-                 escaping rules. The 'usage' field is cleaner, works consistently between TOML/file tasks, and \
-                 provides all the same functionality. See migration guide: https://mise.jdx.dev/tasks/task-arguments/#tera-templates",
-                task_name
-            );
-        }
+        deprecated!(
+            "tera_template_task_args",
+            *V >= deprecation_version,
+            "Task '{}' uses deprecated Tera template functions (arg(), option(), flag()) in run scripts. \
+             This will be removed in mise 2026.11.0. The template functions require two-pass parsing which \
+             causes unexpected behavior - they return empty strings during spec collection and have complex \
+             escaping rules. The 'usage' field is cleaner, works consistently between TOML/file tasks, and \
+             provides all the same functionality. See migration guide: https://mise.jdx.dev/tasks/task-arguments/#tera-templates",
+            task_name
+        );
     }
 
     // Helper functions for tera error handling

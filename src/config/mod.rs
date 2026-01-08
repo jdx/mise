@@ -775,15 +775,13 @@ async fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
     if enable_tools.is_empty() {
         return BTreeMap::new();
     }
-    if !Settings::get()
-        .idiomatic_version_file_disable_tools
-        .is_empty()
-    {
-        deprecated!(
-            "idiomatic_version_file_disable_tools",
-            "is deprecated, use idiomatic_version_file_enable_tools instead"
-        );
-    }
+    deprecated!(
+        "idiomatic_version_file_disable_tools",
+        !Settings::get()
+            .idiomatic_version_file_disable_tools
+            .is_empty(),
+        "is deprecated, use idiomatic_version_file_enable_tools instead"
+    );
     let mut jset = JoinSet::new();
     for tool in backend::list() {
         let enable_tools = enable_tools.clone();

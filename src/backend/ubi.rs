@@ -194,6 +194,7 @@ impl Backend for UbiBackend {
     ) -> eyre::Result<ToolVersion> {
         deprecated!(
             "ubi",
+            true,
             "The ubi backend is deprecated. Use the github backend instead (e.g., github:owner/repo)"
         );
         // Check if lockfile has URL for this platform

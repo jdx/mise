@@ -151,8 +151,11 @@ pub static DEPRECATED: LazyLock<Mutex<HashSet<&'static str>>> = LazyLock::new(De
 
 #[macro_export]
 macro_rules! deprecated {
-    ($id:tt, $($arg:tt)*) => {{
-        if $crate::output::DEPRECATED.lock().unwrap().insert($id) {
+    ($id:tt, $cond:expr, $($arg:tt)*) => {{
+        if $cond
+            && !$crate::config::Settings::get().suppress_deprecation_warnings
+            && $crate::output::DEPRECATED.lock().unwrap().insert($id)
+        {
             warn!("deprecated [{}]: {}", $id, format!($($arg)*));
         }
     }};
