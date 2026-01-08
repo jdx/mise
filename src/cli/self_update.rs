@@ -130,9 +130,7 @@ impl SelfUpdate {
         let target = format!("{}-{}", *OS, *ARCH);
         #[cfg(target_env = "musl")]
         let target = format!("{target}-musl");
-        if self.force || self.version.is_some() {
-            update.target_version_tag(&v);
-        }
+        update.target_version_tag(&v);
         #[cfg(windows)]
         let target = format!("mise-{v}-{target}.zip");
         #[cfg(not(windows))]
