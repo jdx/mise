@@ -1591,9 +1591,10 @@ backends = ["aqua:itchyny/fillin", "asdf:ouest/asdf-fillin"]
 description = "fill-in your command and execute"
 
 [tools.firebase]
-backends = ["aqua:firebase/firebase-tools", "asdf:jthegedus/asdf-firebase"]
+backends = ["aqua:firebase/firebase-tools", "npm:firebase-tools", "asdf:jthegedus/asdf-firebase"]
 description = "The Firebase Command Line Tools"
-test = ["firebase --version", "{{version}}"]
+# 15.2.0 doesn't work. ref: https://github.com/firebase/firebase-tools/issues/9715
+# test = ["firebase --version", "{{version}}"]
 
 [tools.fission]
 backends = ["aqua:fission/fission", "asdf:virtualstaticvoid/asdf-fission"]
