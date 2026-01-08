@@ -557,6 +557,11 @@ fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<St
 impl Cli {
     pub async fn run(args: &Vec<String>) -> Result<()> {
         crate::env::ARGS.write().unwrap().clone_from(args);
+        // Load .miserc.toml early, before MISE_ENV and other early settings are accessed.
+        // This allows setting MISE_ENV in a config file instead of only via env vars.
+        if let Err(err) = crate::config::miserc::init() {
+            warn!("Failed to load .miserc.toml: {err}");
+        }
         if *crate::env::MISE_TOOL_STUB && args.len() >= 2 {
             tool_stub::short_circuit_stub(&args[2..]).await?;
         }

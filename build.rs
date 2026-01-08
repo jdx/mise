@@ -414,5 +414,51 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
         .to_string(),
     );
 
+    // Generate MisercSettings struct for early initialization settings
+    lines.push(
+        r#"
+/// Settings that can be set in .miserc.toml for early initialization.
+/// These settings affect config file discovery and must be loaded before
+/// the main config files are parsed.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct MisercSettings {"#
+            .to_string(),
+    );
+
+    for (key, props) in &settings {
+        let props = props.as_table().unwrap();
+        // Only include settings with rc = true
+        if props
+            .get("rc")
+            .is_some_and(|v| v.as_bool().unwrap_or(false))
+        {
+            if let Some(description) = props.get("description") {
+                lines.push(format!("    /// {}", description.as_str().unwrap()));
+            }
+            let type_ = props
+                .get("rust_type")
+                .map(|rt| rt.as_str().unwrap())
+                .or(props.get("type").map(|t| match t.as_str().unwrap() {
+                    "Bool" => "bool",
+                    "String" => "String",
+                    "Integer" => "i64",
+                    "Url" => "String",
+                    "Path" => "PathBuf",
+                    "Duration" => "String",
+                    "ListString" => "Vec<String>",
+                    "ListPath" => "Vec<PathBuf>",
+                    "SetString" => "BTreeSet<String>",
+                    "IndexMap<String, String>" => "IndexMap<String, String>",
+                    t => panic!("Unknown type: {t}"),
+                }));
+            if let Some(type_) = type_ {
+                // All miserc settings are optional
+                let type_ = format!("Option<{type_}>");
+                lines.push(format!("    pub {key}: {type_},"));
+            }
+        }
+    }
+    lines.push("}".to_string());
+
     fs::write(&dest_path, lines.join("\n")).unwrap();
 }

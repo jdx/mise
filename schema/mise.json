@@ -489,6 +489,14 @@
           "description": "Path to change to after launching mise",
           "type": "string"
         },
+        "ceiling_paths": {
+          "default": [],
+          "description": "Directories where mise stops searching for config files.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "ci": {
           "default": "false",
           "description": "Set to true if running in a CI environment",
@@ -855,7 +863,7 @@
         },
         "override_config_filenames": {
           "default": [],
-          "description": "If set, mise will ignore default config files like `mise.toml` and use these filenames instead. This must be an env var.",
+          "description": "If set, mise will ignore default config files like `mise.toml` and use these filenames instead.",
           "type": "array",
           "items": {
             "type": "string"
@@ -863,7 +871,7 @@
         },
         "override_tool_versions_filenames": {
           "default": [],
-          "description": "If set, mise will ignore .tool-versions files and use these filenames instead. Can be set to `none` to disable .tool-versions. This must be an env var.",
+          "description": "If set, mise will ignore .tool-versions files and use these filenames instead. Can be set to `none` to disable .tool-versions.",
           "type": "array",
           "items": {
             "type": "string"

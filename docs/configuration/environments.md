@@ -1,9 +1,35 @@
 # Config Environments
 
 It's possible to have separate `mise.toml` files in the same directory for different
-environments like `development` and `production`. To enable, either set the `-E,--env` option or `MISE_ENV` environment
-variable to an environment like `development` or `production`. mise will then look for a `mise.{MISE_ENV}.toml` file
-in the current directory, parent directories and the `MISE_CONFIG_DIR` directory.
+environments like `development` and `production`. To enable, set `MISE_ENV` to an
+environment like `development` or `production` using one of these methods:
+
+- CLI flag: `-E development` or `--env development`
+- Environment variable: `MISE_ENV=development`
+- `.miserc.toml` file: `env = ["development"]`
+
+mise will then look for a `mise.{MISE_ENV}.toml` file in the current directory,
+parent directories and the `MISE_CONFIG_DIR` directory.
+
+## Setting MISE_ENV in .miserc.toml
+
+You can set `MISE_ENV` in a `.miserc.toml` file, which is loaded very early before
+other config files are discovered. This allows you to commit your environment
+configuration to version control:
+
+```toml
+# .miserc.toml
+env = ["development"]
+```
+
+File locations searched (in order of precedence):
+
+1. `.miserc.toml` in current directory and parent directories
+2. `~/.config/mise/miserc.toml` (global)
+3. `/etc/mise/miserc.toml` (system)
+
+Note: `MISE_ENV` cannot be set in `mise.toml` because it determines which config
+files to load in the first place.
 
 mise will also look for "local" files like `mise.local.toml` and `mise.{MISE_ENV}.local.toml`
 in the current directory and parent directories.

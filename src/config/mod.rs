@@ -33,6 +33,7 @@ use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shim
 
 pub mod config_file;
 pub mod env_directive;
+pub mod miserc;
 pub mod settings;
 pub mod tracking;
 
