@@ -6,6 +6,9 @@ use std::path::MAIN_SEPARATOR_STR;
 use toml_edit::Item;
 
 /// Create a new task
+///
+/// Adds a task to the local mise.toml file.
+/// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TasksAdd {

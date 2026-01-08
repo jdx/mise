@@ -7,7 +7,9 @@ use crate::{config, duration, file};
 
 /// Add/update a setting
 ///
-/// This modifies the contents of ~/.config/mise/config.toml
+/// This modifies the contents of ~/.config/mise/config.toml by default.
+/// With `--local`, modifies the local config file instead.
+/// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 #[derive(Debug, clap::Args)]
 #[clap(visible_aliases = ["create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsSet {
