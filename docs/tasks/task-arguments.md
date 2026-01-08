@@ -145,9 +145,6 @@ arg "<file>" long_help="Extended help text shown with --help"
 
 // Hidden from help output
 arg "<file>" hide=#true
-
-// Parse value with external command
-arg "<input>" parse="mycli parse-input {}"
 ```
 
 #### Double-Dash Behavior
@@ -227,39 +224,11 @@ flag "--color" negate="--no-color" default=#true
 flag "-v --verbose" global=#true
 ```
 
-#### Environment Variable and Config Backing
-
-```kdl
-flag "--color" env="MYCLI_COLOR"              // Can be set via $MYCLI_COLOR
-flag "--format <fmt>" config="ui.format"      // Backed by config file value
-flag "--port <port>" env="PORT"
-flag "--debug" env="DEBUG"
-```
-
-Priority order: CLI flag > Environment variable > Config file > Default value
-
-#### Conditional Requirements
-
-```kdl
-// If --output is set, --file must be too
-flag "--file <file>" required_if="--output"
-
-// Either --file or --stdin must be set
-flag "--file <file>" required_unless="--stdin"
-
-// If --file is set, --stdin is ignored
-flag "--file <file>" overrides="--stdin"
-```
-
 #### Flag Advanced Features
 
 ```kdl
 flag "--verbose" long_help="Extended help text"
 flag "--debug" hide=#true                      // Hidden from help
-flag "-q --quiet" {
-  help "Suppress output"
-  alias "--silent"                            // Alternative name
-}
 ```
 
 ### Completion (`complete`)
@@ -366,10 +335,7 @@ flag "--region <region>" {
 
 flag "--skip-tests" help="Skip running tests before deploy"
 
-flag "--force" {
-  help "Force deployment even with warnings"
-  required_if "--skip-tests"
-}
+flag "--force" help="Force deployment even with warnings"
 
 // Custom completions
 complete "services" run="mycli list-services"
