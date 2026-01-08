@@ -39,6 +39,57 @@ pub fn python_path(tv: &ToolVersion) -> PathBuf {
     }
 }
 
+/// Sort key for Python versions that handles miniconda's two versioning schemes correctly.
+///
+/// Miniconda has two formats:
+/// - Old format: `miniconda3-{conda_version}` (e.g., `miniconda3-3.16.0`, `miniconda3-4.7.12`)
+/// - New format: `miniconda3-{python_version}-{conda_version}` (e.g., `miniconda3-3.7-4.8.2`)
+///
+/// Returns a tuple for sorting: (is_miniconda, prefix_order, is_not_latest, conda_version, python_version)
+fn python_version_sort_key(
+    version: &str,
+) -> (bool, u8, bool, Option<Versioning>, Option<Versioning>) {
+    // Check if this is a miniconda version and get prefix order
+    let (prefix_order, version_part) = if let Some(v) = version.strip_prefix("miniconda3-") {
+        (2u8, v)
+    } else if let Some(v) = version.strip_prefix("miniconda2-") {
+        (1u8, v)
+    } else if let Some(v) = version.strip_prefix("miniconda-") {
+        (0u8, v)
+    } else {
+        // Not miniconda - put non-digit-starting first, then digit-starting
+        // Use is_miniconda=false to separate from miniconda versions
+        let starts_with_digit = regex!(r"^\d").is_match(version);
+        return (
+            false,
+            if starts_with_digit { 1 } else { 0 },
+            false,
+            None,
+            None,
+        );
+    };
+
+    // Handle "latest" specially - put first in each miniconda group
+    if version_part == "latest" {
+        return (true, prefix_order, false, None, None);
+    }
+
+    // Parse miniconda version: old format vs new format
+    // Old format has no dash in version part: "3.16.0"
+    // New format has dash separating python and conda: "3.7-4.8.2"
+    let (conda_version, python_version) = if let Some(dash_pos) = version_part.find('-') {
+        // New format: "3.7-4.8.2" -> python=3.7, conda=4.8.2
+        let python = &version_part[..dash_pos];
+        let conda = &version_part[dash_pos + 1..];
+        (Versioning::new(conda), Versioning::new(python))
+    } else {
+        // Old format: "3.16.0" -> conda=3.16.0, no python version
+        (Versioning::new(version_part), None)
+    };
+
+    (true, prefix_order, true, conda_version, python_version)
+}
+
 impl PythonPlugin {
     pub fn new() -> Self {
         let ba = Arc::new(plugins::core::new_backend_arg("python"));
@@ -447,7 +498,7 @@ impl Backend for PythonPlugin {
                         version: s.to_string(),
                         ..Default::default()
                     })
-                    .sorted_by_cached_key(|v| regex!(r"^\d+").is_match(&v.version))
+                    .sorted_by_cached_key(|v| python_version_sort_key(&v.version))
                     .collect();
                 Ok(versions)
             })
