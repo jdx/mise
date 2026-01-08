@@ -284,7 +284,7 @@ impl Plugin for AsdfPlugin {
         let prefix = format!("plugin:{}", style(&self.name).blue().for_stderr());
         let pr = mpr.add_with_options(&prefix, dry_run);
         if !dry_run {
-            let _lock = lock_file::get(&self.plugin_path, force)?;
+            let _lock = lock_file::get(&self.plugin_path)?;
             self.install(config, pr.as_ref()).await
         } else {
             Ok(())

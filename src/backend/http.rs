@@ -661,7 +661,7 @@ impl Backend for HttpBackend {
 
         // Acquire lock and extract or reuse cache
         let cache_path = self.cache_path(&cache_key);
-        let _lock = crate::lock_file::get(&cache_path, ctx.force)?;
+        let _lock = crate::lock_file::get(&cache_path)?;
 
         // Determine extraction type based on whether we're using cache or extracting fresh
         // On cache hit, we need to detect the actual filename from the cache (which may differ

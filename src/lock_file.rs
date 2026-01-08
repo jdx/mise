@@ -45,16 +45,11 @@ impl LockFile {
     }
 }
 
-pub(crate) fn get(path: &Path, force: bool) -> eyre::Result<Option<fslock::LockFile>> {
-    let lock = if force {
-        None
-    } else {
-        let lock = LockFile::new(path)
-            .with_callback(|l| {
-                debug!("waiting for lock on {}", display_path(l));
-            })
-            .lock()?;
-        Some(lock)
-    };
-    Ok(lock)
+pub(crate) fn get(path: &Path) -> eyre::Result<Option<fslock::LockFile>> {
+    let lock = LockFile::new(path)
+        .with_callback(|l| {
+            debug!("waiting for lock on {}", display_path(l));
+        })
+        .lock()?;
+    Ok(Some(lock))
 }

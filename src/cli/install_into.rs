@@ -44,6 +44,7 @@ impl InstallInto {
         let mpr = MultiProgressReport::get();
         let install_ctx = InstallContext {
             config: config.clone(),
+            reason: "install-into".to_string(),
             ts: ts.clone(),
             pr: mpr.add(&tv.style()),
             force: true,

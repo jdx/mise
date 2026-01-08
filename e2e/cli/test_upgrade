@@ -17,13 +17,13 @@ assert_not_contains "mise ls --installed dummy" "1.1.0"
 rm .tool-versions
 
 # ensure options are retained
-mise use "ubi:bazelbuild/buildtools[exe=buildifier,matching=buildifier]@7.1.2"
+mise use "github:bazelbuild/buildtools[exe=buildifier]@7.1.2"
 assert "cat mise.toml" '[tools]
-"ubi:bazelbuild/buildtools" = { version = "7.1.2", exe = "buildifier", matching = "buildifier" }'
-bazelbuild_latest=$(mise latest ubi:bazelbuild/buildtools)
-mise up --bump ubi:bazelbuild/buildtools
+"github:bazelbuild/buildtools" = { version = "7.1.2", exe = "buildifier" }'
+bazelbuild_latest=$(mise latest github:bazelbuild/buildtools)
+mise up --bump github:bazelbuild/buildtools
 assert "cat mise.toml" "[tools]
-\"ubi:bazelbuild/buildtools\" = { version = \"$bazelbuild_latest\", exe = \"buildifier\", matching = \"buildifier\" }"
+\"github:bazelbuild/buildtools\" = { version = \"$bazelbuild_latest\", exe = \"buildifier\" }"
 
 rm -f .tool-versions
 echo "tools.dummy = 'prefix:1'" >mise.toml

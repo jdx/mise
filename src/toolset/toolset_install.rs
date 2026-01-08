@@ -331,6 +331,7 @@ impl Toolset {
 
                         let ctx = InstallContext {
                             config: config.clone(),
+                            reason: opts.reason.clone(),
                             ts: ts.clone(),
                             pr: mpr.add_with_options(&tv.style(), opts.dry_run),
                             force: opts.force,
