@@ -1,5 +1,45 @@
 # Changelog
 
+## [2026.1.1](https://github.com/jdx/mise/compare/v2026.1.0..v2026.1.1) - 2026-01-08
+
+### 🚀 Features
+
+- **(config)** add .miserc.toml for early initialization settings by @jdx in [#7596](https://github.com/jdx/mise/pull/7596)
+- allow to include tasks from git repositories by @vmaleze in [#7582](https://github.com/jdx/mise/pull/7582)
+
+### 🐛 Bug Fixes
+
+- **(config)** mise use writes to lowest precedence config file by @jdx in [#7598](https://github.com/jdx/mise/pull/7598)
+- **(python)** sort miniconda versions by conda version instead of version string by @jdx in [#7595](https://github.com/jdx/mise/pull/7595)
+- Rust channel updates installing twice by @x9xhack in [#7565](https://github.com/jdx/mise/pull/7565)
+- use Bearer instead of token in authorization headers by @risu729 in [#7593](https://github.com/jdx/mise/pull/7593)
+
+### 📚 Documentation
+
+- **(url-replacements)** document auth behaviour with url replacements by @risu729 in [#7592](https://github.com/jdx/mise/pull/7592)
+- correct spelling in walkthrough.md by @tomhoover in [#7581](https://github.com/jdx/mise/pull/7581)
+
+### 📦 Registry
+
+- Revert "fix(registry): fix biome test to handle version prefix" by @risu729 in [#7586](https://github.com/jdx/mise/pull/7586)
+- use aqua backend for ty by @risu729 in [#7539](https://github.com/jdx/mise/pull/7539)
+- update opencode's org from sst to anomalyco by @graelo in [#7594](https://github.com/jdx/mise/pull/7594)
+
+### New Contributors
+
+- @graelo made their first contribution in [#7594](https://github.com/jdx/mise/pull/7594)
+- @tomhoover made their first contribution in [#7581](https://github.com/jdx/mise/pull/7581)
+- @vmaleze made their first contribution in [#7582](https://github.com/jdx/mise/pull/7582)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (5)
+
+- [`jbangdev/jbang`](https://github.com/jbangdev/jbang)
+- [`k8sgpt-ai/k8sgpt`](https://github.com/k8sgpt-ai/k8sgpt)
+- [`kawaz/authsock-filter`](https://github.com/kawaz/authsock-filter)
+- [`mazrean/kessoku`](https://github.com/mazrean/kessoku)
+- [`static-web-server/static-web-server`](https://github.com/static-web-server/static-web-server)
 ## [2026.1.0](https://github.com/jdx/mise/compare/v2025.12.13..v2026.1.0) - 2026-01-07
 
 ### 🚀 Features
