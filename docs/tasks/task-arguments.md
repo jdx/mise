@@ -224,16 +224,6 @@ flag "--color" negate="--no-color" default=#true
 flag "-v --verbose" global=#true
 ```
 
-#### Environment Variable Backing
-
-```kdl
-flag "--color" env="MYCLI_COLOR"              // Can be set via $MYCLI_COLOR
-flag "--port <port>" env="PORT"
-flag "--debug" env="DEBUG"
-```
-
-Priority order: CLI flag > Environment variable > Default value
-
 #### Flag Advanced Features
 
 ```kdl
