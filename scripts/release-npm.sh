@@ -63,7 +63,7 @@ for platform in "${platforms[@]}"; do
 EOF
 	pushd "$RELEASE_DIR/npm"
 	tree || true
-	if [ "${DRY_RUN:-0}" != "0" ]; then
+	if [ "${DRY_RUN:-1}" != "0" ]; then
 		echo DRY_RUN
 		echo npm publish --access public --tag "$dist_tag" --provenance
 		echo DRY_RUN
@@ -160,7 +160,7 @@ cat <<EOF >"$RELEASE_DIR/npm/package.json"
 }
 EOF
 pushd "$RELEASE_DIR/npm"
-if [ "${DRY_RUN:-0}" != "0" ]; then
+if [ "${DRY_RUN:-1}" != "0" ]; then
 	echo DRY_RUN
 	echo npm publish --access public --tag "$dist_tag" --provenance
 	echo DRY_RUN
