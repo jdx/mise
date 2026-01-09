@@ -87,7 +87,7 @@ For user config, aliases are defined like the following in `~/.config/mise/confi
   lts = "20.0.0""#
         after_long_help r"Examples:
 
-    $ mise aliases
+    $ mise tool-alias
     node    lts-hydrogen   20.0.0
 "
         flag "--no-header" help="Don't show table header"
@@ -871,7 +871,7 @@ cmd "settings" help="Manage settings" {
 This is the contents of a single entry in ~/.config/mise/config.toml
 
 Note that aliases are also stored in this file
-but managed separately with `mise aliases get`"
+but managed separately with `mise tool-alias get`"
         after_long_help r"Examples:
 
     $ mise settings get legacy_version_file
@@ -886,7 +886,7 @@ but managed separately with `mise aliases get`"
 This is the contents of ~/.config/mise/config.toml
 
 Note that aliases are also stored in this file
-but managed separately with `mise aliases`"
+but managed separately with `mise tool-alias`"
         after_long_help r"Examples:
 
     $ mise settings

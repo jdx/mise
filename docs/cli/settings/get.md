@@ -9,7 +9,7 @@ Show a current setting
 This is the contents of a single entry in ~/.config/mise/config.toml
 
 Note that aliases are also stored in this file
-but managed separately with `mise aliases get`
+but managed separately with `mise tool-alias get`
 
 ## Arguments
 

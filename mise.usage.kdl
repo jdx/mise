@@ -773,7 +773,7 @@ cmd set help="Set environment variables in mise.toml" {
     arg "[ENV_VAR]…" help="Environment variable(s) to set\ne.g.: NODE_ENV=production" required=#false var=#true
 }
 cmd settings help="Manage settings" {
-    long_help "Show current settings\n\nThis is the contents of ~/.config/mise/config.toml\n\nNote that aliases are also stored in this file\nbut managed separately with `mise aliases`"
+    long_help "Show current settings\n\nThis is the contents of ~/.config/mise/config.toml\n\nNote that aliases are also stored in this file\nbut managed separately with `mise tool-alias`"
     after_long_help "Examples:\n    # list all settings\n    $ mise settings\n\n    # get the value of the setting \"always_keep_download\"\n    $ mise settings always_keep_download\n\n    # set the value of the setting \"always_keep_download\" to \"true\"\n    $ mise settings always_keep_download=true\n\n    # set the value of the setting \"node.mirror_url\" to \"https://npm.taobao.org/mirrors/node\"\n    $ mise settings node.mirror_url https://npm.taobao.org/mirrors/node\n"
     flag "-a --all" help="List all settings"
     flag "-J --json" help="Output in JSON format"
@@ -791,14 +791,14 @@ cmd settings help="Manage settings" {
         arg <VALUE> help="The value to set"
     }
     cmd get help="Show a current setting" {
-        long_help "Show a current setting\n\nThis is the contents of a single entry in ~/.config/mise/config.toml\n\nNote that aliases are also stored in this file\nbut managed separately with `mise aliases get`"
+        long_help "Show a current setting\n\nThis is the contents of a single entry in ~/.config/mise/config.toml\n\nNote that aliases are also stored in this file\nbut managed separately with `mise tool-alias get`"
         after_long_help "Examples:\n\n    $ mise settings get idiomatic_version_file\n    true\n"
         flag "-l --local" help="Use the local config file instead of the global one"
         arg <SETTING> help="The setting to show"
     }
     cmd ls help="Show current settings" {
         alias list
-        long_help "Show current settings\n\nThis is the contents of ~/.config/mise/config.toml\n\nNote that aliases are also stored in this file\nbut managed separately with `mise aliases`"
+        long_help "Show current settings\n\nThis is the contents of ~/.config/mise/config.toml\n\nNote that aliases are also stored in this file\nbut managed separately with `mise tool-alias`"
         after_long_help "Examples:\n\n    $ mise settings ls\n    idiomatic_version_file = false\n    ...\n\n    $ mise settings ls python\n    default_packages_file = \"~/.default-python-packages\"\n    ...\n"
         flag "-a --all" help="List all settings"
         flag "-J --json" help="Output in JSON format"
