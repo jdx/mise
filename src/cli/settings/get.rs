@@ -7,7 +7,7 @@ use eyre::bail;
 /// This is the contents of a single entry in ~/.config/mise/config.toml
 ///
 /// Note that aliases are also stored in this file
-/// but managed separately with `mise aliases get`
+/// but managed separately with `mise tool-alias get`
 #[derive(Debug, clap::Args)]
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsGet {
