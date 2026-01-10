@@ -5187,6 +5187,11 @@ backends = ["aqua:ajeetdsouza/zoxide", "cargo:zoxide"]
 description = "A smarter cd command. Supports all major shells"
 test = ["zoxide --version", "zoxide {{version}}"]
 
+[tools.zvelte-check]
+backends = ["github:ampcode/zvelte-check", "aqua:ampcode/zvelte-check"]
+description = "A fast diagnostic tool for Svelte projects"
+test = ["zvelte-check --version", "zvelte-check {{version}}"]
+
 [tools.zprint]
 description = "Executables, uberjar, and library to beautifully format Clojure and Clojurescript source code and s-expressions"
 
