@@ -646,12 +646,10 @@ pub trait Backend: Debug + Send + Sync {
                 // For stable version, apply date filter if provided
                 match before_date {
                     Some(before) => {
-                        let versions_with_info =
-                            self.list_remote_versions_with_info(config).await?;
-                        let filtered = VersionInfo::filter_by_date(versions_with_info, before);
-                        let versions: Vec<String> =
-                            filtered.into_iter().map(|v| v.version).collect();
-                        Ok(find_match_in_list(&versions, "latest"))
+                        let matches = self
+                            .list_versions_matching_with_opts(config, "latest", Some(before))
+                            .await?;
+                        Ok(find_match_in_list(&matches, "latest"))
                     }
                     None => self.latest_stable_version(config).await,
                 }
