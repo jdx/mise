@@ -672,7 +672,7 @@ description = "cheat allows you to create and view interactive cheatsheets on th
 [tools.checkmake]
 backends = ["aqua:mrtazz/checkmake"]
 description = "experimental linter/analyzer for Makefiles"
-test = ["checkmake --version", "checkmake {{version}}"]
+test = ["checkmake --version", "checkmake v{{version}}"]
 
 [tools.checkov]
 backends = ["aqua:bridgecrewio/checkov", "asdf:bosmak/asdf-checkov"]
