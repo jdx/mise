@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Test that MISE_*_VERSION environment variable overrides work for monorepo tasks
+export MISE_EXPERIMENTAL=1
+
+cat <<EOF >mise.toml
+experimental_monorepo_root = true
+
+[tools]
+tiny = "2.0.0"
+
+[tasks.root-task]
+run = 'rtx-tiny'
+EOF
+
+mkdir -p projects/backend
+cat <<EOF >projects/backend/mise.toml
+[tasks.build]
+run = 'rtx-tiny'
+EOF
+
+mise install tiny@2.0.0 tiny@3.0.0 tiny@3.1.0
+
+echo "=== Test 1: Without env override, uses config version ==="
+assert_contains "mise run //projects/backend:build" "v2.0.0"
+
+echo "=== Test 2: With MISE_TINY_VERSION, should use env override version ==="
+assert_contains "MISE_TINY_VERSION=3.0.0 mise run //projects/backend:build" "v3.0.0"
+
+echo "=== Test 3: Root task should respect env override ==="
+assert_contains "MISE_TINY_VERSION=3.0.0 mise run //:root-task" "v3.0.0"
+
+mkdir -p projects/frontend
+cat <<EOF >projects/frontend/mise.toml
+[tools]
+tiny = "2.0.0"
+
+[tasks.build]
+run = 'rtx-tiny'
+EOF
+
+echo "=== Test 4: Project with tools, env override should still win ==="
+assert_contains "MISE_TINY_VERSION=3.1.0 mise run //projects/frontend:build" "v3.1.0"
+
+echo "=== All MISE_*_VERSION environment override tests passed! ==="
