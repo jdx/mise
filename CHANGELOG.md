@@ -1,5 +1,41 @@
 # Changelog
 
+## [2026.1.2](https://github.com/jdx/mise/compare/v2026.1.1..v2026.1.2) - 2026-01-11
+
+### 🐛 Bug Fixes
+
+- **(backend)** filter pre-release versions with latest + install_before by @koh-sh in [#7631](https://github.com/jdx/mise/pull/7631)
+- **(docs)** formatting in configuration hierarchy section by @jonathanagustin in [#7638](https://github.com/jdx/mise/pull/7638)
+- **(npm)** migrate npm publish to OIDC trusted publishing by @jdx in [#7607](https://github.com/jdx/mise/pull/7607)
+- **(registry)** correct checkmake version test pattern by @jdx in [#7632](https://github.com/jdx/mise/pull/7632)
+- **(self-update)** self-update fails across year boundary due to semver mismatch by @jdx in [#7611](https://github.com/jdx/mise/pull/7611)
+
+### 📚 Documentation
+
+- **(tasks)** remove documentation for unimplemented features by @turbocrime in [#7599](https://github.com/jdx/mise/pull/7599)
+- update `mise aliases` references to `mise tool-alias` by @muzimuzhi in [#7615](https://github.com/jdx/mise/pull/7615)
+- use call operator in PowerShell profile example by @shina1024 in [#7639](https://github.com/jdx/mise/pull/7639)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:alpine docker digest to fbfffcf by @renovate[bot] in [#7619](https://github.com/jdx/mise/pull/7619)
+
+### 📦 Registry
+
+- add hatoo/oha tool by @jylenhof in [#7633](https://github.com/jdx/mise/pull/7633)
+
+### New Contributors
+
+- @shina1024 made their first contribution in [#7639](https://github.com/jdx/mise/pull/7639)
+- @jonathanagustin made their first contribution in [#7638](https://github.com/jdx/mise/pull/7638)
+- @turbocrime made their first contribution in [#7599](https://github.com/jdx/mise/pull/7599)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`ampcode/zvelte-check`](https://github.com/ampcode/zvelte-check)
+- [`openshift/rosa`](https://github.com/openshift/rosa)
 ## [2026.1.1](https://github.com/jdx/mise/compare/v2026.1.0..v2026.1.1) - 2026-01-08
 
 ### 🚀 Features
