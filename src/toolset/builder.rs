@@ -4,7 +4,7 @@ use eyre::Result;
 use itertools::Itertools;
 
 use crate::cli::args::{BackendArg, ToolArg};
-use crate::config::Config;
+use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset};
@@ -16,6 +16,7 @@ pub struct ToolsetBuilder {
     global_only: bool,
     default_to_latest: bool,
     resolve_options: ResolveOptions,
+    config_files: Option<ConfigMap>,
 }
 
 impl ToolsetBuilder {
@@ -40,6 +41,12 @@ impl ToolsetBuilder {
 
     pub fn with_resolve_options(mut self, resolve_options: ResolveOptions) -> Self {
         self.resolve_options = resolve_options;
+        self
+    }
+
+    /// Use custom config files instead of config.config_files
+    pub fn with_config_files(mut self, config_files: ConfigMap) -> Self {
+        self.config_files = Some(config_files);
         self
     }
 
@@ -73,7 +80,9 @@ impl ToolsetBuilder {
     }
 
     fn load_config_files(&self, config: &Arc<Config>, ts: &mut Toolset) -> eyre::Result<()> {
-        for cf in config.config_files.values().rev() {
+        let config_files = self.config_files.as_ref().unwrap_or(&config.config_files);
+
+        for cf in config_files.values().rev() {
             if self.global_only && !config::is_global_config(cf.get_path()) {
                 continue;
             }
