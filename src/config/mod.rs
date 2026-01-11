@@ -46,7 +46,7 @@ use crate::watch_files::WatchFile;
 use crate::wildcard::Wildcard;
 
 type AliasMap = IndexMap<String, Alias>;
-type ConfigMap = IndexMap<PathBuf, Arc<dyn ConfigFile>>;
+pub(crate) type ConfigMap = IndexMap<PathBuf, Arc<dyn ConfigFile>>;
 pub type EnvWithSources = IndexMap<String, (String, PathBuf)>;
 
 pub struct Config {

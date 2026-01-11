@@ -39,7 +39,7 @@ impl<'a> TaskToolInstaller<'a> {
             // Collect tools from monorepo task config files
             if let Some(task_cf) = t.cf(config) {
                 let tool_requests = self
-                    .collect_tools_from_config_file(config, task_cf.clone(), &t.name)
+                    .collect_tools_from_config_file(task_cf.clone(), &t.name)
                     .await?;
                 all_tool_requests.extend(tool_requests);
             }
@@ -54,67 +54,84 @@ impl<'a> TaskToolInstaller<'a> {
         Ok(())
     }
 
-    /// Collect tools from a task's config file with caching
+    /// Collect tools from a task's config file hierarchy
     async fn collect_tools_from_config_file(
         &self,
-        _config: &Arc<Config>,
         task_cf: Arc<dyn crate::config::config_file::ConfigFile>,
         task_name: &str,
     ) -> Result<Vec<crate::toolset::ToolRequest>> {
-        let config_path = canonicalize_path(task_cf.get_path());
+        let task_dir = task_cf.get_path().parent().unwrap_or(task_cf.get_path());
 
-        // Check cache first
-        let cache = self
-            .context_builder
-            .tool_request_set_cache()
-            .read()
-            .expect("tool_request_set_cache RwLock poisoned");
+        let config_paths = crate::config::load_config_hierarchy_from_dir(task_dir)?;
+        let task_config_files = crate::config::load_config_files_from_paths(&config_paths).await?;
 
-        let tool_request_set = if let Some(cached) = cache.get(&config_path) {
-            trace!(
-                "Using cached tool request set from {}",
-                config_path.display()
-            );
-            Arc::clone(cached)
-        } else {
-            drop(cache); // Release read lock before write
-            match task_cf.to_tool_request_set() {
-                Ok(trs) => {
-                    let trs = Arc::new(trs);
-                    let mut cache = self
-                        .context_builder
-                        .tool_request_set_cache()
-                        .write()
-                        .expect("tool_request_set_cache RwLock poisoned");
-                    cache.entry(config_path.clone()).or_insert_with(|| {
-                        trace!("Cached tool request set to {}", config_path.display());
-                        Arc::clone(&trs)
-                    });
-                    trs
+        let mut tool_requests: Vec<crate::toolset::ToolRequest> = vec![];
+        let mut seen_tools: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        for (source, cf) in task_config_files.iter() {
+            let config_path = canonicalize_path(source);
+
+            // Check cache first for this config file's tool request set
+            let trs = {
+                let cache = self
+                    .context_builder
+                    .tool_request_set_cache()
+                    .read()
+                    .expect("tool_request_set_cache RwLock poisoned");
+                cache.get(&config_path).cloned()
+            };
+
+            let trs = if let Some(cached) = trs {
+                trace!(
+                    "Using cached tool request set from {}",
+                    config_path.display()
+                );
+                cached
+            } else {
+                match cf.to_tool_request_set() {
+                    Ok(trs) => {
+                        let trs = Arc::new(trs);
+                        let mut cache = self
+                            .context_builder
+                            .tool_request_set_cache()
+                            .write()
+                            .expect("tool_request_set_cache RwLock poisoned");
+                        cache.insert(config_path.clone(), Arc::clone(&trs));
+                        trace!("Cached tool request set from {}", config_path.display());
+                        trs
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse tools from {} for task {}: {}",
+                            source.display(),
+                            task_name,
+                            e
+                        );
+                        continue;
+                    }
                 }
-                Err(e) => {
-                    warn!(
-                        "Failed to parse tools from {} for task {}: {}",
-                        task_cf.get_path().display(),
-                        task_name,
-                        e
+            };
+
+            for (ba, reqs) in trs.tools.iter() {
+                let tool_key = ba.to_string();
+                if !seen_tools.contains(&tool_key) {
+                    trace!(
+                        "Adding tool {} from {} for task {}",
+                        ba,
+                        source.display(),
+                        task_name
                     );
-                    return Ok(vec![]);
+                    tool_requests.extend(reqs.iter().cloned());
+                    seen_tools.insert(tool_key);
                 }
             }
-        };
+        }
 
         trace!(
-            "Found {} tools in config file for task {}",
-            tool_request_set.tools.len(),
+            "Found {} tool requests in config hierarchy for task {}",
+            tool_requests.len(),
             task_name
         );
-
-        // Extract all tool requests from the tool request set
-        let mut tool_requests = vec![];
-        for (_, reqs) in tool_request_set.tools.iter() {
-            tool_requests.extend(reqs.iter().cloned());
-        }
 
         Ok(tool_requests)
     }
