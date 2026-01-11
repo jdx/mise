@@ -48,7 +48,7 @@ When mise needs configuration, it follows this process:
 
 ```
 /
-├── etc/mise/                          # System-wide config (highest precedence)
+├── etc/mise/                         # System-wide config (highest precedence)
 │   ├── conf.d/*.toml                 # System fragments, loaded alphabetically
 │   ├── config.toml                   # System defaults
 │   └── config.<env>.toml             # Env-specific system config (MISE_ENV or -E)
