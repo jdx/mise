@@ -3845,6 +3845,16 @@ const completionSpec: Fig.Spec = {
       isRepeatable: false,
     },
     {
+      name: "--no-env",
+      description: "Do not load environment variables from config files",
+      isRepeatable: false,
+    },
+    {
+      name: "--no-hooks",
+      description: "Do not execute hooks from config files",
+      isRepeatable: false,
+    },
+    {
       name: "--output",
       isRepeatable: false,
       args: {

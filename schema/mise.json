@@ -1399,6 +1399,14 @@
               "type": "boolean"
             }
           }
+        },
+        "no_env": {
+          "description": "Do not load environment variables from config files.",
+          "type": "boolean"
+        },
+        "no_hooks": {
+          "description": "Do not execute hooks from config files.",
+          "type": "boolean"
         }
       }
     },

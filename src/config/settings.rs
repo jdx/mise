@@ -502,6 +502,26 @@ impl Settings {
                     .take_while(|a| *a != "--")
                     .any(|a| a == "--no-config")
     }
+
+    pub fn no_env() -> bool {
+        *env::MISE_NO_ENV
+            || env::ARGS
+                .read()
+                .unwrap()
+                .iter()
+                .take_while(|a| *a != "--")
+                .any(|a| a == "--no-env")
+    }
+
+    pub fn no_hooks() -> bool {
+        *env::MISE_NO_HOOKS
+            || env::ARGS
+                .read()
+                .unwrap()
+                .iter()
+                .take_while(|a| *a != "--")
+                .any(|a| a == "--no-hooks")
+    }
 }
 
 impl Display for Settings {

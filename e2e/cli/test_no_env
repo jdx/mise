@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+# Test that --no-env flag prevents loading environment variables from config files
+
+# Create a config file with environment variables
+cat <<EOF >mise.toml
+[env]
+TEST_FOO_VAR = "FOO"
+EOF
+
+# Test if it works with env
+assert_contains "mise env" "TEST_FOO_VAR"
+assert_not_contains "mise --no-env env" "TEST_FOO_VAR"
+
+# Test with exec as well
+assert_contains "mise exec -- env | grep TEST_FOO_VAR" "TEST_FOO_VAR=FOO"
+assert_not_contains "mise --no-env exec -- env" "TEST_FOO_VAR"
+
+# Test that MISE_NO_ENV=1 environment variable works the same way
+assert_not_contains "MISE_NO_ENV=1 mise env" "TEST_FOO_VAR"
+assert_not_contains "MISE_NO_ENV=1 mise exec -- env" "TEST_FOO_VAR"
+
+cat <<EOF >mise.toml
+[settings]
+no_env = true
+
+[env]
+TEST_FOO_VAR = "FOO"
+EOF
+
+assert_not_contains "mise env" "TEST_FOO_VAR"
+
+# Cleanup
+rm -f mise.toml
