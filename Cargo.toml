@@ -3,7 +3,7 @@ members = ["crates/vfox", "crates/aqua-registry"]
 
 [package]
 name = "mise"
-version = "2026.1.1"
+version = "2026.1.2"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
