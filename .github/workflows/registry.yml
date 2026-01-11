@@ -66,37 +66,39 @@ jobs:
     needs: check-changes
     if: github.event_name == 'pull_request' && needs.check-changes.outputs.registry-changed == 'true'
     outputs:
-      tools: ${{ steps.diff.outputs.tools }}
+      tools: ${{ steps.determine-tools.outputs.tools }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
-      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
-        with:
-          install_args: yj
-      - id: diff
-        shell: bash # -eo pipefail
+      - id: workflow-check
         run: |
-          # If the workflow file itself is modified, run all tests
           if git diff --name-only ${{ github.event.pull_request.base.sha }} HEAD | grep -q ".github/workflows/registry.yml"; then
-            echo "Workflow file modified. Running all tests."
+            echo "modified=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: ./.github/actions/registry-diff
+        id: registry-diff
+        if: steps.workflow-check.outputs.modified != 'true'
+        with:
+          base_sha: ${{ github.event.pull_request.base.sha }}
+      - id: determine-tools
+        run: |
+          if [ "${{ steps.workflow-check.outputs.modified }}" == "true" ]; then
+            echo "Workflow modified, running all tests"
             echo "tools=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          changed_tools=$( \
-            cat \
-              <(git show ${{ github.event.pull_request.base.sha }}:registry.toml | mise x yj -- yj -t) \
-              <(mise x yj -- yj -t < registry.toml) \
-            | jq -rs '
-              (.[0].tools) as $old |
-              (.[1].tools) as $new |
-              [ ($new | keys[]) | select($new[.] != $old[.]) ] |
-              join(" ")
-            ' || true \
-          )
-          echo "$changed_tools"
-          echo "tools=$changed_tools" >> "$GITHUB_OUTPUT"
+          tools="${{ steps.registry-diff.outputs.modified_tools }}"
+          count=$(echo "$tools" | wc -w)
+          echo "Modified tools count: $(echo "$tools" | wc -w)"
+
+          if [ "$count" -gt 30 ]; then
+            echo "Over 30 tools updated, running all tests"
+            echo "tools=" >> "$GITHUB_OUTPUT"
+          else
+            echo "tools=$tools" >> "$GITHUB_OUTPUT"
+          fi
 
   test-tool:
     name: test-tool-${{ matrix.tranche }}
