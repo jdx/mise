@@ -275,7 +275,12 @@ mod tests {
     use crate::cli::args::BackendArg;
 
     fn create_npm_backend(tool: &str) -> NPMBackend {
-        let ba = BackendArg::new_raw("npm".to_string(), Some(tool.to_string()), tool.to_string(), None);
+        let ba = BackendArg::new_raw(
+            "npm".to_string(),
+            Some(tool.to_string()),
+            tool.to_string(),
+            None,
+        );
         NPMBackend::from_arg(ba)
     }
 
