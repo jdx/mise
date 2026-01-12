@@ -35,7 +35,13 @@ impl Backend for NPMBackend {
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
-        Ok(vec!["node", "npm", "bun", "pnpm"])
+        // Don't include "npm" as dependency when we ARE npm itself (npm:npm)
+        // to avoid circular dependency that causes timeout
+        if self.tool_name() == "npm" {
+            Ok(vec!["node", "bun", "pnpm"])
+        } else {
+            Ok(vec!["node", "npm", "bun", "pnpm"])
+        }
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
