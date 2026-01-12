@@ -291,7 +291,7 @@ impl AssetPicker {
         if asset.contains("debug") || asset.contains("test") {
             penalty -= 20;
         }
-        if asset.ends_with(".artifactbundle") {
+        if asset.ends_with(".artifactbundle") || asset.contains(".artifactbundle.") {
             penalty -= 30;
         }
 
@@ -1088,6 +1088,50 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             "Linux should prefer .tar.gz over .zip (zip: {}, tar: {})",
             score_linux_zip,
             score_linux_tar
+        );
+    }
+
+    #[test]
+    fn test_artifactbundle_penalty() {
+        // Test that .artifactbundle files are penalized (they have different internal structure)
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None);
+
+        // Test .artifactbundle.zip (like sourcery-2.2.7.artifactbundle.zip)
+        let assets = vec![
+            "sourcery-2.2.7-macos-arm64.zip".to_string(),
+            "sourcery-2.2.7.artifactbundle.zip".to_string(),
+        ];
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(
+            picked, "sourcery-2.2.7-macos-arm64.zip",
+            ".artifactbundle.zip should be penalized"
+        );
+
+        // Test plain .artifactbundle
+        let assets = vec![
+            "tool-1.0.0-darwin-arm64.tar.gz".to_string(),
+            "tool-1.0.0.artifactbundle".to_string(),
+        ];
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(
+            picked, "tool-1.0.0-darwin-arm64.tar.gz",
+            ".artifactbundle should be penalized"
+        );
+
+        // Verify penalty scores
+        let score_regular = picker.score_asset("sourcery-2.2.7-macos-arm64.zip");
+        let score_bundle_zip = picker.score_asset("sourcery-2.2.7.artifactbundle.zip");
+        let score_bundle = picker.score_asset("tool.artifactbundle");
+
+        assert!(
+            score_regular > score_bundle_zip,
+            "Regular zip should score higher than .artifactbundle.zip (regular: {}, bundle: {})",
+            score_regular,
+            score_bundle_zip
+        );
+        assert!(
+            score_bundle < 0 || score_bundle < score_regular - 20,
+            ".artifactbundle should have penalty applied"
         );
     }
 
