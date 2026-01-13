@@ -654,9 +654,10 @@ of the full backend specification.
 2. **Add to registry.toml**:
 
    ```toml
-   your-tool.description = "Brief description of the tool"
-   your-tool.backends = ["aqua:owner/repo", "github:owner/repo"]
-   your-tool.test = ["your-tool --version", "{{version}}"]
+   [tools.your-tool]
+   description = "Brief description of the tool"
+   backends = ["aqua:owner/repo", "github:owner/repo"]
+   test = ["your-tool --version", "{{version}}"]
    ```
 
 3. **Test the tool** works properly with `mise test-tool your-tool`
@@ -679,19 +680,20 @@ enforced by [GitHub Actions workflow](https://github.com/jdx/mise/blob/main/.git
 The `registry.toml` file uses this format:
 
 ```toml
-# Tool name (becomes the short name for `mise use`)
-your-tool.description = "Tool description"
-your-tool.backends = [
+# Tool name "your-tool" (becomes the short name for `mise use`)
+[tools.your-tool]
+description = "Tool description"
+backends = [
     "aqua:owner/repo",           # Preferred backend first
     "github:owner/repo",         # Fallback backends
     "npm:package-name"           # Multiple backends supported
 ]
-your-tool.test = [
+test = [
     "your-tool --version",       # Command to run
     "{{version}}"                # Expected output pattern
 ]
-your-tool.aliases = ["alt-name"] # Optional alternative names
-your-tool.os = ["linux", "macos"] # Optional OS restrictions
+aliases = ["alt-name"] # Optional alternative names
+os = ["linux", "macos"] # Optional OS restrictions
 ```
 
 ### Backend Priority
@@ -704,7 +706,7 @@ backend, but can override with explicit syntax like `mise use aqua:owner/repo`.
 All tools must include a test to verify proper installation:
 
 ```toml
-your-tool.test = [
+test = [
     "command-to-run",
     "expected-output-pattern"
 ]
@@ -720,15 +722,17 @@ Recent tool additions:
 - **DuckDB**: Simple github backend ([#4248](https://github.com/jdx/mise/pull/4248))
 
   ```toml
-  duckdb.backends = ["github:duckdb/duckdb"]
-  duckdb.test = ["duckdb --version", "{{version}}"]
+  [tools.duckdb]
+  backends = ["github:duckdb/duckdb"]
+  test = ["duckdb --version", "{{version}}"]
   ```
 
 - **Biome**: Multiple backends ([#4283](https://github.com/jdx/mise/pull/4283))
 
   ```toml
-  biome.backends = ["aqua:biomejs/biome", "github:biomejs/biome"]
-  biome.test = ["biome --version", "Version: {{version}}"]
+  [tools.biome]
+  backends = ["aqua:biomejs/biome", "github:biomejs/biome"]
+  test = ["biome --version", "Version: {{version}}"]
   ```
 
 ## Adding Backends
