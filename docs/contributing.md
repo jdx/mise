@@ -22,7 +22,7 @@ so make sure before you start working on something it won't be a wasted effort.
 
 1. **PR titles**: Must follow conventional commit format (validated
    automatically)
-   - For new tools in registry: Use `registry: add tool-name`
+   - For new tools in registry: Use `registry: add tool-name (backend:full/name)`
 2. **Auto-formatting**: Code will be automatically formatted by autofix.ci
 3. **CI checks**: All tests must pass across Linux, macOS, and Windows
 4. **Coverage**: New code should maintain or improve test coverage
