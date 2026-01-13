@@ -57,10 +57,25 @@ jobs:
             echo "Other files are also modified:"
             echo "$MODIFIED_FILES"
           fi
-      - uses: ./.github/actions/registry-diff
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+      - name: Diff registry tools
         id: registry-diff
-        with:
-          base_sha: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git show ${{ github.event.pull_request.base.sha }}:registry.toml | mise x yj -- yj -t > old.json
+          mise x yj -- yj -t < registry.toml > new.json
+
+          changed=$(jq -r -s '
+             (.[0].tools) as $old | (.[1].tools) as $new |
+             [ ($new | keys[]) | select($new[.] != $old[.]) ] | join(" ")
+          ' old.json new.json)
+
+          new=$(jq -r -s '
+             (.[0].tools) as $old | (.[1].tools) as $new |
+             [ ($new | keys[]) | select($old[.] == null) ] | join(" ")
+          ' old.json new.json)
+
+          echo "modified_tools=$changed" >> "$GITHUB_OUTPUT"
+          echo "new_tools=$new" >> "$GITHUB_OUTPUT"
       - name: Check PR title format
         if: steps.check-files.outputs.only-registry-toml == 'true' && steps.registry-diff.outputs.new_tools == ''
         env:
