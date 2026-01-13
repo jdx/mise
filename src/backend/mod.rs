@@ -37,6 +37,7 @@ use console::style;
 use eyre::{Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
+use versions::Versioning;
 use platform_target::PlatformTarget;
 use regex::Regex;
 use std::sync::LazyLock as Lazy;
@@ -1319,10 +1320,20 @@ pub trait Backend: Debug + Send + Sync {
 }
 
 fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
-    match list.contains(&query.to_string()) {
-        true => Some(query.to_string()),
-        false => list.last().map(|s| s.to_string()),
+    if list.contains(&query.to_string()) {
+        return Some(query.to_string());
     }
+    // Find semantically highest version to handle incorrectly ordered data sources
+    list.iter()
+        .max_by(|a, b| {
+            let a = a.strip_prefix(['v', 'V']).unwrap_or(a);
+            let b = b.strip_prefix(['v', 'V']).unwrap_or(b);
+            match (Versioning::new(a), Versioning::new(b)) {
+                (Some(va), Some(vb)) => va.cmp(&vb),
+                _ => a.cmp(b),
+            }
+        })
+        .cloned()
 }
 
 fn rmdir(dir: &Path, pr: &dyn SingleReport) -> eyre::Result<()> {
