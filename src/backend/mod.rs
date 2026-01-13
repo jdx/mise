@@ -37,10 +37,10 @@ use console::style;
 use eyre::{Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use versions::Versioning;
 use platform_target::PlatformTarget;
 use regex::Regex;
 use std::sync::LazyLock as Lazy;
+use versions::Versioning;
 
 pub mod aqua;
 pub mod asdf;
