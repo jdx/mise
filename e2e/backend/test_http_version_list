@@ -20,3 +20,16 @@ if [[ ! $LATEST =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
 	fail "upstream claude-code /latest returned unexpected value: '$LATEST'"
 fi
 assert "mise latest claude" "$LATEST"
+
+
+# Test that ls-remote works without registry or installed tool
+cat <<EOF >mise.toml
+[tools."http:zmx"]
+version = "0.2.0"
+version_list_url = "https://api.github.com/repos/neurosnap/zmx/tags"
+version_json_path = ".[].name"
+url = "https://zmx.sh/a/zmx-{{version}}-{{os()}}-{% if arch() == 'arm64' %}aarch64{% else %}x86_64{% endif %}.tar.gz"
+EOF
+
+mise cache clear
+assert_contains "mise ls-remote http:zmx" "0.2.0"

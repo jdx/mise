@@ -544,8 +544,12 @@ impl HttpBackend {
     // -------------------------------------------------------------------------
 
     /// Fetch versions from version_list_url if configured
-    async fn fetch_versions(&self) -> Result<Vec<String>> {
-        let opts = self.ba.opts();
+    async fn fetch_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
+        let opts = if !self.ba.opts().contains_key("version_list_url") {
+            config.get_tool_opts(&self.ba).await?.unwrap_or_default()
+        } else {
+            self.ba.opts()
+        };
 
         let url = match opts.get("version_list_url") {
             Some(url) => url.clone(),
@@ -581,8 +585,8 @@ impl Backend for HttpBackend {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let versions = self.fetch_versions().await?;
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+        let versions = self.fetch_versions(config).await?;
         Ok(versions
             .into_iter()
             .map(|v| VersionInfo {
