@@ -174,7 +174,7 @@ The [hooks](/hooks.html) `cd`, `enter`, `exit`, and `watch_files` only trigger w
 
 ### `which`
 
-`which` is a command that a lot of users find great value in. Using shims effectively "break" `which` and cause it to show the location of the shim. A workaround is to use `mise which` will show the actual location. Some users prefer the "cleanliness" of running `which node` and getting back a real path with a version number inside of it. e.g:
+`which` is a command that a lot of users find great value in. Using shims effectively "break" `which` and cause it to show the location of the shim. A workaround is to use `mise which`, which will show the actual location. Some users prefer the "cleanliness" of running `which node` and getting back a real path with a version number inside of it. e.g:
 
 ```sh
 $ which node
