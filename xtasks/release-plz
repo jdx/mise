@@ -248,7 +248,7 @@ OLD_AQUA_PKGS=""
 LATEST_TAG=$(git tag --list "v[0-9]*" --sort=-v:refname | head -1)
 
 if [[ -n $LATEST_TAG ]]; then
-	OLD_AQUA_PKGS="$(git ls-tree -r --name-only "$LATEST_TAG" -- crates/aqua-registry/aqua-registry/pkgs 2>/dev/null | { grep "/registry.yaml$" || true; } | sed 's|crates/aqua-registry/aqua-registry/pkgs/||;s|/registry.yaml||' | sort)"
+	OLD_AQUA_PKGS="$(git ls-tree -r --name-only "$LATEST_TAG" crates/aqua-registry/aqua-registry/pkgs | grep "/registry.yaml$" | sed 's|crates/aqua-registry/aqua-registry/pkgs/||;s|/registry.yaml||' | sort)"
 elif [[ -d crates/aqua-registry/aqua-registry/pkgs ]]; then
 	OLD_AQUA_PKGS="$(find crates/aqua-registry/aqua-registry/pkgs -name registry.yaml -type f | sed 's|crates/aqua-registry/aqua-registry/pkgs/||;s|/registry.yaml||' | sort)"
 fi
