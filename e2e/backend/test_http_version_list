@@ -21,7 +21,6 @@ if [[ ! $LATEST =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
 fi
 assert "mise latest claude" "$LATEST"
 
-
 # Test that ls-remote works without registry or installed tool
 cat <<EOF >mise.toml
 [tools."http:zmx"]
