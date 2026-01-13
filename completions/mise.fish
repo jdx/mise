@@ -8,7 +8,7 @@ if ! type -p usage &> /dev/null
     return 1
 end
 set -l tmpdir (if set -q TMPDIR; echo $TMPDIR; else; echo /tmp; end)
-set -l spec_file "$tmpdir/usage__usage_spec_mise_2026_1_1.spec"
+set -l spec_file "$tmpdir/usage__usage_spec_mise_2026_1_2.spec"
 if not test -f "$spec_file"
     mise usage | string collect > "$spec_file"
 end

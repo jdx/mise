@@ -1,8 +1,10 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
 packages:
   - type: github_release
-    repo_owner: tweag
+    repo_owner: nickel-lang
     repo_name: nickel
+    aliases:
+      - name: tweag/nickel
     description: Better configuration for less
     version_constraint: "false"
     version_overrides:

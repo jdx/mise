@@ -1,5 +1,68 @@
 # Changelog
 
+## [2026.1.2](https://github.com/jdx/mise/compare/v2026.1.1..v2026.1.2) - 2026-01-13
+
+### 🐛 Bug Fixes
+
+- **(backend)** filter pre-release versions with latest + install_before by @koh-sh in [#7631](https://github.com/jdx/mise/pull/7631)
+- **(backend)** detect .artifactbundle.zip files in asset selection by @swizzlr in [#7657](https://github.com/jdx/mise/pull/7657)
+- **(docs)** formatting in configuration hierarchy section by @jonathanagustin in [#7638](https://github.com/jdx/mise/pull/7638)
+- **(http)** enhance fetch_versions to to fallback to config for tool options by @roele in [#7655](https://github.com/jdx/mise/pull/7655)
+- **(npm)** migrate npm publish to OIDC trusted publishing by @jdx in [#7607](https://github.com/jdx/mise/pull/7607)
+- **(registry)** correct checkmake version test pattern by @jdx in [#7632](https://github.com/jdx/mise/pull/7632)
+- **(release)** handle empty grep result in aqua-registry changelog by @jdx in [f45b4c6](https://github.com/jdx/mise/commit/f45b4c66d752c8e31ca103e42eda37710afd9d00)
+- **(self-update)** self-update fails across year boundary due to semver mismatch by @jdx in [#7611](https://github.com/jdx/mise/pull/7611)
+- **(tasks)** fix tool inheritance from intermediate parents by @chadxz in [#7637](https://github.com/jdx/mise/pull/7637)
+- add `-test` to VERSION_REGEX prerelease filter by @belgio99 in [#7647](https://github.com/jdx/mise/pull/7647)
+
+### 📚 Documentation
+
+- **(tasks)** remove documentation for unimplemented features by @turbocrime in [#7599](https://github.com/jdx/mise/pull/7599)
+- update `mise aliases` references to `mise tool-alias` by @muzimuzhi in [#7615](https://github.com/jdx/mise/pull/7615)
+- use call operator in PowerShell profile example by @shina1024 in [#7639](https://github.com/jdx/mise/pull/7639)
+- replace ASCII .pub key with binary .gpg for signed-by on Ubuntu/Debian by @gmalinowski in [#7649](https://github.com/jdx/mise/pull/7649)
+- add missing word by @henrebotha in [#7653](https://github.com/jdx/mise/pull/7653)
+
+### 🛡️ Security
+
+- **(security)** prevent code execution from untrusted fork in registry-comment workflow by @jdx in [4a2441e](https://github.com/jdx/mise/commit/4a2441e81649c37dc05354246f9c9c192b6e8180)
+
+### ◀️ Revert
+
+- Revert "fix(release): handle empty grep result in aqua-registry changelog" by @jdx in [522ffdc](https://github.com/jdx/mise/commit/522ffdcb0627c31d60bf0b7f11ae5341896ccfc9)
+- Revert "chore(release): include manually updated aqua-registry entries in the changelog " by @jdx in [1ebb943](https://github.com/jdx/mise/commit/1ebb9436d8b32c8dacf2ceca4d4c7a341f1a3bcb)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:alpine docker digest to fbfffcf by @renovate[bot] in [#7619](https://github.com/jdx/mise/pull/7619)
+- lock file maintenance by @renovate[bot] in [#7646](https://github.com/jdx/mise/pull/7646)
+
+### 📦 Registry
+
+- add hatoo/oha tool by @jylenhof in [#7633](https://github.com/jdx/mise/pull/7633)
+
+### Chore
+
+- **(registry)** fix registry comment workflow by @risu729 in [#7554](https://github.com/jdx/mise/pull/7554)
+- **(release)** include manually updated aqua-registry entries in the changelog by @risu729 in [#7603](https://github.com/jdx/mise/pull/7603)
+
+### New Contributors
+
+- @swizzlr made their first contribution in [#7657](https://github.com/jdx/mise/pull/7657)
+- @belgio99 made their first contribution in [#7647](https://github.com/jdx/mise/pull/7647)
+- @gmalinowski made their first contribution in [#7649](https://github.com/jdx/mise/pull/7649)
+- @chadxz made their first contribution in [#7637](https://github.com/jdx/mise/pull/7637)
+- @shina1024 made their first contribution in [#7639](https://github.com/jdx/mise/pull/7639)
+- @jonathanagustin made their first contribution in [#7638](https://github.com/jdx/mise/pull/7638)
+- @turbocrime made their first contribution in [#7599](https://github.com/jdx/mise/pull/7599)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`ampcode/zvelte-check`](https://github.com/ampcode/zvelte-check)
+- [`nickel-lang/nickel`](https://github.com/nickel-lang/nickel)
+- [`openshift/rosa`](https://github.com/openshift/rosa)
 ## [2026.1.1](https://github.com/jdx/mise/compare/v2026.1.0..v2026.1.1) - 2026-01-08
 
 ### 🚀 Features
