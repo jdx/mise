@@ -3271,6 +3271,18 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: ["-x", "--exclude"],
+          description: "Tool(s) to exclude from upgrading\ne.g.: go python",
+          isRepeatable: true,
+          args: {
+            name: "installed_tool",
+            generators: completionGeneratorTemplate(
+              `mise ls -i | awk '{print $1}' | uniq`
+            ),
+            debounce: true,
+          },
+        },
+        {
           name: "--before",
           description: "Only upgrade to versions released before this date",
           isRepeatable: false,

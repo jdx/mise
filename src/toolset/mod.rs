@@ -238,7 +238,7 @@ impl Toolset {
         bump: bool,
         opts: &ResolveOptions,
     ) -> Vec<OutdatedInfo> {
-        self.list_outdated_versions_filtered(config, bump, opts, None)
+        self.list_outdated_versions_filtered(config, bump, opts, None, None)
             .await
     }
 
@@ -248,12 +248,20 @@ impl Toolset {
         bump: bool,
         opts: &ResolveOptions,
         filter_tools: Option<&[crate::cli::args::ToolArg]>,
+        exclude_tools: Option<&[crate::cli::args::ToolArg]>,
     ) -> Vec<OutdatedInfo> {
         let versions = self
             .list_current_versions()
             .into_iter()
             // Filter to only check specified tools if provided
             .filter(|(_, tv)| {
+                // Exclude tools if specified
+                if let Some(exclude) = exclude_tools
+                    && exclude.iter().any(|t| t.ba.as_ref() == tv.ba())
+                {
+                    return false;
+                }
+                // Include only specified tools if provided
                 if let Some(tools) = filter_tools {
                     tools.iter().any(|t| t.ba.as_ref() == tv.ba())
                 } else {

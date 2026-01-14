@@ -1115,7 +1115,7 @@ cmd unuse help="Removes installed tool versions from mise.toml" {
 cmd upgrade help="Upgrades outdated tools" {
     alias up
     long_help "Upgrades outdated tools\n\nBy default, this keeps the range specified in mise.toml. So if you have node@20 set, it will\nupgrade to the latest 20.x.x version available. See the `--bump` flag to use the latest version\nand bump the version in mise.toml.\n\nThis will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile"
-    after_long_help "Examples:\n\n    # Upgrades node to the latest version matching the range in mise.toml\n    $ mise upgrade node\n\n    # Upgrades node to the latest version and bumps the version in mise.toml\n    $ mise upgrade node --bump\n\n    # Upgrades all tools to the latest versions\n    $ mise upgrade\n\n    # Upgrades all tools to the latest versions and bumps the version in mise.toml\n    $ mise upgrade --bump\n\n    # Just print what would be done, don't actually do it\n    $ mise upgrade --dry-run\n\n    # Upgrades node and python to the latest versions\n    $ mise upgrade node python\n\n    # Show a multiselect menu to choose which tools to upgrade\n    $ mise upgrade --interactive\n"
+    after_long_help "Examples:\n\n    # Upgrades node to the latest version matching the range in mise.toml\n    $ mise upgrade node\n\n    # Upgrades node to the latest version and bumps the version in mise.toml\n    $ mise upgrade node --bump\n\n    # Upgrades all tools to the latest versions\n    $ mise upgrade\n\n    # Upgrades all tools to the latest versions and bumps the version in mise.toml\n    $ mise upgrade --bump\n\n    # Just print what would be done, don't actually do it\n    $ mise upgrade --dry-run\n\n    # Upgrades node and python to the latest versions\n    $ mise upgrade node python\n\n    # Upgrade all tools except go\n    $ mise upgrade --exclude go\n\n    # Show a multiselect menu to choose which tools to upgrade\n    $ mise upgrade --interactive\n"
     flag "-i --interactive" help="Display multiselect menu to choose which tools to upgrade"
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg <JOBS>
@@ -1124,6 +1124,9 @@ cmd upgrade help="Upgrades outdated tools" {
         long_help "Upgrades to the latest version available, bumping the version in mise.toml\n\nFor example, if you have `node = \"20.0.0\"` in your mise.toml but 22.1.0 is the latest available,\nthis will install 22.1.0 and set `node = \"22.1.0\"` in your config.\n\nIt keeps the same precision as what was there before, so if you instead had `node = \"20\"`, it\nwould change your config to `node = \"22\"`."
     }
     flag "-n --dry-run" help="Just print what would be done, don't actually do it"
+    flag "-x --exclude" help="Tool(s) to exclude from upgrading\ne.g.: go python" var=#true {
+        arg <INSTALLED_TOOL>
+    }
     flag --before help="Only upgrade to versions released before this date" {
         long_help "Only upgrade to versions released before this date\n\nSupports absolute dates like \"2024-06-01\" and relative durations like \"90d\" or \"1y\".\nThis can be useful for reproducibility or security purposes.\n\nThis only affects fuzzy version matches like \"20\" or \"latest\".\nExplicitly pinned versions like \"22.5.0\" are not filtered."
         arg <BEFORE>
