@@ -57,6 +57,7 @@ pub mod jq;
 pub mod npm;
 pub mod pipx;
 pub mod platform_target;
+pub mod s3;
 pub mod spm;
 pub mod static_helpers;
 pub mod ubi;
@@ -255,6 +256,7 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Pipx => Some(Arc::new(pipx::PIPXBackend::from_arg(ba))),
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
         BackendType::Http => Some(Arc::new(http::HttpBackend::from_arg(ba))),
+        BackendType::S3 => Some(Arc::new(s3::S3Backend::from_arg(ba))),
         BackendType::Ubi => Some(Arc::new(ubi::UbiBackend::from_arg(ba))),
         BackendType::Vfox => Some(Arc::new(vfox::VfoxBackend::from_arg(ba, None))),
         BackendType::VfoxBackend(plugin_name) => Some(Arc::new(vfox::VfoxBackend::from_arg(
@@ -271,6 +273,7 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
 pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<String> {
     match backend_type {
         BackendType::Http => http::install_time_option_keys(),
+        BackendType::S3 => s3::install_time_option_keys(),
         BackendType::Github | BackendType::Gitlab => github::install_time_option_keys(),
         BackendType::Ubi => ubi::install_time_option_keys(),
         BackendType::Cargo => cargo::install_time_option_keys(),
