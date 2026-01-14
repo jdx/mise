@@ -242,9 +242,10 @@ impl S3Backend {
                                 .or_else(|| captures.get(0))
                                 .map(|m| m.as_str().to_string());
                             if let Some(v) = version
-                                && !versions.contains(&v) {
-                                    versions.push(v);
-                                }
+                                && !versions.contains(&v)
+                            {
+                                versions.push(v);
+                            }
                         }
                     }
                 }
