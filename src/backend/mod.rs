@@ -556,7 +556,16 @@ pub trait Backend: Debug + Send + Sync {
             } else {
                 path.parent().unwrap_or(&path).join(&target)
             };
-            if target.starts_with(*dirs::INSTALLS) {
+            // Canonicalize to resolve any ".." components before checking.
+            // If target doesn't exist (canonicalize fails), don't skip - treat as needing install
+            let Ok(target) = target.canonicalize() else {
+                return None;
+            };
+            // Canonicalize INSTALLS too for consistent comparison (handles symlinked data dirs)
+            let installs = dirs::INSTALLS
+                .canonicalize()
+                .unwrap_or(dirs::INSTALLS.to_path_buf());
+            if target.starts_with(installs) {
                 return Some(path);
             }
         }
