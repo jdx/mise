@@ -7,6 +7,7 @@ use serde_json::json;
 use crate::config::Config;
 use crate::file::display_path;
 use crate::task::Task;
+use crate::task::task_fetcher::TaskFetcher;
 use crate::ui::info;
 
 /// Get information about a task
@@ -41,6 +42,13 @@ impl TasksInfo {
         let task = matching.and_then(|m| m.first().cloned().cloned());
 
         if let Some(task) = task {
+            // Resolve remote task files before displaying task info
+            let mut tasks = vec![task.clone()];
+            // always pass no_cache=false as the command doesn't take no-cache argument
+            // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
+            TaskFetcher::new(false).fetch_tasks(&mut tasks).await?;
+            let task = &tasks[0];
+
             if self.json {
                 self.display_json(&config, task).await?;
             } else {
