@@ -15,6 +15,7 @@ use tokio::{sync::OnceCell, task::JoinSet};
 use walkdir::WalkDir;
 
 use crate::backend::ABackend;
+use crate::cli::args::BackendArg;
 use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
@@ -27,7 +28,9 @@ use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::Task;
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
-use crate::toolset::{ToolRequestSet, ToolRequestSetBuilder, ToolVersion, Toolset, install_state};
+use crate::toolset::{
+    ToolRequestSet, ToolRequestSetBuilder, ToolVersion, ToolVersionOptions, Toolset, install_state,
+};
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
 
@@ -325,6 +328,15 @@ impl Config {
                 Ok(ts)
             })
             .await
+    }
+
+    pub async fn get_tool_opts(
+        self: &Arc<Self>,
+        backend_arg: &Arc<BackendArg>,
+    ) -> Result<Option<ToolVersionOptions>> {
+        let trs = self.get_tool_request_set().await?;
+        let tool_request = trs.iter().find(|tr| tr.0.short == backend_arg.short);
+        Ok(tool_request.and_then(|tr| tr.1.first().map(|req| req.options())))
     }
 
     pub fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
