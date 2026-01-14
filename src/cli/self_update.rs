@@ -103,6 +103,12 @@ impl SelfUpdate {
     }
 
     fn do_update(&self) -> Result<Status> {
+        // Use block_in_place to allow self_update's blocking HTTP calls
+        // to work within mise's async runtime
+        tokio::task::block_in_place(|| self.do_update_blocking())
+    }
+
+    fn do_update_blocking(&self) -> Result<Status> {
         let mut update = Update::configure();
         if let Some(token) = &*env::GITHUB_TOKEN {
             update.auth_token(token);
@@ -127,9 +133,18 @@ impl SelfUpdate {
                 Ok,
             )
             .map(|v| format!("v{v}"))?;
+
+        // Check if already up to date (unless --force is specified)
+        let current_version = format!("v{}", cargo_crate_version!());
+        if !self.force && v == current_version {
+            return Ok(Status::UpToDate(current_version));
+        }
+
         let target = format!("{}-{}", *OS, *ARCH);
         #[cfg(target_env = "musl")]
         let target = format!("{target}-musl");
+        // Always set target_version_tag to ensure we download the correct release
+        // (fixes semver mismatch across year boundaries, e.g. 2025.x -> 2026.x)
         update.target_version_tag(&v);
         #[cfg(windows)]
         let target = format!("mise-{v}-{target}.zip");
