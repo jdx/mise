@@ -3286,12 +3286,12 @@ const completionSpec: Fig.Spec = {
         },
       ],
       args: {
-        name: "tool@version",
+        name: "installed_tool@version",
         description:
           "Tool(s) to upgrade\ne.g.: node@20 python@3.10\nIf not specified, all current tools will be upgraded",
         isOptional: true,
         isVariadic: true,
-        generators: toolVersionGenerator,
+        generators: installedToolVersionGenerator,
         debounce: true,
       },
     },

@@ -28,7 +28,7 @@ pub struct Upgrade {
     /// Tool(s) to upgrade
     /// e.g.: node@20 python@3.10
     /// If not specified, all current tools will be upgraded
-    #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
+    #[clap(value_name = "INSTALLED_TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
     /// Display multiselect menu to choose which tools to upgrade
