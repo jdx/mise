@@ -412,8 +412,8 @@ fn github_headers(url: &Url) -> HeaderMap {
         && let Some(token) = &*env::GITHUB_TOKEN
     {
         headers.insert(
-            "authorization",
-            HeaderValue::from_str(format!("token {token}").as_str()).unwrap(),
+            reqwest::header::AUTHORIZATION,
+            HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
         );
         headers.insert(
             "x-github-api-version",
@@ -431,7 +431,7 @@ fn netrc_headers(url: &Url) -> HeaderMap {
     {
         let credentials = BASE64_STANDARD.encode(format!("{login}:{password}"));
         if let Ok(value) = HeaderValue::from_str(&format!("Basic {credentials}")) {
-            headers.insert("authorization", value);
+            headers.insert(reqwest::header::AUTHORIZATION, value);
         }
     }
     headers

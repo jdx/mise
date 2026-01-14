@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2209
+
+# Test that .miserc.toml can set MISE_ENV
+
+echo "tools.dummy = '1'" >mise.toml
+echo "tools.dummy = '2'" >mise.test.toml
+echo 'env = ["test"]' >.miserc.toml
+
+# .miserc.toml should set MISE_ENV=test, loading mise.test.toml
+assert "mise ls dummy" "dummy  2.0.0 (missing)  ~/workdir/mise.test.toml  2"
+
+# Env var should override .miserc.toml
+MISE_ENV=ci assert "mise ls dummy" "dummy  1.1.0 (missing)  ~/workdir/mise.toml  1"
+
+# Test ceiling_paths in .miserc.toml - subdirectory should pick up parent miserc
+rm -f .miserc.toml
+echo 'env = ["test"]' >.miserc.toml
+mkdir -p subdir
+cd subdir || exit 1
+
+# Should still pick up parent .miserc.toml and mise.test.toml
+assert "mise ls dummy" "dummy  2.0.0 (missing)  ~/workdir/mise.test.toml  2"
+
+cd .. || exit 1

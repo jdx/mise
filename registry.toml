@@ -310,9 +310,9 @@ description = "A powerful tool for using AWS Identity Center for the CLI and web
 test = ["aws-sso version", "AWS SSO CLI Version {{version}}"]
 
 [tools.aws-vault]
-backends = ["aqua:99designs/aws-vault", "asdf:karancode/asdf-aws-vault"]
+backends = ["aqua:ByteNess/aws-vault"]
 description = "A vault for securely storing and accessing AWS credentials in development environments"
-test = ["aws-vault --version 2>&1", "v{{version}}"]
+# test = ["aws-vault --version 2>&1", "v{{version}}"] # TODO: re-enable after versions host update
 
 [tools.awscli-local]
 backends = ["pipx:awscli-local"]
@@ -672,7 +672,7 @@ description = "cheat allows you to create and view interactive cheatsheets on th
 [tools.checkmake]
 backends = ["aqua:mrtazz/checkmake"]
 description = "experimental linter/analyzer for Makefiles"
-test = ["checkmake --version", "checkmake {{version}}"]
+test = ["checkmake --version", "checkmake v{{version}}"]
 
 [tools.checkov]
 backends = ["aqua:bridgecrewio/checkov", "asdf:bosmak/asdf-checkov"]
@@ -774,7 +774,7 @@ test = ["clarinet --version", "clarinet {{version}}"]
 [tools.claude]
 aliases = ["claude-code"]
 description = "Claude Code is an agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster by executing routine tasks, explaining complex code, and handling git workflows -- all through natural language commands"
-os = ["linux", "macos"]
+os = ["linux", "macos", "windows"]
 test = ["claude --version", "{{version}} (Claude Code)"]
 
 [[tools.claude.backends]]
@@ -797,6 +797,10 @@ url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d
 
 [tools.claude.backends.options.platforms.linux-x64]
 url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{version}/linux-x64/claude"
+
+[tools.claude.backends.options.platforms.windows-x64]
+bin = "claude.exe"
+url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{version}/win32-x64/claude.exe"
 
 [[tools.claude.backends]]
 full = "npm:@anthropic-ai/claude-code"
@@ -1126,6 +1130,11 @@ backends = ["aqua:CycloneDX/cyclonedx-cli", "asdf:xeedio/asdf-cyclonedx"]
 description = "CycloneDX CLI tool for SBOM analysis, merging, diffs and format conversions"
 # TODO: re-enable test when aqua-registry is updated to use gnu instead of musl
 # test = ["cyclonedx --version", "{{version}}"]
+
+[tools.d2]
+backends = ["aqua:terrastruct/d2", "github:terrastruct/d2[strip_components=1]"]
+description = "Modern diagram scripting language that turns text to diagrams"
+test = ["d2 --version", "v{{version}}"]
 
 [tools.dagger]
 backends = ["aqua:dagger/dagger", "asdf:virtualstaticvoid/asdf-dagger"]
@@ -1582,9 +1591,14 @@ backends = ["aqua:itchyny/fillin", "asdf:ouest/asdf-fillin"]
 description = "fill-in your command and execute"
 
 [tools.firebase]
-backends = ["aqua:firebase/firebase-tools", "asdf:jthegedus/asdf-firebase"]
+backends = [
+  "aqua:firebase/firebase-tools",
+  "npm:firebase-tools",
+  "asdf:jthegedus/asdf-firebase",
+]
 description = "The Firebase Command Line Tools"
-test = ["firebase --version", "{{version}}"]
+# 15.2.0 doesn't work. ref: https://github.com/firebase/firebase-tools/issues/9715
+# test = ["firebase --version", "{{version}}"]
 
 [tools.fission]
 backends = ["aqua:fission/fission", "asdf:virtualstaticvoid/asdf-fission"]
@@ -2577,6 +2591,11 @@ backends = ["aqua:kubernetes/kompose", "asdf:technikhil314/asdf-kompose"]
 description = "Go from Docker Compose to Kubernetes"
 test = ["kompose version", "{{version}}"]
 
+[tools.kopia]
+backends = ["aqua:kopia/kopia", "github:kopia/kopia"]
+description = "Kopia is a fast and secure open-source backup/restore tool that allows you to create encrypted snapshots of your data and save the snapshots to remote or cloud storage of your choice, to network-attached storage or server, or locally on your machine"
+test = ["kopia --version", "{{version}}"]
+
 [tools.kops]
 backends = ["aqua:kubernetes/kops", "asdf:Antiarchitect/asdf-kops"]
 description = "Kubernetes Operations (kops) - Production Grade K8s Installation, Upgrades, and Management"
@@ -3069,6 +3088,11 @@ description = "Mercury is a logic/functional programming language which combines
 backends = ["asdf:mise-plugins/mise-meson"]
 description = "Meson is an open source build system meant to be both extremely fast, and, even more importantly, as user friendly as possible"
 
+[tools.micromamba]
+backends = ["github:mamba-org/micromamba-releases"]
+description = "Lightweight conda-compatible package manager"
+test = ["micromamba --version", "{{ version | split(pat='-') | first }}"]
+
 [tools.micronaut]
 backends = [
   "github:micronaut-projects/micronaut-starter[exe=mn]",
@@ -3266,6 +3290,12 @@ description = "A CLI tool to sign and verify artifacts"
 backends = ["aqua:FairwindsOps/nova", "asdf:elementalvoid/asdf-nova"]
 description = "Find outdated or deprecated Helm charts running in your cluster"
 
+[tools.npm]
+backends = ["npm:npm"]
+description = "the package manager for JavaScript"
+overrides = ["node"]
+test = ["npm --version", "{{version}}"]
+
 [tools.nsc]
 backends = ["github:nats-io/nsc", "asdf:dex4er/asdf-nsc"]
 description = "Tool for creating nkey/jwt based configurations"
@@ -3311,6 +3341,16 @@ description = "Odin Programming Language"
 [tools.odo]
 backends = ["aqua:redhat-developer/odo", "asdf:rm3l/asdf-odo"]
 description = "A fast, and iterative CLI tool for container-based application development"
+
+[tools.oh-my-posh]
+backends = ["aqua:JanDeDobbeleer/oh-my-posh"]
+description = "The most customizable and fastest prompt engine for any shell"
+test = ["oh-my-posh version", "{{version}}"]
+
+[tools.oha]
+backends = ["aqua:hatoo/oha", "github:hatoo/oha"]
+description = "Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation"
+test = ["oha --version", "oha {{version}}"]
 
 [tools.okta-aws]
 aliases = ["okta-aws-cli"]
@@ -3359,7 +3399,7 @@ backends = ["github:openbao/openbao[exe=bao]"]
 description = "OpenBao exists to provide a software solution to manage, store, and distribute sensitive data including secrets, certificates, and keys"
 
 [tools.opencode]
-backends = ["aqua:sst/opencode"]
+backends = ["aqua:anomalyco/opencode"]
 description = "AI coding agent, built for the terminal"
 test = ["opencode --version", "{{version}}"]
 
@@ -3886,6 +3926,11 @@ backends = ["aqua:astral-sh/ruff", "asdf:simhem/asdf-ruff"]
 description = "An extremely fast Python linter and code formatter, written in Rust"
 test = ["ruff --version", "ruff {{version}}"]
 
+[tools.rumdl]
+backends = ["github:rvben/rumdl"]
+description = "Markdown Linter and Formatter written in Rust"
+test = ["rumdl --version", "rumdl {{version}}"]
+
 [tools.rust]
 backends = ["core:rust", "asdf:code-lever/asdf-rust"]
 description = "Rust language"
@@ -4214,6 +4259,11 @@ description = "Spring Boot CLI"
 backends = ["aqua:geofffranks/spruce", "asdf:woneill/asdf-spruce"]
 description = "Standalone, daemon-less, unprivileged Dockerfile and OCI compatible container image builder"
 
+[tools.sqlc]
+backends = ["github:sqlc-dev/sqlc"]
+description = "Generate type-safe code from SQL"
+test = ["sqlc version", "{{version}}"]
+
 [tools.sqlite]
 backends = ["asdf:mise-plugins/mise-sqlite"]
 description = "SQLite is a C-language library that implements a small, fast, self-contained, high-reliability, full-featured, SQL database engine. SQLite is the most used database engine in the world"
@@ -4338,7 +4388,10 @@ description = "Swift Lang (Core)"
 os = ["linux", "macos"]
 
 [tools.swift-package-list]
-backends = ["asdf:mise-plugins/mise-swift-package-list"]
+backends = [
+  "spm:FelixHerrmann/swift-package-list",
+  "asdf:mise-plugins/mise-swift-package-list",
+]
 description = "A command-line tool to get all used Swift Package dependencies"
 
 [tools.swiftformat]
@@ -4597,8 +4650,10 @@ description = "A tldr client written in Rust"
 test = ["tldr --version", "tlrc v{{version}}"]
 
 [tools.tmux]
-backends = ["asdf:mise-plugins/mise-tmux"]
+backends = ["github:tmux/tmux-builds", "asdf:mise-plugins/mise-tmux"]
 description = "tmux is a terminal multiplexer. It lets you switch easily between several programs in one terminal, detach them (they keep running in the background) and reattach them to a different terminal"
+os = ["linux", "macos"]
+test = ["tmux -V", "tmux {{version}}"]
 
 [tools.tokei]
 backends = [
@@ -4721,6 +4776,11 @@ test = [
   "typstyle --version | grep 'Version:' | awk '{print $2}'",
   "{{version}}",
 ]
+
+[tools.ty]
+backends = ["aqua:astral-sh/ty", "github:astral-sh/ty"]
+description = "An extremely fast Python type checker and language server, written in Rust"
+test = ["ty --version", "ty {{version}}"]
 
 [tools.uaa]
 aliases = ["uaa-cli"]
@@ -5079,6 +5139,11 @@ test = ["yt-dlp --version", "{{version}}"]
 backends = ["aqua:carvel-dev/ytt", "asdf:vmware-tanzu/asdf-carvel"]
 description = "YAML templating tool that works on YAML structure instead of text"
 test = ["ytt --version", "ytt version {{version}}"]
+
+[tools.zarf]
+backends = ["aqua:zarf-dev/zarf"]
+description = "The Airgap Native Packager Manager for Kubernetes"
+test = ["zarf version", "v{{version | trim_start_matches(pat='v')}}"]
 
 [tools.zbctl]
 backends = ["npm:zbctl"]

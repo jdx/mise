@@ -240,7 +240,7 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     let url = url.into_url().unwrap();
     let mut set_headers = |token: &str| {
         headers.insert(
-            "Authorization",
+            reqwest::header::AUTHORIZATION,
             HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
         );
     };

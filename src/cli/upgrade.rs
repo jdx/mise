@@ -148,10 +148,22 @@ impl Upgrade {
             })
             .collect::<Vec<_>>();
 
-        let to_remove = outdated
+        // Determine which old versions should be uninstalled after upgrade
+        // Skip uninstall when current == latest (channel-based versions that update in-place)
+        let to_remove: Vec<_> = outdated
             .iter()
-            .filter_map(|o| o.current.as_ref().map(|current| (o, current)))
-            .collect::<Vec<_>>();
+            .filter_map(|o| {
+                o.current.as_ref().and_then(|current| {
+                    // Skip if current and latest version strings are identical
+                    // This handles channels like "nightly", "stable", "beta" that update in-place
+                    if &o.latest == current {
+                        return None;
+                    }
+
+                    Some((o, current))
+                })
+            })
+            .collect();
 
         if self.dry_run {
             for (o, current) in &to_remove {

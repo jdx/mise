@@ -1,6 +1,6 @@
 [package]
 name = "aqua-registry"
-version = "2025.9.11"
+version = "2026.1.2"
 edition = "2024"
 description = "Aqua registry backend for mise"
 authors = ["Jeff Dickey (@jdx)"]

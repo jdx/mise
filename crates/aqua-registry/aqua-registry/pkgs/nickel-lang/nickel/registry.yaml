@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: nickel-lang
+    repo_name: nickel
+    aliases:
+      - name: tweag/nickel
+    description: Better configuration for less
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "1.2.0"
+        no_asset: true
+      - version_constraint: semver("<= 0.3.1")
+        no_asset: true
+      - version_constraint: semver("<= 1.8.0")
+        asset: nickel-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux
+      - version_constraint: semver("<= 1.9.1")
+        asset: nickel-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: "true"
+        asset: nickel-{{.Arch}}-{{.OS}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64

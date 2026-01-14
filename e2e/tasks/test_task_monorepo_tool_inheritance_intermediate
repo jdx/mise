@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Test that monorepo tasks inherit tools from intermediate parent directories
+export MISE_EXPERIMENTAL=1
+export MISE_NODE_VERIFY=0
+
+cat <<EOF >mise.toml
+experimental_monorepo_root = true
+EOF
+
+mkdir -p parent
+cat <<EOF >parent/mise.toml
+[tools]
+node = "20"
+EOF
+
+mkdir -p parent/child
+cat <<EOF >parent/child/mise.toml
+[tasks.build]
+run = 'echo "NODE_VERSION=\$(node --version | cut -c2- | cut -d. -f1)"'
+EOF
+
+# Install node from the parent directory where it's defined
+(cd parent && mise install)
+
+echo "=== Test: Child task inherits node 20 from intermediate parent ==="
+assert_contains "mise run //parent/child:build" "NODE_VERSION=20"
+
+echo "=== Intermediate parent tool inheritance test passed! ==="

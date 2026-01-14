@@ -15,6 +15,7 @@ use tokio::{sync::OnceCell, task::JoinSet};
 use walkdir::WalkDir;
 
 use crate::backend::ABackend;
+use crate::cli::args::BackendArg;
 use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
@@ -26,12 +27,16 @@ use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENA
 use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::Task;
-use crate::toolset::{ToolRequestSet, ToolRequestSetBuilder, ToolVersion, Toolset, install_state};
+use crate::task::task_file_providers::TaskFileProvidersBuilder;
+use crate::toolset::{
+    ToolRequestSet, ToolRequestSetBuilder, ToolVersion, ToolVersionOptions, Toolset, install_state,
+};
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
 
 pub mod config_file;
 pub mod env_directive;
+pub mod miserc;
 pub mod settings;
 pub mod tracking;
 
@@ -44,7 +49,7 @@ use crate::watch_files::WatchFile;
 use crate::wildcard::Wildcard;
 
 type AliasMap = IndexMap<String, Alias>;
-type ConfigMap = IndexMap<PathBuf, Arc<dyn ConfigFile>>;
+pub(crate) type ConfigMap = IndexMap<PathBuf, Arc<dyn ConfigFile>>;
 pub type EnvWithSources = IndexMap<String, (String, PathBuf)>;
 
 pub struct Config {
@@ -325,6 +330,15 @@ impl Config {
             .await
     }
 
+    pub async fn get_tool_opts(
+        self: &Arc<Self>,
+        backend_arg: &Arc<BackendArg>,
+    ) -> Result<Option<ToolVersionOptions>> {
+        let trs = self.get_tool_request_set().await?;
+        let tool_request = trs.iter().find(|tr| tr.0.short == backend_arg.short);
+        Ok(tool_request.and_then(|tr| tr.1.first().map(|req| req.options())))
+    }
+
     pub fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
         let plugin_name = self
             .all_aliases
@@ -542,6 +556,9 @@ impl Config {
     }
 
     async fn load_env(self: &Arc<Self>) -> Result<EnvResults> {
+        if Settings::no_env() || Settings::get().no_env.unwrap_or(false) {
+            return Ok(EnvResults::default());
+        }
         time!("load_env start");
         let entries = self
             .config_files
@@ -938,12 +955,30 @@ fn all_dirs_from(start_dir: &Path) -> Result<Vec<PathBuf>> {
     file::all_dirs(start_dir, &env::MISE_CEILING_PATHS)
 }
 
+/// Returns true if a path is a .tool-versions file (lower priority for writes)
+fn is_tool_versions_file(p: &Path) -> bool {
+    p.file_name()
+        .is_some_and(|f| f.to_string_lossy().ends_with(".tool-versions"))
+}
+
+/// Get the first (lowest precedence) config file, but skip .tool-versions unless
+/// it's the only option. This ensures commands like `mise use` write to mise.toml
+/// instead of mise.local.toml or .tool-versions when multiple configs exist.
+/// See: https://github.com/jdx/mise/discussions/6475
+fn first_config_file(files: &IndexSet<PathBuf>) -> Option<&PathBuf> {
+    files
+        .iter()
+        .find(|p| !is_tool_versions_file(p))
+        .or_else(|| files.first())
+}
+
 pub fn config_file_from_dir(p: &Path) -> PathBuf {
     if !p.is_dir() {
         return p.to_path_buf();
     }
     for dir in all_dirs().unwrap_or_default() {
-        if let Some(cf) = self::config_files_in_dir(&dir).last()
+        let files = self::config_files_in_dir(&dir);
+        if let Some(cf) = first_config_file(&files)
             && !is_global_config(cf)
         {
             return cf.clone();
@@ -1154,12 +1189,15 @@ pub fn local_toml_config_paths() -> Vec<&'static PathBuf> {
         .collect()
 }
 
-/// either the top local mise.toml or the path to where it should be written to
+/// The last (lowest precedence) local mise.toml or the path to where it should be written to.
+/// This ensures commands write to mise.toml instead of mise.local.toml when both exist.
+/// Note: local_toml_config_paths() returns files in highest-to-lowest precedence order,
+/// so we use .last() to get the lowest precedence file.
 pub fn local_toml_config_path() -> PathBuf {
     static CWD: Lazy<PathBuf> = Lazy::new(|| PathBuf::from("."));
     local_toml_config_paths()
         .into_iter()
-        .next_back()
+        .last()
         .cloned()
         .unwrap_or_else(|| {
             dirs::CWD
@@ -1438,13 +1476,13 @@ impl Debug for Config {
     }
 }
 
-fn default_task_includes() -> Vec<PathBuf> {
+fn default_task_includes() -> Vec<String> {
     vec![
-        PathBuf::from("mise-tasks"),
-        PathBuf::from(".mise-tasks"),
-        PathBuf::from(".mise").join("tasks"),
-        PathBuf::from(".config").join("mise").join("tasks"),
-        PathBuf::from("mise").join("tasks"),
+        "mise-tasks".to_string(),
+        ".mise-tasks".to_string(),
+        ".mise/tasks".to_string(),
+        ".config/mise/tasks".to_string(),
+        "mise/tasks".to_string(),
     ]
 }
 
@@ -1544,9 +1582,11 @@ async fn load_local_tasks_with_context(
                 async move {
                     let mut all_tasks = Vec::new();
                     // Load config files from subdirectory
+                    let mut found_config = false;
                     for config_filename in DEFAULT_CONFIG_FILENAMES.iter() {
                         let config_path = subdir.join(config_filename);
                         if config_path.exists() {
+                            found_config = true;
                             match config_file::parse(&config_path).await {
                                 Ok(cf) => {
                                     let mut subdir_tasks =
@@ -1574,6 +1614,17 @@ async fn load_local_tasks_with_context(
                             }
                         }
                     }
+
+                    // If no config file exists, still load default task include dirs
+                    if !found_config {
+                        let includes = task_includes_for_dir(&subdir, &config.config_files);
+                        for include in includes {
+                            let mut subdir_tasks =
+                                load_tasks_includes(&config, &include, &subdir).await?;
+                            prefix_monorepo_task_names(&mut subdir_tasks, &subdir, &monorepo_root);
+                            all_tasks.extend(subdir_tasks);
+                        }
+                    }
                     Ok::<Vec<Task>, eyre::Report>(all_tasks)
                 }
             })
@@ -1599,6 +1650,11 @@ fn discover_monorepo_subdirs(
     ctx: Option<&crate::task::TaskLoadContext>,
 ) -> Result<Vec<PathBuf>> {
     const DEFAULT_IGNORED_DIRS: &[&str] = &["node_modules", "target", "dist", "build"];
+    let has_task_includes = |dir: &Path| {
+        default_task_includes()
+            .into_iter()
+            .any(|include| dir.join(include).exists())
+    };
 
     let mut subdirs = Vec::new();
     let settings = Settings::get();
@@ -1649,7 +1705,8 @@ fn discover_monorepo_subdirs(
                 let has_config = DEFAULT_CONFIG_FILENAMES
                     .iter()
                     .any(|f| dir.join(f).exists());
-                if has_config {
+                let has_task_includes = has_task_includes(dir);
+                if has_config || has_task_includes {
                     // Apply context filtering if provided
                     if let Some(ctx) = ctx {
                         let rel_path = dir
@@ -1685,7 +1742,8 @@ fn discover_monorepo_subdirs(
                 let has_config = DEFAULT_CONFIG_FILENAMES
                     .iter()
                     .any(|f| dir.join(f).exists());
-                if has_config {
+                let has_task_includes = has_task_includes(dir);
+                if has_config || has_task_includes {
                     // Apply context filtering if provided
                     if let Some(ctx) = ctx {
                         let rel_path = dir
@@ -1797,6 +1855,18 @@ async fn load_tasks_includes(
     }
 }
 
+async fn resolve_git_url_to_path(git_url: &str) -> Result<PathBuf> {
+    let no_cache = Settings::get().task_remote_no_cache.unwrap_or(false);
+    let task_file_providers = TaskFileProvidersBuilder::new()
+        .with_cache(!no_cache)
+        .build();
+
+    match task_file_providers.get_provider(git_url) {
+        Some(provider) => provider.get_local_path(git_url).await,
+        None => bail!("No provider found for git URL: {}", git_url),
+    }
+}
+
 async fn load_file_tasks(
     config: &Arc<Config>,
     cf: Arc<dyn ConfigFile>,
@@ -1806,16 +1876,18 @@ async fn load_file_tasks(
         .task_config()
         .includes
         .clone()
-        .unwrap_or_else(default_task_includes)
-        .into_iter()
-        .map(|p| cf.get_path().parent().unwrap().join(p))
-        .collect::<Vec<_>>();
+        .unwrap_or_else(default_task_includes);
+
     let mut tasks = vec![];
     let config_root = Arc::new(config_root.to_path_buf());
-    for p in includes {
-        let config_root = config_root.clone();
-        let config = config.clone();
-        tasks.extend(load_tasks_includes(&config, &p, &config_root).await?);
+
+    for include in includes {
+        let path = if include.starts_with("git::") {
+            resolve_git_url_to_path(&include).await?
+        } else {
+            cf.get_path().parent().unwrap().join(&include)
+        };
+        tasks.extend(load_tasks_includes(config, &path, &config_root).await?);
     }
     Ok(tasks)
 }
@@ -1827,10 +1899,24 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBu
         .find_map(|cf| cf.task_config().includes.clone())
         .unwrap_or_else(default_task_includes)
         .into_iter()
-        .map(|p| if p.is_absolute() { p } else { dir.join(p) })
-        .filter(|p| p.exists())
-        .collect::<Vec<_>>()
-        .into_iter()
+        .filter_map(|p| {
+            // Git URLs will be handled by load_file_tasks
+            if p.starts_with("git::") {
+                None
+            } else {
+                let path = PathBuf::from(p);
+                let resolved = if path.is_absolute() {
+                    path
+                } else {
+                    dir.join(path)
+                };
+                if resolved.exists() {
+                    Some(resolved)
+                } else {
+                    None
+                }
+            }
+        })
         .unique()
         .collect::<Vec<_>>()
 }
@@ -1841,15 +1927,32 @@ pub async fn load_tasks_in_dir(
     config_files: &ConfigMap,
 ) -> Result<Vec<Task>> {
     let configs = configs_at_root(dir, config_files);
+
+    let git_includes: Vec<String> = configs
+        .iter()
+        .rev()
+        .find_map(|cf| cf.task_config().includes.clone())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| p.starts_with("git::"))
+        .collect();
+
     let mut config_tasks = vec![];
-    for cf in configs {
+    for cf in &configs {
         let dir = dir.to_path_buf();
-        config_tasks.extend(load_config_tasks(config, cf.clone(), &dir).await?);
+        config_tasks.extend(load_config_tasks(config, (*cf).clone(), &dir).await?);
     }
+
     let mut file_tasks = vec![];
     for p in task_includes_for_dir(dir, config_files) {
         file_tasks.extend(load_tasks_includes(config, &p, dir).await?);
     }
+
+    for include in git_includes {
+        let resolved = resolve_git_url_to_path(&include).await?;
+        file_tasks.extend(load_tasks_includes(config, &resolved, dir).await?);
+    }
+
     let mut tasks = file_tasks
         .into_iter()
         .chain(config_tasks)

@@ -479,6 +479,42 @@ run = "echo task4"
 
 If you want auto-completion/validation in included toml tasks files, you can use the following JSON schema: <https://mise.jdx.dev/schema/mise-task.json>
 
+#### Remote Git Includes <Badge type="warning" text="experimental" />
+
+You can include directories of tasks from git repositories using the `git::` URL syntax:
+
+::: code-group
+
+```mise-toml [ssh]
+[task_config]
+includes = [
+    "git::ssh://git@github.com/myorg/shared-tasks.git//tasks?ref=v1.0.0"
+]
+```
+
+```mise-toml [https]
+[task_config]
+includes = [
+    "git::https://github.com/myorg/shared-tasks.git//tasks?ref=main"
+]
+```
+
+:::
+
+URL format: `git::<protocol>://<url>//<path>?<ref>`
+
+Required fields:
+
+- `protocol`: The git protocol (ssh or https).
+- `url`: The git repository URL.
+- `path`: The path to the directory in the repository.
+
+Optional fields:
+
+- `ref`: The git reference (branch, tag, commit). Defaults to the repository's default branch.
+
+The repository will be cloned and cached in `MISE_CACHE_DIR/remote-git-tasks-cache`. Tasks from the included directory will be loaded as if they were local file tasks. You can disable caching with `MISE_TASK_REMOTE_NO_CACHE=true` or the `--no-cache` flag.
+
 ## Monorepo Support <Badge type="warning" text="experimental" />
 
 mise supports monorepo-style task organization with target path syntax. Enable it by setting `experimental_monorepo_root = true` in your root `mise.toml`.

@@ -246,11 +246,12 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Cargo => Some(Arc::new(cargo::CargoBackend::from_arg(ba))),
         BackendType::Conda => Some(Arc::new(conda::CondaBackend::from_arg(ba))),
         BackendType::Dotnet => Some(Arc::new(dotnet::DotnetBackend::from_arg(ba))),
-        BackendType::Npm => Some(Arc::new(npm::NPMBackend::from_arg(ba))),
+        BackendType::Forgejo => Some(Arc::new(github::UnifiedGitBackend::from_arg(ba))),
         BackendType::Gem => Some(Arc::new(gem::GemBackend::from_arg(ba))),
         BackendType::Github => Some(Arc::new(github::UnifiedGitBackend::from_arg(ba))),
         BackendType::Gitlab => Some(Arc::new(github::UnifiedGitBackend::from_arg(ba))),
         BackendType::Go => Some(Arc::new(go::GoBackend::from_arg(ba))),
+        BackendType::Npm => Some(Arc::new(npm::NPMBackend::from_arg(ba))),
         BackendType::Pipx => Some(Arc::new(pipx::PIPXBackend::from_arg(ba))),
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
         BackendType::Http => Some(Arc::new(http::HttpBackend::from_arg(ba))),
@@ -657,12 +658,10 @@ pub trait Backend: Debug + Send + Sync {
                 // For stable version, apply date filter if provided
                 match before_date {
                     Some(before) => {
-                        let versions_with_info =
-                            self.list_remote_versions_with_info(config).await?;
-                        let filtered = VersionInfo::filter_by_date(versions_with_info, before);
-                        let versions: Vec<String> =
-                            filtered.into_iter().map(|v| v.version).collect();
-                        Ok(find_match_in_list(&versions, "latest"))
+                        let matches = self
+                            .list_versions_matching_with_opts(config, "latest", Some(before))
+                            .await?;
+                        Ok(find_match_in_list(&matches, "latest"))
                     }
                     None => self.latest_stable_version(config).await,
                 }
@@ -791,6 +790,12 @@ pub trait Backend: Debug + Send + Sync {
 
         ctx.pr.set_message("install".into());
         let _lock = lock_file::get(&tv.install_path(), ctx.force)?;
+
+        // Double-checked (locking) that it wasn't installed while we were waiting for the lock
+        if self.is_version_installed(&ctx.config, &tv, true) && !ctx.force {
+            return Ok(tv);
+        }
+
         self.create_install_dirs(&tv)?;
 
         let old_tv = tv.clone();
@@ -857,8 +862,8 @@ pub trait Backend: Debug + Send + Sync {
         CmdLineRunner::new(&*env::SHELL)
             .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
-            .env("MISE_TOOL_NAME", &tv.ba().short)
-            .env("MISE_TOOL_VERSION", &tv.version)
+            .env("MISE_TOOL_NAME", tv.ba().short.clone())
+            .env("MISE_TOOL_VERSION", tv.version.clone())
             .with_pr(ctx.pr.as_ref())
             .arg(env::SHELL_COMMAND_FLAG)
             .arg(script)

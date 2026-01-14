@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+# Test that concurrent processes installing the same tool doesn't corrupt
+# the other ongoing `exec`s.
+# This tests the race condition fix where Process B would wipe Process A's install
+
+set -euo pipefail
+
+mise use dummy@2.0.0
+
+# Clean up any existing installation
+mise uninstall dummy --all 2>/dev/null || true
+
+# Launch multiple processes trying to install the same tool concurrently
+for _ in {1..4}; do
+	mise x -- dummy --version &
+done
+
+# Wait for all background processes to complete
+wait
+
+# Verify the tool is installed and works
+assert_contains "mise ls --installed dummy" "2.0.0"
+
+# Verify the binary actually exists and is executable
+assert_contains "mise x -- dummy --version" "2.0.0"
+
+# Clean up
+mise uninstall dummy --all 2>/dev/null || true

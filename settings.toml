@@ -233,6 +233,27 @@ hide = true
 optional = true
 type = "Path"
 
+[ceiling_paths]
+default = []
+description = "Directories where mise stops searching for config files."
+docs = """
+Directories where mise stops searching for config files. By default, mise
+will search from the current directory up to the root of the filesystem.
+
+Setting this to a list of directories will stop the search when one of
+those directories is reached. This is useful to prevent mise from searching
+outside of a project directory.
+
+This is an early-init setting: it must be set in `.miserc.toml`, environment
+variables, or CLI flags. Setting it in `mise.toml` will have no effect because
+config file discovery has already occurred by the time `mise.toml` is read.
+"""
+env = "MISE_CEILING_PATHS"
+parse_env = "list_by_colon"
+rc = true
+rust_type = "BTreeSet<PathBuf>"
+type = "ListPath"
+
 [ci]
 default = "false"
 description = "Set to true if running in a CI environment"
@@ -373,9 +394,14 @@ to use this feature.
 
 Multiple envs can be set by separating them with a comma, e.g. `MISE_ENV=ci,test`.
 They will be read in order, with the last one taking precedence.
+
+This is an early-init setting: it must be set in `.miserc.toml`, environment
+variables, or CLI flags (`-E`/`--env`). Setting it in `mise.toml` will have no
+effect because `MISE_ENV` determines which config files to load.
 """
 env = "MISE_ENV"
 parse_env = "list_by_comma"
+rc = true
 type = "ListString"
 
 [env_file]
@@ -658,8 +684,16 @@ type = "SetString"
 [ignored_config_paths]
 default = []
 description = "This is a list of config paths that mise will ignore."
+docs = """
+This is a list of config paths that mise will ignore.
+
+This is an early-init setting: it must be set in `.miserc.toml`, environment
+variables, or CLI flags. Setting it in `mise.toml` will have no effect because
+config file discovery has already occurred by the time `mise.toml` is read.
+"""
 env = "MISE_IGNORED_CONFIG_PATHS"
 parse_env = "list_by_colon"
+rc = true
 rust_type = "BTreeSet<PathBuf>"
 type = "ListPath"
 
@@ -827,6 +861,18 @@ env = "MISE_NETRC_FILE"
 optional = true
 type = "Path"
 
+[no_env]
+description = "Do not load environment variables from config files."
+env = "MISE_NO_ENV"
+optional = true
+type = "Bool"
+
+[no_hooks]
+description = "Do not execute hooks from config files."
+env = "MISE_NO_HOOKS"
+optional = true
+type = "Bool"
+
 [node.compile]
 description = "Compile node from source."
 env = "MISE_NODE_COMPILE"
@@ -907,16 +953,34 @@ type = "String"
 
 [override_config_filenames]
 default = []
-description = "If set, mise will ignore default config files like `mise.toml` and use these filenames instead. This must be an env var."
+description = "If set, mise will ignore default config files like `mise.toml` and use these filenames instead."
+docs = """
+If set, mise will ignore default config files like `mise.toml` and use these
+filenames instead.
+
+This is an early-init setting: it must be set in `.miserc.toml`, environment
+variables, or CLI flags. Setting it in `mise.toml` will have no effect because
+config file discovery has already occurred by the time `mise.toml` is read.
+"""
 env = "MISE_OVERRIDE_CONFIG_FILENAMES"
 parse_env = "list_by_colon"
+rc = true
 type = "ListString"
 
 [override_tool_versions_filenames]
 default = []
-description = "If set, mise will ignore .tool-versions files and use these filenames instead. Can be set to `none` to disable .tool-versions. This must be an env var."
+description = "If set, mise will ignore .tool-versions files and use these filenames instead. Can be set to `none` to disable .tool-versions."
+docs = """
+If set, mise will ignore .tool-versions files and use these filenames instead.
+Can be set to `none` to disable .tool-versions entirely.
+
+This is an early-init setting: it must be set in `.miserc.toml`, environment
+variables, or CLI flags. Setting it in `mise.toml` will have no effect because
+config file discovery has already occurred by the time `mise.toml` is read.
+"""
 env = "MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES"
 parse_env = "list_by_colon"
+rc = true
 type = "ListString"
 
 [paranoid]
@@ -1167,7 +1231,7 @@ description = "Enable terminal progress indicators (OSC 9;4) for compatible term
 docs = """
 Enable terminal progress indicators using OSC 9;4 escape sequences. This provides
 native progress bars in the terminal window chrome for terminals that support it,
-including Ghostty, VS Code's integrated terminal, Windows Terminal, and VTE-based
+including Ghostty, iTerm2, VS Code's integrated terminal, Windows Terminal, and VTE-based
 terminals (GNOME Terminal, Ptyxis, etc.).
 
 When enabled, mise will send progress updates to the terminal during operations like
@@ -1175,7 +1239,7 @@ tool installations. The progress bar appears in the terminal's window UI, separa
 from the text output.
 
 mise automatically detects whether your terminal supports OSC 9;4 and will only send
-these sequences if supported. Terminals like Alacritty, iTerm2, WezTerm, and kitty
+these sequences if supported. Terminals like Alacritty, WezTerm, and kitty
 do not support OSC 9;4 and will not receive these sequences.
 
 Set to false to disable this feature if you prefer not to see these indicators.
@@ -1364,14 +1428,14 @@ env = "MISE_AGE_STRICT"
 type = "Bool"
 
 [sops.age_key]
-description = "The age private key to use for sops secret decryption."
+description = "The age private key to use for sops secret decryption. Takes precedence over standard SOPS_AGE_KEY environment variable."
 env = "MISE_SOPS_AGE_KEY"
 optional = true
 type = "String"
 
 [sops.age_key_file]
 default_docs = "~/.config/mise/age.txt"
-description = "Path to the age private key file to use for sops secret decryption."
+description = "Path to the age private key file for sops secret decryption. Takes precedence over standard SOPS_AGE_KEY_FILE environment variable."
 env = "MISE_SOPS_AGE_KEY_FILE"
 optional = true
 type = "Path"
@@ -1537,6 +1601,11 @@ env = "MISE_TASK_TIMINGS"
 optional = true
 type = "Bool"
 
+[task_show_full_cmd]
+description = "Disable truncation of command lines in task execution output. When true, the full command line will be shown."
+env = "MISE_TASK_SHOW_CMD_NO_TRUNC"
+type = "Bool"
+
 [trace]
 description = "Sets log level to trace"
 env = "MISE_TRACE"
@@ -1689,6 +1758,21 @@ If you don't have the mirror list cached locally, you can place the newline-sepa
 server list inside `mise cache path`, folder `zig` as `community-mirrors.txt`.
 """
 env = "MISE_ZIG_USE_COMMUNITY_MIRRORS"
+type = "Bool"
+
+[task.disable_spec_from_run_scripts]
+default = false
+description = "Opt out of parsing task run scripts to infer the usage spec (arguments and flags). When enabled, mise will derive the usage spec only from the `usage` field, ignoring any `arg()`, `option()`, or `flag()` templates used in run scripts. This can restore previous behavior and avoid the extra template pass over run scripts when collecting specs."
+docs = """
+When enabled, `arg()`, `option()`, and `flag()` Tera functions in run scripts will not contribute
+to the task's usage spec—only the explicit `usage` field is used.
+
+This is useful for:
+- Skipping the extra template pass over run scripts (performance)
+- Avoiding two-pass parsing quirks where template functions return empty strings during spec collection
+- Early opt-out before Tera template arguments are removed in 2026.11.0
+"""
+env = "MISE_TASK_DISABLE_SPEC_FROM_RUN_SCRIPTS"
 type = "Bool"
 
 [task.monorepo_depth]

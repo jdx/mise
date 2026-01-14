@@ -17,7 +17,7 @@
 //!     .pick_from(&assets)?;
 //! ```
 
-use eyre::{Result, bail};
+use eyre::Result;
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -202,27 +202,12 @@ impl AssetPicker {
 
     /// Picks the best asset from available options
     pub fn pick_best_asset(&self, assets: &[String]) -> Option<String> {
-        let candidates = self.filter_archive_assets(assets);
-        let mut scored_assets = self.score_all_assets(&candidates);
+        let mut scored_assets = self.score_all_assets(assets);
         scored_assets.sort_by(|a, b| b.0.cmp(&a.0));
         scored_assets
             .first()
             .filter(|(score, _)| *score > 0)
             .map(|(_, asset)| asset.clone())
-    }
-
-    fn filter_archive_assets(&self, assets: &[String]) -> Vec<String> {
-        let archive_assets: Vec<String> = assets
-            .iter()
-            .filter(|name| ARCHIVE_EXTENSIONS.iter().any(|ext| name.ends_with(ext)))
-            .cloned()
-            .collect();
-
-        if archive_assets.is_empty() {
-            assets.to_vec()
-        } else {
-            archive_assets
-        }
     }
 
     fn score_all_assets(&self, assets: &[String]) -> Vec<(i32, String)> {
@@ -285,6 +270,14 @@ impl AssetPicker {
     }
 
     fn score_format_preferences(&self, asset: &str) -> i32 {
+        let asset = asset.to_lowercase();
+        if asset.ends_with(".zip") {
+            if self.target_os == "windows" {
+                return 15;
+            } else {
+                return 5;
+            }
+        }
         if ARCHIVE_EXTENSIONS.iter().any(|ext| asset.ends_with(ext)) {
             10
         } else {
@@ -294,12 +287,43 @@ impl AssetPicker {
 
     fn score_build_penalties(&self, asset: &str) -> i32 {
         let mut penalty = 0;
+        let asset = asset.to_lowercase();
         if asset.contains("debug") || asset.contains("test") {
             penalty -= 20;
         }
-        if asset.contains(".artifactbundle") {
+        if asset.ends_with(".artifactbundle") || asset.contains(".artifactbundle.") {
             penalty -= 30;
         }
+
+        // Penalize metadata/checksum/signature files
+        if asset.ends_with(".asc")
+            || asset.ends_with(".sig")
+            || asset.ends_with(".sign")
+            || asset.ends_with(".sha256")
+            || asset.ends_with(".sha512")
+            || asset.ends_with(".sha1")
+            || asset.ends_with(".md5")
+            || asset.ends_with(".json")
+            || asset.ends_with(".txt")
+            || asset.ends_with(".xml")
+            || asset.ends_with(".sbom")
+            || asset.ends_with(".spdx")
+            || asset.ends_with(".intoto")
+            || asset.ends_with(".attestation")
+            || asset.ends_with(".pem")
+            || asset.ends_with(".crt")
+            || asset.ends_with(".key")
+            || asset.ends_with(".pub")
+            || asset.ends_with(".manifest")
+        {
+            penalty -= 100;
+        }
+
+        // Penalize common non-binary filenames
+        if asset.contains("release-info") || asset.contains("changelog") {
+            penalty -= 50;
+        }
+
         penalty
     }
 }
@@ -413,13 +437,7 @@ impl AssetMatcher {
 
     /// Pick the best matching asset from a list of names
     pub fn pick_from(&self, assets: &[String]) -> Result<MatchedAsset> {
-        let filtered = self.filter_assets(assets);
-
-        if filtered.is_empty() {
-            bail!("No assets available after filtering");
-        }
-
-        self.match_by_auto_detection(&filtered)
+        self.match_by_auto_detection(assets)
     }
 
     /// Find checksum file for a given asset
@@ -456,18 +474,6 @@ impl AssetMatcher {
     }
 
     // ========== Internal Methods ==========
-
-    fn filter_assets(&self, assets: &[String]) -> Vec<String> {
-        let is_archive = |name: &str| ARCHIVE_EXTENSIONS.iter().any(|ext| name.ends_with(ext));
-
-        // Prefer archives when available
-        let archives: Vec<String> = assets.iter().filter(|a| is_archive(a)).cloned().collect();
-        if !archives.is_empty() {
-            return archives;
-        }
-
-        assets.to_vec()
-    }
 
     fn create_picker(&self) -> Option<AssetPicker> {
         let os = self.target_os.as_ref()?;
@@ -891,6 +897,28 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
     }
 
     #[test]
+    fn test_asset_picker_functionality_mixed() {
+        // mixed archive/binary formats like in babs/multiping
+        let assets = vec![
+            "tool-1.0.0-linux-x86_64.xz".to_string(),
+            "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
+            "tool-1.0.0-darwin-x86_64.xz".to_string(),
+            "tool-1.0.0-darwin-aarch64.xz".to_string(),
+            "tool-1.0.0-windows-x86_64.zip".to_string(),
+        ];
+
+        let picked = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "tool-1.0.0-linux-x86_64.tar.gz");
+
+        let picked = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "tool-1.0.0-darwin-aarch64.xz");
+    }
+
+    #[test]
     fn test_asset_scoring() {
         let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
 
@@ -1035,5 +1063,111 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             result.is_none(),
             "Should return None when target file is not in SHASUMS"
         );
+    }
+    #[test]
+    fn test_zip_scoring() {
+        // Test Windows preference for .zip
+        let picker_win = AssetPicker::with_libc("windows".to_string(), "x86_64".to_string(), None);
+        let score_win_zip = picker_win.score_asset("tool-1.0.0-windows-x86_64.zip");
+        let score_win_tar = picker_win.score_asset("tool-1.0.0-windows-x86_64.tar.gz");
+
+        assert!(
+            score_win_zip > score_win_tar,
+            "Windows should prefer .zip (zip: {}, tar: {})",
+            score_win_zip,
+            score_win_tar
+        );
+
+        // Test Linux penalty for .zip
+        let picker_linux = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let score_linux_zip = picker_linux.score_asset("tool-1.0.0-linux-x86_64.zip");
+        let score_linux_tar = picker_linux.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
+
+        assert!(
+            score_linux_tar > score_linux_zip,
+            "Linux should prefer .tar.gz over .zip (zip: {}, tar: {})",
+            score_linux_zip,
+            score_linux_tar
+        );
+    }
+
+    #[test]
+    fn test_artifactbundle_penalty() {
+        // Test that .artifactbundle files are penalized (they have different internal structure)
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None);
+
+        // Test .artifactbundle.zip (like sourcery-2.2.7.artifactbundle.zip)
+        let assets = vec![
+            "sourcery-2.2.7-macos-arm64.zip".to_string(),
+            "sourcery-2.2.7.artifactbundle.zip".to_string(),
+        ];
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(
+            picked, "sourcery-2.2.7-macos-arm64.zip",
+            ".artifactbundle.zip should be penalized"
+        );
+
+        // Test plain .artifactbundle
+        let assets = vec![
+            "tool-1.0.0-darwin-arm64.tar.gz".to_string(),
+            "tool-1.0.0.artifactbundle".to_string(),
+        ];
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(
+            picked, "tool-1.0.0-darwin-arm64.tar.gz",
+            ".artifactbundle should be penalized"
+        );
+
+        // Verify penalty scores
+        let score_regular = picker.score_asset("sourcery-2.2.7-macos-arm64.zip");
+        let score_bundle_zip = picker.score_asset("sourcery-2.2.7.artifactbundle.zip");
+        let score_bundle = picker.score_asset("tool.artifactbundle");
+
+        assert!(
+            score_regular > score_bundle_zip,
+            "Regular zip should score higher than .artifactbundle.zip (regular: {}, bundle: {})",
+            score_regular,
+            score_bundle_zip
+        );
+        assert!(
+            score_bundle < 0 || score_bundle < score_regular - 20,
+            ".artifactbundle should have penalty applied"
+        );
+    }
+
+    #[test]
+    fn test_metadata_penalty() {
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let assets = vec![
+            "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
+            "tool-1.0.0-linux-x86_64.tar.gz.asc".to_string(),
+            "tool-1.0.0-linux-x86_64.tar.gz.sha256".to_string(),
+            "release-notes.txt".to_string(),
+        ];
+
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "tool-1.0.0-linux-x86_64.tar.gz");
+
+        // Ensure penalties are applied
+        let score_tar = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
+        let score_asc = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.asc");
+        let score_sha = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz.sha256");
+        let score_txt = picker.score_asset("release-notes.txt");
+
+        assert!(
+            score_tar > score_asc,
+            "Tarball should score higher than signature"
+        );
+        assert!(
+            score_tar > score_sha,
+            "Tarball should score higher than checksum"
+        );
+        assert!(
+            score_tar > score_txt,
+            "Tarball should score higher than text file"
+        );
+
+        // Metadata should have negative score contribution from penalties
+        assert!(score_asc < 0 || score_asc < score_tar - 50);
     }
 }

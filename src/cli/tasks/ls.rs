@@ -96,8 +96,9 @@ impl TasksLs {
 
         let config = Config::get().await?;
 
-        // Create context based on --all flag
-        let ctx = if self.all {
+        // Create context based on --all flag or when generating completions/usage specs
+        // to ensure monorepo tasks (e.g., `//app:task`) are available for autocomplete.
+        let ctx = if self.all || self.complete || self.usage {
             Some(TaskLoadContext::all())
         } else {
             None

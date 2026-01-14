@@ -299,8 +299,8 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     let url = url.into_url().unwrap();
     let mut set_headers = |token: &str| {
         headers.insert(
-            "authorization",
-            HeaderValue::from_str(format!("token {token}").as_str()).unwrap(),
+            reqwest::header::AUTHORIZATION,
+            HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
         );
         headers.insert(
             "x-github-api-version",
@@ -312,7 +312,10 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
         if let Some(token) = env::GITHUB_TOKEN.as_ref() {
             set_headers(token);
         }
-    } else if let Some(token) = env::MISE_GITHUB_ENTERPRISE_TOKEN.as_ref() {
+    } else if let Some(token) = env::MISE_GITHUB_ENTERPRISE_TOKEN
+        .as_ref()
+        .or(env::GITHUB_TOKEN.as_ref())
+    {
         set_headers(token);
     }
 

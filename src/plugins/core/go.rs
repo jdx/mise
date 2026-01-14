@@ -223,15 +223,9 @@ impl Backend for GoPlugin {
             github::list_tags_with_dates(repo)
                 .await?
                 .into_iter()
-                .filter_map(|t| {
-                    t.name
-                        .strip_prefix("go")
-                        .map(|v| (v.to_string(), t.date))
-                })
-                .filter(|(v, _)| {
-                    !regex!(r"^1($|\.0|\.0\.[0-9]|\.1|\.1rc[0-9]|\.1\.[0-9]|.2|\.2rc[0-9]|\.2\.1|.8.5rc5)$")
-                        .is_match(v)
-                })
+                .filter_map(|t| t.name.strip_prefix("go").map(|v| (v.to_string(), t.date)))
+                // remove beta and rc versions
+                .filter(|(v, _)| !regex!(r"(beta|rc)[0-9]*$").is_match(v))
                 .unique_by(|(v, _)| v.clone())
                 .sorted_by_cached_key(|(v, _)| (Versioning::new(v), v.to_string()))
                 .map(|(version, created_at)| VersionInfo {
@@ -258,10 +252,8 @@ impl Backend for GoPlugin {
                     .lines()
                     .filter_map(|line| line.split("/go").last())
                     .filter(|s| !s.is_empty())
-                    .filter(|s| {
-                        !regex!(r"^1($|\.0|\.0\.[0-9]|\.1|\.1rc[0-9]|\.1\.[0-9]|.2|\.2rc[0-9]|\.2\.1|.8.5rc5)$")
-                            .is_match(s)
-                    })
+                    // remove beta and rc versions
+                    .filter(|s| !regex!(r"(beta|rc)[0-9]*$").is_match(s))
                     .map(|s| s.to_string())
                     .unique()
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))

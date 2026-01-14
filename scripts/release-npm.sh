@@ -6,11 +6,6 @@ error() {
 	exit 1
 }
 
-if [[ -z ${NODE_AUTH_TOKEN:-} ]]; then
-	echo "NODE_AUTH_TOKEN must be set" >&2
-	exit 0
-fi
-
 mkdir -p "$RELEASE_DIR/npm"
 
 dist_tag_from_version() {
@@ -22,11 +17,8 @@ dist_tag="$(dist_tag_from_version "$MISE_VERSION")"
 
 platforms=(
 	linux-x64
-	linux-x64-musl
 	linux-arm64
-	linux-arm64-musl
 	linux-armv7
-	linux-armv7-musl
 	macos-x64
 	macos-arm64
 )
@@ -68,12 +60,19 @@ for platform in "${platforms[@]}"; do
 EOF
 	pushd "$RELEASE_DIR/npm"
 	tree || true
-	if [ "$DRY_RUN" != "0" ]; then
+	if [ "${DRY_RUN:-1}" != "0" ]; then
 		echo DRY_RUN
-		echo npm publish --access public --tag "$dist_tag"
+		echo npm publish --access public --tag "$dist_tag" --provenance
 		echo DRY_RUN
 	else
-		npm publish --access public --tag "$dist_tag" || true
+		if ! npm publish --access public --tag "$dist_tag" --provenance 2>&1 | tee /tmp/npm-publish.log; then
+			if grep -q "You cannot publish over the previously published versions" /tmp/npm-publish.log; then
+				echo "Version already published, skipping..."
+			else
+				cat /tmp/npm-publish.log
+				exit 1
+			fi
+		fi
 	fi
 	popd
 done
@@ -165,11 +164,18 @@ cat <<EOF >"$RELEASE_DIR/npm/package.json"
 }
 EOF
 pushd "$RELEASE_DIR/npm"
-if [ "$DRY_RUN" != "0" ]; then
+if [ "${DRY_RUN:-1}" != "0" ]; then
 	echo DRY_RUN
-	echo npm publish --access public --tag "$dist_tag"
+	echo npm publish --access public --tag "$dist_tag" --provenance
 	echo DRY_RUN
 else
-	npm publish --access public --tag "$dist_tag" || true
+	if ! npm publish --access public --tag "$dist_tag" --provenance 2>&1 | tee /tmp/npm-publish.log; then
+		if grep -q "You cannot publish over the previously published versions" /tmp/npm-publish.log; then
+			echo "Version already published, skipping..."
+		else
+			cat /tmp/npm-publish.log
+			exit 1
+		fi
+	fi
 fi
 popd

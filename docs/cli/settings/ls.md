@@ -10,7 +10,7 @@ Show current settings
 This is the contents of ~/.config/mise/config.toml
 
 Note that aliases are also stored in this file
-but managed separately with `mise aliases`
+but managed separately with `mise tool-alias`
 
 ## Arguments
 

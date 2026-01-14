@@ -84,39 +84,30 @@ impl TaskContextBuilder {
                 }
             }
 
-            // Build a toolset from all config files in the hierarchy
-            // This ensures tools are inherited from parent configs
-
-            // Start by building a toolset from all global config files
-            // This includes parent configs but NOT the subdirectory config
-            let mut task_ts = ToolsetBuilder::new().build(config).await?;
+            let task_dir = task_cf.get_path().parent().unwrap_or(task_cf.get_path());
             trace!(
-                "task {} base toolset from global configs: {:?}",
-                task.name, task_ts
-            );
-
-            // Then merge the subdirectory's config file tools on top
-            // This allows subdirectories to override parent tools
-            let subdir_toolset = task_cf.to_toolset()?;
-            trace!(
-                "task {} merging subdirectory tools from {}: {:?}",
+                "Loading config hierarchy for monorepo task {} toolset from {}",
                 task.name,
-                task_cf.get_path().display(),
-                subdir_toolset
+                task_dir.display()
             );
-            task_ts.merge(subdir_toolset);
 
-            trace!("task {} final merged toolset: {:?}", task.name, task_ts);
+            let config_paths = crate::config::load_config_hierarchy_from_dir(task_dir)?;
+            trace!(
+                "task {} found {} config files in hierarchy",
+                task.name,
+                config_paths.len()
+            );
 
-            // Add task-specific tools and CLI args
-            if !tools.is_empty() {
-                let arg_toolset = ToolsetBuilder::new().with_args(tools).build(config).await?;
-                // Merge task-specific tools into the config file's toolset
-                task_ts.merge(arg_toolset);
-            }
+            let task_config_files =
+                crate::config::load_config_files_from_paths(&config_paths).await?;
 
-            // Resolve the final toolset
-            task_ts.resolve(config).await?;
+            let task_ts = ToolsetBuilder::new()
+                .with_config_files(task_config_files)
+                .with_args(tools)
+                .build(config)
+                .await?;
+
+            trace!("task {} final toolset: {:?}", task.name, task_ts);
 
             // Cache the toolset if no task-specific tools or CLI args
             if tools.is_empty() && task.tools.is_empty() {
