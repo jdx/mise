@@ -3342,6 +3342,11 @@ description = "Odin Programming Language"
 backends = ["aqua:redhat-developer/odo", "asdf:rm3l/asdf-odo"]
 description = "A fast, and iterative CLI tool for container-based application development"
 
+[tools.oh-my-posh]
+backends = ["aqua:JanDeDobbeleer/oh-my-posh"]
+description = "The most customizable and fastest prompt engine for any shell"
+test = ["oh-my-posh version", "{{version}}"]
+
 [tools.oha]
 backends = ["aqua:hatoo/oha", "github:hatoo/oha"]
 description = "Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation"
