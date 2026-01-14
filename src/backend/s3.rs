@@ -478,12 +478,12 @@ impl Backend for S3Backend {
         // Verify artifact (checksum/size from options)
         verify_artifact(&tv, &file_path, &opts, Some(ctx.pr.as_ref()))?;
 
+        // Verify/generate lockfile checksum (before extraction for security)
+        self.verify_checksum(ctx, &mut tv, &file_path)?;
+
         // Extract and install
         ctx.pr.set_message("extract".into());
         install_artifact(&tv, &file_path, &opts, Some(ctx.pr.as_ref()))?;
-
-        // Verify/generate lockfile checksum
-        self.verify_checksum(ctx, &mut tv, &file_path)?;
 
         Ok(tv)
     }
