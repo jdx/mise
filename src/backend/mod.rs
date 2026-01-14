@@ -553,6 +553,8 @@ pub trait Backend: Debug + Send + Sync {
             } else {
                 path.parent().unwrap_or(&path).join(&target)
             };
+            // Canonicalize to resolve any ".." components before checking
+            let target = target.canonicalize().unwrap_or(target);
             if target.starts_with(*dirs::INSTALLS) {
                 return Some(path);
             }
