@@ -29,6 +29,7 @@ pub enum BackendType {
     Pipx,
     Spm,
     Http,
+    S3,
     Ubi,
     Vfox,
     VfoxBackend(String),
@@ -64,6 +65,7 @@ impl BackendType {
             "pipx" => BackendType::Pipx,
             "spm" => BackendType::Spm,
             "http" => BackendType::Http,
+            "s3" => BackendType::S3,
             "ubi" => BackendType::Ubi,
             "vfox" => BackendType::Vfox,
             _ => BackendType::Unknown,
@@ -72,11 +74,12 @@ impl BackendType {
 
     /// Returns true if this backend requires experimental mode to be enabled
     pub fn is_experimental(&self) -> bool {
-        use super::{conda, dotnet, spm};
+        use super::{conda, dotnet, s3, spm};
         match self {
             BackendType::Conda => conda::EXPERIMENTAL,
-            BackendType::Spm => spm::EXPERIMENTAL,
             BackendType::Dotnet => dotnet::EXPERIMENTAL,
+            BackendType::S3 => s3::EXPERIMENTAL,
+            BackendType::Spm => spm::EXPERIMENTAL,
             _ => false,
         }
     }

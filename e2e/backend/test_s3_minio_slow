@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+
+# Test S3 backend with a real MinIO server
+# This test installs MinIO, starts a local server, and tests actual S3 operations
+
+# Install MinIO server and client
+mise install minio@latest mc@latest
+
+# MinIO configuration
+MINIO_PORT=19000
+MINIO_CONSOLE_PORT=19001
+MINIO_ROOT_USER="minioadmin"
+MINIO_ROOT_PASSWORD="minioadmin"
+MINIO_ENDPOINT="http://127.0.0.1:$MINIO_PORT"
+# Use /tmp directly to avoid disk space issues in isolated test tmp dir
+MINIO_DATA_DIR="/tmp/mise-minio-test-$$"
+
+# Create data directory
+mkdir -p "$MINIO_DATA_DIR"
+
+# Start MinIO server in the background using mise x
+# MINIO_CI_CD=1 relaxes storage constraints for CI/CD environments
+MINIO_ROOT_USER="$MINIO_ROOT_USER" \
+	MINIO_ROOT_PASSWORD="$MINIO_ROOT_PASSWORD" \
+	MINIO_CI_CD=1 \
+	mise x minio@latest -- minio server "$MINIO_DATA_DIR" \
+	--address ":$MINIO_PORT" \
+	--console-address ":$MINIO_CONSOLE_PORT" \
+	>/dev/null 2>&1 &
+MINIO_PID=$!
+
+# Cleanup function
+cleanup() {
+	if [[ -n ${MINIO_PID:-} ]]; then
+		kill "$MINIO_PID" 2>/dev/null || true
+		wait "$MINIO_PID" 2>/dev/null || true
+	fi
+	rm -rf "$MINIO_DATA_DIR"
+}
+trap cleanup EXIT
+
+# Wait for MinIO to be ready
+echo "Waiting for MinIO to start..."
+for i in {1..30}; do
+	if curl -s "$MINIO_ENDPOINT/minio/health/ready" >/dev/null 2>&1; then
+		echo "MinIO is ready"
+		break
+	fi
+	if [[ $i -eq 30 ]]; then
+		echo "MinIO failed to start"
+		exit 1
+	fi
+	sleep 1
+done
+
+# Configure mc (MinIO client) using mise x
+mise x mc@latest -- mc alias set testminio "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" --api S3v4
+
+# Create test bucket
+mise x mc@latest -- mc mb testminio/test-bucket
+
+# Create a simple test tarball with a hello-world script
+# Use --no-xattrs and --no-mac-metadata to avoid macOS extended attribute issues
+TEST_DIR="$HOME/test-tool-1.0.0"
+mkdir -p "$TEST_DIR/bin"
+printf '#!/bin/sh\necho "test-tool version 1.0.0"\n' >"$TEST_DIR/bin/test-tool"
+chmod +x "$TEST_DIR/bin/test-tool"
+
+# Create tarball without macOS metadata
+if tar --help 2>&1 | grep -q "no-mac-metadata"; then
+	(cd "$HOME" && tar --no-mac-metadata -czf test-tool-1.0.0.tar.gz test-tool-1.0.0)
+else
+	(cd "$HOME" && COPYFILE_DISABLE=1 tar -czf test-tool-1.0.0.tar.gz test-tool-1.0.0)
+fi
+
+# Upload to MinIO
+mise x mc@latest -- mc cp "$HOME/test-tool-1.0.0.tar.gz" testminio/test-bucket/tools/
+
+# Create a versions.json manifest
+echo '["1.0.0", "0.9.0", "0.8.0"]' >"$HOME/versions.json"
+mise x mc@latest -- mc cp "$HOME/versions.json" testminio/test-bucket/tools/
+
+# Set AWS credentials for mise to use
+export AWS_ACCESS_KEY_ID="$MINIO_ROOT_USER"
+export AWS_SECRET_ACCESS_KEY="$MINIO_ROOT_PASSWORD"
+export AWS_DEFAULT_REGION="us-east-1"
+
+# Test 1: Basic S3 download and install
+echo "Test 1: Basic S3 download and install"
+cat <<EOF >mise.toml
+[tools]
+"s3:test-tool" = { version = "1.0.0", url = "s3://test-bucket/tools/test-tool-{version}.tar.gz", endpoint = "$MINIO_ENDPOINT", region = "us-east-1", bin_path = "test-tool-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/test-tool-1.0.0/bin/test-tool" }
+EOF
+
+mise install
+
+# Debug: show what was installed
+ls -la "$HOME/.local/share/mise/installs/s3-test-tool/1.0.0/" || true
+ls -la "$HOME/.local/share/mise/installs/s3-test-tool/1.0.0/test-tool-1.0.0/bin/" || true
+
+# Debug: check if the binary runs directly
+cat "$HOME/.local/share/mise/installs/s3-test-tool/1.0.0/test-tool-1.0.0/bin/test-tool"
+"$HOME/.local/share/mise/installs/s3-test-tool/1.0.0/test-tool-1.0.0/bin/test-tool" || echo "Direct exec failed with: $?"
+
+# Debug: check mise bin paths
+mise where s3:test-tool@1.0.0 || true
+mise bin-paths s3:test-tool@1.0.0 || true
+
+assert_contains "mise x -- test-tool" "test-tool version 1.0.0"
+
+# Test 2: Version listing from manifest file
+echo "Test 2: Version listing from manifest file"
+cat <<EOF >mise.toml
+[tools."s3:test-tool-manifest"]
+version = "latest"
+url = "s3://test-bucket/tools/test-tool-{version}.tar.gz"
+version_list_url = "s3://test-bucket/tools/versions.json"
+endpoint = "$MINIO_ENDPOINT"
+region = "us-east-1"
+bin_path = "test-tool-1.0.0/bin"
+EOF
+
+# List versions - should show 1.0.0, 0.9.0, 0.8.0
+VERSIONS=$(mise ls-remote s3:test-tool-manifest)
+assert_contains "echo '$VERSIONS'" "1.0.0"
+assert_contains "echo '$VERSIONS'" "0.9.0"
+assert_contains "echo '$VERSIONS'" "0.8.0"
+
+# Test 3: Version listing from S3 object listing
+echo "Test 3: Version listing from S3 object listing"
+
+# Upload additional versions for listing test
+cp "$HOME/test-tool-1.0.0.tar.gz" "$HOME/test-tool-0.9.0.tar.gz"
+cp "$HOME/test-tool-1.0.0.tar.gz" "$HOME/test-tool-0.8.0.tar.gz"
+mise x mc@latest -- mc cp "$HOME/test-tool-0.9.0.tar.gz" testminio/test-bucket/tools/
+mise x mc@latest -- mc cp "$HOME/test-tool-0.8.0.tar.gz" testminio/test-bucket/tools/
+
+cat <<EOF >mise.toml
+[tools."s3:test-tool-listing"]
+version = "latest"
+url = "s3://test-bucket/tools/test-tool-{version}.tar.gz"
+version_prefix = "tools/test-tool-"
+version_regex = "test-tool-([0-9.]+)"
+endpoint = "$MINIO_ENDPOINT"
+region = "us-east-1"
+bin_path = "test-tool-1.0.0/bin"
+EOF
+
+# List versions - should find versions from S3 listing
+VERSIONS=$(mise ls-remote s3:test-tool-listing)
+assert_contains "echo '$VERSIONS'" "1.0.0"
+assert_contains "echo '$VERSIONS'" "0.9.0"
+assert_contains "echo '$VERSIONS'" "0.8.0"
+
+# Test 4: Checksum verification
+echo "Test 4: Checksum verification"
+
+# Calculate checksum of the uploaded file (use shasum on macOS, sha256sum on Linux)
+if command -v sha256sum >/dev/null 2>&1; then
+	CHECKSUM=$(sha256sum "$HOME/test-tool-1.0.0.tar.gz" | cut -d' ' -f1)
+else
+	CHECKSUM=$(shasum -a 256 "$HOME/test-tool-1.0.0.tar.gz" | cut -d' ' -f1)
+fi
+
+cat <<EOF >mise.toml
+[tools]
+"s3:test-tool-checksum" = { version = "1.0.0", url = "s3://test-bucket/tools/test-tool-{version}.tar.gz", endpoint = "$MINIO_ENDPOINT", region = "us-east-1", bin_path = "test-tool-1.0.0/bin", checksum = "sha256:$CHECKSUM" }
+EOF
+
+mise install
+assert_contains "mise x -- test-tool" "test-tool version 1.0.0"
+
+# Test 5: Invalid checksum should fail
+echo "Test 5: Invalid checksum should fail"
+cat <<EOF >mise.toml
+[tools]
+"s3:test-tool-bad-checksum" = { version = "1.0.0", url = "s3://test-bucket/tools/test-tool-{version}.tar.gz", endpoint = "$MINIO_ENDPOINT", region = "us-east-1", bin_path = "test-tool-1.0.0/bin", checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
+EOF
+
+assert_fail "mise install 2>&1"
+
+echo "All S3 MinIO tests passed!"
