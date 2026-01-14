@@ -41,6 +41,12 @@ flag --log-level hide=#true global=#true {
 flag --no-config help="Do not load any config files" {
     long_help "Do not load any config files\n\nCan also use `MISE_NO_CONFIG=1`"
 }
+flag --no-env help="Do not load environment variables from config files" {
+    long_help "Do not load environment variables from config files\n\nCan also use `MISE_NO_ENV=1`"
+}
+flag --no-hooks help="Do not execute hooks from config files" {
+    long_help "Do not execute hooks from config files\n\nCan also use `MISE_NO_HOOKS=1`"
+}
 flag --no-timings help="Hides elapsed time after each task completes" hide=#true {
     long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
 }

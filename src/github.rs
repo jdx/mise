@@ -312,7 +312,10 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
         if let Some(token) = env::GITHUB_TOKEN.as_ref() {
             set_headers(token);
         }
-    } else if let Some(token) = env::MISE_GITHUB_ENTERPRISE_TOKEN.as_ref() {
+    } else if let Some(token) = env::MISE_GITHUB_ENTERPRISE_TOKEN
+        .as_ref()
+        .or(env::GITHUB_TOKEN.as_ref())
+    {
         set_headers(token);
     }
 

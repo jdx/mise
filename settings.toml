@@ -861,6 +861,18 @@ env = "MISE_NETRC_FILE"
 optional = true
 type = "Path"
 
+[no_env]
+description = "Do not load environment variables from config files."
+env = "MISE_NO_ENV"
+optional = true
+type = "Bool"
+
+[no_hooks]
+description = "Do not execute hooks from config files."
+env = "MISE_NO_HOOKS"
+optional = true
+type = "Bool"
+
 [node.compile]
 description = "Compile node from source."
 env = "MISE_NODE_COMPILE"
@@ -1752,7 +1764,7 @@ type = "Bool"
 default = false
 description = "Opt out of parsing task run scripts to infer the usage spec (arguments and flags). When enabled, mise will derive the usage spec only from the `usage` field, ignoring any `arg()`, `option()`, or `flag()` templates used in run scripts. This can restore previous behavior and avoid the extra template pass over run scripts when collecting specs."
 docs = """
-When enabled, `arg()`, `option()`, and `flag()` Tera functions in run scripts will not contribute 
+When enabled, `arg()`, `option()`, and `flag()` Tera functions in run scripts will not contribute
 to the task's usage spec—only the explicit `usage` field is used.
 
 This is useful for:
