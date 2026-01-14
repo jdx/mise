@@ -1129,7 +1129,7 @@ cmd upgrade help="Upgrades outdated tools" {
         arg <BEFORE>
     }
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
-    arg "[TOOL@VERSION]…" help="Tool(s) to upgrade\ne.g.: node@20 python@3.10\nIf not specified, all current tools will be upgraded" required=#false var=#true
+    arg "[INSTALLED_TOOL@VERSION]…" help="Tool(s) to upgrade\ne.g.: node@20 python@3.10\nIf not specified, all current tools will be upgraded" required=#false var=#true
 }
 cmd usage hide=#true help="Generate a usage CLI spec" {
     long_help "Generate a usage CLI spec\n\nSee https://usage.jdx.dev for more information on this specification."
