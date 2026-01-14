@@ -542,10 +542,22 @@ pub trait Backend: Debug + Send + Sync {
         !self.is_version_installed(config, tv, true) || is_outdated_version(&tv.version, &latest)
     }
     fn symlink_path(&self, tv: &ToolVersion) -> Option<PathBuf> {
-        match tv.install_path() {
-            path if path.is_symlink() && !is_runtime_symlink(&path) => Some(path),
-            _ => None,
+        let path = tv.install_path();
+        if !path.is_symlink() {
+            return None;
         }
+        // Only skip symlinks pointing within installs (user aliases, not backend-managed)
+        if let Ok(Some(target)) = file::resolve_symlink(&path) {
+            let target = if target.is_absolute() {
+                target
+            } else {
+                path.parent().unwrap_or(&path).join(&target)
+            };
+            if target.starts_with(*dirs::INSTALLS) {
+                return Some(path);
+            }
+        }
+        None
     }
     fn create_symlink(&self, version: &str, target: &Path) -> Result<Option<(PathBuf, PathBuf)>> {
         let link = self.ba().installs_path.join(version);
