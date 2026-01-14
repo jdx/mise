@@ -46,6 +46,11 @@ would change your config to `node = "22"`.
 
 Just print what would be done, don't actually do it
 
+### `-x --exclude… <INSTALLED_TOOL>`
+
+Tool(s) to exclude from upgrading
+e.g.: go python
+
 ### `--before <BEFORE>`
 
 Only upgrade to versions released before this date
@@ -80,6 +85,9 @@ $ mise upgrade --dry-run
 
 # Upgrades node and python to the latest versions
 $ mise upgrade node python
+
+# Upgrade all tools except go
+$ mise upgrade --exclude go
 
 # Show a multiselect menu to choose which tools to upgrade
 $ mise upgrade --interactive
