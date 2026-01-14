@@ -257,9 +257,10 @@ impl Toolset {
             .filter(|(_, tv)| {
                 // Exclude tools if specified
                 if let Some(exclude) = exclude_tools
-                    && exclude.iter().any(|t| t.ba.as_ref() == tv.ba()) {
-                        return false;
-                    }
+                    && exclude.iter().any(|t| t.ba.as_ref() == tv.ba())
+                {
+                    return false;
+                }
                 // Include only specified tools if provided
                 if let Some(tools) = filter_tools {
                     tools.iter().any(|t| t.ba.as_ref() == tv.ba())
