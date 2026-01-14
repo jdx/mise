@@ -249,7 +249,10 @@ impl AssetPicker {
                 return if arch.matches_target(&self.target_arch) {
                     50
                 } else {
-                    -25
+                    // Architecture mismatch should be disqualifying - don't silently
+                    // fall back to incompatible architectures (e.g., x86_64 when arm64
+                    // is requested). See: https://github.com/jdx/mise/discussions/7628
+                    -150
                 };
             }
         }
@@ -934,6 +937,12 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
             score_linux > score_linux_arm,
             "x86_64 should score higher than arm64"
         );
+        // Architecture mismatch should result in negative score
+        assert!(
+            score_linux_arm < 0,
+            "Architecture mismatch should be negative, got {}",
+            score_linux_arm
+        );
     }
 
     #[test]
@@ -1132,6 +1141,34 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
         assert!(
             score_bundle < 0 || score_bundle < score_regular - 20,
             ".artifactbundle should have penalty applied"
+        );
+    }
+
+    #[test]
+    fn test_arch_mismatch_rejected() {
+        // Regression test for https://github.com/jdx/mise/discussions/7628
+        // When the requested architecture is not available, we should NOT silently
+        // fall back to a different architecture (e.g., x86_64 when arm64 is requested)
+        let picker = AssetPicker::with_libc("linux".to_string(), "aarch64".to_string(), None);
+        let assets = vec![
+            "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
+            "tool-1.0.0-darwin-arm64.tar.gz".to_string(),
+            "tool-1.0.0-windows-x86_64.zip".to_string(),
+        ];
+
+        // Should return None because linux-arm64 is not available
+        let picked = picker.pick_best_asset(&assets);
+        assert!(
+            picked.is_none(),
+            "Should not fall back to x86_64 when arm64 is requested but unavailable"
+        );
+
+        // Verify the score is negative for arch mismatch
+        let score = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
+        assert!(
+            score < 0,
+            "Architecture mismatch should result in negative score, got {}",
+            score
         );
     }
 
