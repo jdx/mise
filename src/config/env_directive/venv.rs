@@ -7,9 +7,10 @@ use crate::config::{Config, Settings};
 use crate::env_diff::EnvMap;
 use crate::file::{display_path, which_non_pristine};
 use crate::lock_file::LockFile;
-use crate::toolset::ToolsetBuilder;
+use crate::toolset::Toolset;
 use crate::{backend, plugins};
 use indexmap::IndexMap;
+use std::collections::HashSet;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -41,7 +42,23 @@ impl EnvResults {
         if !venv.exists() && create {
             // TODO: the toolset stuff doesn't feel like it's in the right place here
             // TODO: in fact this should probably be moved to execute at the same time as src/uv.rs runs in ts.env() instead of config.env()
-            let ts = Box::pin(ToolsetBuilder::new().build(config)).await?;
+            // Build a toolset with only Python and UV tools to avoid circular dependency deadlock.
+            // When all tools are resolved (including go:* tools), those tools may need to access
+            // the environment via dependency_toolset(), which tries to call config.env() again,
+            // creating a circular wait since we're already in the middle of resolving the venv
+            // directive as part of config.env().
+            // By filtering to only Python/UV BEFORE resolution, we avoid resolving unrelated tools
+            // that have their own dependencies and environment requirements.
+            let trs = config.get_tool_request_set().await?;
+            let mut filter = HashSet::new();
+            filter.insert("python".to_string());
+            filter.insert("uv".to_string());
+            let filtered_trs = trs.filter_by_tool(filter);
+
+            // Convert the filtered tool request set to a toolset and resolve only these tools
+            let mut ts: Toolset = filtered_trs.into();
+            // Ignore resolution errors for venv creation - if tools aren't available, we'll warn below
+            let _ = ts.resolve(config).await;
             let ba = BackendArg::from("python");
             let tv = ts.versions.get(&ba).and_then(|tv| {
                 // if a python version is specified, check if that version is installed
@@ -65,7 +82,7 @@ impl EnvResults {
                 true
             };
             if !installed {
-                warn!(
+                warn_once!(
                     "no venv found at: {p}\n\n\
                     mise will automatically create the venv once all requested python versions are installed.\n\
                     To install the missing python versions and create the venv, please run:\n\
@@ -137,7 +154,7 @@ impl EnvResults {
             );
         } else if !create {
             // The create "no venv found" warning is handled elsewhere
-            warn!(
+            warn_once!(
                 "no venv found at: {p}
 To create a virtualenv manually, run:
 python -m venv {p}",
