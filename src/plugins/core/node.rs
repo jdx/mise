@@ -1,6 +1,6 @@
 use crate::backend::VersionInfo;
 use crate::backend::static_helpers::fetch_checksum_from_shasums;
-use crate::backend::{Backend, VersionCacheManager, platform_target::PlatformTarget};
+use crate::backend::{Backend, VersionCacheManager, normalize_idiomatic_contents, platform_target::PlatformTarget};
 use crate::build_time::built_info;
 use crate::cache::CacheManagerBuilder;
 use crate::cli::args::BackendArg;
@@ -577,14 +577,12 @@ impl Backend for NodePlugin {
                 .runtime_version("node")
                 .ok_or_else(|| eyre::eyre!("no node version found in package.json"));
         }
-        let body = file::read_to_string(path)?;
-        // strip comments
-        let body = body.split('#').next().unwrap_or_default().to_string();
+        let body = normalize_idiomatic_contents(&file::read_to_string(path)?);
         // trim "v" prefix
         let body = body.trim().strip_prefix('v').unwrap_or(&body);
         // replace lts/* with lts
         let body = body.replace("lts/*", "lts");
-        Ok(body)
+        Ok(body.to_string())
     }
 
     async fn install_version_(
