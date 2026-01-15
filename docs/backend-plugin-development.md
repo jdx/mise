@@ -38,6 +38,9 @@ function PLUGIN:BackendListVersions(ctx)
 end
 ```
 
+> [!WARNING]
+> **Version sorting**: The versions returned by `BackendListVersions` should be in ascending order (oldest to newest), sorted semantically (version `3.10.0` should not come before `3.2.0`). Mise does not apply any additional sorting to the versions returned by this method.
+
 ### BackendInstall
 
 Installs a specific version of a tool:
