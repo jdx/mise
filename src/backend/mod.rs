@@ -819,7 +819,16 @@ pub trait Backend: Debug + Send + Sync {
     }
     async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<String> {
         let contents = file::read_to_string(path)?;
-        Ok(contents.trim().to_string())
+        // Filter out comment lines (lines starting with #) and empty lines
+        let filtered: String = contents
+            .lines()
+            .filter(|line| {
+                let trimmed = line.trim();
+                !trimmed.is_empty() && !trimmed.starts_with('#')
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        Ok(filtered)
     }
     fn plugin(&self) -> Option<&PluginEnum> {
         None
