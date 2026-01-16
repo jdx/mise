@@ -32,15 +32,13 @@ packages:
           algorithm: sha256
       - version_constraint: "true"
         asset: dprint-{{.Arch}}-{{.OS}}.zip
+        windows_arm_emulation: true
         replacements:
           amd64: x86_64
           arm64: aarch64
           darwin: apple-darwin
           linux: unknown-linux-musl
           windows: pc-windows-msvc
-        supported_envs:
-          - darwin
-          - amd64
         checksum:
           type: github_release
           asset: SHASUMS256.txt

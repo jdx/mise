@@ -366,15 +366,24 @@ pub fn install_artifact(
     file::create_dir_all(&install_path)?;
 
     // Use TarFormat for format detection
-    let ext = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
-    let format = file::TarFormat::from_ext(ext);
+    // Check for explicit format option first, then fall back to file extension
+    let ext = if let Some(format_opt) = lookup_with_fallback(opts, "format") {
+        format_opt
+    } else {
+        file_path
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    let format = file::TarFormat::from_ext(&ext);
 
     // Get file extension and detect format
     let file_name = file_path.file_name().unwrap().to_string_lossy();
 
     // Check if it's a compressed binary (not a tar archive)
     let is_compressed_binary =
-        !file_name.contains(".tar") && matches!(ext, "gz" | "xz" | "bz2" | "zst");
+        !file_name.contains(".tar") && matches!(ext.as_str(), "gz" | "xz" | "bz2" | "zst");
 
     if is_compressed_binary {
         // Handle compressed single binary
@@ -393,7 +402,7 @@ pub fn install_artifact(
             install_path.join(cleaned_name)
         };
 
-        match ext {
+        match ext.as_str() {
             "gz" => file::un_gz(file_path, &dest)?,
             "xz" => file::un_xz(file_path, &dest)?,
             "bz2" => file::un_bz2(file_path, &dest)?,

@@ -9,6 +9,9 @@ packages:
       - version_constraint: semver("<= 1.47.0")
         asset: smithy-cli-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
+        files:
+          - name: smithy
+            src: bin/smithy
         windows_arm_emulation: true
         replacements:
           amd64: x86_64
@@ -24,6 +27,9 @@ packages:
       - version_constraint: "true"
         asset: smithy-cli-{{.OS}}-{{.Arch}}.{{.Format}}
         format: zip
+        files:
+          - name: smithy
+            src: smithy-cli-{{.OS}}-{{.Arch}}/bin/smithy
         windows_arm_emulation: true
         replacements:
           amd64: x86_64

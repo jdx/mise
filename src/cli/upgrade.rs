@@ -28,7 +28,7 @@ pub struct Upgrade {
     /// Tool(s) to upgrade
     /// e.g.: node@20 python@3.10
     /// If not specified, all current tools will be upgraded
-    #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
+    #[clap(value_name = "INSTALLED_TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
     /// Display multiselect menu to choose which tools to upgrade
@@ -53,6 +53,11 @@ pub struct Upgrade {
     /// Just print what would be done, don't actually do it
     #[clap(long, short = 'n', verbatim_doc_comment)]
     dry_run: bool,
+
+    /// Tool(s) to exclude from upgrading
+    /// e.g.: go python
+    #[clap(long, short = 'x', value_name = "INSTALLED_TOOL", verbatim_doc_comment)]
+    exclude: Vec<ToolArg>,
 
     /// Only upgrade to versions released before this date
     ///
@@ -90,8 +95,13 @@ impl Upgrade {
         } else {
             None
         };
+        let exclude_tools = if !self.exclude.is_empty() {
+            Some(self.exclude.as_slice())
+        } else {
+            None
+        };
         let mut outdated = ts
-            .list_outdated_versions_filtered(&config, self.bump, &opts, filter_tools)
+            .list_outdated_versions_filtered(&config, self.bump, &opts, filter_tools, exclude_tools)
             .await;
         if self.interactive && !outdated.is_empty() {
             outdated = self.get_interactive_tool_set(&outdated)?;
@@ -351,6 +361,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     # Upgrades node and python to the latest versions
     $ <bold>mise upgrade node python</bold>
+
+    # Upgrade all tools except go
+    $ <bold>mise upgrade --exclude go</bold>
 
     # Show a multiselect menu to choose which tools to upgrade
     $ <bold>mise upgrade --interactive</bold>

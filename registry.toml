@@ -432,6 +432,11 @@ backends = ["vfox:mise-plugins/vfox-bfs", "asdf:mise-plugins/mise-bfs"]
 description = "Breadth-first search for your files"
 test = ["bfs --version", "bfs {{version}}"]
 
+[tools.bibtex-tidy]
+backends = ["npm:bibtex-tidy"]
+description = "Cleaner and Formatter for BibTeX files"
+test = ["bibtex-tidy --version", "v{{version}}"]
+
 [tools.binnacle]
 backends = ["aqua:Traackr/binnacle", "asdf:Traackr/asdf-binnacle"]
 description = "An opinionated tool to interact with Kubernetes' Helm"
@@ -2628,11 +2633,10 @@ backends = ["aqua:kubernetes-sigs/krew", "asdf:bjw-s/asdf-krew"]
 description = "Find and install kubectl plugins"
 
 [tools.kscript]
-backends = [
-  "github:kscripting/kscript[bin_path=bin]",
-  "asdf:edgelevel/asdf-kscript",
-]
+backends = ["github:kscripting/kscript", "asdf:edgelevel/asdf-kscript"]
+depends = ["kotlin"]
 description = "Scripting enhancements for Kotlin"
+test = ["kscript --version 2>&1", "Version   : {{version}}"]
 
 [tools.ksops]
 backends = ["aqua:viaduct-ai/kustomize-sops", "asdf:janpieper/asdf-ksops"]

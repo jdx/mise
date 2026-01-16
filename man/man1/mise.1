@@ -60,6 +60,16 @@ Do not load any config files
 
 Can also use `MISE_NO_CONFIG=1`
 .TP
+\fB\-\-no\-env\fR
+Do not load environment variables from config files
+
+Can also use `MISE_NO_ENV=1`
+.TP
+\fB\-\-no\-hooks\fR
+Do not execute hooks from config files
+
+Can also use `MISE_NO_HOOKS=1`
+.TP
 \fB\-\-no\-timings\fR
 Hides elapsed time after each task completes
 
@@ -2814,7 +2824,7 @@ and bump the version in mise.toml.
 
 This will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
 .PP
-\fBUsage:\fR mise upgrade [OPTIONS] [<TOOL@VERSION>] ...
+\fBUsage:\fR mise upgrade [OPTIONS] [<INSTALLED_TOOL@VERSION>] ...
 .PP
 \fBOptions:\fR
 .PP
@@ -2838,6 +2848,10 @@ would change your config to `node = "22"`.
 \fB\-n, \-\-dry\-run\fR
 Just print what would be done, don't actually do it
 .TP
+\fB\-x, \-\-exclude\fR \fI<INSTALLED_TOOL>\fR
+Tool(s) to exclude from upgrading
+e.g.: go python
+.TP
 \fB\-\-before\fR \fI<BEFORE>\fR
 Only upgrade to versions released before this date
 
@@ -2852,7 +2866,7 @@ Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
 \fBArguments:\fR
 .PP
 .TP
-\fB<TOOL@VERSION>\fR
+\fB<INSTALLED_TOOL@VERSION>\fR
 Tool(s) to upgrade
 e.g.: node@20 python@3.10
 If not specified, all current tools will be upgraded
