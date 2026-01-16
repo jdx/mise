@@ -2634,10 +2634,12 @@ description = "Find and install kubectl plugins"
 
 [tools.kscript]
 backends = [
-  "github:kscripting/kscript[bin_path=bin]",
+  "github:kscripting/kscript",
   "asdf:edgelevel/asdf-kscript",
 ]
 description = "Scripting enhancements for Kotlin"
+depends = ["kotlin"]
+test = ["kscript --version", "Version   : {{version}}"]
 
 [tools.ksops]
 backends = ["aqua:viaduct-ai/kustomize-sops", "asdf:janpieper/asdf-ksops"]
