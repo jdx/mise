@@ -35,7 +35,13 @@ impl Backend for NPMBackend {
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
-        Ok(vec!["node", "npm", "bun", "pnpm"])
+        // Don't include "npm" as dependency when we ARE npm itself (npm:npm)
+        // to avoid circular dependency that causes timeout
+        if self.tool_name() == "npm" {
+            Ok(vec!["node", "bun", "pnpm"])
+        } else {
+            Ok(vec!["node", "npm", "bun", "pnpm"])
+        }
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
@@ -260,5 +266,40 @@ impl NPMBackend {
                 .await
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::args::BackendArg;
+
+    fn create_npm_backend(tool: &str) -> NPMBackend {
+        let ba = BackendArg::new_raw(
+            "npm".to_string(),
+            Some(tool.to_string()),
+            tool.to_string(),
+            None,
+        );
+        NPMBackend::from_arg(ba)
+    }
+
+    #[test]
+    fn test_get_dependencies_for_npm_itself() {
+        // When the tool is npm itself (npm:npm), it should NOT include "npm" in dependencies
+        // to avoid circular dependency that causes timeout
+        let backend = create_npm_backend("npm");
+        let deps = backend.get_dependencies().unwrap();
+        assert!(!deps.contains(&"npm"), "npm:npm should not depend on npm");
+        assert!(deps.contains(&"node"));
+    }
+
+    #[test]
+    fn test_get_dependencies_for_other_packages() {
+        // When the tool is any other npm package, it SHOULD include "npm" in dependencies
+        let backend = create_npm_backend("prettier");
+        let deps = backend.get_dependencies().unwrap();
+        assert!(deps.contains(&"npm"), "npm:prettier should depend on npm");
+        assert!(deps.contains(&"node"));
     }
 }
