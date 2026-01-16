@@ -60,6 +60,16 @@ Do not load any config files
 
 Can also use `MISE_NO_CONFIG=1`
 .TP
+\fB\-\-no\-env\fR
+Do not load environment variables from config files
+
+Can also use `MISE_NO_ENV=1`
+.TP
+\fB\-\-no\-hooks\fR
+Do not execute hooks from config files
+
+Can also use `MISE_NO_HOOKS=1`
+.TP
 \fB\-\-no\-timings\fR
 Hides elapsed time after each task completes
 
@@ -1902,6 +1912,10 @@ Update to a specific version
 Set environment variables in mise.toml
 
 By default, this command modifies `mise.toml` in the current directory.
+If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
+the lowest precedence file (`mise.toml`) will be used.
+See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations
+
 Use `\-E <env>` to create/modify environment\-specific config files like `mise.<env>.toml`.
 .PP
 \fBUsage:\fR mise set [OPTIONS] [<ENV_VAR>] ...
@@ -1961,7 +1975,7 @@ Show current settings
 This is the contents of ~/.config/mise/config.toml
 
 Note that aliases are also stored in this file
-but managed separately with `mise aliases`
+but managed separately with `mise tool\-alias`
 .PP
 \fBUsage:\fR mise settings [OPTIONS] [<SETTING>] [<VALUE>] [COMMAND]
 .PP
@@ -2020,7 +2034,7 @@ Show a current setting
 This is the contents of a single entry in ~/.config/mise/config.toml
 
 Note that aliases are also stored in this file
-but managed separately with `mise aliases get`
+but managed separately with `mise tool\-alias get`
 .PP
 \fBUsage:\fR mise settings get [OPTIONS] <SETTING>
 .PP
@@ -2040,7 +2054,7 @@ Show current settings
 This is the contents of ~/.config/mise/config.toml
 
 Note that aliases are also stored in this file
-but managed separately with `mise aliases`
+but managed separately with `mise tool\-alias`
 .PP
 \fBUsage:\fR mise settings ls [OPTIONS] [<SETTING>]
 .PP
@@ -2072,7 +2086,9 @@ Name of setting
 .SH "MISE SETTINGS SET"
 Add/update a setting
 
-This modifies the contents of ~/.config/mise/config.toml
+This modifies the contents of ~/.config/mise/config.toml by default.
+With `\-\-local`, modifies the local config file instead.
+See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations
 .PP
 \fBUsage:\fR mise settings set [OPTIONS] <SETTING> <VALUE>
 .PP
@@ -2287,6 +2303,9 @@ Sort order. Default is asc.
 Task name to get info of
 .SH "MISE TASKS ADD"
 Create a new task
+
+Adds a task to the local mise.toml file.
+See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations
 .PP
 \fBUsage:\fR mise tasks add [OPTIONS] <TASK> [<RUN>] ...
 .PP
@@ -2759,6 +2778,9 @@ e.g.: NODE_ENV
 Removes installed tool versions from mise.toml
 
 By default, this will use the `mise.toml` file that has the tool defined.
+If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
+the lowest precedence file (`mise.toml`) will be used.
+See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations
 
 In the following order:
   \- If `\-\-global` is set, it will use the global config file.
@@ -2802,7 +2824,7 @@ and bump the version in mise.toml.
 
 This will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
 .PP
-\fBUsage:\fR mise upgrade [OPTIONS] [<TOOL@VERSION>] ...
+\fBUsage:\fR mise upgrade [OPTIONS] [<INSTALLED_TOOL@VERSION>] ...
 .PP
 \fBOptions:\fR
 .PP
@@ -2826,6 +2848,10 @@ would change your config to `node = "22"`.
 \fB\-n, \-\-dry\-run\fR
 Just print what would be done, don't actually do it
 .TP
+\fB\-x, \-\-exclude\fR \fI<INSTALLED_TOOL>\fR
+Tool(s) to exclude from upgrading
+e.g.: go python
+.TP
 \fB\-\-before\fR \fI<BEFORE>\fR
 Only upgrade to versions released before this date
 
@@ -2840,7 +2866,7 @@ Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
 \fBArguments:\fR
 .PP
 .TP
-\fB<TOOL@VERSION>\fR
+\fB<INSTALLED_TOOL@VERSION>\fR
 Tool(s) to upgrade
 e.g.: node@20 python@3.10
 If not specified, all current tools will be upgraded
@@ -2849,6 +2875,9 @@ Installs a tool and adds the version to mise.toml.
 
 This will install the tool version if it is not already installed.
 By default, this will use a `mise.toml` file in the current directory.
+If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
+the lowest precedence file (`mise.toml`) will be used.
+See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations
 
 In the following order:
   \- If `\-\-global` is set, it will use the global config file.

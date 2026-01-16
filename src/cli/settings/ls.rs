@@ -12,7 +12,7 @@ use tabled::{Table, Tabled};
 /// This is the contents of ~/.config/mise/config.toml
 ///
 /// Note that aliases are also stored in this file
-/// but managed separately with `mise aliases`
+/// but managed separately with `mise tool-alias`
 #[derive(Debug, clap::Args)]
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub struct SettingsLs {

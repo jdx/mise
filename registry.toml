@@ -432,6 +432,11 @@ backends = ["vfox:mise-plugins/vfox-bfs", "asdf:mise-plugins/mise-bfs"]
 description = "Breadth-first search for your files"
 test = ["bfs --version", "bfs {{version}}"]
 
+[tools.bibtex-tidy]
+backends = ["npm:bibtex-tidy"]
+description = "Cleaner and Formatter for BibTeX files"
+test = ["bibtex-tidy --version", "v{{version}}"]
+
 [tools.binnacle]
 backends = ["aqua:Traackr/binnacle", "asdf:Traackr/asdf-binnacle"]
 description = "An opinionated tool to interact with Kubernetes' Helm"
@@ -671,7 +676,7 @@ test = ["cheat --version", "{{version}}"]
 [tools.checkmake]
 backends = ["aqua:mrtazz/checkmake"]
 description = "experimental linter/analyzer for Makefiles"
-test = ["checkmake --version", "checkmake {{version}}"]
+test = ["checkmake --version", "checkmake v{{version}}"]
 
 [tools.checkov]
 backends = ["aqua:bridgecrewio/checkov", "asdf:bosmak/asdf-checkov"]
@@ -1634,9 +1639,14 @@ description = "fill-in your command and execute"
 test = ["fillin --version", "fillin {{version}}"]
 
 [tools.firebase]
-backends = ["aqua:firebase/firebase-tools", "asdf:jthegedus/asdf-firebase"]
+backends = [
+  "aqua:firebase/firebase-tools",
+  "npm:firebase-tools",
+  "asdf:jthegedus/asdf-firebase",
+]
 description = "The Firebase Command Line Tools"
-test = ["firebase --version", "{{version}}"]
+# 15.2.0 doesn't work. ref: https://github.com/firebase/firebase-tools/issues/9715
+# test = ["firebase --version", "{{version}}"]
 
 [tools.fission]
 backends = ["aqua:fission/fission", "asdf:virtualstaticvoid/asdf-fission"]
@@ -3455,6 +3465,12 @@ backends = ["aqua:FairwindsOps/nova", "asdf:elementalvoid/asdf-nova"]
 description = "Find outdated or deprecated Helm charts running in your cluster"
 test = ["nova version", "Version:{{version}}"]
 
+[tools.npm]
+backends = ["npm:npm"]
+description = "the package manager for JavaScript"
+overrides = ["node"]
+test = ["npm --version", "{{version}}"]
+
 [tools.nsc]
 backends = ["github:nats-io/nsc", "asdf:dex4er/asdf-nsc"]
 description = "Tool for creating nkey/jwt based configurations"
@@ -3502,6 +3518,16 @@ description = "Odin Programming Language"
 [tools.odo]
 backends = ["aqua:redhat-developer/odo", "asdf:rm3l/asdf-odo"]
 description = "A fast, and iterative CLI tool for container-based application development"
+
+[tools.oh-my-posh]
+backends = ["aqua:JanDeDobbeleer/oh-my-posh"]
+description = "The most customizable and fastest prompt engine for any shell"
+test = ["oh-my-posh version", "{{version}}"]
+
+[tools.oha]
+backends = ["aqua:hatoo/oha", "github:hatoo/oha"]
+description = "Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation"
+test = ["oha --version", "oha {{version}}"]
 
 [tools.okta-aws]
 aliases = ["okta-aws-cli"]
@@ -3552,7 +3578,7 @@ backends = ["github:openbao/openbao[exe=bao]"]
 description = "OpenBao exists to provide a software solution to manage, store, and distribute sensitive data including secrets, certificates, and keys"
 
 [tools.opencode]
-backends = ["aqua:sst/opencode"]
+backends = ["aqua:anomalyco/opencode"]
 description = "AI coding agent, built for the terminal"
 test = ["opencode --version", "{{version}}"]
 
@@ -4460,6 +4486,11 @@ backends = ["aqua:geofffranks/spruce", "asdf:woneill/asdf-spruce"]
 description = "Standalone, daemon-less, unprivileged Dockerfile and OCI compatible container image builder"
 test = ["spruce --version", "spruce - Version v{{version}}"]
 
+[tools.sqlc]
+backends = ["github:sqlc-dev/sqlc"]
+description = "Generate type-safe code from SQL"
+test = ["sqlc version", "{{version}}"]
+
 [tools.sqlite]
 backends = ["asdf:mise-plugins/mise-sqlite"]
 description = "SQLite is a C-language library that implements a small, fast, self-contained, high-reliability, full-featured, SQL database engine. SQLite is the most used database engine in the world"
@@ -4593,7 +4624,10 @@ description = "Swift Lang (Core)"
 os = ["linux", "macos"]
 
 [tools.swift-package-list]
-backends = ["asdf:mise-plugins/mise-swift-package-list"]
+backends = [
+  "spm:FelixHerrmann/swift-package-list",
+  "asdf:mise-plugins/mise-swift-package-list",
+]
 description = "A command-line tool to get all used Swift Package dependencies"
 
 [tools.swiftformat]
@@ -4869,8 +4903,10 @@ description = "A tldr client written in Rust"
 test = ["tldr --version", "tlrc v{{version}}"]
 
 [tools.tmux]
-backends = ["asdf:mise-plugins/mise-tmux"]
+backends = ["github:tmux/tmux-builds", "asdf:mise-plugins/mise-tmux"]
 description = "tmux is a terminal multiplexer. It lets you switch easily between several programs in one terminal, detach them (they keep running in the background) and reattach them to a different terminal"
+os = ["linux", "macos"]
+test = ["tmux -V", "tmux {{version}}"]
 
 [tools.tokei]
 backends = [
@@ -4998,7 +5034,7 @@ description = "Beautiful and reliable typst code formatter"
 test = ["typstyle --version", "Version:             {{version}}"]
 
 [tools.ty]
-backends = ["github:astral-sh/ty"]
+backends = ["aqua:astral-sh/ty", "github:astral-sh/ty"]
 description = "An extremely fast Python type checker and language server, written in Rust"
 test = ["ty --version", "ty {{version}}"]
 

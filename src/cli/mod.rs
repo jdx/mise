@@ -158,6 +158,16 @@ pub struct Cli {
     /// Can also use `MISE_NO_CONFIG=1`
     #[clap(long)]
     pub no_config: bool,
+    /// Do not load environment variables from config files
+    ///
+    /// Can also use `MISE_NO_ENV=1`
+    #[clap(long)]
+    pub no_env: bool,
+    /// Do not execute hooks from config files
+    ///
+    /// Can also use `MISE_NO_HOOKS=1`
+    #[clap(long)]
+    pub no_hooks: bool,
     /// Hides elapsed time after each task completes
     ///
     /// Default to always hide with `MISE_TASK_TIMINGS=0`
@@ -557,6 +567,11 @@ fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<St
 impl Cli {
     pub async fn run(args: &Vec<String>) -> Result<()> {
         crate::env::ARGS.write().unwrap().clone_from(args);
+        // Load .miserc.toml early, before MISE_ENV and other early settings are accessed.
+        // This allows setting MISE_ENV in a config file instead of only via env vars.
+        if let Err(err) = crate::config::miserc::init() {
+            warn!("Failed to load .miserc.toml: {err}");
+        }
         if *crate::env::MISE_TOOL_STUB && args.len() >= 2 {
             tool_stub::short_circuit_stub(&args[2..]).await?;
         }

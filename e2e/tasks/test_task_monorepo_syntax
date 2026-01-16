@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Test basic monorepo task syntax (//pkg:task addressing)
+# These tests verify the fundamental task addressing works, not inheritance
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config with tasks
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[tasks.rootTask]
+run = "echo 'task from root'"
+
+[tasks.build]
+run = "echo 'root build'"
+TOML
+
+# Create subdirectory with its own tasks
+mkdir -p example-pkg
+cat <<'TOML' >example-pkg/mise.toml
+[tasks.build]
+run = "echo 'example-pkg build'"
+
+[tasks.localTask]
+run = "echo 'local task'"
+TOML
+
+# Create intermediate parent with tasks
+mkdir -p libs
+cat <<'TOML' >libs/mise.toml
+[tasks.build]
+run = "echo 'libs build'"
+TOML
+
+mkdir -p libs/example-lib1
+cat <<'TOML' >libs/example-lib1/mise.toml
+[tasks.build]
+run = "echo 'example-lib1 build'"
+TOML
+
+# --- Tests for basic monorepo syntax ---
+
+# Test 1: Root tasks appear in task list with // prefix
+assert_contains "mise tasks --all" "//:rootTask"
+assert_contains "mise tasks --all" "//:build"
+
+# Test 2: Root tasks can be run with // prefix
+assert_contains "mise run //:rootTask" "task from root"
+
+# Test 3: Subpackage local tasks can be run
+assert_contains "mise run //example-pkg:build" "example-pkg build"
+assert_contains "mise run //example-pkg:localTask" "local task"
+
+# Test 4: Child's local task shadows parent's task of same name
+assert_contains "mise run //libs/example-lib1:build" "example-lib1 build"
+
+# Test 5: Local task runs from its definition directory
+cat <<'TOML' >example-pkg/mise.toml
+[tasks.showdir]
+run = "pwd"
+TOML
+
+assert_contains "mise run //example-pkg:showdir" "example-pkg"

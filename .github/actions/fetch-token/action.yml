@@ -34,7 +34,7 @@ runs:
           exit 0
         fi
         # Validate the token works by calling GitHub API
-        if ! curl -sf -H "Authorization: token $token" "https://api.github.com/rate_limit" > /dev/null; then
+        if ! curl -sf -H "Authorization: Bearer $token" "https://api.github.com/rate_limit" > /dev/null; then
           echo "Token failed GitHub API validation, skipping"
           exit 0
         fi

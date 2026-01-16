@@ -41,6 +41,12 @@ flag --log-level hide=#true global=#true {
 flag --no-config help="Do not load any config files" {
     long_help "Do not load any config files\n\nCan also use `MISE_NO_CONFIG=1`"
 }
+flag --no-env help="Do not load environment variables from config files" {
+    long_help "Do not load environment variables from config files\n\nCan also use `MISE_NO_ENV=1`"
+}
+flag --no-hooks help="Do not execute hooks from config files" {
+    long_help "Do not execute hooks from config files\n\nCan also use `MISE_NO_HOOKS=1`"
+}
 flag --no-timings help="Hides elapsed time after each task completes" hide=#true {
     long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
 }
@@ -741,7 +747,7 @@ cmd self-update help="Updates mise itself." {
 }
 cmd set help="Set environment variables in mise.toml" {
     alias ev env-vars hide=#true
-    long_help "Set environment variables in mise.toml\n\nBy default, this command modifies `mise.toml` in the current directory.\nUse `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`."
+    long_help "Set environment variables in mise.toml\n\nBy default, this command modifies `mise.toml` in the current directory.\nIf multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),\nthe lowest precedence file (`mise.toml`) will be used.\nSee https://mise.jdx.dev/configuration.html#target-file-for-write-operations\n\nUse `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`."
     after_long_help "Examples:\n\n    $ mise set NODE_ENV=production\n\n    $ mise set NODE_ENV\n    production\n\n    $ mise set -E staging NODE_ENV=staging\n    # creates or modifies mise.staging.toml\n\n    $ mise set\n    key       value       source\n    NODE_ENV  production  ~/.config/mise/config.toml\n\n    $ mise set --prompt PASSWORD\n    Enter value for PASSWORD: [hidden input]\n\n    [experimental] Age Encryption:\n\n    $ mise set --age-encrypt API_KEY=secret\n\n    $ mise set --age-encrypt --prompt API_KEY\n    Enter value for API_KEY: [hidden input]\n"
     flag "-E --env" help="Create/modify an environment-specific config file like .mise.<env>.toml" {
         arg <ENV>
@@ -773,7 +779,7 @@ cmd set help="Set environment variables in mise.toml" {
     arg "[ENV_VAR]…" help="Environment variable(s) to set\ne.g.: NODE_ENV=production" required=#false var=#true
 }
 cmd settings help="Manage settings" {
-    long_help "Show current settings\n\nThis is the contents of ~/.config/mise/config.toml\n\nNote that aliases are also stored in this file\nbut managed separately with `mise aliases`"
+    long_help "Show current settings\n\nThis is the contents of ~/.config/mise/config.toml\n\nNote that aliases are also stored in this file\nbut managed separately with `mise tool-alias`"
     after_long_help "Examples:\n    # list all settings\n    $ mise settings\n\n    # get the value of the setting \"always_keep_download\"\n    $ mise settings always_keep_download\n\n    # set the value of the setting \"always_keep_download\" to \"true\"\n    $ mise settings always_keep_download=true\n\n    # set the value of the setting \"node.mirror_url\" to \"https://npm.taobao.org/mirrors/node\"\n    $ mise settings node.mirror_url https://npm.taobao.org/mirrors/node\n"
     flag "-a --all" help="List all settings"
     flag "-J --json" help="Output in JSON format"
@@ -791,14 +797,14 @@ cmd settings help="Manage settings" {
         arg <VALUE> help="The value to set"
     }
     cmd get help="Show a current setting" {
-        long_help "Show a current setting\n\nThis is the contents of a single entry in ~/.config/mise/config.toml\n\nNote that aliases are also stored in this file\nbut managed separately with `mise aliases get`"
+        long_help "Show a current setting\n\nThis is the contents of a single entry in ~/.config/mise/config.toml\n\nNote that aliases are also stored in this file\nbut managed separately with `mise tool-alias get`"
         after_long_help "Examples:\n\n    $ mise settings get idiomatic_version_file\n    true\n"
         flag "-l --local" help="Use the local config file instead of the global one"
         arg <SETTING> help="The setting to show"
     }
     cmd ls help="Show current settings" {
         alias list
-        long_help "Show current settings\n\nThis is the contents of ~/.config/mise/config.toml\n\nNote that aliases are also stored in this file\nbut managed separately with `mise aliases`"
+        long_help "Show current settings\n\nThis is the contents of ~/.config/mise/config.toml\n\nNote that aliases are also stored in this file\nbut managed separately with `mise tool-alias`"
         after_long_help "Examples:\n\n    $ mise settings ls\n    idiomatic_version_file = false\n    ...\n\n    $ mise settings ls python\n    default_packages_file = \"~/.default-python-packages\"\n    ...\n"
         flag "-a --all" help="List all settings"
         flag "-J --json" help="Output in JSON format"
@@ -810,7 +816,7 @@ cmd settings help="Manage settings" {
     }
     cmd set help="Add/update a setting" {
         alias create
-        long_help "Add/update a setting\n\nThis modifies the contents of ~/.config/mise/config.toml"
+        long_help "Add/update a setting\n\nThis modifies the contents of ~/.config/mise/config.toml by default.\nWith `--local`, modifies the local config file instead.\nSee https://mise.jdx.dev/configuration.html#target-file-for-write-operations"
         after_long_help "Examples:\n\n    $ mise settings idiomatic_version_file=true\n"
         flag "-l --local" help="Use the local config file instead of the global one"
         arg <SETTING> help="The setting to set"
@@ -905,6 +911,7 @@ cmd tasks help="Manage tasks" {
     flag --usage hide=#true global=#true
     arg "[TASK]" help="Task name to get info of" required=#false
     cmd add help="Create a new task" {
+        long_help "Create a new task\n\nAdds a task to the local mise.toml file.\nSee https://mise.jdx.dev/configuration.html#target-file-for-write-operations"
         after_long_help "Examples:\n\n    $ mise tasks add pre-commit --depends \"test\" --depends \"render\" -- echo pre-commit\n"
         flag "-a --alias" help="Other names for the task" var=#true {
             arg <ALIAS>
@@ -1092,7 +1099,7 @@ cmd unset help="Remove environment variable(s) from the config file." {
 }
 cmd unuse help="Removes installed tool versions from mise.toml" {
     alias rm remove
-    long_help "Removes installed tool versions from mise.toml\n\nBy default, this will use the `mise.toml` file that has the tool defined.\n\nIn the following order:\n  - If `--global` is set, it will use the global config file.\n  - If `--path` is set, it will use the config file at the given path.\n  - If `--env` is set, it will use `mise.<env>.toml`.\n  - If `MISE_DEFAULT_CONFIG_FILENAME` is set, it will use that instead.\n  - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.\n  - Otherwise just \"mise.toml\" or global config if cwd is home directory.\n\nWill also prune the installed version if no other configurations are using it."
+    long_help "Removes installed tool versions from mise.toml\n\nBy default, this will use the `mise.toml` file that has the tool defined.\nIf multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),\nthe lowest precedence file (`mise.toml`) will be used.\nSee https://mise.jdx.dev/configuration.html#target-file-for-write-operations\n\nIn the following order:\n  - If `--global` is set, it will use the global config file.\n  - If `--path` is set, it will use the config file at the given path.\n  - If `--env` is set, it will use `mise.<env>.toml`.\n  - If `MISE_DEFAULT_CONFIG_FILENAME` is set, it will use that instead.\n  - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.\n  - Otherwise just \"mise.toml\" or global config if cwd is home directory.\n\nWill also prune the installed version if no other configurations are using it."
     after_long_help "Examples:\n\n    # will uninstall specific version\n    $ mise unuse node@18.0.0\n\n    # will uninstall specific version from global config\n    $ mise unuse -g node@18.0.0\n\n    # will uninstall specific version from .mise.local.toml\n    $ mise unuse --env local node@20\n\n    # will uninstall specific version from .mise.staging.toml\n    $ mise unuse --env staging node@20\n"
     flag "-e --env" help="Create/modify an environment-specific config file like .mise.<env>.toml" {
         arg <ENV>
@@ -1108,7 +1115,7 @@ cmd unuse help="Removes installed tool versions from mise.toml" {
 cmd upgrade help="Upgrades outdated tools" {
     alias up
     long_help "Upgrades outdated tools\n\nBy default, this keeps the range specified in mise.toml. So if you have node@20 set, it will\nupgrade to the latest 20.x.x version available. See the `--bump` flag to use the latest version\nand bump the version in mise.toml.\n\nThis will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile"
-    after_long_help "Examples:\n\n    # Upgrades node to the latest version matching the range in mise.toml\n    $ mise upgrade node\n\n    # Upgrades node to the latest version and bumps the version in mise.toml\n    $ mise upgrade node --bump\n\n    # Upgrades all tools to the latest versions\n    $ mise upgrade\n\n    # Upgrades all tools to the latest versions and bumps the version in mise.toml\n    $ mise upgrade --bump\n\n    # Just print what would be done, don't actually do it\n    $ mise upgrade --dry-run\n\n    # Upgrades node and python to the latest versions\n    $ mise upgrade node python\n\n    # Show a multiselect menu to choose which tools to upgrade\n    $ mise upgrade --interactive\n"
+    after_long_help "Examples:\n\n    # Upgrades node to the latest version matching the range in mise.toml\n    $ mise upgrade node\n\n    # Upgrades node to the latest version and bumps the version in mise.toml\n    $ mise upgrade node --bump\n\n    # Upgrades all tools to the latest versions\n    $ mise upgrade\n\n    # Upgrades all tools to the latest versions and bumps the version in mise.toml\n    $ mise upgrade --bump\n\n    # Just print what would be done, don't actually do it\n    $ mise upgrade --dry-run\n\n    # Upgrades node and python to the latest versions\n    $ mise upgrade node python\n\n    # Upgrade all tools except go\n    $ mise upgrade --exclude go\n\n    # Show a multiselect menu to choose which tools to upgrade\n    $ mise upgrade --interactive\n"
     flag "-i --interactive" help="Display multiselect menu to choose which tools to upgrade"
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg <JOBS>
@@ -1117,19 +1124,22 @@ cmd upgrade help="Upgrades outdated tools" {
         long_help "Upgrades to the latest version available, bumping the version in mise.toml\n\nFor example, if you have `node = \"20.0.0\"` in your mise.toml but 22.1.0 is the latest available,\nthis will install 22.1.0 and set `node = \"22.1.0\"` in your config.\n\nIt keeps the same precision as what was there before, so if you instead had `node = \"20\"`, it\nwould change your config to `node = \"22\"`."
     }
     flag "-n --dry-run" help="Just print what would be done, don't actually do it"
+    flag "-x --exclude" help="Tool(s) to exclude from upgrading\ne.g.: go python" var=#true {
+        arg <INSTALLED_TOOL>
+    }
     flag --before help="Only upgrade to versions released before this date" {
         long_help "Only upgrade to versions released before this date\n\nSupports absolute dates like \"2024-06-01\" and relative durations like \"90d\" or \"1y\".\nThis can be useful for reproducibility or security purposes.\n\nThis only affects fuzzy version matches like \"20\" or \"latest\".\nExplicitly pinned versions like \"22.5.0\" are not filtered."
         arg <BEFORE>
     }
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
-    arg "[TOOL@VERSION]…" help="Tool(s) to upgrade\ne.g.: node@20 python@3.10\nIf not specified, all current tools will be upgraded" required=#false var=#true
+    arg "[INSTALLED_TOOL@VERSION]…" help="Tool(s) to upgrade\ne.g.: node@20 python@3.10\nIf not specified, all current tools will be upgraded" required=#false var=#true
 }
 cmd usage hide=#true help="Generate a usage CLI spec" {
     long_help "Generate a usage CLI spec\n\nSee https://usage.jdx.dev for more information on this specification."
 }
 cmd use help="Installs a tool and adds the version to mise.toml." {
     alias u
-    long_help "Installs a tool and adds the version to mise.toml.\n\nThis will install the tool version if it is not already installed.\nBy default, this will use a `mise.toml` file in the current directory.\n\nIn the following order:\n  - If `--global` is set, it will use the global config file.\n  - If `--path` is set, it will use the config file at the given path.\n  - If `--env` is set, it will use `mise.<env>.toml`.\n  - If `MISE_DEFAULT_CONFIG_FILENAME` is set, it will use that instead.\n  - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.\n  - Otherwise just \"mise.toml\" or global config if cwd is home directory.\n\nUse the `--global` flag to use the global config file instead."
+    long_help "Installs a tool and adds the version to mise.toml.\n\nThis will install the tool version if it is not already installed.\nBy default, this will use a `mise.toml` file in the current directory.\nIf multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),\nthe lowest precedence file (`mise.toml`) will be used.\nSee https://mise.jdx.dev/configuration.html#target-file-for-write-operations\n\nIn the following order:\n  - If `--global` is set, it will use the global config file.\n  - If `--path` is set, it will use the config file at the given path.\n  - If `--env` is set, it will use `mise.<env>.toml`.\n  - If `MISE_DEFAULT_CONFIG_FILENAME` is set, it will use that instead.\n  - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.\n  - Otherwise just \"mise.toml\" or global config if cwd is home directory.\n\nUse the `--global` flag to use the global config file instead."
     after_long_help "Examples:\n    \n    # run with no arguments to use the interactive selector\n    $ mise use\n\n    # set the current version of node to 20.x in mise.toml of current directory\n    # will write the fuzzy version (e.g.: 20)\n    $ mise use node@20\n\n    # set the current version of node to 20.x in ~/.config/mise/config.toml\n    # will write the precise version (e.g.: 20.0.0)\n    $ mise use -g --pin node@20\n\n    # sets .mise.local.toml (which is intended not to be committed to a project)\n    $ mise use --env local node@20\n\n    # sets .mise.staging.toml (which is used if MISE_ENV=staging)\n    $ mise use --env staging node@20\n"
     flag "-e --env" help="Create/modify an environment-specific config file like .mise.<env>.toml" {
         arg <ENV>

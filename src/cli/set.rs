@@ -16,6 +16,10 @@ use tabled::Tabled;
 /// Set environment variables in mise.toml
 ///
 /// By default, this command modifies `mise.toml` in the current directory.
+/// If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
+/// the lowest precedence file (`mise.toml`) will be used.
+/// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
+///
 /// Use `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`.
 #[derive(Debug, clap::Args)]
 #[clap(aliases = ["ev", "env-vars"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]

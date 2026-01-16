@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+# Test that HTTP backend tools (which use symlinks to cache) can be upgraded
+# This validates the fix for https://github.com/jdx/mise/pull/7012
+#
+# The HTTP backend creates symlinks from installs/ to http-tarballs/ cache.
+# Before the fix, these symlinks caused tools to be incorrectly skipped
+# in the outdated check, preventing upgrades from working.
+
+# Start a simple HTTP server to serve version list
+VERSION_LIST_DIR="$TMPDIR/version-list-server"
+mkdir -p "$VERSION_LIST_DIR"
+
+# Create version list file with two versions
+echo -e "1.0.0\n2.0.0" >"$VERSION_LIST_DIR/versions.txt"
+
+# Start Python HTTP server in background
+(cd "$VERSION_LIST_DIR" && python3 -m http.server 18123 &>/dev/null) &
+HTTP_SERVER_PID=$!
+
+# Wait for server to start
+sleep 1
+
+# Cleanup function
+cleanup() {
+	kill $HTTP_SERVER_PID 2>/dev/null || true
+}
+trap cleanup EXIT
+
+# Verify server is running
+if ! curl -s http://localhost:18123/versions.txt | grep -q "1.0.0"; then
+	fail "HTTP server failed to start"
+fi
+
+# Test 1: Install HTTP tool and verify it's a symlink to cache
+echo "Test 1: Install HTTP tool with version_list_url"
+cat <<EOF >mise.toml
+[tools."http:hello-upgrade"]
+version = "1.0.0"
+url = "https://mise.jdx.dev/test-fixtures/hello-world-{{version}}.tar.gz"
+version_list_url = "http://localhost:18123/versions.txt"
+bin_path = "hello-world-1.0.0/bin"
+postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"
+EOF
+
+mise install
+assert_contains "mise x -- hello-world" "hello world"
+
+# Verify install is a symlink (HTTP backend caching behavior)
+INSTALL_PATH="$MISE_DATA_DIR/installs/http-hello-upgrade/1.0.0"
+if [[ ! -L $INSTALL_PATH ]]; then
+	fail "Expected install path to be a symlink: $INSTALL_PATH"
+fi
+echo "Verified: Install path is a symlink (HTTP backend caching)"
+
+# Test 2: Verify mise latest sees the newer version
+echo "Test 2: Check that mise latest sees version 2.0.0"
+assert "mise latest http:hello-upgrade" "2.0.0"
+
+# Test 3: Verify mise outdated --bump shows the tool as outdated
+# This is the key test - before the fix, HTTP backend tools were skipped
+echo "Test 3: Check that mise outdated --bump detects outdated version"
+OUTDATED_OUTPUT=$(mise outdated --bump 2>&1)
+if [[ $OUTDATED_OUTPUT != *"hello-upgrade"* ]] || [[ $OUTDATED_OUTPUT != *"2.0.0"* ]]; then
+	echo "outdated output: $OUTDATED_OUTPUT"
+	fail "mise outdated --bump should show http:hello-upgrade as outdated to 2.0.0"
+fi
+echo "Verified: mise outdated --bump correctly detects HTTP backend tool as outdated"
+
+# Test 4: Verify mise upgrade --bump --dry-run shows the upgrade
+echo "Test 4: Check that mise upgrade --bump --dry-run shows the upgrade"
+UPGRADE_OUTPUT=$(mise upgrade --bump --dry-run 2>&1)
+if [[ $UPGRADE_OUTPUT != *"Would install"* ]] || [[ $UPGRADE_OUTPUT != *"hello-upgrade"* ]]; then
+	echo "upgrade output: $UPGRADE_OUTPUT"
+	fail "mise upgrade --bump --dry-run should show install for http:hello-upgrade"
+fi
+echo "Verified: mise upgrade --bump --dry-run correctly shows upgrade for HTTP backend tool"
+
+echo "SUCCESS: HTTP backend upgrade test passed!"

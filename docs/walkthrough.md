@@ -191,7 +191,7 @@ mise run greet --user jdx -g "hey" "How are you?"
   as options.
 - [Custom completion](https://usage.jdx.dev/spec/reference/complete) can be provided by a CLI. `mise run greet --dir <tab>` will execute `find . -maxdepth 1 -type d` to provide completions.
 
-To get the autocopletion working, set up [mise autocompletions](/installing-mise.html#autocompletion).
+To get the autocompletion working, set up [mise autocompletions](/installing-mise.html#autocompletion).
 
 _See [Tasks](/tasks/) for more information on working with tasks._
 

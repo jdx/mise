@@ -48,7 +48,7 @@ When mise needs configuration, it follows this process:
 
 ```
 /
-├── etc/mise/                          # System-wide config (highest precedence)
+├── etc/mise/                         # System-wide config (highest precedence)
 │   ├── conf.d/*.toml                 # System fragments, loaded alphabetically
 │   ├── config.toml                   # System defaults
 │   └── config.<env>.toml             # Env-specific system config (MISE_ENV or -E)
@@ -108,6 +108,27 @@ Different configuration sections merge in different ways:
 
 ::: tip
 Run `mise config` to see what files mise has loaded in order of precedence.
+:::
+
+### Target File for Write Operations
+
+When commands like [`mise use`](/cli/use), [`mise set`](/cli/set), or [`mise unuse`](/cli/unuse) need to write to a config file, they use the **lowest precedence file in the highest precedence directory**. This means:
+
+- If both `mise.toml` and `mise.local.toml` exist, writes go to `mise.toml`
+- If both `mise.toml` and `mise.production.toml` exist, writes go to `mise.toml`
+- If only `mise.local.toml` exists, writes go to `mise.local.toml`
+
+This behavior ensures that shared configuration (`mise.toml`) is updated by default, while local overrides (`mise.local.toml`) and environment-specific configs remain untouched unless explicitly targeted.
+
+::: info Example
+
+```bash
+# With both mise.toml and mise.local.toml present:
+$ mise use node@22              # writes to mise.toml
+$ mise use --env local node@20  # writes to mise.local.toml
+$ mise set NODE_ENV=production  # writes to mise.toml
+```
+
 :::
 
 Here is what a `mise.toml` looks like:

@@ -3271,6 +3271,18 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: ["-x", "--exclude"],
+          description: "Tool(s) to exclude from upgrading\ne.g.: go python",
+          isRepeatable: true,
+          args: {
+            name: "installed_tool",
+            generators: completionGeneratorTemplate(
+              `mise ls -i | awk '{print $1}' | uniq`
+            ),
+            debounce: true,
+          },
+        },
+        {
           name: "--before",
           description: "Only upgrade to versions released before this date",
           isRepeatable: false,
@@ -3286,12 +3298,12 @@ const completionSpec: Fig.Spec = {
         },
       ],
       args: {
-        name: "tool@version",
+        name: "installed_tool@version",
         description:
           "Tool(s) to upgrade\ne.g.: node@20 python@3.10\nIf not specified, all current tools will be upgraded",
         isOptional: true,
         isVariadic: true,
-        generators: toolVersionGenerator,
+        generators: installedToolVersionGenerator,
         debounce: true,
       },
     },
@@ -3842,6 +3854,16 @@ const completionSpec: Fig.Spec = {
     {
       name: "--no-config",
       description: "Do not load any config files",
+      isRepeatable: false,
+    },
+    {
+      name: "--no-env",
+      description: "Do not load environment variables from config files",
+      isRepeatable: false,
+    },
+    {
+      name: "--no-hooks",
+      description: "Do not execute hooks from config files",
       isRepeatable: false,
     },
     {

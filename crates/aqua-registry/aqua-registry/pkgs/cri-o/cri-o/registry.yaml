@@ -306,7 +306,7 @@ packages:
             src: cri-o/bin/{{.FileName}}
           - name: pinns
             src: cri-o/bin/{{.FileName}}
-      - version_constraint: "true"
+      - version_constraint: semver("<= 1.34.1")
         cosign:
           opts:
             - --certificate-identity
@@ -317,3 +317,13 @@ packages:
             - https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.cert
             - --signature
             - https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.sig
+      - version_constraint: "true"
+        cosign:
+          bundle:
+            type: http
+            url: https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.bundle
+          opts:
+            - --certificate-identity
+            - "https://github.com/cri-o/packaging/.github/workflows/obs.yml@refs/heads/main"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"

@@ -63,6 +63,18 @@ Do not load any config files
 
 Can also use `MISE_NO_CONFIG=1`
 
+### `--no-env`
+
+Do not load environment variables from config files
+
+Can also use `MISE_NO_ENV=1`
+
+### `--no-hooks`
+
+Do not execute hooks from config files
+
+Can also use `MISE_NO_HOOKS=1`
+
 ### `--output <OUTPUT>`
 
 ## Subcommands
@@ -158,7 +170,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise uninstall [-a --all] [-n --dry-run] [INSTALLED_TOOL@VERSION]…`](/cli/uninstall.md)
 - [`mise unset [-f --file <FILE>] [-g --global] [ENV_KEY]…`](/cli/unset.md)
 - [`mise unuse [FLAGS] <INSTALLED_TOOL@VERSION>…`](/cli/unuse.md)
-- [`mise upgrade [FLAGS] [TOOL@VERSION]…`](/cli/upgrade.md)
+- [`mise upgrade [FLAGS] [INSTALLED_TOOL@VERSION]…`](/cli/upgrade.md)
 - [`mise use [FLAGS] [TOOL@VERSION]…`](/cli/use.md)
 - [`mise version [-J --json]`](/cli/version.md)
 - [`mise watch [FLAGS] [TASK] [ARGS]…`](/cli/watch.md)

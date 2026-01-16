@@ -502,6 +502,28 @@ impl Settings {
                     .take_while(|a| *a != "--")
                     .any(|a| a == "--no-config")
     }
+
+    pub fn no_env() -> bool {
+        *env::MISE_NO_ENV
+            || !*crate::env::IS_RUNNING_AS_SHIM
+                && env::ARGS
+                    .read()
+                    .unwrap()
+                    .iter()
+                    .take_while(|a| *a != "--")
+                    .any(|a| a == "--no-env")
+    }
+
+    pub fn no_hooks() -> bool {
+        *env::MISE_NO_HOOKS
+            || !*crate::env::IS_RUNNING_AS_SHIM
+                && env::ARGS
+                    .read()
+                    .unwrap()
+                    .iter()
+                    .take_while(|a| *a != "--")
+                    .any(|a| a == "--no-hooks")
+    }
 }
 
 impl Display for Settings {

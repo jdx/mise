@@ -13,6 +13,7 @@ Below is a list of the available backends in mise:
 - [cargo](/dev-tools/backends/cargo)
 - [conda](/dev-tools/backends/conda) <Badge type="warning" text="experimental" />
 - [dotnet](/dev-tools/backends/dotnet) <Badge type="warning" text="experimental" />
+- [forgejo](/dev-tools/backends/forgejo)
 - [gem](/dev-tools/backends/gem)
 - [github](/dev-tools/backends/github)
 - [gitlab](/dev-tools/backends/gitlab)
@@ -20,6 +21,7 @@ Below is a list of the available backends in mise:
 - [http](/dev-tools/backends/http)
 - [npm](/dev-tools/backends/npm)
 - [pipx](/dev-tools/backends/pipx)
+- [s3](/dev-tools/backends/s3) <Badge type="warning" text="experimental" />
 - [spm](/dev-tools/backends/spm) <Badge type="warning" text="experimental" />
 - [ubi](/dev-tools/backends/ubi)
 - [vfox](/dev-tools/backends/vfox) (provide tools through [plugins](/plugins.html))

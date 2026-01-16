@@ -1,4 +1,4 @@
-name: registry_comment
+name: registry-comment
 on:
   pull_request_target:
     branches: [main]
@@ -22,7 +22,7 @@ jobs:
       pull-requests: read
       contents: read
     outputs:
-      new-tools-added: ${{ steps.check-new-tools.outputs.new-tools-added }}
+      new_tools_added: ${{ steps.registry-diff.outputs.new_tools != '' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -57,29 +57,27 @@ jobs:
             echo "Other files are also modified:"
             echo "$MODIFIED_FILES"
           fi
-      - name: Check for new tools added
-        id: check-new-tools
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+      - name: Diff registry tools
+        id: registry-diff
         run: |
-          # Extract tool names from base commit (lines ending with .backends)
-          BASE_TOOLS=$(git show ${{ github.event.pull_request.base.sha }}:registry.toml | grep -E '^[a-zA-Z0-9_-]+\.backends' | sed 's/\.backends.*//' | sort)
+          git show ${{ github.event.pull_request.base.sha }}:registry.toml | mise x yj -- yj -t > old.json
+          mise x yj -- yj -t < registry.toml > new.json
 
-          # Extract tool names from head commit (lines ending with .backends)
-          HEAD_TOOLS=$(git show ${{ github.event.pull_request.head.sha }}:registry.toml | grep -E '^[a-zA-Z0-9_-]+\.backends' | sed 's/\.backends.*//' | sort)
+          changed=$(jq -r -s '
+             (.[0].tools) as $old | (.[1].tools) as $new |
+             [ ($new | keys[]) | select($new[.] != $old[.]) ] | join(" ")
+          ' old.json new.json)
 
-          # Find new tools (tools in head but not in base)
-          NEW_TOOLS=$(comm -13 <(echo "$BASE_TOOLS") <(echo "$HEAD_TOOLS"))
+          new=$(jq -r -s '
+             (.[0].tools) as $old | (.[1].tools) as $new |
+             [ ($new | keys[]) | select($old[.] == null) ] | join(" ")
+          ' old.json new.json)
 
-          if [[ -n "$NEW_TOOLS" ]]; then
-            echo "new-tools-added=true" >> "$GITHUB_OUTPUT"
-            echo "new-tools=$NEW_TOOLS" >> "$GITHUB_OUTPUT"
-            echo "New tools detected:"
-            echo "$NEW_TOOLS"
-          else
-            echo "new-tools-added=false" >> "$GITHUB_OUTPUT"
-            echo "No new tools detected"
-          fi
+          echo "modified_tools=$changed" >> "$GITHUB_OUTPUT"
+          echo "new_tools=$new" >> "$GITHUB_OUTPUT"
       - name: Check PR title format
-        if: steps.check-files.outputs.only-registry-toml == 'true' && steps.check-new-tools.outputs.new-tools-added == 'false'
+        if: steps.check-files.outputs.only-registry-toml == 'true' && steps.registry-diff.outputs.new_tools == ''
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
@@ -91,9 +89,9 @@ jobs:
           fi
           echo "✅ PR title format is valid"
       - name: Validate new tool PR title format
-        if: steps.check-new-tools.outputs.new-tools-added == 'true'
+        if: steps.registry-diff.outputs.new_tools != ''
         env:
-          NEW_TOOLS: ${{ steps.check-new-tools.outputs.new-tools }}
+          NEW_TOOLS: ${{ steps.registry-diff.outputs.new_tools }}
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           # Check if PR title follows the exact format: registry: add [TOOL] ([FULL])
@@ -124,7 +122,7 @@ jobs:
           fi
           echo "✅ PR title format is valid and mentions new tool(s)"
 
-  build:
+  comment:
     timeout-minutes: 20
     runs-on: ubuntu-latest
     permissions:
@@ -132,7 +130,7 @@ jobs:
     needs: validate-registry-pr
     steps:
       - uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3
-        if: github.event.pull_request.number != null && github.actor != 'jdx' && needs.validate-registry-pr.outputs.new-tools-added == 'true'
+        if: github.event.pull_request.number != null && github.actor != 'jdx' && needs.validate-registry-pr.outputs.new_tools_added == 'true'
         with:
           comment-tag: "mise-registry-bot"
           message: |
