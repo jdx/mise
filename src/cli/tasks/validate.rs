@@ -6,6 +6,7 @@ use crate::config::Config;
 use crate::duration;
 use crate::file;
 use crate::task::Task;
+use crate::task::task_fetcher::TaskFetcher;
 use crate::ui::style;
 use console::style as console_style;
 use eyre::{Result, eyre};
@@ -59,7 +60,19 @@ struct ValidationResults {
 impl TasksValidate {
     pub async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        let all_tasks = config.tasks().await?;
+
+        // Resolve all remote task files before validation
+        // so we can properly validate remote tasks and circular dependencies
+        let mut resolved_tasks: Vec<Task> = config.tasks().await?.values().cloned().collect();
+        // always no_cache=false as the command doesn't take no-cache argument
+        // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
+        TaskFetcher::new(false)
+            .fetch_tasks(&mut resolved_tasks)
+            .await?;
+        let all_tasks: BTreeMap<String, Task> = resolved_tasks
+            .into_iter()
+            .map(|t| (t.name.clone(), t))
+            .collect();
 
         // Filter tasks to validate
         let tasks = if let Some(ref task_names) = self.tasks {

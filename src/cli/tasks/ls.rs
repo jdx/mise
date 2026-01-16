@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::config::Config;
 use crate::file::display_rel_path;
 use crate::task::Task;
+use crate::task::task_fetcher::TaskFetcher;
 use crate::ui::table::MiseTable;
 use comfy_table::{Attribute, Cell, Row};
 use eyre::Result;
@@ -114,6 +115,12 @@ impl TasksLs {
             .cloned()
             .sorted_by(|a, b| self.sort(a, b))
             .collect::<Vec<Task>>();
+
+        // Resolve remote task files before any operation that may need them
+        let mut tasks = tasks;
+        // always pass no_cache=false as the command doesn't take no-cache argument
+        // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
+        TaskFetcher::new(false).fetch_tasks(&mut tasks).await?;
 
         if self.complete {
             return self.complete(tasks);

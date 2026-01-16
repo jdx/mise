@@ -113,3 +113,22 @@ assert_directory_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_empty "${REMOTE_TASKS_DIR}"
 assert_directory_exists "${MISE_LOCAL_CACHE_DIR}"
 assert_directory_not_empty "${MISE_LOCAL_CACHE_DIR}"
+
+#################################################################################
+# Test usage and info commands with git remote tasks
+# Verifies fix for https://github.com/jdx/mise/discussions/7578
+#################################################################################
+
+# Usage should work and show task in completion output
+assert_contains "mise tasks ls --usage" 'cmd remote_lint_https_ref'
+
+# Info should show local cached path, not git URL
+assert_contains "mise tasks info remote_lint_https_ref" "remote-git-tasks-cache"
+assert_not_contains "mise tasks info remote_lint_https_ref" "git::http"
+
+# JSON output should also work
+assert_contains "mise tasks info remote_lint_https_ref --json" '"file":'
+assert_contains "mise tasks info remote_lint_https_ref --json" "remote-git-tasks-cache"
+
+# Validate should work with remote tasks
+assert_succeed "mise tasks validate remote_lint_https_ref"
