@@ -2633,12 +2633,9 @@ backends = ["aqua:kubernetes-sigs/krew", "asdf:bjw-s/asdf-krew"]
 description = "Find and install kubectl plugins"
 
 [tools.kscript]
-backends = [
-  "github:kscripting/kscript",
-  "asdf:edgelevel/asdf-kscript",
-]
-description = "Scripting enhancements for Kotlin"
+backends = ["github:kscripting/kscript", "asdf:edgelevel/asdf-kscript"]
 depends = ["kotlin"]
+description = "Scripting enhancements for Kotlin"
 test = ["kscript --version", "Version   : {{version}}"]
 
 [tools.ksops]
