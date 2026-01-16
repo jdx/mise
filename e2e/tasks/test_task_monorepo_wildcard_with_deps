@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+
+# Test that wildcard patterns work correctly when tasks have relative :dependency syntax
+# This tests the scenario where running `mise run '//...:format'` fails with
+# "task not found: :bootstrap" when individual projects have tasks like:
+#   [tasks.format]
+#   depends = [":bootstrap"]
+#
+# Individual task execution works: `mise run //project:format` correctly resolves
+# the :bootstrap dependency to //project:bootstrap
+#
+# But wildcard execution fails: `mise run '//...:format'` loses the config_root
+# context and tries to find :bootstrap at the monorepo root instead of each
+# project's own bootstrap task.
+
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config
+cat <<'EOF' >mise.toml
+experimental_monorepo_root = true
+
+[settings]
+experimental = true
+EOF
+
+# Create first project with format depending on bootstrap
+mkdir -p libs/shared
+cat <<'EOF' >libs/shared/mise.toml
+[tasks.bootstrap]
+run = 'echo "shared bootstrap executed"'
+
+[tasks.format]
+depends = [":bootstrap"]
+run = 'echo "shared format executed"'
+
+[tasks.lint]
+depends = [":bootstrap"]
+run = 'echo "shared lint executed"'
+EOF
+
+# Create second project with same pattern
+mkdir -p apps/frontend
+cat <<'EOF' >apps/frontend/mise.toml
+[tasks.bootstrap]
+run = 'echo "frontend bootstrap executed"'
+
+[tasks.format]
+depends = [":bootstrap"]
+run = 'echo "frontend format executed"'
+
+[tasks.build]
+depends = [":bootstrap"]
+run = 'echo "frontend build executed"'
+EOF
+
+# Create third project with same pattern
+mkdir -p apps/backend
+cat <<'EOF' >apps/backend/mise.toml
+[tasks.bootstrap]
+run = 'echo "backend bootstrap executed"'
+
+[tasks.format]
+depends = [":bootstrap"]
+run = 'echo "backend format executed"'
+
+[tasks.test]
+depends = [":format"]
+run = 'echo "backend test executed"'
+EOF
+
+# Create a project WITHOUT bootstrap to ensure it doesn't interfere
+mkdir -p tools/cli
+cat <<'EOF' >tools/cli/mise.toml
+[tasks.format]
+run = 'echo "cli format executed"'
+EOF
+
+# Verify tasks are discovered correctly
+assert_contains "mise tasks --all" "//libs/shared:format"
+assert_contains "mise tasks --all" "//libs/shared:bootstrap"
+assert_contains "mise tasks --all" "//apps/frontend:format"
+assert_contains "mise tasks --all" "//apps/frontend:bootstrap"
+assert_contains "mise tasks --all" "//apps/backend:format"
+assert_contains "mise tasks --all" "//apps/backend:bootstrap"
+assert_contains "mise tasks --all" "//tools/cli:format"
+
+# Test 1: Individual task execution works (baseline)
+assert_contains "mise run //libs/shared:format" "shared bootstrap executed"
+assert_contains "mise run //libs/shared:format" "shared format executed"
+
+assert_contains "mise run //apps/frontend:format" "frontend bootstrap executed"
+assert_contains "mise run //apps/frontend:format" "frontend format executed"
+
+assert_contains "mise run //apps/backend:format" "backend bootstrap executed"
+assert_contains "mise run //apps/backend:format" "backend format executed"
+
+# Test 2: Wildcard with dependencies should work
+# This is the failing case - :bootstrap should resolve to each project's own bootstrap
+output=$(mise run '//...:format')
+assert_contains "mise run '//...:format'" "shared bootstrap executed"
+assert_contains "mise run '//...:format'" "shared format executed"
+assert_contains "mise run '//...:format'" "frontend bootstrap executed"
+assert_contains "mise run '//...:format'" "frontend format executed"
+assert_contains "mise run '//...:format'" "backend bootstrap executed"
+assert_contains "mise run '//...:format'" "backend format executed"
+assert_contains "mise run '//...:format'" "cli format executed"
+
+# Test 3: Partial wildcard with dependencies
+assert_contains "mise run '//apps/...:format'" "frontend bootstrap executed"
+assert_contains "mise run '//apps/...:format'" "frontend format executed"
+assert_contains "mise run '//apps/...:format'" "backend bootstrap executed"
+assert_contains "mise run '//apps/...:format'" "backend format executed"
+
+# Test 4: Task name wildcard with dependencies
+assert_contains "mise run '//libs/shared:*'" "shared bootstrap executed"
+assert_contains "mise run '//libs/shared:*'" "shared format executed"
+assert_contains "mise run '//libs/shared:*'" "shared lint executed"
+
+# Test 5: Chained dependencies through wildcards
+# backend:test depends on :format which depends on :bootstrap
+assert_contains "mise run '//apps/backend:test'" "backend bootstrap executed"
+assert_contains "mise run '//apps/backend:test'" "backend format executed"
+assert_contains "mise run '//apps/backend:test'" "backend test executed"
+
+# Test 6: Wildcard should work for tasks with chained relative dependencies
+assert_contains "mise run '//...:test'" "backend bootstrap executed"
+assert_contains "mise run '//...:test'" "backend format executed"
+assert_contains "mise run '//...:test'" "backend test executed"
+
+echo "=== All wildcard with dependencies tests passed! ==="
