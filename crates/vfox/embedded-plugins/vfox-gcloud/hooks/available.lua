@@ -71,7 +71,7 @@ local function compare_versions(a, b)
         local na = va[i] or 0
         local nb = vb[i] or 0
         if na ~= nb then
-            return na < nb
+            return na > nb
         end
     end
     return false
@@ -85,7 +85,7 @@ function PLUGIN:Available(ctx)
 
     local versions = fetch_versions()
 
-    -- Sort versions in ascending order
+    -- Sort versions in descending order (newest first) to match vfox conventions
     table.sort(versions, compare_versions)
 
     -- Build result table
