@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Test for deadlock issue between Python venv creation and Go backend tools
+# This reproduces the scenario where go:* tools with dependencies would cause
+# a circular dependency during environment resolution while creating Python venv.
+# fixes https://github.com/jdx/mise/discussions/7059
+set -euo pipefail
+
+cat >.mise.toml <<EOF
+[tools]
+go = "1.25.4"
+python = "3.12.3"
+"go:github.com/charmbracelet/gum" = "v0.17.0"
+
+[env]
+_.python.venv = {path = "{{env.HOME}}/my_venv", create=true}
+EOF
+
+# This should complete without timeout (previously would hang indefinitely)
+# The go backend tool resolution should not interfere with Python venv creation
+timeout 60 mise install
+
+# Verify Python venv was created
+assert "mise x -- python --version" "Python 3.12.3"
+assert "mise env -s bash | grep VIRTUAL_ENV" "export VIRTUAL_ENV=$HOME/my_venv"
+assert "mise x -- which python" "$HOME/my_venv/bin/python"
+
+# Verify Go backend tool was installed and can run
+assert_contains "mise x -- gum --version" "0.17.0"
+
+# Required to properly cleanup as go installs read-only sources
+chmod -R +w ~/go
