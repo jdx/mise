@@ -1,5 +1,64 @@
 # Changelog
 
+## [2026.1.3](https://github.com/jdx/mise/compare/v2026.1.2..v2026.1.3) - 2026-01-16
+
+### 🚀 Features
+
+- **(s3)** add S3 backend for private artifact storage by @jdx in [#7668](https://github.com/jdx/mise/pull/7668)
+- **(upgrade)** use installed_tool completer for mise upgrade by @jdx in [#7670](https://github.com/jdx/mise/pull/7670)
+- **(upgrade)** add --exclude flag to mise upgrade command by @jdx in [#7669](https://github.com/jdx/mise/pull/7669)
+- add no hooks and no env flags by @aacebedo in [#7560](https://github.com/jdx/mise/pull/7560)
+
+### 🐛 Bug Fixes
+
+- **(backend)** allow upgrading vfox backend tools with symlinked installations by @TyceHerrman in [#7012](https://github.com/jdx/mise/pull/7012)
+- **(backend)** reject architecture mismatches in asset selection by @jdx in [#7672](https://github.com/jdx/mise/pull/7672)
+- **(backend)** canonicalize symlink target before installs check by @jdx in [#7671](https://github.com/jdx/mise/pull/7671)
+- **(self-update)** skip update when already at latest version by @jdx in [#7666](https://github.com/jdx/mise/pull/7666)
+- fall back to GITHUB_TOKEN for github.com by @subdigital in [#7667](https://github.com/jdx/mise/pull/7667)
+- GitHub token fallback by @subdigital in [#7673](https://github.com/jdx/mise/pull/7673)
+- inherit tasks from parent configs in monorepos by @chadxz in [#7643](https://github.com/jdx/mise/pull/7643)
+
+### 📚 Documentation
+
+- **(contributing)** update registry examples by @scop in [#7660](https://github.com/jdx/mise/pull/7660)
+- **(contributing)** update registry PR title rule by @scop in [#7663](https://github.com/jdx/mise/pull/7663)
+- remove 404 link from contributing by @opswole in [#7692](https://github.com/jdx/mise/pull/7692)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:alpine docker digest to 11f659e by @renovate[bot] in [#7685](https://github.com/jdx/mise/pull/7685)
+- update ghcr.io/jdx/mise:copr docker digest to 3adaea4 by @renovate[bot] in [#7686](https://github.com/jdx/mise/pull/7686)
+- update ghcr.io/jdx/mise:deb docker digest to 8bbca53 by @renovate[bot] in [#7687](https://github.com/jdx/mise/pull/7687)
+- update ghcr.io/jdx/mise:rpm docker digest to de81415 by @renovate[bot] in [#7688](https://github.com/jdx/mise/pull/7688)
+- update mcr.microsoft.com/devcontainers/rust:1 docker digest to 282e805 by @renovate[bot] in [#7690](https://github.com/jdx/mise/pull/7690)
+- update rust docker digest to bed2d7f by @renovate[bot] in [#7691](https://github.com/jdx/mise/pull/7691)
+
+### 📦 Registry
+
+- add oh-my-posh by @scop in [#7659](https://github.com/jdx/mise/pull/7659)
+- add bibtex-tidy (npm:bibtex-tidy) by @3w36zj6 in [#7677](https://github.com/jdx/mise/pull/7677)
+- remove misconfigured bin_path option from kscript by @risu729 in [#7693](https://github.com/jdx/mise/pull/7693)
+
+### New Contributors
+
+- @opswole made their first contribution in [#7692](https://github.com/jdx/mise/pull/7692)
+- @subdigital made their first contribution in [#7673](https://github.com/jdx/mise/pull/7673)
+- @aacebedo made their first contribution in [#7560](https://github.com/jdx/mise/pull/7560)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (5)
+
+- [`BeaconBay/ck`](https://github.com/BeaconBay/ck)
+- [`d-kuro/gwq`](https://github.com/d-kuro/gwq)
+- [`kubernetes/cloud-provider-gcp/gke-gcloud-auth-plugin`](https://github.com/kubernetes/cloud-provider-gcp/gke-gcloud-auth-plugin)
+- [`smithy-lang/smithy`](https://github.com/smithy-lang/smithy)
+- [`tassiovirginio/try-rs`](https://github.com/tassiovirginio/try-rs)
+
+#### Updated Packages (1)
+
+- [`dprint/dprint`](https://github.com/dprint/dprint)
 ## [2026.1.2](https://github.com/jdx/mise/compare/v2026.1.1..v2026.1.2) - 2026-01-13
 
 ### 🐛 Bug Fixes

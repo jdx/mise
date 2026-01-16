@@ -229,7 +229,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
 name = "aqua-registry"
-version = "2026.1.2"
+version = "2026.1.3"
 dependencies = [
  "expr-lang",
  "eyre",
@@ -5003,7 +5003,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2026.1.2"
+version = "2026.1.3"
 dependencies = [
  "age",
  "anyhow",
@@ -8709,7 +8709,7 @@ dependencies = [
 
 [[package]]
 name = "vfox"
-version = "2025.12.12"
+version = "2026.1.0"
 dependencies = [
  "clap",
  "env_logger",
