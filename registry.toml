@@ -4145,34 +4145,9 @@ description = "Verify provenance from SLSA compliant builders"
 test = ["slsa-verifier version", "{{version}}"]
 
 [tools.smithy]
+backends = ["aqua:smithy-lang/smithy", "asdf:mise-plugins/mise-smithy"]
 description = "Smithy is a language for defining services and SDKs"
 test = ["smithy --version", "{{version}}"]
-
-[[tools.smithy.backends]]
-full = "github:smithy-lang/smithy"
-
-[tools.smithy.backends.options.platforms.macos-arm64]
-asset_pattern = "smithy-cli-darwin-aarch64.zip"
-bin_path = "smithy-cli-darwin-aarch64/bin"
-
-[tools.smithy.backends.options.platforms.macos-x64]
-asset_pattern = "smithy-cli-darwin-x86_64.zip"
-bin_path = "smithy-cli-darwin-x86_64/bin"
-
-[tools.smithy.backends.options.platforms.linux-arm64]
-asset_pattern = "smithy-cli-linux-aarch64.zip"
-bin_path = "smithy-cli-linux-aarch64/bin"
-
-[tools.smithy.backends.options.platforms.linux-x64]
-asset_pattern = "smithy-cli-linux-x86_64.zip"
-bin_path = "smithy-cli-linux-x86_64/bin"
-
-[tools.smithy.backends.options.platforms.windows-x64]
-asset_pattern = "smithy-cli-windows-x64.zip"
-bin_path = "smithy-cli-windows-x64/bin"
-
-[[tools.smithy.backends]]
-full = "asdf:mise-plugins/mise-smithy"
 
 [tools.smlnj]
 backends = ["asdf:mise-plugins/mise-smlnj"]
