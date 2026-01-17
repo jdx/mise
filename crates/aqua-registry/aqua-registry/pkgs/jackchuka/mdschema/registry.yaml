@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jackchuka
+    repo_name: mdschema
+    description: A declarative schema-based Markdown validator that helps maintain consistent documentation structure across projects
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: mdschema_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: mdschema_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

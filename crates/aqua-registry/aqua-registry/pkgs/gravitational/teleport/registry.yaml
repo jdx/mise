@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: gravitational
+    repo_name: teleport
+    description: Client Tools for teleport - The easiest, and most secure way to access and protect all of your infrastructure
+    files:
+      - name: tbot
+      - name: tctl
+      - name: teleport
+      - name: tsh
+    overrides:
+      - goos: linux
+        url: https://cdn.teleport.dev/teleport-{{.Version}}-linux-{{.Arch}}-bin.{{.Format}}
+        format: tar.gz
+        files:
+          - name: tbot
+            src: teleport/tbot
+          - name: tctl
+            src: teleport/tctl
+          - name: teleport
+            src: teleport/teleport
+          - name: tsh
+            src: teleport/tsh
+      - goos: darwin
+        url: https://cdn.teleport.dev/teleport-tools-{{trimV .Version}}.{{.Format}}
+        format: pkg
+        files:
+          - name: tctl
+            src: tctl-{{trimV .Version}}.pkg/Payload/tctl.app/Contents/MacOS/tctl
+          - name: tsh
+            src: tsh-{{trimV .Version}}.pkg/Payload/tsh.app/Contents/MacOS/tsh
+      - goos: windows
+        url: https://cdn.teleport.dev/teleport-{{.Version}}-windows-amd64-bin.{{.Format}}
+        format: zip
+        files:
+          - name: tbot
+          - name: tctl
+          - name: tsh
