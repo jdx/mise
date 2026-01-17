@@ -1343,17 +1343,6 @@ pub trait Backend: Debug + Send + Sync {
             conda_deps: None,
         })
     }
-
-    /// Resolve conda packages for the lockfile's shared conda-packages section.
-    /// Returns a map of basename -> CondaPackageInfo for the given platform.
-    /// Default implementation returns empty (only conda backend overrides this).
-    async fn resolve_conda_packages(
-        &self,
-        _tv: &ToolVersion,
-        _target: &PlatformTarget,
-    ) -> BTreeMap<String, crate::lockfile::CondaPackageInfo> {
-        BTreeMap::new()
-    }
 }
 
 fn find_match_in_list(list: &[String], query: &str) -> Option<String> {

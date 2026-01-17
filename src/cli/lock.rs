@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::backend::backend_type::BackendType;
+use crate::backend::conda::CondaBackend;
 use crate::backend::platform_target::PlatformTarget;
 use crate::config::Config;
 use crate::file::display_path;
@@ -370,8 +372,13 @@ impl Lock {
                     let options = backend.resolve_lockfile_options(&tv.request, &target);
                     match backend.resolve_lock_info(&tv, &target).await {
                         Ok(info) => {
-                            // Also resolve conda packages if any
-                            let conda_packages = backend.resolve_conda_packages(&tv, &target).await;
+                            // Resolve conda packages only for conda backend
+                            let conda_packages = if backend.get_type() == BackendType::Conda {
+                                let conda_backend = CondaBackend::from_arg(ba.clone());
+                                conda_backend.resolve_conda_packages(&tv, &target).await
+                            } else {
+                                BTreeMap::new()
+                            };
                             (Some(info), options, conda_packages)
                         }
                         Err(e) => {

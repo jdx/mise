@@ -56,13 +56,8 @@ pub struct PlatformInfo {
     pub conda_deps: Option<Vec<String>>,
 }
 
-/// Conda package info stored in the shared conda-packages section
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct CondaPackageInfo {
-    pub url: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub checksum: Option<String>,
-}
+// Re-export CondaPackageInfo from conda backend for lockfile serialization
+pub use crate::backend::conda::CondaPackageInfo;
 
 impl PlatformInfo {
     /// Returns true if this PlatformInfo has no meaningful data (for serde skip)

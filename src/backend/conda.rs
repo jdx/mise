@@ -8,19 +8,27 @@ use crate::config::Settings;
 use crate::file::{self, TarOptions};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::lockfile::{self, CondaPackageInfo, Lockfile, PlatformInfo};
+use crate::lockfile::{self, Lockfile, PlatformInfo};
 use crate::toolset::ToolSource;
 use crate::toolset::ToolVersion;
 use crate::{backend::Backend, dirs, hash, http::HTTP, parallel};
 use async_trait::async_trait;
 use eyre::{Result, bail};
 use itertools::Itertools;
-use serde::Deserialize;
-use std::collections::{HashMap, HashSet};
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use versions::Versioning;
+
+/// Conda package info stored in the shared conda-packages section of lockfiles
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CondaPackageInfo {
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<String>,
+}
 
 /// Conda backend requires experimental mode to be enabled
 pub const EXPERIMENTAL: bool = true;
@@ -458,6 +466,52 @@ impl CondaBackend {
             _ => Ok(Lockfile::default()),
         }
     }
+
+    /// Resolve conda packages for the lockfile's shared conda-packages section.
+    /// Returns a map of basename -> CondaPackageInfo for the given platform.
+    pub async fn resolve_conda_packages(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> BTreeMap<String, CondaPackageInfo> {
+        let mut result = BTreeMap::new();
+
+        let files = match self.fetch_package_files().await {
+            Ok(f) => f,
+            Err(_) => return result,
+        };
+        let subdir = Self::conda_subdir_for_platform(target);
+
+        let Some(pkg_file) = Self::find_package_file(&files, Some(&tv.version), subdir) else {
+            return result;
+        };
+
+        // Resolve dependencies for this platform
+        let mut resolved = HashMap::new();
+        let mut visited = HashSet::new();
+        visited.insert(self.tool_name());
+        if self
+            .resolve_dependencies(pkg_file, subdir, &mut resolved, &mut visited)
+            .await
+            .is_err()
+        {
+            return result;
+        }
+
+        // Convert to CondaPackageInfo map keyed by basename
+        for pkg in resolved.values() {
+            let basename = strip_conda_extension(&pkg.basename).to_string();
+            result.insert(
+                basename,
+                CondaPackageInfo {
+                    url: pkg.download_url.clone(),
+                    checksum: pkg.sha256.as_ref().map(|s| format!("sha256:{}", s)),
+                },
+            );
+        }
+
+        result
+    }
 }
 
 #[async_trait]
@@ -734,50 +788,6 @@ impl Backend for CondaBackend {
                 })
             }
         }
-    }
-
-    async fn resolve_conda_packages(
-        &self,
-        tv: &ToolVersion,
-        target: &PlatformTarget,
-    ) -> std::collections::BTreeMap<String, CondaPackageInfo> {
-        let mut result = std::collections::BTreeMap::new();
-
-        let files = match self.fetch_package_files().await {
-            Ok(f) => f,
-            Err(_) => return result,
-        };
-        let subdir = Self::conda_subdir_for_platform(target);
-
-        let Some(pkg_file) = Self::find_package_file(&files, Some(&tv.version), subdir) else {
-            return result;
-        };
-
-        // Resolve dependencies for this platform
-        let mut resolved = HashMap::new();
-        let mut visited = HashSet::new();
-        visited.insert(self.tool_name());
-        if self
-            .resolve_dependencies(pkg_file, subdir, &mut resolved, &mut visited)
-            .await
-            .is_err()
-        {
-            return result;
-        }
-
-        // Convert to CondaPackageInfo map keyed by basename
-        for pkg in resolved.values() {
-            let basename = strip_conda_extension(&pkg.basename).to_string();
-            result.insert(
-                basename,
-                CondaPackageInfo {
-                    url: pkg.download_url.clone(),
-                    checksum: pkg.sha256.as_ref().map(|s| format!("sha256:{}", s)),
-                },
-            );
-        }
-
-        result
     }
 
     async fn list_bin_paths(
