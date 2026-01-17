@@ -312,9 +312,9 @@ impl Lockfile {
                     size: platform_info.size.or(existing.size),
                     url: platform_info.url.or_else(|| existing.url.clone()),
                     url_api: platform_info.url_api.or_else(|| existing.url_api.clone()),
-                    conda_deps: platform_info
-                        .conda_deps
-                        .or_else(|| existing.conda_deps.clone()),
+                    // For conda_deps, always use the new value - None means "no dependencies"
+                    // rather than "not computed", so we shouldn't preserve stale deps
+                    conda_deps: platform_info.conda_deps,
                 }
             } else {
                 platform_info

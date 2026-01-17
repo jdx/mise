@@ -473,32 +473,23 @@ impl CondaBackend {
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,
-    ) -> BTreeMap<String, CondaPackageInfo> {
-        let mut result = BTreeMap::new();
-
-        let files = match self.fetch_package_files().await {
-            Ok(f) => f,
-            Err(_) => return result,
-        };
+    ) -> Result<BTreeMap<String, CondaPackageInfo>> {
+        let files = self.fetch_package_files().await?;
         let subdir = Self::conda_subdir_for_platform(target);
 
         let Some(pkg_file) = Self::find_package_file(&files, Some(&tv.version), subdir) else {
-            return result;
+            return Ok(BTreeMap::new());
         };
 
         // Resolve dependencies for this platform
         let mut resolved = HashMap::new();
         let mut visited = HashSet::new();
         visited.insert(self.tool_name());
-        if self
-            .resolve_dependencies(pkg_file, subdir, &mut resolved, &mut visited)
-            .await
-            .is_err()
-        {
-            return result;
-        }
+        self.resolve_dependencies(pkg_file, subdir, &mut resolved, &mut visited)
+            .await?;
 
         // Convert to CondaPackageInfo map keyed by basename
+        let mut result = BTreeMap::new();
         for pkg in resolved.values() {
             let basename = strip_conda_extension(&pkg.basename).to_string();
             result.insert(
@@ -510,7 +501,7 @@ impl CondaBackend {
             );
         }
 
-        result
+        Ok(result)
     }
 }
 
