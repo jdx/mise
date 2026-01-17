@@ -1597,8 +1597,32 @@ description = "The main compiler for FlatBuffers is called flatc and is used to 
 test = ["flatc --version", "flatc version {{version}}"]
 
 [tools.flutter]
-backends = ["asdf:mise-plugins/mise-flutter", "vfox:mise-plugins/vfox-flutter"]
 description = "Flutter is an open source framework for building beautiful, natively compiled, multi-platform applications from a single codebase"
+
+[[tools.flutter.backends]]
+full = "http:flutter"
+
+[tools.flutter.backends.options]
+version_json_path = ".releases[?channel=stable].version"
+version_list_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json"
+
+[tools.flutter.backends.options.platforms.macos-x64]
+url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_{version}-stable.zip"
+
+[tools.flutter.backends.options.platforms.macos-arm64]
+url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_arm64_{version}-stable.zip"
+
+[tools.flutter.backends.options.platforms.linux-x64]
+url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_{version}-stable.tar.xz"
+
+[tools.flutter.backends.options.platforms.windows-x64]
+url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_{version}-stable.zip"
+
+[[tools.flutter.backends]]
+full = "asdf:mise-plugins/mise-flutter"
+
+[[tools.flutter.backends]]
+full = "vfox:mise-plugins/vfox-flutter"
 
 [tools.fluttergen]
 backends = [

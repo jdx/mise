@@ -232,6 +232,7 @@ Supported path expressions:
 - `.field[]` - iterate over array in field
 - `.field.subfield` - nested field access
 - `.data.versions[]` - complex nested paths
+- `.[?field=value]` - filter array elements where field equals value
 
 Examples:
 
@@ -244,7 +245,12 @@ version_json_path = ".data.versions[]"
 
 # Release info objects
 version_json_path = ".releases[].info.version"
+
+# Filter for stable releases only (e.g., Flutter)
+version_json_path = ".releases[?channel=stable].version"
 ```
+
+The filter syntax `[?field=value]` allows filtering JSON arrays before extraction. This is useful for APIs that return multiple release channels (stable, beta, dev) and you only want specific ones.
 
 ### `bin_path`
 
