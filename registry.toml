@@ -2984,7 +2984,7 @@ backends = ["github:charmbracelet/melt", "asdf:chessmango/asdf-melt"]
 description = "Backup and restore Ed25519 SSH keys with seed words 🫠"
 
 [tools.meson]
-backends = ["asdf:mise-plugins/mise-meson"]
+backends = ["pipx:meson", "asdf:mise-plugins/mise-meson"]
 description = "Meson is an open source build system meant to be both extremely fast, and, even more importantly, as user friendly as possible"
 
 [tools.micromamba]
