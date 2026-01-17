@@ -918,6 +918,9 @@ The "\-\-" separates runtimes from the commands to pass along to the subprocess.
 \fB\-c, \-\-command\fR \fI<C>\fR
 Command string to execute
 .TP
+\fB\-F, \-\-fresh\-env\fR
+Force fresh environment computation, ignoring env cache
+.TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
 [default: 4]
@@ -1780,6 +1783,9 @@ Change to this directory before executing the command
 \fB\-f, \-\-force\fR
 Force the tasks to run even if outputs are up to date
 .TP
+\fB\-F, \-\-fresh\-env\fR
+Force fresh environment computation, ignoring env cache
+.TP
 \fB\-i, \-\-interleave\fR
 Print directly to stdout/stderr instead of by line
 Defaults to true if \-\-jobs == 1
@@ -2499,6 +2505,9 @@ Change to this directory before executing the command
 .TP
 \fB\-f, \-\-force\fR
 Force the tasks to run even if outputs are up to date
+.TP
+\fB\-F, \-\-fresh\-env\fR
+Force fresh environment computation, ignoring env cache
 .TP
 \fB\-i, \-\-interleave\fR
 Print directly to stdout/stderr instead of by line

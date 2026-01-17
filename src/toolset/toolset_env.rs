@@ -32,24 +32,20 @@ impl Toolset {
             let current_key = compute_cache_key(config, self);
 
             // First check if parent process provided a matching cache key
-            if let Ok(parent_key) = std::env::var("__MISE_ENV_CACHE_KEY") {
-                if parent_key == current_key {
-                    if let Some(cached) = CachedEnv::load(&current_key) {
-                        if cached.is_valid() {
+            if let Ok(parent_key) = std::env::var("__MISE_ENV_CACHE_KEY")
+                && parent_key == current_key
+                    && let Some(cached) = CachedEnv::load(&current_key)
+                        && cached.is_valid() {
                             trace!("using cached environment from parent");
                             return Ok(cached.env);
                         }
-                    }
-                }
-            }
 
             // Check if we have a valid cache for this context
-            if let Some(cached) = CachedEnv::load(&current_key) {
-                if cached.is_valid() {
+            if let Some(cached) = CachedEnv::load(&current_key)
+                && cached.is_valid() {
                     trace!("using cached environment from file");
                     return Ok(cached.env);
                 }
-            }
         }
 
         let (mut env, env_results) = self.final_env(config).await?;

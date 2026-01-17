@@ -276,7 +276,7 @@ run all tests
 
 - **Usage**: `test:build-perf-workspace`
 
-task description
+inner task called by outer task
 
 ## `test:coverage`
 

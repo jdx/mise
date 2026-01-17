@@ -985,6 +985,12 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
+          name: ["-F", "--fresh-env"],
+          description:
+            "Force fresh environment computation, ignoring env cache",
+          isRepeatable: false,
+        },
+        {
           name: ["-j", "--jobs"],
           description: "Number of jobs to run in parallel\n[default: 4]",
           isRepeatable: false,
@@ -1984,6 +1990,12 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: ["-F", "--fresh-env"],
+          description:
+            "Force fresh environment computation, ignoring env cache",
+          isRepeatable: false,
+        },
+        {
           name: ["-j", "--jobs"],
           description:
             "Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var",
@@ -2799,6 +2811,12 @@ const completionSpec: Fig.Spec = {
               name: ["-f", "--force"],
               description:
                 "Force the tasks to run even if outputs are up to date",
+              isRepeatable: false,
+            },
+            {
+              name: ["-F", "--fresh-env"],
+              description:
+                "Force fresh environment computation, ignoring env cache",
               isRepeatable: false,
             },
             {

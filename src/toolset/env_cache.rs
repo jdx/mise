@@ -84,8 +84,8 @@ fn unix_timestamp() -> u64 {
 fn hash_config_files(config_files: &ConfigMap, hasher: &mut DefaultHasher) {
     for (path, _) in config_files {
         path.hash(hasher);
-        if let Ok(meta) = path.metadata() {
-            if let Ok(mtime) = meta.modified() {
+        if let Ok(meta) = path.metadata()
+            && let Ok(mtime) = meta.modified() {
                 // Use nanoseconds for more precise cache invalidation
                 // (seconds would miss rapid file changes in tests)
                 mtime
@@ -94,7 +94,6 @@ fn hash_config_files(config_files: &ConfigMap, hasher: &mut DefaultHasher) {
                     .as_nanos()
                     .hash(hasher);
             }
-        }
     }
 }
 

@@ -278,6 +278,7 @@ cmd exec help="Execute a command with tool(s) set" {
     flag "-c --command" help="Command string to execute" {
         arg <C>
     }
+    flag "-F --fresh-env" help="Force fresh environment computation, ignoring env cache"
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg <JOBS>
     }
@@ -692,6 +693,7 @@ cmd run restart_token=::: help="Run task(s)" {
         arg <CD>
     }
     flag "-f --force" help="Force the tasks to run even if outputs are up to date"
+    flag "-F --fresh-env" help="Force fresh environment computation, ignoring env cache"
     flag "-i --interleave" help="Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var" hide=#true
     flag "-j --jobs" help="Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var" {
         arg <JOBS>
@@ -1000,6 +1002,7 @@ cmd tasks help="Manage tasks" {
             arg <CD>
         }
         flag "-f --force" help="Force the tasks to run even if outputs are up to date"
+        flag "-F --fresh-env" help="Force fresh environment computation, ignoring env cache"
         flag "-i --interleave" help="Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var" hide=#true
         flag "-j --jobs" help="Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var" {
             arg <JOBS>

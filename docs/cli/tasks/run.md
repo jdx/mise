@@ -63,6 +63,10 @@ Change to this directory before executing the command
 
 Force the tasks to run even if outputs are up to date
 
+### `-F --fresh-env`
+
+Force fresh environment computation, ignoring env cache
+
 ### `-j --jobs <JOBS>`
 
 Number of tasks to run in parallel

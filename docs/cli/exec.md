@@ -31,6 +31,10 @@ Command string to execute (same as --command)
 
 Command string to execute
 
+### `-F --fresh-env`
+
+Force fresh environment computation, ignoring env cache
+
 ### `-j --jobs <JOBS>`
 
 Number of jobs to run in parallel
