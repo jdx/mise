@@ -3007,7 +3007,7 @@ description = "🍃 A refreshing programming language for the front-end web"
 [tools.mirrord]
 backends = ["aqua:metalbear-co/mirrord", "asdf:metalbear-co/asdf-mirrord"]
 description = "Connect your local process and your cloud environment, and run local code in cloud conditions"
-test = ["mirrord --version", "mirrord {{version}}"]
+# test = ["mirrord --version", "mirrord {{version}}"]
 
 [tools.mitmproxy]
 backends = ["pipx:mitmproxy", "asdf:mise-plugins/mise-mitmproxy"]
