@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+# Test that env cache is NOT used when _.source scripts are present
+# _.source scripts are too dynamic (can have side effects, read network/DB)
+
+export MISE_EXPERIMENTAL=true
+export MISE_ENV_CACHE=true
+
+# Clear any existing cache first
+rm -rf "$MISE_STATE_DIR/env-cache/"
+
+# Create a source script
+cat <<'EOF' >env.sh
+export DYNAMIC_VAR="value-from-script"
+EOF
+
+# Create a config that uses _.source
+cat <<'EOF' >mise.toml
+[env]
+_.source = "./env.sh"
+EOF
+
+# First call computes env
+mise env >/dev/null
+
+# Check that no cache is used (scripts prevent caching)
+output=$(MISE_TRACE=1 mise env 2>&1)
+assert_not_contains "echo '$output'" "using cached environment"
+
+# Verify the script output is still processed correctly
+output=$(mise env)
+assert_contains "echo '$output'" "DYNAMIC_VAR=value-from-script"
+
+# Clean up and test that without _.source, caching works
+cat <<'EOF' >mise.toml
+[env]
+STATIC_VAR = "plain-value"
+EOF
+
+rm -rf "$MISE_STATE_DIR/env-cache/"
+
+# First call caches
+mise env >/dev/null
+
+# Second call should use cache
+output=$(MISE_TRACE=1 mise env 2>&1)
+assert_contains "echo '$output'" "using cached environment"

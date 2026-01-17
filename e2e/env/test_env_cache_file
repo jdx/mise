@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+# Test that env cache is invalidated when _.file referenced files change
+
+export MISE_EXPERIMENTAL=true
+export MISE_ENV_CACHE=true
+
+# Clear any existing cache first
+rm -rf "$MISE_STATE_DIR/env-cache/"
+
+# Create a .env file
+cat <<'EOF' >.env.test
+MY_VAR=original-value
+EOF
+
+# Create a config that references the .env file
+cat <<'EOF' >mise.toml
+[env]
+_.file = ".env.test"
+EOF
+
+# First call computes and caches
+mise env >/dev/null
+
+# Second call should use cache
+output=$(MISE_TRACE=1 mise env 2>&1)
+assert_contains "echo '$output'" "using cached environment"
+
+# Verify the original value
+output=$(mise env)
+assert_contains "echo '$output'" "MY_VAR=original-value"
+
+# Now modify the .env file
+sleep 0.1 # Ensure mtime changes
+cat <<'EOF' >.env.test
+MY_VAR=updated-value
+EOF
+
+# Cache should be invalidated because .env.test mtime changed
+output=$(MISE_TRACE=1 mise env 2>&1)
+assert_not_contains "echo '$output'" "using cached environment"
+
+# Verify the updated value is reflected
+output=$(mise env)
+assert_contains "echo '$output'" "MY_VAR=updated-value"
+
+# Next call should use newly cached env
+output=$(MISE_TRACE=1 mise env 2>&1)
+assert_contains "echo '$output'" "using cached environment"

@@ -51,10 +51,21 @@ impl Toolset {
         }
 
         let (mut env, env_results) = self.final_env(config).await?;
+        // Get config-level env results for redactions, env_files, and env_scripts
+        let config_env_results = config.env_results().await?;
+
         // Don't cache if secrets/redactions are present (security)
-        // Check both tool-specific redactions (from env_results) and env directive redactions (from config)
-        let config_redactions = &config.env_results().await?.redactions;
-        let has_secrets = !env_results.redactions.is_empty() || !config_redactions.is_empty();
+        let has_secrets =
+            !env_results.redactions.is_empty() || !config_env_results.redactions.is_empty();
+
+        // Don't cache if _.source scripts are used (too dynamic - can have side effects)
+        let has_scripts =
+            !env_results.env_scripts.is_empty() || !config_env_results.env_scripts.is_empty();
+
+        // Collect all referenced files (from _.file directives) for cache invalidation
+        let mut all_env_files = env_results.env_files.clone();
+        all_env_files.extend(config_env_results.env_files.clone());
+
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
         let paths = self.list_final_paths(config, env_results).await?;
         for p in &paths {
@@ -63,9 +74,29 @@ impl Toolset {
         env.insert(PATH_KEY.to_string(), path_env.to_string());
 
         // Cache the computed environment for future use (only when experimental is on)
-        // Skip caching if secrets are present to avoid persisting sensitive data
-        if settings.experimental && settings.env_cache && !has_secrets {
+        // Skip caching if:
+        // - secrets are present (security - don't persist sensitive data)
+        // - _.source scripts are used (too dynamic - can have side effects, read network/DB)
+        if settings.experimental && settings.env_cache && !has_secrets && !has_scripts {
             let cache_key = compute_cache_key(config, self);
+
+            // Build referenced_files with mtimes for cache invalidation
+            let referenced_files: Vec<(PathBuf, u128)> = all_env_files
+                .into_iter()
+                .filter_map(|path| {
+                    path.metadata()
+                        .ok()
+                        .and_then(|m| m.modified().ok())
+                        .map(|mtime| {
+                            let nanos = mtime
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_nanos();
+                            (path, nanos)
+                        })
+                })
+                .collect();
+
             let cached = CachedEnv {
                 paths,
                 env: env.clone(),
@@ -73,6 +104,7 @@ impl Toolset {
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs(),
+                referenced_files,
             };
             if let Err(e) = cached.save(&cache_key) {
                 trace!("failed to save env cache: {e}");

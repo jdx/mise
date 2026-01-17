@@ -18,6 +18,10 @@ pub struct CachedEnv {
     pub paths: Vec<PathBuf>,
     pub env: BTreeMap<String, String>,
     pub created_at: u64,
+    /// Files referenced by _.file directives (path, mtime_nanos)
+    /// Used to invalidate cache when .env files change
+    #[serde(default)]
+    pub referenced_files: Vec<(PathBuf, u128)>,
 }
 
 impl CachedEnv {
@@ -36,11 +40,39 @@ impl CachedEnv {
         Ok(())
     }
 
-    /// Check if cache is still valid based on TTL
+    /// Check if cache is still valid based on TTL and referenced file mtimes
     pub fn is_valid(&self) -> bool {
+        // Check TTL
         let ttl = Settings::get().env_cache_ttl_duration();
         let now = unix_timestamp();
-        now.saturating_sub(self.created_at) < ttl.as_secs()
+        if now.saturating_sub(self.created_at) >= ttl.as_secs() {
+            return false;
+        }
+
+        // Check that all referenced files (from _.file directives) haven't changed
+        for (path, cached_mtime) in &self.referenced_files {
+            match path.metadata() {
+                Ok(meta) => {
+                    if let Ok(mtime) = meta.modified() {
+                        let current_mtime = mtime
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_nanos();
+                        if current_mtime != *cached_mtime {
+                            trace!("env cache invalid: {} mtime changed", path.display());
+                            return false;
+                        }
+                    }
+                }
+                Err(_) => {
+                    // File no longer exists or can't be accessed
+                    trace!("env cache invalid: {} no longer accessible", path.display());
+                    return false;
+                }
+            }
+        }
+
+        true
     }
 }
 
