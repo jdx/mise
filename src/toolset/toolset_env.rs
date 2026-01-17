@@ -62,6 +62,9 @@ impl Toolset {
         let has_scripts =
             !env_results.env_scripts.is_empty() || !config_env_results.env_scripts.is_empty();
 
+        // Don't cache if templates are used (dynamic values like now(), uuid(), etc.)
+        let has_templates = env_results.has_templates || config_env_results.has_templates;
+
         // Collect all referenced files (from _.file directives) for cache invalidation
         let mut all_env_files = env_results.env_files.clone();
         all_env_files.extend(config_env_results.env_files.clone());
@@ -77,7 +80,13 @@ impl Toolset {
         // Skip caching if:
         // - secrets are present (security - don't persist sensitive data)
         // - _.source scripts are used (too dynamic - can have side effects, read network/DB)
-        if settings.experimental && settings.env_cache && !has_secrets && !has_scripts {
+        // - templates are used (dynamic values like now(), uuid(), etc.)
+        if settings.experimental
+            && settings.env_cache
+            && !has_secrets
+            && !has_scripts
+            && !has_templates
+        {
             let cache_key = compute_cache_key(config, self);
 
             // Build referenced_files with mtimes for cache invalidation

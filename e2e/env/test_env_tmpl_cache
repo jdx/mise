@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Disable env cache so we're testing template caching, not env caching
-export MISE_ENV_CACHE=0
+# Note: env cache is automatically disabled when templates are detected,
+# so this test can verify template-specific caching behavior without interference
 
 cat <<'EOF' >mise.toml
 [env]

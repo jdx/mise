@@ -239,6 +239,8 @@ pub struct EnvResults {
     pub env_scripts: Vec<PathBuf>,
     pub redactions: Vec<String>,
     pub tool_add_paths: Vec<PathBuf>,
+    /// Whether any templates were used in env directives (contains `{{`)
+    pub has_templates: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -277,6 +279,7 @@ impl EnvResults {
             env_scripts: Vec::new(),
             redactions: Vec::new(),
             tool_add_paths: Vec::new(),
+            has_templates: false,
         };
         let normalize_path = |config_root: &Path, p: PathBuf| {
             let p = p.strip_prefix("./").unwrap_or(&p);
@@ -628,7 +631,7 @@ impl EnvResults {
     }
 
     fn parse_template(
-        &self,
+        &mut self,
         ctx: &tera::Context,
         tera: &mut tera::Tera,
         path: &Path,
@@ -637,6 +640,8 @@ impl EnvResults {
         if !input.contains("{{") && !input.contains("{%") && !input.contains("{#") {
             return Ok(input.to_string());
         }
+        // Track that templates were used (affects env caching)
+        self.has_templates = true;
         trust_check(path)?;
         let output = tera
             .render_str(input, ctx)
