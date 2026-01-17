@@ -558,8 +558,9 @@ impl HttpBackend {
 
         let regex = opts.get("version_regex").map(|s| s.as_str());
         let json_path = opts.get("version_json_path").map(|s| s.as_str());
+        let version_expr = opts.get("version_expr").map(|s| s.as_str());
 
-        version_list::fetch_versions(&url, regex, json_path).await
+        version_list::fetch_versions(&url, regex, json_path, version_expr).await
     }
 }
 
@@ -571,6 +572,7 @@ pub fn install_time_option_keys() -> Vec<String> {
         "version_list_url".into(),
         "version_regex".into(),
         "version_json_path".into(),
+        "version_expr".into(),
         "format".into(),
     ]
 }

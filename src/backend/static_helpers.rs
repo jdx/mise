@@ -327,8 +327,29 @@ pub fn list_available_platforms_with_key(opts: &ToolVersionOptions, key_type: &s
 }
 
 pub fn template_string(template: &str, tv: &ToolVersion) -> String {
-    let version = &tv.version;
-    template.replace("{version}", version)
+    // Check for legacy {version} syntax and emit deprecation warning
+    if template.contains("{version}") && !template.contains("{{version}}") {
+        deprecated_at!(
+            "2026.3.0",
+            "legacy-version-template",
+            "Use {{{{ version }}}} instead of {{version}} in URL templates"
+        );
+        // Legacy support: replace {version} placeholder
+        return template.replace("{version}", &tv.version);
+    }
+
+    // Use Tera rendering for templates
+    // Supports {{ version }}, {{ os() }}, {{ arch() }}, etc.
+    let mut ctx = crate::tera::BASE_CONTEXT.clone();
+    ctx.insert("version", &tv.version);
+
+    match crate::tera::get_tera(None).render_str(template, &ctx) {
+        Ok(rendered) => rendered,
+        Err(e) => {
+            warn!("Failed to render template '{}': {}", template, e);
+            template.to_string()
+        }
+    }
 }
 
 pub fn get_filename_from_url(url_str: &str) -> String {

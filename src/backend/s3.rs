@@ -202,8 +202,14 @@ impl S3Backend {
         let content = file::read_to_string(&tmp_path)?;
         let regex = Self::get_opt(opts, "version_regex");
         let json_path = Self::get_opt(opts, "version_json_path");
+        let version_expr = Self::get_opt(opts, "version_expr");
 
-        version_list::parse_version_list(&content, regex.as_deref(), json_path.as_deref())
+        version_list::parse_version_list(
+            &content,
+            regex.as_deref(),
+            json_path.as_deref(),
+            version_expr.as_deref(),
+        )
     }
 
     /// Fetch versions by listing S3 objects
@@ -351,6 +357,7 @@ pub fn install_time_option_keys() -> Vec<String> {
         "version_list_url".into(),
         "version_regex".into(),
         "version_json_path".into(),
+        "version_expr".into(),
         "version_prefix".into(),
         "format".into(),
         "region".into(),

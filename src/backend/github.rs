@@ -1217,15 +1217,53 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
         _ => arch,
     };
 
-    template
-        .replace("{version}", version)
-        .replace("{os}", os)
-        .replace("{arch}", arch)
-        // Common aliases
-        .replace("{darwin_os}", darwin_os)
-        .replace("{amd64_arch}", amd64_arch)
-        .replace("{x86_64_arch}", x86_64_arch)
-        .replace("{gnu_arch}", gnu_arch)
+    // Check for legacy {placeholder} syntax (any of the supported placeholders)
+    let has_legacy_placeholder = [
+        "{version}",
+        "{os}",
+        "{arch}",
+        "{darwin_os}",
+        "{amd64_arch}",
+        "{x86_64_arch}",
+        "{gnu_arch}",
+    ]
+    .iter()
+    .any(|p| template.contains(p) && !template.contains(&format!("{{{p}}}")));
+
+    if has_legacy_placeholder {
+        deprecated_at!(
+            "2026.3.0",
+            "legacy-version-template",
+            "Use Tera syntax (e.g., {{{{ version }}}}) instead of legacy {{version}} in templates"
+        );
+        // Legacy support: replace {placeholder} patterns
+        return template
+            .replace("{version}", version)
+            .replace("{os}", os)
+            .replace("{arch}", arch)
+            .replace("{darwin_os}", darwin_os)
+            .replace("{amd64_arch}", amd64_arch)
+            .replace("{x86_64_arch}", x86_64_arch)
+            .replace("{gnu_arch}", gnu_arch);
+    }
+
+    // Use Tera rendering for templates
+    let mut ctx = crate::tera::BASE_CONTEXT.clone();
+    ctx.insert("version", version);
+    ctx.insert("os", os);
+    ctx.insert("arch", arch);
+    ctx.insert("darwin_os", darwin_os);
+    ctx.insert("amd64_arch", amd64_arch);
+    ctx.insert("x86_64_arch", x86_64_arch);
+    ctx.insert("gnu_arch", gnu_arch);
+
+    match crate::tera::get_tera(None).render_str(template, &ctx) {
+        Ok(rendered) => rendered,
+        Err(e) => {
+            warn!("Failed to render template '{}': {}", template, e);
+            template.to_string()
+        }
+    }
 }
 
 #[cfg(test)]

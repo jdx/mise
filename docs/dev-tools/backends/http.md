@@ -139,7 +139,7 @@ Rename the downloaded binary to a specific name. This is useful when downloading
 ```toml
 [tools."http:docker-compose"]
 version = "2.29.1"
-url = "https://github.com/docker/compose/releases/download/v{version}/docker-compose-linux-x86_64"
+url = "https://github.com/docker/compose/releases/download/v{{ version }}/docker-compose-linux-x86_64"
 bin = "docker-compose"  # Rename from docker-compose-linux-x86_64 to docker-compose
 ```
 
@@ -251,6 +251,34 @@ version_json_path = ".releases[?channel=stable].version"
 ```
 
 The filter syntax `[?field=value]` allows filtering JSON arrays before extraction. This is useful for APIs that return multiple release channels (stable, beta, dev) and you only want specific ones.
+
+### `version_expr`
+
+Extract versions using an [expr-lang](https://expr-lang.org/) expression. This provides the most flexibility for complex version extraction logic:
+
+```toml
+[tools."http:my-tool"]
+version = "latest"
+url = "https://example.com/releases/my-tool-v{{ version }}.tar.gz"
+version_list_url = "https://example.com/versions.txt"
+version_expr = 'split(body, "\n")'
+```
+
+The expression receives the HTTP response body as the `body` variable and should return an array of version strings.
+
+Example expressions:
+
+```toml
+# Split newline-separated versions
+version_expr = 'split(body, "\n")'
+
+# Split and filter empty lines
+version_expr = 'filter(split(body, "\n"), # != "")'
+```
+
+::: tip
+`version_expr` takes precedence over `version_regex` and `version_json_path` if multiple are specified. Use it when the other options aren't flexible enough for your use case.
+:::
 
 ### `bin_path`
 
