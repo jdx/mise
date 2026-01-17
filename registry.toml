@@ -3465,7 +3465,10 @@ backends = ["aqua:derailed/popeye", "asdf:nlamirault/asdf-popeye"]
 description = "A Kubernetes cluster resource sanitizer"
 
 [tools.postgres]
-backends = ["asdf:mise-plugins/mise-postgres"]
+backends = [
+  "vfox:mise-plugins/vfox-postgres",
+  "asdf:mise-plugins/mise-postgres",
+]
 description = "PostgreSQL is a powerful, open source object-relational database system with over 35 years of active development that has earned it a strong reputation for reliability, feature robustness, and performance"
 
 [tools.powerline-go]
