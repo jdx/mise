@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Test [monorepo].config_roots for explicit config root listing
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config with explicit config_roots
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = [
+    "packages/frontend",
+    "packages/backend",
+    "services/*",
+]
+
+[tasks.root]
+run = 'echo "root task"'
+TOML
+
+# Create packages that ARE in config_roots
+mkdir -p packages/frontend
+cat <<'TOML' >packages/frontend/mise.toml
+[tasks.build]
+run = 'echo "frontend build"'
+TOML
+
+mkdir -p packages/backend
+cat <<'TOML' >packages/backend/mise.toml
+[tasks.build]
+run = 'echo "backend build"'
+TOML
+
+# Create services/* for glob test
+mkdir -p services/api
+cat <<'TOML' >services/api/mise.toml
+[tasks.serve]
+run = 'echo "api serve"'
+TOML
+
+mkdir -p services/worker
+cat <<'TOML' >services/worker/mise.toml
+[tasks.process]
+run = 'echo "worker process"'
+TOML
+
+# Create a package that is NOT in config_roots (should NOT be discovered)
+mkdir -p packages/ignored
+cat <<'TOML' >packages/ignored/mise.toml
+[tasks.hidden]
+run = 'echo "this should not appear"'
+TOML
+
+# Create another directory that is NOT in config_roots
+mkdir -p libs/common
+cat <<'TOML' >libs/common/mise.toml
+[tasks.test]
+run = 'echo "this should not appear either"'
+TOML
+
+# Test 1: Listed explicit paths are discovered
+echo "=== Test 1: Explicit paths are discovered ==="
+output=$(mise tasks --all 2>&1)
+echo "$output"
+echo "$output" | grep -q "//packages/frontend:build" || (echo "FAIL: frontend not found" && exit 1)
+echo "$output" | grep -q "//packages/backend:build" || (echo "FAIL: backend not found" && exit 1)
+
+# Test 2: Glob patterns work (services/*)
+echo "=== Test 2: Glob patterns work ==="
+echo "$output" | grep -q "//services/api:serve" || (echo "FAIL: services/api not found via glob" && exit 1)
+echo "$output" | grep -q "//services/worker:process" || (echo "FAIL: services/worker not found via glob" && exit 1)
+
+# Test 3: Unlisted paths are NOT discovered
+echo "=== Test 3: Unlisted paths are not discovered ==="
+if echo "$output" | grep -q "//packages/ignored:hidden"; then
+	echo "FAIL: packages/ignored should NOT be discovered"
+	exit 1
+fi
+if echo "$output" | grep -q "//libs/common:test"; then
+	echo "FAIL: libs/common should NOT be discovered"
+	exit 1
+fi
+
+# Test 4: Tasks can still be run
+echo "=== Test 4: Tasks can be run ==="
+mise run '//packages/frontend:build' | grep -q "frontend build" || (echo "FAIL: couldn't run frontend task" && exit 1)
+mise run '//services/api:serve' | grep -q "api serve" || (echo "FAIL: couldn't run api task" && exit 1)
+
+echo "=== All config_roots tests passed! ==="

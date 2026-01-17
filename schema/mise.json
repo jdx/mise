@@ -1793,6 +1793,20 @@
       "description": "Marks this config as a monorepo root, enabling target path syntax for tasks. Requires MISE_EXPERIMENTAL=1. When enabled, tasks can be referenced with paths like //projects/frontend:build",
       "type": "boolean"
     },
+    "monorepo": {
+      "description": "Configuration for monorepo task discovery",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "config_roots": {
+          "description": "Explicit list of config root paths for monorepo task discovery. Supports single-level glob patterns (*). When set, skips filesystem walking for better performance.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "tool": {
       "oneOf": [
         {
@@ -2066,6 +2080,9 @@
     },
     "experimental_monorepo_root": {
       "$ref": "#/$defs/experimental_monorepo_root"
+    },
+    "monorepo": {
+      "$ref": "#/$defs/monorepo"
     },
     "min_version": {
       "description": "minimum version of mise required to use this config",

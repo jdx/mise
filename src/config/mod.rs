@@ -774,7 +774,11 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
 }
 
 fn find_monorepo_root(config_files: &ConfigMap) -> Option<PathBuf> {
-    // Find the config file that has experimental_monorepo_root = true
+    find_monorepo_config(config_files).and_then(|cf| cf.project_root().map(|p| p.to_path_buf()))
+}
+
+/// Find the config file that has experimental_monorepo_root = true
+fn find_monorepo_config(config_files: &ConfigMap) -> Option<&Arc<dyn ConfigFile>> {
     // This feature requires experimental mode
     if !Settings::get().experimental {
         return None;
@@ -782,7 +786,6 @@ fn find_monorepo_root(config_files: &ConfigMap) -> Option<PathBuf> {
     config_files
         .values()
         .find(|cf| cf.experimental_monorepo_root() == Some(true))
-        .and_then(|cf| cf.project_root().map(|p| p.to_path_buf()))
 }
 
 async fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
@@ -1594,7 +1597,8 @@ async fn load_local_tasks_with_context(
     ctx: Option<&crate::task::TaskLoadContext>,
 ) -> Result<Vec<Task>> {
     let mut tasks = vec![];
-    let monorepo_root = find_monorepo_root(&config.config_files);
+    let monorepo_config = find_monorepo_config(&config.config_files);
+    let monorepo_root = monorepo_config.and_then(|cf| cf.project_root().map(|p| p.to_path_buf()));
 
     // Load tasks from parent directories (current working directory up to root)
 
@@ -1632,7 +1636,11 @@ async fn load_local_tasks_with_context(
             return Ok(tasks);
         }
 
-        let subdirs = discover_monorepo_subdirs(monorepo_root, ctx)?;
+        // Get config_roots from [monorepo] section if defined
+        let config_roots = monorepo_config
+            .and_then(|cf| cf.monorepo())
+            .map(|m| &m.config_roots);
+        let subdirs = discover_monorepo_subdirs(monorepo_root, config_roots, ctx)?;
 
         // Load tasks from subdirectories in parallel
         // This includes inherited tasks from parent directories up to monorepo root
@@ -1740,10 +1748,97 @@ async fn load_local_tasks_with_context(
     Ok(tasks)
 }
 
-fn discover_monorepo_subdirs(
+/// Expand [monorepo].config_roots patterns to actual directories.
+/// Supports explicit paths and single-level globs (*).
+fn expand_config_roots(
     root: &Path,
+    patterns: &[String],
     ctx: Option<&crate::task::TaskLoadContext>,
 ) -> Result<Vec<PathBuf>> {
+    let mut subdirs = Vec::new();
+
+    for pattern in patterns {
+        if pattern.contains('*') {
+            // Single-level glob expansion
+            let full_pattern = root.join(pattern);
+            match glob::glob(&full_pattern.to_string_lossy()) {
+                Ok(entries) => {
+                    for entry in entries {
+                        match entry {
+                            Ok(path) => {
+                                if path.is_dir() && has_mise_config(&path) {
+                                    subdirs.push(path);
+                                }
+                            }
+                            Err(e) => {
+                                warn!("[monorepo] config_roots glob error: {e}");
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("[monorepo] config_roots invalid glob pattern '{pattern}': {e}");
+                }
+            }
+        } else {
+            // Explicit path
+            let path = root.join(pattern);
+            if path.is_dir() {
+                if has_mise_config(&path) {
+                    subdirs.push(path);
+                } else {
+                    warn!(
+                        "[monorepo] config_roots: '{}' has no mise config file",
+                        pattern
+                    );
+                }
+            } else {
+                warn!("[monorepo] config_roots: '{}' does not exist", pattern);
+            }
+        }
+    }
+
+    // Apply TaskLoadContext filtering if provided
+    if let Some(ctx) = ctx {
+        subdirs.retain(|dir| {
+            let rel_path = dir
+                .strip_prefix(root)
+                .ok()
+                .and_then(|p| p.to_str())
+                .unwrap_or("");
+            ctx.should_load_subdir(rel_path, root.to_str().unwrap_or(""))
+        });
+    }
+
+    Ok(subdirs)
+}
+
+/// Check if a directory contains a mise config file
+fn has_mise_config(dir: &Path) -> bool {
+    DEFAULT_CONFIG_FILENAMES
+        .iter()
+        .any(|f| dir.join(f).exists())
+}
+
+fn discover_monorepo_subdirs(
+    root: &Path,
+    config_roots: Option<&Vec<String>>,
+    ctx: Option<&crate::task::TaskLoadContext>,
+) -> Result<Vec<PathBuf>> {
+    // If [monorepo].config_roots is defined, use explicit paths instead of walking
+    if let Some(patterns) = config_roots {
+        if !patterns.is_empty() {
+            return expand_config_roots(root, patterns, ctx);
+        }
+    }
+
+    // Fall back to filesystem walking (deprecated)
+    deprecated!(
+        "monorepo_auto_discovery",
+        "Automatic monorepo discovery is deprecated. \
+         Please define [monorepo].config_roots in your root mise.toml. \
+         See https://mise.jdx.dev/tasks/monorepo.html#explicit-config-roots"
+    );
     const DEFAULT_IGNORED_DIRS: &[&str] = &["node_modules", "target", "dist", "build"];
     let has_task_includes = |dir: &Path| {
         default_task_includes()
