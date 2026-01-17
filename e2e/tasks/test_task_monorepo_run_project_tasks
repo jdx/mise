@@ -7,6 +7,9 @@ export MISE_EXPERIMENTAL=1
 cat <<'TOML' >mise.toml
 experimental_monorepo_root = true
 
+[monorepo]
+config_roots = ["projects/*"]
+
 [tasks.call-backend-via-run]
 run = [
     { task = "//projects/backend:hello" }
@@ -40,6 +43,9 @@ echo "$output" | grep -q "after dependency" || (echo "FAIL: Root task did not ru
 # Test 3: Multiple project tasks in run block
 cat <<'TOML' >mise.toml
 experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["projects/*"]
 
 [tasks.call-multiple]
 run = [

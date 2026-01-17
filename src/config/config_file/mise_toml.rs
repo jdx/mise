@@ -83,6 +83,9 @@ pub struct MiseToml {
     /// Marks this config as a monorepo root, enabling target path syntax for tasks
     #[serde(default)]
     experimental_monorepo_root: Option<bool>,
+    /// Configuration for monorepo task discovery
+    #[serde(default)]
+    monorepo: Option<MonorepoConfig>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -99,6 +102,15 @@ pub struct Tasks(pub BTreeMap<String, Task>);
 
 #[derive(Debug, Default, Clone)]
 pub struct EnvList(pub(crate) Vec<EnvDirective>);
+
+/// Configuration for [monorepo] section in mise.toml
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct MonorepoConfig {
+    /// Explicit list of config roots for monorepo task discovery.
+    /// Supports single-level glob patterns (*).
+    #[serde(default)]
+    pub config_roots: Vec<String>,
+}
 
 impl EnvList {
     pub fn is_empty(&self) -> bool {
@@ -736,6 +748,10 @@ impl ConfigFile for MiseToml {
         self.experimental_monorepo_root
     }
 
+    fn monorepo(&self) -> Option<&MonorepoConfig> {
+        self.monorepo.as_ref()
+    }
+
     fn redactions(&self) -> &Redactions {
         &self.redactions
     }
@@ -850,6 +866,7 @@ impl Clone for MiseToml {
             prepare: self.prepare.clone(),
             vars: self.vars.clone(),
             experimental_monorepo_root: self.experimental_monorepo_root,
+            monorepo: self.monorepo.clone(),
         }
     }
 }

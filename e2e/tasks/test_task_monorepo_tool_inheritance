@@ -7,6 +7,9 @@ export MISE_NODE_VERIFY=0 # Skip GPG verification to avoid keyboxd issues
 cat <<EOF >mise.toml
 experimental_monorepo_root = true
 
+[monorepo]
+config_roots = ["projects/*", "projects/backend/*"]
+
 [tools]
 # Root defines node that should be inherited by all subdirectories
 node = "20"

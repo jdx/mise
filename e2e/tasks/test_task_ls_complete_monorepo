@@ -5,6 +5,9 @@
 cat <<'CONFIG' >mise.toml
 experimental_monorepo_root = true
 
+[monorepo]
+config_roots = ["apps/*"]
+
 [tasks.root-task]
 run = 'echo root'
 CONFIG

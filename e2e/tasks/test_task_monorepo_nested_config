@@ -12,6 +12,9 @@ export MISE_EXPERIMENTAL=1
 # Create monorepo root config
 cat <<'TOML' >mise.toml
 experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["projects/*"]
 TOML
 
 # Create subdirectory with NESTED config path (.config/mise/config.toml)
