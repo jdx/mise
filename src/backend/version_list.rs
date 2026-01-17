@@ -46,11 +46,9 @@ pub fn parse_version_list(
     let trimmed = content.trim();
 
     // If an expr is provided, use it to evaluate and extract versions
+    // Fail hard if the expression is invalid - don't silently fall through
     if let Some(expr_str) = version_expr {
-        if let Ok(extracted) = eval_version_expr(expr_str, trimmed) {
-            versions = extracted;
-        }
-        // Fall through to other methods if expr evaluation fails
+        versions = eval_version_expr(expr_str, trimmed)?;
     }
     // If a JSON path is provided (like ".[].version" or ".versions"), try to use it
     // but fall back to text parsing if JSON parsing fails

@@ -1217,12 +1217,24 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
         _ => arch,
     };
 
-    // Check for legacy {version} syntax and emit deprecation warning
-    if template.contains("{version}") && !template.contains("{{version}}") {
+    // Check for legacy {placeholder} syntax (any of the supported placeholders)
+    let has_legacy_placeholder = [
+        "{version}",
+        "{os}",
+        "{arch}",
+        "{darwin_os}",
+        "{amd64_arch}",
+        "{x86_64_arch}",
+        "{gnu_arch}",
+    ]
+    .iter()
+    .any(|p| template.contains(p) && !template.contains(&format!("{{{p}}}")));
+
+    if has_legacy_placeholder {
         deprecated_at!(
             "2026.3.0",
             "legacy-version-template",
-            "Use {{{{ version }}}} instead of {{version}} in URL templates"
+            "Use Tera syntax (e.g., {{{{ version }}}}) instead of legacy {{version}} in templates"
         );
         // Legacy support: replace {placeholder} patterns
         return template

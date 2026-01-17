@@ -357,6 +357,7 @@ pub fn install_time_option_keys() -> Vec<String> {
         "version_list_url".into(),
         "version_regex".into(),
         "version_json_path".into(),
+        "version_expr".into(),
         "version_prefix".into(),
         "format".into(),
         "region".into(),
