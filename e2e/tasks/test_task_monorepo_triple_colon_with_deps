@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+
+# Test that ::: syntax works correctly when tasks have relative :dependency syntax
+# The ::: syntax allows running multiple task groups in sequence.
+# Each task group should correctly resolve its own relative dependencies.
+#
+# Example: `mise run //project-a:ci ::: //project-b:ci`
+# Each project's :ci task may have `depends = [":bootstrap"]` which should
+# resolve to that project's own :bootstrap task, not the monorepo root's.
+
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config
+cat <<'EOF' >mise.toml
+experimental_monorepo_root = true
+
+[settings]
+experimental = true
+EOF
+
+# Create first project with format depending on bootstrap
+mkdir -p libs/shared
+cat <<'EOF' >libs/shared/mise.toml
+[tasks.bootstrap]
+run = 'echo "shared bootstrap executed"'
+
+[tasks.format]
+depends = [":bootstrap"]
+run = 'echo "shared format executed"'
+
+[tasks.lint]
+depends = [":bootstrap"]
+run = 'echo "shared lint executed"'
+EOF
+
+# Create second project with same pattern
+mkdir -p apps/frontend
+cat <<'EOF' >apps/frontend/mise.toml
+[tasks.bootstrap]
+run = 'echo "frontend bootstrap executed"'
+
+[tasks.format]
+depends = [":bootstrap"]
+run = 'echo "frontend format executed"'
+
+[tasks.build]
+depends = [":bootstrap"]
+run = 'echo "frontend build executed"'
+EOF
+
+# Create third project with same pattern
+mkdir -p apps/backend
+cat <<'EOF' >apps/backend/mise.toml
+[tasks.bootstrap]
+run = 'echo "backend bootstrap executed"'
+
+[tasks.format]
+depends = [":bootstrap"]
+run = 'echo "backend format executed"'
+
+[tasks.test]
+depends = [":format"]
+run = 'echo "backend test executed"'
+EOF
+
+# Create a project WITHOUT bootstrap to ensure it doesn't interfere
+mkdir -p tools/cli
+cat <<'EOF' >tools/cli/mise.toml
+[tasks.format]
+run = 'echo "cli format executed"'
+EOF
+
+# Verify tasks are discovered correctly
+assert_contains "mise tasks --all" "//libs/shared:format"
+assert_contains "mise tasks --all" "//libs/shared:bootstrap"
+assert_contains "mise tasks --all" "//apps/frontend:format"
+assert_contains "mise tasks --all" "//apps/frontend:bootstrap"
+assert_contains "mise tasks --all" "//apps/backend:format"
+assert_contains "mise tasks --all" "//apps/backend:bootstrap"
+assert_contains "mise tasks --all" "//tools/cli:format"
+
+# Test 1: Basic ::: syntax with relative dependencies
+# Each task should resolve :bootstrap to its own project's bootstrap
+assert_contains "mise run //libs/shared:format ::: //apps/frontend:format" "shared bootstrap executed"
+assert_contains "mise run //libs/shared:format ::: //apps/frontend:format" "shared format executed"
+assert_contains "mise run //libs/shared:format ::: //apps/frontend:format" "frontend bootstrap executed"
+assert_contains "mise run //libs/shared:format ::: //apps/frontend:format" "frontend format executed"
+
+# Test 2: ::: with three projects - all should resolve their own dependencies
+assert_contains "mise run //libs/shared:format ::: //apps/frontend:format ::: //apps/backend:format" "shared bootstrap executed"
+assert_contains "mise run //libs/shared:format ::: //apps/frontend:format ::: //apps/backend:format" "shared format executed"
+assert_contains "mise run //libs/shared:format ::: //apps/frontend:format ::: //apps/backend:format" "frontend bootstrap executed"
+assert_contains "mise run //libs/shared:format ::: //apps/frontend:format ::: //apps/backend:format" "frontend format executed"
+assert_contains "mise run //libs/shared:format ::: //apps/frontend:format ::: //apps/backend:format" "backend bootstrap executed"
+assert_contains "mise run //libs/shared:format ::: //apps/frontend:format ::: //apps/backend:format" "backend format executed"
+
+# Test 3: ::: with chained relative dependencies
+# backend:test depends on :format which depends on :bootstrap
+assert_contains "mise run //apps/backend:test ::: //libs/shared:lint" "backend bootstrap executed"
+assert_contains "mise run //apps/backend:test ::: //libs/shared:lint" "backend format executed"
+assert_contains "mise run //apps/backend:test ::: //libs/shared:lint" "backend test executed"
+assert_contains "mise run //apps/backend:test ::: //libs/shared:lint" "shared bootstrap executed"
+assert_contains "mise run //apps/backend:test ::: //libs/shared:lint" "shared lint executed"
+
+# Test 4: ::: mixing project with dependencies and project without
+# tools/cli:format has no dependencies, others do
+assert_contains "mise run //tools/cli:format ::: //libs/shared:format" "cli format executed"
+assert_contains "mise run //tools/cli:format ::: //libs/shared:format" "shared bootstrap executed"
+assert_contains "mise run //tools/cli:format ::: //libs/shared:format" "shared format executed"
+
+# Test 5: ::: with wildcard in one group
+# Wildcard should expand and resolve dependencies, then ::: group runs separately
+assert_contains "mise run '//apps/...:format' ::: //libs/shared:lint" "frontend bootstrap executed"
+assert_contains "mise run '//apps/...:format' ::: //libs/shared:lint" "frontend format executed"
+assert_contains "mise run '//apps/...:format' ::: //libs/shared:lint" "backend bootstrap executed"
+assert_contains "mise run '//apps/...:format' ::: //libs/shared:lint" "backend format executed"
+assert_contains "mise run '//apps/...:format' ::: //libs/shared:lint" "shared bootstrap executed"
+assert_contains "mise run '//apps/...:format' ::: //libs/shared:lint" "shared lint executed"
+
+# Test 6: ::: with wildcards in multiple groups
+assert_contains "mise run '//apps/...:format' ::: '//libs/...:format'" "frontend bootstrap executed"
+assert_contains "mise run '//apps/...:format' ::: '//libs/...:format'" "frontend format executed"
+assert_contains "mise run '//apps/...:format' ::: '//libs/...:format'" "backend bootstrap executed"
+assert_contains "mise run '//apps/...:format' ::: '//libs/...:format'" "backend format executed"
+assert_contains "mise run '//apps/...:format' ::: '//libs/...:format'" "shared bootstrap executed"
+assert_contains "mise run '//apps/...:format' ::: '//libs/...:format'" "shared format executed"
+
+echo "=== All ::: with dependencies tests passed! ==="
