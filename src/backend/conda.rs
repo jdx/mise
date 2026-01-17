@@ -22,6 +22,20 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use versions::Versioning;
 
+// Shared utilities for platform-specific library path fixing
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[path = "conda_common.rs"]
+mod conda_common;
+
+// Platform-specific library path fixing modules
+#[cfg(target_os = "linux")]
+#[path = "conda_linux.rs"]
+mod platform;
+
+#[cfg(target_os = "macos")]
+#[path = "conda_macos.rs"]
+mod platform;
+
 /// Conda package info stored in the shared conda-packages section of lockfiles
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CondaPackageInfo {
@@ -689,6 +703,11 @@ impl Backend for CondaBackend {
             ctx.pr.set_message(format!("extract {}", self.tool_name()));
             self.extract_conda_package(ctx, main_tarball, &install_path)?;
         }
+
+        // Fix hardcoded library paths in binaries and shared libraries
+        // This patches conda build paths to point to the actual install directory
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        platform::fix_library_paths(ctx, &install_path)?;
 
         // Store lockfile info
         let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();
