@@ -4160,6 +4160,7 @@ os = ["linux", "macos"]
 
 [tools.swift-package-list]
 backends = [
+  "github:FelixHerrmann/swift-package-list",
   "spm:FelixHerrmann/swift-package-list",
   "asdf:mise-plugins/mise-swift-package-list",
 ]
