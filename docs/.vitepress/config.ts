@@ -193,7 +193,6 @@ export default withMermaid(
               ],
             },
             { text: "Team", link: "/team" },
-            { text: "Roadmap", link: "/roadmap" },
             { text: "Contributing", link: "/contributing" },
             { text: "External Resources", link: "/external-resources" },
           ],

@@ -197,3 +197,18 @@ You can leverage usage in file tasks to get auto-completion working, see [file t
 In VSCode, many extensions will throw an "error spawn EINVAL" due to a [Node.js security fix](https://nodejs.org/en/blog/vulnerability/april-2024-security-releases-2#command-injection-via-args-parameter-of-child_processspawn-without-shell-option-enabled-on-windows-cve-2024-27980---high).
 
 You can change [windows_shim_mode](https://mise.jdx.dev/configuration/settings.html#windows_shim_mode) to `hardlink` or `symlink`
+
+## How does mise versioning work?
+
+mise uses [Calver](https://calver.org/) versioning (`2024.1.0`).
+Breaking changes will be few but when they do happen,
+they will be communicated in the CLI with plenty of notice whenever possible.
+
+Rather than have SemVer major releases to communicate change in large releases,
+new functionality and changes can be opted-into with settings like `experimental = true`.
+This way plugin authors and users can
+test out new functionality immediately without waiting for a major release.
+
+The numbers in Calver (YYYY.MM.RELEASE) simply represent the date of the release—not compatibility
+or how many new features were added.
+Each release will be small and incremental.
