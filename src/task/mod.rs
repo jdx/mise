@@ -1124,10 +1124,26 @@ impl PartialOrd for Task {
     }
 }
 
+/// Extract sorted env key-value pairs for consistent comparison
+fn env_key(task: &Task) -> Vec<(&String, &String)> {
+    task.env
+        .0
+        .iter()
+        .filter_map(|d| match d {
+            EnvDirective::Val(k, v, _) => Some((k, v)),
+            _ => None,
+        })
+        .sorted()
+        .collect()
+}
+
 impl Ord for Task {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.name.cmp(&other.name) {
-            Ordering::Equal => self.args.cmp(&other.args),
+            Ordering::Equal => match self.args.cmp(&other.args) {
+                Ordering::Equal => env_key(self).cmp(&env_key(other)),
+                o => o,
+            },
             o => o,
         }
     }
@@ -1137,12 +1153,10 @@ impl Hash for Task {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.name.hash(state);
         self.args.iter().for_each(|arg| arg.hash(state));
-        // Include env vars in hash for proper deduplication
-        for directive in &self.env.0 {
-            if let EnvDirective::Val(k, v, _) = directive {
-                k.hash(state);
-                v.hash(state);
-            }
+        // Include sorted env vars in hash for consistent deduplication
+        for (k, v) in env_key(self) {
+            k.hash(state);
+            v.hash(state);
         }
     }
 }
@@ -1150,29 +1164,7 @@ impl Hash for Task {
 impl Eq for Task {}
 impl PartialEq for Task {
     fn eq(&self, other: &Self) -> bool {
-        if self.name != other.name || self.args != other.args {
-            return false;
-        }
-        // Compare env vars for equality
-        let self_env: Vec<_> = self
-            .env
-            .0
-            .iter()
-            .filter_map(|d| match d {
-                EnvDirective::Val(k, v, _) => Some((k, v)),
-                _ => None,
-            })
-            .collect();
-        let other_env: Vec<_> = other
-            .env
-            .0
-            .iter()
-            .filter_map(|d| match d {
-                EnvDirective::Val(k, v, _) => Some((k, v)),
-                _ => None,
-            })
-            .collect();
-        self_env == other_env
+        self.name == other.name && self.args == other.args && env_key(self) == env_key(other)
     }
 }
 
