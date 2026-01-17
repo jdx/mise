@@ -1217,6 +1217,24 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
         _ => arch,
     };
 
+    // Check for legacy {version} syntax and emit deprecation warning
+    if template.contains("{version}") && !template.contains("{{version}}") {
+        deprecated_at!(
+            "2026.3.0",
+            "legacy-version-template",
+            "Use {{{{ version }}}} instead of {{version}} in URL templates"
+        );
+        // Legacy support: replace {placeholder} patterns
+        return template
+            .replace("{version}", version)
+            .replace("{os}", os)
+            .replace("{arch}", arch)
+            .replace("{darwin_os}", darwin_os)
+            .replace("{amd64_arch}", amd64_arch)
+            .replace("{x86_64_arch}", x86_64_arch)
+            .replace("{gnu_arch}", gnu_arch);
+    }
+
     // Use Tera rendering for templates
     let mut ctx = crate::tera::BASE_CONTEXT.clone();
     ctx.insert("version", version);

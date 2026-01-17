@@ -327,6 +327,17 @@ pub fn list_available_platforms_with_key(opts: &ToolVersionOptions, key_type: &s
 }
 
 pub fn template_string(template: &str, tv: &ToolVersion) -> String {
+    // Check for legacy {version} syntax and emit deprecation warning
+    if template.contains("{version}") && !template.contains("{{version}}") {
+        deprecated_at!(
+            "2026.3.0",
+            "legacy-version-template",
+            "Use {{{{ version }}}} instead of {{version}} in URL templates"
+        );
+        // Legacy support: replace {version} placeholder
+        return template.replace("{version}", &tv.version);
+    }
+
     // Use Tera rendering for templates
     // Supports {{ version }}, {{ os() }}, {{ arch() }}, etc.
     let mut ctx = crate::tera::BASE_CONTEXT.clone();

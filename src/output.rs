@@ -158,6 +158,26 @@ macro_rules! deprecated {
     }};
 }
 
+/// Emits a deprecation warning only if the current mise version is >= the specified version.
+/// Use this for gradual deprecations that should start warning at a future version.
+///
+/// # Example
+/// ```ignore
+/// deprecated_at!("2026.3.0", "legacy-syntax", "Use {{version}} instead of {version}");
+/// ```
+#[macro_export]
+macro_rules! deprecated_at {
+    ($version:tt, $id:tt, $($arg:tt)*) => {{
+        use versions::Versioning;
+        let target = Versioning::new($version).expect("invalid version in deprecated_at!");
+        if *$crate::cli::version::V >= target {
+            if $crate::output::DEPRECATED.lock().unwrap().insert($id) {
+                warn!("deprecated [{}]: {}", $id, format!($($arg)*));
+            }
+        }
+    }};
+}
+
 #[cfg(test)]
 pub mod tests {
     use std::sync::Mutex;
