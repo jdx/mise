@@ -225,6 +225,9 @@ pub struct Task {
     pub wait_for: Vec<TaskDep>,
     #[serde(default)]
     pub env: EnvList,
+    /// Env vars inherited from parent tasks at runtime (not used for task identity/deduplication)
+    #[serde(skip)]
+    pub inherited_env: EnvList,
     #[serde(default)]
     pub dir: Option<String>,
     #[serde(default)]
@@ -373,7 +376,8 @@ impl Task {
 
     pub fn derive_env(&self, env_directives: &[EnvDirective]) -> Self {
         let mut new_task = self.clone();
-        new_task.env.0.extend_from_slice(env_directives);
+        // Put inherited env in separate field so it doesn't affect task identity/deduplication
+        new_task.inherited_env.0.extend_from_slice(env_directives);
         new_task
     }
 
@@ -861,10 +865,12 @@ impl Task {
 
         // Convert task env directives to (EnvDirective, PathBuf) pairs
         // Use the config file path as source for proper path resolution
-        let env_directives = self
-            .env
+        // Include inherited_env first (so task's own env can override it)
+        let env_directives: Vec<_> = self
+            .inherited_env
             .0
             .iter()
+            .chain(self.env.0.iter())
             .map(|directive| (directive.clone(), self.config_source.clone()))
             .collect();
 
@@ -1073,6 +1079,7 @@ impl Default for Task {
             depends_post: vec![],
             wait_for: vec![],
             env: Default::default(),
+            inherited_env: Default::default(),
             dir: None,
             hide: false,
             global: false,
@@ -1124,7 +1131,8 @@ impl PartialOrd for Task {
     }
 }
 
-/// Extract sorted env key-value pairs for consistent comparison
+/// Extract sorted env key-value pairs from task's own env (not inherited_env)
+/// Used for consistent comparison/hashing of task identity
 fn env_key(task: &Task) -> Vec<(&String, &String)> {
     task.env
         .0
@@ -1153,7 +1161,7 @@ impl Hash for Task {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.name.hash(state);
         self.args.iter().for_each(|arg| arg.hash(state));
-        // Include sorted env vars in hash for consistent deduplication
+        // Include task's own env (not inherited_env) for deduplication
         for (k, v) in env_key(self) {
             k.hash(state);
             v.hash(state);
