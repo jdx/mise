@@ -374,10 +374,19 @@ impl Task {
         Ok(task)
     }
 
+    /// Add env vars that were inherited from parent tasks (e.g., via `run = [{ task = "..." }]`)
+    /// These do NOT affect task identity/deduplication
     pub fn derive_env(&self, env_directives: &[EnvDirective]) -> Self {
         let mut new_task = self.clone();
-        // Put inherited env in separate field so it doesn't affect task identity/deduplication
         new_task.inherited_env.0.extend_from_slice(env_directives);
+        new_task
+    }
+
+    /// Add env vars specified in dependency declarations (e.g., `depends = ["FOO=bar task"]`)
+    /// These DO affect task identity/deduplication
+    pub fn with_dependency_env(&self, env_directives: &[EnvDirective]) -> Self {
+        let mut new_task = self.clone();
+        new_task.env.0.extend_from_slice(env_directives);
         new_task
     }
 
@@ -1020,14 +1029,14 @@ fn match_tasks_with_context(
         .map(|t| {
             let mut t = (*t).clone();
             t.args = td.args.clone();
-            // Apply env vars from dependency
+            // Apply env vars from dependency - these affect task identity/deduplication
             if !td.env.is_empty() {
                 let env_directives: Vec<EnvDirective> = td
                     .env
                     .iter()
                     .map(|(k, v)| EnvDirective::Val(k.clone(), v.clone(), Default::default()))
                     .collect();
-                t = t.derive_env(&env_directives);
+                t = t.with_dependency_env(&env_directives);
             }
             t
         })
