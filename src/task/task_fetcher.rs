@@ -24,6 +24,11 @@ impl TaskFetcher {
             if let Some(file) = &t.file {
                 let source = file.to_string_lossy().to_string();
 
+                // Skip local files - they don't need provider resolution
+                if !Self::is_remote_source(&source) {
+                    continue;
+                }
+
                 let provider = task_file_providers.get_provider(&source);
 
                 if provider.is_none() {
@@ -40,5 +45,12 @@ impl TaskFetcher {
         }
 
         Ok(())
+    }
+
+    /// Check if a source path is a remote task file (git or http/https)
+    fn is_remote_source(source: &str) -> bool {
+        source.starts_with("git::")
+            || source.starts_with("http://")
+            || source.starts_with("https://")
     }
 }
