@@ -45,10 +45,11 @@ pub fn python_path(tv: &ToolVersion) -> PathBuf {
 /// - Old format: `miniconda3-{conda_version}` (e.g., `miniconda3-3.16.0`, `miniconda3-4.7.12`)
 /// - New format: `miniconda3-{python_version}-{conda_version}` (e.g., `miniconda3-3.7-4.8.2`)
 ///
-/// Returns a tuple for sorting: (is_miniconda, prefix_order, is_not_latest, conda_version, python_version)
+/// Returns a tuple for sorting: (distro_priority, prefix_order, is_not_latest, conda_version, python_version)
+/// distro_priority: 0 = other distros, 1 = miniconda, 2 = CPython (bare version numbers)
 fn python_version_sort_key(
     version: &str,
-) -> (bool, u8, bool, Option<Versioning>, Option<Versioning>) {
+) -> (u8, u8, bool, Option<Versioning>, Option<Versioning>) {
     // Check if this is a miniconda version and get prefix order
     let (prefix_order, version_part) = if let Some(v) = version.strip_prefix("miniconda3-") {
         (2u8, v)
@@ -57,21 +58,14 @@ fn python_version_sort_key(
     } else if let Some(v) = version.strip_prefix("miniconda-") {
         (0u8, v)
     } else {
-        // Not miniconda - put non-digit-starting first, then digit-starting
-        // Use is_miniconda=false to separate from miniconda versions
+        // Not miniconda - put other distros first (0), CPython (digit-starting) last (2)
         let starts_with_digit = regex!(r"^\d").is_match(version);
-        return (
-            false,
-            if starts_with_digit { 1 } else { 0 },
-            false,
-            None,
-            None,
-        );
+        return (if starts_with_digit { 2 } else { 0 }, 0, false, None, None);
     };
 
     // Handle "latest" specially - put first in each miniconda group
     if version_part == "latest" {
-        return (true, prefix_order, false, None, None);
+        return (1, prefix_order, false, None, None);
     }
 
     // Parse miniconda version: old format vs new format
@@ -87,7 +81,7 @@ fn python_version_sort_key(
         (Versioning::new(version_part), None)
     };
 
-    (true, prefix_order, true, conda_version, python_version)
+    (1, prefix_order, true, conda_version, python_version)
 }
 
 impl PythonPlugin {
