@@ -1090,7 +1090,11 @@ description = "The glamourous AI coding agent for your favourite terminal"
 test = ["crush --version", "v{{version}}"]
 
 [tools.crystal]
-backends = ["asdf:mise-plugins/mise-crystal", "vfox:mise-plugins/vfox-crystal"]
+backends = [
+  "github:crystal-lang/crystal",
+  "asdf:mise-plugins/mise-crystal",
+  "vfox:mise-plugins/vfox-crystal",
+]
 description = "Crystal: A language for humans and computers"
 
 [tools.cspell]
