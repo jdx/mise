@@ -275,21 +275,6 @@ impl Lockfile {
         self.conda_packages.get(platform)?.get(basename)
     }
 
-    /// Get all conda packages for a platform
-    pub fn get_conda_packages(
-        &self,
-        platform: &str,
-    ) -> Option<&BTreeMap<String, CondaPackageInfo>> {
-        self.conda_packages.get(platform)
-    }
-
-    /// Get mutable reference to all conda packages
-    pub fn conda_packages_mut(
-        &mut self,
-    ) -> &mut BTreeMap<String, BTreeMap<String, CondaPackageInfo>> {
-        &mut self.conda_packages
-    }
-
     /// Get all platform keys present in the lockfile
     pub fn all_platform_keys(&self) -> BTreeSet<String> {
         let mut platforms = BTreeSet::new();
@@ -1301,7 +1286,7 @@ backend = "conda:jq"
         let lockfile = Lockfile::read(&test_lockfile).unwrap();
 
         // Verify conda packages were parsed
-        let macos_packages = lockfile.get_conda_packages("macos-arm64").unwrap();
+        let macos_packages = lockfile.conda_packages.get("macos-arm64").unwrap();
         assert_eq!(macos_packages.len(), 2);
 
         let ncurses = macos_packages.get("ncurses-6.4-h7ea286d_0").unwrap();
@@ -1393,7 +1378,7 @@ backend = "conda:jq"
 
         // Round-trip test: read it back
         let reloaded = Lockfile::read(&test_lockfile).unwrap();
-        let packages = reloaded.get_conda_packages("macos-arm64").unwrap();
+        let packages = reloaded.conda_packages.get("macos-arm64").unwrap();
         assert!(packages.contains_key("ncurses-6.4-h7ea286d_0"));
 
         let _ = std::fs::remove_file(&test_lockfile);
