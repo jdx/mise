@@ -80,10 +80,7 @@ mod tests {
         let mut settings = Settings::get().deref().clone();
         settings.shorthands_file = Some("../fixtures/shorthands.toml".into());
         let shorthands = get_shorthands(&settings);
-        assert_str_eq!(
-            shorthands["ephemeral-postgres"][0],
-            "asdf:mise-plugins/mise-ephemeral-postgres"
-        );
+        assert_str_eq!(shorthands["aapt2"][0], "vfox:mise-plugins/vfox-aapt2");
         assert_str_eq!(shorthands["node"][0], "https://node");
         assert_str_eq!(shorthands["xxxxxx"][0], "https://xxxxxx");
     }
