@@ -782,20 +782,20 @@ bin = "claude"
 version_list_url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/latest"
 
 [tools.claude.backends.options.platforms.macos-arm64]
-url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{version}/darwin-arm64/claude"
+url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/darwin-arm64/claude"
 
 [tools.claude.backends.options.platforms.macos-x64]
-url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{version}/darwin-x64/claude"
+url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/darwin-x64/claude"
 
 [tools.claude.backends.options.platforms.linux-arm64]
-url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{version}/linux-arm64/claude"
+url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/linux-arm64/claude"
 
 [tools.claude.backends.options.platforms.linux-x64]
-url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{version}/linux-x64/claude"
+url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/linux-x64/claude"
 
 [tools.claude.backends.options.platforms.windows-x64]
 bin = "claude.exe"
-url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{version}/win32-x64/claude.exe"
+url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/win32-x64/claude.exe"
 
 [[tools.claude.backends]]
 full = "npm:@anthropic-ai/claude-code"
@@ -1329,19 +1329,19 @@ os = ["linux", "macos", "windows"]
 full = "github:domeengine/dome"
 
 [tools.dome.backends.options.platforms.macos-x64]
-asset_pattern = "dome-v{version}-macosx-all.zip"
+asset_pattern = "dome-v{{ version }}-macosx-all.zip"
 bin_path = "dome-macosx-all"
 
 [tools.dome.backends.options.platforms.macos-arm64]
-asset_pattern = "dome-v{version}-macosx-all.zip"
+asset_pattern = "dome-v{{ version }}-macosx-all.zip"
 bin_path = "dome-macosx-all"
 
 [tools.dome.backends.options.platforms.linux-x64]
-asset_pattern = "dome-v{version}-linux-x64.zip"
+asset_pattern = "dome-v{{ version }}-linux-x64.zip"
 bin_path = "dome-linux-x64"
 
 [tools.dome.backends.options.platforms.windows-x64]
-asset_pattern = "dome-v{version}-windows-x64.zip"
+asset_pattern = "dome-v{{ version }}-windows-x64.zip"
 bin_path = "dome-windows-x64"
 
 [[tools.dome.backends]]
@@ -1674,20 +1674,20 @@ test = ["flyway --version", "{{version}}"]
 full = "github:flyway/flyway[version_prefix=flyway-]"
 
 [tools.flyway.backends.options.platforms.macos-arm64]
-asset_pattern = "flyway-commandline-{version}-macosx-arm64.tar.gz"
-bin_path = "flyway-{version}"
+asset_pattern = "flyway-commandline-{{ version }}-macosx-arm64.tar.gz"
+bin_path = "flyway-{{ version }}"
 
 [tools.flyway.backends.options.platforms.macos-x64]
-asset_pattern = "flyway-commandline-{version}-macosx-x64.tar.gz"
-bin_path = "flyway-{version}"
+asset_pattern = "flyway-commandline-{{ version }}-macosx-x64.tar.gz"
+bin_path = "flyway-{{ version }}"
 
 [tools.flyway.backends.options.platforms.linux-x64]
-asset_pattern = "flyway-commandline-{version}-linux-x64.tar.gz"
-bin_path = "flyway-{version}"
+asset_pattern = "flyway-commandline-{{ version }}-linux-x64.tar.gz"
+bin_path = "flyway-{{ version }}"
 
 [tools.flyway.backends.options.platforms.windows-x64]
-asset_pattern = "flyway-commandline-{version}-windows-x64.zip"
-bin_path = "flyway-{version}"
+asset_pattern = "flyway-commandline-{{ version }}-windows-x64.zip"
+bin_path = "flyway-{{ version }}"
 
 [[tools.flyway.backends]]
 full = "asdf:mise-plugins/mise-flyway"
@@ -4962,13 +4962,13 @@ description = "Executables, uberjar, and library to beautifully format Clojure a
 full = "github:kkinnear/zprint[bin=zprint]"
 
 [tools.zprint.backends.options.platforms.macos-arm64]
-asset_pattern = "zprintma-{version}"
+asset_pattern = "zprintma-{{ version }}"
 
 [tools.zprint.backends.options.platforms.macos-x64]
-asset_pattern = "zprintm-{version}"
+asset_pattern = "zprintm-{{ version }}"
 
 [tools.zprint.backends.options.platforms.linux-x64]
-asset_pattern = "zprintl-{version}"
+asset_pattern = "zprintl-{{ version }}"
 
 [[tools.zprint.backends]]
 full = "asdf:mise-plugins/mise-zprint"
