@@ -51,6 +51,10 @@ impl Toolset {
         }
 
         let (mut env, env_results) = self.final_env(config).await?;
+        // Don't cache if secrets/redactions are present (security)
+        // Check both tool-specific redactions (from env_results) and env directive redactions (from config)
+        let config_redactions = &config.env_results().await?.redactions;
+        let has_secrets = !env_results.redactions.is_empty() || !config_redactions.is_empty();
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
         let paths = self.list_final_paths(config, env_results).await?;
         for p in &paths {
@@ -59,7 +63,8 @@ impl Toolset {
         env.insert(PATH_KEY.to_string(), path_env.to_string());
 
         // Cache the computed environment for future use (only when experimental is on)
-        if settings.experimental && settings.env_cache {
+        // Skip caching if secrets are present to avoid persisting sensitive data
+        if settings.experimental && settings.env_cache && !has_secrets {
             let cache_key = compute_cache_key(config, self);
             let cached = CachedEnv {
                 paths,

@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Disable env cache so we're testing template caching, not env caching
+export MISE_ENV_CACHE=0
+
 cat <<'EOF' >mise.toml
 [env]
 NOW="{{ exec(command='date') }}"

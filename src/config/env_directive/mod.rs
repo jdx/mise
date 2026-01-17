@@ -357,7 +357,6 @@ impl EnvResults {
 
             ctx.insert("vars", &vars);
             let redact = directive.options().redact;
-            // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
                 EnvDirective::Val(k, v, _opts) => {
                     let v = r.parse_template(&ctx, &mut tera, &source, &v)?;

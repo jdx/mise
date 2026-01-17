@@ -105,6 +105,11 @@ fn hash_relevant_settings(hasher: &mut DefaultHasher) {
     settings.node.compile.hash(hasher);
     settings.python.compile.hash(hasher);
     settings.ruby.compile.hash(hasher);
+    // Include no_env flag state (checks --no-env flag and MISE_NO_ENV env var)
+    Settings::no_env().hash(hasher);
+    // Include env-related environment variables that affect config loading
+    std::env::var("MISE_ENV_FILE").ok().hash(hasher);
+    std::env::var("MISE_ENV").ok().hash(hasher);
 }
 
 fn hash_tool_requests(toolset: &Toolset, hasher: &mut DefaultHasher) {
