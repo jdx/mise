@@ -5036,6 +5036,7 @@ dependencies = [
  "dotenvy",
  "duct 0.13.7",
  "exec",
+ "expr-lang",
  "eyre",
  "filetime",
  "flate2",

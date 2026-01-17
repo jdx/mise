@@ -558,8 +558,9 @@ impl HttpBackend {
 
         let regex = opts.get("version_regex").map(|s| s.as_str());
         let json_path = opts.get("version_json_path").map(|s| s.as_str());
+        let version_expr = opts.get("version_expr").map(|s| s.as_str());
 
-        version_list::fetch_versions(&url, regex, json_path).await
+        version_list::fetch_versions(&url, regex, json_path, version_expr).await
     }
 }
 

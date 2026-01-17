@@ -1154,12 +1154,21 @@ description = "Command-line tools for Dapr"
 test = ["dapr --version", "CLI version: {{version}}"]
 
 [tools.dart]
-backends = [
-  "http:dart[url=https://storage.googleapis.com/dart-archive/channels/stable/release/{version}/sdk/dartsdk-{{ os() }}-{{ arch() }}-release.zip,version_list_url=https://storage.googleapis.com/storage/v1/b/dart-archive/o?prefix=channels/stable/release/&delimiter=/,version_regex=channels/stable/release/(\\d+\\.\\d+\\.\\d+)/]",
-  "asdf:mise-plugins/mise-dart",
-  "vfox:mise-plugins/vfox-dart",
-]
 description = "An approachable, portable, and productive language for high-quality apps on any platform"
+
+[[tools.dart.backends]]
+full = "http:dart"
+
+[tools.dart.backends.options]
+url = "https://storage.googleapis.com/dart-archive/channels/stable/release/{{ version }}/sdk/dartsdk-{{ os() }}-{{ arch() }}-release.zip"
+version_list_url = "https://storage.googleapis.com/storage/v1/b/dart-archive/o?prefix=channels/stable/release/&delimiter=/"
+version_regex = "channels/stable/release/(\\d+\\.\\d+\\.\\d+)/"
+
+[[tools.dart.backends]]
+full = "asdf:mise-plugins/mise-dart"
+
+[[tools.dart.backends]]
+full = "vfox:mise-plugins/vfox-dart"
 
 [tools.dasel]
 backends = ["aqua:TomWright/dasel", "asdf:asdf-community/asdf-dasel"]
@@ -1615,16 +1624,16 @@ version_json_path = ".releases[?channel=stable].version"
 version_list_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json"
 
 [tools.flutter.backends.options.platforms.macos-x64]
-url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_{version}-stable.zip"
+url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_{{ version }}-stable.zip"
 
 [tools.flutter.backends.options.platforms.macos-arm64]
-url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_arm64_{version}-stable.zip"
+url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_arm64_{{ version }}-stable.zip"
 
 [tools.flutter.backends.options.platforms.linux-x64]
-url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_{version}-stable.tar.xz"
+url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_{{ version }}-stable.tar.xz"
 
 [tools.flutter.backends.options.platforms.windows-x64]
-url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_{version}-stable.zip"
+url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_{{ version }}-stable.zip"
 
 [[tools.flutter.backends]]
 full = "asdf:mise-plugins/mise-flutter"

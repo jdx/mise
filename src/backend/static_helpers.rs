@@ -327,20 +327,22 @@ pub fn list_available_platforms_with_key(opts: &ToolVersionOptions, key_type: &s
 }
 
 pub fn template_string(template: &str, tv: &ToolVersion) -> String {
-    let version = &tv.version;
-    let result = template.replace("{version}", version);
+    // If template contains Tera syntax, use Tera rendering
+    // This supports {{ version }}, {{ os() }}, {{ arch() }}, etc.
+    if template.contains("{{") {
+        let mut ctx = crate::tera::BASE_CONTEXT.clone();
+        ctx.insert("version", &tv.version);
 
-    // If the template contains Tera syntax, render it
-    if result.contains("{{") {
-        match crate::tera::get_tera(None).render_str(&result, &crate::tera::BASE_CONTEXT) {
+        match crate::tera::get_tera(None).render_str(template, &ctx) {
             Ok(rendered) => rendered,
             Err(e) => {
-                warn!("Failed to render template '{}': {}", result, e);
-                result
+                warn!("Failed to render template '{}': {}", template, e);
+                template.to_string()
             }
         }
     } else {
-        result
+        // Legacy support: replace {version} placeholder
+        template.replace("{version}", &tv.version)
     }
 }
 
