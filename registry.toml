@@ -1154,7 +1154,11 @@ description = "Command-line tools for Dapr"
 test = ["dapr --version", "CLI version: {{version}}"]
 
 [tools.dart]
-backends = ["asdf:mise-plugins/mise-dart", "vfox:mise-plugins/vfox-dart"]
+backends = [
+  "http:dart[url=https://storage.googleapis.com/dart-archive/channels/stable/release/{version}/sdk/dartsdk-{{ os() }}-{{ arch() }}-release.zip,version_list_url=https://storage.googleapis.com/storage/v1/b/dart-archive/o?prefix=channels/stable/release/&delimiter=/,version_regex=channels/stable/release/(\\d+\\.\\d+\\.\\d+)/]",
+  "asdf:mise-plugins/mise-dart",
+  "vfox:mise-plugins/vfox-dart",
+]
 description = "An approachable, portable, and productive language for high-quality apps on any platform"
 
 [tools.dasel]

@@ -328,7 +328,20 @@ pub fn list_available_platforms_with_key(opts: &ToolVersionOptions, key_type: &s
 
 pub fn template_string(template: &str, tv: &ToolVersion) -> String {
     let version = &tv.version;
-    template.replace("{version}", version)
+    let result = template.replace("{version}", version);
+
+    // If the template contains Tera syntax, render it
+    if result.contains("{{") {
+        match crate::tera::get_tera(None).render_str(&result, &crate::tera::BASE_CONTEXT) {
+            Ok(rendered) => rendered,
+            Err(e) => {
+                warn!("Failed to render template '{}': {}", result, e);
+                result
+            }
+        }
+    } else {
+        result
+    }
 }
 
 pub fn get_filename_from_url(url_str: &str) -> String {
