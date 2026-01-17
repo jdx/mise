@@ -2529,7 +2529,11 @@ backends = ["aqua:kubernetes/kops", "asdf:Antiarchitect/asdf-kops"]
 description = "Kubernetes Operations (kops) - Production Grade K8s Installation, Upgrades, and Management"
 
 [tools.kotlin]
-backends = ["asdf:mise-plugins/mise-kotlin", "vfox:mise-plugins/vfox-kotlin"]
+backends = [
+  "github:JetBrains/kotlin[asset_pattern=kotlin-compiler-*.zip,bin_path=kotlinc/bin]",
+  "asdf:mise-plugins/mise-kotlin",
+  "vfox:mise-plugins/vfox-kotlin",
+]
 description = "Kotlin is a modern but already mature programming language designed to make developers happier. It's concise, safe, interoperable with Java and other languages, and provides many ways to reuse code between multiple platforms for productive programming"
 
 [tools.kpack]
