@@ -80,6 +80,10 @@ pub struct Run {
     #[clap(long, short, verbatim_doc_comment)]
     pub force: bool,
 
+    /// Force fresh environment computation, ignoring env cache
+    #[clap(long, short = 'F')]
+    pub fresh_env: bool,
+
     /// Print directly to stdout/stderr instead of by line
     /// Defaults to true if --jobs == 1
     /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
@@ -200,6 +204,11 @@ pub struct Run {
 
 impl Run {
     pub async fn run(mut self) -> Result<()> {
+        // Set fresh env flag if requested
+        if self.fresh_env {
+            crate::env::set_var("__MISE_FRESH_ENV", "1");
+        }
+
         // Check help flags before doing any work
         if self.task == "-h" {
             self.get_clap_command().print_help()?;

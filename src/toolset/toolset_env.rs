@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use eyre::Result;
 
@@ -9,6 +10,7 @@ use crate::env::{PATH_KEY, WARN_ON_MISSING_REQUIRED_ENV};
 use crate::env_diff::EnvMap;
 use crate::path_env::PathEnv;
 use crate::toolset::Toolset;
+use crate::toolset::env_cache::{CachedEnv, compute_cache_key};
 use crate::toolset::tool_request::ToolRequest;
 use crate::{env, parallel, uv};
 
@@ -21,12 +23,59 @@ impl Toolset {
 
     /// the full mise environment including all tool paths
     pub async fn env_with_path(&self, config: &Arc<Config>) -> Result<EnvMap> {
+        // Fast path: check if cached environment is available and valid
+        // Skip cache if __MISE_FRESH_ENV is set (via --fresh-env flag)
+        // Only enabled when experimental mode is on
+        let settings = Settings::get();
+        let fresh_env = std::env::var("__MISE_FRESH_ENV").is_ok();
+        if settings.experimental && settings.env_cache && !fresh_env {
+            let current_key = compute_cache_key(config, self);
+
+            // First check if parent process provided a matching cache key
+            if let Ok(parent_key) = std::env::var("__MISE_ENV_CACHE_KEY") {
+                if parent_key == current_key {
+                    if let Some(cached) = CachedEnv::load(&current_key) {
+                        if cached.is_valid() {
+                            trace!("using cached environment from parent");
+                            return Ok(cached.env);
+                        }
+                    }
+                }
+            }
+
+            // Check if we have a valid cache for this context
+            if let Some(cached) = CachedEnv::load(&current_key) {
+                if cached.is_valid() {
+                    trace!("using cached environment from file");
+                    return Ok(cached.env);
+                }
+            }
+        }
+
         let (mut env, env_results) = self.final_env(config).await?;
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
-        for p in self.list_final_paths(config, env_results).await? {
+        let paths = self.list_final_paths(config, env_results).await?;
+        for p in &paths {
             path_env.add(p.clone());
         }
         env.insert(PATH_KEY.to_string(), path_env.to_string());
+
+        // Cache the computed environment for future use (only when experimental is on)
+        if settings.experimental && settings.env_cache {
+            let cache_key = compute_cache_key(config, self);
+            let cached = CachedEnv {
+                paths,
+                env: env.clone(),
+                created_at: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+            };
+            if let Err(e) = cached.save(&cache_key) {
+                trace!("failed to save env cache: {e}");
+            }
+        }
+
         Ok(env)
     }
 

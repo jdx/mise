@@ -28,6 +28,40 @@ pub async fn handle_shim() -> Result<()> {
     if bin_name.starts_with("mise") || cfg!(test) {
         return Ok(());
     }
+
+    // Fast path: if we're inside a task context with cached env,
+    // the tool should already be in PATH, so try to find it directly.
+    // We validate the project root to ensure we're still in the same project context
+    // (e.g., a task might cd to a different project with different tool versions)
+    if std::env::var("__MISE_ENV_CACHE_KEY").is_ok() {
+        // Validate we're still in the same project context
+        let in_same_project = match std::env::var("__MISE_PROJECT_ROOT") {
+            Ok(cached_root) => {
+                let cached_root = PathBuf::from(cached_root);
+                dirs::CWD
+                    .as_ref()
+                    .is_some_and(|cwd| cwd.starts_with(&cached_root))
+            }
+            Err(_) => true, // No project root set, trust the cache
+        };
+
+        if in_same_project {
+            if let Ok(bin) = which::which(bin_name) {
+                // Make sure it's not pointing back to shims dir (with symlink resolution)
+                let shims_canonical = fs::canonicalize(*dirs::SHIMS).unwrap_or_default();
+                let bin_parent_canonical = bin
+                    .parent()
+                    .and_then(|p| fs::canonicalize(p).ok())
+                    .unwrap_or_default();
+                if bin_parent_canonical != shims_canonical {
+                    trace!("shim[{bin_name}] using cached PATH: {}", display_path(&bin));
+                    let args = env::ARGS.read().unwrap().clone();
+                    return exec_shim_binary(&bin, &args[1..]);
+                }
+            }
+        }
+    }
+
     let mut config = Config::get().await?;
     let mut args = env::ARGS.read().unwrap().clone();
     env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
@@ -44,10 +78,28 @@ pub async fn handle_shim() -> Result<()> {
         jobs: None,
         raw: false,
         no_prepare: true, // Skip prepare for shims to avoid performance impact
+        fresh_env: false,
     };
     time!("shim exec");
     exec.run().await?;
     exit(0);
+}
+
+#[cfg(unix)]
+fn exec_shim_binary(bin: &Path, args: &[String]) -> Result<()> {
+    use std::os::unix::process::CommandExt;
+    let err = std::process::Command::new(bin).args(args).exec();
+    bail!("{:?} {err}", bin.to_string_lossy())
+}
+
+#[cfg(windows)]
+fn exec_shim_binary(bin: &Path, args: &[String]) -> Result<()> {
+    use crate::cmd;
+    let res = cmd::cmd(bin, args).unchecked().run()?;
+    match res.status.code() {
+        Some(code) => std::process::exit(code),
+        None => bail!("command failed: terminated by signal"),
+    }
 }
 
 async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf> {

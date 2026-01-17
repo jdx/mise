@@ -595,6 +595,16 @@
             "type": "string"
           }
         },
+        "env_cache": {
+          "default": true,
+          "description": "Cache computed environments to avoid redundant loading",
+          "type": "boolean"
+        },
+        "env_cache_ttl": {
+          "default": "24h",
+          "description": "Time-to-live for cached environments",
+          "type": "string"
+        },
         "env_file": {
           "description": "Path to a file containing environment variables to automatically load.",
           "type": "string"

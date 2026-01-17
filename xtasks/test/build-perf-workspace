@@ -20,6 +20,21 @@ EOF
 	for i in $(seq 1 "$num_tasks"); do
 		ln -sf ./perf-0 ".mise-tasks/perf-$i"
 	done
+
+	# Create nested task that calls mise run internally (for env cache testing)
+	cat <<EOF >.mise-tasks/nested-outer
+#!/bin/sh
+#MISE description="outer task that calls inner task"
+mise run nested-inner
+EOF
+	chmod +x .mise-tasks/nested-outer
+
+	cat <<EOF >.mise-tasks/nested-inner
+#!/bin/sh
+#MISE description="inner task called by outer task"
+echo inner task done
+EOF
+	chmod +x .mise-tasks/nested-inner
 }
 
 create_tools() {

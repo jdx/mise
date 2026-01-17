@@ -8,6 +8,7 @@ use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::task_source_checker::{save_checksum, sources_are_fresh, task_cwd};
 use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
+use crate::toolset::env_cache::compute_cache_key;
 use crate::ui::{style, time};
 use duct::IntoExecutablePath;
 use eyre::{Report, Result, ensure, eyre};
@@ -201,6 +202,18 @@ impl TaskExecutor {
         if let Some(config_root) = &task.config_root {
             env.insert("MISE_CONFIG_ROOT".into(), config_root.display().to_string());
         }
+
+        // Export env cache key for nested mise invocations (only when experimental is on)
+        let settings = Settings::get();
+        if settings.experimental && settings.env_cache {
+            let cache_key = compute_cache_key(config, &ts);
+            env.insert("__MISE_ENV_CACHE_KEY".into(), cache_key);
+            // Also export project root for shim fast-path validation
+            if let Some(ref root) = config.project_root {
+                env.insert("__MISE_PROJECT_ROOT".into(), root.display().to_string());
+            }
+        }
+
         let timer = std::time::Instant::now();
 
         if let Some(file) = task.file_path(config).await? {

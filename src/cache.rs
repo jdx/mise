@@ -261,6 +261,20 @@ pub(crate) fn auto_prune() -> Result<()> {
             age,
         },
     )?;
+
+    // Also prune env-cache in STATE directory
+    let env_cache_dir = dirs::STATE.join("env-cache");
+    if env_cache_dir.exists() {
+        prune(
+            &env_cache_dir,
+            &PruneOptions {
+                dry_run: false,
+                verbose: false,
+                age,
+            },
+        )?;
+    }
+
     Ok(())
 }
 

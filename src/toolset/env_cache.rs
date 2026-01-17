@@ -1,0 +1,117 @@
+use std::collections::BTreeMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use eyre::Result;
+use serde::{Deserialize, Serialize};
+
+use crate::config::{Config, ConfigMap, Settings};
+use crate::toolset::Toolset;
+use crate::{dirs, file};
+
+/// Cached environment data
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CachedEnv {
+    pub paths: Vec<PathBuf>,
+    pub env: BTreeMap<String, String>,
+    pub created_at: u64,
+}
+
+impl CachedEnv {
+    /// Load cached environment from file
+    pub fn load(key: &str) -> Option<Self> {
+        let path = cache_file(key);
+        let content = std::fs::read(&path).ok()?;
+        rmp_serde::from_slice(&content).ok()
+    }
+
+    /// Save cached environment to file
+    pub fn save(&self, key: &str) -> Result<()> {
+        file::create_dir_all(cache_dir())?;
+        let content = rmp_serde::to_vec(self)?;
+        std::fs::write(cache_file(key), content)?;
+        Ok(())
+    }
+
+    /// Check if cache is still valid based on TTL
+    pub fn is_valid(&self) -> bool {
+        let ttl = Settings::get().env_cache_ttl_duration();
+        let now = unix_timestamp();
+        now.saturating_sub(self.created_at) < ttl.as_secs()
+    }
+}
+
+/// Compute cache key from config and toolset
+pub fn compute_cache_key(config: &Arc<Config>, toolset: &Toolset) -> String {
+    let mut hasher = DefaultHasher::new();
+
+    // Hash project root
+    config.project_root.hash(&mut hasher);
+
+    // Hash config files and their modification times
+    hash_config_files(&config.config_files, &mut hasher);
+
+    // Hash relevant settings
+    hash_relevant_settings(&mut hasher);
+
+    // Hash resolved tool versions (handles mise x foo@1 vs foo@2)
+    hash_tool_requests(toolset, &mut hasher);
+
+    // Hash mise version
+    env!("CARGO_PKG_VERSION").hash(&mut hasher);
+
+    format!("{:x}", hasher.finish())
+}
+
+fn cache_dir() -> PathBuf {
+    dirs::STATE.join("env-cache")
+}
+
+fn cache_file(key: &str) -> PathBuf {
+    cache_dir().join(key)
+}
+
+fn unix_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn hash_config_files(config_files: &ConfigMap, hasher: &mut DefaultHasher) {
+    for (path, _) in config_files {
+        path.hash(hasher);
+        if let Ok(meta) = path.metadata() {
+            if let Ok(mtime) = meta.modified() {
+                // Use nanoseconds for more precise cache invalidation
+                // (seconds would miss rapid file changes in tests)
+                mtime
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+                    .hash(hasher);
+            }
+        }
+    }
+}
+
+fn hash_relevant_settings(hasher: &mut DefaultHasher) {
+    let settings = Settings::get();
+    settings.experimental.hash(hasher);
+    settings.all_compile.hash(hasher);
+    settings.node.compile.hash(hasher);
+    settings.python.compile.hash(hasher);
+    settings.ruby.compile.hash(hasher);
+}
+
+fn hash_tool_requests(toolset: &Toolset, hasher: &mut DefaultHasher) {
+    for (backend, tvl) in &toolset.versions {
+        backend.short.hash(hasher);
+        for tv in &tvl.versions {
+            tv.version.hash(hasher);
+        }
+    }
+}

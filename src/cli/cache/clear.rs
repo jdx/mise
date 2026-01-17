@@ -1,4 +1,4 @@
-use crate::dirs::CACHE;
+use crate::dirs::{CACHE, STATE};
 use crate::file::{display_path, remove_all};
 use eyre::Result;
 use filetime::set_file_times;
@@ -45,6 +45,14 @@ impl CacheClear {
                 if p.exists() {
                     debug!("clearing cache from {}", display_path(&p));
                     remove_all(p)?;
+                }
+            }
+            // Also clear env-cache from STATE directory when no specific plugin is specified
+            if self.plugin.is_none() {
+                let env_cache_dir = STATE.join("env-cache");
+                if env_cache_dir.exists() {
+                    debug!("clearing env-cache from {}", display_path(&env_cache_dir));
+                    remove_all(&env_cache_dir)?;
                 }
             }
             match &self.plugin {

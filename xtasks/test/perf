@@ -73,6 +73,44 @@ fi
 benchmark ls ls
 benchmark bin-paths bin-paths
 benchmark task-ls task ls
+
+# Benchmark nested task execution with and without env cache
+benchmark_env_cache() {
+	local name="nested-task"
+	local cached_duration
+	local no_cache_duration
+
+	echo "running nested task with env cache (experimental=1)..." >&2
+	local total=0
+	for _ in $(seq 1 $runs); do
+		start_time=$(date +%s%N)
+		MISE_EXPERIMENTAL=1 timeout -v 20 mise run nested-outer >/dev/null || true
+		end_time=$(date +%s%N)
+		duration=$(((end_time - start_time) / 1000000))
+		total=$((total + duration))
+	done
+	cached_duration=$((total / runs))
+
+	echo "running nested task without env cache (experimental=0)..." >&2
+	total=0
+	for _ in $(seq 1 $runs); do
+		start_time=$(date +%s%N)
+		MISE_EXPERIMENTAL=0 timeout -v 20 mise run nested-outer >/dev/null || true
+		end_time=$(date +%s%N)
+		duration=$(((end_time - start_time) / 1000000))
+		total=$((total + duration))
+	done
+	no_cache_duration=$((total / runs))
+
+	benchmarks["$name-with-env-cache"]=$cached_duration
+	benchmarks["$name-without-env-cache"]=$no_cache_duration
+	names+=("$name-env-cache")
+}
+
+# Warmup for nested task
+mise run nested-outer >/dev/null 2>&1 || true
+benchmark_env_cache
+
 set +x
 
 get_performance_emoji() {
@@ -130,8 +168,17 @@ print_performance_table() {
 		echo "| Command    | Time   |" >>"$output_file"
 		echo "|------------|--------|" >>"$output_file"
 		for name in "${names[@]}"; do
-			# printf "| %-10s | %6dms |\n" "$name (uncached)" "${benchmarks[\"$name-uncached\"]}" >>"$output_file"
-			printf "| %-10s | %6dms |\n" "$name (cached)" "${benchmarks["$name-cached"]}" >>"$output_file"
+			# Handle env-cache benchmark specially
+			if [[ $name == *"-env-cache" ]]; then
+				local base_name="${name%-env-cache}"
+				local with_cache="${benchmarks["$base_name-with-env-cache"]}"
+				local without_cache="${benchmarks["$base_name-without-env-cache"]}"
+				printf "| %-20s | %6dms |\n" "$base_name (env-cache)" "$with_cache" >>"$output_file"
+				printf "| %-20s | %6dms |\n" "$base_name (no-cache)" "$without_cache" >>"$output_file"
+			else
+				# printf "| %-10s | %6dms |\n" "$name (uncached)" "${benchmarks[\"$name-uncached\"]}" >>"$output_file"
+				printf "| %-20s | %6dms |\n" "$name (cached)" "${benchmarks["$name-cached"]}" >>"$output_file"
+			fi
 		done
 	fi
 }

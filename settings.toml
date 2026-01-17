@@ -404,6 +404,41 @@ parse_env = "list_by_comma"
 rc = true
 type = "ListString"
 
+[env_cache]
+default = true
+description = "Cache computed environments to avoid redundant loading"
+docs = """
+When enabled, mise caches computed environments to disk and reuses them
+when the configuration hasn't changed. This significantly improves
+performance for nested mise invocations (e.g., mise run inside mise run).
+
+Requires `experimental = true` to be enabled.
+
+The cache is keyed by:
+- Project root
+- Config file paths and modification times
+- Relevant settings
+- Tool versions
+- Mise version
+
+Cache files are stored in the state directory and are cleaned up by
+the autopruner and `mise cache clear`.
+"""
+env = "MISE_ENV_CACHE"
+type = "Bool"
+
+[env_cache_ttl]
+default = "24h"
+description = "Time-to-live for cached environments"
+docs = """
+How long cached environments remain valid. After this duration,
+the cache will be recomputed even if inputs haven't changed.
+
+Requires `experimental = true` to be enabled.
+"""
+env = "MISE_ENV_CACHE_TTL"
+type = "Duration"
+
 [env_file]
 description = "Path to a file containing environment variables to automatically load."
 env = "MISE_ENV_FILE"

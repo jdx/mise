@@ -406,6 +406,10 @@ impl Settings {
         if age.as_secs() == 0 { None } else { Some(age) }
     }
 
+    pub fn env_cache_ttl_duration(&self) -> Duration {
+        duration::parse_duration(&self.env_cache_ttl).unwrap()
+    }
+
     pub fn fetch_remote_versions_timeout(&self) -> Duration {
         duration::parse_duration(&self.fetch_remote_versions_timeout).unwrap()
     }
