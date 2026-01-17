@@ -8,7 +8,8 @@ use crate::config::Settings;
 use crate::file::{self, TarOptions};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{self, CondaPackageInfo, Lockfile, PlatformInfo};
+use crate::toolset::ToolSource;
 use crate::toolset::ToolVersion;
 use crate::{backend::Backend, dirs, hash, http::HTTP, parallel};
 use async_trait::async_trait;
@@ -446,6 +447,17 @@ impl CondaBackend {
 
         Ok(tarball_path)
     }
+
+    /// Read the lockfile for the tool's source config
+    fn read_lockfile_for_tool(&self, tv: &ToolVersion) -> Result<Lockfile> {
+        match tv.request.source() {
+            ToolSource::MiseToml(path) => {
+                let (lockfile_path, _) = lockfile::lockfile_path_for_config(path);
+                Lockfile::read(&lockfile_path)
+            }
+            _ => Ok(Lockfile::default()),
+        }
+    }
 }
 
 #[async_trait]
@@ -514,6 +526,7 @@ impl Backend for CondaBackend {
         Settings::get().ensure_experimental("conda backend")?;
         let files = self.fetch_package_files().await?;
         let subdir = Self::conda_subdir();
+        let platform_key = self.get_platform_key();
 
         // Find the package file for this version (prefers platform-specific over noarch)
         let pkg_file = Self::find_package_file(&files, Some(&tv.version), subdir);
@@ -528,17 +541,68 @@ impl Backend for CondaBackend {
             ),
         };
 
-        // Resolve all dependencies
-        ctx.pr.set_message("resolving dependencies".to_string());
-        let mut resolved = HashMap::new();
-        let mut visited = HashSet::new();
-        // Add main package to visited to prevent circular resolution back to it
-        visited.insert(self.tool_name());
-        self.resolve_dependencies(pkg_file, subdir, &mut resolved, &mut visited)
-            .await?;
-
         // Build main package info
         let main_pkg = pkg_file.to_resolved_package(&self.tool_name());
+
+        // Check if we have locked dependencies
+        let locked_deps = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|p| p.conda_deps.as_ref());
+
+        // Resolve dependencies - either from lockfile or dynamically
+        let (resolved, dep_basenames) = if let Some(basenames) = locked_deps {
+            // Use locked dependencies - look them up in the lockfile
+            ctx.pr.set_message("using locked dependencies".to_string());
+            let lockfile = self.read_lockfile_for_tool(&tv)?;
+
+            let mut resolved = HashMap::new();
+            for basename in basenames {
+                if let Some(pkg_info) = lockfile.get_conda_package(&platform_key, basename) {
+                    let full_basename = extract_basename_from_url(&pkg_info.url);
+                    resolved.insert(
+                        basename.clone(),
+                        ResolvedPackage {
+                            name: basename.clone(), // Use basename as the key
+                            download_url: pkg_info.url.clone(),
+                            sha256: pkg_info.checksum.as_ref().map(|c: &String| {
+                                c.strip_prefix("sha256:").unwrap_or(c).to_string()
+                            }),
+                            basename: full_basename,
+                        },
+                    );
+                } else {
+                    warn!(
+                        "conda package {} not found in lockfile for platform {}",
+                        basename, platform_key
+                    );
+                }
+            }
+            (resolved, basenames.clone())
+        } else {
+            // Resolve dynamically (current behavior)
+            ctx.pr.set_message("resolving dependencies".to_string());
+            let mut resolved = HashMap::new();
+            let mut visited = HashSet::new();
+            // Add main package to visited to prevent circular resolution back to it
+            visited.insert(self.tool_name());
+            self.resolve_dependencies(pkg_file, subdir, &mut resolved, &mut visited)
+                .await?;
+
+            // Convert to basename keys for lockfile
+            let dep_basenames: Vec<String> = resolved
+                .values()
+                .map(|p| strip_conda_extension(&p.basename).to_string())
+                .collect();
+
+            // Re-key resolved by basename for consistency
+            let resolved_by_basename: HashMap<String, ResolvedPackage> = resolved
+                .into_values()
+                .map(|p| (strip_conda_extension(&p.basename).to_string(), p))
+                .collect();
+
+            (resolved_by_basename, dep_basenames)
+        };
 
         // Build list of all packages to download (deps + main)
         let mut all_packages: Vec<ResolvedPackage> = resolved.values().cloned().collect();
@@ -550,11 +614,16 @@ impl Backend for CondaBackend {
         let downloaded_paths =
             parallel::parallel(all_packages.clone(), Self::download_package).await?;
 
-        // Create map of package name -> downloaded path
+        // Create map of package basename -> downloaded path
         let path_map: HashMap<String, PathBuf> = all_packages
             .iter()
             .zip(downloaded_paths.iter())
-            .map(|(pkg, path)| (pkg.name.clone(), path.clone()))
+            .map(|(pkg, path)| {
+                (
+                    strip_conda_extension(&pkg.basename).to_string(),
+                    path.clone(),
+                )
+            })
             .collect();
 
         let install_path = tv.install_path();
@@ -562,23 +631,37 @@ impl Backend for CondaBackend {
         file::create_dir_all(&install_path)?;
 
         // Extract dependencies first (sequential to avoid conflicts)
-        for name in resolved.keys() {
-            let tarball_path = &path_map[name];
-            ctx.pr.set_message(format!("extract {name}"));
-            self.extract_conda_package(ctx, tarball_path, &install_path)?;
+        for basename in &dep_basenames {
+            if let Some(tarball_path) = path_map.get(basename) {
+                ctx.pr.set_message(format!("extract {basename}"));
+                self.extract_conda_package(ctx, tarball_path, &install_path)?;
+            }
         }
 
         // Extract main package last (so its files take precedence)
-        let main_tarball = &path_map[&main_pkg.name];
-        ctx.pr.set_message(format!("extract {}", self.tool_name()));
-        self.extract_conda_package(ctx, main_tarball, &install_path)?;
+        let main_basename = strip_conda_extension(&main_pkg.basename);
+        if let Some(main_tarball) = path_map.get(main_basename) {
+            ctx.pr.set_message(format!("extract {}", self.tool_name()));
+            self.extract_conda_package(ctx, main_tarball, &install_path)?;
+        }
 
         // Store lockfile info
-        let platform_key = self.get_platform_key();
-        let platform_info = tv.lock_platforms.entry(platform_key).or_default();
+        let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();
         platform_info.url = Some(main_pkg.download_url.clone());
         if let Some(sha256) = &main_pkg.sha256 {
             platform_info.checksum = Some(format!("sha256:{}", sha256));
+        }
+        platform_info.conda_deps = Some(dep_basenames.clone());
+
+        // Store resolved packages in tv.conda_packages for lockfile update
+        for (basename, pkg) in &resolved {
+            tv.conda_packages.insert(
+                (platform_key.clone(), basename.clone()),
+                CondaPackageInfo {
+                    url: pkg.download_url.clone(),
+                    checksum: pkg.sha256.as_ref().map(|s| format!("sha256:{}", s)),
+                },
+            );
         }
 
         // Make binaries executable (use same path logic as list_bin_paths)
@@ -614,11 +697,30 @@ impl Backend for CondaBackend {
         match pkg_file {
             Some(pkg_file) => {
                 let download_url = Self::build_download_url(&pkg_file.download_url);
+
+                // Resolve dependencies for this platform
+                let mut resolved = HashMap::new();
+                let mut visited = HashSet::new();
+                visited.insert(self.tool_name());
+                self.resolve_dependencies(pkg_file, subdir, &mut resolved, &mut visited)
+                    .await?;
+
+                // Get dependency basenames
+                let conda_deps: Vec<String> = resolved
+                    .values()
+                    .map(|p| strip_conda_extension(&p.basename).to_string())
+                    .collect();
+
                 Ok(PlatformInfo {
                     url: Some(download_url),
                     checksum: pkg_file.sha256.as_ref().map(|s| format!("sha256:{}", s)),
                     size: None,
                     url_api: None,
+                    conda_deps: if conda_deps.is_empty() {
+                        None
+                    } else {
+                        Some(conda_deps)
+                    },
                 })
             }
             None => {
@@ -628,9 +730,54 @@ impl Backend for CondaBackend {
                     checksum: None,
                     size: None,
                     url_api: None,
+                    conda_deps: None,
                 })
             }
         }
+    }
+
+    async fn resolve_conda_packages(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> std::collections::BTreeMap<String, CondaPackageInfo> {
+        let mut result = std::collections::BTreeMap::new();
+
+        let files = match self.fetch_package_files().await {
+            Ok(f) => f,
+            Err(_) => return result,
+        };
+        let subdir = Self::conda_subdir_for_platform(target);
+
+        let Some(pkg_file) = Self::find_package_file(&files, Some(&tv.version), subdir) else {
+            return result;
+        };
+
+        // Resolve dependencies for this platform
+        let mut resolved = HashMap::new();
+        let mut visited = HashSet::new();
+        visited.insert(self.tool_name());
+        if self
+            .resolve_dependencies(pkg_file, subdir, &mut resolved, &mut visited)
+            .await
+            .is_err()
+        {
+            return result;
+        }
+
+        // Convert to CondaPackageInfo map keyed by basename
+        for pkg in resolved.values() {
+            let basename = strip_conda_extension(&pkg.basename).to_string();
+            result.insert(
+                basename,
+                CondaPackageInfo {
+                    url: pkg.download_url.clone(),
+                    checksum: pkg.sha256.as_ref().map(|s| format!("sha256:{}", s)),
+                },
+            );
+        }
+
+        result
     }
 
     async fn list_bin_paths(
@@ -732,4 +879,19 @@ fn parse_dependency(dep: &str) -> Option<(String, Option<String>)> {
     // Get version spec if present (ignore build spec)
     let version = parts.get(1).map(|s| s.to_string());
     Some((name, version))
+}
+
+/// Strip conda extension from basename
+/// "ncurses-6.4-h7ea286d_0.conda" -> "ncurses-6.4-h7ea286d_0"
+fn strip_conda_extension(basename: &str) -> &str {
+    basename
+        .strip_suffix(".conda")
+        .or_else(|| basename.strip_suffix(".tar.bz2"))
+        .unwrap_or(basename)
+}
+
+/// Extract basename from URL
+/// "https://conda.anaconda.org/.../ncurses-6.4-h7ea286d_0.conda" -> "ncurses-6.4-h7ea286d_0.conda"
+fn extract_basename_from_url(url: &str) -> String {
+    url.rsplit('/').next().unwrap_or(url).to_string()
 }

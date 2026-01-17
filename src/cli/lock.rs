@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::backend::platform_target::PlatformTarget;
 use crate::config::Config;
 use crate::file::display_path;
-use crate::lockfile::{self, Lockfile, PlatformInfo};
+use crate::lockfile::{self, CondaPackageInfo, Lockfile, PlatformInfo};
 use crate::platform::Platform;
 use crate::toolset::Toolset;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -15,7 +15,7 @@ use eyre::Result;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
-/// Result type for lock task: (short_name, version, backend, platform, info, options)
+/// Result type for lock task: (short_name, version, backend, platform, info, options, conda_packages)
 type LockTaskResult = (
     String,
     String,
@@ -23,6 +23,7 @@ type LockTaskResult = (
     Platform,
     Option<PlatformInfo>,
     BTreeMap<String, String>,
+    BTreeMap<String, CondaPackageInfo>,
 );
 
 /// Update lockfile checksums and URLs for all specified platforms
@@ -365,10 +366,14 @@ impl Lock {
                 let target = PlatformTarget::new(platform.clone());
                 let backend = crate::backend::get(&ba);
 
-                let (info, options) = if let Some(backend) = backend {
+                let (info, options, conda_packages) = if let Some(backend) = backend {
                     let options = backend.resolve_lockfile_options(&tv.request, &target);
                     match backend.resolve_lock_info(&tv, &target).await {
-                        Ok(info) => (Some(info), options),
+                        Ok(info) => {
+                            // Also resolve conda packages if any
+                            let conda_packages = backend.resolve_conda_packages(&tv, &target).await;
+                            (Some(info), options, conda_packages)
+                        }
                         Err(e) => {
                             warn!(
                                 "Failed to resolve {} for {}: {}",
@@ -376,12 +381,12 @@ impl Lock {
                                 platform.to_key(),
                                 e
                             );
-                            (None, options)
+                            (None, options, BTreeMap::new())
                         }
                     }
                 } else {
                     warn!("Backend not found for {}", ba.short);
-                    (None, BTreeMap::new())
+                    (None, BTreeMap::new(), BTreeMap::new())
                 };
 
                 (
@@ -391,6 +396,7 @@ impl Lock {
                     platform,
                     info,
                     options,
+                    conda_packages,
                 )
             });
         }
@@ -400,7 +406,7 @@ impl Lock {
         while let Some(result) = jset.join_next().await {
             completed += 1;
             match result {
-                Ok((short, version, backend, platform, info, options)) => {
+                Ok((short, version, backend, platform, info, options, conda_packages)) => {
                     let platform_key = platform.to_key();
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
@@ -414,6 +420,10 @@ impl Lock {
                             &platform_key,
                             info,
                         );
+                    }
+                    // Merge conda packages into the lockfile's shared section
+                    for (basename, pkg_info) in conda_packages {
+                        lockfile.set_conda_package(&platform_key, &basename, pkg_info);
                     }
                     results.push((short, platform_key, ok));
                 }

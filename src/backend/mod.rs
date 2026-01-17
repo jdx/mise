@@ -1288,6 +1288,7 @@ pub trait Backend: Debug + Send + Sync {
             size: None,     // TODO: Implement size fetching via HEAD request
             url: Some(tarball_url.to_string()),
             url_api: None,
+            conda_deps: None,
         })
     }
 
@@ -1321,6 +1322,7 @@ pub trait Backend: Debug + Send + Sync {
             size: None,     // TODO: Implement size fetching from GitHub API
             url: asset_url,
             url_api: None,
+            conda_deps: None,
         })
     }
 
@@ -1338,7 +1340,19 @@ pub trait Backend: Debug + Send + Sync {
             size: None,
             url: None,
             url_api: None,
+            conda_deps: None,
         })
+    }
+
+    /// Resolve conda packages for the lockfile's shared conda-packages section.
+    /// Returns a map of basename -> CondaPackageInfo for the given platform.
+    /// Default implementation returns empty (only conda backend overrides this).
+    async fn resolve_conda_packages(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> BTreeMap<String, crate::lockfile::CondaPackageInfo> {
+        BTreeMap::new()
     }
 }
 

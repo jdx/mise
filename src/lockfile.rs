@@ -22,6 +22,10 @@ use xx::regex;
 pub struct Lockfile {
     #[serde(skip)]
     tools: BTreeMap<String, Vec<LockfileTool>>,
+    /// Shared conda packages: platform -> basename -> CondaPackageInfo
+    /// Basename includes version+build (e.g., "ncurses-6.4-h7ea286d_0")
+    #[serde(skip)]
+    conda_packages: BTreeMap<String, BTreeMap<String, CondaPackageInfo>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -47,12 +51,26 @@ pub struct PlatformInfo {
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url_api: Option<String>,
+    /// References to conda packages in the shared conda-packages section (by basename)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conda_deps: Option<Vec<String>>,
+}
+
+/// Conda package info stored in the shared conda-packages section
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CondaPackageInfo {
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<String>,
 }
 
 impl PlatformInfo {
     /// Returns true if this PlatformInfo has no meaningful data (for serde skip)
     pub fn is_empty(&self) -> bool {
-        self.checksum.is_none() && self.url.is_none() && self.url_api.is_none()
+        self.checksum.is_none()
+            && self.url.is_none()
+            && self.url_api.is_none()
+            && self.conda_deps.is_none()
     }
 }
 
@@ -62,9 +80,7 @@ impl TryFrom<toml::Value> for PlatformInfo {
         match value {
             toml::Value::String(checksum) => Ok(PlatformInfo {
                 checksum: Some(checksum),
-                size: None,
-                url: None,
-                url_api: None,
+                ..Default::default()
             }),
             toml::Value::Table(mut t) => {
                 let checksum = match t.remove("checksum") {
@@ -84,11 +100,20 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     Some(toml::Value::String(s)) => Some(s),
                     _ => None,
                 };
+                let conda_deps = match t.remove("conda_deps") {
+                    Some(toml::Value::Array(arr)) => Some(
+                        arr.into_iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect(),
+                    ),
+                    _ => None,
+                };
                 Ok(PlatformInfo {
                     checksum,
                     size,
                     url,
                     url_api,
+                    conda_deps,
                 })
             }
             _ => bail!("unsupported asset info format"),
@@ -108,7 +133,38 @@ impl From<PlatformInfo> for toml::Value {
         if let Some(url_api) = platform_info.url_api {
             table.insert("url_api".to_string(), url_api.into());
         }
+        if let Some(conda_deps) = platform_info.conda_deps {
+            let deps: toml::Value = conda_deps
+                .into_iter()
+                .map(toml::Value::String)
+                .collect::<Vec<_>>()
+                .into();
+            table.insert("conda_deps".to_string(), deps);
+        }
         toml::Value::Table(table)
+    }
+}
+
+impl TryFrom<toml::Value> for CondaPackageInfo {
+    type Error = Report;
+    fn try_from(value: toml::Value) -> Result<Self> {
+        match value {
+            toml::Value::Table(mut t) => {
+                let url = t
+                    .remove("url")
+                    .and_then(|v| match v {
+                        toml::Value::String(s) => Some(s),
+                        _ => None,
+                    })
+                    .ok_or_else(|| eyre::eyre!("missing url in conda package info"))?;
+                let checksum = match t.remove("checksum") {
+                    Some(toml::Value::String(s)) => Some(s),
+                    _ => None,
+                };
+                Ok(CondaPackageInfo { url, checksum })
+            }
+            _ => bail!("unsupported conda package info format"),
+        }
     }
 }
 
@@ -142,6 +198,22 @@ impl Lockfile {
             lockfile.tools.insert(short, versions);
         }
 
+        // Parse conda-packages section: platform -> basename -> CondaPackageInfo
+        if let Some(conda_packages) = table.remove("conda-packages") {
+            let platforms: toml::Table = conda_packages.try_into()?;
+            for (platform, packages) in platforms {
+                let packages_table: toml::Table = packages.try_into()?;
+                for (basename, info) in packages_table {
+                    let info: CondaPackageInfo = info.try_into()?;
+                    lockfile
+                        .conda_packages
+                        .entry(platform.clone())
+                        .or_default()
+                        .insert(basename, info);
+                }
+            }
+        }
+
         Ok(lockfile)
     }
 
@@ -149,6 +221,27 @@ impl Lockfile {
         if self.is_empty() {
             let _ = file::remove_file(path);
         } else {
+            let mut lockfile = toml::Table::new();
+
+            // Write conda-packages section first (before tools for nicer ordering)
+            if !self.conda_packages.is_empty() {
+                let mut conda_packages = toml::Table::new();
+                for (platform, packages) in &self.conda_packages {
+                    let mut platform_table = toml::Table::new();
+                    for (basename, info) in packages {
+                        let mut pkg_table = toml::Table::new();
+                        pkg_table.insert("url".to_string(), info.url.clone().into());
+                        if let Some(checksum) = &info.checksum {
+                            pkg_table.insert("checksum".to_string(), checksum.clone().into());
+                        }
+                        platform_table.insert(basename.clone(), pkg_table.into());
+                    }
+                    conda_packages.insert(platform.clone(), platform_table.into());
+                }
+                lockfile.insert("conda-packages".to_string(), conda_packages.into());
+            }
+
+            // Write tools section
             let mut tools = toml::Table::new();
             for (short, versions) in &self.tools {
                 // Always write Multi-Version format (array format) for consistency
@@ -160,7 +253,6 @@ impl Lockfile {
                     .into();
                 tools.insert(short.clone(), value);
             }
-            let mut lockfile = toml::Table::new();
             lockfile.insert("tools".to_string(), tools.into());
 
             let content = toml::to_string_pretty(&toml::Value::Table(lockfile))?;
@@ -171,7 +263,36 @@ impl Lockfile {
     }
 
     fn is_empty(&self) -> bool {
-        self.tools.is_empty()
+        self.tools.is_empty() && self.conda_packages.is_empty()
+    }
+
+    /// Add or update a conda package in the shared section
+    /// `basename` is without extension, e.g., "ncurses-6.4-h7ea286d_0"
+    pub fn set_conda_package(&mut self, platform: &str, basename: &str, info: CondaPackageInfo) {
+        self.conda_packages
+            .entry(platform.to_string())
+            .or_default()
+            .insert(basename.to_string(), info);
+    }
+
+    /// Get a conda package from the shared section by basename
+    pub fn get_conda_package(&self, platform: &str, basename: &str) -> Option<&CondaPackageInfo> {
+        self.conda_packages.get(platform)?.get(basename)
+    }
+
+    /// Get all conda packages for a platform
+    pub fn get_conda_packages(
+        &self,
+        platform: &str,
+    ) -> Option<&BTreeMap<String, CondaPackageInfo>> {
+        self.conda_packages.get(platform)
+    }
+
+    /// Get mutable reference to all conda packages
+    pub fn conda_packages_mut(
+        &mut self,
+    ) -> &mut BTreeMap<String, BTreeMap<String, CondaPackageInfo>> {
+        &mut self.conda_packages
     }
 
     /// Get all platform keys present in the lockfile
@@ -211,6 +332,9 @@ impl Lockfile {
                     size: platform_info.size.or(existing.size),
                     url: platform_info.url.or_else(|| existing.url.clone()),
                     url_api: platform_info.url_api.or_else(|| existing.url_api.clone()),
+                    conda_deps: platform_info
+                        .conda_deps
+                        .or_else(|| existing.conda_deps.clone()),
                 }
             } else {
                 platform_info
@@ -422,6 +546,13 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
             let merged_tools =
                 merge_tool_entries_with_env(entries, existing_lockfile.tools.get(&short));
             existing_lockfile.tools.insert(short, merged_tools);
+        }
+
+        // Merge conda packages from new_versions into the lockfile
+        for tv in new_versions {
+            for ((platform, basename), pkg_info) in &tv.conda_packages {
+                existing_lockfile.set_conda_package(platform, basename, pkg_info.clone());
+            }
         }
 
         existing_lockfile.save(&lockfile_path)?;
@@ -837,6 +968,7 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
                             size: platform_info.size,
                             url: platform_info.url.clone(),
                             url_api: platform_info.url_api.clone(),
+                            conda_deps: platform_info.conda_deps.clone(),
                         },
                     );
                 }
@@ -961,6 +1093,7 @@ backend = "core:python"
                 size: Some(12345678),
                 url: Some("https://example.com/node.tar.gz".to_string()),
                 url_api: Some("https://api.github.com.com/repos/test/1234".to_string()),
+                conda_deps: None,
             },
         );
 
@@ -1151,5 +1284,123 @@ options = { exe = "rg" }
             lockfile_path_for_config(Path::new("/foo/bar/.config/mise/conf.d/foo.toml"));
         assert_eq!(path, PathBuf::from("/foo/bar/.config/mise/mise.lock"));
         assert!(!is_local);
+    }
+
+    #[test]
+    fn test_conda_packages_parsing() {
+        let toml_with_conda = r#"
+[conda-packages."macos-arm64"]
+"ncurses-6.4-h7ea286d_0" = { url = "https://conda.anaconda.org/conda-forge/osx-arm64/ncurses-6.4-h7ea286d_0.conda", checksum = "sha256:abc123" }
+"readline-8.2-h92ec313_1" = { url = "https://conda.anaconda.org/conda-forge/osx-arm64/readline-8.2-h92ec313_1.conda" }
+
+[[tools.jq]]
+version = "1.7.1"
+backend = "conda:jq"
+"platforms.macos-arm64" = { url = "https://example.com/jq.conda", checksum = "sha256:def456", conda_deps = ["ncurses-6.4-h7ea286d_0", "readline-8.2-h92ec313_1"] }
+"#;
+
+        let temp_dir = std::env::temp_dir();
+        let test_lockfile = temp_dir.join("test_conda_parse.lock");
+        std::fs::write(&test_lockfile, toml_with_conda).unwrap();
+
+        let lockfile = Lockfile::read(&test_lockfile).unwrap();
+
+        // Verify conda packages were parsed
+        let macos_packages = lockfile.get_conda_packages("macos-arm64").unwrap();
+        assert_eq!(macos_packages.len(), 2);
+
+        let ncurses = macos_packages.get("ncurses-6.4-h7ea286d_0").unwrap();
+        assert_eq!(
+            ncurses.url,
+            "https://conda.anaconda.org/conda-forge/osx-arm64/ncurses-6.4-h7ea286d_0.conda"
+        );
+        assert_eq!(ncurses.checksum, Some("sha256:abc123".to_string()));
+
+        let readline = macos_packages.get("readline-8.2-h92ec313_1").unwrap();
+        assert!(readline.checksum.is_none());
+
+        // Verify tool with conda_deps was parsed
+        let jq = &lockfile.tools["jq"][0];
+        let platform_info = jq.platforms.get("macos-arm64").unwrap();
+        assert_eq!(
+            platform_info.conda_deps,
+            Some(vec![
+                "ncurses-6.4-h7ea286d_0".to_string(),
+                "readline-8.2-h92ec313_1".to_string()
+            ])
+        );
+
+        let _ = std::fs::remove_file(&test_lockfile);
+    }
+
+    #[test]
+    fn test_conda_packages_serialization() {
+        let mut lockfile = Lockfile::default();
+
+        // Add conda packages
+        lockfile.set_conda_package(
+            "macos-arm64",
+            "ncurses-6.4-h7ea286d_0",
+            CondaPackageInfo {
+                url: "https://example.com/ncurses.conda".to_string(),
+                checksum: Some("sha256:abc123".to_string()),
+            },
+        );
+
+        // Add a tool with conda_deps
+        let mut platforms = BTreeMap::new();
+        platforms.insert(
+            "macos-arm64".to_string(),
+            PlatformInfo {
+                url: Some("https://example.com/jq.conda".to_string()),
+                checksum: Some("sha256:def456".to_string()),
+                size: None,
+                url_api: None,
+                conda_deps: Some(vec!["ncurses-6.4-h7ea286d_0".to_string()]),
+            },
+        );
+        lockfile.tools.insert(
+            "jq".to_string(),
+            vec![LockfileTool {
+                version: "1.7.1".to_string(),
+                backend: Some("conda:jq".to_string()),
+                options: BTreeMap::new(),
+                env: None,
+                platforms,
+            }],
+        );
+
+        let temp_dir = std::env::temp_dir();
+        let test_lockfile = temp_dir.join("test_conda_serialize.lock");
+
+        lockfile.save(&test_lockfile).unwrap();
+        let content = std::fs::read_to_string(&test_lockfile).unwrap();
+
+        // Verify content contains conda-packages section (TOML formats it as nested tables)
+        assert!(
+            content.contains("conda-packages"),
+            "content should contain conda-packages section: {content}"
+        );
+        assert!(
+            content.contains("ncurses-6.4-h7ea286d_0"),
+            "content should contain package name: {content}"
+        );
+        assert!(
+            content.contains("https://example.com/ncurses.conda"),
+            "content should contain URL: {content}"
+        );
+
+        // Verify tool section contains conda_deps
+        assert!(
+            content.contains("conda_deps"),
+            "content should contain conda_deps: {content}"
+        );
+
+        // Round-trip test: read it back
+        let reloaded = Lockfile::read(&test_lockfile).unwrap();
+        let packages = reloaded.get_conda_packages("macos-arm64").unwrap();
+        assert!(packages.contains_key("ncurses-6.4-h7ea286d_0"));
+
+        let _ = std::fs::remove_file(&test_lockfile);
     }
 }

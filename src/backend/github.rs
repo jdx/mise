@@ -311,6 +311,7 @@ impl Backend for UnifiedGitBackend {
                 url_api: Some(asset.url_api),
                 checksum: asset.digest,
                 size: None,
+                conda_deps: None,
             }),
             Err(e) => {
                 debug!(
