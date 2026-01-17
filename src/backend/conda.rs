@@ -21,6 +21,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use versions::Versioning;
 
+// Shared utilities for platform-specific library path fixing
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[path = "conda_common.rs"]
+mod conda_common;
+
 // Platform-specific library path fixing modules
 #[cfg(target_os = "linux")]
 #[path = "conda_linux.rs"]

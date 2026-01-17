@@ -3,13 +3,11 @@
 //! Uses `install_name_tool` to rewrite hardcoded build paths and
 //! `codesign` to re-sign binaries after modification.
 
+use super::conda_common::{find_binary_files, is_macho_file};
+use crate::install_context::InstallContext;
 use eyre::Result;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use walkdir::WalkDir;
-
-use crate::install_context::InstallContext;
 
 /// Fix library paths in all binaries and shared libraries after extraction.
 /// This patches hardcoded build paths to point to the actual install directory.
@@ -18,28 +16,13 @@ pub fn fix_library_paths(ctx: &InstallContext, install_dir: &Path) -> Result<()>
 
     // Remove quarantine/provenance attributes that can prevent execution
     // These are added by macOS when files are downloaded from the internet
-    let _ = Command::new("xattr")
-        .args([
-            "-r",
-            "-d",
-            "com.apple.quarantine",
-            install_dir.to_str().unwrap_or(""),
-        ])
-        .output();
-    let _ = Command::new("xattr")
-        .args([
-            "-r",
-            "-d",
-            "com.apple.provenance",
-            install_dir.to_str().unwrap_or(""),
-        ])
-        .output();
+    remove_quarantine_attrs(install_dir);
 
     let lib_dir = install_dir.join("lib");
     let bin_dir = install_dir.join("bin");
 
     // Find all Mach-O files (dylibs and executables)
-    let files = find_macho_files(install_dir)?;
+    let files = find_binary_files(install_dir, is_macho_file);
 
     if files.is_empty() {
         return Ok(());
@@ -47,33 +30,13 @@ pub fn fix_library_paths(ctx: &InstallContext, install_dir: &Path) -> Result<()>
 
     for file_path in &files {
         // Get current library dependencies using otool
-        let output = match Command::new("otool")
-            .args(["-L", file_path.to_str().unwrap_or("")])
-            .output()
-        {
-            Ok(o) => o,
-            Err(_) => continue,
+        let deps = match get_library_dependencies(file_path) {
+            Some(d) => d,
+            None => continue,
         };
 
-        let deps = String::from_utf8_lossy(&output.stdout);
-
         // Collect paths that need fixing
-        let paths_to_fix: Vec<(String, PathBuf)> = deps
-            .lines()
-            .skip(1)
-            .filter_map(|line| {
-                let line = line.trim();
-                if let Some(old_path) = extract_build_path(line) {
-                    if let Some(lib_name) = Path::new(&old_path).file_name() {
-                        let new_path = lib_dir.join(lib_name);
-                        if new_path.exists() {
-                            return Some((old_path, new_path));
-                        }
-                    }
-                }
-                None
-            })
-            .collect();
+        let paths_to_fix = find_paths_to_fix(&deps, &lib_dir);
 
         // Check if this is a library that needs its ID fixed
         let is_dylib = file_path.extension().is_some_and(|e| e == "dylib");
@@ -86,113 +49,135 @@ pub fn fix_library_paths(ctx: &InstallContext, install_dir: &Path) -> Result<()>
         }
 
         // Verify the original binary has a valid signature before modifying
-        let verify_result = Command::new("codesign")
-            .args(["--verify", file_path.to_str().unwrap_or("")])
-            .output();
-
-        if let Ok(output) = &verify_result {
-            if !output.status.success() {
-                debug!(
-                    "Binary {} has invalid or missing signature, skipping signature verification",
-                    file_path.display()
-                );
-            }
-        }
+        verify_signature(file_path);
 
         // Fix each hardcoded path
         for (old_path, new_path) in &paths_to_fix {
-            let _ = Command::new("install_name_tool")
-                .args([
-                    "-change",
-                    old_path,
-                    new_path.to_str().unwrap_or(""),
-                    file_path.to_str().unwrap_or(""),
-                ])
-                .output();
+            fix_library_reference(file_path, old_path, new_path);
         }
 
         // Fix the library's own ID if it's a dylib in the lib directory
         if needs_id_fix {
-            if let Some(filename) = file_path.file_name() {
-                let new_id = format!("@rpath/{}", filename.to_str().unwrap_or(""));
-                let _ = Command::new("install_name_tool")
-                    .args(["-id", &new_id, file_path.to_str().unwrap_or("")])
-                    .output();
-            }
+            fix_library_id(file_path);
         }
 
         // Add rpath entries for lib directory
-        // For binaries in bin/, add @executable_path/../lib
-        // For libraries in lib/, add @loader_path
-        if file_path.starts_with(&bin_dir) {
-            let _ = Command::new("install_name_tool")
-                .args([
-                    "-add_rpath",
-                    "@executable_path/../lib",
-                    file_path.to_str().unwrap_or(""),
-                ])
-                .output();
-        } else if file_path.starts_with(&lib_dir) {
-            let _ = Command::new("install_name_tool")
-                .args([
-                    "-add_rpath",
-                    "@loader_path",
-                    file_path.to_str().unwrap_or(""),
-                ])
-                .output();
-        }
-
-        // Also add absolute path to lib directory as fallback
-        if lib_dir.exists() {
-            let _ = Command::new("install_name_tool")
-                .args([
-                    "-add_rpath",
-                    lib_dir.to_str().unwrap_or(""),
-                    file_path.to_str().unwrap_or(""),
-                ])
-                .output();
-        }
+        add_rpath_entries(file_path, &lib_dir, &bin_dir);
 
         // Re-sign the binary with an ad-hoc signature
         // This is required because install_name_tool invalidates the original signature
-        let _ = Command::new("codesign")
-            .args(["--force", "--sign", "-", file_path.to_str().unwrap_or("")])
-            .output();
+        resign_binary(file_path);
     }
 
     Ok(())
 }
 
-/// Find all Mach-O files (executables and dylibs) in a directory
-fn find_macho_files(dir: &Path) -> Result<Vec<PathBuf>> {
-    let mut files = Vec::new();
-    for entry in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
-        let path = entry.path();
-        if path.is_file() && is_macho_file(path) {
-            files.push(path.to_path_buf());
-        }
-    }
-    Ok(files)
+/// Remove macOS quarantine and provenance attributes
+fn remove_quarantine_attrs(dir: &Path) {
+    let dir_str = dir.to_str().unwrap_or("");
+    let _ = Command::new("xattr")
+        .args(["-r", "-d", "com.apple.quarantine", dir_str])
+        .output();
+    let _ = Command::new("xattr")
+        .args(["-r", "-d", "com.apple.provenance", dir_str])
+        .output();
 }
 
-/// Check if a file is a Mach-O binary
-fn is_macho_file(path: &Path) -> bool {
-    if let Ok(mut file) = std::fs::File::open(path) {
-        let mut magic = [0u8; 4];
-        if file.read_exact(&mut magic).is_ok() {
-            // Mach-O magic numbers
-            return matches!(
-                magic,
-                [0xfe, 0xed, 0xfa, 0xce]   // MH_MAGIC (32-bit)
-                    | [0xfe, 0xed, 0xfa, 0xcf] // MH_MAGIC_64 (64-bit)
-                    | [0xce, 0xfa, 0xed, 0xfe] // MH_CIGAM (32-bit swapped)
-                    | [0xcf, 0xfa, 0xed, 0xfe] // MH_CIGAM_64 (64-bit swapped)
-                    | [0xca, 0xfe, 0xba, 0xbe] // FAT_MAGIC (universal)
-                    | [0xbe, 0xba, 0xfe, 0xca] // FAT_CIGAM (universal swapped)
+/// Get library dependencies using otool -L
+fn get_library_dependencies(path: &Path) -> Option<String> {
+    let output = Command::new("otool")
+        .args(["-L", path.to_str().unwrap_or("")])
+        .output()
+        .ok()?;
+    Some(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Find paths that need fixing in the otool output
+fn find_paths_to_fix(deps: &str, lib_dir: &Path) -> Vec<(String, PathBuf)> {
+    deps.lines()
+        .skip(1) // Skip the first line (file path)
+        .filter_map(|line| {
+            let line = line.trim();
+            if let Some(old_path) = extract_build_path(line) {
+                if let Some(lib_name) = Path::new(&old_path).file_name() {
+                    let new_path = lib_dir.join(lib_name);
+                    if new_path.exists() {
+                        return Some((old_path, new_path));
+                    }
+                }
+            }
+            None
+        })
+        .collect()
+}
+
+/// Verify binary signature (logging only)
+fn verify_signature(path: &Path) {
+    let result = Command::new("codesign")
+        .args(["--verify", path.to_str().unwrap_or("")])
+        .output();
+
+    if let Ok(output) = result {
+        if !output.status.success() {
+            debug!(
+                "Binary {} has invalid or missing signature, skipping signature verification",
+                path.display()
             );
         }
     }
-    false
+}
+
+/// Fix a single library reference using install_name_tool
+fn fix_library_reference(binary: &Path, old_path: &str, new_path: &Path) {
+    let _ = Command::new("install_name_tool")
+        .args([
+            "-change",
+            old_path,
+            new_path.to_str().unwrap_or(""),
+            binary.to_str().unwrap_or(""),
+        ])
+        .output();
+}
+
+/// Fix the library's own ID to use @rpath
+fn fix_library_id(path: &Path) {
+    if let Some(filename) = path.file_name() {
+        let new_id = format!("@rpath/{}", filename.to_str().unwrap_or(""));
+        let _ = Command::new("install_name_tool")
+            .args(["-id", &new_id, path.to_str().unwrap_or("")])
+            .output();
+    }
+}
+
+/// Add rpath entries for library resolution
+fn add_rpath_entries(path: &Path, lib_dir: &Path, bin_dir: &Path) {
+    let path_str = path.to_str().unwrap_or("");
+
+    // For binaries in bin/, add @executable_path/../lib
+    // For libraries in lib/, add @loader_path
+    if path.starts_with(bin_dir) {
+        let _ = Command::new("install_name_tool")
+            .args(["-add_rpath", "@executable_path/../lib", path_str])
+            .output();
+    } else if path.starts_with(lib_dir) {
+        let _ = Command::new("install_name_tool")
+            .args(["-add_rpath", "@loader_path", path_str])
+            .output();
+    }
+
+    // Also add absolute path to lib directory as fallback
+    if lib_dir.exists() {
+        let _ = Command::new("install_name_tool")
+            .args(["-add_rpath", lib_dir.to_str().unwrap_or(""), path_str])
+            .output();
+    }
+}
+
+/// Re-sign the binary with an ad-hoc signature
+fn resign_binary(path: &Path) {
+    let _ = Command::new("codesign")
+        .args(["--force", "--sign", "-", path.to_str().unwrap_or("")])
+        .output();
 }
 
 /// Extract a build path from an otool -L output line
