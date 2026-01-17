@@ -1827,9 +1827,10 @@ fn discover_monorepo_subdirs(
 ) -> Result<Vec<PathBuf>> {
     // If [monorepo].config_roots is defined, use explicit paths instead of walking
     if let Some(patterns) = config_roots
-        && !patterns.is_empty() {
-            return expand_config_roots(root, patterns, ctx);
-        }
+        && !patterns.is_empty()
+    {
+        return expand_config_roots(root, patterns, ctx);
+    }
 
     // Fall back to filesystem walking (deprecated)
     deprecated!(
