@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# Test that env cache is invalidated when tools are installed/uninstalled
+
+export MISE_EXPERIMENTAL=true
+export MISE_ENV_CACHE=true
+
+rm -rf "$MISE_STATE_DIR/env-cache/"
+
+# Configure a tool
+cat <<'EOF' >mise.toml
+[tools]
+tiny = "latest"
+EOF
+
+# Uninstall if present
+mise uninstall tiny 2>/dev/null || true
+
+# First call - tiny not installed, should not be in PATH
+output=$(mise env)
+assert_not_contains "echo '$output'" "installs/tiny"
+
+# Install tiny
+mise install tiny
+
+# Second call - tiny now installed, should be in PATH
+# Cache should be invalidated because install state changed
+output=$(mise env)
+assert_contains "echo '$output'" "installs/tiny"
+
+# Uninstall tiny
+mise uninstall tiny
+
+# Third call - tiny uninstalled, should not be in PATH
+output=$(mise env)
+assert_not_contains "echo '$output'" "installs/tiny"

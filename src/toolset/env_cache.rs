@@ -89,8 +89,9 @@ pub fn compute_cache_key(config: &Arc<Config>, toolset: &Toolset) -> String {
     // Hash relevant settings
     hash_relevant_settings(&mut hasher);
 
-    // Hash resolved tool versions (handles mise x foo@1 vs foo@2)
-    hash_tool_requests(toolset, &mut hasher);
+    // Hash resolved tool versions AND installation state
+    // This ensures cache invalidation when tools are installed/uninstalled
+    hash_tool_requests(config, toolset, &mut hasher);
 
     // Hash mise version
     std::env!("CARGO_PKG_VERSION").hash(&mut hasher);
@@ -153,11 +154,20 @@ fn hash_relevant_settings(hasher: &mut DefaultHasher) {
     std::env::var("MISE_ENV").ok().hash(hasher);
 }
 
-fn hash_tool_requests(toolset: &Toolset, hasher: &mut DefaultHasher) {
+fn hash_tool_requests(config: &Arc<Config>, toolset: &Toolset, hasher: &mut DefaultHasher) {
+    // Hash requested tool versions
     for (backend, tvl) in &toolset.versions {
         backend.short.hash(hasher);
         for tv in &tvl.versions {
             tv.version.hash(hasher);
         }
+    }
+
+    // Hash which requested versions are actually installed
+    // This ensures cache invalidation when tools are installed/uninstalled
+    for (backend, tv) in toolset.list_current_installed_versions(config) {
+        backend.id().hash(hasher);
+        tv.version.hash(hasher);
+        true.hash(hasher); // installed marker
     }
 }
