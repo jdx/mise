@@ -127,17 +127,19 @@ fn value_to_strings(value: Value) -> Result<Vec<String>> {
             let mut result = Vec::new();
             for v in arr {
                 if let Some(s) = value_as_string(&v)
-                    && !s.is_empty() {
-                        result.push(s);
-                    }
+                    && !s.is_empty()
+                {
+                    result.push(s);
+                }
             }
             Ok(result)
         }
         _ => {
             if let Some(s) = value_as_string(&value)
-                && !s.is_empty() {
-                    return Ok(vec![s]);
-                }
+                && !s.is_empty()
+            {
+                return Ok(vec![s]);
+            }
             Ok(vec![])
         }
     }

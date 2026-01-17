@@ -139,7 +139,7 @@ Rename the downloaded binary to a specific name. This is useful when downloading
 ```toml
 [tools."http:docker-compose"]
 version = "2.29.1"
-url = "https://github.com/docker/compose/releases/download/v{version}/docker-compose-linux-x86_64"
+url = "https://github.com/docker/compose/releases/download/v{{ version }}/docker-compose-linux-x86_64"
 bin = "docker-compose"  # Rename from docker-compose-linux-x86_64 to docker-compose
 ```
 
