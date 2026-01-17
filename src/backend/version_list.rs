@@ -235,4 +235,19 @@ mod tests {
         // Falls back to treating JSON as a single line of text
         assert_eq!(versions, vec![r#"{"other": "data"}"#]);
     }
+
+    #[test]
+    fn test_parse_flutter_json_with_filter() {
+        // Test Flutter-style JSON with channel filter
+        let content = r#"{
+            "releases": [
+                {"version": "3.38.7", "channel": "stable"},
+                {"version": "3.41.0-0.0.pre", "channel": "beta"},
+                {"version": "3.38.6", "channel": "stable"}
+            ]
+        }"#;
+        let versions =
+            parse_version_list(content, None, Some(".releases[?channel=stable].version")).unwrap();
+        assert_eq!(versions, vec!["3.38.7", "3.38.6"]);
+    }
 }

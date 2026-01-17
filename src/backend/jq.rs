@@ -8,6 +8,8 @@
 /// - `.field[]` - iterate over array in field
 /// - `.field[].subfield` - extract subfield from array elements
 /// - `.field.subfield` - nested field access
+/// - `.[?field=value]` - filter array elements where field equals value
+/// - `.releases[?channel=stable].version` - filter then extract
 ///
 /// Values are extracted as strings, with 'v' prefix stripped from version-like values.
 use eyre::Result;
@@ -120,6 +122,35 @@ fn extract_recursive(json: &serde_json::Value, path: &str, results: &mut Vec<Str
         return;
     }
 
+    // Handle filter syntax "[?field=value]" or "[?field=value]."
+    if let Some(filter_content) = path.strip_prefix("[?") {
+        if let Some(end_bracket) = filter_content.find(']') {
+            let filter_expr = &filter_content[..end_bracket];
+            let rest = &filter_content[end_bracket + 1..];
+            let rest = rest.strip_prefix('.').unwrap_or(rest);
+
+            // Parse filter expression "field=value"
+            if let Some((filter_field, filter_value)) = filter_expr.split_once('=') {
+                if let Some(arr) = json.as_array() {
+                    for val in arr {
+                        // Check if this element matches the filter
+                        if let Some(obj) = val.as_object()
+                            && let Some(field_val) = obj.get(filter_field)
+                            && field_val.as_str() == Some(filter_value)
+                        {
+                            if rest.is_empty() {
+                                extract_values(val, results);
+                            } else {
+                                extract_recursive(val, rest, results);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return;
+    }
+
     // Handle field access with possible continuation
     // Find where the field name ends (at '.' or '[')
     let (field, rest) = if let Some(idx) = path.find(['.', '[']) {
@@ -158,6 +189,18 @@ fn extract_values(json: &serde_json::Value, results: &mut Vec<String>) {
         }
         serde_json::Value::Number(n) => {
             results.push(n.to_string());
+        }
+        serde_json::Value::Object(obj) => {
+            // Try common version field names
+            for field in ["version", "tag_name", "name", "tag", "v"] {
+                if let Some(v) = obj.get(field).and_then(|v| v.as_str()) {
+                    let v = normalize_version(v);
+                    if !v.is_empty() {
+                        results.push(v);
+                        break;
+                    }
+                }
+            }
         }
         _ => {}
     }
@@ -274,5 +317,57 @@ mod tests {
     fn test_extract_auto_object_releases_field() {
         let data = json!({"releases": ["1.0.0", "2.0.0"]});
         assert_eq!(extract_auto(&data), vec!["1.0.0", "2.0.0"]);
+    }
+
+    #[test]
+    fn test_extract_filter_simple() {
+        let data = json!([
+            {"version": "1.0.0", "channel": "stable"},
+            {"version": "2.0.0", "channel": "beta"},
+            {"version": "3.0.0", "channel": "stable"}
+        ]);
+        assert_eq!(
+            extract(&data, ".[?channel=stable].version").unwrap(),
+            vec!["1.0.0", "3.0.0"]
+        );
+    }
+
+    #[test]
+    fn test_extract_filter_nested() {
+        let data = json!({
+            "releases": [
+                {"version": "1.0.0", "channel": "stable"},
+                {"version": "2.0.0", "channel": "beta"},
+                {"version": "3.0.0", "channel": "stable"}
+            ]
+        });
+        assert_eq!(
+            extract(&data, ".releases[?channel=stable].version").unwrap(),
+            vec!["1.0.0", "3.0.0"]
+        );
+    }
+
+    #[test]
+    fn test_extract_filter_no_match() {
+        let data = json!([
+            {"version": "1.0.0", "channel": "beta"},
+            {"version": "2.0.0", "channel": "dev"}
+        ]);
+        assert!(
+            extract(&data, ".[?channel=stable].version")
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_extract_filter_whole_object() {
+        let data = json!([
+            {"version": "1.0.0", "channel": "stable"},
+            {"version": "2.0.0", "channel": "beta"}
+        ]);
+        // Without a field after filter, extracts version-like fields from matched objects
+        let result = extract(&data, ".[?channel=stable]").unwrap();
+        assert_eq!(result, vec!["1.0.0"]);
     }
 }
