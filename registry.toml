@@ -1353,8 +1353,8 @@ description = "a secure dotenv–from the creator of `dotenv`"
 test = ["dotenvx --version", "{{version}}"]
 
 [tools.dotnet]
-backends = ["asdf:mise-plugins/mise-dotnet", "vfox:mise-plugins/vfox-dotnet"]
-description = ".Net"
+backends = ["vfox:mise-plugins/vfox-dotnet", "asdf:mise-plugins/mise-dotnet"]
+description = ".NET SDK"
 
 [tools.dotnet-core]
 backends = ["asdf:mise-plugins/mise-dotnet-core"]
