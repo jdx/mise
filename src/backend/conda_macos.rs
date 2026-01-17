@@ -46,23 +46,6 @@ pub fn fix_library_paths(ctx: &InstallContext, install_dir: &Path) -> Result<()>
     }
 
     for file_path in &files {
-        // Verify the original binary has a valid signature before modifying
-        // This ensures the download wasn't corrupted or tampered with
-        let verify_result = Command::new("codesign")
-            .args(["--verify", file_path.to_str().unwrap_or("")])
-            .output();
-
-        if let Ok(output) = &verify_result {
-            if !output.status.success() {
-                // Binary has an invalid signature - log warning but continue
-                // Some conda packages may not be signed at all
-                debug!(
-                    "Binary {} has invalid or missing signature, skipping signature verification",
-                    file_path.display()
-                );
-            }
-        }
-
         // Get current library dependencies using otool
         let output = match Command::new("otool")
             .args(["-L", file_path.to_str().unwrap_or("")])
@@ -74,31 +57,62 @@ pub fn fix_library_paths(ctx: &InstallContext, install_dir: &Path) -> Result<()>
 
         let deps = String::from_utf8_lossy(&output.stdout);
 
-        // For each dependency with a hardcoded build path, fix it
-        for line in deps.lines().skip(1) {
-            // otool output: "\t/path/to/lib.dylib (compatibility ...)"
-            let line = line.trim();
-            if let Some(old_path) = extract_build_path(line) {
-                if let Some(lib_name) = Path::new(&old_path).file_name() {
-                    let new_path = lib_dir.join(lib_name);
-
-                    if new_path.exists() {
-                        // Fix the library reference
-                        let _ = Command::new("install_name_tool")
-                            .args([
-                                "-change",
-                                &old_path,
-                                new_path.to_str().unwrap_or(""),
-                                file_path.to_str().unwrap_or(""),
-                            ])
-                            .output();
+        // Collect paths that need fixing
+        let paths_to_fix: Vec<(String, PathBuf)> = deps
+            .lines()
+            .skip(1)
+            .filter_map(|line| {
+                let line = line.trim();
+                if let Some(old_path) = extract_build_path(line) {
+                    if let Some(lib_name) = Path::new(&old_path).file_name() {
+                        let new_path = lib_dir.join(lib_name);
+                        if new_path.exists() {
+                            return Some((old_path, new_path));
+                        }
                     }
                 }
+                None
+            })
+            .collect();
+
+        // Check if this is a library that needs its ID fixed
+        let is_dylib = file_path.extension().is_some_and(|e| e == "dylib");
+        let needs_id_fix = is_dylib && file_path.starts_with(&lib_dir);
+
+        // Skip binaries that don't need any modification to preserve their checksum
+        // This is important for tools like Santa that allowlist by checksum
+        if paths_to_fix.is_empty() && !needs_id_fix {
+            continue;
+        }
+
+        // Verify the original binary has a valid signature before modifying
+        let verify_result = Command::new("codesign")
+            .args(["--verify", file_path.to_str().unwrap_or("")])
+            .output();
+
+        if let Ok(output) = &verify_result {
+            if !output.status.success() {
+                debug!(
+                    "Binary {} has invalid or missing signature, skipping signature verification",
+                    file_path.display()
+                );
             }
         }
 
+        // Fix each hardcoded path
+        for (old_path, new_path) in &paths_to_fix {
+            let _ = Command::new("install_name_tool")
+                .args([
+                    "-change",
+                    old_path,
+                    new_path.to_str().unwrap_or(""),
+                    file_path.to_str().unwrap_or(""),
+                ])
+                .output();
+        }
+
         // Fix the library's own ID if it's a dylib
-        if file_path.extension().is_some_and(|e| e == "dylib") {
+        if is_dylib {
             if let Some(filename) = file_path.file_name() {
                 let new_id = format!("@rpath/{}", filename.to_str().unwrap_or(""));
                 let _ = Command::new("install_name_tool")
