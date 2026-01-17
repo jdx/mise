@@ -78,7 +78,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-${{matrix.name}}
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     env:
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
       MINIO_AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_AWS_SECRET_ACCESS_KEY }}
@@ -108,7 +108,7 @@ jobs:
       - name: build-tarball ${{matrix.target}}
         uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
         with:
-          timeout_minutes: 45
+          timeout_minutes: 90
           max_attempts: 3
           command: scripts/build-tarball.sh ${{matrix.target}}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
