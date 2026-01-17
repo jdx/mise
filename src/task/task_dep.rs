@@ -30,28 +30,44 @@ impl TaskDep {
         // Parse shell-style "FOO=bar BAZ=qux taskname arg1 arg2" if args/env not already set
         if self.args.is_empty() && self.env.is_empty() {
             let s = self.task.clone();
-            let parts = shell_words::split(&s)
+            let parts: Vec<String> = shell_words::split(&s)
                 .unwrap_or_else(|_| s.split_whitespace().map(String::from).collect());
-            let mut task_found = false;
 
-            for part in parts {
-                if !task_found {
-                    // Check if this looks like KEY=value (env var)
-                    if let Some((key, value)) = part.split_once('=') {
-                        // Only treat as env var if key looks like a valid env var name
-                        if !key.is_empty()
-                            && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-                        {
-                            self.env.insert(key.to_string(), value.to_string());
-                            continue;
+            // Only parse env vars if there are multiple parts
+            // Single token like "build=release" should be treated as task name, not env var
+            if parts.len() > 1 {
+                let mut task_found = false;
+
+                for part in parts {
+                    if !task_found {
+                        // Check if this looks like KEY=value (env var)
+                        if let Some((key, value)) = part.split_once('=') {
+                            // Only treat as env var if key looks like a valid env var name
+                            if !key.is_empty()
+                                && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                            {
+                                self.env.insert(key.to_string(), value.to_string());
+                                continue;
+                            }
                         }
+                        // First non-env-var token is the task name
+                        self.task = part;
+                        task_found = true;
+                    } else {
+                        self.args.push(part);
                     }
-                    // First non-env-var token is the task name
-                    self.task = part;
-                    task_found = true;
-                } else {
-                    self.args.push(part);
                 }
+
+                // Validate that a task name was found (not just env vars)
+                if !task_found {
+                    return Err(eyre::eyre!(
+                        "invalid task dependency '{}': missing task name (only environment variables found)",
+                        s
+                    ));
+                }
+            } else if let Some(task) = parts.into_iter().next() {
+                // Single token - use as task name directly (even if it contains '=')
+                self.task = task;
             }
         }
         Ok(self)
@@ -301,5 +317,31 @@ mod tests {
         assert_eq!(td.task, "mytask");
         assert_eq!(td.args, vec!["arg1", "arg2"]);
         assert!(td.env.is_empty());
+    }
+
+    #[test]
+    fn test_task_dep_single_token_with_equals() {
+        // Single token like "build=release" should be treated as task name, not env var
+        let mut td: TaskDep = "build=release".parse().unwrap();
+        let mut tera = tera::Tera::default();
+        let ctx = tera::Context::new();
+        td.render(&mut tera, &ctx).unwrap();
+
+        assert_eq!(td.task, "build=release");
+        assert!(td.args.is_empty());
+        assert!(td.env.is_empty());
+    }
+
+    #[test]
+    fn test_task_dep_only_env_vars_error() {
+        // Only env vars without task name should error
+        let mut td: TaskDep = "FOO=bar BAZ=qux".parse().unwrap();
+        let mut tera = tera::Tera::default();
+        let ctx = tera::Context::new();
+        let result = td.render(&mut tera, &ctx);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("missing task name"));
     }
 }

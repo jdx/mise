@@ -1,3 +1,4 @@
+use crate::config::env_directive::EnvDirective;
 use crate::task::Task;
 use crate::{config::Config, task::task_list::resolve_depends};
 use itertools::Itertools;
@@ -9,17 +10,33 @@ use std::{
 };
 use tokio::sync::mpsc;
 
+/// Unique key for a task instance, including name, args, and env vars
+pub type TaskKey = (String, Vec<String>, Vec<(String, String)>);
+
 #[derive(Debug, Clone)]
 pub struct Deps {
     pub graph: DiGraph<Task, ()>,
-    sent: HashSet<(String, Vec<String>)>, // tasks+args that have already started so should not run again
-    removed: HashSet<(String, Vec<String>)>, // tasks+args that have already finished to track if we are in an infinitve loop
+    sent: HashSet<TaskKey>, // tasks that have already started so should not run again
+    removed: HashSet<TaskKey>, // tasks that have already finished to track if we are in an infinitve loop
     tx: mpsc::UnboundedSender<Option<Task>>,
     // not clone, notify waiters via tx None
 }
 
-pub fn task_key(task: &Task) -> (String, Vec<String>) {
-    (task.name.clone(), task.args.clone())
+/// Extract a hashable key from a task, including env vars set via dependencies
+pub fn task_key(task: &Task) -> TaskKey {
+    // Extract simple key-value env vars for deduplication
+    // This ensures tasks with same name/args but different env are treated as distinct
+    let env_key: Vec<(String, String)> = task
+        .env
+        .0
+        .iter()
+        .filter_map(|d| match d {
+            EnvDirective::Val(k, v, _) => Some((k.clone(), v.clone())),
+            _ => None,
+        })
+        .sorted()
+        .collect();
+    (task.name.clone(), task.args.clone(), env_key)
 }
 
 /// manages a dependency graph of tasks so `mise run` knows what to run next
@@ -79,7 +96,7 @@ impl Deps {
         let leaves_is_empty = leaves.is_empty();
 
         for task in leaves {
-            let key = (task.name.clone(), task.args.clone());
+            let key = task_key(&task);
 
             if self.sent.insert(key) {
                 trace!("Scheduling task {0}", task.name);
@@ -121,7 +138,7 @@ impl Deps {
     pub fn remove(&mut self, task: &Task) {
         if let Some(idx) = self.node_idx(task) {
             self.graph.remove_node(idx);
-            let key = (task.name.clone(), task.args.clone());
+            let key = task_key(task);
             self.removed.insert(key);
             self.emit_leaves();
         }
