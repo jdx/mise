@@ -208,7 +208,7 @@ impl TaskContextBuilder {
         let config_path = canonicalize_path(task_cf.get_path());
 
         // Check cache first if task has no task-specific env directives
-        if task.env.0.is_empty() {
+        if task.env.0.is_empty() && task.inherited_env.0.is_empty() {
             let cache = self
                 .env_resolution_cache
                 .read()
@@ -241,7 +241,7 @@ impl TaskContextBuilder {
         Self::apply_env_results(&mut env, &task_env_results);
 
         // Cache the result if no task-specific env directives
-        if task.env.0.is_empty() {
+        if task.env.0.is_empty() && task.inherited_env.0.is_empty() {
             let mut cache = self
                 .env_resolution_cache
                 .write()
@@ -296,11 +296,13 @@ impl TaskContextBuilder {
         Ok(tera_ctx)
     }
 
-    /// Build env directives from task-specific env
+    /// Build env directives from task-specific env (including inherited env)
     fn build_task_env_directives(&self, task: &Task) -> Vec<(EnvDirective, PathBuf)> {
-        task.env
+        // Include inherited_env first (so task's own env can override it)
+        task.inherited_env
             .0
             .iter()
+            .chain(task.env.0.iter())
             .map(|directive| (directive.clone(), task.config_source.clone()))
             .collect()
     }

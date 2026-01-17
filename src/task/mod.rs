@@ -225,6 +225,9 @@ pub struct Task {
     pub wait_for: Vec<TaskDep>,
     #[serde(default)]
     pub env: EnvList,
+    /// Env vars inherited from parent tasks at runtime (not used for task identity/deduplication)
+    #[serde(skip)]
+    pub inherited_env: EnvList,
     #[serde(default)]
     pub dir: Option<String>,
     #[serde(default)]
@@ -371,7 +374,17 @@ impl Task {
         Ok(task)
     }
 
+    /// Add env vars that were inherited from parent tasks (e.g., via `run = [{ task = "..." }]`)
+    /// These do NOT affect task identity/deduplication
     pub fn derive_env(&self, env_directives: &[EnvDirective]) -> Self {
+        let mut new_task = self.clone();
+        new_task.inherited_env.0.extend_from_slice(env_directives);
+        new_task
+    }
+
+    /// Add env vars specified in dependency declarations (e.g., `depends = ["FOO=bar task"]`)
+    /// These DO affect task identity/deduplication
+    pub fn with_dependency_env(&self, env_directives: &[EnvDirective]) -> Self {
         let mut new_task = self.clone();
         new_task.env.0.extend_from_slice(env_directives);
         new_task
@@ -861,10 +874,12 @@ impl Task {
 
         // Convert task env directives to (EnvDirective, PathBuf) pairs
         // Use the config file path as source for proper path resolution
-        let env_directives = self
-            .env
+        // Include inherited_env first (so task's own env can override it)
+        let env_directives: Vec<_> = self
+            .inherited_env
             .0
             .iter()
+            .chain(self.env.0.iter())
             .map(|directive| (directive.clone(), self.config_source.clone()))
             .collect();
 
@@ -1014,6 +1029,15 @@ fn match_tasks_with_context(
         .map(|t| {
             let mut t = (*t).clone();
             t.args = td.args.clone();
+            // Apply env vars from dependency - these affect task identity/deduplication
+            if !td.env.is_empty() {
+                let env_directives: Vec<EnvDirective> = td
+                    .env
+                    .iter()
+                    .map(|(k, v)| EnvDirective::Val(k.clone(), v.clone(), Default::default()))
+                    .collect();
+                t = t.with_dependency_env(&env_directives);
+            }
             t
         })
         .collect_vec();
@@ -1064,6 +1088,7 @@ impl Default for Task {
             depends_post: vec![],
             wait_for: vec![],
             env: Default::default(),
+            inherited_env: Default::default(),
             dir: None,
             hide: false,
             global: false,
@@ -1115,10 +1140,27 @@ impl PartialOrd for Task {
     }
 }
 
+/// Extract sorted env key-value pairs from task's own env (not inherited_env)
+/// Used for consistent comparison/hashing of task identity
+fn env_key(task: &Task) -> Vec<(&String, &String)> {
+    task.env
+        .0
+        .iter()
+        .filter_map(|d| match d {
+            EnvDirective::Val(k, v, _) => Some((k, v)),
+            _ => None,
+        })
+        .sorted()
+        .collect()
+}
+
 impl Ord for Task {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.name.cmp(&other.name) {
-            Ordering::Equal => self.args.cmp(&other.args),
+            Ordering::Equal => match self.args.cmp(&other.args) {
+                Ordering::Equal => env_key(self).cmp(&env_key(other)),
+                o => o,
+            },
             o => o,
         }
     }
@@ -1128,13 +1170,18 @@ impl Hash for Task {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.name.hash(state);
         self.args.iter().for_each(|arg| arg.hash(state));
+        // Include task's own env (not inherited_env) for deduplication
+        for (k, v) in env_key(self) {
+            k.hash(state);
+            v.hash(state);
+        }
     }
 }
 
 impl Eq for Task {}
 impl PartialEq for Task {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.args == other.args
+        self.name == other.name && self.args == other.args && env_key(self) == env_key(other)
     }
 }
 
@@ -1407,10 +1454,12 @@ mod tests {
                 TaskDep {
                     task: "post1".to_string(),
                     args: vec![],
+                    env: Default::default(),
                 },
                 TaskDep {
                     task: "post2".to_string(),
                     args: vec![],
+                    env: Default::default(),
                 },
             ],
             ..Default::default()
@@ -1422,6 +1471,7 @@ mod tests {
             depends_post: vec![TaskDep {
                 task: "other_post".to_string(),
                 args: vec![],
+                env: Default::default(),
             }],
             ..Default::default()
         };
@@ -1759,6 +1809,7 @@ echo "hello world"
             depends: vec![crate::task::task_dep::TaskDep {
                 task: "task_b".to_string(),
                 args: vec![],
+                env: Default::default(),
             }],
             ..Default::default()
         };
@@ -1768,6 +1819,7 @@ echo "hello world"
             depends: vec![crate::task::task_dep::TaskDep {
                 task: "task_a".to_string(),
                 args: vec![],
+                env: Default::default(),
             }],
             ..Default::default()
         };
@@ -1795,6 +1847,7 @@ echo "hello world"
             depends: vec![crate::task::task_dep::TaskDep {
                 task: "task_b".to_string(),
                 args: vec![],
+                env: Default::default(),
             }],
             ..Default::default()
         };
@@ -1804,6 +1857,7 @@ echo "hello world"
             depends: vec![crate::task::task_dep::TaskDep {
                 task: "task_c".to_string(),
                 args: vec![],
+                env: Default::default(),
             }],
             ..Default::default()
         };
@@ -1813,6 +1867,7 @@ echo "hello world"
             depends: vec![crate::task::task_dep::TaskDep {
                 task: "task_a".to_string(),
                 args: vec![],
+                env: Default::default(),
             }],
             ..Default::default()
         };
@@ -1842,10 +1897,12 @@ echo "hello world"
                 crate::task::task_dep::TaskDep {
                     task: "task_a".to_string(),
                     args: vec![],
+                    env: Default::default(),
                 },
                 crate::task::task_dep::TaskDep {
                     task: "task_b".to_string(),
                     args: vec![],
+                    env: Default::default(),
                 },
             ],
             ..Default::default()
@@ -1856,6 +1913,7 @@ echo "hello world"
             depends: vec![crate::task::task_dep::TaskDep {
                 task: "common".to_string(),
                 args: vec![],
+                env: Default::default(),
             }],
             ..Default::default()
         };
@@ -1865,6 +1923,7 @@ echo "hello world"
             depends: vec![crate::task::task_dep::TaskDep {
                 task: "common".to_string(),
                 args: vec![],
+                env: Default::default(),
             }],
             ..Default::default()
         };
