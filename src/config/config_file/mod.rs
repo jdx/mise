@@ -10,7 +10,7 @@ use std::{
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::min_version::MinVersionSpec;
-use crate::config::config_file::mise_toml::MiseToml;
+use crate::config::config_file::mise_toml::{MiseToml, MonorepoConfig};
 use crate::config::env_directive::EnvDirective;
 use crate::config::{AliasMap, Settings, settings};
 use crate::errors::Error::UntrustedConfig;
@@ -110,6 +110,10 @@ pub trait ConfigFile: Debug + Send + Sync {
     }
 
     fn experimental_monorepo_root(&self) -> Option<bool> {
+        None
+    }
+
+    fn monorepo(&self) -> Option<&MonorepoConfig> {
         None
     }
 

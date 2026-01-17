@@ -211,6 +211,7 @@ impl Backend for BunPlugin {
             checksum,
             size: None,
             url_api: None,
+            conda_deps: None,
         })
     }
 

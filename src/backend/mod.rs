@@ -1288,6 +1288,7 @@ pub trait Backend: Debug + Send + Sync {
             size: None,     // TODO: Implement size fetching via HEAD request
             url: Some(tarball_url.to_string()),
             url_api: None,
+            conda_deps: None,
         })
     }
 
@@ -1321,6 +1322,7 @@ pub trait Backend: Debug + Send + Sync {
             size: None,     // TODO: Implement size fetching from GitHub API
             url: asset_url,
             url_api: None,
+            conda_deps: None,
         })
     }
 
@@ -1338,6 +1340,7 @@ pub trait Backend: Debug + Send + Sync {
             size: None,
             url: None,
             url_api: None,
+            conda_deps: None,
         })
     }
 }

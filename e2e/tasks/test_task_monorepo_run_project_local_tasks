@@ -4,6 +4,9 @@ export MISE_EXPERIMENTAL=1
 
 cat <<'TOML' >mise.toml
 experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["projects/backend"]
 TOML
 
 mkdir -p projects/backend

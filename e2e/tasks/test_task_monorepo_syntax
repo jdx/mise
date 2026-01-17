@@ -7,6 +7,9 @@ export MISE_EXPERIMENTAL=1
 cat <<'TOML' >mise.toml
 experimental_monorepo_root = true
 
+[monorepo]
+config_roots = ["example-pkg", "libs/*"]
+
 [tasks.rootTask]
 run = "echo 'task from root'"
 

@@ -224,34 +224,35 @@ run = "npm run build"  # Uses node 20 and LOG_LEVEL=info from root
 2. **Subdirectory override**: Tools and environment defined in the subdirectory's config file are merged on top, allowing overrides
 3. **Task-specific tools and environment**: Values defined in the task's `tools` and `env` properties take highest precedence
 
-## Performance Tuning
+## Config Roots
 
-For large monorepos, you can control task discovery depth with the `task.monorepo_depth` setting (default: 5):
+You must explicitly list your config roots using the `[monorepo]` section:
 
 ```toml
-[settings]
-task.monorepo_depth = 3  # Only search 3 levels deep
+# /myproject/mise.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = [
+    "packages/frontend",
+    "packages/backend",
+    "services/*",          # Single-level glob pattern
+]
 ```
 
-This limits how deep mise will search for task files:
+This tells mise exactly which directories contain project configurations. Benefits:
 
-- `1` = immediate children only (`monorepo_root/projects/`)
-- `2` = grandchildren (`monorepo_root/projects/frontend/`)
-- `5` = default (5 levels deep)
+- **Fast discovery**: No filesystem walking needed
+- **Explicit control**: Only the projects you list are included
+- **Glob support**: Use `*` for single-level patterns (e.g., `services/*` matches `services/api`, `services/worker`)
 
-Reduce this value if you notice slow task discovery in very large monorepos, especially if your projects are concentrated at a specific depth level.
+::: tip
+Single-level globs (`*`) are supported, but recursive globs (`**`) are not. This ensures predictable performance while still allowing flexible patterns.
+:::
 
-## Discovery Behavior
-
-### Excluded Paths
-
-The following directories are automatically excluded from task discovery:
-
-- Hidden directories (starting with `.`)
-- `node_modules`
-- `target`
-- `dist`
-- `build`
+::: warning Automatic Discovery Deprecated
+Automatic filesystem walking to discover monorepo subdirectories is deprecated. If you don't define `[monorepo].config_roots`, mise will still walk the filesystem but will emit a deprecation warning. Please migrate to explicit config roots.
+:::
 
 ## Listing Tasks
 

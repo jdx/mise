@@ -2529,7 +2529,11 @@ backends = ["aqua:kubernetes/kops", "asdf:Antiarchitect/asdf-kops"]
 description = "Kubernetes Operations (kops) - Production Grade K8s Installation, Upgrades, and Management"
 
 [tools.kotlin]
-backends = ["asdf:mise-plugins/mise-kotlin", "vfox:mise-plugins/vfox-kotlin"]
+backends = [
+  "github:JetBrains/kotlin[asset_pattern=kotlin-compiler-*.zip,bin_path=kotlinc/bin]",
+  "asdf:mise-plugins/mise-kotlin",
+  "vfox:mise-plugins/vfox-kotlin",
+]
 description = "Kotlin is a modern but already mature programming language designed to make developers happier. It's concise, safe, interoperable with Java and other languages, and provides many ways to reuse code between multiple platforms for productive programming"
 
 [tools.kpack]
@@ -2795,7 +2799,7 @@ description = "Fast and powerful Git hooks manager for any type of projects"
 test = ["lefthook version", "{{version}}"]
 
 [tools.leiningen]
-backends = ["asdf:mise-plugins/mise-lein"]
+backends = ["vfox:mise-plugins/vfox-leiningen", "asdf:mise-plugins/mise-lein"]
 description = "for automating Clojure projects without setting your hair on fire"
 
 [tools.levant]
@@ -2980,7 +2984,7 @@ backends = ["github:charmbracelet/melt", "asdf:chessmango/asdf-melt"]
 description = "Backup and restore Ed25519 SSH keys with seed words 🫠"
 
 [tools.meson]
-backends = ["asdf:mise-plugins/mise-meson"]
+backends = ["pipx:meson", "asdf:mise-plugins/mise-meson"]
 description = "Meson is an open source build system meant to be both extremely fast, and, even more importantly, as user friendly as possible"
 
 [tools.micromamba]
@@ -3465,7 +3469,10 @@ backends = ["aqua:derailed/popeye", "asdf:nlamirault/asdf-popeye"]
 description = "A Kubernetes cluster resource sanitizer"
 
 [tools.postgres]
-backends = ["asdf:mise-plugins/mise-postgres"]
+backends = [
+  "vfox:mise-plugins/vfox-postgres",
+  "asdf:mise-plugins/mise-postgres",
+]
 description = "PostgreSQL is a powerful, open source object-relational database system with over 35 years of active development that has earned it a strong reputation for reliability, feature robustness, and performance"
 
 [tools.powerline-go]
@@ -3637,7 +3644,7 @@ backends = ["github:FairwindsOps/reckoner", "asdf:FairwindsOps/asdf-reckoner"]
 description = "Declaratively install and manage multiple Helm chart releases"
 
 [tools.redis]
-backends = ["asdf:mise-plugins/mise-redis"]
+backends = ["vfox:mise-plugins/vfox-redis", "asdf:mise-plugins/mise-redis"]
 description = "Cache & in-memory datastore"
 
 [tools.redo]

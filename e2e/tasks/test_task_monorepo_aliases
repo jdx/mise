@@ -7,6 +7,9 @@ export MISE_EXPERIMENTAL=1
 cat <<'TOML' >mise.toml
 experimental_monorepo_root = true
 
+[monorepo]
+config_roots = ["projects/*"]
+
 [tasks.format]
 alias = "fmt"
 run = "echo 'formatting code'"
@@ -61,6 +64,9 @@ echo "$output" | grep -q "building backend" || (echo "FAIL: Nested task alias di
 cat <<'TOML' >mise.toml
 experimental_monorepo_root = true
 
+[monorepo]
+config_roots = ["projects/*"]
+
 [tasks.format]
 alias = "fmt"
 run = "echo 'formatting code'"
@@ -79,6 +85,9 @@ echo "$output" | grep -q "deploying" || (echo "FAIL: Dependent task did not run"
 # Test 7: Task depends on unprefixed alias (should resolve to monorepo task)
 cat <<'TOML' >mise.toml
 experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["projects/*"]
 
 [tasks.format]
 alias = "fmt"

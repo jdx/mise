@@ -7,6 +7,9 @@ export MISE_EXPERIMENTAL=1
 cat <<'TOML' >mise.toml
 experimental_monorepo_root = true
 
+[monorepo]
+config_roots = ["example-pkg", "libs", "libs/*", "projects/*"]
+
 [tasks.taskDefinedAtRoot]
 run = "echo 'task from root'"
 TOML
@@ -79,6 +82,9 @@ assert_contains "mise run //projects/include-only:taskDefinedAtRoot" "task from 
 cat <<'TOML' >mise.toml
 experimental_monorepo_root = true
 
+[monorepo]
+config_roots = ["example-pkg", "libs", "libs/*", "projects/*"]
+
 [tasks.showdir]
 run = "pwd"
 TOML
@@ -95,6 +101,15 @@ assert_not_contains "mise run //example-pkg:showdir" "example-pkg"
 # Reset root config
 cat <<'TOML' >mise.toml
 experimental_monorepo_root = true
+
+[monorepo]
+config_roots = [
+  "example-pkg",
+  "libs",
+  "libs/*",
+  "libs/frontend/*",
+  "projects/*",
+]
 
 [tasks.rootTask]
 run = "echo 'task from root'"

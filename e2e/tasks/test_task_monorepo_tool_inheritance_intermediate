@@ -5,6 +5,9 @@ export MISE_NODE_VERIFY=0
 
 cat <<EOF >mise.toml
 experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["parent/*"]
 EOF
 
 mkdir -p parent
