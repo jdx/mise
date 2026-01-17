@@ -1154,8 +1154,35 @@ description = "Command-line tools for Dapr"
 test = ["dapr --version", "CLI version: {{version}}"]
 
 [tools.dart]
-backends = ["asdf:mise-plugins/mise-dart", "vfox:mise-plugins/vfox-dart"]
 description = "An approachable, portable, and productive language for high-quality apps on any platform"
+
+[[tools.dart.backends]]
+full = "http:dart"
+
+[tools.dart.backends.options]
+version_list_url = "https://storage.googleapis.com/storage/v1/b/dart-archive/o?prefix=channels/stable/release/&delimiter=/"
+version_regex = "channels/stable/release/(\\d+\\.\\d+\\.\\d+)/"
+
+[tools.dart.backends.options.platforms.macos-x64]
+url = "https://storage.googleapis.com/dart-archive/channels/stable/release/{version}/sdk/dartsdk-macos-x64-release.zip"
+
+[tools.dart.backends.options.platforms.macos-arm64]
+url = "https://storage.googleapis.com/dart-archive/channels/stable/release/{version}/sdk/dartsdk-macos-arm64-release.zip"
+
+[tools.dart.backends.options.platforms.linux-x64]
+url = "https://storage.googleapis.com/dart-archive/channels/stable/release/{version}/sdk/dartsdk-linux-x64-release.zip"
+
+[tools.dart.backends.options.platforms.linux-arm64]
+url = "https://storage.googleapis.com/dart-archive/channels/stable/release/{version}/sdk/dartsdk-linux-arm64-release.zip"
+
+[tools.dart.backends.options.platforms.windows-x64]
+url = "https://storage.googleapis.com/dart-archive/channels/stable/release/{version}/sdk/dartsdk-windows-x64-release.zip"
+
+[[tools.dart.backends]]
+full = "asdf:mise-plugins/mise-dart"
+
+[[tools.dart.backends]]
+full = "vfox:mise-plugins/vfox-dart"
 
 [tools.dasel]
 backends = ["aqua:TomWright/dasel", "asdf:asdf-community/asdf-dasel"]
