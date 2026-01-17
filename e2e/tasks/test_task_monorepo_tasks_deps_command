@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+
+# Test that `mise tasks deps` command works with monorepo task paths.
+# The `mise tasks deps` command should be able to show dependency trees for
+# monorepo tasks like //mydir:task, not just tasks in the current directory.
+
+export MISE_EXPERIMENTAL=1
+
+# Set up monorepo structure
+cat <<'EOF' >mise.toml
+experimental_monorepo_root = true
+
+[tasks.root]
+depends = ["//mydir:child"]
+run = "echo root"
+EOF
+
+mkdir -p mydir
+cat <<'EOF' >mydir/mise.toml
+[tasks.child]
+depends = [":grandchild"]
+run = "echo child"
+
+[tasks.grandchild]
+run = "echo grandchild"
+EOF
+
+# Verify tasks are discovered
+assert_contains "mise tasks --all" "//mydir:child"
+assert_contains "mise tasks --all" "//mydir:grandchild"
+
+# Verify tasks can be run (sanity check)
+assert_contains "mise run //mydir:child" "grandchild"
+assert_contains "mise run //mydir:child" "child"
+
+# Test: mise tasks deps should work with monorepo task paths
+assert_contains "mise tasks deps //mydir:child" "//mydir:child"
+assert_contains "mise tasks deps //mydir:child" "//mydir:grandchild"
+
+# Test with full prefix
+assert_contains "mise tasks deps //:root" "//:root"
+assert_contains "mise tasks deps //:root" "//mydir:child"
+
+# Test from subdirectory - should still work with full monorepo paths
+(
+cd mydir
+assert_contains "mise tasks deps //mydir:child" "//mydir:child"
+assert_contains "mise tasks deps //mydir:grandchild" "//mydir:grandchild"
+)
+
+# Test shorthand from root
+assert_contains "mise tasks deps root" "//:root"
+
+# Test --dot output format works with monorepo tasks
+assert_contains "mise tasks deps --dot //mydir:child" "label"
+assert_contains "mise tasks deps --dot //mydir:child" "//mydir:child"
+
+# Test error message shows correct available tasks for monorepo context
+OUTPUT=$(mise tasks deps //mydir:nonexistent 2>&1 || true)
+assert_contains "echo '$OUTPUT'" "//mydir:child"
+
+# Test multiple tasks argument
+assert_contains "mise tasks deps //mydir:child //mydir:grandchild" "//mydir:child"
+assert_contains "mise tasks deps //mydir:child //mydir:grandchild" "//mydir:grandchild"
+
+# Test multiple tasks with mixed monorepo and root paths
+assert_contains "mise tasks deps //:root //mydir:grandchild" "//:root"
+assert_contains "mise tasks deps //:root //mydir:grandchild" "//mydir:grandchild"
+
+# Test --hidden flag with hidden tasks
+cat <<'EOF' >mydir/mise.toml
+[tasks.child]
+depends = [":grandchild"]
+run = "echo child"
+
+[tasks.grandchild]
+run = "echo grandchild"
+
+[tasks.secret]
+hide = true
+run = "echo secret"
+EOF
+
+# Without --hidden, secret task should not appear in deps output
+OUTPUT=$(mise tasks deps 2>&1)
+assert_not_contains "echo '$OUTPUT'" "secret"
+
+# With --hidden, secret task should appear
+assert_contains "mise tasks deps --hidden" "//mydir:secret"
