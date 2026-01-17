@@ -11,3 +11,8 @@ assert_contains "mise x conda:bat@0.24.0 -- bat --version" "0.24.0"
 
 # Test installing a tool with dependencies (jq depends on oniguruma)
 assert_contains "mise x conda:jq@1.7.1 -- jq --version" "jq-1.7.1"
+
+# Test installing a tool with many dependencies and library path fixes
+# postgresql has ~23 dependencies including ncurses, readline, openssl, etc.
+# This tests that hardcoded library paths are correctly patched
+assert_contains "mise x conda:postgresql@17.2 -- psql --version" "17.2"
