@@ -14,6 +14,8 @@ impl EnvResults {
         value: &Value,
         redact: bool,
     ) -> Result<()> {
+        // Track that modules were used (vfox plugins can be dynamic)
+        r.has_modules = true;
         let path = dirs::PLUGINS.join(name.to_kebab_case());
         let plugin = VfoxPlugin::new(name, path);
         if let Some(env) = plugin.mise_env(value).await? {

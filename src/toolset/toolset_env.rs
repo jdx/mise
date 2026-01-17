@@ -65,6 +65,9 @@ impl Toolset {
         // Don't cache if templates are used (dynamic values like now(), uuid(), etc.)
         let has_templates = env_results.has_templates || config_env_results.has_templates;
 
+        // Don't cache if modules are used (vfox plugins can be dynamic)
+        let has_modules = env_results.has_modules || config_env_results.has_modules;
+
         // Collect all referenced files (from _.file directives) for cache invalidation
         let mut all_env_files = env_results.env_files.clone();
         all_env_files.extend(config_env_results.env_files.clone());
@@ -81,11 +84,13 @@ impl Toolset {
         // - secrets are present (security - don't persist sensitive data)
         // - _.source scripts are used (too dynamic - can have side effects, read network/DB)
         // - templates are used (dynamic values like now(), uuid(), etc.)
+        // - modules are used (vfox plugins can be dynamic)
         if settings.experimental
             && settings.env_cache
             && !has_secrets
             && !has_scripts
             && !has_templates
+            && !has_modules
         {
             let cache_key = compute_cache_key(config, self);
 

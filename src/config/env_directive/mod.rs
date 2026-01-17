@@ -241,6 +241,8 @@ pub struct EnvResults {
     pub tool_add_paths: Vec<PathBuf>,
     /// Whether any templates were used in env directives (contains `{{`)
     pub has_templates: bool,
+    /// Whether any modules were used (vfox plugins can be dynamic)
+    pub has_modules: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -280,6 +282,7 @@ impl EnvResults {
             redactions: Vec::new(),
             tool_add_paths: Vec::new(),
             has_templates: false,
+            has_modules: false,
         };
         let normalize_path = |config_root: &Path, p: PathBuf| {
             let p = p.strip_prefix("./").unwrap_or(&p);
