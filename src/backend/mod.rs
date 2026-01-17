@@ -779,7 +779,8 @@ pub trait Backend: Debug + Send + Sync {
             }
         }
         // Check for --locked mode: if enabled and no lockfile URL exists, fail early
-        if ctx.locked {
+        // Exempt tool stubs from lockfile requirements since they are ephemeral
+        if ctx.locked && !tv.request.source().is_tool_stub() {
             let platform_key = self.get_platform_key();
             let has_lockfile_url = tv
                 .lock_platforms
