@@ -45,20 +45,19 @@ pub async fn handle_shim() -> Result<()> {
             Err(_) => true, // No project root set, trust the cache
         };
 
-        if in_same_project
-            && let Ok(bin) = which::which(bin_name) {
-                // Make sure it's not pointing back to shims dir (with symlink resolution)
-                let shims_canonical = fs::canonicalize(*dirs::SHIMS).unwrap_or_default();
-                let bin_parent_canonical = bin
-                    .parent()
-                    .and_then(|p| fs::canonicalize(p).ok())
-                    .unwrap_or_default();
-                if bin_parent_canonical != shims_canonical {
-                    trace!("shim[{bin_name}] using cached PATH: {}", display_path(&bin));
-                    let args = env::ARGS.read().unwrap().clone();
-                    return exec_shim_binary(&bin, &args[1..]);
-                }
+        if in_same_project && let Ok(bin) = which::which(bin_name) {
+            // Make sure it's not pointing back to shims dir (with symlink resolution)
+            let shims_canonical = fs::canonicalize(*dirs::SHIMS).unwrap_or_default();
+            let bin_parent_canonical = bin
+                .parent()
+                .and_then(|p| fs::canonicalize(p).ok())
+                .unwrap_or_default();
+            if bin_parent_canonical != shims_canonical {
+                trace!("shim[{bin_name}] using cached PATH: {}", display_path(&bin));
+                let args = env::ARGS.read().unwrap().clone();
+                return exec_shim_binary(&bin, &args[1..]);
             }
+        }
     }
 
     let mut config = Config::get().await?;

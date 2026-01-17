@@ -208,8 +208,9 @@ impl TaskExecutor {
         if settings.experimental && settings.env_cache {
             let cache_key = compute_cache_key(config, &ts);
             env.insert("__MISE_ENV_CACHE_KEY".into(), cache_key);
-            // Also export project root for shim fast-path validation
-            if let Some(ref root) = config.project_root {
+            // Also export project/config root for shim fast-path validation
+            // Use task's config_root for monorepo support, otherwise project_root
+            if let Some(root) = task.config_root.as_ref().or(config.project_root.as_ref()) {
                 env.insert("__MISE_PROJECT_ROOT".into(), root.display().to_string());
             }
         }
