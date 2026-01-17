@@ -130,8 +130,8 @@ fn extract_recursive(json: &serde_json::Value, path: &str, results: &mut Vec<Str
             let rest = rest.strip_prefix('.').unwrap_or(rest);
 
             // Parse filter expression "field=value"
-            if let Some((filter_field, filter_value)) = filter_expr.split_once('=') {
-                if let Some(arr) = json.as_array() {
+            if let Some((filter_field, filter_value)) = filter_expr.split_once('=')
+                && let Some(arr) = json.as_array() {
                     for val in arr {
                         // Check if this element matches the filter
                         if let Some(obj) = val.as_object()
@@ -146,7 +146,6 @@ fn extract_recursive(json: &serde_json::Value, path: &str, results: &mut Vec<Str
                         }
                     }
                 }
-            }
         }
         return;
     }
