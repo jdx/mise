@@ -42,7 +42,10 @@ pub async fn handle_shim() -> Result<()> {
                     .as_ref()
                     .is_some_and(|cwd| cwd.starts_with(&cached_root))
             }
-            Err(_) => true, // No project root set, trust the cache
+            // No project root set - don't trust cache, fall back to normal resolution
+            // This handles cases where a task runs from global context then CDs to a
+            // project with its own mise.toml that needs different tool versions
+            Err(_) => false,
         };
 
         if in_same_project && let Ok(bin) = which::which(bin_name) {

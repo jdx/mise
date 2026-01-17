@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::{Config, ConfigMap, Settings};
 use crate::toolset::Toolset;
-use crate::{dirs, file};
+use crate::{dirs, env, file};
 
 /// Cached environment data
 #[derive(Debug, Serialize, Deserialize)]
@@ -93,7 +93,16 @@ pub fn compute_cache_key(config: &Arc<Config>, toolset: &Toolset) -> String {
     hash_tool_requests(toolset, &mut hasher);
 
     // Hash mise version
-    env!("CARGO_PKG_VERSION").hash(&mut hasher);
+    std::env!("CARGO_PKG_VERSION").hash(&mut hasher);
+
+    // Hash the user's base PATH from PRISTINE_ENV
+    // This ensures cache invalidation when user modifies their shell PATH
+    // (e.g., adds /custom/bin to .bashrc and opens a new terminal)
+    env::PRISTINE_ENV
+        .get(&*env::PATH_KEY)
+        .map(|p| p.as_str())
+        .unwrap_or("")
+        .hash(&mut hasher);
 
     format!("{:x}", hasher.finish())
 }
