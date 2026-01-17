@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::config::Config;
-use crate::task::{Deps, Task};
+use crate::task::{Deps, GetMatchingExt, Task, build_task_ref_map};
 use crate::ui::style::{self};
 use crate::ui::tree::print_tree;
 use console::style;
@@ -47,8 +47,10 @@ impl TasksDeps {
     }
 
     async fn get_all_tasks(&self, config: &Arc<Config>) -> Result<Vec<Task>> {
+        // Use TaskLoadContext::all() to load tasks from entire monorepo
+        let ctx = crate::task::TaskLoadContext::all();
         Ok(config
-            .tasks()
+            .tasks_with_context(Some(&ctx))
             .await?
             .values()
             .filter(|t| self.hidden || !t.hide)
@@ -57,19 +59,66 @@ impl TasksDeps {
     }
 
     async fn get_task_lists(&self, config: &Arc<Config>) -> Result<Vec<Task>> {
-        let all_tasks = config.tasks().await?;
+        // Expand all task names first
+        let task_names: Vec<String> = self
+            .tasks
+            .as_ref()
+            .unwrap_or(&vec![])
+            .iter()
+            .map(|t| crate::task::expand_colon_task_syntax(t, config))
+            .collect::<Result<Vec<_>>>()?;
+
+        // Load monorepo tasks once with combined context for all monorepo patterns
+        let monorepo_patterns: Vec<&str> = task_names
+            .iter()
+            .filter(|t| t.starts_with("//"))
+            .map(|s| s.as_str())
+            .collect();
+        let monorepo_tasks = if !monorepo_patterns.is_empty() {
+            let ctx = crate::task::TaskLoadContext::from_patterns(monorepo_patterns.into_iter());
+            Some(config.tasks_with_context(Some(&ctx)).await?)
+        } else {
+            None
+        };
+
+        // Load non-monorepo tasks once (only if needed)
+        let has_regular = task_names.iter().any(|t| !t.starts_with("//"));
+        let regular_tasks = if has_regular {
+            Some(config.tasks().await?)
+        } else {
+            None
+        };
+
+        // Build task ref maps once (not per-task)
+        let monorepo_ref_map = monorepo_tasks
+            .as_ref()
+            .map(|t| build_task_ref_map(t.iter()));
+        let regular_ref_map = regular_tasks.as_ref().map(|t| build_task_ref_map(t.iter()));
+
+        // Look up each task from the appropriate cache
         let mut tasks = vec![];
-        for task in self.tasks.as_ref().unwrap_or(&vec![]) {
-            match all_tasks
-                .get(task)
-                .or_else(|| all_tasks.values().find(|t| &t.display_name == task))
-                .cloned()
-            {
+        for task_name in &task_names {
+            let (all_tasks, ref_map) = if task_name.starts_with("//") {
+                (
+                    monorepo_tasks.as_ref().unwrap(),
+                    monorepo_ref_map.as_ref().unwrap(),
+                )
+            } else {
+                (
+                    regular_tasks.as_ref().unwrap(),
+                    regular_ref_map.as_ref().unwrap(),
+                )
+            };
+
+            let matching = ref_map.get_matching(task_name).ok();
+            let task = matching.and_then(|m| m.first().cloned().cloned());
+
+            match task {
                 Some(task) => {
-                    tasks.push(task);
+                    tasks.push(task.clone());
                 }
                 None => {
-                    return Err(self.err_no_task(config, task).await);
+                    return Err(self.err_no_task(task_name, all_tasks));
                 }
             }
         }
@@ -136,17 +185,16 @@ impl TasksDeps {
         Ok(())
     }
 
-    async fn err_no_task(&self, config: &Arc<Config>, t: &str) -> eyre::Report {
-        let tasks = config
-            .tasks()
-            .await
-            .map(|t| {
-                t.values()
-                    .map(|v| v.display_name.clone())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let task_names = tasks.into_iter().map(style::ecyan).join(", ");
+    fn err_no_task(
+        &self,
+        t: &str,
+        all_tasks: &std::collections::BTreeMap<String, Task>,
+    ) -> eyre::Report {
+        let task_names = all_tasks
+            .values()
+            .map(|v| v.display_name.clone())
+            .map(style::ecyan)
+            .join(", ");
         let t = style(&t).yellow().for_stderr();
         eyre!("no tasks named `{t}` found. Available tasks: {task_names}")
     }
