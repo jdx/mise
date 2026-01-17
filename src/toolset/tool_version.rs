@@ -11,7 +11,7 @@ use crate::config::Config;
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{CondaPackageInfo, PlatformInfo};
 use crate::toolset::{ToolRequest, ToolVersionOptions, tool_request};
 use console::style;
 use dashmap::DashMap;
@@ -27,6 +27,8 @@ pub struct ToolVersion {
     pub version: String,
     pub lock_platforms: BTreeMap<String, PlatformInfo>,
     pub install_path: Option<PathBuf>,
+    /// Conda packages resolved during installation: (platform, basename) -> CondaPackageInfo
+    pub conda_packages: BTreeMap<(String, String), CondaPackageInfo>,
 }
 
 impl ToolVersion {
@@ -36,6 +38,7 @@ impl ToolVersion {
             version,
             lock_platforms: Default::default(),
             install_path: None,
+            conda_packages: Default::default(),
         }
     }
 

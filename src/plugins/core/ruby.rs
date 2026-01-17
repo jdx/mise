@@ -841,6 +841,7 @@ impl Backend for RubyPlugin {
                 checksum,
                 size: None,
                 url_api: None,
+                conda_deps: None,
             });
         }
 
@@ -851,6 +852,7 @@ impl Backend for RubyPlugin {
                 checksum: Some(checksum),
                 size: None,
                 url_api: None,
+                conda_deps: None,
             }),
             None => Ok(PlatformInfo::default()),
         }

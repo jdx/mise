@@ -656,6 +656,7 @@ impl Backend for NodePlugin {
             checksum,
             size: None,
             url_api: None,
+            conda_deps: None,
         })
     }
 }

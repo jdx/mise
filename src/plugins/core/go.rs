@@ -375,6 +375,7 @@ impl Backend for GoPlugin {
             checksum,
             size: None,
             url_api: None,
+            conda_deps: None,
         })
     }
 }
