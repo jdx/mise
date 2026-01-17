@@ -252,6 +252,34 @@ version_json_path = ".releases[?channel=stable].version"
 
 The filter syntax `[?field=value]` allows filtering JSON arrays before extraction. This is useful for APIs that return multiple release channels (stable, beta, dev) and you only want specific ones.
 
+### `version_expr`
+
+Extract versions using an [expr-lang](https://expr-lang.org/) expression. This provides the most flexibility for complex version extraction logic:
+
+```toml
+[tools."http:my-tool"]
+version = "latest"
+url = "https://example.com/releases/my-tool-v{{ version }}.tar.gz"
+version_list_url = "https://example.com/versions.txt"
+version_expr = 'split(body, "\n")'
+```
+
+The expression receives the HTTP response body as the `body` variable and should return an array of version strings.
+
+Example expressions:
+
+```toml
+# Split newline-separated versions
+version_expr = 'split(body, "\n")'
+
+# Split and filter empty lines
+version_expr = 'filter(split(body, "\n"), # != "")'
+```
+
+::: tip
+`version_expr` takes precedence over `version_regex` and `version_json_path` if multiple are specified. Use it when the other options aren't flexible enough for your use case.
+:::
+
 ### `bin_path`
 
 Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports templating with `{{version}}`:
