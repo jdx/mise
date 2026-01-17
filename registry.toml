@@ -2842,7 +2842,7 @@ backends = ["aqua:lsd-rs/lsd", "asdf:mise-plugins/asdf-lsd", "cargo:lsd"]
 description = "The next gen ls command"
 
 [tools.lua]
-backends = ["asdf:mise-plugins/mise-lua"]
+backends = ["vfox:mise-plugins/vfox-lua", "asdf:mise-plugins/mise-lua"]
 description = "Lua language"
 
 [tools.lua-language-server]
