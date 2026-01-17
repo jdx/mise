@@ -335,7 +335,12 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
             .collect();
 
         // Check if we found any new paths
-        let had_new_hints = new_hints.iter().any(|h| all_path_hints.insert(h.clone()));
+        let mut had_new_hints = false;
+        for h in &new_hints {
+            if all_path_hints.insert(h.clone()) {
+                had_new_hints = true;
+            }
+        }
         if !had_new_hints {
             break;
         }
