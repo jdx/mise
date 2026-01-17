@@ -7,6 +7,9 @@ echo "=== Test 1: Malformed config in subdirectory ==="
 cat <<'TOML' >mise.toml
 experimental_monorepo_root = true
 
+[monorepo]
+config_roots = ["projects/*"]
+
 [tasks.root-task]
 run = 'echo "root task works"'
 TOML
@@ -104,6 +107,9 @@ echo "=== Test 5: Empty subdirectory config ==="
 export MISE_EXPERIMENTAL=1
 cat <<'TOML' >mise.toml
 experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["projects/*"]
 
 [tasks.root-task]
 run = 'echo "root"'

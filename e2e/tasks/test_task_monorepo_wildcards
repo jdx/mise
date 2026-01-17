@@ -7,6 +7,16 @@ export MISE_EXPERIMENTAL=1
 cat <<EOF >mise.toml
 experimental_monorepo_root = true
 
+[monorepo]
+config_roots = [
+  "projects/frontend",
+  "projects/backend",
+  "projects/services/api/v1",
+  "projects/tools/cli",
+  "libs/shared",
+  "libs/shared/utils"
+]
+
 [tasks.root-task]
 run = 'echo "root task"'
 EOF

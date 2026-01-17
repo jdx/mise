@@ -5,6 +5,9 @@ export MISE_EXPERIMENTAL=1
 cat <<EOF >mise.toml
 experimental_monorepo_root = true
 
+[monorepo]
+config_roots = ["projects/*"]
+
 [tools]
 tiny = "2.0.0"
 

@@ -10,6 +10,9 @@ cat <<'EOF' >mise.toml
 min_version = "2025.10.6"
 experimental_monorepo_root = true
 
+[monorepo]
+config_roots = ["app", "frontend", "backend", "services", "other"]
+
 [settings]
 experimental = true
 EOF

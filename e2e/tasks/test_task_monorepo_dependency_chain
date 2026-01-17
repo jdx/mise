@@ -6,6 +6,9 @@ export MISE_EXPERIMENTAL=1
 # Create monorepo root config
 cat <<'TOML' >mise.toml
 experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["ProjectA", "ProjectB"]
 TOML
 
 # Create ProjectB with a build task

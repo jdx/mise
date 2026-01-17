@@ -6,6 +6,9 @@ export MISE_EXPERIMENTAL=1
 cat <<EOF >mise.toml
 experimental_monorepo_root = true
 
+[monorepo]
+config_roots = ["projects/*"]
+
 [env]
 ROOT_VAR = "root_value"
 ENV_VAR = "root_default"

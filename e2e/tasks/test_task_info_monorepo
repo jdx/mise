@@ -5,6 +5,9 @@
 cat >mise.toml <<EOF
 experimental_monorepo_root = true
 
+[monorepo]
+config_roots = ["lib"]
+
 [tasks.root_task]
 alias = "some_root_task_alias"
 run = "echo This is the root task"

@@ -1750,6 +1750,7 @@ async fn load_local_tasks_with_context(
 
 /// Expand [monorepo].config_roots patterns to actual directories.
 /// Supports explicit paths and single-level globs (*).
+/// Recursive globs (**) are not supported.
 fn expand_config_roots(
     root: &Path,
     patterns: &[String],
@@ -1758,6 +1759,24 @@ fn expand_config_roots(
     let mut subdirs = Vec::new();
 
     for pattern in patterns {
+        // Reject absolute paths and parent directory escapes
+        if pattern.starts_with('/') || pattern.starts_with("..") || pattern.contains("/../") {
+            warn!(
+                "[monorepo] config_roots: '{}' must be a relative path within the monorepo",
+                pattern
+            );
+            continue;
+        }
+
+        // Reject recursive glob patterns (**)
+        if pattern.contains("**") {
+            warn!(
+                "[monorepo] config_roots: recursive glob '**' not supported in '{}', use single-level '*' instead",
+                pattern
+            );
+            continue;
+        }
+
         if pattern.contains('*') {
             // Single-level glob expansion
             let full_pattern = root.join(pattern);
@@ -1766,6 +1785,14 @@ fn expand_config_roots(
                     for entry in entries {
                         match entry {
                             Ok(path) => {
+                                // Verify path is within monorepo root
+                                if path.strip_prefix(root).is_err() {
+                                    warn!(
+                                        "[monorepo] config_roots: glob matched path outside monorepo root: {}",
+                                        path.display()
+                                    );
+                                    continue;
+                                }
                                 if path.is_dir() && has_mise_config(&path) {
                                     subdirs.push(path);
                                 }
@@ -1783,6 +1810,18 @@ fn expand_config_roots(
         } else {
             // Explicit path
             let path = root.join(pattern);
+            // Verify path is within monorepo root after resolution
+            if let Ok(canonical) = path.canonicalize() {
+                if let Ok(canonical_root) = root.canonicalize() {
+                    if !canonical.starts_with(&canonical_root) {
+                        warn!(
+                            "[monorepo] config_roots: '{}' resolves outside monorepo root",
+                            pattern
+                        );
+                        continue;
+                    }
+                }
+            }
             if path.is_dir() {
                 if has_mise_config(&path) {
                     subdirs.push(path);
@@ -1813,11 +1852,13 @@ fn expand_config_roots(
     Ok(subdirs)
 }
 
-/// Check if a directory contains a mise config file
+/// Check if a directory contains a mise config file or file tasks directory
 fn has_mise_config(dir: &Path) -> bool {
     DEFAULT_CONFIG_FILENAMES
         .iter()
         .any(|f| dir.join(f).exists())
+        || dir.join(".mise/tasks").is_dir()
+        || dir.join("mise-tasks").is_dir()
 }
 
 fn discover_monorepo_subdirs(
