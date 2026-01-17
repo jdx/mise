@@ -1811,17 +1811,15 @@ fn expand_config_roots(
             // Explicit path
             let path = root.join(pattern);
             // Verify path is within monorepo root after resolution
-            if let Ok(canonical) = path.canonicalize() {
-                if let Ok(canonical_root) = root.canonicalize() {
-                    if !canonical.starts_with(&canonical_root) {
+            if let Ok(canonical) = path.canonicalize()
+                && let Ok(canonical_root) = root.canonicalize()
+                    && !canonical.starts_with(&canonical_root) {
                         warn!(
                             "[monorepo] config_roots: '{}' resolves outside monorepo root",
                             pattern
                         );
                         continue;
                     }
-                }
-            }
             if path.is_dir() {
                 if has_mise_config(&path) {
                     subdirs.push(path);
