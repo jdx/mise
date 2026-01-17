@@ -3637,7 +3637,7 @@ backends = ["github:FairwindsOps/reckoner", "asdf:FairwindsOps/asdf-reckoner"]
 description = "Declaratively install and manage multiple Helm chart releases"
 
 [tools.redis]
-backends = ["asdf:mise-plugins/mise-redis"]
+backends = ["vfox:mise-plugins/vfox-redis", "asdf:mise-plugins/mise-redis"]
 description = "Cache & in-memory datastore"
 
 [tools.redo]
