@@ -111,8 +111,8 @@ pub fn fix_library_paths(ctx: &InstallContext, install_dir: &Path) -> Result<()>
                 .output();
         }
 
-        // Fix the library's own ID if it's a dylib
-        if is_dylib {
+        // Fix the library's own ID if it's a dylib in the lib directory
+        if needs_id_fix {
             if let Some(filename) = file_path.file_name() {
                 let new_id = format!("@rpath/{}", filename.to_str().unwrap_or(""));
                 let _ = Command::new("install_name_tool")
