@@ -67,7 +67,7 @@ packages:
           - goos: darwin
             asset: ollama-{{.OS}}
             format: raw
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.13.5")
         asset: ollama-{{.OS}}-{{.Arch}}.{{.Format}}
         format: zip
         windows_arm_emulation: true
@@ -84,3 +84,19 @@ packages:
           - goos: darwin
             asset: ollama-{{.OS}}.{{.Format}}
             format: tgz
+      - version_constraint: "true"
+        asset: ollama-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: ollama-{{.OS}}.{{.Format}}
+            format: tgz
+          - goos: linux
+            format: tar.zst
+            files:
+              - name: ollama
+                src: bin/ollama

@@ -186,7 +186,7 @@ packages:
           - goos: windows
             format: zip
             asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-      - version_constraint: "true"
+      - version_constraint: semver("<= 2.68.1")
         asset: chezmoi_{{trimV .Version}}_{{.OS}}-glibc_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
@@ -213,3 +213,19 @@ packages:
           - goos: windows
             format: zip
             asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+      - version_constraint: "true"
+        asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: chezmoi_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --key
+              - https://github.com/twpayne/chezmoi/releases/download/{{.Version}}/chezmoi_cosign.pub
+              - --signature
+              - https://github.com/twpayne/chezmoi/releases/download/{{.Version}}/chezmoi_{{trimV .Version}}_checksums.txt.sig
+        overrides:
+          - goos: windows
+            format: zip

@@ -1,5 +1,75 @@
 # Changelog
 
+## [2026.1.4](https://github.com/jdx/mise/compare/v2026.1.3..v2026.1.4) - 2026-01-17
+
+### 🚀 Features
+
+- **(conda)** add dependency locking for reproducible installations by @jdx in [#7708](https://github.com/jdx/mise/pull/7708)
+- **(http)** add JSON filter syntax for version extraction by @jdx in [#7707](https://github.com/jdx/mise/pull/7707)
+- **(http)** add version_expr support and Tera templating by @jdx in [#7723](https://github.com/jdx/mise/pull/7723)
+- **(task)** add [monorepo].config_roots for explicit config root listing by @jdx in [#7705](https://github.com/jdx/mise/pull/7705)
+- **(task)** support env vars in task dependencies by @jdx in [#7724](https://github.com/jdx/mise/pull/7724)
+
+### 🐛 Bug Fixes
+
+- **(conda)** fix hardcoded library paths in conda packages by @jdx in [#7713](https://github.com/jdx/mise/pull/7713)
+- **(env)** avoid venv/go backend deadlock during env resolution by @stk0vrfl0w in [#7696](https://github.com/jdx/mise/pull/7696)
+- **(python)** sort CPython versions at end of ls-remote output by @jdx in [#7721](https://github.com/jdx/mise/pull/7721)
+- **(task)** resolve remote task files before display and validation commands by @yannrouillard in [#7681](https://github.com/jdx/mise/pull/7681)
+- **(task)** support monorepo paths in `mise tasks deps` by @chadxz in [#7699](https://github.com/jdx/mise/pull/7699)
+- **(task)** resolve all monorepo path hints in deps by @chadxz in [#7698](https://github.com/jdx/mise/pull/7698)
+
+### 📚 Documentation
+
+- remove outdated roadmap page by @jdx in [#7726](https://github.com/jdx/mise/pull/7726)
+
+### ⚡ Performance
+
+- **(task)** fix task-ls cached performance regression by @jdx in [#7716](https://github.com/jdx/mise/pull/7716)
+
+### 📦️ Dependency Updates
+
+- replace dependency @tsconfig/node22 with @tsconfig/node24 by @renovate[bot] in [#7618](https://github.com/jdx/mise/pull/7618)
+
+### 📦 Registry
+
+- add aqua backend for smithy by @jdx in [#7661](https://github.com/jdx/mise/pull/7661)
+- remove low-usage asdf plugins by @jdx in [#7701](https://github.com/jdx/mise/pull/7701)
+- disable mirrord test by @jdx in [#7703](https://github.com/jdx/mise/pull/7703)
+- use vfox-dotnet as default backend by @jdx in [#7704](https://github.com/jdx/mise/pull/7704)
+- use vfox-lua as default lua backend by @jdx in [#7706](https://github.com/jdx/mise/pull/7706)
+- add vfox backend for redis by @jdx in [#7709](https://github.com/jdx/mise/pull/7709)
+- use vfox-postgres as default postgres backend by @jdx in [#7710](https://github.com/jdx/mise/pull/7710)
+- use github backend for kotlin by @jdx in [#7711](https://github.com/jdx/mise/pull/7711)
+- add vfox backend for leiningen by @jdx in [#7714](https://github.com/jdx/mise/pull/7714)
+- use pipx backend for meson by @jdx in [#7712](https://github.com/jdx/mise/pull/7712)
+- use github backend for crystal by @jdx in [#7715](https://github.com/jdx/mise/pull/7715)
+- use conda backend for sqlite by @jdx in [#7718](https://github.com/jdx/mise/pull/7718)
+- use conda backend for make by @jdx in [#7719](https://github.com/jdx/mise/pull/7719)
+- swift-package-list use github backend by @jdx in [#7720](https://github.com/jdx/mise/pull/7720)
+
+### Chore
+
+- increase macos release build timeout to 90 minutes by @jdx in [#7725](https://github.com/jdx/mise/pull/7725)
+
+### New Contributors
+
+- @yannrouillard made their first contribution in [#7681](https://github.com/jdx/mise/pull/7681)
+- @stk0vrfl0w made their first contribution in [#7696](https://github.com/jdx/mise/pull/7696)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (4)
+
+- [`chevdor/tera-cli`](https://github.com/chevdor/tera-cli)
+- [`goforj/wire`](https://github.com/goforj/wire)
+- [`gravitational/teleport`](https://github.com/gravitational/teleport)
+- [`jackchuka/mdschema`](https://github.com/jackchuka/mdschema)
+
+#### Updated Packages (2)
+
+- [`ollama/ollama`](https://github.com/ollama/ollama)
+- [`twpayne/chezmoi`](https://github.com/twpayne/chezmoi)
 ## [2026.1.3](https://github.com/jdx/mise/compare/v2026.1.2..v2026.1.3) - 2026-01-16
 
 ### 🚀 Features

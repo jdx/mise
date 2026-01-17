@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: chevdor
+    repo_name: tera-cli
+    description: A command line utility on top of the tera templating engine. Takes json|yaml|toml as input and can merge ENV in. You may see it as envsubst on steroid
+    files:
+      - name: tera
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.4.0"
+        asset: tera-{{.OS}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: macos
+        files:
+          - name: tera
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 0.1.2")
+        no_asset: true
+      - version_constraint: semver("<= 0.2.4")
+        asset: tera-{{.OS}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: macos
+        files:
+          - name: tera
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 0.3.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: tera-cli-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        files:
+          - name: tera
+        checksum:
+          type: github_release
+          asset: tera-cli-{{.Arch}}-{{.OS}}.sha512
+          algorithm: sha512
+        overrides:
+          - goos: windows
+            format: zip
