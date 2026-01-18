@@ -328,7 +328,7 @@ jobs:
         if: startsWith(github.event.ref, 'refs/tags/v')
         run: |
           VERSION="$(./scripts/get-version.sh)"
-          PREV_VERSION="$(git describe --tags --abbrev=0 "v$VERSION^" 2>/dev/null || echo "")"
+          PREV_VERSION="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "v$VERSION^" 2>/dev/null || echo "")"
           # Generate rich release notes using LLM
           if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
             mise run gen-release-notes "v$VERSION" "$PREV_VERSION" >/tmp/release-notes.txt || {
