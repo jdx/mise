@@ -329,18 +329,23 @@ jobs:
         run: |
           VERSION="$(./scripts/get-version.sh)"
           PREV_VERSION="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "v$VERSION^" 2>/dev/null || echo "")"
-          # Generate rich release notes using LLM
+          # Generate rich release notes using LLM (first line is title, rest is body)
+          RELEASE_TITLE="$VERSION"
           if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
-            mise run gen-release-notes "v$VERSION" "$PREV_VERSION" >/tmp/release-notes.txt || {
+            if mise run gen-release-notes "v$VERSION" "$PREV_VERSION" >/tmp/release-full.txt; then
+              # Extract title (first line) and body (after blank line)
+              RELEASE_TITLE="$VERSION - $(head -1 /tmp/release-full.txt)"
+              tail -n +3 /tmp/release-full.txt >/tmp/release-notes.txt
+            else
               echo "LLM generation failed, falling back to CHANGELOG.md"
               awk '/^## \[/{if(found) exit; found=1} found{print}' CHANGELOG.md >/tmp/release-notes.txt
-            }
+            fi
           else
             echo "ANTHROPIC_API_KEY not set, using CHANGELOG.md"
             awk '/^## \[/{if(found) exit; found=1} found{print}' CHANGELOG.md >/tmp/release-notes.txt
           fi
           gh release create "$VERSION" \
-            --title "$VERSION" \
+            --title "$RELEASE_TITLE" \
             --notes-file /tmp/release-notes.txt \
             --verify-tag \
             --draft \

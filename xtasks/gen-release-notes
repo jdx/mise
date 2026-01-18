@@ -35,8 +35,19 @@ prompt=$(
 	printf '%s\n' "$changelog"
 	printf '\n'
 	cat <<'INSTRUCTIONS'
-Write user-friendly release notes:
+Write user-friendly release notes with a creative title:
 
+FORMAT:
+- First line: A short, creative release title (2-6 words, no version number, captures the theme of the release)
+- Second line: Empty
+- Rest: The release notes
+
+TITLE GUIDELINES:
+- Be creative and memorable (e.g., "The Great Backend Migration", "Conda Gets Cozy", "Monorepo Magic")
+- Reference the main theme or biggest feature of the release
+- Keep it fun but professional
+
+RELEASE NOTES:
 1. Start with 1-2 paragraphs summarizing key changes
 2. Organize into ### sections (Highlights, Bug Fixes, etc.)
 3. Explain WHY changes matter to users
@@ -44,7 +55,7 @@ Write user-friendly release notes:
 5. Include contributor usernames (@username)
 6. Skip internal changes
 
-Output ONLY the release notes, no preamble.
+Output ONLY the title, blank line, and release notes - no other preamble.
 INSTRUCTIONS
 )
 
