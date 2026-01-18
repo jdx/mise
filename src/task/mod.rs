@@ -343,7 +343,7 @@ impl Task {
             .filter(|&field| info.get(field).is_some())
             .copied()
             .collect();
-        
+
         if alias_fields.len() > 1 {
             return Err(eyre::eyre!(
                 "Cannot define both 'alias' and 'aliases' fields in task file header: {}. Use only one.",
@@ -1420,9 +1420,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
+    use std::path::Path;
 
     use crate::task::Task;
     use crate::{config::Config, dirs};
@@ -2103,8 +2103,8 @@ echo "hello world"
     #[tokio::test]
     #[cfg(unix)]
     async fn test_parses_all_fields() {
-        use tempfile::tempdir;
         use std::fs;
+        use tempfile::tempdir;
 
         // Create a temporary directory for the test
         let temp_dir = tempdir().unwrap();
@@ -2135,14 +2135,9 @@ echo "test"
         fs::set_permissions(&task_file, std::fs::Permissions::from_mode(0o755)).unwrap();
 
         let config = Config::get().await.unwrap();
-        let task = Task::from_path(
-            &config,
-            &task_file,
-            &tasks_dir,
-            temp_dir.path(),
-        )
-        .await
-        .unwrap();
+        let task = Task::from_path(&config, &task_file, &tasks_dir, temp_dir.path())
+            .await
+            .unwrap();
 
         // Verify all fields are populated correctly
         assert_eq!(task.description, "Test task with all fields");
