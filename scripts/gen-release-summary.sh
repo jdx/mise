@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Generate a prose summary of release notes using Claude Code
-# Usage: ./scripts/gen-release-summary.sh [version] [prev_version]
+# Generate editorialized release notes using Claude Code
+# Usage: ./scripts/gen-release-summary.sh <version> [prev_version]
 
 version="${1:-}"
 prev_version="${2:-}"
@@ -20,25 +20,29 @@ if [[ -z $changelog ]]; then
 	exit 0
 fi
 
-# Use Claude Code to generate summary with full repo context
+# Use Claude Code to editorialize the release notes
 # Sandboxed: only read-only tools allowed (no Bash, Edit, Write)
 claude -p \
 	--model claude-opus-4-20250514 \
 	--output-format text \
 	--allowedTools "Read,Grep,Glob" \
 	<<EOF
-You are generating release notes for mise version ${version}${prev_version:+ (previous version: ${prev_version})}.
+You are writing release notes for mise version ${version}${prev_version:+ (previous version: ${prev_version})}.
 
-Here is the structured changelog from git-cliff:
+Here is the raw changelog from git-cliff:
 ${changelog}
 
-Write a 2-3 paragraph prose summary of this release. Focus on:
-- The most impactful changes for users
-- Key new features and why they matter
-- Important bug fixes
-- Any breaking changes or migration notes
+Rewrite this into user-friendly release notes. The format should be:
 
-Be concise and write in flowing prose (no bullet points). The tone should be informative and professional, similar to a blog post announcement.
+1. Start with 1-2 paragraphs summarizing the most important changes
+2. Then organize into sections like "### Highlights", "### Bug Fixes", etc.
+3. Write in clear, user-focused language (not developer commit messages)
+4. Explain WHY changes matter to users, not just what changed
+5. Group related changes together logically
+6. Skip minor/internal changes that don't affect users
+7. Include contributor attribution where appropriate (@username)
 
-Output ONLY the prose summary, no preamble or explanation.
+Keep the tone professional but approachable. Focus on what users care about.
+
+Output ONLY the editorialized release notes, no preamble.
 EOF

@@ -262,33 +262,24 @@ NEW_AQUA_PKGS="$(find crates/aqua-registry/aqua-registry/pkgs -name registry.yam
 AQUA_CHANGELOG_MD="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA_PKGS" "###" || true)"
 AQUA_CHANGELOG_PR="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA_PKGS" "##" || true)"
 
-# Generate only the new release section (unreleased changes)
-# Use --prepend to preserve existing changelog content
-git cliff --tag "v$version" --unreleased --prepend CHANGELOG.md
-
-# Generate LLM prose summary for the release
-echo "Generating LLM prose summary..."
+# Generate editorialized release notes using LLM
+echo "Generating editorialized release notes..."
 prev_tag="$(git describe --tags --abbrev=0 2>/dev/null || echo "")"
-LLM_SUMMARY="$(./scripts/gen-release-summary.sh "v$version" "$prev_tag")"
-if [[ -n $LLM_SUMMARY ]]; then
-	# Inject the summary after the release header in CHANGELOG.md
-	# The format is: ## [version](link) - date\n\n<summary>\n\n### Features...
-	# Use ENVIRON instead of -v to avoid awk interpreting backslash escape sequences
-	export LLM_SUMMARY
-	awk '
-		/^## \[/ && !inserted {
-			print
-			getline # print the blank line after header
-			print
-			print ENVIRON["LLM_SUMMARY"]
-			print ""
-			inserted = 1
-			next
-		}
-		{print}
-	' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
-	echo "LLM summary added to CHANGELOG.md"
-fi
+EDITORIALIZED_NOTES="$(./scripts/gen-release-summary.sh "v$version" "$prev_tag")"
+
+# Create the release header and combine with editorialized content
+RELEASE_DATE="$(date +%Y-%m-%d)"
+RELEASE_HEADER="## [$version](https://github.com/jdx/mise/compare/$prev_tag..v$version) - $RELEASE_DATE"
+
+# Prepend the new release to CHANGELOG.md
+{
+	echo "$RELEASE_HEADER"
+	echo ""
+	echo "$EDITORIALIZED_NOTES"
+	echo ""
+	cat CHANGELOG.md
+} >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
+echo "Editorialized release notes added to CHANGELOG.md"
 
 # Inject aqua-registry updates into CHANGELOG.md if there are any
 if [[ -n $AQUA_CHANGELOG_MD ]]; then
@@ -313,10 +304,6 @@ if [[ -n $AQUA_CHANGELOG_MD ]]; then
 		}
 	' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
 fi
-
-# Generate changelog for PR body
-changelog="$(git cliff --tag "v$version" --unreleased --strip all)"
-changelog="$(echo "$changelog" | tail -n +3)"
 
 mise up
 mise lock
@@ -373,16 +360,16 @@ git push origin release --force
 
 if [[ "$(gh pr list --label release)" == "" ]]; then
 	# Append aqua-registry updates to PR body if available
-	PR_BODY="$changelog"
+	PR_BODY="$EDITORIALIZED_NOTES"
 	if [[ -n $AQUA_CHANGELOG_PR ]]; then
-		PR_BODY="$changelog"$'\n\n'"$AQUA_CHANGELOG_PR"
+		PR_BODY="$EDITORIALIZED_NOTES"$'\n\n'"$AQUA_CHANGELOG_PR"
 	fi
 	gh pr create --title "chore: release $version" --body "$PR_BODY" --label "release" --head release
 else
 	# Append aqua-registry updates to PR body if available
-	PR_BODY="$changelog"
+	PR_BODY="$EDITORIALIZED_NOTES"
 	if [[ -n $AQUA_CHANGELOG_PR ]]; then
-		PR_BODY="$changelog"$'\n\n'"$AQUA_CHANGELOG_PR"
+		PR_BODY="$EDITORIALIZED_NOTES"$'\n\n'"$AQUA_CHANGELOG_PR"
 	fi
 	gh pr edit --title "chore: release $version" --body "$PR_BODY"
 fi
