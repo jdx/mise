@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Generate rich release notes for GitHub releases using Claude Code
+# Usage: ./scripts/gen-release-notes.sh <version> [prev_version]
+
+version="${1:-}"
+prev_version="${2:-}"
+
+if [[ -z $version ]]; then
+	echo "Usage: $0 <version> [prev_version]" >&2
+	exit 1
+fi
+
+# Get the git-cliff changelog for context
+# Use the tag range if prev_version provided, otherwise unreleased
+if [[ -n $prev_version ]]; then
+	changelog=$(git cliff --strip all "${prev_version}..${version}" 2>/dev/null || echo "")
+else
+	changelog=$(git cliff --unreleased --strip all 2>/dev/null || echo "")
+fi
+
+if [[ -z $changelog ]]; then
+	echo "Error: No changes found for release" >&2
+	exit 1
+fi
+
+# Build prompt safely using printf to avoid command substitution on backticks in changelog
+prompt=$(
+	printf '%s\n' "You are writing release notes for mise version ${version}${prev_version:+ (previous version: ${prev_version})}."
+	printf '\n'
+	printf '%s\n' "mise is a polyglot runtime manager (like asdf, nvm, pyenv, etc), environment manager, and task runner."
+	printf '\n'
+	printf '%s\n' "Here is the raw changelog from git-cliff:"
+	printf '%s\n' "$changelog"
+	printf '\n'
+	cat <<'INSTRUCTIONS'
+Write user-friendly release notes:
+
+1. Start with 1-2 paragraphs summarizing key changes
+2. Organize into ### sections (Highlights, Bug Fixes, etc.)
+3. Explain WHY changes matter to users
+4. Include PR links and documentation links (https://mise.jdx.dev/)
+5. Include contributor usernames (@username)
+6. Skip internal changes
+
+Output ONLY the release notes, no preamble.
+INSTRUCTIONS
+)
+
+# Use Claude Code to generate the release notes
+# Sandboxed: only read-only tools allowed (no Bash, Edit, Write)
+output=$(
+	printf '%s' "$prompt" | claude -p \
+		--model claude-opus-4-20250514 \
+		--output-format text \
+		--allowedTools "Read,Grep,Glob"
+)
+
+echo "$output"

@@ -265,7 +265,7 @@ AQUA_CHANGELOG_PR="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA
 # Generate editorialized release notes using LLM
 echo "Generating editorialized release notes..."
 prev_tag="$(git describe --tags --abbrev=0 2>/dev/null || echo "")"
-EDITORIALIZED_NOTES="$(./scripts/gen-release-summary.sh "v$version" "$prev_tag")"
+EDITORIALIZED_NOTES="$(mise run gen-release-summary "v$version" "$prev_tag")"
 
 # Validate we got non-empty release notes
 if [[ -z $EDITORIALIZED_NOTES ]]; then

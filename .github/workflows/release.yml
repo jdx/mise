@@ -321,12 +321,24 @@ jobs:
         if: github.event_name != 'pull_request' || github.head_ref == 'release'
       - run: mise x -- scripts/release.sh
         if: github.event_name != 'pull_request' || github.head_ref == 'release'
+      - name: Install Claude Code CLI
+        if: startsWith(github.event.ref, 'refs/tags/v')
+        run: npm install -g @anthropic-ai/claude-code
       - name: Create Draft GitHub Release
         if: startsWith(github.event.ref, 'refs/tags/v')
         run: |
           VERSION="$(./scripts/get-version.sh)"
-          # Extract the latest release section from CHANGELOG.md (includes LLM summary)
-          awk '/^## \[/{if(found) exit; found=1} found{print}' CHANGELOG.md >/tmp/release-notes.txt
+          PREV_VERSION="$(git describe --tags --abbrev=0 "v$VERSION^" 2>/dev/null || echo "")"
+          # Generate rich release notes using LLM
+          if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+            mise run gen-release-notes "v$VERSION" "$PREV_VERSION" >/tmp/release-notes.txt || {
+              echo "LLM generation failed, falling back to CHANGELOG.md"
+              awk '/^## \[/{if(found) exit; found=1} found{print}' CHANGELOG.md >/tmp/release-notes.txt
+            }
+          else
+            echo "ANTHROPIC_API_KEY not set, using CHANGELOG.md"
+            awk '/^## \[/{if(found) exit; found=1} found{print}' CHANGELOG.md >/tmp/release-notes.txt
+          fi
           gh release create "$VERSION" \
             --title "$VERSION" \
             --notes-file /tmp/release-notes.txt \
@@ -335,6 +347,7 @@ jobs:
             "releases/$VERSION"/*
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       - name: Publish Release Assets to CDN
         if: startsWith(github.event.ref, 'refs/tags/v')
         run: mise x -- scripts/publish-release.sh
