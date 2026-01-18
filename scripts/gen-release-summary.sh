@@ -16,8 +16,8 @@ fi
 changelog=$(git cliff --unreleased --strip all 2>/dev/null || echo "")
 
 if [[ -z $changelog ]]; then
-	echo "No unreleased changes found" >&2
-	exit 0
+	echo "Error: No unreleased changes found" >&2
+	exit 1
 fi
 
 # Use Claude Code to editorialize the release notes

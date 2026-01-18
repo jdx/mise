@@ -267,6 +267,12 @@ echo "Generating editorialized release notes..."
 prev_tag="$(git describe --tags --abbrev=0 2>/dev/null || echo "")"
 EDITORIALIZED_NOTES="$(./scripts/gen-release-summary.sh "v$version" "$prev_tag")"
 
+# Validate we got non-empty release notes
+if [[ -z $EDITORIALIZED_NOTES ]]; then
+	echo "Error: Failed to generate release notes (empty output)" >&2
+	exit 1
+fi
+
 # Create the release header with appropriate URL format
 RELEASE_DATE="$(date +%Y-%m-%d)"
 if [[ -n $prev_tag ]]; then
@@ -276,23 +282,33 @@ else
 	RELEASE_HEADER="## [$version](https://github.com/jdx/mise/releases/tag/v$version) - $RELEASE_DATE"
 fi
 
-# Insert the new release after the "# Changelog" header line
-# This preserves the header and avoids it appearing in extracted release notes
+# Insert the new release before the first existing release section (## [)
+# This handles any CHANGELOG format as long as releases start with ## [
 # Use ENVIRON for notes to avoid awk interpreting backslash escape sequences
 export RELEASE_HEADER EDITORIALIZED_NOTES
+awk_exit_code=0
 awk '
-	NR == 1 && /^# / { print; next }  # Print the # Changelog header
-	NR == 2 && /^$/ {                  # After the blank line following header
-		print
+	/^## \[/ && !inserted {
+		# Insert new release before the first existing release
 		print ENVIRON["RELEASE_HEADER"]
 		print ""
 		print ENVIRON["EDITORIALIZED_NOTES"]
 		print ""
 		inserted = 1
-		next
 	}
 	{ print }
-' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
+	END {
+		# Signal whether insertion happened via exit code
+		exit (inserted ? 0 : 1)
+	}
+' CHANGELOG.md >CHANGELOG.md.tmp || awk_exit_code=$?
+
+if [[ $awk_exit_code -ne 0 ]]; then
+	echo "Error: Failed to insert release notes into CHANGELOG.md (no existing release section found)" >&2
+	rm -f CHANGELOG.md.tmp
+	exit 1
+fi
+mv CHANGELOG.md.tmp CHANGELOG.md
 echo "Editorialized release notes added to CHANGELOG.md"
 
 # Inject aqua-registry updates into CHANGELOG.md if there are any
