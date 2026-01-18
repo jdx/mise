@@ -332,6 +332,39 @@ impl Task {
                 map
             });
         let info = toml::Value::Table(info);
+
+        if let Some(table) = info.as_table() {
+            const KNOWN_FIELDS: &[&str] = &[
+                "description",
+                "alias",
+                "aliases",
+                "confirm",
+                "depends",
+                "depends_post",
+                "wait_for",
+                "env",
+                "dir",
+                "hide",
+                "raw",
+                "sources",
+                "outputs",
+                "shell",
+                "quiet",
+                "silent",
+                "tools",
+            ];
+
+            for key in table.keys() {
+                if !KNOWN_FIELDS.contains(&key.as_str()) {
+                    return Err(eyre::eyre!(
+                        "unknown field `{}` in task file header: {}",
+                        key,
+                        file::display_path(path)
+                    ));
+                }
+            }
+        }
+
         let p = TomlParser::new(&info);
         // trace!("task info: {:#?}", info);
 

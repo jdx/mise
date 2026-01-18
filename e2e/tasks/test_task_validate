@@ -187,3 +187,29 @@ assert_contains "mise tasks validate" "✓ All 2 task(s) validated successfully"
 # Test that command-line validation can use task aliases
 assert_contains "mise tasks validate b" "✓ All 1 task(s) validated successfully"
 assert_contains "mise tasks validate build" "✓ All 1 task(s) validated successfully"
+
+# Test unknown field validation in file tasks
+mkdir -p mise-tasks
+cat <<'SCRIPT' >mise-tasks/bad-field
+#!/usr/bin/env bash
+#MISE description="Test file task"
+#MISE not_a_valid_field="this should error"
+echo "should not run"
+SCRIPT
+chmod +x mise-tasks/bad-field
+
+assert_contains "mise tasks validate bad-field 2>&1 || true" "unknown field"
+assert_contains "mise tasks validate bad-field 2>&1 || true" "not_a_valid_field"
+
+# Clean up
+rm -rf mise-tasks
+
+# Test unknown field validation in TOML tasks
+cat <<EOF >mise.toml
+[tasks.toml-bad-field]
+run = "echo test"
+not_a_valid_field = "this should error"
+EOF
+
+assert_contains "mise tasks validate toml-bad-field 2>&1 || true" "unknown field"
+assert_contains "mise tasks validate toml-bad-field 2>&1 || true" "not_a_valid_field"
