@@ -12,6 +12,7 @@ mise plugins have access to a comprehensive set of built-in Lua modules that pro
 - **`file`** - File system operations
 - **`env`** - Environment variable operations
 - **`strings`** - String manipulation utilities
+- **`semver`** - Semantic version comparison and sorting
 - **`html`** - HTML parsing and manipulation
 - **`archiver`** - Archive extraction
 
@@ -192,6 +193,109 @@ local function normalize_version(version)
 end
 
 local version = normalize_version("v1.2.3-beta.1")  -- "1.2.3"
+```
+
+## Semver Module
+
+The semver module provides semantic version comparison and sorting functionality. This is useful for sorting version lists returned by `Available()` hooks.
+
+### Version Comparison
+
+```lua
+local semver = require("semver")
+
+-- Compare two versions
+-- Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2
+local result = semver.compare("1.2.3", "1.2.4")  -- -1
+local result = semver.compare("2.0.0", "1.9.9")  -- 1
+local result = semver.compare("1.0.0", "1.0.0")  -- 0
+
+-- Handles numeric comparison correctly
+local result = semver.compare("9.6.9", "9.6.24")   -- -1 (not lexicographic!)
+local result = semver.compare("10.0.0", "9.6.24") -- 1
+```
+
+### Parse Version
+
+```lua
+local semver = require("semver")
+
+-- Parse version string into numeric parts
+local parts = semver.parse("1.2.3")
+print(parts[1])  -- 1
+print(parts[2])  -- 2
+print(parts[3])  -- 3
+
+-- Works with prefixes and suffixes
+local parts = semver.parse("v1.2.3-beta")  -- {1, 2, 3}
+```
+
+### Sort Version Strings
+
+```lua
+local semver = require("semver")
+
+-- Sort array of version strings (ascending order)
+local versions = {"1.10.0", "1.2.0", "1.9.0", "2.0.0"}
+local sorted = semver.sort(versions)
+-- Result: {"1.2.0", "1.9.0", "1.10.0", "2.0.0"}
+```
+
+### Sort Tables by Version Field
+
+```lua
+local semver = require("semver")
+
+-- Sort array of tables by a version field (ascending order)
+local releases = {
+    {version = "1.10.0", url = "..."},
+    {version = "1.2.0", url = "..."},
+    {version = "1.9.0", url = "..."},
+}
+local sorted = semver.sort_by(releases, "version")
+-- Result: sorted by version ascending
+```
+
+### Real-World Example: Available Hook
+
+```lua
+local http = require("http")
+local semver = require("semver")
+
+function PLUGIN:Available(ctx)
+    local resp, err = http.get({
+        url = "https://example.com/releases/"
+    })
+
+    if err ~= nil then
+        error("Failed to fetch versions: " .. err)
+    end
+
+    local result = {}
+    -- Parse versions from response...
+    for version in string.gmatch(resp.body, 'v([0-9]+%.[0-9]+%.[0-9]+)') do
+        table.insert(result, {version = version})
+    end
+
+    -- Sort versions semantically (ascending order - oldest first)
+    return semver.sort_by(result, "version")
+end
+```
+
+### Using Compare in Custom Sort
+
+```lua
+local semver = require("semver")
+
+-- Sort with custom comparator (descending order - newest first)
+table.sort(versions, function(a, b)
+    return semver.compare(a.version, b.version) > 0
+end)
+
+-- Sort ascending (oldest first) - default for Available()
+table.sort(versions, function(a, b)
+    return semver.compare(a.version, b.version) < 0
+end)
 ```
 
 ## HTML Module
