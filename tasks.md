@@ -116,6 +116,14 @@ User to run as
 
 Generate a flamegraph for performance analysis
 
+## `gen-release-notes`
+
+- **Usage**: `gen-release-notes`
+
+## `gen-release-summary`
+
+- **Usage**: `gen-release-summary`
+
 ## `install-dev`
 
 - **Usage**: `install-dev`
