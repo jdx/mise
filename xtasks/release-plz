@@ -267,18 +267,32 @@ echo "Generating editorialized release notes..."
 prev_tag="$(git describe --tags --abbrev=0 2>/dev/null || echo "")"
 EDITORIALIZED_NOTES="$(./scripts/gen-release-summary.sh "v$version" "$prev_tag")"
 
-# Create the release header and combine with editorialized content
+# Create the release header with appropriate URL format
 RELEASE_DATE="$(date +%Y-%m-%d)"
-RELEASE_HEADER="## [$version](https://github.com/jdx/mise/compare/$prev_tag..v$version) - $RELEASE_DATE"
+if [[ -n $prev_tag ]]; then
+	RELEASE_HEADER="## [$version](https://github.com/jdx/mise/compare/$prev_tag..v$version) - $RELEASE_DATE"
+else
+	# No previous tag - link to the tag directly instead of a compare URL
+	RELEASE_HEADER="## [$version](https://github.com/jdx/mise/releases/tag/v$version) - $RELEASE_DATE"
+fi
 
-# Prepend the new release to CHANGELOG.md
-{
-	echo "$RELEASE_HEADER"
-	echo ""
-	echo "$EDITORIALIZED_NOTES"
-	echo ""
-	cat CHANGELOG.md
-} >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
+# Insert the new release after the "# Changelog" header line
+# This preserves the header and avoids it appearing in extracted release notes
+# Use ENVIRON for notes to avoid awk interpreting backslash escape sequences
+export RELEASE_HEADER EDITORIALIZED_NOTES
+awk '
+	NR == 1 && /^# / { print; next }  # Print the # Changelog header
+	NR == 2 && /^$/ {                  # After the blank line following header
+		print
+		print ENVIRON["RELEASE_HEADER"]
+		print ""
+		print ENVIRON["EDITORIALIZED_NOTES"]
+		print ""
+		inserted = 1
+		next
+	}
+	{ print }
+' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
 echo "Editorialized release notes added to CHANGELOG.md"
 
 # Inject aqua-registry updates into CHANGELOG.md if there are any
