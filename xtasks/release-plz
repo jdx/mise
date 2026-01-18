@@ -266,14 +266,40 @@ AQUA_CHANGELOG_PR="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA
 # Use --prepend to preserve existing changelog content
 git cliff --tag "v$version" --unreleased --prepend CHANGELOG.md
 
+# Generate LLM prose summary for the release
+echo "Generating LLM prose summary..."
+prev_tag="$(git describe --tags --abbrev=0 2>/dev/null || echo "")"
+LLM_SUMMARY="$(./scripts/gen-release-summary.sh "v$version" "$prev_tag")"
+if [[ -n $LLM_SUMMARY ]]; then
+	# Inject the summary after the release header in CHANGELOG.md
+	# The format is: ## [version](link) - date\n\n<summary>\n\n### Features...
+	# Use ENVIRON instead of -v to avoid awk interpreting backslash escape sequences
+	export LLM_SUMMARY
+	awk '
+		/^## \[/ && !inserted {
+			print
+			getline # print the blank line after header
+			print
+			print ENVIRON["LLM_SUMMARY"]
+			print ""
+			inserted = 1
+			next
+		}
+		{print}
+	' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
+	echo "LLM summary added to CHANGELOG.md"
+fi
+
 # Inject aqua-registry updates into CHANGELOG.md if there are any
 if [[ -n $AQUA_CHANGELOG_MD ]]; then
 	# Find the FIRST release section (the one we just added) and inject aqua section at the end, before the next release
-	awk -v aqua_section="$AQUA_CHANGELOG_MD" '
+	# Use ENVIRON instead of -v to avoid awk interpreting backslash escape sequences
+	export AQUA_CHANGELOG_MD
+	awk '
 		/^## \[/ {
 			if (release_count == 1 && !inserted) {
 				# We are at the second release, inject aqua section before it
-				print aqua_section
+				print ENVIRON["AQUA_CHANGELOG_MD"]
 				inserted = 1
 			}
 			release_count++
@@ -282,7 +308,7 @@ if [[ -n $AQUA_CHANGELOG_MD ]]; then
 		END {
 			# If we never hit a second release (only one release in file), append at end
 			if (release_count == 1 && !inserted) {
-				print aqua_section
+				print ENVIRON["AQUA_CHANGELOG_MD"]
 			}
 		}
 	' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md

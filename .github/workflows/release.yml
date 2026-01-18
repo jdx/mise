@@ -325,7 +325,8 @@ jobs:
         if: startsWith(github.event.ref, 'refs/tags/v')
         run: |
           VERSION="$(./scripts/get-version.sh)"
-          mise x -- git-cliff --strip all --latest >/tmp/release-notes.txt
+          # Extract the latest release section from CHANGELOG.md (includes LLM summary)
+          awk '/^## \[/{if(found) exit; found=1} found{print}' CHANGELOG.md >/tmp/release-notes.txt
           gh release create "$VERSION" \
             --title "$VERSION" \
             --notes-file /tmp/release-notes.txt \
