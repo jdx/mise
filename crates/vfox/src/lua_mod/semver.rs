@@ -105,18 +105,18 @@ mod tests {
         lua.load(mlua::chunk! {
             local semver = require("semver")
 
-            // Test compare
+            -- Test compare
             assert(semver.compare("1.2.3", "1.2.3") == 0, "equal versions")
             assert(semver.compare("1.2.3", "1.2.4") == -1, "less than")
             assert(semver.compare("1.2.4", "1.2.3") == 1, "greater than")
             assert(semver.compare("9.6.9", "9.6.24") == -1, "numeric comparison")
             assert(semver.compare("10.0", "9.6.24") == 1, "major version")
 
-            // Test parse
+            -- Test parse
             local parts = semver.parse("1.2.3")
             assert(parts[1] == 1 and parts[2] == 2 and parts[3] == 3, "parse")
 
-            // Test sort
+            -- Test sort
             local versions = semver.sort({"1.2", "1.10", "1.1", "2.0"})
             assert(versions[1] == "1.1", "sort[1]")
             assert(versions[2] == "1.2", "sort[2]")
