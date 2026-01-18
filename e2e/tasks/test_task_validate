@@ -213,3 +213,22 @@ EOF
 
 assert_contains "mise tasks validate toml-bad-field 2>&1 || true" "unknown field"
 assert_contains "mise tasks validate toml-bad-field 2>&1 || true" "not_a_valid_field"
+
+# Clean up mise.toml before next test
+rm -f mise.toml
+
+# Test multiple alias fields (both alias and aliases)
+mkdir -p mise-tasks
+cat <<'SCRIPT' >mise-tasks/multiple-alias
+#!/usr/bin/env bash
+#MISE description="Task with both alias and aliases"
+#MISE alias="single"
+#MISE aliases=["multi1", "multi2"]
+echo "should not run"
+SCRIPT
+chmod +x mise-tasks/multiple-alias
+
+assert_contains "mise tasks validate multiple-alias 2>&1 || true" "Cannot define both 'alias' and 'aliases'"
+
+# Clean up
+rm -rf mise-tasks

@@ -1,6 +1,6 @@
 use crate::cli::version::VERSION;
 use crate::config::config_file::mise_toml::EnvList;
-use crate::config::config_file::toml::{TomlParser, deserialize_arr};
+use crate::config::config_file::toml::{TrackingTomlParser, deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{self, Config};
 use crate::path_env::PathEnv;
@@ -333,42 +333,24 @@ impl Task {
             });
         let info = toml::Value::Table(info);
 
-        if let Some(table) = info.as_table() {
-            const KNOWN_FIELDS: &[&str] = &[
-                "description",
-                "alias",
-                "aliases",
-                "confirm",
-                "depends",
-                "depends_post",
-                "wait_for",
-                "env",
-                "dir",
-                "hide",
-                "raw",
-                "sources",
-                "outputs",
-                "shell",
-                "quiet",
-                "silent",
-                "tools",
-            ];
-
-            for key in table.keys() {
-                if !KNOWN_FIELDS.contains(&key.as_str()) {
-                    return Err(eyre::eyre!(
-                        "unknown field `{}` in task file header: {}",
-                        key,
-                        file::display_path(path)
-                    ));
-                }
-            }
-        }
-
-        let p = TomlParser::new(&info);
+        let mut p = TrackingTomlParser::new(&info);
         // trace!("task info: {:#?}", info);
 
         task.description = p.parse_str("description").unwrap_or_default();
+        // Check for multiple alias fields before parsing
+        let alias_fields: Vec<&str> = ["alias", "aliases"]
+            .iter()
+            .filter(|&field| info.get(field).is_some())
+            .copied()
+            .collect();
+        
+        if alias_fields.len() > 1 {
+            return Err(eyre::eyre!(
+                "Cannot define both 'alias' and 'aliases' fields in task file header: {}. Use only one.",
+                display_path(path)
+            ));
+        }
+
         task.aliases = p
             .parse_array("alias")
             .or(p.parse_array("aliases"))
@@ -384,25 +366,40 @@ impl Task {
         task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
         task.raw = p.parse_bool("raw").unwrap_or_default();
         task.sources = p.parse_array("sources").unwrap_or_default();
-        task.outputs = info.get("outputs").map(|to| to.into()).unwrap_or_default();
+        task.outputs = p.get_raw("outputs").map(|to| to.into()).unwrap_or_default();
         task.file = Some(path.to_path_buf());
         task.shell = p.parse_str("shell");
         task.quiet = p.parse_bool("quiet").unwrap_or_default();
-        task.silent = info
-            .get("silent")
-            .and_then(|v| {
-                // Try to deserialize as Silent enum (handles bool, "stdout", "stderr")
-                Silent::deserialize(v.clone()).ok()
-            })
+        task.silent = p
+            .get_raw("silent")
+            .and_then(|v| Silent::deserialize(v.clone()).ok())
             .unwrap_or_default();
         task.tools = p
             .parse_table("tools")
             .map(|t| {
                 t.into_iter()
-                    .filter_map(|(k, v)| v.as_str().map(|v| (k, v.to_string())))
+                    .filter_map(|(k, v)| v.as_str().map(|vs| (k, vs.to_string())))
                     .collect()
             })
             .unwrap_or_default();
+
+        let known: HashSet<&str> = p.known_keys().collect();
+        if let Some(table) = info.as_table() {
+            let mut unknown: Vec<_> = table
+                .keys()
+                .filter(|k| !known.contains(k.as_str()))
+                .cloned()
+                .collect();
+            unknown.sort();
+
+            if !unknown.is_empty() {
+                return Err(eyre::eyre!(
+                    "unknown field(s) {:?} in task file header: {}",
+                    unknown,
+                    display_path(path)
+                ));
+            }
+        }
         task.render(config, config_root).await?;
         Ok(task)
     }
@@ -1424,6 +1421,8 @@ where
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     use crate::task::Task;
     use crate::{config::Config, dirs};
@@ -2099,5 +2098,64 @@ echo "hello world"
         let result = task.file_path(&config).await;
         // Should succeed (not error on template rendering)
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_parses_all_fields() {
+        use tempfile::tempdir;
+        use std::fs;
+
+        // Create a temporary directory for the test
+        let temp_dir = tempdir().unwrap();
+        let tasks_dir = temp_dir.path().join("tasks");
+        fs::create_dir(&tasks_dir).unwrap();
+        let task_file = tasks_dir.join("test-task");
+
+        // Create a file task with ALL possible header fields
+        let script_content = r#"#!/usr/bin/env bash
+#MISE description="Test task with all fields"
+#MISE alias="test-alias"
+#MISE depends=["dep1", "dep2"]
+#MISE depends_post=["post1"]
+#MISE wait_for=["wait1"]
+#MISE env={TEST_VAR="value"}
+#MISE dir="/some/dir"
+#MISE hide=true
+#MISE raw=true
+#MISE sources=["src1.txt", "src2.txt"]
+#MISE outputs=["out1.txt"]
+#MISE shell="bash -c"
+#MISE quiet=true
+#MISE silent=true
+#MISE tools={node="20", python="3.11"}
+echo "test"
+"#;
+        fs::write(&task_file, script_content).unwrap();
+        fs::set_permissions(&task_file, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let config = Config::get().await.unwrap();
+        let task = Task::from_path(
+            &config,
+            &task_file,
+            &tasks_dir,
+            temp_dir.path(),
+        )
+        .await
+        .unwrap();
+
+        // Verify all fields are populated correctly
+        assert_eq!(task.description, "Test task with all fields");
+        assert_eq!(task.aliases, vec!["test-alias"]);
+        assert_eq!(task.depends.len(), 2);
+        assert_eq!(task.depends_post.len(), 1);
+        assert_eq!(task.wait_for.len(), 1);
+        assert_eq!(task.dir, Some("/some/dir".to_string()));
+        assert_eq!(task.hide, true);
+        assert_eq!(task.raw, true);
+        assert_eq!(task.sources, vec!["src1.txt", "src2.txt"]);
+        assert_eq!(task.shell, Some("bash -c".to_string()));
+        assert_eq!(task.quiet, true);
+        assert!(!task.tools.is_empty());
     }
 }
