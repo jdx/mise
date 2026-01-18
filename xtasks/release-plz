@@ -388,18 +388,15 @@ git checkout -B release
 git commit -m "chore: release $version"
 git push origin release --force
 
-if [[ "$(gh pr list --label release)" == "" ]]; then
-	# Append aqua-registry updates to PR body if available
-	PR_BODY="$EDITORIALIZED_NOTES"
-	if [[ -n $AQUA_CHANGELOG_PR ]]; then
-		PR_BODY="$EDITORIALIZED_NOTES"$'\n\n'"$AQUA_CHANGELOG_PR"
-	fi
+# Append aqua-registry updates to PR body if available
+PR_BODY="$EDITORIALIZED_NOTES"
+if [[ -n $AQUA_CHANGELOG_PR ]]; then
+	PR_BODY="$EDITORIALIZED_NOTES"$'\n\n'"$AQUA_CHANGELOG_PR"
+fi
+
+# Check for existing PR from the release branch specifically (not by label repo-wide)
+if [[ "$(gh pr list --head release --state open)" == "" ]]; then
 	gh pr create --title "chore: release $version" --body "$PR_BODY" --label "release" --head release
 else
-	# Append aqua-registry updates to PR body if available
-	PR_BODY="$EDITORIALIZED_NOTES"
-	if [[ -n $AQUA_CHANGELOG_PR ]]; then
-		PR_BODY="$EDITORIALIZED_NOTES"$'\n\n'"$AQUA_CHANGELOG_PR"
-	fi
-	gh pr edit --title "chore: release $version" --body "$PR_BODY"
+	gh pr edit release --title "chore: release $version" --body "$PR_BODY"
 fi
