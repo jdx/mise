@@ -262,11 +262,12 @@ NEW_AQUA_PKGS="$(find crates/aqua-registry/aqua-registry/pkgs -name registry.yam
 AQUA_CHANGELOG_MD="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA_PKGS" "###" || true)"
 AQUA_CHANGELOG_PR="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA_PKGS" "##" || true)"
 
-# Generate changelog using git-cliff (LLM editorialization happens in release.yml after merge)
-git cliff --bump -o CHANGELOG.md
+# Generate changelog using git-cliff with explicit calver version (not --bump which uses semver)
+# LLM editorialization happens in release.yml after merge
+git cliff --tag "v$version" -o CHANGELOG.md
 
 # Get the unreleased notes for PR body (strip version header since PR title has version)
-PR_NOTES="$(git cliff --bump --unreleased --strip all | tail -n +3)"
+PR_NOTES="$(git cliff --tag "v$version" --unreleased --strip all | tail -n +3)"
 
 # Inject aqua-registry updates into CHANGELOG.md if there are any
 if [[ -n $AQUA_CHANGELOG_MD ]]; then
