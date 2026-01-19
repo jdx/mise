@@ -61,12 +61,21 @@ INSTRUCTIONS
 
 # Use Claude Code to generate the release notes
 # Sandboxed: only read-only tools allowed (no Bash, Edit, Write)
-output=$(
+echo "Generating release notes with Claude..." >&2
+echo "Version: $version" >&2
+echo "Previous version: ${prev_version:-none}" >&2
+echo "Changelog length: ${#changelog} chars" >&2
+
+if ! output=$(
 	printf '%s' "$prompt" | claude -p \
 		--model claude-opus-4-20250514 \
 		--output-format text \
-		--allowedTools "Read,Grep,Glob"
-)
+		--allowedTools "Read,Grep,Glob" 2>&1
+); then
+	echo "Error: Claude CLI failed" >&2
+	echo "Output: $output" >&2
+	exit 1
+fi
 
 # Validate we got non-empty output
 if [[ -z $output ]]; then
