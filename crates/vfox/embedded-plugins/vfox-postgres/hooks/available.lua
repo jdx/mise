@@ -31,5 +31,36 @@ function PLUGIN:Available(ctx)
         end
     end
 
+    -- Sort versions semantically (ascending order - oldest first)
+    table.sort(result, function(a, b)
+        return compare_versions(a.version, b.version)
+    end)
+
     return result
+end
+
+--- Compare two version strings semantically
+--- Returns true if v1 < v2 (for ascending sort)
+function compare_versions(v1, v2)
+    local parts1 = split_version(v1)
+    local parts2 = split_version(v2)
+
+    local max_len = math.max(#parts1, #parts2)
+    for i = 1, max_len do
+        local p1 = parts1[i] or 0
+        local p2 = parts2[i] or 0
+        if p1 ~= p2 then
+            return p1 < p2
+        end
+    end
+    return false
+end
+
+--- Split a version string into numeric parts
+function split_version(version)
+    local parts = {}
+    for part in string.gmatch(version, "([0-9]+)") do
+        table.insert(parts, tonumber(part))
+    end
+    return parts
 end
