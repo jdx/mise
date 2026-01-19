@@ -4957,6 +4957,10 @@ test = ["zoxide --version", "zoxide {{version}}"]
 
 [tools.zprint]
 description = "Executables, uberjar, and library to beautifully format Clojure and Clojurescript source code and s-expressions"
+test = ["zprint --version 2>&1", "zprint-{{version}}"]
+
+[[tools.zprint.backends]]
+full = "aqua:kkinnear/zprint"
 
 [[tools.zprint.backends]]
 full = "github:kkinnear/zprint[bin=zprint]"
