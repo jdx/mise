@@ -34,6 +34,7 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions
 use crate::watch_files::WatchFile;
 use crate::{env, file};
 
+use super::diagnostic::toml_parse_error;
 use super::{ConfigFileType, min_version::MinVersionSpec};
 
 #[derive(Default, Deserialize)]
@@ -182,7 +183,7 @@ impl MiseToml {
             Ok(rf) => rf,
             Err(err) => {
                 Self::enforce_min_version_fallback(body)?;
-                return Err(err.into());
+                return Err(toml_parse_error(&err, body, path));
             }
         };
         rf.context = BASE_CONTEXT.clone();

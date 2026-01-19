@@ -34,6 +34,7 @@ use tool_versions::ToolVersions;
 use super::Config;
 
 pub mod config_root;
+pub mod diagnostic;
 pub mod idiomatic_version;
 pub mod min_version;
 pub mod mise_toml;
