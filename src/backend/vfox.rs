@@ -122,9 +122,10 @@ impl Backend for VfoxBackend {
 
         // Store checksum for rolling version tracking
         if let Some(sha256) = result.sha256
-            && let Err(e) = install_state::write_checksum(&self.ba.short, &tv.version, &sha256) {
-                warn!("failed to write checksum for {}: {e}", tv);
-            }
+            && let Err(e) = install_state::write_checksum(&self.ba.short, &tv.version, &sha256)
+        {
+            warn!("failed to write checksum for {}: {e}", tv);
+        }
 
         Ok(tv)
     }
