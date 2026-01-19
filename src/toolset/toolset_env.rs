@@ -134,12 +134,10 @@ impl Toolset {
         // Get settings hash
         let settings_hash = compute_settings_hash();
 
-        // Get base PATH
-        let base_path = env::PATH
-            .iter()
-            .map(|p| p.to_string_lossy())
-            .collect::<Vec<_>>()
-            .join(":");
+        // Get base PATH using platform-appropriate separator
+        let base_path = std::env::join_paths(env::PATH.iter())
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
 
         Ok(CachedEnv::compute_cache_key(
             &config_files,

@@ -8,6 +8,7 @@ use super::args::ToolArg;
 use crate::cli::{Cli, unescape_task_args};
 use crate::config::{Config, Settings};
 use crate::duration;
+use crate::env;
 use crate::prepare::{PrepareEngine, PrepareOptions};
 use crate::task::has_any_args_defined;
 use crate::task::task_helpers::task_needs_permit;
@@ -180,7 +181,7 @@ pub struct Run {
     pub timeout: Option<String>,
 
     /// Bypass the environment cache and recompute the environment
-    #[clap(long, short = 'F')]
+    #[clap(long)]
     pub fresh_env: bool,
 
     /// Shows elapsed time after each task completes
@@ -219,11 +220,7 @@ impl Run {
 
         // Temporarily unset cache key to force fresh env computation
         if self.fresh_env {
-            // SAFETY: We're only unsetting a mise-specific env var, not affecting other
-            // processes or causing data races
-            unsafe {
-                std::env::remove_var("__MISE_ENV_CACHE_KEY");
-            }
+            env::reset_env_cache_key();
         }
 
         // Check if --help or -h is in the task args BEFORE toolset/prepare

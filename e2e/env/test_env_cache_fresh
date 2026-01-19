@@ -27,8 +27,8 @@ EOF
 # Normal exec should see cache invalidated due to mtime change
 assert_contains "mise exec -- bash -c 'echo \$FRESH_TEST_VAR'" "modified"
 
-# Verify --fresh-env / -F flag exists on exec
+# Verify --fresh-env flag exists on exec
 assert_contains "mise exec --help" "fresh-env"
 
-# Verify --fresh-env / -F flag exists on run
+# Verify --fresh-env flag exists on run
 assert_contains "mise run --help" "fresh-env"

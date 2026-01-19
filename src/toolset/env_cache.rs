@@ -258,6 +258,7 @@ impl CachedEnv {
     }
 
     /// Clears all env cache files
+    #[allow(dead_code)]
     pub fn clear() -> Result<()> {
         let cache_dir = Self::cache_dir();
         if cache_dir.exists() {
@@ -267,6 +268,7 @@ impl CachedEnv {
     }
 
     /// Clears stale cache files (files that can't be decrypted with current key)
+    #[allow(dead_code)]
     pub fn clear_stale() -> Result<usize> {
         let cache_dir = Self::cache_dir();
         if !cache_dir.exists() {

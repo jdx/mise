@@ -57,7 +57,7 @@ pub struct Exec {
     pub raw: bool,
 
     /// Bypass the environment cache and recompute the environment
-    #[clap(long, short = 'F')]
+    #[clap(long)]
     pub fresh_env: bool,
 }
 
@@ -66,11 +66,7 @@ impl Exec {
     pub async fn run(self) -> eyre::Result<()> {
         // Temporarily unset cache key to force fresh env computation
         if self.fresh_env {
-            // SAFETY: We're only unsetting a mise-specific env var, not affecting other
-            // processes or causing data races
-            unsafe {
-                std::env::remove_var("__MISE_ENV_CACHE_KEY");
-            }
+            env::reset_env_cache_key();
         }
 
         let mut config = Config::get().await?;
