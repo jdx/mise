@@ -272,11 +272,9 @@ impl PrepareEngine {
                     match Self::execute_prepare_static(&cmd, &toolset_env, &project_root) {
                         Ok(()) => {
                             pr.finish_with_message(format!("{} done", cmd.description));
-                            // Clear stale status for outputs after successful prepare
-                            for output in &outputs {
-                                super::clear_output_stale(output);
-                            }
-                            Ok(PrepareStepResult::Ran(id))
+                            // Return outputs along with result so we can clear stale status
+                            // after ALL providers complete successfully
+                            Ok((PrepareStepResult::Ran(id), outputs))
                         }
                         Err(e) => {
                             pr.finish_with_message(format!("{} failed: {}", cmd.description, e));
@@ -287,7 +285,13 @@ impl PrepareEngine {
             )
             .await?;
 
-            results.extend(run_results);
+            // All providers completed successfully - now clear stale status for all outputs
+            for (step_result, outputs) in run_results {
+                for output in &outputs {
+                    super::clear_output_stale(output);
+                }
+                results.push(step_result);
+            }
         }
 
         Ok(PrepareResult { steps: results })
