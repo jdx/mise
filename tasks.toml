@@ -91,6 +91,7 @@ set -xeuo pipefail
 mise completion bash > completions/mise.bash
 mise completion zsh > completions/_mise
 mise completion fish > completions/mise.fish
+mise completion powershell > completions/mise.ps1
 '''
 
 ["render:mangen"]
