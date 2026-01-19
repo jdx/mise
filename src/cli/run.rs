@@ -157,6 +157,10 @@ pub struct Run {
     #[clap(skip)]
     pub is_linear: bool,
 
+    /// Bypass the environment cache and recompute the environment
+    #[clap(long)]
+    pub fresh_env: bool,
+
     /// Do not use cache on remote tasks
     #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
     pub no_cache: bool,
@@ -179,10 +183,6 @@ pub struct Run {
     /// e.g.: 30s, 5m
     #[clap(long, verbatim_doc_comment)]
     pub timeout: Option<String>,
-
-    /// Bypass the environment cache and recompute the environment
-    #[clap(long)]
-    pub fresh_env: bool,
 
     /// Shows elapsed time after each task completes
     ///

@@ -47,6 +47,10 @@ pub struct Exec {
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
+    /// Bypass the environment cache and recompute the environment
+    #[clap(long)]
+    pub fresh_env: bool,
+
     /// Skip automatic dependency preparation
     #[clap(long)]
     pub no_prepare: bool,
@@ -55,10 +59,6 @@ pub struct Exec {
     /// Sets --jobs=1
     #[clap(long, overrides_with = "jobs")]
     pub raw: bool,
-
-    /// Bypass the environment cache and recompute the environment
-    #[clap(long)]
-    pub fresh_env: bool,
 }
 
 impl Exec {
