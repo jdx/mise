@@ -736,7 +736,7 @@ const completionSpec: Fig.Spec = {
         name: "shell",
         description: "Shell type to generate completions for",
         isOptional: true,
-        suggestions: ["bash", "fish", "zsh"],
+        suggestions: ["bash", "fish", "powershell", "zsh"],
       },
     },
     {
