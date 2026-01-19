@@ -65,6 +65,66 @@ impl<'a> TomlParser<'a> {
     }
 }
 
+pub struct TrackingTomlParser<'a> {
+    inner: TomlParser<'a>,
+    table: &'a toml::Value,
+    properties: std::collections::BTreeSet<String>,
+}
+
+impl<'a> TrackingTomlParser<'a> {
+    pub fn new(table: &'a toml::Value) -> Self {
+        Self {
+            inner: TomlParser::new(table),
+            table,
+            properties: std::collections::BTreeSet::new(),
+        }
+    }
+
+    fn record(&mut self, key: &str) {
+        self.properties.insert(key.to_string());
+    }
+
+    pub fn known_keys(&self) -> impl Iterator<Item = &str> {
+        self.properties.iter().map(|s| s.as_str())
+    }
+
+    pub fn parse_str<T>(&mut self, key: &str) -> Option<T>
+    where
+        T: From<String>,
+    {
+        self.record(key);
+        self.inner.parse_str::<T>(key)
+    }
+
+    pub fn parse_bool(&mut self, key: &str) -> Option<bool> {
+        self.record(key);
+        self.inner.parse_bool(key)
+    }
+
+    pub fn parse_array<T>(&mut self, key: &str) -> Option<Vec<T>>
+    where
+        T: From<String>,
+    {
+        self.record(key);
+        self.inner.parse_array::<T>(key)
+    }
+
+    pub fn parse_table(&mut self, key: &str) -> Option<BTreeMap<String, toml::Value>> {
+        self.record(key);
+        self.inner.parse_table(key)
+    }
+
+    pub fn parse_env(&mut self, key: &str) -> Result<Option<EnvList>> {
+        self.record(key);
+        self.inner.parse_env(key)
+    }
+
+    pub fn get_raw(&mut self, key: &str) -> Option<&'a toml::Value> {
+        self.record(key);
+        self.table.get(key)
+    }
+}
+
 pub fn deserialize_arr<'de, D, C, T>(deserializer: D) -> std::result::Result<C, D::Error>
 where
     D: de::Deserializer<'de>,
