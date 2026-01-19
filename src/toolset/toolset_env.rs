@@ -26,10 +26,11 @@ impl Toolset {
     pub async fn env_with_path(&self, config: &Arc<Config>) -> Result<EnvMap> {
         // Try to load from cache if enabled
         if CachedEnv::is_enabled()
-            && let Some(cached) = self.try_load_env_cache(config)? {
-                trace!("env_cache: using cached environment");
-                return Ok(cached);
-            }
+            && let Some(cached) = self.try_load_env_cache(config)?
+        {
+            trace!("env_cache: using cached environment");
+            return Ok(cached);
+        }
 
         let (mut env, env_results) = self.final_env(config).await?;
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
@@ -40,10 +41,12 @@ impl Toolset {
         env.insert(PATH_KEY.to_string(), path_env.to_string());
 
         // Save to cache if enabled and no uncacheable directives
-        if CachedEnv::is_enabled() && !env_results.has_uncacheable
-            && let Err(e) = self.save_env_cache(config, &env, &paths, &env_results) {
-                debug!("env_cache: failed to save: {}", e);
-            }
+        if CachedEnv::is_enabled()
+            && !env_results.has_uncacheable
+            && let Err(e) = self.save_env_cache(config, &env, &paths, &env_results)
+        {
+            debug!("env_cache: failed to save: {}", e);
+        }
 
         Ok(env)
     }

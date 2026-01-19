@@ -205,9 +205,10 @@ impl TaskExecutor {
         // Propagate cache key to task subprocesses for nested mise invocations
         // Only propagate if key already exists (respects --fresh-env flag)
         if Settings::get().env_cache
-            && let Ok(key) = std::env::var("__MISE_ENV_CACHE_KEY") {
-                env.insert("__MISE_ENV_CACHE_KEY".into(), key);
-            }
+            && let Ok(key) = std::env::var("__MISE_ENV_CACHE_KEY")
+        {
+            env.insert("__MISE_ENV_CACHE_KEY".into(), key);
+        }
 
         let timer = std::time::Instant::now();
 
