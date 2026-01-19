@@ -258,40 +258,12 @@ impl CachedEnv {
     }
 
     /// Clears all env cache files
-    #[allow(dead_code)]
     pub fn clear() -> Result<()> {
         let cache_dir = Self::cache_dir();
         if cache_dir.exists() {
             file::remove_all(&cache_dir)?;
         }
         Ok(())
-    }
-
-    /// Clears stale cache files (files that can't be decrypted with current key)
-    #[allow(dead_code)]
-    pub fn clear_stale() -> Result<usize> {
-        let cache_dir = Self::cache_dir();
-        if !cache_dir.exists() {
-            return Ok(0);
-        }
-
-        let key = match Self::get_encryption_key() {
-            Some(k) => k,
-            None => return Ok(0),
-        };
-
-        let mut removed = 0;
-        for entry in file::ls(&cache_dir)? {
-            if entry.is_file()
-                && let Ok(data) = file::read(&entry)
-                && Self::decrypt(&data, &key).is_err()
-            {
-                let _ = file::remove_file(&entry);
-                removed += 1;
-            }
-        }
-
-        Ok(removed)
     }
 }
 

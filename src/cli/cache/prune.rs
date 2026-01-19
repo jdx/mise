@@ -2,6 +2,7 @@ use crate::cache;
 use crate::cache::{PruneOptions, PruneResults};
 use crate::config::Settings;
 use crate::dirs::CACHE;
+use crate::toolset::env_cache::CachedEnv;
 use eyre::Result;
 use number_prefix::NumberPrefix;
 use std::time::Duration;
@@ -29,7 +30,6 @@ pub struct CachePrune {
 impl CachePrune {
     pub fn run(self) -> Result<()> {
         let settings = Settings::get();
-        let cache_dirs = vec![CACHE.to_path_buf()];
         let opts = PruneOptions {
             dry_run: self.dry_run,
             verbose: self.verbose > 0,
@@ -38,11 +38,25 @@ impl CachePrune {
                 .unwrap_or(Duration::from_secs(30 * 24 * 60 * 60)),
         };
         let mut results = PruneResults { size: 0, count: 0 };
-        for p in &cache_dirs {
-            let r = cache::prune(p, &opts)?;
+
+        // Prune main cache
+        let r = cache::prune(&CACHE.to_path_buf(), &opts)?;
+        results.size += r.size;
+        results.count += r.count;
+
+        // Prune env cache using env_cache_ttl
+        let env_cache_dir = CachedEnv::cache_dir();
+        if env_cache_dir.exists() {
+            let env_opts = PruneOptions {
+                dry_run: self.dry_run,
+                verbose: self.verbose > 0,
+                age: settings.env_cache_ttl(),
+            };
+            let r = cache::prune(&env_cache_dir, &env_opts)?;
             results.size += r.size;
             results.count += r.count;
         }
+
         let count = results.count;
         let size = bytes_str(results.size);
         info!("cache pruned {count} files, {size}");
