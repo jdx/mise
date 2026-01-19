@@ -72,12 +72,17 @@ trap 'rm -f "$stderr_file"' EXIT
 
 if ! output=$(
 	printf '%s' "$prompt" | claude -p \
-		--model claude-opus-4-20250514 \
+		--model claude-opus-4-5-20251101 \
+		--permission-mode bypassPermissions \
 		--output-format text \
 		--allowedTools "Read,Grep,Glob" 2>"$stderr_file"
 ); then
 	echo "Error: Claude CLI failed" >&2
-	cat "$stderr_file" >&2
+	if [[ -s $stderr_file ]]; then
+		cat "$stderr_file" >&2
+	else
+		echo "(no stderr output from Claude CLI)" >&2
+	fi
 	exit 1
 fi
 
