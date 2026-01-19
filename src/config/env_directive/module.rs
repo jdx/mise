@@ -27,7 +27,16 @@ impl EnvResults {
             r.watch_files.push(path);
 
             // Add watch files for cache invalidation
-            r.watch_files.extend(response.watch_files);
+            // Absolutize relative paths to ensure consistent cache validation
+            // regardless of which directory mise is run from
+            let cwd = std::env::current_dir().unwrap_or_default();
+            for watch_file in response.watch_files {
+                if watch_file.is_absolute() {
+                    r.watch_files.push(watch_file);
+                } else {
+                    r.watch_files.push(cwd.join(watch_file));
+                }
+            }
 
             // Add env vars
             for (k, v) in response.env {
