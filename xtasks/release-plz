@@ -262,54 +262,11 @@ NEW_AQUA_PKGS="$(find crates/aqua-registry/aqua-registry/pkgs -name registry.yam
 AQUA_CHANGELOG_MD="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA_PKGS" "###" || true)"
 AQUA_CHANGELOG_PR="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA_PKGS" "##" || true)"
 
-# Generate editorialized release notes using LLM
-echo "Generating editorialized release notes..."
-prev_tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo "")"
-EDITORIALIZED_NOTES="$(mise run gen-release-summary "v$version" "$prev_tag")"
+# Generate changelog using git-cliff (LLM editorialization happens in release.yml after merge)
+git cliff --bump -o CHANGELOG.md
 
-# Validate we got non-empty release notes
-if [[ -z $EDITORIALIZED_NOTES ]]; then
-	echo "Error: Failed to generate release notes (empty output)" >&2
-	exit 1
-fi
-
-# Create the release header with appropriate URL format
-RELEASE_DATE="$(date +%Y-%m-%d)"
-if [[ -n $prev_tag ]]; then
-	RELEASE_HEADER="## [$version](https://github.com/jdx/mise/compare/$prev_tag..v$version) - $RELEASE_DATE"
-else
-	# No previous tag - link to the tag directly instead of a compare URL
-	RELEASE_HEADER="## [$version](https://github.com/jdx/mise/releases/tag/v$version) - $RELEASE_DATE"
-fi
-
-# Insert the new release before the first existing release section (## [)
-# This handles any CHANGELOG format as long as releases start with ## [
-# Use ENVIRON for notes to avoid awk interpreting backslash escape sequences
-export RELEASE_HEADER EDITORIALIZED_NOTES
-awk_exit_code=0
-awk '
-	/^## \[/ && !inserted {
-		# Insert new release before the first existing release
-		print ENVIRON["RELEASE_HEADER"]
-		print ""
-		print ENVIRON["EDITORIALIZED_NOTES"]
-		print ""
-		inserted = 1
-	}
-	{ print }
-	END {
-		# Signal whether insertion happened via exit code
-		exit (inserted ? 0 : 1)
-	}
-' CHANGELOG.md >CHANGELOG.md.tmp || awk_exit_code=$?
-
-if [[ $awk_exit_code -ne 0 ]]; then
-	echo "Error: Failed to insert release notes into CHANGELOG.md (no existing release section found)" >&2
-	rm -f CHANGELOG.md.tmp
-	exit 1
-fi
-mv CHANGELOG.md.tmp CHANGELOG.md
-echo "Editorialized release notes added to CHANGELOG.md"
+# Get the unreleased notes for PR body
+PR_NOTES="$(git cliff --bump --unreleased --strip all)"
 
 # Inject aqua-registry updates into CHANGELOG.md if there are any
 if [[ -n $AQUA_CHANGELOG_MD ]]; then
@@ -389,9 +346,9 @@ git commit -m "chore: release $version"
 git push origin release --force
 
 # Append aqua-registry updates to PR body if available
-PR_BODY="$EDITORIALIZED_NOTES"
+PR_BODY="$PR_NOTES"
 if [[ -n $AQUA_CHANGELOG_PR ]]; then
-	PR_BODY="$EDITORIALIZED_NOTES"$'\n\n'"$AQUA_CHANGELOG_PR"
+	PR_BODY="$PR_NOTES"$'\n\n'"$AQUA_CHANGELOG_PR"
 fi
 
 # Check for existing PR from the release branch specifically (not by label repo-wide)
