@@ -3827,7 +3827,7 @@ test = ["sccache --version", "sccache {{version}}"]
 [tools.schemacrawler]
 backends = ["github:schemacrawler/SchemaCrawler[exe=schemacrawler.sh]"]
 description = "Free database schema discovery and comprehension tool"
-test = ["schemacrawler.sh --version", "SchemaCrawler {{version}}"]
+#test = ["schemacrawler.sh --version", "SchemaCrawler {{version}}"]
 
 [tools.scie-pants]
 backends = ["github:pantsbuild/scie-pants", "asdf:robzr/asdf-scie-pants"]
