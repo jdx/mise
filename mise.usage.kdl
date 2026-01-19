@@ -1178,7 +1178,7 @@ cmd version help="Display the version of mise" {
 }
 cmd watch help="Run task(s) and watch for changes to rerun it" {
     alias w
-    long_help "Run task(s) and watch for changes to rerun it\n\nThis command uses the `watchexec` tool to watch for changes to files and rerun the specified task(s).\nIt must be installed for this command to work, but you can install it with `mise use -g watchexec@latest`."
+    long_help "Run task(s) and watch for changes to rerun it\n\nThis command uses the `watchexec` tool to watch for changes to files and rerun the specified task(s).\nIt must be installed for this command to work, but you can install it with `mise use -g watchexec@latest`.\n\nFor more advanced process management (daemon management, auto-restart, readiness checks,\ncron scheduling), see mise's sister project: https://pitchfork.jdx.dev"
     after_long_help "Examples:\n\n    $ mise watch build\n    Runs the \"build\" tasks. Will re-run the tasks when any of its sources change.\n    Uses \"sources\" from the tasks definition to determine which files to watch.\n\n    $ mise watch build --glob src/**/*.rs\n    Runs the \"build\" tasks but specify the files to watch with a glob pattern.\n    This overrides the \"sources\" from the tasks definition.\n\n    $ mise watch build --clear\n    Extra arguments are passed to watchexec. See `watchexec --help` for details.\n\n    $ mise watch serve --watch src --exts rs --restart\n    Starts an api server, watching for changes to \"*.rs\" files in \"./src\" and kills/restarts the server when they change.\n"
     flag "-t --task-flag" help="Tasks to run" var=#true hide=#true {
         arg <TASK_FLAG>
