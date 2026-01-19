@@ -192,6 +192,12 @@ Arguments, flags, environment variables, and config files can all be defined in 
 
 You can leverage usage in file tasks to get auto-completion working, see [file tasks arguments](/tasks/file-tasks.html#arguments).
 
+## What is pitchfork?
+
+pitchfork (<https://pitchfork.jdx.dev/>) is a process manager for developers.
+
+It handles daemon management with features like automatic restarts on failure, smart readiness checks, shell-based auto-start/stop when entering project directories, and cron-style scheduling for periodic tasks.
+
 ## VSCode for windows extension with error `spawn EINVAL`
 
 In VSCode, many extensions will throw an "error spawn EINVAL" due to a [Node.js security fix](https://nodejs.org/en/blog/vulnerability/april-2024-security-releases-2#command-injection-via-args-parameter-of-child_processspawn-without-shell-option-enabled-on-windows-cve-2024-27980---high).
