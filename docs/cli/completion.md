@@ -16,6 +16,7 @@ Shell type to generate completions for
 
 - `bash`
 - `fish`
+- `powershell`
 - `zsh`
 
 ## Flags
@@ -33,4 +34,5 @@ Examples:
 mise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise
 mise completion zsh  > /usr/local/share/zsh/site-functions/_mise
 mise completion fish > ~/.config/fish/completions/mise.fish
+mise completion powershell >> $PROFILE
 ```
