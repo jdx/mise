@@ -15,12 +15,16 @@ impl EnvResults {
         redact: bool,
     ) -> Result<()> {
         let path = dirs::PLUGINS.join(name.to_kebab_case());
-        let plugin = VfoxPlugin::new(name, path);
+        let plugin = VfoxPlugin::new(name, path.clone());
         if let Some(response) = plugin.mise_env(value).await? {
             // Track cacheability
             if !response.cacheable {
                 r.has_uncacheable = true;
             }
+
+            // Add plugin directory to watch files for cache invalidation
+            // This ensures cache invalidates when plugin is updated
+            r.watch_files.push(path);
 
             // Add watch files for cache invalidation
             r.watch_files.extend(response.watch_files);

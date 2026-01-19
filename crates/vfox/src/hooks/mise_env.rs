@@ -63,9 +63,30 @@ impl FromLua for MiseEnvResult {
 
                 if has_env || has_cacheable || has_watch_files {
                     // Extended format
-                    let env: Vec<EnvKey> = table.get("env").unwrap_or_default();
-                    let cacheable: bool = table.get("cacheable").unwrap_or(false);
-                    let watch_files: Vec<String> = table.get("watch_files").unwrap_or_default();
+                    let env: Vec<EnvKey> = table
+                        .get::<Option<Vec<EnvKey>>>("env")
+                        .map_err(|e| {
+                            LuaError::RuntimeError(format!(
+                                "Invalid 'env' field in MiseEnv result: expected array of {{key, value}} pairs. Error: {e}"
+                            ))
+                        })?
+                        .unwrap_or_default();
+                    let cacheable: bool = table
+                        .get::<Option<bool>>("cacheable")
+                        .map_err(|e| {
+                            LuaError::RuntimeError(format!(
+                                "Invalid 'cacheable' field in MiseEnv result: expected boolean. Error: {e}"
+                            ))
+                        })?
+                        .unwrap_or(false);
+                    let watch_files: Vec<String> = table
+                        .get::<Option<Vec<String>>>("watch_files")
+                        .map_err(|e| {
+                            LuaError::RuntimeError(format!(
+                                "Invalid 'watch_files' field in MiseEnv result: expected array of strings. Error: {e}"
+                            ))
+                        })?
+                        .unwrap_or_default();
 
                     Ok(MiseEnvResult {
                         env,
