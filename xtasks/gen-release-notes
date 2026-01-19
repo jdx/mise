@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Generate rich release notes for GitHub releases using Claude Code
+# Usage: ./scripts/gen-release-notes.sh <version> [prev_version]
+
+version="${1:-}"
+prev_version="${2:-}"
+
+if [[ -z $version ]]; then
+	echo "Usage: $0 <version> [prev_version]" >&2
+	exit 1
+fi
+
+# Get the git-cliff changelog for context
+# Use the tag range if prev_version provided, otherwise unreleased
+if [[ -n $prev_version ]]; then
+	changelog=$(git cliff --strip all "${prev_version}..${version}" 2>/dev/null || echo "")
+else
+	changelog=$(git cliff --unreleased --strip all 2>/dev/null || echo "")
+fi
+
+if [[ -z $changelog ]]; then
+	echo "Error: No changes found for release" >&2
+	exit 1
+fi
+
+# Build prompt safely using printf to avoid command substitution on backticks in changelog
+prompt=$(
+	printf '%s\n' "You are writing release notes for mise version ${version}${prev_version:+ (previous version: ${prev_version})}."
+	printf '\n'
+	printf '%s\n' "mise is a polyglot runtime manager (like asdf, nvm, pyenv, etc), environment manager, and task runner."
+	printf '\n'
+	printf '%s\n' "Here is the raw changelog from git-cliff:"
+	printf '%s\n' "$changelog"
+	printf '\n'
+	cat <<'INSTRUCTIONS'
+Write user-friendly release notes with a creative title:
+
+FORMAT:
+- First line: A short, creative release title (2-6 words, no version number, captures the theme of the release)
+- Second line: Empty
+- Rest: The release notes
+
+TITLE GUIDELINES:
+- Be creative and memorable (e.g., "The Great Backend Migration", "Conda Gets Cozy", "Monorepo Magic")
+- Reference the main theme or biggest feature of the release
+- Keep it fun but professional
+
+RELEASE NOTES:
+1. Start with 1-2 paragraphs summarizing key changes
+2. Organize into ### sections (Highlights, Bug Fixes, etc.)
+3. Explain WHY changes matter to users
+4. Include PR links and documentation links (https://mise.jdx.dev/)
+5. Include contributor usernames (@username)
+6. Skip internal changes
+
+Output ONLY the title, blank line, and release notes - no other preamble.
+INSTRUCTIONS
+)
+
+# Use Claude Code to generate the release notes
+# Sandboxed: only read-only tools allowed (no Bash, Edit, Write)
+echo "Generating release notes with Claude..." >&2
+echo "Version: $version" >&2
+echo "Previous version: ${prev_version:-none}" >&2
+echo "Changelog length: ${#changelog} chars" >&2
+
+# Capture stderr separately to avoid polluting output
+stderr_file=$(mktemp)
+trap 'rm -f "$stderr_file"' EXIT
+
+if ! output=$(
+	printf '%s' "$prompt" | claude -p \
+		--model claude-opus-4-5-20251101 \
+		--permission-mode bypassPermissions \
+		--output-format text \
+		--allowedTools "Read,Grep,Glob" 2>"$stderr_file"
+); then
+	echo "Error: Claude CLI failed" >&2
+	if [[ -s $stderr_file ]]; then
+		cat "$stderr_file" >&2
+	else
+		echo "(no stderr output from Claude CLI)" >&2
+	fi
+	exit 1
+fi
+
+# Validate we got non-empty output
+if [[ -z $output ]]; then
+	echo "Error: Claude returned empty output" >&2
+	cat "$stderr_file" >&2
+	exit 1
+fi
+
+echo "$output"

@@ -262,18 +262,23 @@ NEW_AQUA_PKGS="$(find crates/aqua-registry/aqua-registry/pkgs -name registry.yam
 AQUA_CHANGELOG_MD="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA_PKGS" "###" || true)"
 AQUA_CHANGELOG_PR="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA_PKGS" "##" || true)"
 
-# Generate only the new release section (unreleased changes)
-# Use --prepend to preserve existing changelog content
-git cliff --tag "v$version" --unreleased --prepend CHANGELOG.md
+# Generate changelog using git-cliff with explicit calver version (not --bump which uses semver)
+# LLM editorialization happens in release.yml after merge
+git cliff --tag "v$version" -o CHANGELOG.md
+
+# Get the unreleased notes for PR body (strip version header since PR title has version)
+PR_NOTES="$(git cliff --tag "v$version" --unreleased --strip all | tail -n +3)"
 
 # Inject aqua-registry updates into CHANGELOG.md if there are any
 if [[ -n $AQUA_CHANGELOG_MD ]]; then
 	# Find the FIRST release section (the one we just added) and inject aqua section at the end, before the next release
-	awk -v aqua_section="$AQUA_CHANGELOG_MD" '
+	# Use ENVIRON instead of -v to avoid awk interpreting backslash escape sequences
+	export AQUA_CHANGELOG_MD
+	awk '
 		/^## \[/ {
 			if (release_count == 1 && !inserted) {
 				# We are at the second release, inject aqua section before it
-				print aqua_section
+				print ENVIRON["AQUA_CHANGELOG_MD"]
 				inserted = 1
 			}
 			release_count++
@@ -282,15 +287,11 @@ if [[ -n $AQUA_CHANGELOG_MD ]]; then
 		END {
 			# If we never hit a second release (only one release in file), append at end
 			if (release_count == 1 && !inserted) {
-				print aqua_section
+				print ENVIRON["AQUA_CHANGELOG_MD"]
 			}
 		}
 	' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
 fi
-
-# Generate changelog for PR body
-changelog="$(git cliff --tag "v$version" --unreleased --strip all)"
-changelog="$(echo "$changelog" | tail -n +3)"
 
 mise up
 mise lock
@@ -345,18 +346,15 @@ git checkout -B release
 git commit -m "chore: release $version"
 git push origin release --force
 
-if [[ "$(gh pr list --label release)" == "" ]]; then
-	# Append aqua-registry updates to PR body if available
-	PR_BODY="$changelog"
-	if [[ -n $AQUA_CHANGELOG_PR ]]; then
-		PR_BODY="$changelog"$'\n\n'"$AQUA_CHANGELOG_PR"
-	fi
+# Append aqua-registry updates to PR body if available
+PR_BODY="$PR_NOTES"
+if [[ -n $AQUA_CHANGELOG_PR ]]; then
+	PR_BODY="$PR_NOTES"$'\n\n'"$AQUA_CHANGELOG_PR"
+fi
+
+# Check for existing PR from the release branch specifically (not by label repo-wide)
+if [[ "$(gh pr list --head release --state open)" == "" ]]; then
 	gh pr create --title "chore: release $version" --body "$PR_BODY" --label "release" --head release
 else
-	# Append aqua-registry updates to PR body if available
-	PR_BODY="$changelog"
-	if [[ -n $AQUA_CHANGELOG_PR ]]; then
-		PR_BODY="$changelog"$'\n\n'"$AQUA_CHANGELOG_PR"
-	fi
-	gh pr edit --title "chore: release $version" --body "$PR_BODY"
+	gh pr edit release --title "chore: release $version" --body "$PR_BODY"
 fi
