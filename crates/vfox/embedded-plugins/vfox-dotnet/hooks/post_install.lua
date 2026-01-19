@@ -7,15 +7,18 @@ function PLUGIN:PostInstall(ctx)
     local path = sdkInfo.path
     local version = sdkInfo.version
 
+    -- Use correct path separator for OS
+    local sep = RUNTIME.osType == "windows" and "\\" or "/"
+
     if RUNTIME.osType == "windows" then
         -- Windows: Use PowerShell script
-        local scriptPath = path .. "/dotnet-install.ps1"
+        local scriptPath = path .. sep .. "dotnet-install.ps1"
         cmd.exec("powershell -ExecutionPolicy Bypass -File '" .. scriptPath .. "' -InstallDir '" .. path .. "' -Version '" .. version .. "' -NoPath")
         -- Clean up installer script
         os.remove(scriptPath)
     else
         -- Linux/macOS: Use bash script
-        local scriptPath = path .. "/dotnet-install.sh"
+        local scriptPath = path .. sep .. "dotnet-install.sh"
         -- Make script executable
         cmd.exec("chmod +x '" .. scriptPath .. "'")
         -- Run the installer
@@ -27,9 +30,9 @@ function PLUGIN:PostInstall(ctx)
     -- Verify installation
     local dotnetBin
     if RUNTIME.osType == "windows" then
-        dotnetBin = path .. "/dotnet.exe"
+        dotnetBin = path .. sep .. "dotnet.exe"
     else
-        dotnetBin = path .. "/dotnet"
+        dotnetBin = path .. sep .. "dotnet"
     end
 
     local f = io.open(dotnetBin, "r")
