@@ -10,9 +10,11 @@ Register-ArgumentCompleter -Native -CommandName 'mise' -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
 
     $tmpDir = if ($env:TEMP) { $env:TEMP } else { [System.IO.Path]::GetTempPath() }
-    $specFile = Join-Path $tmpDir "usage__usage_spec_mise.kdl"
+    $specFile = Join-Path $tmpDir "usage__usage_spec_mise_2026_1_4.kdl"
 
+    if (-not (Test-Path $specFile)) {
     mise usage | Out-File -FilePath $specFile -Encoding utf8
+}
 
     $words = $commandAst.CommandElements | ForEach-Object { $_.ToString() }
     if ($words.Count -lt 1) {
