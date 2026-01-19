@@ -993,6 +993,12 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
+          name: "--fresh-env",
+          description:
+            "Bypass the environment cache and recompute the environment",
+          isRepeatable: false,
+        },
+        {
           name: "--no-prepare",
           description: "Skip automatic dependency preparation",
           isRepeatable: false,
@@ -1001,12 +1007,6 @@ const completionSpec: Fig.Spec = {
           name: "--raw",
           description:
             "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
-          isRepeatable: false,
-        },
-        {
-          name: ["-F", "--fresh-env"],
-          description:
-            "Bypass the environment cache and recompute the environment",
           isRepeatable: false,
         },
       ],
@@ -2049,6 +2049,12 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
+          name: "--fresh-env",
+          description:
+            "Bypass the environment cache and recompute the environment",
+          isRepeatable: false,
+        },
+        {
           name: "--no-cache",
           description: "Do not use cache on remote tasks",
           isRepeatable: false,
@@ -2075,12 +2081,6 @@ const completionSpec: Fig.Spec = {
           args: {
             name: "timeout",
           },
-        },
-        {
-          name: ["-F", "--fresh-env"],
-          description:
-            "Bypass the environment cache and recompute the environment",
-          isRepeatable: false,
         },
       ],
       generateSpec: usageGenerateSpec(["mise tasks --usage"]),
@@ -2873,6 +2873,12 @@ const completionSpec: Fig.Spec = {
               },
             },
             {
+              name: "--fresh-env",
+              description:
+                "Bypass the environment cache and recompute the environment",
+              isRepeatable: false,
+            },
+            {
               name: "--no-cache",
               description: "Do not use cache on remote tasks",
               isRepeatable: false,
@@ -2900,12 +2906,6 @@ const completionSpec: Fig.Spec = {
               args: {
                 name: "timeout",
               },
-            },
-            {
-              name: ["-F", "--fresh-env"],
-              description:
-                "Bypass the environment cache and recompute the environment",
-              isRepeatable: false,
             },
           ],
           args: [
