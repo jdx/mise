@@ -29,19 +29,24 @@ impl Plugin {
 pub struct AvailableVersion {
     pub version: String,
     pub note: Option<String>,
-    // pub addition: Option<Table>,
+    /// If true, this version is a rolling release (like "nightly") that should
+    /// always be considered potentially outdated for `mise up` purposes
+    pub rolling: bool,
+    /// Checksum of the release asset, used to detect changes in rolling releases
+    pub checksum: Option<String>,
 }
 
 impl FromLua for AvailableVersion {
     fn from_lua(value: Value, _: &Lua) -> std::result::Result<Self, LuaError> {
         match value {
             Value::Table(table) => {
-                // TODO: try to default this to an empty table or something
-                // let addition = table.get::<Option<Table>>("addition")?;
+                let rolling = table.get::<Option<bool>>("rolling")?.unwrap_or(false);
+                let checksum = table.get::<Option<String>>("checksum")?;
                 Ok(AvailableVersion {
                     version: table.get::<String>("version")?,
                     note: table.get::<Option<String>>("note")?,
-                    // addition,
+                    rolling,
+                    checksum,
                 })
             }
             _ => panic!("Expected table"),

@@ -82,20 +82,24 @@ impl Backend for RustPlugin {
                 release_url: Some(format!("https://releases.rs/docs/{}/", r.tag_name)),
                 version: r.tag_name,
                 created_at: Some(r.created_at),
+                ..Default::default()
             })
             .rev()
             .chain(vec![
-                // Special channels don't have release URLs since they're not actual releases
+                // Special channels - these are rolling releases that should always be updated
                 VersionInfo {
                     version: "nightly".into(),
+                    rolling: true,
                     ..Default::default()
                 },
                 VersionInfo {
                     version: "beta".into(),
+                    rolling: true,
                     ..Default::default()
                 },
                 VersionInfo {
                     version: "stable".into(),
+                    rolling: true,
                     ..Default::default()
                 },
             ])

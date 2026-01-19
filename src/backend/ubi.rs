@@ -43,8 +43,7 @@ impl Backend for UbiBackend {
         if name_is_url(&self.tool_name()) {
             Ok(vec![VersionInfo {
                 version: "latest".to_string(),
-                created_at: None,
-                release_url: None,
+                ..Default::default()
             }])
         } else {
             let opts = self.ba.opts();
@@ -120,8 +119,8 @@ impl Backend for UbiBackend {
                                     format!("{}/releases/tag/{}", release_url_base, tag);
                                 VersionInfo {
                                     version: strip_v_prefix(&tag),
-                                    created_at: None,
                                     release_url: Some(release_url),
+                                    ..Default::default()
                                 }
                             })
                             .collect()
@@ -136,6 +135,7 @@ impl Backend for UbiBackend {
                                     version: strip_v_prefix(&r.tag_name),
                                     created_at: Some(r.created_at),
                                     release_url: Some(release_url),
+                                    ..Default::default()
                                 }
                             })
                             .collect()
@@ -155,8 +155,8 @@ impl Backend for UbiBackend {
                                 let release_url = format!("{}/-/tags/{}", release_url_base, tag);
                                 VersionInfo {
                                     version: strip_v_prefix(&tag),
-                                    created_at: None,
                                     release_url: Some(release_url),
+                                    ..Default::default()
                                 }
                             })
                             .collect()
@@ -171,6 +171,7 @@ impl Backend for UbiBackend {
                                     version: strip_v_prefix(&r.tag_name),
                                     created_at: r.released_at,
                                     release_url: Some(release_url),
+                                    ..Default::default()
                                 }
                             })
                             .collect()

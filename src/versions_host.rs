@@ -78,6 +78,7 @@ pub async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>>
                     version,
                     created_at: Some(entry.created_at.to_string()),
                     release_url: entry.release_url,
+                    ..Default::default()
                 })
                 .collect()
         }

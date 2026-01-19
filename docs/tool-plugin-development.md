@@ -76,6 +76,41 @@ function PLUGIN:Available(ctx)
 end
 ```
 
+##### Rolling Releases
+
+For tools that have rolling releases like "nightly" or "stable" where the version string stays the same but the content changes, you can mark versions as rolling and provide a checksum for update detection:
+
+```lua
+function PLUGIN:Available(ctx)
+    return {
+        {
+            version = "nightly",
+            note = "Latest development build",
+            rolling = true,  -- Mark as rolling release
+            checksum = "abc123..."  -- SHA256 of the release asset
+        },
+        {
+            version = "stable",
+            note = "Latest stable release",
+            rolling = true,
+            checksum = "def456..."
+        },
+        {
+            version = "1.0.0",
+            note = "Fixed release"
+            -- No rolling or checksum needed for fixed versions
+        }
+    }
+end
+```
+
+When `rolling = true` is set:
+
+- `mise upgrade` will check if the checksum has changed to detect updates
+- `mise upgrade --bump` will preserve the version name (e.g., "nightly") instead of converting it to a semver
+
+The checksum should be the SHA256 hash of the release asset for the user's platform. See the [vfox-neovim plugin](https://github.com/mise-plugins/vfox-neovim) for a complete example.
+
 #### PreInstall Hook
 
 Handles pre-installation logic and returns download information:
