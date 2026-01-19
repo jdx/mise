@@ -293,6 +293,32 @@ pub fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
         .join("incomplete")
 }
 
+/// Path to the checksum file for a specific tool version
+/// Used to track changes in rolling releases (like "nightly")
+fn checksum_file_path(short: &str, v: &str) -> PathBuf {
+    dirs::INSTALLS
+        .join(short.to_kebab_case())
+        .join(v)
+        .join(".mise.checksum")
+}
+
+/// Store the checksum for a tool version (used for rolling release tracking)
+pub fn write_checksum(short: &str, v: &str, checksum: &str) -> Result<()> {
+    let path = checksum_file_path(short, v);
+    file::write(&path, checksum)?;
+    Ok(())
+}
+
+/// Read the stored checksum for a tool version
+pub fn read_checksum(short: &str, v: &str) -> Option<String> {
+    let path = checksum_file_path(short, v);
+    if path.exists() {
+        file::read_to_string(&path).ok()
+    } else {
+        None
+    }
+}
+
 pub fn reset() {
     *INSTALL_STATE_PLUGINS
         .lock()

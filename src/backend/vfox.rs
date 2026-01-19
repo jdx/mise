@@ -21,7 +21,7 @@ use crate::env_diff::EnvMap;
 use crate::install_context::InstallContext;
 use crate::plugins::Plugin;
 use crate::plugins::vfox_plugin::VfoxPlugin;
-use crate::toolset::{ToolVersion, Toolset};
+use crate::toolset::{ToolVersion, Toolset, install_state};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 #[derive(Debug)]
@@ -80,6 +80,8 @@ impl Backend for VfoxBackend {
                     .rev()
                     .map(|v| VersionInfo {
                         version: v.version,
+                        rolling: v.rolling,
+                        checksum: v.checksum,
                         ..Default::default()
                     })
                     .collect())
@@ -114,8 +116,17 @@ impl Backend for VfoxBackend {
         }
 
         // Use default vfox behavior for traditional plugins
-        vfox.install(&self.pathname, &tv.version, tv.install_path())
+        let result = vfox
+            .install(&self.pathname, &tv.version, tv.install_path())
             .await?;
+
+        // Store checksum for rolling version tracking
+        if let Some(sha256) = result.sha256 {
+            if let Err(e) = install_state::write_checksum(&self.ba.short, &tv.version, &sha256) {
+                warn!("failed to write checksum for {}: {e}", tv);
+            }
+        }
+
         Ok(tv)
     }
 

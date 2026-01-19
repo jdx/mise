@@ -3130,7 +3130,7 @@ description = "Neon CLI tool. The Neon CLI is a command-line interface that lets
 test = ["neonctl --version", "{{version}}"]
 
 [tools.neovim]
-backends = ["aqua:neovim/neovim", "asdf:richin13/asdf-neovim"]
+backends = ["vfox:mise-plugins/vfox-neovim", "aqua:neovim/neovim"]
 description = "Vim-fork focused on extensibility and usability"
 
 [tools.nerdctl]

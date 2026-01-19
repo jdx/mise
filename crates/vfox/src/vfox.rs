@@ -24,6 +24,13 @@ use crate::plugin::Plugin;
 use crate::registry;
 use crate::sdk_info::SdkInfo;
 
+/// Install result containing optional checksum used for verification
+#[derive(Debug, Default)]
+pub struct InstallResult {
+    /// The SHA256 checksum if one was provided and verified
+    pub sha256: Option<String>,
+}
+
 #[derive(Debug)]
 pub struct Vfox {
     pub runtime_version: String,
@@ -151,7 +158,7 @@ impl Vfox {
         sdk: &str,
         version: &str,
         install_dir: ID,
-    ) -> Result<()> {
+    ) -> Result<InstallResult> {
         self.install_plugin(sdk)?;
         let sdk = self.get_sdk(sdk)?;
         let pre_install = sdk.pre_install(version).await?;
@@ -173,7 +180,9 @@ impl Vfox {
             .await?;
         }
 
-        Ok(())
+        Ok(InstallResult {
+            sha256: pre_install.sha256,
+        })
     }
 
     pub fn uninstall(&self, sdk: &str, version: &str) -> Result<()> {
