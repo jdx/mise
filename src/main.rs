@@ -146,6 +146,14 @@ fn handle_err(err: Report) -> eyre::Result<()> {
     {
         return Ok(());
     }
+
+    // Check for miette diagnostic errors and render them specially
+    if let Some(diagnostic) = err.downcast_ref::<config::config_file::diagnostic::MiseDiagnostic>()
+    {
+        eprintln!("{}", diagnostic.render());
+        exit(1);
+    }
+
     show_github_rate_limit_err(&err);
     if *env::MISE_FRIENDLY_ERROR {
         display_friendly_err(&err);

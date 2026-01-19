@@ -112,6 +112,7 @@ junction = "1"
 log = "0.4"
 minisign-verify = "0.2"
 md-5 = "0.10"
+miette = { version = "7", features = ["fancy"] }
 netrc-rs = "0.1"
 num_cpus = "1"
 number_prefix = "0.4"
