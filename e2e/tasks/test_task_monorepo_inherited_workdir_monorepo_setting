@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# SOLUTION: Monorepo-level [monorepo].inherited_task_dir option
+#
+# PROBLEM: When a task is defined at a parent config and inherited by a child
+# config root, the inherited task runs from where it was DEFINED, not where
+# it was INVOKED.
+#
+# SOLUTION: Add a monorepo setting that changes the default working directory
+# behavior for all inherited tasks across the entire monorepo.
+#
+# Values:
+# - "defined" (default): Run from where task is defined (current behavior)
+# - "invoked": Run from the subconfig root where task is invoked
+#
+# Usage:
+#   [monorepo]
+#   config_roots = ["packages/*"]
+#   inherited_task_dir = "invoked"
+#
+# Pros:
+# - Single setting for entire monorepo
+# - Clear monorepo-wide policy
+# - Minimal config changes needed
+#
+# Cons:
+# - Less granular control
+# - Affects all inherited tasks globally
+# - Can't mix behaviors within same monorepo
+
+echo "=== Solution: [monorepo].inherited_task_dir option ==="
+
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+inherited_task_dir = "invoked"
+
+[tasks.build]
+description = "Build the project"
+run = "pwd"
+
+[tasks.deploy]
+description = "Deploy the project"
+run = "pwd"
+TOML
+
+mkdir -p packages/frontend
+cat <<'TOML' >packages/frontend/mise.toml
+# Inherits build and deploy, both run from packages/frontend
+TOML
+
+mkdir -p packages/backend
+cat <<'TOML' >packages/backend/mise.toml
+# Inherits build and deploy, both run from packages/backend
+TOML
+
+# All inherited tasks should run from invocation point due to monorepo setting
+assert_contains "mise run '//packages/frontend:build'" "packages/frontend"
+assert_contains "mise run '//packages/frontend:deploy'" "packages/frontend"
+
+assert_contains "mise run '//packages/backend:build'" "packages/backend"
+assert_contains "mise run '//packages/backend:deploy'" "packages/backend"
+
+echo "=== [monorepo].inherited_task_dir option test passed! ==="

@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# SOLUTION: Implicit behavior - monorepo path implies working directory
+#
+# PROBLEM: When a task is defined at a parent config and inherited by a child
+# config root, the inherited task runs from where it was DEFINED, not where
+# it was INVOKED.
+#
+# SOLUTION: Change the default behavior so that when you use the explicit
+# monorepo path syntax (//path:task), the task automatically runs from
+# that path's config root. The reasoning is: if you're explicitly specifying
+# //packages/frontend:build, you're already declaring the context - the
+# working directory should match that context.
+#
+# This would be a breaking change to current behavior, but it's arguably
+# more intuitive: "run the build task IN packages/frontend" vs "run the
+# build task that packages/frontend inherited".
+#
+# Usage:
+#   mise run //packages/frontend:build  # Runs in packages/frontend
+#   mise run //:build                   # Runs in monorepo root (where defined)
+#
+# Pros:
+# - Most intuitive behavior for users
+# - No extra syntax, flags, or config needed
+# - Path in command matches working directory
+#
+# Cons:
+# - Breaking change to existing behavior
+# - Users who want "defined" behavior need //:task syntax
+# - Might surprise users upgrading
+
+echo "=== Solution: Implicit behavior - path implies working directory ==="
+
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+
+[tasks.build]
+description = "Build the project"
+run = "pwd"
+
+[tasks.test]
+description = "Run tests"
+run = "pwd"
+TOML
+
+mkdir -p packages/frontend
+cat <<'TOML' >packages/frontend/mise.toml
+# Inherits build and test from root
+TOML
+
+mkdir -p packages/backend
+cat <<'TOML' >packages/backend/mise.toml
+# Inherits build and test from root
+TOML
+
+# Using //packages/frontend:task should implicitly run in packages/frontend
+# because you're explicitly naming that path context
+assert_contains "mise run '//packages/frontend:build'" "packages/frontend"
+assert_contains "mise run '//packages/backend:build'" "packages/backend"
+
+# Using //:task (root path) should run in root (where task is defined)
+assert_not_contains "mise run '//:build'" "packages"
+
+# Multiple subpackages work independently
+assert_contains "mise run '//packages/frontend:test'" "packages/frontend"
+assert_contains "mise run '//packages/backend:test'" "packages/backend"
+
+echo "=== Implicit behavior test passed! ==="

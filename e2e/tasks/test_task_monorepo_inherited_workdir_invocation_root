@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# SOLUTION: New template variable {{invocation_root}}
+#
+# PROBLEM: When a task is defined at a parent config and inherited by a child
+# config root, the inherited task runs from where it was DEFINED, not where
+# it was INVOKED.
+#
+# SOLUTION: Add a new tera template variable `{{invocation_root}}` that always
+# points to the subconfig root where the task is invoked from. For example,
+# running //foo/bar:task would have invocation_root = /monorepo/foo/bar,
+# while config_root would still point to where the task is defined.
+#
+# Usage in task definition:
+#   [tasks.build]
+#   dir = "{{invocation_root}}"
+#   run = "npm run build"
+#
+# Pros:
+# - Explicit opt-in, backwards compatible
+# - Clear distinction between config_root and invocation_root
+# - Task authors have full control
+# - Works with existing tera templating system
+#
+# Cons:
+# - Requires task authors to know about and use this variable
+# - Need to add documentation for the new variable
+
+echo "=== Solution: {{invocation_root}} template variable ==="
+
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+
+[tasks.build]
+description = "Build using invocation_root"
+dir = "{{invocation_root}}"
+run = "pwd"
+
+[tasks.test]
+description = "Test using config_root (default)"
+run = "pwd"
+TOML
+
+mkdir -p packages/frontend
+cat <<'TOML' >packages/frontend/mise.toml
+# Inherits build (with invocation_root) and test (default)
+TOML
+
+mkdir -p packages/backend
+cat <<'TOML' >packages/backend/mise.toml
+# Inherits build and test from root
+TOML
+
+# Task using {{invocation_root}} should run from the invocation point
+assert_contains "mise run '//packages/frontend:build'" "packages/frontend"
+assert_contains "mise run '//packages/backend:build'" "packages/backend"
+
+# Task without invocation_root still runs from where defined (root)
+assert_not_contains "mise run '//packages/frontend:test'" "packages/frontend"
+
+echo "=== {{invocation_root}} template variable test passed! ==="

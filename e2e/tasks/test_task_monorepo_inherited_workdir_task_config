@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# SOLUTION: Config-level [task_config].inherited_working_dir option
+#
+# PROBLEM: When a task is defined at a parent config and inherited by a child
+# config root, the inherited task runs from where it was DEFINED, not where
+# it was INVOKED.
+#
+# SOLUTION: Add a new task_config setting that changes the default working
+# directory behavior for all tasks in that config when they are inherited.
+#
+# Values:
+# - "defined" (default): Run from where task is defined (current behavior)
+# - "invoked": Run from the subconfig root where task is invoked
+#
+# Usage:
+#   [task_config]
+#   inherited_working_dir = "invoked"
+#
+# Pros:
+# - One setting affects all tasks in the config
+# - Good for monorepos where all tasks should use this behavior
+# - Reduces boilerplate vs per-task settings
+#
+# Cons:
+# - Less granular control than per-task option
+# - All-or-nothing for tasks in that config
+
+echo "=== Solution: [task_config].inherited_working_dir option ==="
+
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+
+[task_config]
+inherited_working_dir = "invoked"
+
+[tasks.build]
+description = "Build the project"
+run = "pwd"
+
+[tasks.test]
+description = "Run tests"
+run = "pwd"
+
+[tasks.lint]
+description = "Run linter"
+run = "pwd"
+TOML
+
+mkdir -p packages/frontend
+cat <<'TOML' >packages/frontend/mise.toml
+# Inherits all tasks, all should run from packages/frontend
+TOML
+
+mkdir -p packages/backend
+cat <<'TOML' >packages/backend/mise.toml
+# Inherits all tasks, all should run from packages/backend
+TOML
+
+# All inherited tasks should run from the invocation point
+assert_contains "mise run '//packages/frontend:build'" "packages/frontend"
+assert_contains "mise run '//packages/frontend:test'" "packages/frontend"
+assert_contains "mise run '//packages/frontend:lint'" "packages/frontend"
+
+assert_contains "mise run '//packages/backend:build'" "packages/backend"
+
+echo "=== [task_config].inherited_working_dir option test passed! ==="
