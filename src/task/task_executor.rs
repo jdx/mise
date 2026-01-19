@@ -8,6 +8,7 @@ use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::task_source_checker::{save_checksum, sources_are_fresh, task_cwd};
 use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
+use crate::toolset::env_cache::CachedEnv;
 use crate::ui::{style, time};
 use duct::IntoExecutablePath;
 use eyre::{Report, Result, ensure, eyre};
@@ -201,6 +202,14 @@ impl TaskExecutor {
         if let Some(config_root) = &task.config_root {
             env.insert("MISE_CONFIG_ROOT".into(), config_root.display().to_string());
         }
+
+        // Ensure cache key exists for task subprocesses for nested mise invocations
+        // This matches exec.rs behavior - enables caching for subprocesses
+        if Settings::get().env_cache {
+            let key = CachedEnv::ensure_encryption_key();
+            env.insert("__MISE_ENV_CACHE_KEY".into(), key);
+        }
+
         let timer = std::time::Instant::now();
 
         if let Some(file) = task.file_path(config).await? {

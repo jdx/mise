@@ -19,6 +19,7 @@ use crate::config::Settings;
 use crate::file::{display_path, modified_duration};
 use crate::hash::hash_to_str;
 use crate::rand::random_string;
+use crate::toolset::env_cache::CachedEnv;
 use crate::{dirs, file};
 
 #[derive(Debug)]
@@ -253,14 +254,22 @@ pub(crate) fn auto_prune() -> Result<()> {
     debug!(
         "pruning old cache files, this behavior can be modified with the MISE_CACHE_PRUNE_AGE setting"
     );
-    prune(
-        *dirs::CACHE,
-        &PruneOptions {
+    let opts = PruneOptions {
+        dry_run: false,
+        verbose: false,
+        age,
+    };
+    prune(*dirs::CACHE, &opts)?;
+    // Also prune env cache using env_cache_ttl
+    let env_cache_dir = CachedEnv::cache_dir();
+    if env_cache_dir.exists() {
+        let env_opts = PruneOptions {
             dry_run: false,
             verbose: false,
-            age,
-        },
-    )?;
+            age: settings.env_cache_ttl(),
+        };
+        prune(&env_cache_dir, &env_opts)?;
+    }
     Ok(())
 }
 

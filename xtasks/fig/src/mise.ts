@@ -993,6 +993,12 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
+          name: "--fresh-env",
+          description:
+            "Bypass the environment cache and recompute the environment",
+          isRepeatable: false,
+        },
+        {
           name: "--no-prepare",
           description: "Skip automatic dependency preparation",
           isRepeatable: false,
@@ -2043,6 +2049,12 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
+          name: "--fresh-env",
+          description:
+            "Bypass the environment cache and recompute the environment",
+          isRepeatable: false,
+        },
+        {
           name: "--no-cache",
           description: "Do not use cache on remote tasks",
           isRepeatable: false,
@@ -2859,6 +2871,12 @@ const completionSpec: Fig.Spec = {
                 generators: toolVersionGenerator,
                 debounce: true,
               },
+            },
+            {
+              name: "--fresh-env",
+              description:
+                "Bypass the environment cache and recompute the environment",
+              isRepeatable: false,
             },
             {
               name: "--no-cache",

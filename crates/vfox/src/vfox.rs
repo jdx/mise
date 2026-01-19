@@ -13,7 +13,7 @@ use crate::hooks::backend_exec_env::BackendExecEnvContext;
 use crate::hooks::backend_install::BackendInstallContext;
 use crate::hooks::backend_list_versions::BackendListVersionsContext;
 use crate::hooks::env_keys::{EnvKey, EnvKeysContext};
-use crate::hooks::mise_env::MiseEnvContext;
+use crate::hooks::mise_env::{MiseEnvContext, MiseEnvResult};
 use crate::hooks::mise_path::MisePathContext;
 use crate::hooks::parse_legacy_file::ParseLegacyFileResponse;
 use crate::hooks::post_install::PostInstallContext;
@@ -229,10 +229,10 @@ impl Vfox {
         sdk.env_keys(ctx).await
     }
 
-    pub async fn mise_env<T: serde::Serialize>(&self, sdk: &str, opts: T) -> Result<Vec<EnvKey>> {
+    pub async fn mise_env<T: serde::Serialize>(&self, sdk: &str, opts: T) -> Result<MiseEnvResult> {
         let plugin = self.get_sdk(sdk)?;
         if !plugin.get_metadata()?.hooks.contains("mise_env") {
-            return Ok(vec![]);
+            return Ok(MiseEnvResult::default());
         }
         let ctx = MiseEnvContext {
             args: vec![],

@@ -669,6 +669,7 @@ impl Cli {
                         timeout: None,
                         skip_deps: false,
                         no_prepare: false,
+                        fresh_env: false,
                     })));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(

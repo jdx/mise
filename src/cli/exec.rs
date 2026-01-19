@@ -14,6 +14,7 @@ use crate::cmd;
 use crate::config::{Config, Settings};
 use crate::env;
 use crate::prepare::{PrepareEngine, PrepareOptions};
+use crate::toolset::env_cache::CachedEnv;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolsetBuilder};
 
 /// Execute a command with tool(s) set
@@ -46,6 +47,10 @@ pub struct Exec {
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
+    /// Bypass the environment cache and recompute the environment
+    #[clap(long)]
+    pub fresh_env: bool,
+
     /// Skip automatic dependency preparation
     #[clap(long)]
     pub no_prepare: bool,
@@ -59,6 +64,11 @@ pub struct Exec {
 impl Exec {
     #[async_backtrace::framed]
     pub async fn run(self) -> eyre::Result<()> {
+        // Temporarily unset cache key to force fresh env computation
+        if self.fresh_env {
+            env::reset_env_cache_key();
+        }
+
         let mut config = Config::get().await?;
 
         // Check if any tool arg explicitly specified @latest
@@ -132,6 +142,12 @@ impl Exec {
         // Ensure MISE_ENV is set in the spawned shell if it was specified via -E flag
         if !env::MISE_ENV.is_empty() {
             env.insert("MISE_ENV".to_string(), env::MISE_ENV.join(","));
+        }
+
+        // Ensure cache key is propagated to subprocesses for env caching
+        if Settings::get().env_cache && !self.fresh_env {
+            let key = CachedEnv::ensure_encryption_key();
+            env.insert("__MISE_ENV_CACHE_KEY".to_string(), key);
         }
 
         if program.rsplit('/').next() == Some("fish") {

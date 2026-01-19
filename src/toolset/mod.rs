@@ -30,6 +30,7 @@ use helpers::TVTuple;
 pub use install_options::InstallOptions;
 
 mod builder;
+pub mod env_cache;
 mod helpers;
 mod install_options;
 pub(crate) mod install_state;

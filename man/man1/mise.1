@@ -922,6 +922,9 @@ Command string to execute
 Number of jobs to run in parallel
 [default: 4]
 .TP
+\fB\-\-fresh\-env\fR
+Bypass the environment cache and recompute the environment
+.TP
 \fB\-\-no\-prepare\fR
 Skip automatic dependency preparation
 .TP
@@ -1830,6 +1833,9 @@ Don't show any output except for errors
 \fB\-t, \-\-tool\fR \fI<TOOL@VERSION>\fR
 Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
 .TP
+\fB\-\-fresh\-env\fR
+Bypass the environment cache and recompute the environment
+.TP
 \fB\-\-no\-cache\fR
 Do not use cache on remote tasks
 .TP
@@ -2549,6 +2555,9 @@ Don't show any output except for errors
 .TP
 \fB\-t, \-\-tool\fR \fI<TOOL@VERSION>\fR
 Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
+.TP
+\fB\-\-fresh\-env\fR
+Bypass the environment cache and recompute the environment
 .TP
 \fB\-\-no\-cache\fR
 Do not use cache on remote tasks

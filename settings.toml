@@ -404,6 +404,55 @@ parse_env = "list_by_comma"
 rc = true
 type = "ListString"
 
+[env_cache]
+default = false
+description = "[experimental] Enable environment caching for nested mise invocations"
+docs = """
+When enabled, mise will cache the computed environment (env vars and PATH) to disk.
+This dramatically speeds up nested mise invocations (e.g., `mise x -- mise env`).
+
+The cache is encrypted using a session-scoped key (`__MISE_ENV_CACHE_KEY`) that is
+generated when you run `mise activate` or `mise exec`. This means:
+- Cache files are encrypted and unreadable by other processes
+- When your shell session ends, the key is lost
+- Old cache files become unreadable and will be regenerated
+
+Cache invalidation happens when:
+- Any config file changes (mise.toml, .tool-versions, etc.)
+- Tool versions change
+- Settings change
+- mise version changes
+- TTL expires (configurable via `env_cache_ttl`)
+- Any watched files change (from modules or _.source directives)
+
+Modules (vfox plugins) can declare themselves cacheable by returning
+`{cacheable = true, watch_files = [...], env = [...]}` from their mise_env hook.
+Modules that don't declare cacheability are treated as dynamic and will be
+re-executed on each cache hit.
+
+Directives can opt out of caching by setting `cacheable = false`:
+```toml
+[env]
+TIMESTAMP = { value = "{{ now() }}", cacheable = false }
+_.source = { file = "dynamic.sh", cacheable = false }
+```
+"""
+env = "MISE_ENV_CACHE"
+type = "Bool"
+
+[env_cache_ttl]
+default = "1h"
+description = "TTL for cached environments"
+docs = """
+How long cached environments remain valid before being regenerated.
+Accepts duration strings like "1h", "30m", "1d".
+
+Even with a valid TTL, caches are still invalidated when config files,
+tool versions, settings, or watched files change.
+"""
+env = "MISE_ENV_CACHE_TTL"
+type = "Duration"
+
 [env_file]
 description = "Path to a file containing environment variables to automatically load."
 env = "MISE_ENV_FILE"

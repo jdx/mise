@@ -1,5 +1,6 @@
 use crate::dirs::CACHE;
 use crate::file::{display_path, remove_all};
+use crate::toolset::env_cache::CachedEnv;
 use eyre::Result;
 use filetime::set_file_times;
 use walkdir::WalkDir;
@@ -46,6 +47,10 @@ impl CacheClear {
                     debug!("clearing cache from {}", display_path(&p));
                     remove_all(p)?;
                 }
+            }
+            // Also clear env cache when clearing all caches
+            if self.plugin.is_none() {
+                CachedEnv::clear()?;
             }
             match &self.plugin {
                 Some(plugins) => info!("cache cleared for {}", plugins.join(", ")),
