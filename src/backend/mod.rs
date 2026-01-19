@@ -742,13 +742,13 @@ pub trait Backend: Debug + Send + Sync {
             _ => return false, // Not rolling or not found
         };
 
-        // If no checksum available, assume outdated (will reinstall)
+        // If no checksum available, we can't detect changes - don't assume outdated
         let Some(latest_checksum) = version_info.checksum else {
             trace!(
-                "No checksum available for rolling version {}, assuming outdated",
+                "No checksum available for rolling version {}, cannot detect updates",
                 version
             );
-            return true;
+            return false;
         };
 
         // Compare with stored checksum
