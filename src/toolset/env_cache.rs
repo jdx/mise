@@ -85,7 +85,7 @@ impl CachedEnv {
 
     /// Generates a new encryption key and returns it as a base64 string
     pub fn generate_encryption_key() -> String {
-        let key: [u8; 32] = rand::random();
+        let key = ChaCha20Poly1305::generate_key(&mut OsRng);
         BASE64_STANDARD.encode(key)
     }
 
@@ -183,12 +183,9 @@ impl CachedEnv {
             .unwrap_or_default()
             .as_secs();
         let ttl = Settings::get().env_cache_ttl().as_secs();
-        if now - cached.created_at > ttl {
-            debug!(
-                "env_cache: cache expired (age: {}s, ttl: {}s)",
-                now - cached.created_at,
-                ttl
-            );
+        let age = now.saturating_sub(cached.created_at);
+        if age > ttl {
+            debug!("env_cache: cache expired (age: {}s, ttl: {}s)", age, ttl);
             let _ = file::remove_file(&cache_file);
             return Ok(None);
         }

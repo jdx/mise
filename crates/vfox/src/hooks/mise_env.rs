@@ -75,7 +75,14 @@ impl FromLua for MiseEnvResult {
                 } else {
                     // Legacy format: table is actually an array of env keys
                     // Try to parse as array
-                    let env: Vec<EnvKey> = Vec::from_lua(Value::Table(table), lua)?;
+                    let env: Vec<EnvKey> = Vec::from_lua(Value::Table(table), lua).map_err(|e| {
+                        LuaError::RuntimeError(format!(
+                            "Failed to parse MiseEnv hook result. Expected either:\n\
+                             - Legacy format: array of {{key, value}} pairs like {{{{\"KEY\", \"VALUE\"}}, ...}}\n\
+                             - Extended format: table with 'env' field like {{env = {{}}, cacheable = true}}\n\
+                             Error: {e}"
+                        ))
+                    })?;
                     Ok(MiseEnvResult {
                         env,
                         cacheable: false,
