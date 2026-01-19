@@ -655,8 +655,12 @@ impl ConfigFile for MiseToml {
             for tool in &tvp.0 {
                 let version = self.parse_template_with_context(&context, &tool.tt.to_string())?;
                 let tvr = if let Some(mut options) = tool.options.clone() {
+                    // Add placeholder for version since it's not available at config load time
+                    // This preserves {{ version }} in the output for install-time rendering
+                    let mut opts_context = context.clone();
+                    opts_context.insert("version", "{{ version }}");
                     for v in options.opts.values_mut() {
-                        *v = self.parse_template_with_context(&context, v)?;
+                        *v = self.parse_template_with_context(&opts_context, v)?;
                     }
                     let mut ba = ba.clone();
                     // Start with cached options but filter out install-time-only options
