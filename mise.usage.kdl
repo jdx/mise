@@ -155,10 +155,10 @@ cmd cache help="Manage the mise cache" {
 }
 cmd completion help="Generate shell completions" {
     alias complete completions hide=#true
-    after_long_help "Examples:\n\n    $ mise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise\n    $ mise completion zsh  > /usr/local/share/zsh/site-functions/_mise\n    $ mise completion fish > ~/.config/fish/completions/mise.fish\n"
+    after_long_help "Examples:\n\n    $ mise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise\n    $ mise completion zsh  > /usr/local/share/zsh/site-functions/_mise\n    $ mise completion fish > ~/.config/fish/completions/mise.fish\n    $ mise completion powershell >> $PROFILE\n"
     flag "-s --shell" help="Shell type to generate completions for" hide=#true {
         arg <SHELL_TYPE> {
-            choices bash fish zsh
+            choices bash fish powershell zsh
         }
     }
     flag --include-bash-completion-lib help="Include the bash completion library in the bash completion script" {
@@ -168,7 +168,7 @@ cmd completion help="Generate shell completions" {
         long_help "Always use usage for completions.\nCurrently, usage is the default for fish and bash but not zsh since it has a few quirks\nto work out first.\n\nThis requires the `usage` CLI to be installed.\nhttps://usage.jdx.dev"
     }
     arg "[SHELL]" help="Shell type to generate completions for" required=#false {
-        choices bash fish zsh
+        choices bash fish powershell zsh
     }
 }
 cmd config help="Manage config files" {
