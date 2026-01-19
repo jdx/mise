@@ -179,6 +179,10 @@ pub struct Run {
     #[clap(long, verbatim_doc_comment)]
     pub timeout: Option<String>,
 
+    /// Bypass the environment cache and recompute the environment
+    #[clap(long, short = 'F')]
+    pub fresh_env: bool,
+
     /// Shows elapsed time after each task completes
     ///
     /// Default to always show with `MISE_TASK_TIMINGS=1`
@@ -212,6 +216,15 @@ impl Run {
 
         // Unescape task args early so we can check for help flags
         self.args = unescape_task_args(&self.args);
+
+        // Temporarily unset cache key to force fresh env computation
+        if self.fresh_env {
+            // SAFETY: We're only unsetting a mise-specific env var, not affecting other
+            // processes or causing data races
+            unsafe {
+                std::env::remove_var("__MISE_ENV_CACHE_KEY");
+            }
+        }
 
         // Check if --help or -h is in the task args BEFORE toolset/prepare
         // NOTE: Only check self.args, not self.args_last, because args_last contains

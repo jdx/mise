@@ -16,8 +16,17 @@ impl EnvResults {
     ) -> Result<()> {
         let path = dirs::PLUGINS.join(name.to_kebab_case());
         let plugin = VfoxPlugin::new(name, path);
-        if let Some(env) = plugin.mise_env(value).await? {
-            for (k, v) in env {
+        if let Some(response) = plugin.mise_env(value).await? {
+            // Track cacheability
+            if !response.cacheable {
+                r.has_uncacheable = true;
+            }
+
+            // Add watch files for cache invalidation
+            r.watch_files.extend(response.watch_files);
+
+            // Add env vars
+            for (k, v) in response.env {
                 if redact {
                     r.redactions.push(k.clone());
                 }

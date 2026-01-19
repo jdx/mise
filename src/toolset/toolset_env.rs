@@ -1,5 +1,7 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use eyre::Result;
 
@@ -9,6 +11,7 @@ use crate::env::{PATH_KEY, WARN_ON_MISSING_REQUIRED_ENV};
 use crate::env_diff::EnvMap;
 use crate::path_env::PathEnv;
 use crate::toolset::Toolset;
+use crate::toolset::env_cache::{CachedEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::tool_request::ToolRequest;
 use crate::{env, parallel, uv};
 
@@ -21,13 +24,128 @@ impl Toolset {
 
     /// the full mise environment including all tool paths
     pub async fn env_with_path(&self, config: &Arc<Config>) -> Result<EnvMap> {
+        // Try to load from cache if enabled
+        if CachedEnv::is_enabled() {
+            if let Some(cached) = self.try_load_env_cache(config)? {
+                trace!("env_cache: using cached environment");
+                return Ok(cached);
+            }
+        }
+
         let (mut env, env_results) = self.final_env(config).await?;
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
-        for p in self.list_final_paths(config, env_results).await? {
+        let paths = self.list_final_paths(config, env_results.clone()).await?;
+        for p in &paths {
             path_env.add(p.clone());
         }
         env.insert(PATH_KEY.to_string(), path_env.to_string());
+
+        // Save to cache if enabled and no uncacheable directives
+        if CachedEnv::is_enabled() && !env_results.has_uncacheable {
+            if let Err(e) = self.save_env_cache(config, &env, &paths, &env_results) {
+                debug!("env_cache: failed to save: {}", e);
+            }
+        }
+
         Ok(env)
+    }
+
+    /// Try to load environment from cache
+    fn try_load_env_cache(&self, config: &Arc<Config>) -> Result<Option<EnvMap>> {
+        let cache_key = self.compute_env_cache_key(config)?;
+        match CachedEnv::load(&cache_key)? {
+            Some(cached) => {
+                let mut env = cached.env;
+                // Reconstruct PATH from cached paths
+                let mut path_env = PathEnv::from_iter(env::PATH.clone());
+                for p in cached.paths {
+                    path_env.add(p);
+                }
+                env.insert(PATH_KEY.to_string(), path_env.to_string());
+                Ok(Some(env))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Save environment to cache
+    fn save_env_cache(
+        &self,
+        config: &Arc<Config>,
+        env: &EnvMap,
+        paths: &[PathBuf],
+        env_results: &EnvResults,
+    ) -> Result<()> {
+        let cache_key = self.compute_env_cache_key(config)?;
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        // Collect all files to watch (config files + module watch_files + env_files)
+        let mut watch_files: Vec<PathBuf> = config.config_files.keys().cloned().collect();
+        watch_files.extend(env_results.watch_files.clone());
+        watch_files.extend(env_results.env_files.clone());
+        watch_files.extend(env_results.env_scripts.clone());
+
+        // Get mtimes for watch files
+        let watch_file_mtimes: Vec<u64> = watch_files
+            .iter()
+            .map(|p| get_file_mtime(p).unwrap_or(0))
+            .collect();
+
+        // Remove PATH from env before caching (we store paths separately)
+        let env_without_path: BTreeMap<String, String> = env
+            .iter()
+            .filter(|(k, _)| k.as_str() != PATH_KEY.as_str())
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        let cached = CachedEnv {
+            env: env_without_path,
+            paths: paths.to_vec(),
+            created_at: now,
+            watch_files,
+            watch_file_mtimes,
+            mise_version: env!("CARGO_PKG_VERSION").to_string(),
+            cache_key_debug: cache_key.clone(),
+        };
+
+        cached.save(&cache_key)
+    }
+
+    /// Compute the cache key for the current configuration
+    fn compute_env_cache_key(&self, config: &Arc<Config>) -> Result<String> {
+        // Collect config files with their mtimes
+        let config_files: Vec<(PathBuf, u64)> = config
+            .config_files
+            .keys()
+            .map(|p| (p.clone(), get_file_mtime(p).unwrap_or(0)))
+            .collect();
+
+        // Collect tool versions
+        let tool_versions: Vec<(String, String)> = self
+            .list_current_versions()
+            .into_iter()
+            .map(|(b, tv)| (b.id().to_string(), tv.version.clone()))
+            .collect();
+
+        // Get settings hash
+        let settings_hash = compute_settings_hash();
+
+        // Get base PATH
+        let base_path = env::PATH
+            .iter()
+            .map(|p| p.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(":");
+
+        Ok(CachedEnv::compute_cache_key(
+            &config_files,
+            &tool_versions,
+            &settings_hash,
+            &base_path,
+        ))
     }
 
     pub async fn env_from_tools(&self, config: &Arc<Config>) -> Vec<(String, String, String)> {

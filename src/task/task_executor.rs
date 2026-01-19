@@ -201,6 +201,15 @@ impl TaskExecutor {
         if let Some(config_root) = &task.config_root {
             env.insert("MISE_CONFIG_ROOT".into(), config_root.display().to_string());
         }
+
+        // Propagate cache key to task subprocesses for nested mise invocations
+        // Only propagate if key already exists (respects --fresh-env flag)
+        if Settings::get().env_cache {
+            if let Ok(key) = std::env::var("__MISE_ENV_CACHE_KEY") {
+                env.insert("__MISE_ENV_CACHE_KEY".into(), key);
+            }
+        }
+
         let timer = std::time::Instant::now();
 
         if let Some(file) = task.file_path(config).await? {

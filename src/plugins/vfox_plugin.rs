@@ -16,6 +16,17 @@ use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use url::Url;
 use vfox::Vfox;
 use vfox::embedded_plugins;
+
+/// Result from a mise_env call with cache metadata
+#[derive(Debug, Default)]
+pub struct MiseEnvResponse {
+    /// Environment variables to set
+    pub env: IndexMap<String, String>,
+    /// Whether this module's output can be cached
+    pub cacheable: bool,
+    /// Files to watch for cache invalidation
+    pub watch_files: Vec<PathBuf>,
+}
 use xx::regex;
 
 #[derive(Debug)]
@@ -61,14 +72,18 @@ impl VfoxPlugin {
         vfox_to_url(url)
     }
 
-    pub async fn mise_env(&self, opts: &toml::Value) -> Result<Option<IndexMap<String, String>>> {
+    pub async fn mise_env(&self, opts: &toml::Value) -> Result<Option<MiseEnvResponse>> {
         let (vfox, _) = self.vfox();
-        let mut out = indexmap!();
-        let results = vfox.mise_env(&self.name, opts).await?;
-        for env in results {
-            out.insert(env.key, env.value);
+        let result = vfox.mise_env(&self.name, opts).await?;
+        let mut env = indexmap!();
+        for ek in result.env {
+            env.insert(ek.key, ek.value);
         }
-        Ok(Some(out))
+        Ok(Some(MiseEnvResponse {
+            env,
+            cacheable: result.cacheable,
+            watch_files: result.watch_files,
+        }))
     }
 
     pub async fn mise_path(&self, opts: &toml::Value) -> Result<Option<Vec<String>>> {

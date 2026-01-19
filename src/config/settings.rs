@@ -427,6 +427,10 @@ impl Settings {
         duration::parse_duration(&self.http_timeout).unwrap()
     }
 
+    pub fn env_cache_ttl(&self) -> Duration {
+        duration::parse_duration(&self.env_cache_ttl).unwrap()
+    }
+
     pub fn task_timeout_duration(&self) -> Option<Duration> {
         self.task_timeout
             .as_ref()
