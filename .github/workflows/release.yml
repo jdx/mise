@@ -331,7 +331,7 @@ jobs:
           PREV_VERSION="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$VERSION^" 2>/dev/null || echo "")"
           # Generate rich release notes using LLM (first line is title, rest is body)
           mise run gen-release-notes "$VERSION" "$PREV_VERSION" >/tmp/release-full.txt
-          RELEASE_TITLE="$VERSION - $(head -1 /tmp/release-full.txt)"
+          RELEASE_TITLE="$VERSION: $(head -1 /tmp/release-full.txt)"
           tail -n +3 /tmp/release-full.txt >/tmp/release-notes.txt
           # Append aqua section from CHANGELOG.md (LLM doesn't see it)
           CURRENT_RELEASE="$(awk '/^## \[/{if(found) exit; found=1; next} found{print}' CHANGELOG.md)"
