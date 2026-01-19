@@ -134,6 +134,10 @@ Run only the specified tasks skipping all dependencies
 Timeout for the task to complete
 e.g.: 30s, 5m
 
+### `-F --fresh-env`
+
+Bypass the environment cache and recompute the environment
+
 Examples:
 
 ```

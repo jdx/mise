@@ -1003,6 +1003,12 @@ const completionSpec: Fig.Spec = {
             "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
           isRepeatable: false,
         },
+        {
+          name: ["-F", "--fresh-env"],
+          description:
+            "Bypass the environment cache and recompute the environment",
+          isRepeatable: false,
+        },
       ],
       args: [
         {
@@ -2070,6 +2076,12 @@ const completionSpec: Fig.Spec = {
             name: "timeout",
           },
         },
+        {
+          name: ["-F", "--fresh-env"],
+          description:
+            "Bypass the environment cache and recompute the environment",
+          isRepeatable: false,
+        },
       ],
       generateSpec: usageGenerateSpec(["mise tasks --usage"]),
       cache: false,
@@ -2888,6 +2900,12 @@ const completionSpec: Fig.Spec = {
               args: {
                 name: "timeout",
               },
+            },
+            {
+              name: ["-F", "--fresh-env"],
+              description:
+                "Bypass the environment cache and recompute the environment",
+              isRepeatable: false,
             },
           ],
           args: [

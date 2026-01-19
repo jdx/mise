@@ -280,14 +280,12 @@ impl CachedEnv {
 
         let mut removed = 0;
         for entry in file::ls(&cache_dir)? {
-            if entry.is_file() {
-                if let Ok(data) = file::read(&entry) {
-                    if Self::decrypt(&data, &key).is_err() {
+            if entry.is_file()
+                && let Ok(data) = file::read(&entry)
+                    && Self::decrypt(&data, &key).is_err() {
                         let _ = file::remove_file(&entry);
                         removed += 1;
                     }
-                }
-            }
         }
 
         Ok(removed)

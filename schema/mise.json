@@ -604,6 +604,16 @@
             "type": "string"
           }
         },
+        "env_cache": {
+          "default": false,
+          "description": "[experimental] Enable environment caching for nested mise invocations",
+          "type": "boolean"
+        },
+        "env_cache_ttl": {
+          "default": "1h",
+          "description": "TTL for cached environments",
+          "type": "string"
+        },
         "env_file": {
           "description": "Path to a file containing environment variables to automatically load.",
           "type": "string"

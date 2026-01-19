@@ -927,6 +927,9 @@ Skip automatic dependency preparation
 .TP
 \fB\-\-raw\fR
 Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
+.TP
+\fB\-F, \-\-fresh\-env\fR
+Bypass the environment cache and recompute the environment
 \fBArguments:\fR
 .PP
 .TP
@@ -1848,6 +1851,9 @@ Run only the specified tasks skipping all dependencies
 Timeout for the task to complete
 e.g.: 30s, 5m
 .TP
+\fB\-F, \-\-fresh\-env\fR
+Bypass the environment cache and recompute the environment
+.TP
 \fB\-\-timings\fR
 Shows elapsed time after each task completes
 
@@ -2567,6 +2573,9 @@ Run only the specified tasks skipping all dependencies
 \fB\-\-timeout\fR \fI<TIMEOUT>\fR
 Timeout for the task to complete
 e.g.: 30s, 5m
+.TP
+\fB\-F, \-\-fresh\-env\fR
+Bypass the environment cache and recompute the environment
 .TP
 \fB\-\-timings\fR
 Shows elapsed time after each task completes

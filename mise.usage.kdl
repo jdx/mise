@@ -283,6 +283,7 @@ cmd exec help="Execute a command with tool(s) set" {
     }
     flag --no-prepare help="Skip automatic dependency preparation"
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
+    flag "-F --fresh-env" help="Bypass the environment cache and recompute the environment"
     arg "[TOOL@VERSION]…" help="Tool(s) to start e.g.: node@20 python@3.10" required=#false var=#true
     arg "[-- COMMAND]…" help="Command string to execute (same as --command)" required=#false var=#true
 }
@@ -721,6 +722,7 @@ cmd run restart_token=::: help="Run task(s)" {
     flag --timeout help="Timeout for the task to complete\ne.g.: 30s, 5m" {
         arg <TIMEOUT>
     }
+    flag "-F --fresh-env" help="Bypass the environment cache and recompute the environment"
     flag --timings help="Shows elapsed time after each task completes" hide=#true {
         long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
     }
@@ -1029,6 +1031,7 @@ cmd tasks help="Manage tasks" {
         flag --timeout help="Timeout for the task to complete\ne.g.: 30s, 5m" {
             arg <TIMEOUT>
         }
+        flag "-F --fresh-env" help="Bypass the environment cache and recompute the environment"
         flag --timings help="Shows elapsed time after each task completes" hide=#true {
             long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
         }

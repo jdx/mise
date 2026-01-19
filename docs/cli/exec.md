@@ -44,6 +44,10 @@ Skip automatic dependency preparation
 
 Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 
+### `-F --fresh-env`
+
+Bypass the environment cache and recompute the environment
+
 Examples:
 
 ```
