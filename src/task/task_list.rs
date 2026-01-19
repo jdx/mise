@@ -248,6 +248,15 @@ pub async fn get_task_lists(
         // Expand :task pattern to match tasks in current directory's config root
         let t = crate::task::expand_colon_task_syntax(&t, config)?;
 
+        // A path starting with "//" on Windows will be treated as a UNC path by
+        // PathBuf, but "//" in UNIX will be collapsed to "/" by PathBuf.
+        // Checking a non-existent UNC path for Windows will incur a large
+        // hiccup (~2.8s) due to Windows trying to resolve the UNC path.
+        let t_for_path_check = t
+            .strip_prefix("//")
+            .map(|s| format!("/{s}"))
+            .unwrap_or_else(|| t.clone());
+
         // can be any of the following:
         // - ./path/to/script
         // - ~/path/to/script
@@ -255,8 +264,8 @@ pub async fn get_task_lists(
         // - ../path/to/script
         // - C:\path\to\script
         // - .\path\to\script
-        if arg_re.is_match(&t) {
-            let path = PathBuf::from(&t);
+        if arg_re.is_match(&t_for_path_check) {
+            let path = PathBuf::from(&t_for_path_check);
             if path.exists() {
                 let config_root = config
                     .project_root
