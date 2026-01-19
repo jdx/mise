@@ -97,6 +97,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[derive(Debug, Clone, Copy, EnumString, strum::Display)]
 #[strum(serialize_all = "snake_case")]
+#[allow(clippy::enum_variant_names)] // PowerShell is a proper noun
 enum Shell {
     Bash,
     Fish,
