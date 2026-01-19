@@ -958,6 +958,7 @@ test = ["colima --version", "colima version v{{version}}"]
 [tools.committed]
 backends = ["aqua:crate-ci/committed"]
 description = "Nitpicking commit history since beabf39"
+test = ["committed --version", "committed {{version}}"]
 
 [tools.conan]
 backends = ["pipx:conan", "asdf:mise-plugins/mise-pyapp"]
@@ -1385,6 +1386,7 @@ test = ["dotslash --version", "DotSlash"]
 [tools.dprint]
 backends = ["aqua:dprint/dprint", "asdf:asdf-community/asdf-dprint"]
 description = "Pluggable and configurable code formatting platform written in Rust"
+test = ["dprint --version", "dprint {{version}}"]
 
 [tools.draft]
 backends = ["aqua:Azure/draft", "asdf:kristoflemmens/asdf-draft"]
@@ -1890,6 +1892,7 @@ description = "Render markdown on the CLI, with pizzazz"
 [tools.go]
 backends = ["core:go"]
 description = "go lang (Builtin plugin)"
+test = ["go version", "go version go{{version}}"]
 
 [tools.go-containerregistry]
 backends = [
@@ -1965,6 +1968,7 @@ test = ["gokey -p master -r realm -l 8", "hJ2gXSy["]
 [tools.golangci-lint]
 backends = ["aqua:golangci/golangci-lint", "asdf:hypnoglow/asdf-golangci-lint"]
 description = "Fast linters Runner for Go"
+test = ["golangci-lint version", "version {{version}}"]
 
 [tools.golangci-lint-langserver]
 backends = [
@@ -2001,6 +2005,7 @@ description = "The slightly more awesome standard unix password manager for team
 [tools.goreleaser]
 backends = ["aqua:goreleaser/goreleaser", "asdf:kforsthoevel/asdf-goreleaser"]
 description = "Deliver Go binaries as fast and easily as possible"
+test = ["goreleaser --version", "GitVersion:    2.13.3"]
 
 [tools.goss]
 backends = ["aqua:goss-org/goss", "asdf:raimon49/asdf-goss"]
@@ -2009,6 +2014,7 @@ description = "Quick and Easy server testing/validation"
 [tools.gotestsum]
 backends = ["aqua:gotestyourself/gotestsum", "asdf:pmalek/mise-gotestsum"]
 description = "'go test' runner with output optimized for humans, JUnit XML for CI integration, and a summary of the test results"
+test = ["gotestsum --version", "gotestsum version v{{version}}"]
 
 [tools.gping]
 backends = ["aqua:orf/gping", "github:orf/gping", "cargo:gping"]
@@ -2273,6 +2279,7 @@ backends = [
   "cargo:hyperfine",
 ]
 description = "A command-line benchmarking tool"
+test = ["hyperfine --version", "hyperfine {{version}}"]
 
 [tools.iam-policy-json-to-terraform]
 backends = [
@@ -3161,6 +3168,7 @@ description = "a small build system with a focus on speed"
 [tools.node]
 backends = ["core:node"]
 description = "Node.js® is a free, open-source, cross-platform JavaScript runtime environment that lets developers create servers, web apps, command line tools and scripts (Builtin plugin)"
+test = ["node --version", "v{{version}}"]
 
 [tools.nomad]
 backends = ["aqua:hashicorp/nomad", "asdf:mise-plugins/mise-hashicorp"]
@@ -3618,6 +3626,7 @@ test = ["purty version", "Purty version: {{version}}"]
 [tools.python]
 backends = ["core:python"]
 description = "python language"
+test = ["python3 --version", "Python {{version}}"]
 
 [tools.qdns]
 backends = ["github:natesales/q", "asdf:moritz-makandra/asdf-plugin-qdns"]
@@ -4202,6 +4211,7 @@ test = ["swiftlint --version", "{{version}}"]
 [tools.syft]
 backends = ["aqua:anchore/syft", "asdf:davidgp1701/asdf-syft"]
 description = "CLI tool and library for generating a Software Bill of Materials from container images and filesystems"
+test = ["syft --version", "syft {{version}}"]
 
 [tools.tailpipe]
 backends = ["aqua:turbot/tailpipe"]
