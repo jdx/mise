@@ -139,6 +139,8 @@ impl EnvResults {
                 }
                 .envs(env_vars);
                 cmd.execute()?;
+                // Mark venv as stale so prepare knows to run
+                crate::prepare::mark_output_stale(venv.clone());
             }
         }
         drop(venv_lock);

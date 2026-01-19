@@ -191,8 +191,8 @@ impl PrepareEngine {
     pub async fn run(&self, opts: PrepareOptions) -> Result<PrepareResult> {
         let mut results = vec![];
 
-        // Collect providers that need to run with their commands
-        let mut to_run: Vec<(String, super::PrepareCommand)> = vec![];
+        // Collect providers that need to run with their commands and outputs
+        let mut to_run: Vec<(String, super::PrepareCommand, Vec<PathBuf>)> = vec![];
 
         for provider in &self.providers {
             let id = provider.id().to_string();
@@ -226,12 +226,13 @@ impl PrepareEngine {
 
             if !is_fresh {
                 let cmd = provider.prepare_command()?;
+                let outputs = provider.outputs();
 
                 if opts.dry_run {
                     // Just record that it would run, let CLI handle output
                     results.push(PrepareStepResult::WouldRun(id));
                 } else {
-                    to_run.push((id, cmd));
+                    to_run.push((id, cmd, outputs));
                 }
             } else {
                 trace!("prepare step {} is fresh, skipping", id);
@@ -252,10 +253,11 @@ impl PrepareEngine {
             // Include all data in the tuple so closure doesn't capture anything
             let to_run_with_context: Vec<_> = to_run
                 .into_iter()
-                .map(|(id, cmd)| {
+                .map(|(id, cmd, outputs)| {
                     (
                         id,
                         cmd,
+                        outputs,
                         mpr.clone(),
                         project_root.clone(),
                         toolset_env.clone(),
@@ -265,12 +267,14 @@ impl PrepareEngine {
 
             let run_results = parallel::parallel(
                 to_run_with_context,
-                |(id, cmd, mpr, project_root, toolset_env)| async move {
+                |(id, cmd, outputs, mpr, project_root, toolset_env)| async move {
                     let pr = mpr.add(&cmd.description);
                     match Self::execute_prepare_static(&cmd, &toolset_env, &project_root) {
                         Ok(()) => {
                             pr.finish_with_message(format!("{} done", cmd.description));
-                            Ok(PrepareStepResult::Ran(id))
+                            // Return outputs along with result so we can clear stale status
+                            // after ALL providers complete successfully
+                            Ok((PrepareStepResult::Ran(id), outputs))
                         }
                         Err(e) => {
                             pr.finish_with_message(format!("{} failed: {}", cmd.description, e));
@@ -281,7 +285,13 @@ impl PrepareEngine {
             )
             .await?;
 
-            results.extend(run_results);
+            // All providers completed successfully - now clear stale status for all outputs
+            for (step_result, outputs) in run_results {
+                for output in &outputs {
+                    super::clear_output_stale(output);
+                }
+                results.push(step_result);
+            }
         }
 
         Ok(PrepareResult { steps: results })
@@ -295,6 +305,15 @@ impl PrepareEngine {
         if outputs.is_empty() {
             return Ok(false); // No outputs defined, always run to be safe
         }
+
+        // Check if any output was created this session (before prepare ran)
+        // This handles the case where venv is auto-created but packages aren't installed yet
+        for output in &outputs {
+            if super::is_output_stale(output) {
+                return Ok(false); // Created this session, needs prepare
+            }
+        }
+
         // Note: empty sources is handled below - last_modified([]) returns None,
         // and if outputs don't exist either, (_, None) takes precedence → stale
 
