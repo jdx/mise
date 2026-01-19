@@ -145,3 +145,16 @@ The configuration system supports multiple file formats and environment-specific
 - Platform-specific tool installation logic in core plugins
 - Shim system varies by platform (especially Windows)
 - we don't chmod mise e2e tests to be executable
+
+## Documentation
+
+### URL Structure
+When referencing mise documentation URLs, use the correct path structure based on the `docs/` directory layout:
+
+- **Dev tools & backends**: `mise.jdx.dev/dev-tools/backends/<backend>.html` (e.g., `mise.jdx.dev/dev-tools/backends/s3.html`)
+- **Configuration**: `mise.jdx.dev/configuration/...`
+- **Tasks**: `mise.jdx.dev/tasks/...`
+- **Environments**: `mise.jdx.dev/environments/...`
+- **CLI reference**: `mise.jdx.dev/cli/...`
+
+Do NOT use shortened paths like `mise.jdx.dev/backends/...` - always include the full path matching the `docs/` directory structure.
