@@ -347,7 +347,7 @@ this is not necessary.
 See [`MISE_FISH_AUTO_ACTIVATE=1`](/configuration#mise-fish-auto-activate-1) for more information.
 :::
 
-### Powershell
+### PowerShell
 
 ::: warning
 See [about_Profiles](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles) docs to find your actual profile location.

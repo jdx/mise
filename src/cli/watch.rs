@@ -1177,12 +1177,13 @@ pub enum FsEvent {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+#[clap(rename_all = "lower")]
 pub enum ShellCompletion {
     Bash,
     Elvish,
     Fish,
     Nu,
-    Powershell,
+    PowerShell,
     Zsh,
 }
 

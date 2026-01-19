@@ -86,10 +86,10 @@ console.log(`PATH, ${Deno.env.get("PATH")}`);
 
 ```powershell [powershell]
 #!/usr/bin/env pwsh
-#MISE description="Hello, World in Powershell"
+#MISE description="Hello, World in PowerShell"
 
 $current_directory = Get-Location
-Write-Host "Hello from Powershell, current directory is $current_directory"
+Write-Host "Hello from PowerShell, current directory is $current_directory"
 ```
 
 :::
