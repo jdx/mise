@@ -120,10 +120,6 @@ Generate a flamegraph for performance analysis
 
 - **Usage**: `gen-release-notes`
 
-## `gen-release-summary`
-
-- **Usage**: `gen-release-summary`
-
 ## `install-dev`
 
 - **Usage**: `install-dev`
