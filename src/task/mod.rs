@@ -1442,9 +1442,7 @@ mod tests {
     }
 
     fn take_captured_fields() -> Option<Vec<String>> {
-        CAPTURED_PARSER_FIELDS.with(|captured| {
-            captured.lock().unwrap().take()
-        })
+        CAPTURED_PARSER_FIELDS.with(|captured| captured.lock().unwrap().take())
     }
 
     #[tokio::test]
@@ -2171,7 +2169,8 @@ echo "test"
         assert!(!task.tools.is_empty());
         assert_eq!(task.confirm, Some("Are you sure?".to_string()));
 
-        let mut parsed_fields = take_captured_fields().expect("Parser fields should have been captured");
+        let mut parsed_fields =
+            take_captured_fields().expect("Parser fields should have been captured");
 
         // Group "alias" and "aliases" as they are alternate forms (count as 1)
         let has_alias = parsed_fields.iter().any(|k| k == "alias");
@@ -2181,11 +2180,14 @@ echo "test"
         let script_lines = script_content.lines().count() - 2;
 
         assert_eq!(
-            parsed_fields.len(), script_lines,
+            parsed_fields.len(),
+            script_lines,
             "Parser looks for {} properties but test script has {} field lines.\n\
              If you added (or removed) parseable fields, add it to the test script.\n\
              Parser fields: {:?}",
-            parsed_fields.len(), script_lines, parsed_fields
+            parsed_fields.len(),
+            script_lines,
+            parsed_fields
         );
     }
 }
