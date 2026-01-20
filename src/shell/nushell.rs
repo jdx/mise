@@ -169,15 +169,15 @@ impl Shell for Nushell {
     }
 
     fn set_alias(&self, k: &str, v: &str) -> String {
-      let k = Nushell::escape_csv_value(k);
-      let v = Nushell::escape_csv_value(v);
+        let k = Nushell::escape_csv_value(k);
+        let v = Nushell::escape_csv_value(v);
 
-      ShellAliasOp::Set { key: &k, val: &v }.to_string()
+        ShellAliasOp::Set { key: &k, val: &v }.to_string()
     }
 
     fn unset_alias(&self, k: &str) -> String {
-      let k = Nushell::escape_csv_value(k);
-      ShellAliasOp::Hide { key: k.as_ref() }.to_string()
+        let k = Nushell::escape_csv_value(k);
+        ShellAliasOp::Hide { key: k.as_ref() }.to_string()
     }
 }
 
