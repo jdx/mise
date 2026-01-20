@@ -23,8 +23,9 @@ Shell aliases are currently supported in:
 - **bash** - Uses `alias`/`unalias` commands
 - **zsh** - Uses `alias`/`unalias` commands
 - **fish** - Uses `alias`/`functions -e` commands
+- **nushell** - Uses `alias`/`hide` commands
 
-Other shells (nushell, elvish, xonsh, powershell) do not currently support shell aliases.
+Other shells (elvish, xonsh, powershell) do not currently support shell aliases.
 
 ## Dynamic Behavior
 
