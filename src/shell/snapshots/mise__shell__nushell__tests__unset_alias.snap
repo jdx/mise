@@ -1,0 +1,6 @@
+---
+source: src/shell/nushell.rs
+expression: "Nushell::default().unset_alias(\"ll\")"
+snapshot_kind: text
+---
+hide-alias,ll,

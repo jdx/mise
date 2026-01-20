@@ -1,0 +1,6 @@
+---
+source: src/shell/nushell.rs
+expression: "Nushell::default().set_alias(\"ll\", \"ls -a\")"
+snapshot_kind: text
+---
+set-alias,ll,ls -a
