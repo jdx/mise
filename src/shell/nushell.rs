@@ -15,11 +15,25 @@ enum EnvOp<'a> {
     Hide { key: &'a str },
 }
 
+enum ShellAliasOp<'a> {
+    Set { key: &'a str, val: &'a str },
+    Hide { key: &'a str },
+}
+
 impl Display for EnvOp<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EnvOp::Set { key, val } => writeln!(f, "set,{key},{val}"),
-            EnvOp::Hide { key } => writeln!(f, "hide,{key},"),
+            EnvOp::Set { key, val } => writeln!(f, "set-env,{key},{val}"),
+            EnvOp::Hide { key } => writeln!(f, "hide-env,{key},"),
+        }
+    }
+}
+
+impl Display for ShellAliasOp<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ShellAliasOp::Set { key, val } => writeln!(f, "set-shell-alias,{key},{val}"),
+            ShellAliasOp::Hide { key } => writeln!(f, "hide-shell-alias,{key},"),
         }
     }
 }
@@ -64,14 +78,18 @@ impl Shell for Nushell {
 
           def --env "update-env" [] {{
             for $var in $in {{
-              if $var.op == "set" {{
+              if $var.op == "set-env" {{
                 if ($var.name | str upcase) == 'PATH' {{
                   $env.PATH = ($var.value | split row (char esep))
                 }} else {{
                   load-env {{($var.name): $var.value}}
                 }}
-              }} else if $var.op == "hide" and $var.name in $env {{
+              }} else if $var.op == "hide-env" and $var.name in $env {{
                 hide-env $var.name
+              }} else if $var.op == "set-shell-alias" {{
+                alias $var.name = $var.value
+              }} else if $var.op == "hide-shell-alias" and $var.name in (scope aliases).name {{
+                hide $var.name
               }}
             }}
           }}
@@ -148,6 +166,18 @@ impl Shell for Nushell {
     fn unset_env(&self, k: &str) -> String {
         let k = Nushell::escape_csv_value(k);
         EnvOp::Hide { key: k.as_ref() }.to_string()
+    }
+
+    fn set_alias(&self, k: &str, v: &str) -> String {
+      let k = Nushell::escape_csv_value(k);
+      let v = Nushell::escape_csv_value(v);
+
+      ShellAliasOp::Set { key: &k, val: &v }.to_string()
+    }
+
+    fn unset_alias(&self, k: &str) -> String {
+      let k = Nushell::escape_csv_value(k);
+      ShellAliasOp::Hide { key: k.as_ref() }.to_string()
     }
 }
 
