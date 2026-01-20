@@ -1,5 +1,41 @@
 # Changelog
 
+## [2026.1.6](https://github.com/jdx/mise/compare/v2026.1.5..v2026.1.6) - 2026-01-20
+
+### 🚀 Features
+
+- **(config)** add miette diagnostics for TOML parsing errors by @jdx in [#7764](https://github.com/jdx/mise/pull/7764)
+- **(env)** add environment caching with module cacheability support by @jdx in [#7761](https://github.com/jdx/mise/pull/7761)
+
+### 🐛 Bug Fixes
+
+- **(prepare)** handle freshness check for auto-created venvs by @jdx in [#7770](https://github.com/jdx/mise/pull/7770)
+- **(release)** use colon separator in release titles by @jdx in [#7765](https://github.com/jdx/mise/pull/7765)
+- **(release)** drop Fedora 41 from COPR build (EOL) by @TobiX in [#7771](https://github.com/jdx/mise/pull/7771)
+
+### 🚜 Refactor
+
+- improve filetask field parsing tests and parser by @makp0 in [#7751](https://github.com/jdx/mise/pull/7751)
+
+### 📚 Documentation
+
+- improve CLAUDE.md with additional development guidance by @jdx in [#7763](https://github.com/jdx/mise/pull/7763)
+- drop architecture from Debian sources.list by @TobiX in [#7772](https://github.com/jdx/mise/pull/7772)
+
+### 📦 Registry
+
+- use aqua for zprint by @scop in [#7767](https://github.com/jdx/mise/pull/7767)
+
+### Security
+
+- remove insecure registry-comment workflow by @jdx in [#7769](https://github.com/jdx/mise/pull/7769)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`cameron-martin/bazel-lsp`](https://github.com/cameron-martin/bazel-lsp)
+- [`micro-editor/micro`](https://github.com/micro-editor/micro)
 ## [2026.1.5](https://github.com/jdx/mise/compare/v2026.1.4..v2026.1.5) - 2026-01-19
 
 ### 🚀 Features
@@ -40,16 +76,6 @@
 - @makp0 made their first contribution in [#7738](https://github.com/jdx/mise/pull/7738)
 - @vadimpiven made their first contribution in [#7734](https://github.com/jdx/mise/pull/7734)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (2)
-
-- [`F1bonacc1/process-compose`](https://github.com/F1bonacc1/process-compose)
-- [`kkinnear/zprint`](https://github.com/kkinnear/zprint)
-
-#### Updated Packages (1)
-
-- [`theryangeary/choose`](https://github.com/theryangeary/choose)
 ## [2026.1.4](https://github.com/jdx/mise/compare/v2026.1.3..v2026.1.4) - 2026-01-17
 
 ### 🚀 Features
