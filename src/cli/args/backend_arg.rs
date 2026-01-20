@@ -219,6 +219,7 @@ impl BackendArg {
         }
 
         if !self.explicit_backend
+            && install_state::get_plugin_type(short).is_none()
             && let Some(registry_full) = REGISTRY
                 .get(short)
                 .and_then(|rt| rt.backends().first().cloned())
@@ -272,6 +273,9 @@ impl BackendArg {
     pub fn full_with_opts(&self) -> String {
         let full = self.full();
         if regex!(r"^(.+)\[(.+)\]$").is_match(&full) {
+            return full;
+        }
+        if !self.explicit_backend && REGISTRY.get(self.short.as_str()).is_some() {
             return full;
         }
         if let Some(opts) = &self.opts {
@@ -336,6 +340,24 @@ impl BackendArg {
 
     pub fn has_explicit_backend(&self) -> bool {
         self.explicit_backend
+    }
+
+    pub fn stored_full(&self) -> String {
+        if let Some(full) = &self.full {
+            return full.clone();
+        }
+        let short = unalias_backend(&self.short);
+        if let Some(full) = install_state::get_tool_full(short) {
+            return full;
+        }
+        if let Some(pt) = install_state::get_plugin_type(short) {
+            return match pt {
+                PluginType::Asdf => format!("asdf:{short}"),
+                PluginType::Vfox => format!("vfox:{short}"),
+                PluginType::VfoxBackend => short.to_string(),
+            };
+        }
+        self.full()
     }
 
     pub fn tool_name(&self) -> String {

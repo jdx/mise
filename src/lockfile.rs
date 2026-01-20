@@ -963,7 +963,7 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
 
                 LockfileTool {
                     version: tv.version.clone(),
-                    backend: Some(tv.ba().full()),
+                    backend: Some(tv.ba().stored_full()),
                     options,
                     env: None, // Set by merge_tool_entries_with_env based on config source
                     platforms,
