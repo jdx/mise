@@ -527,7 +527,7 @@ async fn execute_with_tool_request(
                 path_env.add(p);
             }
 
-            if let Some((backend, tv)) = toolset.list_current_installed_versions(config).first() {
+            if let Some((backend, _tv)) = toolset.list_current_installed_versions(config).first() {
                 let btp = backend
                     .dependency_toolset(config)
                     .await?
