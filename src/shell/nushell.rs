@@ -232,8 +232,8 @@ mod tests {
     }
 
     #[test]
-    fn test_set_env() {
-        assert_snapshot!(Nushell::default().unset_env("ll"));
+    fn test_unset_alias() {
+        assert_snapshot!(Nushell::default().unset_alias("ll"));
     }
 
     #[test]
