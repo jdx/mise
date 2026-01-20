@@ -39,7 +39,7 @@ impl Toolset {
             path_env.add(p.clone());
         }
         env.insert(PATH_KEY.to_string(), path_env.to_string());
-
+        
         // Save to cache if enabled and no uncacheable directives
         if CachedEnv::is_enabled()
             && !env_results.has_uncacheable
