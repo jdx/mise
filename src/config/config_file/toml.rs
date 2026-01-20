@@ -68,7 +68,7 @@ impl<'a> TomlParser<'a> {
 pub struct TrackingTomlParser<'a> {
     inner: TomlParser<'a>,
     table: &'a toml::Value,
-    properties: std::collections::BTreeSet<String>,
+    parsed_keys: std::collections::BTreeSet<String>,
 }
 
 impl<'a> TrackingTomlParser<'a> {
@@ -76,16 +76,29 @@ impl<'a> TrackingTomlParser<'a> {
         Self {
             inner: TomlParser::new(table),
             table,
-            properties: std::collections::BTreeSet::new(),
+            parsed_keys: std::collections::BTreeSet::new(),
         }
     }
 
     fn record(&mut self, key: &str) {
-        self.properties.insert(key.to_string());
+        self.parsed_keys.insert(key.to_string());
     }
 
-    pub fn known_keys(&self) -> impl Iterator<Item = &str> {
-        self.properties.iter().map(|s| s.as_str())
+    #[cfg(test)]
+    pub fn parsed_keys(&self) -> impl Iterator<Item = &str> {
+        self.parsed_keys.iter().map(|s| s.as_str())
+    }
+
+    pub fn unparsed_keys(&self) -> Vec<String> {
+        if let Some(table) = self.table.as_table() {
+            table
+                .keys()
+                .filter(|k| !self.parsed_keys.contains(k.as_str()))
+                .cloned()
+                .collect()
+        } else {
+            vec![]
+        }
     }
 
     pub fn parse_str<T>(&mut self, key: &str) -> Option<T>

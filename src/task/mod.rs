@@ -383,22 +383,21 @@ impl Task {
             })
             .unwrap_or_default();
 
-        let known: HashSet<&str> = p.known_keys().collect();
-        if let Some(table) = info.as_table() {
-            let mut unknown: Vec<_> = table
-                .keys()
-                .filter(|k| !known.contains(k.as_str()))
-                .cloned()
-                .collect();
-            unknown.sort();
+        let mut unparsed = p.unparsed_keys();
+        unparsed.sort();
 
-            if !unknown.is_empty() {
-                return Err(eyre::eyre!(
-                    "unknown field(s) {:?} in task file header: {}",
-                    unknown,
-                    display_path(path)
-                ));
-            }
+        if !unparsed.is_empty() {
+            return Err(eyre::eyre!(
+                "unknown field(s) {:?} in task file header: {}",
+                unparsed,
+                display_path(path)
+            ));
+        }
+
+        #[cfg(test)]
+        {
+            let fields: Vec<String> = p.parsed_keys().map(|s| s.to_string()).collect();
+            tests::capture_parsed_fields(fields);
         }
         task.render(config, config_root).await?;
         Ok(task)
@@ -1423,12 +1422,28 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
+    use std::sync::Mutex;
 
     use crate::task::Task;
     use crate::{config::Config, dirs};
     use pretty_assertions::assert_eq;
 
     use super::name_from_path;
+
+    // Thread-local storage to capture parser state during tests
+    thread_local! {
+        static CAPTURED_PARSER_FIELDS: Mutex<Option<Vec<String>>> = const { Mutex::new(None) };
+    }
+
+    pub(super) fn capture_parsed_fields(fields: Vec<String>) {
+        CAPTURED_PARSER_FIELDS.with(|captured| {
+            *captured.lock().unwrap() = Some(fields);
+        });
+    }
+
+    fn take_captured_fields() -> Option<Vec<String>> {
+        CAPTURED_PARSER_FIELDS.with(|captured| captured.lock().unwrap().take())
+    }
 
     #[tokio::test]
     async fn test_from_path() {
@@ -2115,7 +2130,7 @@ echo "hello world"
         // Create a file task with ALL possible header fields
         let script_content = r#"#!/usr/bin/env bash
 #MISE description="Test task with all fields"
-#MISE alias="test-alias"
+#MISE aliases=["alias1", "alias2"]
 #MISE depends=["dep1", "dep2"]
 #MISE depends_post=["post1"]
 #MISE wait_for=["wait1"]
@@ -2129,6 +2144,7 @@ echo "hello world"
 #MISE quiet=true
 #MISE silent=true
 #MISE tools={node="20", python="3.11"}
+#MISE confirm="Are you sure?"
 echo "test"
 "#;
         fs::write(&task_file, script_content).unwrap();
@@ -2139,9 +2155,8 @@ echo "test"
             .await
             .unwrap();
 
-        // Verify all fields are populated correctly
         assert_eq!(task.description, "Test task with all fields");
-        assert_eq!(task.aliases, vec!["test-alias"]);
+        assert_eq!(task.aliases, vec!["alias1", "alias2"]);
         assert_eq!(task.depends.len(), 2);
         assert_eq!(task.depends_post.len(), 1);
         assert_eq!(task.wait_for.len(), 1);
@@ -2152,5 +2167,27 @@ echo "test"
         assert_eq!(task.shell, Some("bash -c".to_string()));
         assert_eq!(task.quiet, true);
         assert!(!task.tools.is_empty());
+        assert_eq!(task.confirm, Some("Are you sure?".to_string()));
+
+        let mut parsed_fields =
+            take_captured_fields().expect("Parser fields should have been captured");
+
+        // Group "alias" and "aliases" as they are alternate forms (count as 1)
+        let has_alias = parsed_fields.iter().any(|k| k == "alias");
+        parsed_fields.retain(|k| k != "aliases" || !has_alias);
+
+        // Count property lines in script (exclude shebang and echo command)
+        let script_lines = script_content.lines().count() - 2;
+
+        assert_eq!(
+            parsed_fields.len(),
+            script_lines,
+            "Parser looks for {} properties but test script has {} field lines.\n\
+             If you added (or removed) parseable fields, add it to the test script.\n\
+             Parser fields: {:?}",
+            parsed_fields.len(),
+            script_lines,
+            parsed_fields
+        );
     }
 }
