@@ -3,6 +3,6 @@ source: src/shell/nushell.rs
 expression: replace_path(&deactivate)
 snapshot_kind: text
 ---
-hide,MISE_SHELL,
-hide,__MISE_DIFF,
-hide,__MISE_DIFF,
+hide-env,MISE_SHELL,
+hide-env,__MISE_DIFF,
+hide-env,__MISE_DIFF,

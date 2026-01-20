@@ -32,8 +32,8 @@ impl Display for EnvOp<'_> {
 impl Display for ShellAliasOp<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ShellAliasOp::Set { key, val } => writeln!(f, "set-shell-alias,{key},{val}"),
-            ShellAliasOp::Hide { key } => writeln!(f, "hide-shell-alias,{key},"),
+            ShellAliasOp::Set { key, val } => writeln!(f, "set-alias,{key},{val}"),
+            ShellAliasOp::Hide { key } => writeln!(f, "hide-alias,{key},"),
         }
     }
 }
@@ -86,9 +86,9 @@ impl Shell for Nushell {
                 }}
               }} else if $var.op == "hide-env" and $var.name in $env {{
                 hide-env $var.name
-              }} else if $var.op == "set-shell-alias" {{
+              }} else if $var.op == "set-alias" {{
                 alias $var.name = $var.value
-              }} else if $var.op == "hide-shell-alias" and $var.name in (scope aliases).name {{
+              }} else if $var.op == "hide-alias" and $var.name in (scope aliases).name {{
                 hide $var.name
               }}
             }}
@@ -224,6 +224,16 @@ mod tests {
     #[test]
     fn test_unset_env() {
         assert_snapshot!(Nushell::default().unset_env("FOO"));
+    }
+
+    #[test]
+    fn test_set_alias() {
+        assert_snapshot!(Nushell::default().set_alias("ll", "ls -la"));
+    }
+
+    #[test]
+    fn test_set_env() {
+        assert_snapshot!(Nushell::default().unset_env("ll"));
     }
 
     #[test]
