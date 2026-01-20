@@ -345,6 +345,13 @@ pub trait Backend: Debug + Send + Sync {
         vec![platform.clone()] // Default: just the base platform
     }
 
+    /// Whether this backend supports URL-based locking in locked mode.
+    /// Backends that use external installers (like rustup for Rust) should override
+    /// this to return false, since they don't have downloadable artifacts with lockable URLs.
+    fn supports_lockfile_url(&self) -> bool {
+        true
+    }
+
     async fn description(&self) -> Option<String> {
         None
     }
@@ -850,7 +857,8 @@ pub trait Backend: Debug + Send + Sync {
         }
         // Check for --locked mode: if enabled and no lockfile URL exists, fail early
         // Exempt tool stubs from lockfile requirements since they are ephemeral
-        if ctx.locked && !tv.request.source().is_tool_stub() {
+        // Also exempt backends that don't support URL locking (e.g., Rust uses rustup)
+        if ctx.locked && !tv.request.source().is_tool_stub() && self.supports_lockfile_url() {
             let platform_key = self.get_platform_key();
             let has_lockfile_url = tv
                 .lock_platforms

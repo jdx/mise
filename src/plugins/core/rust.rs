@@ -74,6 +74,12 @@ impl Backend for RustPlugin {
         &self.ba
     }
 
+    /// Rust uses rustup for installation, which handles its own downloads.
+    /// Lockfile URLs are not applicable since we don't download artifacts directly.
+    fn supports_lockfile_url(&self) -> bool {
+        false
+    }
+
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let versions: Vec<VersionInfo> = github::list_releases("rust-lang/rust")
             .await?
