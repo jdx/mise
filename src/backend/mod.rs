@@ -93,6 +93,13 @@ pub struct VersionInfo {
     /// URL to the release page (e.g., GitHub/GitLab release page)
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub release_url: Option<String>,
+    /// If true, this is a rolling release (like "nightly") that should always
+    /// be considered potentially outdated for `mise up` purposes
+    #[serde(default)]
+    pub rolling: bool,
+    /// Checksum of the release asset, used to detect changes in rolling releases
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub checksum: Option<String>,
 }
 
 impl VersionInfo {
@@ -701,6 +708,69 @@ pub trait Backend: Debug + Send + Sync {
                 } else {
                     Ok(None)
                 }
+            }
+        }
+    }
+
+    /// Check if a version is a rolling release (like "nightly") that should
+    /// always be considered potentially outdated for `mise up` purposes
+    async fn is_version_rolling(&self, config: &Arc<Config>, version: &str) -> bool {
+        let versions = match self.list_remote_versions_with_info(config).await {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+        versions.iter().any(|v| v.version == version && v.rolling)
+    }
+
+    /// Get version info for a specific version (including checksum for rolling releases)
+    async fn get_version_info(&self, config: &Arc<Config>, version: &str) -> Option<VersionInfo> {
+        let versions = match self.list_remote_versions_with_info(config).await {
+            Ok(v) => v,
+            Err(_) => return None,
+        };
+        versions.into_iter().find(|v| v.version == version)
+    }
+
+    /// Check if a rolling version has changed (by comparing checksums)
+    /// Returns true if the version should be updated
+    async fn is_rolling_version_outdated(&self, config: &Arc<Config>, version: &str) -> bool {
+        use crate::toolset::install_state;
+
+        // Get the latest version info
+        let version_info = match self.get_version_info(config, version).await {
+            Some(v) if v.rolling => v,
+            _ => return false, // Not rolling or not found
+        };
+
+        // If no checksum available, we can't detect changes - don't assume outdated
+        let Some(latest_checksum) = version_info.checksum else {
+            trace!(
+                "No checksum available for rolling version {}, cannot detect updates",
+                version
+            );
+            return false;
+        };
+
+        // Compare with stored checksum
+        let stored_checksum = install_state::read_checksum(&self.ba().short, version);
+        match stored_checksum {
+            Some(stored) if stored == latest_checksum => {
+                trace!("Rolling version {} checksum unchanged", version);
+                false
+            }
+            Some(stored) => {
+                trace!(
+                    "Rolling version {} checksum changed: {} -> {}",
+                    version, stored, latest_checksum
+                );
+                true
+            }
+            None => {
+                trace!(
+                    "No stored checksum for rolling version {}, assuming outdated",
+                    version
+                );
+                true
             }
         }
     }

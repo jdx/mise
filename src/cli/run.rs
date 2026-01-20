@@ -8,6 +8,7 @@ use super::args::ToolArg;
 use crate::cli::{Cli, unescape_task_args};
 use crate::config::{Config, Settings};
 use crate::duration;
+use crate::env;
 use crate::prepare::{PrepareEngine, PrepareOptions};
 use crate::task::has_any_args_defined;
 use crate::task::task_helpers::task_needs_permit;
@@ -156,6 +157,10 @@ pub struct Run {
     #[clap(skip)]
     pub is_linear: bool,
 
+    /// Bypass the environment cache and recompute the environment
+    #[clap(long)]
+    pub fresh_env: bool,
+
     /// Do not use cache on remote tasks
     #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
     pub no_cache: bool,
@@ -212,6 +217,11 @@ impl Run {
 
         // Unescape task args early so we can check for help flags
         self.args = unescape_task_args(&self.args);
+
+        // Temporarily unset cache key to force fresh env computation
+        if self.fresh_env {
+            env::reset_env_cache_key();
+        }
 
         // Check if --help or -h is in the task args BEFORE toolset/prepare
         // NOTE: Only check self.args, not self.args_last, because args_last contains

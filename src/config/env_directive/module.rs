@@ -15,9 +15,31 @@ impl EnvResults {
         redact: bool,
     ) -> Result<()> {
         let path = dirs::PLUGINS.join(name.to_kebab_case());
-        let plugin = VfoxPlugin::new(name, path);
-        if let Some(env) = plugin.mise_env(value).await? {
-            for (k, v) in env {
+        let plugin = VfoxPlugin::new(name, path.clone());
+        if let Some(response) = plugin.mise_env(value).await? {
+            // Track cacheability
+            if !response.cacheable {
+                r.has_uncacheable = true;
+            }
+
+            // Add plugin directory to watch files for cache invalidation
+            // This ensures cache invalidates when plugin is updated
+            r.watch_files.push(path);
+
+            // Add watch files for cache invalidation
+            // Absolutize relative paths to ensure consistent cache validation
+            // regardless of which directory mise is run from
+            let cwd = std::env::current_dir().unwrap_or_default();
+            for watch_file in response.watch_files {
+                if watch_file.is_absolute() {
+                    r.watch_files.push(watch_file);
+                } else {
+                    r.watch_files.push(cwd.join(watch_file));
+                }
+            }
+
+            // Add env vars
+            for (k, v) in response.env {
                 if redact {
                     r.redactions.push(k.clone());
                 }

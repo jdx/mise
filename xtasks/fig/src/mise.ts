@@ -736,7 +736,7 @@ const completionSpec: Fig.Spec = {
         name: "shell",
         description: "Shell type to generate completions for",
         isOptional: true,
-        suggestions: ["bash", "fish", "zsh"],
+        suggestions: ["bash", "fish", "powershell", "zsh"],
       },
     },
     {
@@ -991,6 +991,12 @@ const completionSpec: Fig.Spec = {
           args: {
             name: "jobs",
           },
+        },
+        {
+          name: "--fresh-env",
+          description:
+            "Bypass the environment cache and recompute the environment",
+          isRepeatable: false,
         },
         {
           name: "--no-prepare",
@@ -2043,6 +2049,12 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
+          name: "--fresh-env",
+          description:
+            "Bypass the environment cache and recompute the environment",
+          isRepeatable: false,
+        },
+        {
           name: "--no-cache",
           description: "Do not use cache on remote tasks",
           isRepeatable: false,
@@ -2859,6 +2871,12 @@ const completionSpec: Fig.Spec = {
                 generators: toolVersionGenerator,
                 debounce: true,
               },
+            },
+            {
+              name: "--fresh-env",
+              description:
+                "Bypass the environment cache and recompute the environment",
+              isRepeatable: false,
             },
             {
               name: "--no-cache",

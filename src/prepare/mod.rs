@@ -1,7 +1,7 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use eyre::{Result, bail};
 
@@ -107,5 +107,32 @@ pub fn notify_if_stale(config: &Arc<Config>) {
     if !stale.is_empty() {
         let providers = stale.join(", ");
         warn!("prepare: {providers} may need update, run `mise prep`");
+    }
+}
+
+/// Tracks directories created during this session that should be considered stale
+/// for prepare freshness checks (e.g., venvs auto-created before prepare runs)
+static STALE_OUTPUTS: LazyLock<Mutex<HashSet<PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// Mark a directory as freshly created (stale for prepare purposes)
+pub fn mark_output_stale(path: PathBuf) {
+    if let Ok(mut set) = STALE_OUTPUTS.lock() {
+        set.insert(path);
+    }
+}
+
+/// Check if a directory was created this session
+pub fn is_output_stale(path: &PathBuf) -> bool {
+    STALE_OUTPUTS
+        .lock()
+        .map(|set| set.contains(path))
+        .unwrap_or(false)
+}
+
+/// Clear stale status for a path (after prepare runs successfully)
+pub fn clear_output_stale(path: &PathBuf) {
+    if let Ok(mut set) = STALE_OUTPUTS.lock() {
+        set.remove(path);
     }
 }

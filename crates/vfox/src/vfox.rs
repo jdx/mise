@@ -13,7 +13,7 @@ use crate::hooks::backend_exec_env::BackendExecEnvContext;
 use crate::hooks::backend_install::BackendInstallContext;
 use crate::hooks::backend_list_versions::BackendListVersionsContext;
 use crate::hooks::env_keys::{EnvKey, EnvKeysContext};
-use crate::hooks::mise_env::MiseEnvContext;
+use crate::hooks::mise_env::{MiseEnvContext, MiseEnvResult};
 use crate::hooks::mise_path::MisePathContext;
 use crate::hooks::parse_legacy_file::ParseLegacyFileResponse;
 use crate::hooks::post_install::PostInstallContext;
@@ -23,6 +23,13 @@ use crate::metadata::Metadata;
 use crate::plugin::Plugin;
 use crate::registry;
 use crate::sdk_info::SdkInfo;
+
+/// Install result containing optional checksum used for verification
+#[derive(Debug, Default)]
+pub struct InstallResult {
+    /// The SHA256 checksum if one was provided and verified
+    pub sha256: Option<String>,
+}
 
 #[derive(Debug)]
 pub struct Vfox {
@@ -151,7 +158,7 @@ impl Vfox {
         sdk: &str,
         version: &str,
         install_dir: ID,
-    ) -> Result<()> {
+    ) -> Result<InstallResult> {
         self.install_plugin(sdk)?;
         let sdk = self.get_sdk(sdk)?;
         let pre_install = sdk.pre_install(version).await?;
@@ -173,7 +180,9 @@ impl Vfox {
             .await?;
         }
 
-        Ok(())
+        Ok(InstallResult {
+            sha256: pre_install.sha256,
+        })
     }
 
     pub fn uninstall(&self, sdk: &str, version: &str) -> Result<()> {
@@ -220,10 +229,10 @@ impl Vfox {
         sdk.env_keys(ctx).await
     }
 
-    pub async fn mise_env<T: serde::Serialize>(&self, sdk: &str, opts: T) -> Result<Vec<EnvKey>> {
+    pub async fn mise_env<T: serde::Serialize>(&self, sdk: &str, opts: T) -> Result<MiseEnvResult> {
         let plugin = self.get_sdk(sdk)?;
         if !plugin.get_metadata()?.hooks.contains("mise_env") {
-            return Ok(vec![]);
+            return Ok(MiseEnvResult::default());
         }
         let ctx = MiseEnvContext {
             args: vec![],

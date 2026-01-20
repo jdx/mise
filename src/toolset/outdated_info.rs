@@ -89,8 +89,18 @@ impl OutdatedInfo {
             .as_ref()
             .is_some_and(|c| !toolset::is_outdated_version(c, &oi.latest))
         {
-            trace!("skipping up-to-date version {}", oi.tool_version);
-            return Ok(None);
+            // Check if this is a rolling version (like "nightly") with a new checksum
+            let rolling_outdated = t
+                .is_rolling_version_outdated(config, &oi.tool_version.request.version())
+                .await;
+            if !rolling_outdated {
+                trace!("skipping up-to-date version {}", oi.tool_version);
+                return Ok(None);
+            }
+            trace!(
+                "rolling version {} has updates (checksum changed)",
+                oi.tool_version.request.version()
+            );
         }
         if bump {
             let old = oi.tool_version.request.version();
@@ -176,14 +186,23 @@ impl Display for OutdatedInfo {
 /// used with `mise outdated --bump` to determine what new semver range to use
 /// given old: "20" and new: "21.2.3", return Some("21")
 fn check_semver_bump(old: &str, new: &str) -> Option<String> {
-    if old == "latest" {
-        return Some("latest".to_string());
+    // Preserve known channel names as-is
+    const CHANNEL_NAMES: &[&str] = &[
+        "latest", "nightly", "stable", "beta", "dev", "canary", "edge", "lts",
+    ];
+    if CHANNEL_NAMES.iter().any(|&c| c.eq_ignore_ascii_case(old)) {
+        return Some(old.to_string());
     }
     if let Some(("prefix", old_)) = old.split_once(':') {
         return check_semver_bump(old_, new);
     }
     let old_chunks = chunkify_version(old);
     let new_chunks = chunkify_version(new);
+    // If old has no semver chunks but is non-empty, it's likely a channel name
+    // that we didn't recognize - preserve it as-is
+    if old_chunks.is_empty() && !old.is_empty() {
+        return Some(old.to_string());
+    }
     if !old_chunks.is_empty() && !new_chunks.is_empty() {
         if old_chunks.len() > new_chunks.len() {
             warn!(
@@ -282,6 +301,19 @@ mod tests {
         std::assert_eq!(
             check_semver_bump("latest", "20.0.0"),
             Some("latest".to_string())
+        );
+        // Channel names like "nightly", "stable", "beta" should be preserved
+        std::assert_eq!(
+            check_semver_bump("nightly", "0.10.0"),
+            Some("nightly".to_string())
+        );
+        std::assert_eq!(
+            check_semver_bump("stable", "0.10.0"),
+            Some("stable".to_string())
+        );
+        std::assert_eq!(
+            check_semver_bump("beta", "1.0.0-beta.1"),
+            Some("beta".to_string())
         );
     }
 }

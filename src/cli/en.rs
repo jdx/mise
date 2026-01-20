@@ -35,6 +35,7 @@ impl En {
             c: None,
             command: Some(command),
             no_prepare: false,
+            fresh_env: false,
         }
         .run()
         .await

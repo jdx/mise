@@ -8,15 +8,16 @@ packages:
     version_overrides:
       - version_constraint: Version == "v1.3.0"
         no_asset: true
-      - version_constraint: Version == "v1.3.5"
+      - version_constraint: Version == "v1.3.6"
         asset: choose-{{.Arch}}-{{.OS}}
         format: raw
         windows_arm_emulation: true
+        complete_windows_ext: false
         replacements:
           amd64: x86_64
           arm64: aarch64
           darwin: apple-darwin
-          windows: win
+          windows: pc-windows-gnu
         overrides:
           - goos: linux
             goarch: amd64
@@ -29,8 +30,31 @@ packages:
           - goos: darwin
             replacements:
               amd64: amd64
-          - goos: windows
-            asset: choose-{{.Arch}}-pc-{{.OS}}dow-gnu
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+      - version_constraint: Version == "v1.3.5"
+        asset: choose-{{.Arch}}-{{.OS}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-window-gnu
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: darwin
+            replacements:
+              amd64: amd64
         supported_envs:
           - linux
           - darwin/arm64
@@ -47,7 +71,6 @@ packages:
         asset: choose-{{.Arch}}-{{.OS}}
         format: raw
         windows_arm_emulation: true
-        complete_windows_ext: false
         replacements:
           amd64: x86_64
           arm64: aarch64

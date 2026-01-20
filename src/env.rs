@@ -690,6 +690,11 @@ pub fn remove_var<K: AsRef<OsStr>>(key: K) {
     }
 }
 
+/// Remove the env cache encryption key to force fresh env computation
+pub fn reset_env_cache_key() {
+    remove_var("__MISE_ENV_CACHE_KEY");
+}
+
 /// Safe wrapper around std::env::vars() that handles invalid UTF-8 gracefully.
 /// This function uses vars_os() and converts OsString to String, skipping any
 /// environment variables that contain invalid UTF-8 sequences.

@@ -89,10 +89,42 @@ function PLUGIN:MiseEnv(ctx)
 end
 ```
 
-**Return value**: Array of tables, each with:
+**Return value**: Either a simple array of env keys, or a table with caching metadata.
+
+Simple format - array of tables, each with:
 
 - `key` (string, required): Environment variable name
 - `value` (string, required): Environment variable value
+
+Extended format - table with:
+
+- `env` (array, required): Array of `{key, value}` tables (same as simple format)
+- `cacheable` (boolean, optional): If `true`, mise can cache this plugin's output. Default: `false`
+- `watch_files` (array of strings, optional): File paths to watch for changes. If any file's mtime changes, the cache is invalidated.
+
+Example using extended format with caching:
+
+```lua
+function PLUGIN:MiseEnv(ctx)
+    local config_path = ctx.options.config_file or "config.json"
+    local config = load_config(config_path)
+
+    return {
+        cacheable = true,
+        watch_files = {config_path},
+        env = {
+            {key = "API_URL", value = config.api_url},
+            {key = "API_KEY", value = config.api_key}
+        }
+    }
+end
+```
+
+When `cacheable = true`, mise will cache the environment variables and only re-execute the plugin when:
+
+- Any file in `watch_files` changes
+- The mise configuration changes
+- The cache TTL expires (configured via `env_cache_ttl` setting)
 
 ### hooks/mise_path.lua
 
@@ -256,26 +288,31 @@ function PLUGIN:MiseEnv(ctx)
 end
 ```
 
-### 4. Cache Expensive Operations
+### 4. Use Built-in Caching for Expensive Operations
 
-For plugins that fetch data from external services, consider caching:
+For plugins that fetch data from external services, use mise's built-in caching by returning the extended format with `cacheable = true`:
 
 ```lua
-local cache_file = os.getenv("HOME") .. "/.cache/my-plugin/secrets.json"
-
 function PLUGIN:MiseEnv(ctx)
-    -- Check if cache is fresh
-    if is_cache_valid(cache_file, 300) then  -- 5 minute cache
-        return load_from_cache(cache_file)
-    end
+    local config_file = ctx.options.config_file or "secrets.json"
 
-    -- Fetch fresh data
+    -- Fetch secrets (mise will cache the result)
     local secrets = fetch_secrets(ctx.options)
-    save_to_cache(cache_file, secrets)
 
-    return secrets
+    return {
+        cacheable = true,
+        watch_files = {config_file},  -- Re-fetch if config changes
+        env = secrets
+    }
 end
 ```
+
+This is preferred over manual caching because:
+
+- mise handles cache invalidation automatically
+- Cache is encrypted with session-scoped keys
+- Integrates with `mise cache clear` and `mise cache prune`
+- Respects the `env_cache_ttl` setting
 
 ### 5. Support Multiple Environments
 

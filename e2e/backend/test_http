@@ -140,3 +140,15 @@ EOF
 mise uninstall --all && mise install
 mise env
 assert_contains "mise x -- hello-world" "hello world"
+
+# Test HTTP backend with Tera {{ version }} templating syntax (with spaces)
+# This tests the fix for https://github.com/jdx/mise/discussions/7748
+# Note: postinstall uses literal version since it's a shell command executed directly
+cat <<'EOF' >mise.toml
+[tools]
+"http:hello-tera" = { version = "1.0.0", url = "https://mise.jdx.dev/test-fixtures/hello-world-{{ version }}.tar.gz", bin_path = "hello-world-{{ version }}/bin", postinstall = "chmod +x $MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+
+mise uninstall --all && mise install
+mise env
+assert_contains "mise x -- hello-world" "hello world"

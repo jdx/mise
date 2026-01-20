@@ -36,6 +36,10 @@ Command string to execute
 Number of jobs to run in parallel
 [default: 4]
 
+### `--fresh-env`
+
+Bypass the environment cache and recompute the environment
+
 ### `--no-prepare`
 
 Skip automatic dependency preparation

@@ -1,0 +1,95 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: F1bonacc1
+    repo_name: process-compose
+    description: Process Compose is a simple and flexible scheduler and orchestrator to manage non-containerized applications
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.55.0"
+        asset: process-compose_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: process-compose_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.5.2")
+        asset: process-compose-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux
+      - version_constraint: semver("<= 0.10.0")
+        asset: process-compose-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        supported_envs:
+          - linux
+          - windows/amd64
+      - version_constraint: semver("<= 0.20.0")
+        asset: process-compose-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 0.29.0")
+        asset: process-compose-{{.OS}}-{{.Arch}}
+        format: raw
+      - version_constraint: semver("<= 0.29.4")
+        asset: process-compose_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: process-compose_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.45.0")
+        asset: process-compose_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: process-compose_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.69.0")
+        asset: process-compose_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: process-compose_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: process-compose_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: process-compose_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

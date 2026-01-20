@@ -78,6 +78,7 @@ impl Completion {
         match shell {
             Shell::Bash => include_str!("../../completions/mise.bash"),
             Shell::Fish => include_str!("../../completions/mise.fish"),
+            Shell::PowerShell => include_str!("../../completions/mise.ps1"),
             Shell::Zsh => include_str!("../../completions/_mise"),
         }
         .to_string()
@@ -90,20 +91,24 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise</bold>
     $ <bold>mise completion zsh  > /usr/local/share/zsh/site-functions/_mise</bold>
     $ <bold>mise completion fish > ~/.config/fish/completions/mise.fish</bold>
+    $ <bold>mise completion powershell >> $PROFILE</bold>
 "#
 );
 
 #[derive(Debug, Clone, Copy, EnumString, strum::Display)]
 #[strum(serialize_all = "snake_case")]
+#[allow(clippy::enum_variant_names)] // PowerShell is a proper noun
 enum Shell {
     Bash,
     Fish,
+    #[strum(serialize = "powershell")]
+    PowerShell,
     Zsh,
 }
 
 impl ValueEnum for Shell {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Bash, Self::Fish, Self::Zsh]
+        &[Self::Bash, Self::Fish, Self::PowerShell, Self::Zsh]
     }
     fn to_possible_value(&self) -> Option<PossibleValue> {
         Some(PossibleValue::new(self.to_string()))

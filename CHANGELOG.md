@@ -1,5 +1,55 @@
 # Changelog
 
+## [2026.1.5](https://github.com/jdx/mise/compare/v2026.1.4..v2026.1.5) - 2026-01-19
+
+### 🚀 Features
+
+- **(complete)** add PowerShell completion support by @jdx in [#7746](https://github.com/jdx/mise/pull/7746)
+- **(release)** add LLM-generated prose summary to release notes by @jdx in [#7737](https://github.com/jdx/mise/pull/7737)
+- **(vfox)** add semver Lua module for version sorting by @jdx in [#7739](https://github.com/jdx/mise/pull/7739)
+- **(vfox)** add rolling release support with checksum tracking by @jdx in [#7757](https://github.com/jdx/mise/pull/7757)
+- dry filetask parsing and validation by @makp0 in [#7738](https://github.com/jdx/mise/pull/7738)
+
+### 🐛 Bug Fixes
+
+- **(completions)** bump usage-cli to 2.13.1 for PowerShell support by @jdx in [#7756](https://github.com/jdx/mise/pull/7756)
+- schema missing env required string variant by @vadimpiven in [#7734](https://github.com/jdx/mise/pull/7734)
+- validate unknown fields in filetask headers by @makp0 in [#7733](https://github.com/jdx/mise/pull/7733)
+- disable schemacrawler test by @jdx in [#7743](https://github.com/jdx/mise/pull/7743)
+- replace double forward slash with single slash in get_task_lists by @collinstevens in [#7744](https://github.com/jdx/mise/pull/7744)
+- require LLM for release notes and include aqua section by @jdx in [#7745](https://github.com/jdx/mise/pull/7745)
+- preserve {{ version }} in tool options during config load by @jdx in [#7755](https://github.com/jdx/mise/pull/7755)
+
+### 📚 Documentation
+
+- add documentation URL structure guidance to CLAUDE.md by @jdx in [#7740](https://github.com/jdx/mise/pull/7740)
+- add pitchfork promotion by @jdx in [#7747](https://github.com/jdx/mise/pull/7747)
+
+### 📦️ Dependency Updates
+
+- relax version constraints and update dependencies by @jdx in [#7736](https://github.com/jdx/mise/pull/7736)
+- lock file maintenance by @renovate[bot] in [#7749](https://github.com/jdx/mise/pull/7749)
+
+### Chore
+
+- bump xx to 2.3.1 by @jdx in [#7753](https://github.com/jdx/mise/pull/7753)
+
+### New Contributors
+
+- @collinstevens made their first contribution in [#7744](https://github.com/jdx/mise/pull/7744)
+- @makp0 made their first contribution in [#7738](https://github.com/jdx/mise/pull/7738)
+- @vadimpiven made their first contribution in [#7734](https://github.com/jdx/mise/pull/7734)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`F1bonacc1/process-compose`](https://github.com/F1bonacc1/process-compose)
+- [`kkinnear/zprint`](https://github.com/kkinnear/zprint)
+
+#### Updated Packages (1)
+
+- [`theryangeary/choose`](https://github.com/theryangeary/choose)
 ## [2026.1.4](https://github.com/jdx/mise/compare/v2026.1.3..v2026.1.4) - 2026-01-17
 
 ### 🚀 Features
@@ -14,6 +64,7 @@
 
 - **(conda)** fix hardcoded library paths in conda packages by @jdx in [#7713](https://github.com/jdx/mise/pull/7713)
 - **(env)** avoid venv/go backend deadlock during env resolution by @stk0vrfl0w in [#7696](https://github.com/jdx/mise/pull/7696)
+- **(locked)** exempt tool stubs from lockfile requirements by @jdx in [#7729](https://github.com/jdx/mise/pull/7729)
 - **(python)** sort CPython versions at end of ls-remote output by @jdx in [#7721](https://github.com/jdx/mise/pull/7721)
 - **(task)** resolve remote task files before display and validation commands by @yannrouillard in [#7681](https://github.com/jdx/mise/pull/7681)
 - **(task)** support monorepo paths in `mise tasks deps` by @chadxz in [#7699](https://github.com/jdx/mise/pull/7699)
@@ -57,19 +108,6 @@
 - @yannrouillard made their first contribution in [#7681](https://github.com/jdx/mise/pull/7681)
 - @stk0vrfl0w made their first contribution in [#7696](https://github.com/jdx/mise/pull/7696)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (4)
-
-- [`chevdor/tera-cli`](https://github.com/chevdor/tera-cli)
-- [`goforj/wire`](https://github.com/goforj/wire)
-- [`gravitational/teleport`](https://github.com/gravitational/teleport)
-- [`jackchuka/mdschema`](https://github.com/jackchuka/mdschema)
-
-#### Updated Packages (2)
-
-- [`ollama/ollama`](https://github.com/ollama/ollama)
-- [`twpayne/chezmoi`](https://github.com/twpayne/chezmoi)
 ## [2026.1.3](https://github.com/jdx/mise/compare/v2026.1.2..v2026.1.3) - 2026-01-16
 
 ### 🚀 Features
@@ -84,6 +122,7 @@
 - **(backend)** allow upgrading vfox backend tools with symlinked installations by @TyceHerrman in [#7012](https://github.com/jdx/mise/pull/7012)
 - **(backend)** reject architecture mismatches in asset selection by @jdx in [#7672](https://github.com/jdx/mise/pull/7672)
 - **(backend)** canonicalize symlink target before installs check by @jdx in [#7671](https://github.com/jdx/mise/pull/7671)
+- **(npm)** avoid circular dependency when npm is in dependencies by @AprilNEA in [#7644](https://github.com/jdx/mise/pull/7644)
 - **(self-update)** skip update when already at latest version by @jdx in [#7666](https://github.com/jdx/mise/pull/7666)
 - fall back to GITHUB_TOKEN for github.com by @subdigital in [#7667](https://github.com/jdx/mise/pull/7667)
 - GitHub token fallback by @subdigital in [#7673](https://github.com/jdx/mise/pull/7673)
@@ -94,6 +133,7 @@
 - **(contributing)** update registry examples by @scop in [#7660](https://github.com/jdx/mise/pull/7660)
 - **(contributing)** update registry PR title rule by @scop in [#7663](https://github.com/jdx/mise/pull/7663)
 - remove 404 link from contributing by @opswole in [#7692](https://github.com/jdx/mise/pull/7692)
+- clarify that backend plugins should sort the version list by @ofalvai in [#7680](https://github.com/jdx/mise/pull/7680)
 
 ### 📦️ Dependency Updates
 
@@ -112,23 +152,11 @@
 
 ### New Contributors
 
+- @AprilNEA made their first contribution in [#7644](https://github.com/jdx/mise/pull/7644)
 - @opswole made their first contribution in [#7692](https://github.com/jdx/mise/pull/7692)
 - @subdigital made their first contribution in [#7673](https://github.com/jdx/mise/pull/7673)
 - @aacebedo made their first contribution in [#7560](https://github.com/jdx/mise/pull/7560)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (5)
-
-- [`BeaconBay/ck`](https://github.com/BeaconBay/ck)
-- [`d-kuro/gwq`](https://github.com/d-kuro/gwq)
-- [`kubernetes/cloud-provider-gcp/gke-gcloud-auth-plugin`](https://github.com/kubernetes/cloud-provider-gcp/gke-gcloud-auth-plugin)
-- [`smithy-lang/smithy`](https://github.com/smithy-lang/smithy)
-- [`tassiovirginio/try-rs`](https://github.com/tassiovirginio/try-rs)
-
-#### Updated Packages (1)
-
-- [`dprint/dprint`](https://github.com/dprint/dprint)
 ## [2026.1.2](https://github.com/jdx/mise/compare/v2026.1.1..v2026.1.2) - 2026-01-13
 
 ### 🐛 Bug Fixes
@@ -185,13 +213,6 @@
 - @jonathanagustin made their first contribution in [#7638](https://github.com/jdx/mise/pull/7638)
 - @turbocrime made their first contribution in [#7599](https://github.com/jdx/mise/pull/7599)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (3)
-
-- [`ampcode/zvelte-check`](https://github.com/ampcode/zvelte-check)
-- [`nickel-lang/nickel`](https://github.com/nickel-lang/nickel)
-- [`openshift/rosa`](https://github.com/openshift/rosa)
 ## [2026.1.1](https://github.com/jdx/mise/compare/v2026.1.0..v2026.1.1) - 2026-01-08
 
 ### 🚀 Features
@@ -223,15 +244,6 @@
 - @tomhoover made their first contribution in [#7581](https://github.com/jdx/mise/pull/7581)
 - @vmaleze made their first contribution in [#7582](https://github.com/jdx/mise/pull/7582)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (5)
-
-- [`jbangdev/jbang`](https://github.com/jbangdev/jbang)
-- [`k8sgpt-ai/k8sgpt`](https://github.com/k8sgpt-ai/k8sgpt)
-- [`kawaz/authsock-filter`](https://github.com/kawaz/authsock-filter)
-- [`mazrean/kessoku`](https://github.com/mazrean/kessoku)
-- [`static-web-server/static-web-server`](https://github.com/static-web-server/static-web-server)
 ## [2026.1.0](https://github.com/jdx/mise/compare/v2025.12.13..v2026.1.0) - 2026-01-07
 
 ### 🚀 Features
@@ -308,59 +320,6 @@
 - @h3y6e made their first contribution in [#7527](https://github.com/jdx/mise/pull/7527)
 - @matixlol made their first contribution in [#7478](https://github.com/jdx/mise/pull/7478)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (9)
-
-- [`anomalyco/opencode`](https://github.com/anomalyco/opencode)
-- [`astral-sh/ty`](https://github.com/astral-sh/ty)
-- [`github/copilot-cli`](https://github.com/github/copilot-cli)
-- [`github/gh-ost`](https://github.com/github/gh-ost)
-- [`golangci/golines`](https://github.com/golangci/golines)
-- [`jamf/Notifier`](https://github.com/jamf/Notifier)
-- [`microsoft/vscode/code`](https://github.com/microsoft/vscode/code)
-- [`pranshuparmar/witr`](https://github.com/pranshuparmar/witr)
-- [`spinel-coop/rv`](https://github.com/spinel-coop/rv)
-
-#### Updated Packages (37)
-
-- [`FiloSottile/age`](https://github.com/FiloSottile/age)
-- [`alvinunreal/tmuxai`](https://github.com/alvinunreal/tmuxai)
-- [`aquasecurity/starboard`](https://github.com/aquasecurity/starboard)
-- [`aristocratos/btop`](https://github.com/aristocratos/btop)
-- [`biomejs/biome`](https://github.com/biomejs/biome)
-- [`bootandy/dust`](https://github.com/bootandy/dust)
-- [`borgbackup/borg`](https://github.com/borgbackup/borg)
-- [`bvaisvil/zenith`](https://github.com/bvaisvil/zenith)
-- [`cri-o/cri-o`](https://github.com/cri-o/cri-o)
-- [`cubefs/cubefs`](https://github.com/cubefs/cubefs)
-- [`domoritz/arrow-tools/csv2arrow`](https://github.com/domoritz/arrow-tools/csv2arrow)
-- [`domoritz/arrow-tools/csv2parquet`](https://github.com/domoritz/arrow-tools/csv2parquet)
-- [`domoritz/arrow-tools/json2arrow`](https://github.com/domoritz/arrow-tools/json2arrow)
-- [`domoritz/arrow-tools/json2parquet`](https://github.com/domoritz/arrow-tools/json2parquet)
-- [`fission/fission`](https://github.com/fission/fission)
-- [`folbricht/desync`](https://github.com/folbricht/desync)
-- [`go-acme/lego`](https://github.com/go-acme/lego)
-- [`gohugoio/hugo`](https://github.com/gohugoio/hugo)
-- [`gohugoio/hugo/hugo-extended`](https://github.com/gohugoio/hugo/hugo-extended)
-- [`golang.org/x/perf/cmd/benchstat`](https://github.com/golang.org/x/perf/cmd/benchstat)
-- [`gsamokovarov/jump`](https://github.com/gsamokovarov/jump)
-- [`haskell/cabal/cabal-install`](https://github.com/haskell/cabal/cabal-install)
-- [`kptdev/kpt`](https://github.com/kptdev/kpt)
-- [`kubescape/kubescape`](https://github.com/kubescape/kubescape)
-- [`mas-cli/mas`](https://github.com/mas-cli/mas)
-- [`maxpert/marmot`](https://github.com/maxpert/marmot)
-- [`mistakenelf/fm`](https://github.com/mistakenelf/fm)
-- [`psf/black`](https://github.com/psf/black)
-- [`redpanda-data/connect`](https://github.com/redpanda-data/connect)
-- [`rest-sh/restish`](https://github.com/rest-sh/restish)
-- [`saucelabs/forwarder`](https://github.com/saucelabs/forwarder)
-- [`sethvargo/ratchet`](https://github.com/sethvargo/ratchet)
-- [`stackrox/kube-linter`](https://github.com/stackrox/kube-linter)
-- [`steveyegge/beads`](https://github.com/steveyegge/beads)
-- [`suzuki-shunsuke/rgo`](https://github.com/suzuki-shunsuke/rgo)
-- [`txn2/kubefwd`](https://github.com/txn2/kubefwd)
-- [`zyedidia/micro`](https://github.com/zyedidia/micro)
 ## [2025.12.13](https://github.com/jdx/mise/compare/v2025.12.12..v2025.12.13) - 2025-12-30
 
 ### 🚀 Features
@@ -574,12 +533,6 @@
 - use github backend for sourcery by @jdx in [#7327](https://github.com/jdx/mise/pull/7327)
 - use github backend for swiftgen by @jdx in [#7326](https://github.com/jdx/mise/pull/7326)
 
-### 📦 Aqua Registry Updates
-
-#### Updated Packages (2)
-
-- [`nektro/zigmod`](https://github.com/nektro/zigmod)
-- [`tuist/tuist`](https://github.com/tuist/tuist)
 ## [2025.12.8](https://github.com/jdx/mise/compare/v2025.12.7..v2025.12.8) - 2025-12-15
 
 ### 🚀 Features
@@ -650,14 +603,6 @@
 - add Versions link to nav bar by @jdx in [#7283](https://github.com/jdx/mise/pull/7283)
 - add mise-tools link to nav bar by @jdx in [#7285](https://github.com/jdx/mise/pull/7285)
 
-### 📦 Aqua Registry Updates
-
-#### Updated Packages (4)
-
-- [`abhimanyu003/sttr`](https://github.com/abhimanyu003/sttr)
-- [`babarot/afx`](https://github.com/babarot/afx)
-- [`becheran/mlc`](https://github.com/becheran/mlc)
-- [`maxpert/marmot`](https://github.com/maxpert/marmot)
 ## [2025.12.5](https://github.com/jdx/mise/compare/v2025.12.4..v2025.12.5) - 2025-12-13
 
 ### 🚀 Features
@@ -722,12 +667,6 @@
 - @agriffis made their first contribution in [#7072](https://github.com/jdx/mise/pull/7072)
 - @bishopmatthew made their first contribution in [#7257](https://github.com/jdx/mise/pull/7257)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (2)
-
-- [`dthagard/tforganize`](https://github.com/dthagard/tforganize)
-- [`google/keep-sorted`](https://github.com/google/keep-sorted)
 ## [2025.12.2](https://github.com/jdx/mise/compare/v2025.12.1..v2025.12.2) - 2025-12-11
 
 ### 🐛 Bug Fixes
@@ -740,17 +679,6 @@
 
 - added werf by @tony-sol in [#7230](https://github.com/jdx/mise/pull/7230)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (1)
-
-- [`ByteNess/aws-vault`](https://github.com/ByteNess/aws-vault)
-
-#### Updated Packages (3)
-
-- [`kyverno/chainsaw`](https://github.com/kyverno/chainsaw)
-- [`openai/codex`](https://github.com/openai/codex)
-- [`tree-sitter/tree-sitter`](https://github.com/tree-sitter/tree-sitter)
 ## [2025.12.1](https://github.com/jdx/mise/compare/v2025.12.0..v2025.12.1) - 2025-12-08
 
 ### 🚀 Features
@@ -786,24 +714,6 @@
 - @antonsergeyev made their first contribution in [#7205](https://github.com/jdx/mise/pull/7205)
 - @bodadotsh made their first contribution in [#7206](https://github.com/jdx/mise/pull/7206)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (3)
-
-- [`skanehira/ghost`](https://github.com/skanehira/ghost)
-- [`square/certigo`](https://github.com/square/certigo)
-- [`steveyegge/beads`](https://github.com/steveyegge/beads)
-
-#### Updated Packages (8)
-
-- [`apache/maven`](https://github.com/apache/maven)
-- [`apple/container`](https://github.com/apple/container)
-- [`aquasecurity/trivy`](https://github.com/aquasecurity/trivy)
-- [`charmbracelet/crush`](https://github.com/charmbracelet/crush)
-- [`goreleaser/goreleaser`](https://github.com/goreleaser/goreleaser)
-- [`goreleaser/nfpm`](https://github.com/goreleaser/nfpm)
-- [`ninja-build/ninja`](https://github.com/ninja-build/ninja)
-- [`twpayne/chezmoi`](https://github.com/twpayne/chezmoi)
 ## [2025.12.0](https://github.com/jdx/mise/compare/v2025.11.11..v2025.12.0) - 2025-12-04
 
 ### 🚀 Features
@@ -837,21 +747,6 @@
 
 - @RobotSupervisor made their first contribution in [#7164](https://github.com/jdx/mise/pull/7164)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (2)
-
-- [`Kitware/CMake`](https://github.com/Kitware/CMake)
-- [`quarto-dev/quarto-cli`](https://github.com/quarto-dev/quarto-cli)
-
-#### Updated Packages (6)
-
-- [`apache/jena`](https://github.com/apache/jena)
-- [`apache/spark`](https://github.com/apache/spark)
-- [`danielfoehrKn/kubeswitch`](https://github.com/danielfoehrKn/kubeswitch)
-- [`danielfoehrKn/kubeswitch/switch-sh`](https://github.com/danielfoehrKn/kubeswitch/switch-sh)
-- [`evilmartians/lefthook`](https://github.com/evilmartians/lefthook)
-- [`updatecli/updatecli`](https://github.com/updatecli/updatecli)
 ## [2025.11.11](https://github.com/jdx/mise/compare/v2025.11.10..v2025.11.11) - 2025-11-30
 
 ### 🚀 Features
@@ -934,18 +829,7 @@
 - update mise.lock with checksums by @jdx in [71e9123](https://github.com/jdx/mise/commit/71e9123efac62924b5804e1f56e61400adf22470)
 - disable cancel-in-progress for test workflow on main branch by @risu729 in [#7152](https://github.com/jdx/mise/pull/7152)
 
-### 📦 Aqua Registry Updates
-
-#### Updated Packages (1)
-
-- [`orf/gping`](https://github.com/orf/gping)
 ## [2025.11.10](https://github.com/jdx/mise/compare/v2025.11.9..v2025.11.10) - 2025-11-27
-
-### 📦 Registry
-
-- enable symlink_bins for aws-sam by @risu729 in [#7082](https://github.com/jdx/mise/pull/7082)
-- use cargo backend for tokei to support latest version by @risu729 in [#7086](https://github.com/jdx/mise/pull/7086)
-- add SonarSource/sonar-scanner-cli by @kapitoshka438 in [#7087](https://github.com/jdx/mise/pull/7087)
 
 ### 🐛 Bug Fixes
 
@@ -955,26 +839,17 @@
 
 - **(hook-env)** derive config_subdirs from config filenames by @risu729 in [#7080](https://github.com/jdx/mise/pull/7080)
 
+### 📦 Registry
+
+- enable symlink_bins for aws-sam by @risu729 in [#7082](https://github.com/jdx/mise/pull/7082)
+- use cargo backend for tokei to support latest version by @risu729 in [#7086](https://github.com/jdx/mise/pull/7086)
+- add SonarSource/sonar-scanner-cli by @kapitoshka438 in [#7087](https://github.com/jdx/mise/pull/7087)
+
 ### New Contributors
 
 - @kapitoshka438 made their first contribution in [#7087](https://github.com/jdx/mise/pull/7087)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (1)
-
-- [`kiali/kiali`](https://github.com/kiali/kiali)
-
-#### Updated Packages (3)
-
-- [`XAMPPRocky/tokei`](https://github.com/XAMPPRocky/tokei)
-- [`astral-sh/uv`](https://github.com/astral-sh/uv)
-- [`wtfutil/wtf`](https://github.com/wtfutil/wtf)
 ## [2025.11.9](https://github.com/jdx/mise/compare/v2025.11.8..v2025.11.9) - 2025-11-27
-
-### 📦 Registry
-
-- add charmbracelet/crush by @ev-the-dev in [#7075](https://github.com/jdx/mise/pull/7075)
 
 ### 🚀 Features
 
@@ -993,32 +868,16 @@
 
 - **(hook-env)** add fast-path to skip initialization when nothing changed by @jdx in [#7073](https://github.com/jdx/mise/pull/7073)
 
+### 📦 Registry
+
+- add charmbracelet/crush by @ev-the-dev in [#7075](https://github.com/jdx/mise/pull/7075)
+
 ### New Contributors
 
 - @ev-the-dev made their first contribution in [#7075](https://github.com/jdx/mise/pull/7075)
 - @SKalt made their first contribution in [#7071](https://github.com/jdx/mise/pull/7071)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (3)
-
-- [`SonarSource/sonar-scanner-cli`](https://github.com/SonarSource/sonar-scanner-cli)
-- [`Stranger6667/jsonschema`](https://github.com/Stranger6667/jsonschema)
-- [`peteretelej/tree`](https://github.com/peteretelej/tree)
-
-#### Updated Packages (2)
-
-- [`astral-sh/uv`](https://github.com/astral-sh/uv)
-- [`pre-commit/pre-commit`](https://github.com/pre-commit/pre-commit)
 ## [2025.11.8](https://github.com/jdx/mise/compare/v2025.11.7..v2025.11.8) - 2025-11-26
-
-### 📦 Registry
-
-- add blender by @lucasew in [#7014](https://github.com/jdx/mise/pull/7014)
-- add vespa-cli by @buinauskas in [#7037](https://github.com/jdx/mise/pull/7037)
-- fix vespa-cli order by @buinauskas in [#7038](https://github.com/jdx/mise/pull/7038)
-- add scooter by @TyceHerrman in [#7039](https://github.com/jdx/mise/pull/7039)
-- Prefer github backend for allure by @TobiX in [#7049](https://github.com/jdx/mise/pull/7049)
 
 ### 🚀 Features
 
@@ -1028,6 +887,7 @@
 ### 🐛 Bug Fixes
 
 - **(core)** trim `core:` prefix in unalias_backend by @kou029w in [#7040](https://github.com/jdx/mise/pull/7040)
+- **(exec)** make `mise x tool@latest` auto-install actual latest version by @jdx in [#7064](https://github.com/jdx/mise/pull/7064)
 - **(go)** use -mod=readonly for go install by @joonas in [#7052](https://github.com/jdx/mise/pull/7052)
 - **(npm)** handle v-prefixed versions correctly by @jdx in [#7062](https://github.com/jdx/mise/pull/7062)
 - **(tasks)** add missing task fields to JSON output by @roele in [#7044](https://github.com/jdx/mise/pull/7044)
@@ -1047,6 +907,14 @@
 - update actions/checkout digest to 34e1148 by @renovate[bot] in [#7032](https://github.com/jdx/mise/pull/7032)
 - lock file maintenance by @renovate[bot] in [#7048](https://github.com/jdx/mise/pull/7048)
 
+### 📦 Registry
+
+- add blender by @lucasew in [#7014](https://github.com/jdx/mise/pull/7014)
+- add vespa-cli by @buinauskas in [#7037](https://github.com/jdx/mise/pull/7037)
+- fix vespa-cli order by @buinauskas in [#7038](https://github.com/jdx/mise/pull/7038)
+- add scooter by @TyceHerrman in [#7039](https://github.com/jdx/mise/pull/7039)
+- Prefer github backend for allure by @TobiX in [#7049](https://github.com/jdx/mise/pull/7049)
+
 ### Chore
 
 - upgrade actionlint to 1.7.9 and fix lint issues by @jdx in [#7065](https://github.com/jdx/mise/pull/7065)
@@ -1060,22 +928,7 @@
 - @buinauskas made their first contribution in [#7038](https://github.com/jdx/mise/pull/7038)
 - @lucasew made their first contribution in [#7014](https://github.com/jdx/mise/pull/7014)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (3)
-
-- [`m7medVision/lazycommit`](https://github.com/m7medVision/lazycommit)
-- [`microsoft/component-detection`](https://github.com/microsoft/component-detection)
-- [`owenlamont/ryl`](https://github.com/owenlamont/ryl)
-
-#### Updated Packages (1)
-
-- [`sst/opencode`](https://github.com/sst/opencode)
 ## [2025.11.7](https://github.com/jdx/mise/compare/v2025.11.6..v2025.11.7) - 2025-11-20
-
-### 📦 Registry
-
-- added nelm by @tony-sol in [#7020](https://github.com/jdx/mise/pull/7020)
 
 ### 🚀 Features
 
@@ -1088,6 +941,10 @@
 - **(nushell)** test `use` not `source`, fix pipeline parse error by @jokeyrhyme in [#7013](https://github.com/jdx/mise/pull/7013)
 - **(tasks)** make file paths relative to config location and templateable by @halms in [#7005](https://github.com/jdx/mise/pull/7005)
 
+### 📦 Registry
+
+- added nelm by @tony-sol in [#7020](https://github.com/jdx/mise/pull/7020)
+
 ### Chore
 
 - **(deny)** add exclusion for number_prefix by @jdx in [e955ecb](https://github.com/jdx/mise/commit/e955ecbb733d61ef1d0b522a979a7d1998ec8061)
@@ -1097,22 +954,7 @@
 - @mariduv made their first contribution in [#7006](https://github.com/jdx/mise/pull/7006)
 - @ceelian made their first contribution in [#7007](https://github.com/jdx/mise/pull/7007)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (2)
-
-- [`blender/blender`](https://github.com/blender/blender)
-- [`werf/werf`](https://github.com/werf/werf)
-
-#### Updated Packages (1)
-
-- [`mas-cli/mas`](https://github.com/mas-cli/mas)
 ## [2025.11.6](https://github.com/jdx/mise/compare/v2025.11.5..v2025.11.6) - 2025-11-18
-
-### 📦 Registry
-
-- add tbls by @artemklevtsov in [#6987](https://github.com/jdx/mise/pull/6987)
-- add kubeswitch tool and add test for ruff by @jylenhof in [#6990](https://github.com/jdx/mise/pull/6990)
 
 ### 🐛 Bug Fixes
 
@@ -1135,6 +977,11 @@
 
 - lock file maintenance by @renovate[bot] in [#6997](https://github.com/jdx/mise/pull/6997)
 
+### 📦 Registry
+
+- add tbls by @artemklevtsov in [#6987](https://github.com/jdx/mise/pull/6987)
+- add kubeswitch tool and add test for ruff by @jylenhof in [#6990](https://github.com/jdx/mise/pull/6990)
+
 ### New Contributors
 
 - @cspotcode made their first contribution in [#7001](https://github.com/jdx/mise/pull/7001)
@@ -1142,19 +989,6 @@
 - @artemklevtsov made their first contribution in [#6987](https://github.com/jdx/mise/pull/6987)
 - @leosuncin made their first contribution in [#6993](https://github.com/jdx/mise/pull/6993)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (1)
-
-- [`houseabsolute/omegasort`](https://github.com/houseabsolute/omegasort)
-
-#### Updated Packages (5)
-
-- [`apache/maven`](https://github.com/apache/maven)
-- [`chaqchase/lla`](https://github.com/chaqchase/lla)
-- [`leoafarias/fvm`](https://github.com/leoafarias/fvm)
-- [`rustic-rs/rustic`](https://github.com/rustic-rs/rustic)
-- [`sigstore/rekor`](https://github.com/sigstore/rekor)
 ## [2025.11.5](https://github.com/jdx/mise/compare/v2025.11.4..v2025.11.5) - 2025-11-15
 
 ### 🚀 Features
@@ -1179,22 +1013,7 @@
 - @blampe made their first contribution in [#6969](https://github.com/jdx/mise/pull/6969)
 - @thejcannon made their first contribution in [#6964](https://github.com/jdx/mise/pull/6964)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (1)
-
-- [`cirruslabs/cirrus-cli`](https://github.com/cirruslabs/cirrus-cli)
-
-#### Updated Packages (1)
-
-- [`axodotdev/cargo-dist`](https://github.com/axodotdev/cargo-dist)
 ## [2025.11.4](https://github.com/jdx/mise/compare/v2025.11.3..v2025.11.4) - 2025-11-13
-
-### 📦 Registry
-
-- add xcsift by @alexey1312 in [#6923](https://github.com/jdx/mise/pull/6923)
-- add tools: magika & xxh by @IceCodeNew in [#6909](https://github.com/jdx/mise/pull/6909)
-- add aliases to aqua-backend tools by @IceCodeNew in [#6910](https://github.com/jdx/mise/pull/6910)
 
 ### 🚀 Features
 
@@ -1219,6 +1038,12 @@
 
 - lock file maintenance by @renovate[bot] in [#6932](https://github.com/jdx/mise/pull/6932)
 
+### 📦 Registry
+
+- add xcsift by @alexey1312 in [#6923](https://github.com/jdx/mise/pull/6923)
+- add tools: magika & xxh by @IceCodeNew in [#6909](https://github.com/jdx/mise/pull/6909)
+- add aliases to aqua-backend tools by @IceCodeNew in [#6910](https://github.com/jdx/mise/pull/6910)
+
 ### Chore
 
 - bump cargo deps by @jdx in [#6960](https://github.com/jdx/mise/pull/6960)
@@ -1230,33 +1055,7 @@
 - @IceCodeNew made their first contribution in [#6910](https://github.com/jdx/mise/pull/6910)
 - @alexey1312 made their first contribution in [#6923](https://github.com/jdx/mise/pull/6923)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (6)
-
-- [`CrociDB/bulletty`](https://github.com/CrociDB/bulletty)
-- [`Gaurav-Gosain/tuios`](https://github.com/Gaurav-Gosain/tuios)
-- [`ck-zhang/reddix`](https://github.com/ck-zhang/reddix)
-- [`hokaccha/spannerdef`](https://github.com/hokaccha/spannerdef)
-- [`lasantosr/intelli-shell`](https://github.com/lasantosr/intelli-shell)
-- [`zerocore-ai/microsandbox`](https://github.com/zerocore-ai/microsandbox)
-
-#### Updated Packages (4)
-
-- [`cue-lang/cue`](https://github.com/cue-lang/cue)
-- [`flutter/flutter`](https://github.com/flutter/flutter)
-- [`phiresky/ripgrep-all`](https://github.com/phiresky/ripgrep-all)
-- [`topgrade-rs/topgrade`](https://github.com/topgrade-rs/topgrade)
 ## [2025.11.3](https://github.com/jdx/mise/compare/v2025.11.2..v2025.11.3) - 2025-11-07
-
-### 📦 Registry
-
-- rename yt-dlp bin by @risu729 in [#6883](https://github.com/jdx/mise/pull/6883)
-- use aqua backend for slsa-verifier by @risu729 in [#6872](https://github.com/jdx/mise/pull/6872)
-- added devcontainer-cli by @moisesmorillo in [#6888](https://github.com/jdx/mise/pull/6888)
-- add amazon-ecs-cli by @ducvuongpham in [#6898](https://github.com/jdx/mise/pull/6898)
-- add helm-ls by @ldrouard in [#6899](https://github.com/jdx/mise/pull/6899)
-- add ubi backend and test for oxipng, change aqua backend by @ldrouard in [#6900](https://github.com/jdx/mise/pull/6900)
 
 ### 🚀 Features
 
@@ -1274,6 +1073,15 @@
 
 - **(security)** use long-form GPG key fingerprint in installation docs by @jdx in [#6885](https://github.com/jdx/mise/pull/6885)
 
+### 📦 Registry
+
+- rename yt-dlp bin by @risu729 in [#6883](https://github.com/jdx/mise/pull/6883)
+- use aqua backend for slsa-verifier by @risu729 in [#6872](https://github.com/jdx/mise/pull/6872)
+- added devcontainer-cli by @moisesmorillo in [#6888](https://github.com/jdx/mise/pull/6888)
+- add amazon-ecs-cli by @ducvuongpham in [#6898](https://github.com/jdx/mise/pull/6898)
+- add helm-ls by @ldrouard in [#6899](https://github.com/jdx/mise/pull/6899)
+- add ubi backend and test for oxipng, change aqua backend by @ldrouard in [#6900](https://github.com/jdx/mise/pull/6900)
+
 ### Chore
 
 - update Java LTS to 25 by @sargunv in [#6897](https://github.com/jdx/mise/pull/6897)
@@ -1284,26 +1092,7 @@
 - @sargunv made their first contribution in [#6897](https://github.com/jdx/mise/pull/6897)
 - @ducvuongpham made their first contribution in [#6898](https://github.com/jdx/mise/pull/6898)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (5)
-
-- [`minc-org/minc`](https://github.com/minc-org/minc)
-- [`neilpa/yajsv`](https://github.com/neilpa/yajsv)
-- [`nmstate/nmstate`](https://github.com/nmstate/nmstate)
-- [`openshift-pipelines/pipelines-as-code`](https://github.com/openshift-pipelines/pipelines-as-code)
-- [`pete911/certinfo`](https://github.com/pete911/certinfo)
-
-#### Updated Packages (3)
-
-- [`amir20/dtop`](https://github.com/amir20/dtop)
-- [`borgbackup/borg`](https://github.com/borgbackup/borg)
-- [`caarlos0/svu`](https://github.com/caarlos0/svu)
 ## [2025.11.2](https://github.com/jdx/mise/compare/v2025.11.1..v2025.11.2) - 2025-11-03
-
-### 📦 Registry
-
-- rename mise-haskell -> asdf-haskell by @jdx in [#6859](https://github.com/jdx/mise/pull/6859)
 
 ### 🚀 Features
 
@@ -1334,16 +1123,15 @@
 
 - lock file maintenance by @renovate[bot] in [#6873](https://github.com/jdx/mise/pull/6873)
 
+### 📦 Registry
+
+- rename mise-haskell -> asdf-haskell by @jdx in [#6859](https://github.com/jdx/mise/pull/6859)
+
 ### New Contributors
 
 - @dragoscirjan made their first contribution in [#6853](https://github.com/jdx/mise/pull/6853)
 
 ## [2025.11.1](https://github.com/jdx/mise/compare/v2025.11.0..v2025.11.1) - 2025-11-01
-
-### 📦 Registry
-
-- Disable libsql-server on Windows by @jayvdb in [#6837](https://github.com/jdx/mise/pull/6837)
-- add infisical by @jdx in [#6845](https://github.com/jdx/mise/pull/6845)
 
 ### 🚀 Features
 
@@ -1354,6 +1142,11 @@
 
 - **(activate)** prevent hash table errors during deactivation by @jdx in [#6846](https://github.com/jdx/mise/pull/6846)
 - **(install)** error on non-existent tools in `mise install` by @jdx in [#6844](https://github.com/jdx/mise/pull/6844)
+
+### 📦 Registry
+
+- Disable libsql-server on Windows by @jayvdb in [#6837](https://github.com/jdx/mise/pull/6837)
+- add infisical by @jdx in [#6845](https://github.com/jdx/mise/pull/6845)
 
 ## [2025.11.0](https://github.com/jdx/mise/compare/v2025.10.21..v2025.11.0) - 2025-11-01
 
@@ -1379,6 +1172,7 @@
 ### 🐛 Bug Fixes
 
 - **(cli)** show friendly error when --cd path does not exist by @jdx in [#6818](https://github.com/jdx/mise/pull/6818)
+- **(env)** prevent PATH corruption when paths are interleaved with original PATH by @jdx in [#6821](https://github.com/jdx/mise/pull/6821)
 - **(node)** update lts version by @risu729 in [#6816](https://github.com/jdx/mise/pull/6816)
 - **(schema,settings)** update type and descriptions for shell argument settings by @astrochemx in [#6805](https://github.com/jdx/mise/pull/6805)
 
@@ -1391,16 +1185,7 @@
 - @astrochemx made their first contribution in [#6805](https://github.com/jdx/mise/pull/6805)
 - @rbino made their first contribution in [#6809](https://github.com/jdx/mise/pull/6809)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (1)
-
-- [`goharbor/harbor-cli`](https://github.com/goharbor/harbor-cli)
 ## [2025.10.20](https://github.com/jdx/mise/compare/v2025.10.19..v2025.10.20) - 2025-10-29
-
-### 📦 Registry
-
-- add cpz and rmz by @sassdavid in [#6793](https://github.com/jdx/mise/pull/6793)
 
 ### 🚀 Features
 
@@ -1417,22 +1202,16 @@
 
 - change 'claude-code' to 'claude' in examples by @bradleybuda in [#6801](https://github.com/jdx/mise/pull/6801)
 
+### 📦 Registry
+
+- add cpz and rmz by @sassdavid in [#6793](https://github.com/jdx/mise/pull/6793)
+
 ### New Contributors
 
 - @trolleyman made their first contribution in [#6798](https://github.com/jdx/mise/pull/6798)
 - @bradleybuda made their first contribution in [#6801](https://github.com/jdx/mise/pull/6801)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (2)
-
-- [`jreisinger/checkip`](https://github.com/jreisinger/checkip)
-- [`suzuki-shunsuke/ghaperf`](https://github.com/suzuki-shunsuke/ghaperf)
 ## [2025.10.19](https://github.com/jdx/mise/compare/v2025.10.18..v2025.10.19) - 2025-10-28
-
-### 📦 Registry
-
-- update bat-extras backends by @TyceHerrman in [#6784](https://github.com/jdx/mise/pull/6784)
 
 ### 🚀 Features
 
@@ -1459,12 +1238,10 @@
 
 - lock file maintenance by @renovate[bot] in [#6780](https://github.com/jdx/mise/pull/6780)
 
-### 📦 Aqua Registry Updates
+### 📦 Registry
 
-#### Updated Packages (2)
+- update bat-extras backends by @TyceHerrman in [#6784](https://github.com/jdx/mise/pull/6784)
 
-- [`alvinunreal/tmuxai`](https://github.com/alvinunreal/tmuxai)
-- [`mvdan/gofumpt`](https://github.com/mvdan/gofumpt)
 ## [2025.10.18](https://github.com/jdx/mise/compare/v2025.10.17..v2025.10.18) - 2025-10-25
 
 ### 🚀 Features
@@ -1480,21 +1257,7 @@
 
 - **(task)** deprecate Tera template functions for task arguments by @jdx in [#6764](https://github.com/jdx/mise/pull/6764)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (1)
-
-- [`gittower/git-flow-next`](https://github.com/gittower/git-flow-next)
-
-#### Updated Packages (1)
-
-- [`suzuki-shunsuke/ci-info`](https://github.com/suzuki-shunsuke/ci-info)
 ## [2025.10.17](https://github.com/jdx/mise/compare/v2025.10.16..v2025.10.17) - 2025-10-24
-
-### 📦 Registry
-
-- add superhtml by @Maarrk in [#6742](https://github.com/jdx/mise/pull/6742)
-- add opengrep by @vmeurisse in [#6745](https://github.com/jdx/mise/pull/6745)
 
 ### 🚀 Features
 
@@ -1522,6 +1285,11 @@
 - update ghcr.io/jdx/mise:alpine docker digest to f749e46 by @renovate[bot] in [#6749](https://github.com/jdx/mise/pull/6749)
 - update ghcr.io/jdx/mise:rpm docker digest to 308b042 by @renovate[bot] in [#6752](https://github.com/jdx/mise/pull/6752)
 - update ghcr.io/jdx/mise:deb docker digest to e28b4fd by @renovate[bot] in [#6751](https://github.com/jdx/mise/pull/6751)
+
+### 📦 Registry
+
+- add superhtml by @Maarrk in [#6742](https://github.com/jdx/mise/pull/6742)
+- add opengrep by @vmeurisse in [#6745](https://github.com/jdx/mise/pull/6745)
 
 ### New Contributors
 
@@ -1555,23 +1323,6 @@
 - @iamkroot made their first contribution in [#6729](https://github.com/jdx/mise/pull/6729)
 - @the-wondersmith made their first contribution in [#6180](https://github.com/jdx/mise/pull/6180)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (8)
-
-- [`SUPERCILEX/fuc/cpz`](https://github.com/SUPERCILEX/fuc/cpz)
-- [`SUPERCILEX/fuc/rmz`](https://github.com/SUPERCILEX/fuc/rmz)
-- [`dinoDanic/diny`](https://github.com/dinoDanic/diny)
-- [`eth-p/bat-extras`](https://github.com/eth-p/bat-extras)
-- [`k1LoW/tailor-log`](https://github.com/k1LoW/tailor-log)
-- [`mashiike/acrun`](https://github.com/mashiike/acrun)
-- [`opengrep/opengrep`](https://github.com/opengrep/opengrep)
-- [`praetorian-inc/noseyparker`](https://github.com/praetorian-inc/noseyparker)
-
-#### Updated Packages (2)
-
-- [`bufbuild/buf`](https://github.com/bufbuild/buf)
-- [`bytecodealliance/wasm-tools`](https://github.com/bytecodealliance/wasm-tools)
 ## [2025.10.15](https://github.com/jdx/mise/compare/v2025.10.14..v2025.10.15) - 2025-10-22
 
 ### 🚀 Features
@@ -1634,6 +1385,10 @@
 
 - **(rust)** preserve original PATH entries when managing tool paths by @jdx in [#6689](https://github.com/jdx/mise/pull/6689)
 
+### 📦️ Dependency Updates
+
+- update rust crate ubi to 0.8.2 by @risu729 in [#6693](https://github.com/jdx/mise/pull/6693)
+
 ## [2025.10.11](https://github.com/jdx/mise/compare/v2025.10.10..v2025.10.11) - 2025-10-18
 
 ### 🚀 Features
@@ -1657,16 +1412,6 @@
 
 - @LER0ever made their first contribution in [#6682](https://github.com/jdx/mise/pull/6682)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (1)
-
-- [`mas-cli/mas`](https://github.com/mas-cli/mas)
-
-#### Updated Packages (2)
-
-- [`microsoft/edit`](https://github.com/microsoft/edit)
-- [`nodejs/node`](https://github.com/nodejs/node)
 ## [2025.10.10](https://github.com/jdx/mise/compare/v2025.10.9..v2025.10.10) - 2025-10-16
 
 ### 🐛 Bug Fixes
@@ -1698,11 +1443,6 @@
 
 ## [2025.10.8](https://github.com/jdx/mise/compare/v2025.10.7..v2025.10.8) - 2025-10-13
 
-### 📦 Registry
-
-- add codex (`npm:@openai/codex`) by @risu729 in [#6634](https://github.com/jdx/mise/pull/6634)
-- add tests (1password-certstrap) by @risu729 in [#6592](https://github.com/jdx/mise/pull/6592)
-
 ### 🚀 Features
 
 - **(plugins)** more archiver extensions by @blaubaer in [#6644](https://github.com/jdx/mise/pull/6644)
@@ -1721,28 +1461,16 @@
 
 - update rust crate ubi to 0.8 by @risu729 in [#6637](https://github.com/jdx/mise/pull/6637)
 
+### 📦 Registry
+
+- add codex (`npm:@openai/codex`) by @risu729 in [#6634](https://github.com/jdx/mise/pull/6634)
+- add tests (1password-certstrap) by @risu729 in [#6592](https://github.com/jdx/mise/pull/6592)
+
 ### New Contributors
 
 - @neongreen made their first contribution in [#6641](https://github.com/jdx/mise/pull/6641)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (3)
-
-- [`defenseunicorns/uds-cli`](https://github.com/defenseunicorns/uds-cli)
-- [`google/addlicense`](https://github.com/google/addlicense)
-- [`zarf-dev/zarf`](https://github.com/zarf-dev/zarf)
-
-#### Updated Packages (2)
-
-- [`golang/tools/godoc`](https://github.com/golang/tools/godoc)
-- [`release-plz/release-plz`](https://github.com/release-plz/release-plz)
-
 ## [2025.10.7](https://github.com/jdx/mise/compare/v2025.10.6..v2025.10.7) - 2025-10-10
-
-### 📦 Registry
-
-- add lazyssh by @TyceHerrman in [#6610](https://github.com/jdx/mise/pull/6610)
 
 ### 🚀 Features
 
@@ -1757,6 +1485,10 @@
 - **(tasks)** restore MISE_ENV environment inheritance for tasks by @glasser in [#6621](https://github.com/jdx/mise/pull/6621)
 - **(ui)** prevent OSC 9;4 progress sequences from being written to non-terminals by @jdx in [#6615](https://github.com/jdx/mise/pull/6615)
 
+### 📦 Registry
+
+- add lazyssh by @TyceHerrman in [#6610](https://github.com/jdx/mise/pull/6610)
+
 ### Chore
 
 - remove cosign/slsa-verifier from mise.toml by @jdx in [#6616](https://github.com/jdx/mise/pull/6616)
@@ -1765,28 +1497,7 @@
 
 - @richardthe3rd made their first contribution in [#6041](https://github.com/jdx/mise/pull/6041)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (3)
-
-- [`kachick/selfup`](https://github.com/kachick/selfup)
-- [`madelynnblue/sqlfmt`](https://github.com/madelynnblue/sqlfmt)
-- [`yonaskolb/XcodeGen`](https://github.com/yonaskolb/XcodeGen)
-
-#### Updated Packages (6)
-
-- [`AGWA/git-crypt`](https://github.com/AGWA/git-crypt)
-- [`apache/maven-mvnd`](https://github.com/apache/maven-mvnd)
-- [`benbjohnson/litestream`](https://github.com/benbjohnson/litestream)
-- [`dex4er/tf`](https://github.com/dex4er/tf)
-- [`oxc-project/oxc/oxlint`](https://github.com/oxc-project/oxc/oxlint)
-- [`sigstore/cosign`](https://github.com/sigstore/cosign)
-
 ## [2025.10.6](https://github.com/jdx/mise/compare/v2025.10.5..v2025.10.6) - 2025-10-08
-
-### 📦 Registry
-
-- add vfox-mongod by @blaubaer in [#6586](https://github.com/jdx/mise/pull/6586)
 
 ### 🚀 Features
 
@@ -1803,26 +1514,15 @@
 - **(exec)** remove redundant tty check for auto-install by @jdx in [#6589](https://github.com/jdx/mise/pull/6589)
 - remove duplicated task loads by @risu729 in [#6594](https://github.com/jdx/mise/pull/6594)
 
+### 📦 Registry
+
+- add vfox-mongod by @blaubaer in [#6586](https://github.com/jdx/mise/pull/6586)
+
 ### New Contributors
 
 - @blaubaer made their first contribution in [#6586](https://github.com/jdx/mise/pull/6586)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (1)
-
-- [`walles/moor`](https://github.com/walles/moor)
-
-#### Updated Packages (2)
-
-- [`linkerd/linkerd2`](https://github.com/linkerd/linkerd2)
-- [`minio/mc`](https://github.com/minio/mc)
-
 ## [2025.10.5](https://github.com/jdx/mise/compare/v2025.10.4..v2025.10.5) - 2025-10-07
-
-### 📦 Registry
-
-- add jules by @alefteris in [#6568](https://github.com/jdx/mise/pull/6568)
 
 ### 🐛 Bug Fixes
 
@@ -1837,16 +1537,9 @@
 - **(tasks)** create dedicated monorepo tasks documentation by @jdx in [#6561](https://github.com/jdx/mise/pull/6561)
 - **(tasks)** enhance monorepo documentation with tool comparisons by @jdx in [#6563](https://github.com/jdx/mise/pull/6563)
 
-### 📦 Aqua Registry Updates
+### 📦 Registry
 
-#### New Packages (2)
-
-- [`flutter/flutter`](https://github.com/flutter/flutter)
-- [`grafana/grafanactl`](https://github.com/grafana/grafanactl)
-
-#### Updated Packages (1)
-
-- [`borgbackup/borg`](https://github.com/borgbackup/borg)
+- add jules by @alefteris in [#6568](https://github.com/jdx/mise/pull/6568)
 
 ## [2025.10.4](https://github.com/jdx/mise/compare/v2025.10.3..v2025.10.4) - 2025-10-06
 
@@ -1864,18 +1557,7 @@
 
 - @equirosa made their first contribution in [#6555](https://github.com/jdx/mise/pull/6555)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (2)
-
-- [`jackchuka/confluence-md`](https://github.com/jackchuka/confluence-md)
-- [`NikitaCOEUR/dirvana`](https://github.com/NikitaCOEUR/dirvana)
-
 ## [2025.10.3](https://github.com/jdx/mise/compare/v2025.10.2..v2025.10.3) - 2025-10-06
-
-### 📦 Registry
-
-- added cloudflare wrangler by @moisesmorillo in [#6534](https://github.com/jdx/mise/pull/6534)
 
 ### 🚀 Features
 
@@ -1895,6 +1577,10 @@
 ### 📚 Documentation
 
 - Update Python virtual environment documentation by @Konfekt in [#6538](https://github.com/jdx/mise/pull/6538)
+
+### 📦 Registry
+
+- added cloudflare wrangler by @moisesmorillo in [#6534](https://github.com/jdx/mise/pull/6534)
 
 ### Chore
 
@@ -1935,10 +1621,6 @@
 
 ## [2025.10.1](https://github.com/jdx/mise/compare/v2025.10.0..v2025.10.1) - 2025-10-03
 
-### 📦 Registry
-
-- add tombi by @TyceHerrman in [#6520](https://github.com/jdx/mise/pull/6520)
-
 ### 🚀 Features
 
 - **(snapcraft)** add snap package by @phanect in [#6472](https://github.com/jdx/mise/pull/6472)
@@ -1946,6 +1628,10 @@
 ### 🐛 Bug Fixes
 
 - **(cache)** remove duplicate bytes in prune output by @risu729 in [#6515](https://github.com/jdx/mise/pull/6515)
+
+### 📦 Registry
+
+- add tombi by @TyceHerrman in [#6520](https://github.com/jdx/mise/pull/6520)
 
 ### Chore
 
@@ -1956,10 +1642,6 @@
 - @phanect made their first contribution in [#6472](https://github.com/jdx/mise/pull/6472)
 
 ## [2025.10.0](https://github.com/jdx/mise/compare/v2025.9.25..v2025.10.0) - 2025-10-01
-
-### 📦 Registry
-
-- add code by @TyceHerrman in [#6492](https://github.com/jdx/mise/pull/6492)
 
 ### 🚀 Features
 
@@ -1979,15 +1661,15 @@
 
 - **(e2e)** remove deprecated MISE_LEGACY_VERSION_FILE assertions by @jdx in [#6505](https://github.com/jdx/mise/pull/6505)
 
+### 📦 Registry
+
+- add code by @TyceHerrman in [#6492](https://github.com/jdx/mise/pull/6492)
+
 ### New Contributors
 
 - @minusfive made their first contribution in [#6497](https://github.com/jdx/mise/pull/6497)
 
 ## [2025.9.25](https://github.com/jdx/mise/compare/v2025.9.24..v2025.9.25) - 2025-09-30
-
-### 📦 Registry
-
-- prefer k3s from Aqua over ASDF plugin by @TobiX in [#6486](https://github.com/jdx/mise/pull/6486)
 
 ### 🐛 Bug Fixes
 
@@ -1998,6 +1680,10 @@
 ### 🧪 Testing
 
 - **(e2e)** use local HTTP server instead of httpbin.org for tool-stub tests by @jdx in [#6488](https://github.com/jdx/mise/pull/6488)
+
+### 📦 Registry
+
+- prefer k3s from Aqua over ASDF plugin by @TobiX in [#6486](https://github.com/jdx/mise/pull/6486)
 
 ### Chore
 
@@ -2010,11 +1696,6 @@
 
 ## [2025.9.24](https://github.com/jdx/mise/compare/v2025.9.23..v2025.9.24) - 2025-09-29
 
-### 📦 Registry
-
-- add ggshield by @TyceHerrman in [#6435](https://github.com/jdx/mise/pull/6435)
-- add jaq by @TyceHerrman in [#6434](https://github.com/jdx/mise/pull/6434)
-
 ### 🚀 Features
 
 - **(age)** support age encrypted env vars in mise.toml files by @jdx in [#6463](https://github.com/jdx/mise/pull/6463)
@@ -2022,6 +1703,11 @@
 ### 🐛 Bug Fixes
 
 - **(vfox)** integrate `parse_legacy_file` into backend by @malept in [#6471](https://github.com/jdx/mise/pull/6471)
+
+### 📦 Registry
+
+- add ggshield by @TyceHerrman in [#6435](https://github.com/jdx/mise/pull/6435)
+- add jaq by @TyceHerrman in [#6434](https://github.com/jdx/mise/pull/6434)
 
 ## [2025.9.23](https://github.com/jdx/mise/compare/v2025.9.22..v2025.9.23) - 2025-09-28
 
@@ -2039,23 +1725,18 @@
 
 ## [2025.9.22](https://github.com/jdx/mise/compare/v2025.9.21..v2025.9.22) - 2025-09-28
 
+### 🚀 Features
+
+- **(backend)** add environment variable override for tool backends by @jdx in [#6456](https://github.com/jdx/mise/pull/6456)
+- add a http_retries setting to define number of retry attempts by @roele in [#6444](https://github.com/jdx/mise/pull/6444)
+
 ### 📦 Registry
 
 - re-enable tests by @risu729 in [#6454](https://github.com/jdx/mise/pull/6454)
 - restore comments and tests by @risu729 in [#6378](https://github.com/jdx/mise/pull/6378)
 - add github backend for graphite by @jdx in [#6455](https://github.com/jdx/mise/pull/6455)
 
-### 🚀 Features
-
-- **(backend)** add environment variable override for tool backends by @jdx in [#6456](https://github.com/jdx/mise/pull/6456)
-- add a http_retries setting to define number of retry attempts by @roele in [#6444](https://github.com/jdx/mise/pull/6444)
-
 ## [2025.9.21](https://github.com/jdx/mise/compare/v2025.9.20..v2025.9.21) - 2025-09-27
-
-### 📦 Registry
-
-- remove incorrect bin_path from balena-cli by @jdx in [#6445](https://github.com/jdx/mise/pull/6445)
-- disable oxlint test temporarily by @jdx in [#6446](https://github.com/jdx/mise/pull/6446)
 
 ### 🚀 Features
 
@@ -2074,17 +1755,16 @@
 - optimize git remote task tests with local repositories by @jdx in [#6441](https://github.com/jdx/mise/pull/6441)
 - mark slow e2e tests and add runtime warnings by @jdx in [#6449](https://github.com/jdx/mise/pull/6449)
 
+### 📦 Registry
+
+- remove incorrect bin_path from balena-cli by @jdx in [#6445](https://github.com/jdx/mise/pull/6445)
+- disable oxlint test temporarily by @jdx in [#6446](https://github.com/jdx/mise/pull/6446)
+
 ### Chore
 
 - **(ci)** run release workflow on PRs to main for branch protection by @jdx in [#6448](https://github.com/jdx/mise/pull/6448)
 
 ## [2025.9.20](https://github.com/jdx/mise/compare/v2025.9.19..v2025.9.20) - 2025-09-26
-
-### 📦 Registry
-
-- use version_prefix for github backends by @risu729 in [#6409](https://github.com/jdx/mise/pull/6409)
-- fix hivemind by @mnm364 in [#6431](https://github.com/jdx/mise/pull/6431)
-- revert opam/k3kcli backends to ubi by @risu729 in [#6406](https://github.com/jdx/mise/pull/6406)
 
 ### 🚀 Features
 
@@ -2106,13 +1786,13 @@
 - update ghcr.io/jdx/mise:deb docker digest to af96f8e by @renovate[bot] in [#6428](https://github.com/jdx/mise/pull/6428)
 - update ghcr.io/jdx/mise:copr docker digest to 0f98c77 by @renovate[bot] in [#6427](https://github.com/jdx/mise/pull/6427)
 
-## [2025.9.19](https://github.com/jdx/mise/compare/v2025.9.18..v2025.9.19) - 2025-09-25
-
 ### 📦 Registry
 
-- fix mise-ghcup plugin managed tools descriptions by @risu729 in [#6411](https://github.com/jdx/mise/pull/6411)
-- add Tinymist by @3w36zj6 in [#6412](https://github.com/jdx/mise/pull/6412)
-- revert djinni backend to ubi by @risu729 in [#6410](https://github.com/jdx/mise/pull/6410)
+- use version_prefix for github backends by @risu729 in [#6409](https://github.com/jdx/mise/pull/6409)
+- fix hivemind by @mnm364 in [#6431](https://github.com/jdx/mise/pull/6431)
+- revert opam/k3kcli backends to ubi by @risu729 in [#6406](https://github.com/jdx/mise/pull/6406)
+
+## [2025.9.19](https://github.com/jdx/mise/compare/v2025.9.18..v2025.9.19) - 2025-09-25
 
 ### 🚀 Features
 
@@ -2127,15 +1807,17 @@
 
 - **(vfox)** replace flaky external tests with local dummy plugin by @jdx in [#6403](https://github.com/jdx/mise/pull/6403)
 
+### 📦 Registry
+
+- fix mise-ghcup plugin managed tools descriptions by @risu729 in [#6411](https://github.com/jdx/mise/pull/6411)
+- add Tinymist by @3w36zj6 in [#6412](https://github.com/jdx/mise/pull/6412)
+- revert djinni backend to ubi by @risu729 in [#6410](https://github.com/jdx/mise/pull/6410)
+
 ### New Contributors
 
 - @Copilot made their first contribution in [#6415](https://github.com/jdx/mise/pull/6415)
 
 ## [2025.9.18](https://github.com/jdx/mise/compare/v2025.9.17..v2025.9.18) - 2025-09-25
-
-### 📦 Registry
-
-- replace amplify-cli github backend with ubi by @eggplants in [#6396](https://github.com/jdx/mise/pull/6396)
 
 ### 🚀 Features
 
@@ -2150,6 +1832,10 @@
 ### 🧪 Testing
 
 - **(test-tool)** uninstall all versions and clear cache before installation by @jdx in [#6393](https://github.com/jdx/mise/pull/6393)
+
+### 📦 Registry
+
+- replace amplify-cli github backend with ubi by @eggplants in [#6396](https://github.com/jdx/mise/pull/6396)
 
 ### New Contributors
 
@@ -2176,10 +1862,6 @@
 
 ## [2025.9.16](https://github.com/jdx/mise/compare/v2025.9.15..v2025.9.16) - 2025-09-22
 
-### 📦 Registry
-
-- use npm backend for zbctl by @risu729 in [#6379](https://github.com/jdx/mise/pull/6379)
-
 ### 🐛 Bug Fixes
 
 - **(aqua)** remove blake3 support from aqua checksum algorithms by @risu729 in [#6370](https://github.com/jdx/mise/pull/6370)
@@ -2191,15 +1873,15 @@
 
 - minisign doesn't require cli by @risu729 in [#6369](https://github.com/jdx/mise/pull/6369)
 
+### 📦 Registry
+
+- use npm backend for zbctl by @risu729 in [#6379](https://github.com/jdx/mise/pull/6379)
+
 ### Chore
 
 - ignore renovate new bot name by @risu729 in [#6364](https://github.com/jdx/mise/pull/6364)
 
 ## [2025.9.15](https://github.com/jdx/mise/compare/v2025.9.14..v2025.9.15) - 2025-09-21
-
-### 📦 Registry
-
-- add missing cargo backends by @jayvdb in [#6307](https://github.com/jdx/mise/pull/6307)
 
 ### 🚀 Features
 
@@ -2225,6 +1907,10 @@
 
 - pin dependencies by @renovate[bot] in [#6243](https://github.com/jdx/mise/pull/6243)
 
+### 📦 Registry
+
+- add missing cargo backends by @jayvdb in [#6307](https://github.com/jdx/mise/pull/6307)
+
 ### Chore
 
 - **(install.sh)** add `MISE_INSTALL_MUSL` to force installing musl variants on Linux by @malept in [#6355](https://github.com/jdx/mise/pull/6355)
@@ -2244,11 +1930,6 @@
 - @lish82 made their first contribution in [#6348](https://github.com/jdx/mise/pull/6348)
 
 ## [2025.9.13](https://github.com/jdx/mise/compare/v2025.9.12..v2025.9.13) - 2025-09-19
-
-### 📦 Registry
-
-- remove deprecated virtualos by @jdx in [166379f](https://github.com/jdx/mise/commit/166379f71c79fccacfc980dd14d4e18642c7d1e5)
-- add trufflehog ([aqua:trufflesecurity/trufflehog](https://github.com/trufflesecurity/trufflehog)) by @risu729 in [#6316](https://github.com/jdx/mise/pull/6316)
 
 ### 🚀 Features
 
@@ -2276,6 +1957,11 @@
 - update rust crate console to v0.16.1 by @renovate[bot] in [#6336](https://github.com/jdx/mise/pull/6336)
 - update rust crate indexmap to v2.11.4 by @renovate[bot] in [#6337](https://github.com/jdx/mise/pull/6337)
 
+### 📦 Registry
+
+- remove deprecated virtualos by @jdx in [166379f](https://github.com/jdx/mise/commit/166379f71c79fccacfc980dd14d4e18642c7d1e5)
+- add trufflehog ([aqua:trufflesecurity/trufflehog](https://github.com/trufflesecurity/trufflehog)) by @risu729 in [#6316](https://github.com/jdx/mise/pull/6316)
+
 ### Chore
 
 - fixing typos by @Its-Just-Nans in [#6331](https://github.com/jdx/mise/pull/6331)
@@ -2299,10 +1985,6 @@
 
 ## [2025.9.11](https://github.com/jdx/mise/compare/v2025.9.10..v2025.9.11) - 2025-09-16
 
-### 📦 Registry
-
-- indicate aws-cli is v2 by @jayvdb in [#6300](https://github.com/jdx/mise/pull/6300)
-
 ### 🚀 Features
 
 - **(ci)** run all registry tools when workflow_dispatch is triggered by @jdx in [#6295](https://github.com/jdx/mise/pull/6295)
@@ -2323,6 +2005,10 @@
 - fix mkdir paths by @risu729 in [#6298](https://github.com/jdx/mise/pull/6298)
 - fix rust profile default by @risu729 in [#6305](https://github.com/jdx/mise/pull/6305)
 
+### 📦 Registry
+
+- indicate aws-cli is v2 by @jayvdb in [#6300](https://github.com/jdx/mise/pull/6300)
+
 ### Chore
 
 - **(aqua-registry)** remove unused aqua-registry files by @jdx in [#6294](https://github.com/jdx/mise/pull/6294)
@@ -2335,10 +2021,6 @@
 - @jayvdb made their first contribution in [#6300](https://github.com/jdx/mise/pull/6300)
 
 ## [2025.9.10](https://github.com/jdx/mise/compare/v2025.9.9..v2025.9.10) - 2025-09-13
-
-### 📦 Registry
-
-- use asdf to install semver-tool by @jylenhof in [#6233](https://github.com/jdx/mise/pull/6233)
 
 ### 🐛 Bug Fixes
 
@@ -2359,6 +2041,10 @@
 
 - update rust crate chrono to v0.4.42 by @renovate[bot] in [#6274](https://github.com/jdx/mise/pull/6274)
 - update taiki-e/install-action digest to 0154864 by @renovate[bot] in [#6273](https://github.com/jdx/mise/pull/6273)
+
+### 📦 Registry
+
+- use asdf to install semver-tool by @jylenhof in [#6233](https://github.com/jdx/mise/pull/6233)
 
 ### Chore
 
@@ -2557,10 +2243,6 @@
 
 ## [2025.8.21](https://github.com/jdx/mise/compare/v2025.8.20..v2025.8.21) - 2025-08-27
 
-### 📦 Registry
-
-- prefer 1password asdf plugin for ls-remote by @risu729 in [#6116](https://github.com/jdx/mise/pull/6116)
-
 ### 🚀 Features
 
 - allow use of templates in task confirmation by @roele in [#6129](https://github.com/jdx/mise/pull/6129)
@@ -2572,6 +2254,10 @@
 ### 📚 Documentation
 
 - Split run command so that copy button is useful by @anujdeshpande in [#6099](https://github.com/jdx/mise/pull/6099)
+
+### 📦 Registry
+
+- prefer 1password asdf plugin for ls-remote by @risu729 in [#6116](https://github.com/jdx/mise/pull/6116)
 
 ### New Contributors
 
@@ -2585,14 +2271,14 @@
 
 ## [2025.8.19](https://github.com/jdx/mise/compare/v2025.8.18..v2025.8.19) - 2025-08-22
 
+### 🐛 Bug Fixes
+
+- **(aqua)** bake in aliased registries by @risu729 in [#6105](https://github.com/jdx/mise/pull/6105)
+
 ### 📦 Registry
 
 - update kubectl aqua alias by @malept in [#6107](https://github.com/jdx/mise/pull/6107)
 - remove asdf plugin for watchexec by @risu729 in [#6106](https://github.com/jdx/mise/pull/6106)
-
-### 🐛 Bug Fixes
-
-- **(aqua)** bake in aliased registries by @risu729 in [#6105](https://github.com/jdx/mise/pull/6105)
 
 ## [2025.8.18](https://github.com/jdx/mise/compare/v2025.8.17..v2025.8.18) - 2025-08-22
 
@@ -2601,10 +2287,6 @@
 - **(env)** add --redacted and --values flags to env command by @jdx in [#6103](https://github.com/jdx/mise/pull/6103)
 
 ## [2025.8.17](https://github.com/jdx/mise/compare/v2025.8.16..v2025.8.17) - 2025-08-22
-
-### 📦 Registry
-
-- remove asdf plugin for zoxide by @risu729 in [#6100](https://github.com/jdx/mise/pull/6100)
 
 ### 🐛 Bug Fixes
 
@@ -2618,6 +2300,10 @@
 
 - update apple-actions/import-codesign-certs digest to 95e84a1 by @renovate[bot] in [#6093](https://github.com/jdx/mise/pull/6093)
 - update taiki-e/install-action digest to 36fe651 by @renovate[bot] in [#6094](https://github.com/jdx/mise/pull/6094)
+
+### 📦 Registry
+
+- remove asdf plugin for zoxide by @risu729 in [#6100](https://github.com/jdx/mise/pull/6100)
 
 ### Chore
 
@@ -2679,10 +2365,6 @@
 
 ## [2025.8.12](https://github.com/jdx/mise/compare/v2025.8.11..v2025.8.12) - 2025-08-17
 
-### 📦 Registry
-
-- support tenv idiomatic files by @risu729 in [#6050](https://github.com/jdx/mise/pull/6050)
-
 ### 🚀 Features
 
 - respect PREFER_OFFLINE for aqua package metadata fetching by @jdx in [#6058](https://github.com/jdx/mise/pull/6058)
@@ -2697,16 +2379,15 @@
 - update actions/checkout digest to 08eba0b by @renovate[bot] in [#6030](https://github.com/jdx/mise/pull/6030)
 - update actions/cache digest to 0400d5f by @renovate[bot] in [#5957](https://github.com/jdx/mise/pull/5957)
 
+### 📦 Registry
+
+- support tenv idiomatic files by @risu729 in [#6050](https://github.com/jdx/mise/pull/6050)
+
 ### Chore
 
 - check for warnings in gha with rust stable by @jdx in [#6055](https://github.com/jdx/mise/pull/6055)
 
 ## [2025.8.11](https://github.com/jdx/mise/compare/v2025.8.10..v2025.8.11) - 2025-08-17
-
-### 📦 Registry
-
-- add container-use ([aqua:dagger/container-use](https://github.com/dagger/container-use)) by @TyceHerrman in [#6029](https://github.com/jdx/mise/pull/6029)
-- add prek ([aqua:j178/prek](https://github.com/j178/prek)) by @HenryZhang-ZHY in [#6023](https://github.com/jdx/mise/pull/6023)
 
 ### 🚀 Features
 
@@ -2724,6 +2405,11 @@
 - added openSUSE zypper install instructions by @lfromanini in [#6037](https://github.com/jdx/mise/pull/6037)
 - update `contributing.md` for discussions by @br3ndonland in [#6047](https://github.com/jdx/mise/pull/6047)
 
+### 📦 Registry
+
+- add container-use ([aqua:dagger/container-use](https://github.com/dagger/container-use)) by @TyceHerrman in [#6029](https://github.com/jdx/mise/pull/6029)
+- add prek ([aqua:j178/prek](https://github.com/j178/prek)) by @HenryZhang-ZHY in [#6023](https://github.com/jdx/mise/pull/6023)
+
 ### Chore
 
 - fix warnings by @jdx in [#6043](https://github.com/jdx/mise/pull/6043)
@@ -2738,14 +2424,6 @@
 
 ## [2025.8.10](https://github.com/jdx/mise/compare/v2025.8.9..v2025.8.10) - 2025-08-14
 
-### 📦 Registry
-
-- enable kubecolor test by @risu729 in [#6008](https://github.com/jdx/mise/pull/6008)
-- fix os specific backends for usage by @risu729 in [#6007](https://github.com/jdx/mise/pull/6007)
-- use aqua backend for restish by @risu729 in [#5986](https://github.com/jdx/mise/pull/5986)
-- add cfssljson ([aqua:cloudflare/cfssl/cfssljson](https://github.com/cloudflare/cfssl/cfssljson)) by @disintegrator in [#6013](https://github.com/jdx/mise/pull/6013)
-- add claude-squad ([aqua:smtg-ai/claude-squad](https://github.com/smtg-ai/claude-squad)) by @TyceHerrman in [#5894](https://github.com/jdx/mise/pull/5894)
-
 ### 🚀 Features
 
 - **(aqua)** make bin paths executable by @risu729 in [#6010](https://github.com/jdx/mise/pull/6010)
@@ -2757,18 +2435,19 @@
 - version prefix detection by @risu729 in [#5943](https://github.com/jdx/mise/pull/5943)
 - respect MISE_DEFAULT_CONFIG_FILENAME by @risu729 in [#5899](https://github.com/jdx/mise/pull/5899)
 
+### 📦 Registry
+
+- enable kubecolor test by @risu729 in [#6008](https://github.com/jdx/mise/pull/6008)
+- fix os specific backends for usage by @risu729 in [#6007](https://github.com/jdx/mise/pull/6007)
+- use aqua backend for restish by @risu729 in [#5986](https://github.com/jdx/mise/pull/5986)
+- add cfssljson ([aqua:cloudflare/cfssl/cfssljson](https://github.com/cloudflare/cfssl/cfssljson)) by @disintegrator in [#6013](https://github.com/jdx/mise/pull/6013)
+- add claude-squad ([aqua:smtg-ai/claude-squad](https://github.com/smtg-ai/claude-squad)) by @TyceHerrman in [#5894](https://github.com/jdx/mise/pull/5894)
+
 ### New Contributors
 
 - @disintegrator made their first contribution in [#6013](https://github.com/jdx/mise/pull/6013)
 
 ## [2025.8.9](https://github.com/jdx/mise/compare/v2025.8.8..v2025.8.9) - 2025-08-13
-
-### 📦 Registry
-
-- add vfox-yarn as primary yarn backend by @jdx in [#5982](https://github.com/jdx/mise/pull/5982)
-- add missing description field for a lot of tools by @jylenhof in [#5966](https://github.com/jdx/mise/pull/5966)
-- rename benthos to redpanda-connect by @risu729 in [#5984](https://github.com/jdx/mise/pull/5984)
-- rename coq to rocq by @risu729 in [#5985](https://github.com/jdx/mise/pull/5985)
 
 ### 🚀 Features
 
@@ -2798,6 +2477,13 @@
 - update docker/metadata-action digest to c1e5197 by @renovate[bot] in [#5961](https://github.com/jdx/mise/pull/5961)
 - update docker/login-action digest to 184bdaa by @renovate[bot] in [#5958](https://github.com/jdx/mise/pull/5958)
 
+### 📦 Registry
+
+- add vfox-yarn as primary yarn backend by @jdx in [#5982](https://github.com/jdx/mise/pull/5982)
+- add missing description field for a lot of tools by @jylenhof in [#5966](https://github.com/jdx/mise/pull/5966)
+- rename benthos to redpanda-connect by @risu729 in [#5984](https://github.com/jdx/mise/pull/5984)
+- rename coq to rocq by @risu729 in [#5985](https://github.com/jdx/mise/pull/5985)
+
 ### Chore
 
 - cargo up by @jdx in [#5992](https://github.com/jdx/mise/pull/5992)
@@ -2809,6 +2495,10 @@
 
 ## [2025.8.8](https://github.com/jdx/mise/compare/v2025.8.7..v2025.8.8) - 2025-08-11
 
+### 📚 Documentation
+
+- add documentation for os field in tool configuration by @jdx in [#5947](https://github.com/jdx/mise/pull/5947)
+
 ### 📦 Registry
 
 - add bob ([aqua:MordechaiHadad/bob](https://github.com/MordechaiHadad/bob)) by @TyceHerrman in [#5914](https://github.com/jdx/mise/pull/5914)
@@ -2816,10 +2506,6 @@
 - filter out installer for podman by @risu729 in [#5974](https://github.com/jdx/mise/pull/5974)
 - use pipx aqua backend by @itochan in [#5971](https://github.com/jdx/mise/pull/5971)
 - only use aqua backend for yarn on windows by @jdx in [#5978](https://github.com/jdx/mise/pull/5978)
-
-### 📚 Documentation
-
-- add documentation for os field in tool configuration by @jdx in [#5947](https://github.com/jdx/mise/pull/5947)
 
 ### Chore
 
@@ -2834,16 +2520,20 @@
 
 ## [2025.8.7](https://github.com/jdx/mise/compare/v2025.8.6..v2025.8.7) - 2025-08-06
 
-### 📦 Registry
-
-- add python to gcloud dependencies by @risu729 in [#5936](https://github.com/jdx/mise/pull/5936)
-
 ### 🐛 Bug Fixes
 
 - **(lockfile)** fix multiple lockfile issues with version management by @jdx in [#5907](https://github.com/jdx/mise/pull/5907)
 - **(toolset)** properly handle MISE_ADD_PATH from plugins by @jdx in [#5937](https://github.com/jdx/mise/pull/5937)
 
+### 📦 Registry
+
+- add python to gcloud dependencies by @risu729 in [#5936](https://github.com/jdx/mise/pull/5936)
+
 ## [2025.8.6](https://github.com/jdx/mise/compare/v2025.8.5..v2025.8.6) - 2025-08-06
+
+### 🚀 Features
+
+- **(tool-stub)** improve stub generation with bin inference, error handling, and fetch mode by @jdx in [#5932](https://github.com/jdx/mise/pull/5932)
 
 ### 📦 Registry
 
@@ -2852,11 +2542,18 @@
 - add oxker ([aqua:mrjackwills/oxker](https://github.com/mrjackwills/oxker)) by @TyceHerrman in [#5929](https://github.com/jdx/mise/pull/5929)
 - add tssh ([aqua:trzsz/trzsz-ssh](https://github.com/trzsz/trzsz-ssh)) by @TyceHerrman in [#5928](https://github.com/jdx/mise/pull/5928)
 
+## [2025.8.5](https://github.com/jdx/mise/compare/v2025.8.4..v2025.8.5) - 2025-08-05
+
 ### 🚀 Features
 
-- **(tool-stub)** improve stub generation with bin inference, error handling, and fetch mode by @jdx in [#5932](https://github.com/jdx/mise/pull/5932)
+- **(ci)** enhance registry PR validation with strict format checking by @jdx in [#5897](https://github.com/jdx/mise/pull/5897)
+- add Model Context Protocol (MCP) server command by @jdx in [#5920](https://github.com/jdx/mise/pull/5920)
 
-## [2025.8.5](https://github.com/jdx/mise/compare/v2025.8.4..v2025.8.5) - 2025-08-05
+### 🐛 Bug Fixes
+
+- **(elixir)** support `.exenv-version` by @risu729 in [#5901](https://github.com/jdx/mise/pull/5901)
+- **(env)** improve PATH handling for env._.path directives by @jdx in [#5922](https://github.com/jdx/mise/pull/5922)
+- allow devcontainer creation without a git repository by @acesyde in [#5891](https://github.com/jdx/mise/pull/5891)
 
 ### 📦 Registry
 
@@ -2869,17 +2566,6 @@
 - add oxlint ([aqua:oxc-project/oxc/oxlint](https://github.com/oxc-project/oxc/oxlint)) by @TyceHerrman in [#5919](https://github.com/jdx/mise/pull/5919)
 - add container ([aqua:apple/container](https://github.com/apple/container)) by @TyceHerrman in [#5917](https://github.com/jdx/mise/pull/5917)
 - support `.packer-version` by @risu729 in [#5900](https://github.com/jdx/mise/pull/5900)
-
-### 🚀 Features
-
-- **(ci)** enhance registry PR validation with strict format checking by @jdx in [#5897](https://github.com/jdx/mise/pull/5897)
-- add Model Context Protocol (MCP) server command by @jdx in [#5920](https://github.com/jdx/mise/pull/5920)
-
-### 🐛 Bug Fixes
-
-- **(elixir)** support `.exenv-version` by @risu729 in [#5901](https://github.com/jdx/mise/pull/5901)
-- **(env)** improve PATH handling for env._.path directives by @jdx in [#5922](https://github.com/jdx/mise/pull/5922)
-- allow devcontainer creation without a git repository by @acesyde in [#5891](https://github.com/jdx/mise/pull/5891)
 
 ### Chore
 
@@ -2899,10 +2585,6 @@
 - **(tasks)** **breaking** Add environment variable directives for mise tasks by @jdx in [#5638](https://github.com/jdx/mise/pull/5638)
 
 ## [2025.8.3](https://github.com/jdx/mise/compare/v2025.8.2..v2025.8.3) - 2025-08-03
-
-### 📦 Registry
-
-- add git-lfs ([aqua:git-lfs/git-lfs](https://github.com/git-lfs/git-lfs)) by @TyceHerrman in [#5885](https://github.com/jdx/mise/pull/5885)
 
 ### 🚀 Features
 
@@ -2924,6 +2606,10 @@
 ### ⚡ Performance
 
 - reduce render env task calls by @jdx in [#5888](https://github.com/jdx/mise/pull/5888)
+
+### 📦 Registry
+
+- add git-lfs ([aqua:git-lfs/git-lfs](https://github.com/git-lfs/git-lfs)) by @TyceHerrman in [#5885](https://github.com/jdx/mise/pull/5885)
 
 ## [2025.8.2](https://github.com/jdx/mise/compare/v2025.8.1..v2025.8.2) - 2025-08-02
 

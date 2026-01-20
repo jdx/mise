@@ -98,12 +98,12 @@ fn find_paths_to_fix(deps: &str, lib_dir: &Path) -> Vec<(String, PathBuf)> {
         .skip(1) // Skip the first line (file path)
         .filter_map(|line| {
             let line = line.trim();
-            if let Some(old_path) = extract_build_path(line) {
-                if let Some(lib_name) = Path::new(&old_path).file_name() {
-                    let new_path = lib_dir.join(lib_name);
-                    if new_path.exists() {
-                        return Some((old_path, new_path));
-                    }
+            if let Some(old_path) = extract_build_path(line)
+                && let Some(lib_name) = Path::new(&old_path).file_name()
+            {
+                let new_path = lib_dir.join(lib_name);
+                if new_path.exists() {
+                    return Some((old_path, new_path));
                 }
             }
             None
@@ -117,13 +117,13 @@ fn verify_signature(path: &Path) {
         .args(["--verify", path.to_str().unwrap_or("")])
         .output();
 
-    if let Ok(output) = result {
-        if !output.status.success() {
-            debug!(
-                "Binary {} has invalid or missing signature, skipping signature verification",
-                path.display()
-            );
-        }
+    if let Ok(output) = result
+        && !output.status.success()
+    {
+        debug!(
+            "Binary {} has invalid or missing signature, skipping signature verification",
+            path.display()
+        );
     }
 }
 

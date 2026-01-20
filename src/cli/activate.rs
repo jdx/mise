@@ -1,9 +1,11 @@
 use std::path::{Path, PathBuf};
 
+use crate::config::Settings;
 use crate::env::PATH_KEY;
 use crate::file::touch_dir;
 use crate::path_env::PathEnv;
 use crate::shell::{ActivateOptions, ActivatePrelude, Shell, ShellType, get_shell};
+use crate::toolset::env_cache::CachedEnv;
 use crate::{dirs, env};
 use eyre::Result;
 use itertools::Itertools;
@@ -114,6 +116,17 @@ impl Activate {
         if let Some(prepend_path) = self.prepend_path(exe_dir) {
             prelude.push(prepend_path);
         }
+
+        // Generate encryption key for env cache if caching is enabled
+        // This key is session-scoped and lost when the shell closes
+        if Settings::get().env_cache {
+            let key = CachedEnv::ensure_encryption_key();
+            prelude.push(ActivatePrelude::SetEnv(
+                "__MISE_ENV_CACHE_KEY".to_string(),
+                key,
+            ));
+        }
+
         miseprint!(
             "{}",
             shell.activate(ActivateOptions {

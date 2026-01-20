@@ -242,5 +242,37 @@ assert_contains "mise prepare --list" "composer"
 assert_contains "mise prepare --list" "composer.lock"
 assert_contains "mise prepare --dry-run" "composer"
 
+# Test freshness detection with output directories
+rm -f composer.lock composer.json
+
+cat >mise.toml <<'EOF'
+[prepare.custom_venv]
+sources = ["requirements.txt"]
+outputs = [".venv"]
+run = "echo PREPARE_RAN"
+EOF
+
+cat >requirements.txt <<'EOF'
+requests==2.31.0
+EOF
+
+# Test 1: No output directory exists → should be stale
+rm -rf .venv
+assert_contains "mise prepare --dry-run" "custom_venv"
+
+# Test 2: Output exists and is newer than sources → should be fresh
+# Use explicit timestamps: source=2023, output=2024
+mkdir -p .venv
+touch -t 202301010000 requirements.txt # Jan 1, 2023
+touch -t 202401010000 .venv/pyvenv.cfg # Jan 1, 2024 (newer)
+# In dry-run mode, fresh providers produce no output, so check provider name is absent
+assert_not_contains "mise prepare --dry-run" "custom_venv"
+
+# Test 3: Sources updated after output → should be stale
+# source=2025 (newer than output=2024)
+touch -t 202501010000 requirements.txt # Jan 1, 2025
+assert_contains "mise prepare --dry-run" "custom_venv"
+
 # Clean up
+rm -rf .venv requirements.txt
 rm -f composer.lock composer.json package.json mise.toml schema.graphql

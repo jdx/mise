@@ -239,6 +239,10 @@ pub struct EnvResults {
     pub env_scripts: Vec<PathBuf>,
     pub redactions: Vec<String>,
     pub tool_add_paths: Vec<PathBuf>,
+    /// Files to watch for cache invalidation (from modules and _.source directives)
+    pub watch_files: Vec<PathBuf>,
+    /// True if any directive declared cacheable=false or is a dynamic module
+    pub has_uncacheable: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -277,6 +281,8 @@ impl EnvResults {
             env_scripts: Vec::new(),
             redactions: Vec::new(),
             tool_add_paths: Vec::new(),
+            watch_files: Vec::new(),
+            has_uncacheable: false,
         };
         let normalize_path = |config_root: &Path, p: PathBuf| {
             let p = p.strip_prefix("./").unwrap_or(&p);

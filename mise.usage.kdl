@@ -155,10 +155,10 @@ cmd cache help="Manage the mise cache" {
 }
 cmd completion help="Generate shell completions" {
     alias complete completions hide=#true
-    after_long_help "Examples:\n\n    $ mise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise\n    $ mise completion zsh  > /usr/local/share/zsh/site-functions/_mise\n    $ mise completion fish > ~/.config/fish/completions/mise.fish\n"
+    after_long_help "Examples:\n\n    $ mise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise\n    $ mise completion zsh  > /usr/local/share/zsh/site-functions/_mise\n    $ mise completion fish > ~/.config/fish/completions/mise.fish\n    $ mise completion powershell >> $PROFILE\n"
     flag "-s --shell" help="Shell type to generate completions for" hide=#true {
         arg <SHELL_TYPE> {
-            choices bash fish zsh
+            choices bash fish powershell zsh
         }
     }
     flag --include-bash-completion-lib help="Include the bash completion library in the bash completion script" {
@@ -168,7 +168,7 @@ cmd completion help="Generate shell completions" {
         long_help "Always use usage for completions.\nCurrently, usage is the default for fish and bash but not zsh since it has a few quirks\nto work out first.\n\nThis requires the `usage` CLI to be installed.\nhttps://usage.jdx.dev"
     }
     arg "[SHELL]" help="Shell type to generate completions for" required=#false {
-        choices bash fish zsh
+        choices bash fish powershell zsh
     }
 }
 cmd config help="Manage config files" {
@@ -281,6 +281,7 @@ cmd exec help="Execute a command with tool(s) set" {
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg <JOBS>
     }
+    flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-prepare help="Skip automatic dependency preparation"
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
     arg "[TOOL@VERSION]…" help="Tool(s) to start e.g.: node@20 python@3.10" required=#false var=#true
@@ -712,6 +713,7 @@ cmd run restart_token=::: help="Run task(s)" {
     flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
         arg <TOOL@VERSION>
     }
+    flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-cache help="Do not use cache on remote tasks"
     flag --no-prepare help="Skip automatic dependency preparation"
     flag --no-timings help="Hides elapsed time after each task completes" {
@@ -1020,6 +1022,7 @@ cmd tasks help="Manage tasks" {
         flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
             arg <TOOL@VERSION>
         }
+        flag --fresh-env help="Bypass the environment cache and recompute the environment"
         flag --no-cache help="Do not use cache on remote tasks"
         flag --no-prepare help="Skip automatic dependency preparation"
         flag --no-timings help="Hides elapsed time after each task completes" {

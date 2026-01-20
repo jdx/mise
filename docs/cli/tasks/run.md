@@ -111,6 +111,10 @@ Don't show any output except for errors
 
 Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
 
+### `--fresh-env`
+
+Bypass the environment cache and recompute the environment
+
 ### `--no-cache`
 
 Do not use cache on remote tasks

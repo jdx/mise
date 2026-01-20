@@ -179,6 +179,7 @@ impl Backend for UnifiedGitBackend {
                     version: self.strip_version_prefix(&r.tag_name),
                     created_at: r.released_at,
                     release_url: Some(format!("{}/-/releases/{}", web_url_base, r.tag_name)),
+                    ..Default::default()
                 })
                 .collect()
         } else if self.is_forgejo() {
@@ -190,6 +191,7 @@ impl Backend for UnifiedGitBackend {
                     version: self.strip_version_prefix(&r.tag_name),
                     created_at: Some(r.created_at),
                     release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
+                    ..Default::default()
                 })
                 .collect()
         } else {
@@ -201,6 +203,7 @@ impl Backend for UnifiedGitBackend {
                     version: self.strip_version_prefix(&r.tag_name),
                     created_at: Some(r.created_at),
                     release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
+                    ..Default::default()
                 })
                 .collect()
         };

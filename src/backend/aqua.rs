@@ -245,6 +245,7 @@ impl Backend for AquaBackend {
                     version: version.to_string(),
                     created_at,
                     release_url: Some(release_url),
+                    ..Default::default()
                 });
             }
         }
