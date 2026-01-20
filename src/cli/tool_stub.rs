@@ -522,27 +522,22 @@ async fn execute_with_tool_request(
         Ok(bin_path) => {
             // Get the environment with proper PATH from toolset
             let mut env = toolset.env_with_path(config).await?;
+            let mut path_env = crate::path_env::PathEnv::from_iter(crate::env::PATH.clone());
+            for p in toolset.list_paths(config).await {
+                path_env.add(p);
+            }
 
-            // Also include dependency paths (e.g., node for npm packages)
-            // This ensures runtime dependencies are available when executing the tool
-            if let Some((backend, _tv)) = toolset.list_current_installed_versions(config).first() {
-                if let Ok(dep_ts) = backend.dependency_toolset(config).await {
-                    let dep_paths = dep_ts.list_paths(config).await;
-                    if !dep_paths.is_empty() {
-                        // Prepend dependency paths to PATH
-                        let mut path_env = crate::path_env::PathEnv::from_iter(crate::env::PATH.clone());
-                        // First add existing tool paths
-                        for p in toolset.list_paths(config).await {
-                            path_env.add(p);
-                        }
-                        // Then add dependency paths
-                        for p in dep_paths {
-                            path_env.add(p);
-                        }
-                        env.insert(crate::env::PATH_KEY.to_string(), path_env.to_string());
-                    }
+            if let Some((backend, tv)) = toolset.list_current_installed_versions(config).first() {
+                let btp = backend
+                    .dependency_toolset(config)
+                    .await?
+                    .list_paths(config)
+                    .await;
+                for p in btp {
+                    path_env.add(p);
                 }
             }
+            env.insert(crate::env::PATH_KEY.to_string(), path_env.to_string());
 
             crate::cli::exec::exec_program(bin_path, args, env)
         }
