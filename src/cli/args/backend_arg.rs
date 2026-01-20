@@ -218,14 +218,13 @@ impl BackendArg {
             }
         }
 
-        if !self.explicit_backend {
-            if let Some(registry_full) = REGISTRY
+        if !self.explicit_backend
+            && let Some(registry_full) = REGISTRY
                 .get(short)
                 .and_then(|rt| rt.backends().first().cloned())
             {
                 return registry_full.to_string();
             }
-        }
 
         if let Some(full) = &self.full {
             full.clone()
