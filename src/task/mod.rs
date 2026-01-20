@@ -1432,7 +1432,7 @@ mod tests {
 
     // Thread-local storage to capture parser state during tests
     thread_local! {
-        static CAPTURED_PARSER_FIELDS: Mutex<Option<Vec<String>>> = Mutex::new(None);
+        static CAPTURED_PARSER_FIELDS: Mutex<Option<Vec<String>>> = const { Mutex::new(None) };
     }
 
     pub(super) fn capture_parsed_fields(fields: Vec<String>) {
