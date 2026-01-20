@@ -280,6 +280,7 @@ mod tests {
             Some(tool.to_string()),
             tool.to_string(),
             None,
+            true,
         );
         NPMBackend::from_arg(ba)
     }

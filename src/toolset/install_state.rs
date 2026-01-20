@@ -31,6 +31,7 @@ pub struct InstallStateTool {
     pub short: String,
     pub full: Option<String>,
     pub versions: Vec<String>,
+    pub explicit_backend: bool,
 }
 
 static INSTALL_STATE_PLUGINS: Mutex<Option<Arc<InstallStatePlugins>>> = Mutex::new(None);
@@ -98,6 +99,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             let backend_meta = read_backend_meta(&dir).unwrap_or_default();
             let short = backend_meta.first().unwrap_or(&dir).to_string();
             let full = backend_meta.get(1).cloned();
+            let explicit_backend = backend_meta.get(2).is_some_and(|v| v == "1");
             let dir = dirs::INSTALLS.join(&dir);
             let versions = file::dir_subdirs(&dir)
                 .unwrap_or_else(|err| {
@@ -119,6 +121,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 short: short.clone(),
                 full,
                 versions,
+                explicit_backend,
             };
             time!("init_tools {short}");
             (short, tool)
@@ -142,6 +145,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 short: short.clone(),
                 full: Some(full.clone()),
                 versions: Default::default(),
+                explicit_backend: true,
             });
         tool.full = Some(full);
     }
@@ -281,7 +285,8 @@ pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
         full if full.starts_with("core:") => ba.full(),
         _ => ba.full_with_opts(),
     };
-    let doc = format!("{}\n{}", ba.short, full);
+    let explicit = if ba.has_explicit_backend() { "1" } else { "0" };
+    let doc = format!("{}\n{}\n{}", ba.short, full, explicit);
     file::write(backend_meta_path(&ba.short), doc.trim())?;
     Ok(())
 }

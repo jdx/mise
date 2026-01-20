@@ -31,6 +31,7 @@ pub struct BackendArg {
     /// ~/.local/share/mise/downloads/<THIS>
     pub downloads_path: PathBuf,
     pub opts: Option<ToolVersionOptions>,
+    explicit_backend: bool,
     // TODO: make this not a hash key anymore to use this
     // backend: OnceCell<ABackend>,
 }
@@ -44,28 +45,37 @@ impl<A: AsRef<str>> From<A> for BackendArg {
 
 impl From<InstallStateTool> for BackendArg {
     fn from(ist: InstallStateTool) -> Self {
-        Self::new(ist.short, ist.full)
+        let (short, tool_name, opts) = parse_backend_components(&ist.short, ist.full.as_ref());
+        Self::new_raw(short, ist.full, tool_name, opts, ist.explicit_backend)
     }
+}
+
+fn parse_backend_components(
+    short: &str,
+    full: Option<&String>,
+) -> (String, String, Option<ToolVersionOptions>) {
+    let short = unalias_backend(short).to_string();
+    let (_backend, mut tool_name) = full
+        .unwrap_or(&short)
+        .split_once(':')
+        .unwrap_or(("", full.unwrap_or(&short)));
+    let short = regex!(r#"\[.+\]$"#).replace_all(&short, "").to_string();
+
+    let mut opts = None;
+    if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(tool_name) {
+        tool_name = c.get(1).unwrap().as_str();
+        opts = Some(parse_tool_options(c.get(2).unwrap().as_str()));
+    }
+
+    (short, tool_name.to_string(), opts)
 }
 
 impl BackendArg {
     #[requires(!short.is_empty())]
     pub fn new(short: String, full: Option<String>) -> Self {
-        let short = unalias_backend(&short).to_string();
-        let (_backend, mut tool_name) = full
-            .as_ref()
-            .unwrap_or(&short)
-            .split_once(':')
-            .unwrap_or(("", full.as_ref().unwrap_or(&short)));
-        let short = regex!(r#"\[.+\]$"#).replace_all(&short, "").to_string();
-
-        let mut opts = None;
-        if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(tool_name) {
-            tool_name = c.get(1).unwrap().as_str();
-            opts = Some(parse_tool_options(c.get(2).unwrap().as_str()));
-        }
-
-        Self::new_raw(short.clone(), full.clone(), tool_name.to_string(), opts)
+        let explicit_backend = full.is_some();
+        let (short, tool_name, opts) = parse_backend_components(&short, full.as_ref());
+        Self::new_raw(short, full, tool_name, opts, explicit_backend)
     }
 
     pub fn new_raw(
@@ -73,6 +83,7 @@ impl BackendArg {
         full: Option<String>,
         tool_name: String,
         opts: Option<ToolVersionOptions>,
+        explicit_backend: bool,
     ) -> Self {
         let pathname = short.to_kebab_case();
         Self {
@@ -83,6 +94,7 @@ impl BackendArg {
             installs_path: dirs::INSTALLS.join(&pathname),
             downloads_path: dirs::DOWNLOADS.join(&pathname),
             opts,
+            explicit_backend,
             // backend: Default::default(),
         }
     }
@@ -205,6 +217,16 @@ impl BackendArg {
                 return backend;
             }
         }
+
+        if !self.explicit_backend {
+            if let Some(registry_full) = REGISTRY
+                .get(short)
+                .and_then(|rt| rt.backends().first().cloned())
+            {
+                return registry_full.to_string();
+            }
+        }
+
         if let Some(full) = &self.full {
             full.clone()
         } else if let Some(full) = install_state::get_tool_full(short) {
@@ -311,6 +333,10 @@ impl BackendArg {
 
     pub fn set_opts(&mut self, opts: Option<ToolVersionOptions>) {
         self.opts = opts;
+    }
+
+    pub fn has_explicit_backend(&self) -> bool {
+        self.explicit_backend
     }
 
     pub fn tool_name(&self) -> String {
@@ -516,6 +542,7 @@ mod tests {
             Some("node[foo=bar]".to_string()),
             "node".to_string(),
             None,
+            true,
         );
         assert_str_eq!("node[foo=bar]", fa.full_with_opts());
 
@@ -524,6 +551,7 @@ mod tests {
             Some("gitlab:jdxcode/mise-test-fixtures[asset_pattern=hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]".to_string()),
             "gitlab:jdxcode/mise-test-fixtures".to_string(),
             None,
+            true,
         );
         assert_str_eq!(
             "gitlab:jdxcode/mise-test-fixtures[asset_pattern=hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]",

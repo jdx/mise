@@ -80,5 +80,6 @@ pub fn new_backend_arg(tool_name: &str) -> BackendArg {
         Some(format!("core:{tool_name}")),
         tool_name.to_string(),
         None,
+        true,
     )
 }

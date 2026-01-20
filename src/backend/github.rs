@@ -1305,6 +1305,7 @@ mod tests {
             Some("github:test/repo".to_string()),
             "test".to_string(),
             Some(opts),
+            true,
         ));
 
         assert_eq!(backend.strip_version_prefix("release-1.0.0"), "1.0.0");
