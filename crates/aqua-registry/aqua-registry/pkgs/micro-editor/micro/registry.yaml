@@ -1,8 +1,10 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
 packages:
   - type: github_release
-    repo_owner: zyedidia
+    repo_owner: micro-editor
     repo_name: micro
+    aliases:
+      - name: zyedidia/micro
     description: A modern and intuitive terminal-based text editor
     version_constraint: "false"
     version_overrides:

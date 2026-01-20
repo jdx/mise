@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cameron-martin
+    repo_name: bazel-lsp
+    description: A language server implementation for Bazel
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.3.0"
+        asset: bazel-lsp-{{trimV .Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements:
+          darwin: osx
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.3.1"
+        asset: bazel-lsp-{{trimV .Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          darwin: osx
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.2.0")
+        asset: bazel-lsp-{{trimV .Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.6.1")
+        asset: bazel-lsp-{{trimV .Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          darwin: osx
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.6.3")
+        asset: bazel-lsp-{{trimV .Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          darwin: osx
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: bazel-lsp-{{trimV .Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          darwin: osx
