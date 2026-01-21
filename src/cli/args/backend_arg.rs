@@ -362,22 +362,29 @@ impl BackendArg {
     /// Returns the stored backend identifier, preferring the explicitly stored value
     /// over dynamic registry resolution. Falls back to `full()` only when no stored
     /// value exists. Used for lockfiles to preserve the actual installed backend when possible.
+    /// Options are stripped since lockfiles have a separate options field.
     pub fn stored_full(&self) -> String {
-        if let Some(full) = &self.full {
-            return full.clone();
+        let full = if let Some(full) = &self.full {
+            full.clone()
+        } else {
+            let short = unalias_backend(&self.short);
+            if let Some(full) = install_state::get_tool_full(short) {
+                full
+            } else if let Some(pt) = install_state::get_plugin_type(short) {
+                match pt {
+                    PluginType::Asdf => format!("asdf:{short}"),
+                    PluginType::Vfox => format!("vfox:{short}"),
+                    PluginType::VfoxBackend => short.to_string(),
+                }
+            } else {
+                self.full()
+            }
+        };
+        // Strip options since lockfiles have a separate options field
+        if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&full) {
+            return c.get(1).unwrap().as_str().to_string();
         }
-        let short = unalias_backend(&self.short);
-        if let Some(full) = install_state::get_tool_full(short) {
-            return full;
-        }
-        if let Some(pt) = install_state::get_plugin_type(short) {
-            return match pt {
-                PluginType::Asdf => format!("asdf:{short}"),
-                PluginType::Vfox => format!("vfox:{short}"),
-                PluginType::VfoxBackend => short.to_string(),
-            };
-        }
-        self.full()
+        full
     }
 
     pub fn tool_name(&self) -> String {
