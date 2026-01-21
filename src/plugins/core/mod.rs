@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::LazyLock as Lazy;
 
 use crate::backend::{Backend, BackendMap};
-use crate::cli::args::BackendArg;
+use crate::cli::args::{BackendArg, BackendResolution};
 use crate::config::Settings;
 use crate::env;
 use crate::env::PATH_KEY;
@@ -80,6 +80,6 @@ pub fn new_backend_arg(tool_name: &str) -> BackendArg {
         Some(format!("core:{tool_name}")),
         tool_name.to_string(),
         None,
-        true,
+        BackendResolution::new(true),
     )
 }

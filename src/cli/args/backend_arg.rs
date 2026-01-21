@@ -16,6 +16,23 @@ use std::hash::Hash;
 use std::path::PathBuf;
 use xx::regex;
 
+/// Metadata about how a backend was resolved.
+/// This struct is designed for extensibility - additional fields can be added
+/// as needed without breaking existing code.
+#[derive(Clone, Debug, Default)]
+pub struct BackendResolution {
+    /// Whether the user explicitly specified the full backend (e.g., "aqua:oven-sh/bun" vs "bun").
+    /// Also true when restored from install state for backward compatibility with existing installations,
+    /// and for plugin-based tools initialized from the plugin registry.
+    pub explicit: bool,
+}
+
+impl BackendResolution {
+    pub fn new(explicit: bool) -> Self {
+        Self { explicit }
+    }
+}
+
 #[derive(Clone)]
 pub struct BackendArg {
     /// short or full identifier (what the user specified), "node", "prettier", "npm:prettier", "cargo:eza"
@@ -31,10 +48,7 @@ pub struct BackendArg {
     /// ~/.local/share/mise/downloads/<THIS>
     pub downloads_path: PathBuf,
     pub opts: Option<ToolVersionOptions>,
-    /// Whether the user explicitly specified the full backend (e.g., "aqua:oven-sh/bun" vs "bun").
-    /// Also true when restored from install state for backward compatibility with existing installations,
-    /// and for plugin-based tools initialized from the plugin registry.
-    explicit_backend: bool,
+    resolution: BackendResolution,
     // TODO: make this not a hash key anymore to use this
     // backend: OnceCell<ABackend>,
 }
@@ -49,7 +63,13 @@ impl<A: AsRef<str>> From<A> for BackendArg {
 impl From<InstallStateTool> for BackendArg {
     fn from(ist: InstallStateTool) -> Self {
         let (short, tool_name, opts) = parse_backend_components(&ist.short, ist.full.as_ref());
-        Self::new_raw(short, ist.full, tool_name, opts, ist.explicit_backend)
+        Self::new_raw(
+            short,
+            ist.full,
+            tool_name,
+            opts,
+            BackendResolution::new(ist.explicit_backend),
+        )
     }
 }
 
@@ -76,9 +96,9 @@ fn parse_backend_components(
 impl BackendArg {
     #[requires(!short.is_empty())]
     pub fn new(short: String, full: Option<String>) -> Self {
-        let explicit_backend = full.is_some();
+        let resolution = BackendResolution::new(full.is_some());
         let (short, tool_name, opts) = parse_backend_components(&short, full.as_ref());
-        Self::new_raw(short, full, tool_name, opts, explicit_backend)
+        Self::new_raw(short, full, tool_name, opts, resolution)
     }
 
     pub fn new_raw(
@@ -86,7 +106,7 @@ impl BackendArg {
         full: Option<String>,
         tool_name: String,
         opts: Option<ToolVersionOptions>,
-        explicit_backend: bool,
+        resolution: BackendResolution,
     ) -> Self {
         let pathname = short.to_kebab_case();
         Self {
@@ -97,7 +117,7 @@ impl BackendArg {
             installs_path: dirs::INSTALLS.join(&pathname),
             downloads_path: dirs::DOWNLOADS.join(&pathname),
             opts,
-            explicit_backend,
+            resolution,
             // backend: Default::default(),
         }
     }
@@ -224,7 +244,7 @@ impl BackendArg {
         // For non-explicit short-name tools that are not plugins, use registry's current
         // backend if available. This allows tools to automatically switch backends when
         // the registry changes (e.g., when a tool moves from one maintainer to another).
-        if !self.explicit_backend
+        if !self.resolution.explicit
             && install_state::get_plugin_type(short).is_none()
             && let Some(registry_full) = REGISTRY
                 .get(short)
@@ -353,7 +373,7 @@ impl BackendArg {
     /// registry backend on next operation, allowing automatic backend migration
     /// when registry.toml is updated.
     pub fn has_explicit_backend(&self) -> bool {
-        self.explicit_backend
+        self.resolution.explicit
     }
 
     /// Returns the stored backend identifier, preferring the explicitly stored value
@@ -587,7 +607,7 @@ mod tests {
             Some("node[foo=bar]".to_string()),
             "node".to_string(),
             None,
-            true,
+            BackendResolution::new(true),
         );
         assert_str_eq!("node[foo=bar]", fa.full_with_opts());
 
@@ -596,7 +616,7 @@ mod tests {
             Some("gitlab:jdxcode/mise-test-fixtures[asset_pattern=hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]".to_string()),
             "gitlab:jdxcode/mise-test-fixtures".to_string(),
             None,
-            true,
+            BackendResolution::new(true),
         );
         assert_str_eq!(
             "gitlab:jdxcode/mise-test-fixtures[asset_pattern=hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]",
