@@ -288,9 +288,6 @@ impl BackendArg {
         if regex!(r"^(.+)\[(.+)\]$").is_match(&full) {
             return full;
         }
-        if !self.explicit_backend && REGISTRY.get(self.short.as_str()).is_some() {
-            return full;
-        }
         if let Some(opts) = &self.opts {
             let opts_str = opts
                 .opts
