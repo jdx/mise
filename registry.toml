@@ -3017,9 +3017,7 @@ backends = [
 description = "A modern, JVM-based, full-stack framework for building modular, easily testable microservice and serverless applications"
 
 [tools.miller]
-backends = [
-  "aqua:johnkerl/miller",
-]
+backends = ["aqua:johnkerl/miller"]
 description = "Miller is like awk, sed, cut, join, and sort for name-indexed data such as CSV, TSV, and tabular JSON"
 test = ["mlr version", "mlr version {{version}}"]
 
