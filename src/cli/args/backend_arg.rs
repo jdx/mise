@@ -64,7 +64,13 @@ impl<A: AsRef<str>> From<A> for BackendArg {
             false
         };
         let (short_parsed, tool_name, opts) = parse_backend_components(&short, None);
-        Self::new_raw(short_parsed, None, tool_name, opts, BackendResolution::new(explicit))
+        Self::new_raw(
+            short_parsed,
+            None,
+            tool_name,
+            opts,
+            BackendResolution::new(explicit),
+        )
     }
 }
 
