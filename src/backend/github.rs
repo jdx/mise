@@ -5,7 +5,7 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
     get_filename_from_url, install_artifact, lookup_platform_key, lookup_platform_key_for_target,
-    template_string, try_with_v_prefix, verify_artifact,
+    template_string, try_with_v_prefix, try_with_v_prefix_and_repo, verify_artifact,
 };
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::{Config, Settings};
@@ -23,6 +23,7 @@ use regex::Regex;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::Arc;
+use xx::regex;
 
 #[derive(Debug)]
 pub struct UnifiedGitBackend {
@@ -598,12 +599,19 @@ impl UnifiedGitBackend {
             })
             .await
         } else {
-            try_with_v_prefix(version, version_prefix, |candidate| async move {
-                self.resolve_github_asset_url_for_target(
-                    tv, opts, repo, api_url, &candidate, target,
-                )
-                .await
-            })
+            // Extract repo short name for trying reponame@version format
+            let repo_short_name = repo.split('/').last();
+            try_with_v_prefix_and_repo(
+                version,
+                version_prefix,
+                repo_short_name,
+                |candidate| async move {
+                    self.resolve_github_asset_url_for_target(
+                        tv, opts, repo, api_url, &candidate, target,
+                    )
+                    .await
+                },
+            )
             .await
         }
     }
@@ -904,6 +912,11 @@ impl UnifiedGitBackend {
             return stripped.to_string();
         }
 
+        // Handle projectname@version format (e.g., "tectonic@0.15.0" -> "0.15.0")
+        if let Some(caps) = regex!(r"^[^@]+@(\d.*)$").captures(tag_name) {
+            return caps.get(1).unwrap().as_str().to_string();
+        }
+
         // Fall back to stripping 'v' prefix
         if tag_name.starts_with('v') {
             tag_name.trim_start_matches('v').to_string()
@@ -1129,11 +1142,17 @@ impl UnifiedGitBackend {
 
         // Try to get the release (with version prefix support)
         let version_prefix = opts.get("version_prefix").map(|s| s.as_str());
-        let release = match try_with_v_prefix(version, version_prefix, |candidate| {
-            let api_url = api_url.clone();
-            let repo = repo.clone();
-            async move { github::get_release_for_url(&api_url, &repo, &candidate).await }
-        })
+        let repo_short_name = repo.split('/').last();
+        let release = match try_with_v_prefix_and_repo(
+            version,
+            version_prefix,
+            repo_short_name,
+            |candidate| {
+                let api_url = api_url.clone();
+                let repo = repo.clone();
+                async move { github::get_release_for_url(&api_url, &repo, &candidate).await }
+            },
+        )
         .await
         {
             Ok(r) => r,

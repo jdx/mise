@@ -130,10 +130,26 @@ where
     Fut: Future<Output = std::result::Result<T, E>>,
     E: VerifiableError,
 {
+    try_with_v_prefix_and_repo(version, version_prefix, None, resolver).await
+}
+
+/// Helper to try various tag formats for a resolver function
+/// Tries version_prefix (if set), v prefix, and optionally repo_name@ prefix
+pub async fn try_with_v_prefix_and_repo<F, Fut, T, E>(
+    version: &str,
+    version_prefix: Option<&str>,
+    repo_name: Option<&str>,
+    resolver: F,
+) -> Result<T>
+where
+    F: Fn(String) -> Fut,
+    Fut: Future<Output = std::result::Result<T, E>>,
+    E: VerifiableError,
+{
     let mut errors = vec![];
 
     // Generate candidates based on version prefix configuration
-    let candidates = if let Some(prefix) = version_prefix {
+    let mut candidates = if let Some(prefix) = version_prefix {
         // If a custom prefix is configured, try both prefixed and non-prefixed versions
         if version.starts_with(prefix) {
             vec![
@@ -151,6 +167,13 @@ where
     } else {
         vec![format!("v{version}"), version.to_string()]
     };
+
+    // Also try reponame@version format (e.g., tectonic@0.15.0) when no prefix is configured
+    if version_prefix.is_none() {
+        if let Some(name) = repo_name {
+            candidates.push(format!("{}@{}", name, version));
+        }
+    }
 
     for candidate in candidates {
         match resolver(candidate).await {
