@@ -231,11 +231,12 @@ impl BackendArg {
                 .and_then(|rt| rt.backends().first().cloned())
         {
             if let Some(stored_full) = &self.full
-                && stored_full != registry_full {
-                    info!(
-                        "backend for '{short}' changed from stored '{stored_full}' to registry '{registry_full}'"
-                    );
-                }
+                && stored_full != registry_full
+            {
+                info!(
+                    "backend for '{short}' changed from stored '{stored_full}' to registry '{registry_full}'"
+                );
+            }
             return registry_full.to_string();
         }
 
