@@ -98,3 +98,17 @@ chmod +x bin/flyctl
 assert_contains "bin/flyctl version" "flyctl v0.3.206"
 mise uninstall --all
 assert_contains "bin/flyctl version" "flyctl v0.3.206"
+
+# Test 13: Tool using non-built-in backend (e.g. npm/pipx)
+cat >bin/stylelint <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+tool = "npm:stylelint"
+version = "17.0.0"
+EOF
+
+chmod +x bin/stylelint
+mise use node@20
+assert_contains "bin/stylelint --version" "17.0.0"
+mise uninstall --all
+mise unuse node@20
+assert_contains "bin/stylelint --version" "17.0.0"
