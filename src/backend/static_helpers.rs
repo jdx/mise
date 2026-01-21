@@ -169,11 +169,10 @@ where
     };
 
     // Also try reponame@version format (e.g., tectonic@0.15.0) when no prefix is configured
-    if version_prefix.is_none() {
-        if let Some(name) = repo_name {
+    if version_prefix.is_none()
+        && let Some(name) = repo_name {
             candidates.push(format!("{}@{}", name, version));
         }
-    }
 
     for candidate in candidates {
         match resolver(candidate).await {

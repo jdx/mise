@@ -600,7 +600,7 @@ impl UnifiedGitBackend {
             .await
         } else {
             // Extract repo short name for trying reponame@version format
-            let repo_short_name = repo.split('/').last();
+            let repo_short_name = repo.split('/').next_back();
             try_with_v_prefix_and_repo(
                 version,
                 version_prefix,
@@ -1142,7 +1142,7 @@ impl UnifiedGitBackend {
 
         // Try to get the release (with version prefix support)
         let version_prefix = opts.get("version_prefix").map(|s| s.as_str());
-        let repo_short_name = repo.split('/').last();
+        let repo_short_name = repo.split('/').next_back();
         let release = match try_with_v_prefix_and_repo(
             version,
             version_prefix,
