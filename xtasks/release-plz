@@ -141,12 +141,16 @@ bump_and_publish_subcrate() {
 	local new_version
 	new_version="$(cargo pkgid -p "$crate_name" | cut -d# -f2)"
 
-	if exists_on_crates "$crate_name" "$new_version"; then
-		echo "$crate_name@$new_version already on crates.io, skipping publish"
-	else
-		echo "Publishing $crate_name@$new_version"
-		cargo publish --allow-dirty -p "$crate_name"
-	fi
+	# Keep bumping if the version already exists on crates.io
+	# This handles cases where a version was published but local code has changed since
+	while exists_on_crates "$crate_name" "$new_version"; do
+		echo "$crate_name@$new_version already on crates.io, bumping again"
+		cargo set-version --bump patch -p "$crate_name"
+		new_version="$(cargo pkgid -p "$crate_name" | cut -d# -f2)"
+	done
+
+	echo "Publishing $crate_name@$new_version"
+	cargo publish --allow-dirty -p "$crate_name"
 
 	# Create tag for this subcrate release
 	local tag_name="${crate_name}-v${new_version}"
