@@ -31,6 +31,9 @@ pub struct BackendArg {
     /// ~/.local/share/mise/downloads/<THIS>
     pub downloads_path: PathBuf,
     pub opts: Option<ToolVersionOptions>,
+    /// Whether the user explicitly specified the full backend (e.g., "aqua:oven-sh/bun" vs "bun").
+    /// Also true when restored from install state for backward compatibility with existing installations,
+    /// and for plugin-based tools initialized from the plugin registry.
     explicit_backend: bool,
     // TODO: make this not a hash key anymore to use this
     // backend: OnceCell<ABackend>,
@@ -218,12 +221,22 @@ impl BackendArg {
             }
         }
 
+        // For non-explicit short-name tools that are not plugins, use registry's current
+        // backend if available. This allows tools to automatically switch backends when
+        // the registry changes (e.g., when a tool moves from one maintainer to another).
         if !self.explicit_backend
             && install_state::get_plugin_type(short).is_none()
             && let Some(registry_full) = REGISTRY
                 .get(short)
                 .and_then(|rt| rt.backends().first().cloned())
         {
+            if let Some(stored_full) = &self.full {
+                if stored_full != &registry_full {
+                    info!(
+                        "backend for '{short}' changed from stored '{stored_full}' to registry '{registry_full}'"
+                    );
+                }
+            }
             return registry_full.to_string();
         }
 
@@ -338,10 +351,17 @@ impl BackendArg {
         self.opts = opts;
     }
 
+    /// Returns true if the user explicitly specified the full backend identifier.
+    /// When false and the tool is not plugin-based, it may resolve to the current
+    /// registry backend on next operation, allowing automatic backend migration
+    /// when registry.toml is updated.
     pub fn has_explicit_backend(&self) -> bool {
         self.explicit_backend
     }
 
+    /// Returns the stored backend identifier, preferring the explicitly stored value
+    /// over dynamic registry resolution. Falls back to `full()` only when no stored
+    /// value exists. Used for lockfiles to preserve the actual installed backend when possible.
     pub fn stored_full(&self) -> String {
         if let Some(full) = &self.full {
             return full.clone();
