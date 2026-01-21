@@ -101,7 +101,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             let full = backend_meta.get(1).cloned();
             // Default to true for backward compatibility: existing installations
             // without this flag should preserve their installed backend
-            let explicit_backend = backend_meta.get(2).map_or(true, |v| v == "1");
+            let explicit_backend = backend_meta.get(2).is_none_or(|v| v == "1");
             let dir = dirs::INSTALLS.join(&dir);
             let versions = file::dir_subdirs(&dir)
                 .unwrap_or_else(|err| {
