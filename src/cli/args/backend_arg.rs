@@ -56,7 +56,15 @@ pub struct BackendArg {
 impl<A: AsRef<str>> From<A> for BackendArg {
     fn from(s: A) -> Self {
         let short = unalias_backend(s.as_ref()).to_string();
-        Self::new(short, None)
+        // Check if this is a full backend identifier (e.g., "aqua:oven-sh/bun")
+        // If so, treat it as explicit since the user specified the backend
+        let explicit = if let Some((prefix, _)) = short.split_once(':') {
+            BackendType::guess(prefix) != BackendType::Unknown
+        } else {
+            false
+        };
+        let (short_parsed, tool_name, opts) = parse_backend_components(&short, None);
+        Self::new_raw(short_parsed, None, tool_name, opts, BackendResolution::new(explicit))
     }
 }
 
@@ -377,10 +385,23 @@ impl BackendArg {
     }
 
     /// Returns the stored backend identifier, preferring the explicitly stored value
-    /// over dynamic registry resolution. Falls back to `full()` only when no stored
-    /// value exists. Used for lockfiles to preserve the actual installed backend when possible.
+    /// over dynamic registry resolution. For non-explicit tools, uses `full()` which
+    /// respects registry updates, allowing automatic backend migration when registry.toml
+    /// is updated. Used for lockfiles to preserve the actual installed backend when possible.
     /// Options are stripped since lockfiles have a separate options field.
     pub fn stored_full(&self) -> String {
+        // For non-explicit tools, use full() which respects registry updates.
+        // This allows tools to automatically switch backends when the registry changes.
+        if !self.resolution.explicit {
+            let full = self.full();
+            // Strip options since lockfiles have a separate options field
+            if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&full) {
+                return c.get(1).unwrap().as_str().to_string();
+            }
+            return full;
+        }
+
+        // For explicit tools, preserve the stored value
         let full = if let Some(full) = &self.full {
             full.clone()
         } else {

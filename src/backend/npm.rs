@@ -272,7 +272,7 @@ impl NPMBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendArg;
+    use crate::cli::args::{BackendArg, BackendResolution};
 
     fn create_npm_backend(tool: &str) -> NPMBackend {
         let ba = BackendArg::new_raw(
@@ -280,7 +280,7 @@ mod tests {
             Some(tool.to_string()),
             tool.to_string(),
             None,
-            true,
+            BackendResolution::new(true),
         );
         NPMBackend::from_arg(ba)
     }

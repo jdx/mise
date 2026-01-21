@@ -1272,7 +1272,7 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::BackendArg;
+    use crate::cli::args::{BackendArg, BackendResolution};
 
     fn create_test_backend() -> UnifiedGitBackend {
         UnifiedGitBackend::from_arg(BackendArg::new(
@@ -1305,7 +1305,7 @@ mod tests {
             Some("github:test/repo".to_string()),
             "test".to_string(),
             Some(opts),
-            true,
+            BackendResolution::new(true),
         ));
 
         assert_eq!(backend.strip_version_prefix("release-1.0.0"), "1.0.0");
