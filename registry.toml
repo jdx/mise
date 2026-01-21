@@ -238,6 +238,11 @@ backends = ["aqua:ariga/atlas", "asdf:komi1230/asdf-atlas"]
 description = "A modern tool for managing database schemas"
 test = ["atlas version", "atlas version v{{version}}"]
 
+[tools.atlas-community]
+backends = ["aqua:ariga/atlas/community"]
+description = "A modern tool for managing database schemas (Community Edition)"
+test = ["atlas version", "atlas community version v{{version}}"]
+
 [tools.atmos]
 backends = ["aqua:cloudposse/atmos", "asdf:cloudposse/asdf-atmos"]
 description = "Workflow automation tool for DevOps. Keep configuration DRY with hierarchical imports of configurations, inheritance, and WAY more. Native support for Terraform and Helmfile"
