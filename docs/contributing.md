@@ -403,7 +403,7 @@ hk check --all
 hk fix --all
 
 # Run specific linter
-hk check --linter shellcheck
+hk check --step shellcheck
 ```
 
 ### Available Linters in hk
@@ -424,8 +424,8 @@ mise run lint  # This runs hk check --all
 hk fix --all
 
 # Check specific file types
-hk check --linter prettier
-hk check --linter shellcheck
+hk check --step prettier
+hk check --step shellcheck
 ```
 
 ### Pre-commit Task Configuration
