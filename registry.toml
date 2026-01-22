@@ -812,6 +812,11 @@ test = ["claude-squad version", """
 claude-squad version {{version}}
 https://github.com/smtg-ai/claude-squad/releases/tag/v{{version}}"""]
 
+[tools.claude-powerline]
+backends = ["npm:@owloops/claude-powerline"]
+description = "Beautiful vim-style powerline statusline for Claude Code"
+test = ["claude-powerline --help", "claude-powerline [options]"]
+
 [tools.cli53]
 backends = ["aqua:barnybug/cli53"]
 description = "Command line tool for Amazon Route 53"
