@@ -3169,7 +3169,7 @@ backends = ["aqua:ninja-build/ninja", "asdf:asdf-community/asdf-ninja"]
 description = "a small build system with a focus on speed"
 
 [tools.node]
-backends = ["core:node"]
+backends = ["aqua:nodejs/node", "core:node"]
 description = "Node.js® is a free, open-source, cross-platform JavaScript runtime environment that lets developers create servers, web apps, command line tools and scripts (Builtin plugin)"
 
 [tools.nomad]
