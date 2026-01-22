@@ -3647,6 +3647,10 @@ backends = ["github:railwayapp/cli[exe=railway]", "cargo:railwayapp"]
 description = "Railway CLI"
 test = ["railway --version", "railway {{version}}"]
 
+[tools.raku]
+backends = ["asdf:m-dango/asdf-raku"]
+description = "The Raku Programming Language"
+
 [tools.rancher]
 backends = ["aqua:rancher/cli", "asdf:abinet/asdf-rancher"]
 description = "Rancher CLI"
