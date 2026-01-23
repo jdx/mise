@@ -3761,6 +3761,11 @@ backends = ["aqua:SUPERCILEX/fuc/rmz"]
 description = "A zippy alternative to rm, a tool to remove files and directories"
 test = ["rmz --version", "rmz {{version}}"]
 
+[tools.rpk]
+backends = ["aqua:redpanda-data/redpanda"]
+description = "Redpanda CLI and toolbox"
+test = ["rpk --version", "rpk version (Redpanda CLI): {{version}}"]
+
 [tools.ruby]
 backends = ["core:ruby"]
 description = "Ruby language"
