@@ -3764,7 +3764,7 @@ test = ["rmz --version", "rmz {{version}}"]
 [tools.rpk]
 backends = ["aqua:redpanda-data/redpanda"]
 description = "Redpanda CLI and toolbox"
-test = ["rpk --version", "rpk version (Redpanda CLI): {{version}}"]
+test = ["rpk --version", "rpk version (Redpanda CLI): v{{version}}"]
 
 [tools.ruby]
 backends = ["core:ruby"]
