@@ -285,7 +285,7 @@ mise can also install tools directly from github with the github backend:
 
 ```sh
 # run ripgrep via mise x|exec
-mise exec github:BurntSushi/ripgrep -- ripgrep --version
+mise exec github:BurntSushi/ripgrep -- rg --version
 
 # or if mise is activated in your shell
 mise use --global github:BurntSushi/ripgrep
