@@ -17,11 +17,13 @@ use crate::ui::progress_report::SingleReport;
 use crate::{dirs, file, hash};
 use async_trait::async_trait;
 use eyre::Result;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use versions::Versioning;
 
 // Constants
 const HTTP_TARBALLS_DIR: &str = "http-tarballs";
@@ -591,6 +593,12 @@ impl Backend for HttpBackend {
         let versions = self.fetch_versions(config).await?;
         Ok(versions
             .into_iter()
+            .sorted_by(|a, b| match (Versioning::new(a), Versioning::new(b)) {
+                (Some(av), Some(bv)) => av.cmp(&bv),
+                (Some(_), None) => std::cmp::Ordering::Greater,
+                (None, Some(_)) => std::cmp::Ordering::Less,
+                (None, None) => a.cmp(b),
+            })
             .map(|v| VersionInfo {
                 version: v,
                 ..Default::default()

@@ -32,3 +32,15 @@ EOF
 
 mise cache clear
 assert_contains "mise ls-remote http:zmx" "0.2.0"
+
+# Test that ls-remote orders versions correctly with semver
+cat <<EOF >mise.toml
+[tools."http:sentinel"]
+version = "latest"
+version_list_url = "https://releases.hashicorp.com/sentinel/index.json"
+version_regex = 'sentinel_(\d+\.\d+\.\d+)'
+EOF
+
+mise cache clear
+LATEST="$(mise ls-remote http:sentinel | awk '{print $1}' | sort -V | tail -n1)"
+assert_contains "mise latest http:sentinel" "$LATEST"
