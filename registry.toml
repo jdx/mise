@@ -2297,7 +2297,7 @@ backends = ["aqua:iann0036/iamlive", "asdf:chessmango/asdf-iamlive"]
 description = "Generate an IAM policy from AWS calls using client-side monitoring (CSM) or embedded proxy"
 
 [tools.imagemagick]
-backends = ["asdf:mise-plugins/mise-imagemagick"]
+backends = ["github:ImageMagick/ImageMagick", "asdf:mise-plugins/mise-imagemagick"]
 description = "ImageMagick is a free, open-source software suite for creating, editing, converting, and displaying images. It supports 200+ formats and offers powerful command-line tools and APIs for automation, scripting, and integration across platforms"
 
 [tools.imgpkg]
