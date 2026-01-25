@@ -1315,6 +1315,12 @@ mod tests {
         assert_eq!(backend.strip_version_prefix("v1.0.0"), "1.0.0");
         assert_eq!(backend.strip_version_prefix("1.0.0"), "1.0.0");
 
+        // Test projectname@version format (e.g., tectonic@0.15.0)
+        assert_eq!(backend.strip_version_prefix("tectonic@0.15.0"), "0.15.0");
+        assert_eq!(backend.strip_version_prefix("project@1.2.3"), "1.2.3");
+        // Should not match if part after @ doesn't start with a digit
+        assert_eq!(backend.strip_version_prefix("project@beta"), "project@beta");
+
         // Test with custom version prefix
         let mut opts = ToolVersionOptions::default();
         opts.opts
