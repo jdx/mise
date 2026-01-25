@@ -13,7 +13,7 @@
 /// - `version_json_path`: JQ-like path to extract versions from JSON (e.g., `.[].version`)
 /// - `version_expr`: Expression using expr-lang syntax to extract versions
 use crate::backend::jq;
-use expr::{Context, Value};
+use expr::{Context, Environment, Value};
 use eyre::Result;
 use regex::Regex;
 use std::collections::HashSet;
@@ -114,8 +114,68 @@ fn eval_version_expr(expr_str: &str, body: &str) -> Result<Vec<String>> {
     let mut ctx = Context::default();
     ctx.insert("body".to_string(), Value::String(body.to_string()));
 
-    let result = expr::eval(expr_str, &ctx)?;
+    let mut env = Environment::new();
+
+    // Add fromJSON function to parse JSON strings
+    env.add_function("fromJSON", |c| {
+        let arg = c
+            .args
+            .first()
+            .ok_or_else(|| "fromJSON requires an argument".to_string())?;
+        let s = match arg {
+            Value::String(s) => s,
+            _ => return Err("fromJSON argument must be a string".to_string().into()),
+        };
+        let json: serde_json::Value =
+            serde_json::from_str(s).map_err(|e| format!("Invalid JSON: {e}"))?;
+        Ok(json_to_expr_value(json))
+    });
+
+    // Add keys function to get object keys
+    env.add_function("keys", |c| {
+        let arg = c
+            .args
+            .first()
+            .ok_or_else(|| "keys requires an argument".to_string())?;
+        match arg {
+            Value::Map(map) => {
+                let keys: Vec<Value> = map.keys().cloned().map(Value::String).collect();
+                Ok(Value::Array(keys))
+            }
+            _ => Err("keys argument must be an object/map".to_string().into()),
+        }
+    });
+
+    let result = env.eval(expr_str, &ctx)?;
     value_to_strings(result)
+}
+
+/// Convert serde_json::Value to expr::Value
+fn json_to_expr_value(json: serde_json::Value) -> Value {
+    match json {
+        serde_json::Value::Null => Value::Nil,
+        serde_json::Value::Bool(b) => Value::Bool(b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Value::Number(i)
+            } else if let Some(f) = n.as_f64() {
+                Value::Float(f)
+            } else {
+                Value::Nil
+            }
+        }
+        serde_json::Value::String(s) => Value::String(s),
+        serde_json::Value::Array(arr) => {
+            Value::Array(arr.into_iter().map(json_to_expr_value).collect())
+        }
+        serde_json::Value::Object(obj) => {
+            let map = obj
+                .into_iter()
+                .map(|(k, v)| (k, json_to_expr_value(v)))
+                .collect();
+            Value::Map(map)
+        }
+    }
 }
 
 /// Convert expr Value to a list of strings
@@ -316,5 +376,23 @@ mod tests {
         let versions =
             parse_version_list(content, None, None, Some(r#"split(body, "\n")"#)).unwrap();
         assert_eq!(versions, vec!["1.0.0", "2.0.0", "3.0.0"]);
+    }
+
+    #[test]
+    fn test_parse_with_version_expr_json_keys() {
+        // Test version_expr with fromJSON and keys for hashicorp-style JSON
+        let content = r#"{"name":"sentinel","versions":{"0.1.0":{},"0.2.0":{},"1.0.0":{}}}"#;
+        let versions = parse_version_list(
+            content,
+            None,
+            None,
+            Some(r#"keys(fromJSON(body).versions)"#),
+        )
+        .unwrap();
+        // Keys may not be in order, so just check we got all versions
+        assert_eq!(versions.len(), 3);
+        assert!(versions.contains(&"0.1.0".to_string()));
+        assert!(versions.contains(&"0.2.0".to_string()));
+        assert!(versions.contains(&"1.0.0".to_string()));
     }
 }

@@ -274,7 +274,16 @@ version_expr = 'split(body, "\n")'
 
 # Split and filter empty lines
 version_expr = 'filter(split(body, "\n"), # != "")'
+
+# Parse JSON and extract object keys (useful for HashiCorp-style JSON)
+# e.g., {"versions": {"1.0.0": {}, "2.0.0": {}}}
+version_expr = 'keys(fromJSON(body).versions)'
 ```
+
+The following custom functions are available:
+
+- **`fromJSON(string)`**: Parse a JSON string into a value
+- **`keys(map)`**: Get the keys of an object/map as an array
 
 ::: tip
 `version_expr` takes precedence over `version_regex` and `version_json_path` if multiple are specified. Use it when the other options aren't flexible enough for your use case.
