@@ -31,6 +31,7 @@ pub struct InstallStateTool {
     pub short: String,
     pub full: Option<String>,
     pub versions: Vec<String>,
+    pub explicit_backend: bool,
 }
 
 static INSTALL_STATE_PLUGINS: Mutex<Option<Arc<InstallStatePlugins>>> = Mutex::new(None);
@@ -98,6 +99,9 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             let backend_meta = read_backend_meta(&dir).unwrap_or_default();
             let short = backend_meta.first().unwrap_or(&dir).to_string();
             let full = backend_meta.get(1).cloned();
+            // Default to true for backward compatibility: existing installations
+            // without this flag should preserve their installed backend
+            let explicit_backend = backend_meta.get(2).is_none_or(|v| v == "1");
             let dir = dirs::INSTALLS.join(&dir);
             let versions = file::dir_subdirs(&dir)
                 .unwrap_or_else(|err| {
@@ -119,6 +123,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 short: short.clone(),
                 full,
                 versions,
+                explicit_backend,
             };
             time!("init_tools {short}");
             (short, tool)
@@ -142,6 +147,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 short: short.clone(),
                 full: Some(full.clone()),
                 versions: Default::default(),
+                explicit_backend: true,
             });
         tool.full = Some(full);
     }
@@ -241,17 +247,19 @@ fn migrate_backend_meta_json(dir: &str) {
                 .get("short")
                 .and_then(|short| short.as_str())
                 .unwrap_or(dir);
-            let doc = format!("{short}\n{full}");
+            // Migrated tools default to explicit_backend=true to preserve their installed backend
+            let doc = format!("{short}\n{full}\n1");
             file::write(backend_meta_path(dir), doc.trim())?;
         }
         Ok(())
     };
     if old.exists() {
         if let Err(err) = migrate() {
-            debug!("{err:#}");
+            warn!("failed to migrate backend meta for {dir}: {err:#}");
+            return; // Don't delete the old file if migration failed
         }
         if let Err(err) = file::remove_file(&old) {
-            debug!("{err:#}");
+            warn!("failed to remove old backend meta for {dir}: {err:#}");
         }
     }
 }
@@ -259,29 +267,39 @@ fn migrate_backend_meta_json(dir: &str) {
 fn read_backend_meta(short: &str) -> Option<Vec<String>> {
     migrate_backend_meta_json(short);
     let path = backend_meta_path(short);
-    if path.exists() {
-        let body = file::read_to_string(&path)
-            .map_err(|err| {
-                warn!("{err:?}");
-            })
-            .unwrap_or_default();
-        Some(
-            body.lines()
-                .filter(|f| !f.is_empty())
-                .map(|f| f.to_string())
-                .collect(),
-        )
-    } else {
-        None
+    if !path.exists() {
+        return None;
     }
+    let body = match file::read_to_string(&path) {
+        std::result::Result::Ok(body) => body,
+        std::result::Result::Err(err) => {
+            warn!(
+                "failed to read backend meta at {}: {err:?}",
+                display_path(&path)
+            );
+            return None;
+        }
+    };
+    Some(
+        body.lines()
+            .filter(|f| !f.is_empty())
+            .map(|f| f.to_string())
+            .collect(),
+    )
 }
 
+/// Writes backend metadata to `.mise.backend` file.
+/// Format: 3 lines
+/// - Line 1: short name (e.g., "bun")
+/// - Line 2: full backend identifier (e.g., "aqua:oven-sh/bun")
+/// - Line 3: explicit flag ("1" if user specified full backend, "0" if resolved from registry)
 pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
     let full = match ba.full() {
         full if full.starts_with("core:") => ba.full(),
         _ => ba.full_with_opts(),
     };
-    let doc = format!("{}\n{}", ba.short, full);
+    let explicit = if ba.has_explicit_backend() { "1" } else { "0" };
+    let doc = format!("{}\n{}\n{}", ba.short, full, explicit);
     file::write(backend_meta_path(&ba.short), doc.trim())?;
     Ok(())
 }

@@ -1,4 +1,4 @@
-pub use backend_arg::BackendArg;
+pub use backend_arg::{BackendArg, BackendResolution};
 pub use env_var_arg::EnvVarArg;
 pub use tool_arg::{ToolArg, ToolVersionType};
 

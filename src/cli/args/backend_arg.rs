@@ -16,6 +16,23 @@ use std::hash::Hash;
 use std::path::PathBuf;
 use xx::regex;
 
+/// Metadata about how a backend was resolved.
+/// This struct is designed for extensibility - additional fields can be added
+/// as needed without breaking existing code.
+#[derive(Clone, Debug, Default)]
+pub struct BackendResolution {
+    /// Whether the user explicitly specified the full backend (e.g., "aqua:oven-sh/bun" vs "bun").
+    /// Also true when restored from install state for backward compatibility with existing installations,
+    /// and for plugin-based tools initialized from the plugin registry.
+    pub explicit: bool,
+}
+
+impl BackendResolution {
+    pub fn new(explicit: bool) -> Self {
+        Self { explicit }
+    }
+}
+
 #[derive(Clone)]
 pub struct BackendArg {
     /// short or full identifier (what the user specified), "node", "prettier", "npm:prettier", "cargo:eza"
@@ -31,6 +48,7 @@ pub struct BackendArg {
     /// ~/.local/share/mise/downloads/<THIS>
     pub downloads_path: PathBuf,
     pub opts: Option<ToolVersionOptions>,
+    resolution: BackendResolution,
     // TODO: make this not a hash key anymore to use this
     // backend: OnceCell<ABackend>,
 }
@@ -38,34 +56,63 @@ pub struct BackendArg {
 impl<A: AsRef<str>> From<A> for BackendArg {
     fn from(s: A) -> Self {
         let short = unalias_backend(s.as_ref()).to_string();
-        Self::new(short, None)
+        // Check if this is a full backend identifier (e.g., "aqua:oven-sh/bun")
+        // If so, treat it as explicit since the user specified the backend
+        let explicit = if let Some((prefix, _)) = short.split_once(':') {
+            BackendType::guess(prefix) != BackendType::Unknown
+        } else {
+            false
+        };
+        let (short_parsed, tool_name, opts) = parse_backend_components(&short, None);
+        Self::new_raw(
+            short_parsed,
+            None,
+            tool_name,
+            opts,
+            BackendResolution::new(explicit),
+        )
     }
 }
 
 impl From<InstallStateTool> for BackendArg {
     fn from(ist: InstallStateTool) -> Self {
-        Self::new(ist.short, ist.full)
+        let (short, tool_name, opts) = parse_backend_components(&ist.short, ist.full.as_ref());
+        Self::new_raw(
+            short,
+            ist.full,
+            tool_name,
+            opts,
+            BackendResolution::new(ist.explicit_backend),
+        )
     }
+}
+
+fn parse_backend_components(
+    short: &str,
+    full: Option<&String>,
+) -> (String, String, Option<ToolVersionOptions>) {
+    let short = unalias_backend(short).to_string();
+    let (_backend, mut tool_name) = full
+        .unwrap_or(&short)
+        .split_once(':')
+        .unwrap_or(("", full.unwrap_or(&short)));
+    let short = regex!(r#"\[.+\]$"#).replace_all(&short, "").to_string();
+
+    let mut opts = None;
+    if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(tool_name) {
+        tool_name = c.get(1).unwrap().as_str();
+        opts = Some(parse_tool_options(c.get(2).unwrap().as_str()));
+    }
+
+    (short, tool_name.to_string(), opts)
 }
 
 impl BackendArg {
     #[requires(!short.is_empty())]
     pub fn new(short: String, full: Option<String>) -> Self {
-        let short = unalias_backend(&short).to_string();
-        let (_backend, mut tool_name) = full
-            .as_ref()
-            .unwrap_or(&short)
-            .split_once(':')
-            .unwrap_or(("", full.as_ref().unwrap_or(&short)));
-        let short = regex!(r#"\[.+\]$"#).replace_all(&short, "").to_string();
-
-        let mut opts = None;
-        if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(tool_name) {
-            tool_name = c.get(1).unwrap().as_str();
-            opts = Some(parse_tool_options(c.get(2).unwrap().as_str()));
-        }
-
-        Self::new_raw(short.clone(), full.clone(), tool_name.to_string(), opts)
+        let resolution = BackendResolution::new(full.is_some());
+        let (short, tool_name, opts) = parse_backend_components(&short, full.as_ref());
+        Self::new_raw(short, full, tool_name, opts, resolution)
     }
 
     pub fn new_raw(
@@ -73,6 +120,7 @@ impl BackendArg {
         full: Option<String>,
         tool_name: String,
         opts: Option<ToolVersionOptions>,
+        resolution: BackendResolution,
     ) -> Self {
         let pathname = short.to_kebab_case();
         Self {
@@ -83,6 +131,7 @@ impl BackendArg {
             installs_path: dirs::INSTALLS.join(&pathname),
             downloads_path: dirs::DOWNLOADS.join(&pathname),
             opts,
+            resolution,
             // backend: Default::default(),
         }
     }
@@ -205,6 +254,26 @@ impl BackendArg {
                 return backend;
             }
         }
+
+        // For non-explicit short-name tools that are not plugins, use registry's current
+        // backend if available. This allows tools to automatically switch backends when
+        // the registry changes (e.g., when a tool moves from one maintainer to another).
+        if !self.resolution.explicit
+            && install_state::get_plugin_type(short).is_none()
+            && let Some(registry_full) = REGISTRY
+                .get(short)
+                .and_then(|rt| rt.backends().first().cloned())
+        {
+            if let Some(stored_full) = &self.full
+                && stored_full != registry_full
+            {
+                info!(
+                    "backend for '{short}' changed from stored '{stored_full}' to registry '{registry_full}'"
+                );
+            }
+            return registry_full.to_string();
+        }
+
         if let Some(full) = &self.full {
             full.clone()
         } else if let Some(full) = install_state::get_tool_full(short) {
@@ -311,6 +380,55 @@ impl BackendArg {
 
     pub fn set_opts(&mut self, opts: Option<ToolVersionOptions>) {
         self.opts = opts;
+    }
+
+    /// Returns true if the user explicitly specified the full backend identifier.
+    /// When false and the tool is not plugin-based, it may resolve to the current
+    /// registry backend on next operation, allowing automatic backend migration
+    /// when registry.toml is updated.
+    pub fn has_explicit_backend(&self) -> bool {
+        self.resolution.explicit
+    }
+
+    /// Returns the stored backend identifier, preferring the explicitly stored value
+    /// over dynamic registry resolution. For non-explicit tools, uses `full()` which
+    /// respects registry updates, allowing automatic backend migration when registry.toml
+    /// is updated. Used for lockfiles to preserve the actual installed backend when possible.
+    /// Options are stripped since lockfiles have a separate options field.
+    pub fn stored_full(&self) -> String {
+        // For non-explicit tools, use full() which respects registry updates.
+        // This allows tools to automatically switch backends when the registry changes.
+        if !self.resolution.explicit {
+            let full = self.full();
+            // Strip options since lockfiles have a separate options field
+            if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&full) {
+                return c.get(1).unwrap().as_str().to_string();
+            }
+            return full;
+        }
+
+        // For explicit tools, preserve the stored value
+        let full = if let Some(full) = &self.full {
+            full.clone()
+        } else {
+            let short = unalias_backend(&self.short);
+            if let Some(full) = install_state::get_tool_full(short) {
+                full
+            } else if let Some(pt) = install_state::get_plugin_type(short) {
+                match pt {
+                    PluginType::Asdf => format!("asdf:{short}"),
+                    PluginType::Vfox => format!("vfox:{short}"),
+                    PluginType::VfoxBackend => short.to_string(),
+                }
+            } else {
+                self.full()
+            }
+        };
+        // Strip options since lockfiles have a separate options field
+        if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&full) {
+            return c.get(1).unwrap().as_str().to_string();
+        }
+        full
     }
 
     pub fn tool_name(&self) -> String {
@@ -516,6 +634,7 @@ mod tests {
             Some("node[foo=bar]".to_string()),
             "node".to_string(),
             None,
+            BackendResolution::new(true),
         );
         assert_str_eq!("node[foo=bar]", fa.full_with_opts());
 
@@ -524,6 +643,7 @@ mod tests {
             Some("gitlab:jdxcode/mise-test-fixtures[asset_pattern=hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]".to_string()),
             "gitlab:jdxcode/mise-test-fixtures".to_string(),
             None,
+            BackendResolution::new(true),
         );
         assert_str_eq!(
             "gitlab:jdxcode/mise-test-fixtures[asset_pattern=hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]",

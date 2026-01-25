@@ -332,6 +332,7 @@ impl SwiftPackageRepo {
 
 #[cfg(test)]
 mod tests {
+    use crate::cli::args::BackendResolution;
     use crate::{config::Config, toolset::ToolVersionOptions};
 
     use super::*;
@@ -342,7 +343,13 @@ mod tests {
     async fn test_git_provider_from_ba() {
         // Example of defining a capture (closure) in Rust:
         let get_ba = |tool: String, opts: Option<ToolVersionOptions>| {
-            BackendArg::new_raw("spm".to_string(), Some(tool.clone()), tool, opts)
+            BackendArg::new_raw(
+                "spm".to_string(),
+                Some(tool.clone()),
+                tool,
+                opts,
+                BackendResolution::new(true),
+            )
         };
 
         assert_eq!(
