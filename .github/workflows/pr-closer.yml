@@ -13,13 +13,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr list -R jdx/mise --state open --json number,author,labels,updatedAt --limit 100 | \
+          gh pr list -R jdx/mise --state open --json number,author,labels,updatedAt,statusCheckRollup --limit 100 | \
           jq -r '.[] | select(
             (.updatedAt | fromdateiso8601) < (now - 30*24*60*60) and
             .author.login != "jdx" and
             ([.labels[].name] | index("keep-open") | not)
-          ) | .number' | \
-          while read -r pr; do
-            echo "Closing PR #$pr"
-            gh pr close "$pr" -R jdx/mise -c "This PR has been open for more than 30 days without activity. Please reopen if you'd like to continue working on it."
+          ) | [.number, (if (.statusCheckRollup | length > 0) and ([.statusCheckRollup[].conclusion] | index("FAILURE") or index("failure")) then "failing" else "passing" end)] | @tsv' | \
+          while read -r pr status; do
+            echo "Closing PR #$pr (checks: $status)"
+            if [ "$status" = "failing" ]; then
+              gh pr close "$pr" -R jdx/mise -c "This PR has been open for more than 30 days without activity. Note: CI checks were failing, which may be why it wasn't reviewed. Feel free to reopen or create a new PR if you'd like to continue working on this."
+            else
+              gh pr close "$pr" -R jdx/mise -c "This PR has been open for more than 30 days without activity. Feel free to reopen or create a new PR if you'd like to continue working on this."
+            fi
           done
