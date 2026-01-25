@@ -104,21 +104,31 @@ All commit messages and PR titles MUST follow conventional commit format:
 - `feat:` - New features
 - `fix:` - Bug fixes
 - `refactor:` - Code refactoring
-- `docs:` - Documentation
-- `style:` - Code style/formatting
+- `docs:` - Documentation changes
+- `style:` - Code style/formatting (no logic changes)
 - `perf:` - Performance improvements
 - `test:` - Testing changes
-- `chore:` - Maintenance tasks
-- `chore(deps):` - Dependency updates
-- `registry:` - New tool additions to `registry.toml` (no scope needed)
+- `chore:` - Maintenance tasks, releases, dependency updates
+- `security:` - Security-related changes
+- `registry:` - New tools in `registry.toml` (no scope needed)
 
-**Common Scopes:** `aqua`, `cli`, `config`, `backend`, `tool`, `env`, `task`, `api`, `ui`, `core`, `deps`, `schema`, `doctor`, `shim`, `security`
+**Scopes:**
+- For command-specific changes, use the command name: `install`, `activate`, `use`, `run`, `exec`, etc.
+- For subsystem changes: `config`, `backend`, `env`, `task`, `vfox`, `python`, `github`, `release`, `completions`, `http`, `schema`, `doctor`, `shim`, `core`, `deps`
+
+**Description Style:**
+- Use lowercase after the colon
+- Use imperative mood ("add feature" not "added feature")
+- Keep it concise but descriptive
 
 **Examples:**
-- `feat(cli): add new command for tool management`
-- `fix(config): resolve parsing issue with nested tables`
-- `test(e2e): add tests for tool installation`
-- `registry: add trunk metalinter (#5875)` - Adding new tool to registry
+- `fix(install): resolve version mismatch for previously installed tools`
+- `feat(activate): add fish shell support`
+- `feat(vfox): add semver Lua module for version sorting`
+- `feat(env): add environment caching with module cacheability support`
+- `docs(contributing): update hk usages`
+- `chore: release 2026.1.6`
+- `registry: add miller`
 
 ### Pre-commit Process
 1. Run `mise run lint-fix` and `git add` any lint fixes before committing
