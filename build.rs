@@ -107,6 +107,7 @@ fn codegen_registry() {
                         r##"RegistryBackend{{
                             full: r#"{backend}"#,
                             platforms: &[],
+                            os: &[],
                             options: &[],
                         }}"##
                     ));
@@ -123,16 +124,32 @@ fn codegen_registry() {
                                 .collect::<Vec<_>>()
                         })
                         .unwrap_or_default();
+                    let backend_os = backend
+                        .get("os")
+                        .map(|o| {
+                            o.as_array()
+                                .unwrap()
+                                .iter()
+                                .map(|o| o.as_str().unwrap().to_string())
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
                     let backend_options = parse_options(backend.get("options"));
                     backends.push(format!(
                         r##"RegistryBackend{{
                             full: r#"{full}"#,
                             platforms: &[{platforms}],
+                            os: &[{os}],
                             options: &[{options}],
                         }}"##,
                         platforms = platforms
                             .into_iter()
                             .map(|p| format!("\"{p}\""))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        os = backend_os
+                            .into_iter()
+                            .map(|o| format!("\"{o}\""))
                             .collect::<Vec<_>>()
                             .join(", "),
                         options = backend_options

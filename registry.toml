@@ -778,6 +778,10 @@ os = ["linux", "macos", "windows"]
 test = ["claude --version", "{{version}} (Claude Code)"]
 
 [[tools.claude.backends]]
+full = "aqua:anthropics/claude-code"
+os = ["linux", "macos"]
+
+[[tools.claude.backends]]
 full = "http:claude"
 
 [tools.claude.backends.options]

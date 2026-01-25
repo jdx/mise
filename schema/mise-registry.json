@@ -48,6 +48,25 @@
                     "type": "string",
                     "description": "Full backend specification"
                   },
+                  "os": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "linux",
+                        "macos",
+                        "windows",
+                        "freebsd",
+                        "openbsd",
+                        "netbsd",
+                        "dragonfly",
+                        "solaris",
+                        "android",
+                        "ios"
+                      ]
+                    },
+                    "description": "Operating systems this backend supports"
+                  },
                   "platforms": {
                     "type": "array",
                     "items": {

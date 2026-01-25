@@ -35,6 +35,7 @@ pub struct RegistryTool {
 pub struct RegistryBackend {
     pub full: &'static str,
     pub platforms: &'static [&'static str],
+    pub os: &'static [&'static str],
     pub options: &'static [(&'static str, &'static str)],
 }
 
@@ -87,10 +88,13 @@ impl RegistryTool {
         self.backends
             .iter()
             .filter(|rb| {
-                rb.platforms.is_empty()
-                    || rb.platforms.contains(&&*os)
-                    || rb.platforms.contains(&&*arch)
-                    || rb.platforms.contains(&&*platform)
+                // Check OS restriction on backend
+                (rb.os.is_empty() || rb.os.contains(&&*os))
+                    // Check platform restriction on backend
+                    && (rb.platforms.is_empty()
+                        || rb.platforms.contains(&&*os)
+                        || rb.platforms.contains(&&*arch)
+                        || rb.platforms.contains(&&*platform))
             })
             .map(|rb| rb.full)
             .filter(|full| {
