@@ -21,8 +21,10 @@ use crate::file;
 pub struct CachedEnv {
     /// Cached environment variables
     pub env: BTreeMap<String, String>,
-    /// Cached PATH entries
-    pub paths: Vec<PathBuf>,
+    /// User-configured paths from env._.path directives
+    pub user_paths: Vec<PathBuf>,
+    /// Tool paths from installations
+    pub tool_paths: Vec<PathBuf>,
     /// Time when the cache was created
     pub created_at: u64,
     /// Files to watch for changes (from modules and _.source directives)
@@ -231,6 +233,10 @@ impl CachedEnv {
         }
         for (path, expected_mtime) in watch_files.iter().zip(expected_mtimes.iter()) {
             if !path.exists() {
+                // mtime=0 means file didn't exist when cached - skip if still doesn't exist
+                if *expected_mtime == 0 {
+                    continue;
+                }
                 bail!("watch file no longer exists: {}", path.display());
             }
             if let Some(current_mtime) = get_file_mtime(path) {

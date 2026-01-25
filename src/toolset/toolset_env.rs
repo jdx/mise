@@ -34,16 +34,21 @@ impl Toolset {
 
         let (mut env, env_results) = self.final_env(config).await?;
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
-        let paths = self.list_final_paths(config, env_results.clone()).await?;
-        for p in &paths {
+        // Use split paths so we save a cache compatible with env_with_path_and_split
+        let (user_paths, tool_paths) = self
+            .list_final_paths_split(config, env_results.clone())
+            .await?;
+        for p in user_paths.iter().chain(tool_paths.iter()) {
             path_env.add(p.clone());
         }
         env.insert(PATH_KEY.to_string(), path_env.to_string());
 
         // Save to cache if enabled and no uncacheable directives
+        // Use save_env_cache_split to ensure cache is compatible with env_with_path_and_split
         if CachedEnv::is_enabled()
             && !env_results.has_uncacheable
-            && let Err(e) = self.save_env_cache(config, &env, &paths, &env_results)
+            && let Err(e) =
+                self.save_env_cache_split(config, &env, &user_paths, &tool_paths, &env_results)
         {
             debug!("env_cache: failed to save: {}", e);
         }
@@ -51,15 +56,70 @@ impl Toolset {
         Ok(env)
     }
 
-    /// Try to load environment from cache
-    fn try_load_env_cache(&self, config: &Arc<Config>) -> Result<Option<EnvMap>> {
+    /// Get environment with split paths (user_paths and tool_paths separate)
+    /// This method uses the env cache when available and returns paths separately
+    /// for proper handling in hook_env.
+    pub async fn env_with_path_and_split(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<(EnvMap, Vec<PathBuf>, Vec<PathBuf>)> {
+        // Try to load from cache if enabled
+        if CachedEnv::is_enabled()
+            && let Some(cached) = self.try_load_env_cache_full(config)?
+        {
+            trace!("env_cache: using cached environment with split paths");
+            let mut env = cached.env;
+            // Reconstruct PATH from cached paths
+            let mut path_env = PathEnv::from_iter(env::PATH.clone());
+            for p in cached.user_paths.iter().chain(cached.tool_paths.iter()) {
+                path_env.add(p.clone());
+            }
+            env.insert(PATH_KEY.to_string(), path_env.to_string());
+            return Ok((env, cached.user_paths, cached.tool_paths));
+        }
+
+        // Compute fresh
+        let (mut env, env_results) = self.final_env(config).await?;
+        let (user_paths, tool_paths) = self
+            .list_final_paths_split(config, env_results.clone())
+            .await?;
+
+        // Build PATH
+        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        for p in user_paths.iter().chain(tool_paths.iter()) {
+            path_env.add(p.clone());
+        }
+        env.insert(PATH_KEY.to_string(), path_env.to_string());
+
+        // Save to cache if enabled and no uncacheable directives
+        if CachedEnv::is_enabled()
+            && !env_results.has_uncacheable
+            && let Err(e) =
+                self.save_env_cache_split(config, &env, &user_paths, &tool_paths, &env_results)
+        {
+            debug!("env_cache: failed to save: {}", e);
+        }
+
+        Ok((env, user_paths, tool_paths))
+    }
+
+    /// Try to load environment from cache (returns full CachedEnv)
+    pub(crate) fn try_load_env_cache_full(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<Option<CachedEnv>> {
         let cache_key = self.compute_env_cache_key(config)?;
-        match CachedEnv::load(&cache_key)? {
+        CachedEnv::load(&cache_key)
+    }
+
+    /// Try to load environment from cache (returns reconstructed EnvMap)
+    fn try_load_env_cache(&self, config: &Arc<Config>) -> Result<Option<EnvMap>> {
+        match self.try_load_env_cache_full(config)? {
             Some(cached) => {
                 let mut env = cached.env;
                 // Reconstruct PATH from cached paths
                 let mut path_env = PathEnv::from_iter(env::PATH.clone());
-                for p in cached.paths {
+                for p in cached.user_paths.into_iter().chain(cached.tool_paths) {
                     path_env.add(p);
                 }
                 env.insert(PATH_KEY.to_string(), path_env.to_string());
@@ -69,12 +129,13 @@ impl Toolset {
         }
     }
 
-    /// Save environment to cache
-    fn save_env_cache(
+    /// Save environment to cache with split paths
+    fn save_env_cache_split(
         &self,
         config: &Arc<Config>,
         env: &EnvMap,
-        paths: &[PathBuf],
+        user_paths: &[PathBuf],
+        tool_paths: &[PathBuf],
         env_results: &EnvResults,
     ) -> Result<()> {
         let cache_key = self.compute_env_cache_key(config)?;
@@ -88,6 +149,13 @@ impl Toolset {
         watch_files.extend(env_results.watch_files.clone());
         watch_files.extend(env_results.env_files.clone());
         watch_files.extend(env_results.env_scripts.clone());
+
+        // Add mise.lock files to watch_files
+        for p in config.config_files.keys() {
+            if let Some(parent) = p.parent() {
+                watch_files.push(parent.join("mise.lock"));
+            }
+        }
 
         // Get mtimes for watch files
         let watch_file_mtimes: Vec<u64> = watch_files
@@ -104,7 +172,8 @@ impl Toolset {
 
         let cached = CachedEnv {
             env: env_without_path,
-            paths: paths.to_vec(),
+            user_paths: user_paths.to_vec(),
+            tool_paths: tool_paths.to_vec(),
             created_at: now,
             watch_files,
             watch_file_mtimes,
