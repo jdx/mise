@@ -1,6 +1,47 @@
 # Changelog
 
-## [2026.1.6](https://github.com/jdx/mise/compare/v2026.1.5..v2026.1.6) - 2026-01-20
+## [2026.1.7](https://github.com/jdx/mise/compare/v2026.1.6..v2026.1.7) - 2026-01-25
+
+### 🐛 Bug Fixes
+
+- **(backend)** resolve registry mismatch for previously installed tools by @smorimoto in [#7773](https://github.com/jdx/mise/pull/7773)
+- **(github)** handle projectname@version tag format by @jdx in [#7788](https://github.com/jdx/mise/pull/7788)
+- **(http)** add fromJSON/keys to version_expr for HashiCorp tools by @jdx in [#7816](https://github.com/jdx/mise/pull/7816)
+
+### 📚 Documentation
+
+- **(contributing)** correct ripgrep command by @nguyenvulong in [#7805](https://github.com/jdx/mise/pull/7805)
+- **(contributing)** update hk usages by @muzimuzhi in [#7797](https://github.com/jdx/mise/pull/7797)
+
+### 📦 Registry
+
+- add claude-powerline by @TyceHerrman in [#7798](https://github.com/jdx/mise/pull/7798)
+- add rpk by @artemklevtsov in [#7802](https://github.com/jdx/mise/pull/7802)
+
+### New Contributors
+
+- @smorimoto made their first contribution in [#7773](https://github.com/jdx/mise/pull/7773)
+- @nguyenvulong made their first contribution in [#7805](https://github.com/jdx/mise/pull/7805)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (5)
+
+- [`Epistates/treemd`](https://github.com/Epistates/treemd)
+- [`anthropics/claude-code`](https://github.com/anthropics/claude-code)
+- [`k1LoW/git-wt`](https://github.com/k1LoW/git-wt)
+- [`odigos-io/odigos`](https://github.com/odigos-io/odigos)
+- [`raskell-io/hx`](https://github.com/raskell-io/hx)
+
+#### Updated Packages (6)
+
+- [`checkmake/checkmake`](https://github.com/checkmake/checkmake)
+- [`gruntwork-io/terragrunt`](https://github.com/gruntwork-io/terragrunt)
+- [`interlynk-io/sbomqs`](https://github.com/interlynk-io/sbomqs)
+- [`maxpert/marmot`](https://github.com/maxpert/marmot)
+- [`pranshuparmar/witr`](https://github.com/pranshuparmar/witr)
+- [`skim-rs/skim`](https://github.com/skim-rs/skim)
+## [2026.1.6](https://github.com/jdx/mise/compare/v2026.1.5..v2026.1.6) - 2026-01-21
 
 ### 🚀 Features
 
@@ -12,6 +53,10 @@
 - **(prepare)** handle freshness check for auto-created venvs by @jdx in [#7770](https://github.com/jdx/mise/pull/7770)
 - **(release)** use colon separator in release titles by @jdx in [#7765](https://github.com/jdx/mise/pull/7765)
 - **(release)** drop Fedora 41 from COPR build (EOL) by @TobiX in [#7771](https://github.com/jdx/mise/pull/7771)
+- **(release)** bump version until unused when publishing subcrates by @jdx in [#7787](https://github.com/jdx/mise/pull/7787)
+- **(tasks)** include task tools in env resolution cache check by @jdx in [#7786](https://github.com/jdx/mise/pull/7786)
+- rust lockfile by @vadimpiven in [#7780](https://github.com/jdx/mise/pull/7780)
+- Ensure tool stubs have dependency toolset paths as well by @thejcannon in [#7777](https://github.com/jdx/mise/pull/7777)
 
 ### 🚜 Refactor
 
@@ -25,17 +70,13 @@
 ### 📦 Registry
 
 - use aqua for zprint by @scop in [#7767](https://github.com/jdx/mise/pull/7767)
+- add miller ([aqua:johnkerl/miller](https://github.com/johnkerl/miller)) by @kit494way in [#7782](https://github.com/jdx/mise/pull/7782)
+- add atlas-community ([aqua:ariga/atlas/community](https://github.com/ariga/atlas/community)) by @akanter in [#7784](https://github.com/jdx/mise/pull/7784)
 
 ### Security
 
 - remove insecure registry-comment workflow by @jdx in [#7769](https://github.com/jdx/mise/pull/7769)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (2)
-
-- [`cameron-martin/bazel-lsp`](https://github.com/cameron-martin/bazel-lsp)
-- [`micro-editor/micro`](https://github.com/micro-editor/micro)
 ## [2026.1.5](https://github.com/jdx/mise/compare/v2026.1.4..v2026.1.5) - 2026-01-19
 
 ### 🚀 Features
@@ -5691,7 +5732,7 @@
 ### New Contributors
 
 - @bnorick made their first contribution in [#3505](https://github.com/jdx/mise/pull/3505)
-- @biggusbeetus made their first contribution in [#3502](https://github.com/jdx/mise/pull/3502)
+- @elchocarrero made their first contribution in [#3502](https://github.com/jdx/mise/pull/3502)
 
 ## [2024.12.7](https://github.com/jdx/mise/compare/v2024.12.6..v2024.12.7) - 2024-12-12
 

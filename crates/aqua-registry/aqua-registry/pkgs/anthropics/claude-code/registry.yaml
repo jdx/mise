@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: anthropics
+    repo_name: claude-code
+    description: Claude Code is an agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster by executing routine tasks, explaining complex code, and handling git workflows - all through natural language commands
+    files:
+      - name: claude
+    version_source: github_tag
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        format: raw
+        url: https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{trimV .Version}}/{{.OS}}-{{.Arch}}/claude
+        files:
+          - name: claude
+        replacements:
+          amd64: x64
+        supported_envs:
+          - darwin
+          - linux
+        overrides:
+          - goos: linux
+            url: https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{trimV .Version}}/{{.OS}}-{{.Arch}}-musl/claude

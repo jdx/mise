@@ -3,10 +3,10 @@ packages:
   - type: github_release
     repo_owner: interlynk-io
     repo_name: sbomqs
-    description: SBOM quality score - Quality metrics for your sboms
+    description: "sbomqs: The Comprehensive SBOM Quality & Compliance Tool"
     version_constraint: "false"
     version_overrides:
-      - version_constraint: semver("<= V0.0.3")
+      - version_constraint: semver("<= 0.0.3")
         no_asset: true
       - version_constraint: semver("<= 0.0.9")
         asset: sbomqs-{{.OS}}-{{.Arch}}
@@ -21,17 +21,44 @@ packages:
           - darwin
           - windows
           - amd64
-      - version_constraint: Version == "v0.0.10"
+      - version_constraint: semver("<= 1.3.0")
         asset: sbomqs-{{.OS}}-{{.Arch}}
         format: raw
         checksum:
           type: github_release
           asset: sbomqs_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 2.0.2")
+        asset: sbomqs_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
           algorithm: sha256
       - version_constraint: "true"
-        asset: sbomqs-{{.OS}}-{{.Arch}}
-        format: raw
+        asset: sbomqs_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
         checksum:
           type: github_release
-          asset: sbomqs_{{trimV .Version}}_checksums.txt
+          asset: checksums.txt
           algorithm: sha256
+        cosign:
+          opts:
+            - --certificate-identity
+            - https://github.com/interlynk-io/sbomqs/.github/workflows/release.yml@refs/tags/{{.Version}}
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
+            - --certificate
+            - https://github.com/interlynk-io/sbomqs/releases/download/{{.Version}}/{{.Asset}}.pem
+            - --signature
+            - https://github.com/interlynk-io/sbomqs/releases/download/{{.Version}}/{{.Asset}}.sig

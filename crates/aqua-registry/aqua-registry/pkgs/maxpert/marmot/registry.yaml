@@ -76,12 +76,21 @@ packages:
         supported_envs:
           - linux
           - darwin
-      - version_constraint: "true"
+      - version_constraint: semver("<= 2.4.2")
         asset: marmot-{{.Version}}-beta-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         overrides:
           - goos: linux
             asset: marmot-{{.Version}}-beta-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: marmot-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: linux
+            asset: marmot-{{.Version}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
         supported_envs:
           - linux
           - darwin
