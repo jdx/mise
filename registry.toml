@@ -784,19 +784,8 @@ full = "http:claude"
 bin = "claude"
 # NOTE: upstream `/stable` is often stale; prefer `/latest` for correct `mise latest claude`
 # See: https://github.com/jdx/mise/discussions/7329
+url = 'https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/{{ os(macos="darwin") }}-{{ arch() }}/claude'
 version_list_url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/latest"
-
-[tools.claude.backends.options.platforms.macos-arm64]
-url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/darwin-arm64/claude"
-
-[tools.claude.backends.options.platforms.macos-x64]
-url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/darwin-x64/claude"
-
-[tools.claude.backends.options.platforms.linux-arm64]
-url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/linux-arm64/claude"
-
-[tools.claude.backends.options.platforms.linux-x64]
-url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/linux-x64/claude"
 
 [tools.claude.backends.options.platforms.windows-x64]
 bin = "claude.exe"
