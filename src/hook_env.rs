@@ -348,6 +348,7 @@ pub async fn build_session(
     aliases: indexmap::IndexMap<String, String>,
     loaded_tools: IndexSet<String>,
     watch_files: BTreeSet<WatchFilePattern>,
+    config_paths: IndexSet<PathBuf>,
 ) -> Result<HookEnvSession> {
     let mut max_modtime = UNIX_EPOCH;
     for cf in get_watch_files(watch_files)? {
@@ -355,12 +356,6 @@ pub async fn build_session(
             max_modtime = std::cmp::max(modified, max_modtime);
         }
     }
-
-    let config_paths = if let Ok(paths) = config.path_dirs().await {
-        paths.iter().cloned().collect()
-    } else {
-        IndexSet::new()
-    };
 
     let loaded_configs: IndexSet<PathBuf> = config.config_files.keys().cloned().collect();
 

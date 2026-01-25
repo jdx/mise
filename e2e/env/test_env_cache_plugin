@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+
+# Test env caching with a plugin that returns cacheable=true
+# This verifies that when env_cache=true, plugins are NOT re-executed on every command
+
+# Enable env caching
+export MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+
+# Create a minimal vfox plugin that tracks execution
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/test-cacheable-env"
+mkdir -p "$PLUGIN_DIR/hooks"
+
+# Create metadata.lua
+cat >"$PLUGIN_DIR/metadata.lua" <<'EOFMETA'
+PLUGIN = {}
+PLUGIN.name = "test-cacheable-env"
+PLUGIN.version = "1.0.0"
+PLUGIN.homepage = "https://example.com"
+PLUGIN.license = "MIT"
+PLUGIN.description = "Test plugin for env caching"
+PLUGIN.minRuntimeVersion = "0.3.0"
+EOFMETA
+
+# Create counter file to track executions
+COUNTER_FILE="$MISE_DATA_DIR/env_cache_test_counter"
+echo "0" >"$COUNTER_FILE"
+
+# Create mise_env.lua hook that increments counter and returns cacheable=true
+cat >"$PLUGIN_DIR/hooks/mise_env.lua" <<EOFHOOK
+function PLUGIN:MiseEnv(ctx)
+    -- Read and increment counter
+    local counter_file = "$COUNTER_FILE"
+    local f = io.open(counter_file, "r")
+    local count = tonumber(f:read("*all")) or 0
+    f:close()
+
+    f = io.open(counter_file, "w")
+    f:write(tostring(count + 1))
+    f:close()
+
+    return {
+        env = {
+            {key = "TEST_CACHEABLE_VAR", value = "cached_value_" .. tostring(count + 1)}
+        },
+        cacheable = true,
+        watch_files = {}
+    }
+end
+EOFHOOK
+
+# Create config that uses the plugin module
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+_.test-cacheable-env = {}
+EOF
+
+# Reset counter
+echo "0" >"$COUNTER_FILE"
+
+# First run - should execute plugin and cache result
+mise env -s bash >/dev/null 2>&1
+FIRST_COUNT=$(cat "$COUNTER_FILE")
+
+# Second run - should use cache, NOT execute plugin again
+mise env -s bash >/dev/null 2>&1
+SECOND_COUNT=$(cat "$COUNTER_FILE")
+
+# Third run - should still use cache
+mise env -s bash >/dev/null 2>&1
+THIRD_COUNT=$(cat "$COUNTER_FILE")
+
+# The counter should only be 1 (first run only)
+# If caching is broken, it would be 3
+if [ "$FIRST_COUNT" -eq 1 ] && [ "$SECOND_COUNT" -eq 1 ] && [ "$THIRD_COUNT" -eq 1 ]; then
+	echo "SUCCESS: Plugin was only executed once (counter=$THIRD_COUNT), caching is working"
+else
+	echo "FAILURE: Plugin was executed multiple times (first=$FIRST_COUNT, second=$SECOND_COUNT, third=$THIRD_COUNT)"
+	echo "Expected counter to remain at 1 after first execution"
+	exit 1
+fi
+
+# Now modify the config to invalidate cache
+sleep 1
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+_.test-cacheable-env = { modified = true }
+EOF
+
+# This run should re-execute the plugin due to config change
+mise env -s bash >/dev/null 2>&1
+FOURTH_COUNT=$(cat "$COUNTER_FILE")
+
+if [ "$FOURTH_COUNT" -eq 2 ]; then
+	echo "SUCCESS: Plugin was re-executed after config change (counter=$FOURTH_COUNT)"
+else
+	echo "FAILURE: Expected counter to be 2 after config change, got $FOURTH_COUNT"
+	exit 1
+fi
+
+# Cleanup
+rm -rf "$PLUGIN_DIR"
+rm -f "$COUNTER_FILE"
