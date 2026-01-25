@@ -3189,23 +3189,9 @@ test = ["nomad-pack version", "{{version}}"]
 full = "http:nomad-pack"
 
 [tools.nomad-pack.backends.options]
-version_expr = 'keys(fromJSON(body).versions)'
+url = 'https://releases.hashicorp.com/nomad-pack/{{ version }}/nomad-pack_{{ version }}_{{ os(macos="darwin") }}_{{ arch(x64="amd64") }}.zip'
+version_expr = 'fromJSON(body).versions | keys() | sortVersions()'
 version_list_url = "https://releases.hashicorp.com/nomad-pack/index.json"
-
-[tools.nomad-pack.backends.options.platforms.macos-arm64]
-url = "https://releases.hashicorp.com/nomad-pack/{{ version }}/nomad-pack_{{ version }}_darwin_arm64.zip"
-
-[tools.nomad-pack.backends.options.platforms.macos-x64]
-url = "https://releases.hashicorp.com/nomad-pack/{{ version }}/nomad-pack_{{ version }}_darwin_amd64.zip"
-
-[tools.nomad-pack.backends.options.platforms.linux-arm64]
-url = "https://releases.hashicorp.com/nomad-pack/{{ version }}/nomad-pack_{{ version }}_linux_arm64.zip"
-
-[tools.nomad-pack.backends.options.platforms.linux-x64]
-url = "https://releases.hashicorp.com/nomad-pack/{{ version }}/nomad-pack_{{ version }}_linux_amd64.zip"
-
-[tools.nomad-pack.backends.options.platforms.windows-x64]
-url = "https://releases.hashicorp.com/nomad-pack/{{ version }}/nomad-pack_{{ version }}_windows_amd64.zip"
 
 [[tools.nomad-pack.backends]]
 full = "asdf:mise-plugins/mise-hashicorp"
@@ -4408,11 +4394,9 @@ os = ["linux"]
 full = "http:tfc-agent"
 
 [tools.tfc-agent.backends.options]
-version_expr = 'keys(fromJSON(body).versions)'
+url = 'https://releases.hashicorp.com/tfc-agent/{{ version }}/tfc-agent_{{ version }}_linux_{{ arch(x64="amd64") }}.zip'
+version_expr = 'fromJSON(body).versions | keys() | sortVersions()'
 version_list_url = "https://releases.hashicorp.com/tfc-agent/index.json"
-
-[tools.tfc-agent.backends.options.platforms.linux-x64]
-url = "https://releases.hashicorp.com/tfc-agent/{{ version }}/tfc-agent_{{ version }}_linux_amd64.zip"
 
 [[tools.tfc-agent.backends]]
 full = "asdf:mise-plugins/mise-hashicorp"
