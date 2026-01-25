@@ -13,7 +13,7 @@
 /// - `version_json_path`: JQ-like path to extract versions from JSON (e.g., `.[].version`)
 /// - `version_expr`: Expression using expr-lang syntax to extract versions
 use crate::backend::jq;
-use expr::{Context, Value};
+use expr::{Context, Environment, Value};
 use eyre::Result;
 use regex::Regex;
 use std::collections::HashSet;
@@ -106,15 +106,45 @@ pub fn parse_version_list(
     let mut seen = HashSet::new();
     versions.retain(|v| seen.insert(v.clone()));
 
+    // DO NOT sort versions here - the backend/upstream determines version order.
+    // Sorting is handled elsewhere (e.g., versions host, resolve logic).
+
     Ok(versions)
 }
 
 /// Evaluate a version expression using expr-lang
 fn eval_version_expr(expr_str: &str, body: &str) -> Result<Vec<String>> {
+    use versions::Versioning;
+
     let mut ctx = Context::default();
     ctx.insert("body".to_string(), Value::String(body.to_string()));
 
-    let result = expr::eval(expr_str, &ctx)?;
+    // expr-lang 1.0+ has built-in fromJSON, keys, values, len, toJSON functions
+    let mut env = Environment::new();
+
+    // Add sortVersions function for semver-aware sorting
+    env.add_function("sortVersions", |c| {
+        if c.args.len() != 1 {
+            return Err("sortVersions() takes exactly one argument"
+                .to_string()
+                .into());
+        }
+        let Value::Array(arr) = &c.args[0] else {
+            return Err("sortVersions() takes an array as the first argument"
+                .to_string()
+                .into());
+        };
+        let mut versions: Vec<_> = arr
+            .iter()
+            .filter_map(|v| v.as_string().map(|s| s.to_string()))
+            .collect();
+        versions.sort_by_cached_key(|v| Versioning::new(v));
+        Ok(Value::Array(
+            versions.into_iter().map(Value::String).collect(),
+        ))
+    });
+
+    let result = env.eval(expr_str, &ctx)?;
     value_to_strings(result)
 }
 
@@ -316,5 +346,23 @@ mod tests {
         let versions =
             parse_version_list(content, None, None, Some(r#"split(body, "\n")"#)).unwrap();
         assert_eq!(versions, vec!["1.0.0", "2.0.0", "3.0.0"]);
+    }
+
+    #[test]
+    fn test_parse_with_version_expr_json_keys() {
+        // Test version_expr with fromJSON and keys for hashicorp-style JSON
+        let content = r#"{"name":"sentinel","versions":{"0.1.0":{},"0.2.0":{},"1.0.0":{}}}"#;
+        let versions = parse_version_list(
+            content,
+            None,
+            None,
+            Some(r#"keys(fromJSON(body).versions)"#),
+        )
+        .unwrap();
+        // Keys may not be in order, so just check we got all versions
+        assert_eq!(versions.len(), 3);
+        assert!(versions.contains(&"0.1.0".to_string()));
+        assert!(versions.contains(&"0.2.0".to_string()));
+        assert!(versions.contains(&"1.0.0".to_string()));
     }
 }

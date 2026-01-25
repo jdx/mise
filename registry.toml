@@ -784,19 +784,8 @@ full = "http:claude"
 bin = "claude"
 # NOTE: upstream `/stable` is often stale; prefer `/latest` for correct `mise latest claude`
 # See: https://github.com/jdx/mise/discussions/7329
+url = 'https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/{{ os(macos="darwin") }}-{{ arch() }}/claude'
 version_list_url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/latest"
-
-[tools.claude.backends.options.platforms.macos-arm64]
-url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/darwin-arm64/claude"
-
-[tools.claude.backends.options.platforms.macos-x64]
-url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/darwin-x64/claude"
-
-[tools.claude.backends.options.platforms.linux-arm64]
-url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/linux-arm64/claude"
-
-[tools.claude.backends.options.platforms.linux-x64]
-url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/linux-x64/claude"
 
 [tools.claude.backends.options.platforms.windows-x64]
 bin = "claude.exe"
@@ -3182,8 +3171,19 @@ backends = ["aqua:hashicorp/nomad", "asdf:mise-plugins/mise-hashicorp"]
 description = "Nomad is an easy-to-use, flexible, and performant workload orchestrator that can deploy a mix of microservice, batch, containerized, and non-containerized applications. Nomad is easy to operate and scale and has native Consul and Vault integrations"
 
 [tools.nomad-pack]
-backends = ["aqua:hashicorp/nomad-pack", "asdf:mise-plugins/mise-hashicorp"]
 description = "Nomad Pack is a templating and packaging tool used with HashiCorp Nomad"
+test = ["nomad-pack version", "{{version}}"]
+
+[[tools.nomad-pack.backends]]
+full = "http:nomad-pack"
+
+[tools.nomad-pack.backends.options]
+url = 'https://releases.hashicorp.com/nomad-pack/{{ version }}/nomad-pack_{{ version }}_{{ os(macos="darwin") }}_{{ arch(x64="amd64") }}.zip'
+version_expr = 'fromJSON(body).versions | keys() | sortVersions()'
+version_list_url = "https://releases.hashicorp.com/nomad-pack/index.json"
+
+[[tools.nomad-pack.backends]]
+full = "asdf:mise-plugins/mise-hashicorp"
 
 [tools.notation]
 backends = ["aqua:notaryproject/notation", "asdf:bodgit/asdf-notation"]
@@ -3888,8 +3888,19 @@ description = "semver bash implementation"
 test = ["semver --version", "semver: {{version}}"]
 
 [tools.sentinel]
-backends = ["aqua:hashicorp/sentinel", "asdf:mise-plugins/mise-hashicorp"]
 description = "Sentinel is a policy as code tool that lets you control what users of HashiCorp products are allowed to do. It enforces policies proactively, preventing end users from deploying changes that are not allowed"
+test = ["sentinel version", "Sentinel v{{version}}"]
+
+[[tools.sentinel.backends]]
+full = "http:sentinel"
+
+[tools.sentinel.backends.options]
+url = 'https://releases.hashicorp.com/sentinel/{{ version }}/sentinel_{{ version }}_{{ os(macos="darwin") }}_{{ arch(x64="amd64") }}.zip'
+version_expr = 'fromJSON(body).versions | keys() | sortVersions()'
+version_list_url = "https://releases.hashicorp.com/sentinel/index.json"
+
+[[tools.sentinel.backends]]
+full = "asdf:mise-plugins/mise-hashicorp"
 
 [tools.sentry]
 aliases = ["sentry-cli"]
@@ -4365,8 +4376,19 @@ backends = ["aqua:dineshba/tf-summarize", "asdf:adamcrews/asdf-tf-summarize"]
 description = "A command-line utility to print the summary of the terraform plan"
 
 [tools.tfc-agent]
-backends = ["aqua:hashicorp/tfc-agent", "asdf:mise-plugins/mise-hashicorp"]
 description = "HCP Terraform Agents allow HCP Terraform to communicate with isolated, private, or on-premises infrastructure"
+os = ["linux"]
+
+[[tools.tfc-agent.backends]]
+full = "http:tfc-agent"
+
+[tools.tfc-agent.backends.options]
+url = 'https://releases.hashicorp.com/tfc-agent/{{ version }}/tfc-agent_{{ version }}_linux_{{ arch(x64="amd64") }}.zip'
+version_expr = 'fromJSON(body).versions | keys() | sortVersions()'
+version_list_url = "https://releases.hashicorp.com/tfc-agent/index.json"
+
+[[tools.tfc-agent.backends]]
+full = "asdf:mise-plugins/mise-hashicorp"
 
 [tools.tfctl]
 backends = ["aqua:flux-iac/tofu-controller/tfctl", "asdf:deas/asdf-tfctl"]
