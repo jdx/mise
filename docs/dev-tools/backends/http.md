@@ -280,10 +280,13 @@ version_expr = 'filter(split(body, "\n"), # != "")'
 version_expr = 'keys(fromJSON(body).versions)'
 ```
 
-The following custom functions are available:
+The [expr-lang](https://expr-lang.org/) library provides built-in functions including:
 
 - **`fromJSON(string)`**: Parse a JSON string into a value
+- **`toJSON(value)`**: Convert a value to a JSON string
 - **`keys(map)`**: Get the keys of an object/map as an array
+- **`values(map)`**: Get the values of an object/map as an array
+- **`len(value)`**: Get the length of a string, array, or map
 
 ::: tip
 `version_expr` takes precedence over `version_regex` and `version_json_path` if multiple are specified. Use it when the other options aren't flexible enough for your use case.
