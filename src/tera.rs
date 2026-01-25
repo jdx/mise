@@ -49,11 +49,10 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
                 env::consts::ARCH
             };
             // Check if there's a remap for this arch
-            if let Some(remapped) = args.get(arch) {
-                if let Some(s) = remapped.as_str() {
+            if let Some(remapped) = args.get(arch)
+                && let Some(s) = remapped.as_str() {
                     return Ok(Value::String(s.to_string()));
                 }
-            }
             Ok(Value::String(arch.to_string()))
         },
     );
@@ -69,11 +68,10 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
         move |args: &HashMap<String, Value>| -> tera::Result<Value> {
             let os = env::consts::OS;
             // Check if there's a remap for this OS
-            if let Some(remapped) = args.get(os) {
-                if let Some(s) = remapped.as_str() {
+            if let Some(remapped) = args.get(os)
+                && let Some(s) = remapped.as_str() {
                     return Ok(Value::String(s.to_string()));
                 }
-            }
             Ok(Value::String(os.to_string()))
         },
     );
