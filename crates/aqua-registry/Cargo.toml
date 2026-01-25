@@ -36,7 +36,7 @@ itertools = "0.14"
 strum = { version = "0.27", features = ["derive"] }
 
 # Template parsing and evaluation
-expr-lang = "0.4"
+expr-lang = "1"
 versions = { version = "6", features = ["serde"] }
 heck = "0.5"
 
