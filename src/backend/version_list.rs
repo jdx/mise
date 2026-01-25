@@ -106,16 +106,44 @@ pub fn parse_version_list(
     let mut seen = HashSet::new();
     versions.retain(|v| seen.insert(v.clone()));
 
+    // DO NOT sort versions here - the backend/upstream determines version order.
+    // Sorting is handled elsewhere (e.g., versions host, resolve logic).
+
     Ok(versions)
 }
 
 /// Evaluate a version expression using expr-lang
 fn eval_version_expr(expr_str: &str, body: &str) -> Result<Vec<String>> {
+    use versions::Versioning;
+
     let mut ctx = Context::default();
     ctx.insert("body".to_string(), Value::String(body.to_string()));
 
-    // expr-lang 0.4+ has built-in fromJSON, keys, values, len, toJSON functions
-    let env = Environment::new();
+    // expr-lang 1.0+ has built-in fromJSON, keys, values, len, toJSON functions
+    let mut env = Environment::new();
+
+    // Add sortVersions function for semver-aware sorting
+    env.add_function("sortVersions", |c| {
+        if c.args.len() != 1 {
+            return Err("sortVersions() takes exactly one argument"
+                .to_string()
+                .into());
+        }
+        let Value::Array(arr) = &c.args[0] else {
+            return Err("sortVersions() takes an array as the first argument"
+                .to_string()
+                .into());
+        };
+        let mut versions: Vec<_> = arr
+            .iter()
+            .filter_map(|v| v.as_string().map(|s| s.to_string()))
+            .collect();
+        versions.sort_by_cached_key(|v| Versioning::new(v));
+        Ok(Value::Array(
+            versions.into_iter().map(Value::String).collect(),
+        ))
+    });
+
     let result = env.eval(expr_str, &ctx)?;
     value_to_strings(result)
 }

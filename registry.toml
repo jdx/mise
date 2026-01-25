@@ -3921,7 +3921,7 @@ full = "http:sentinel"
 
 [tools.sentinel.backends.options]
 url = 'https://releases.hashicorp.com/sentinel/{{ version }}/sentinel_{{ version }}_{{ os(macos="darwin") }}_{{ arch(x64="amd64") }}.zip'
-version_expr = 'keys(fromJSON(body).versions)'
+version_expr = 'fromJSON(body).versions | keys() | sortVersions()'
 version_list_url = "https://releases.hashicorp.com/sentinel/index.json"
 
 [[tools.sentinel.backends]]
