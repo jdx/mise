@@ -1,0 +1,2 @@
+backends = ["aqua:hashicorp/nomad", "asdf:mise-plugins/mise-hashicorp"]
+description = "Nomad is an easy-to-use, flexible, and performant workload orchestrator that can deploy a mix of microservice, batch, containerized, and non-containerized applications. Nomad is easy to operate and scale and has native Consul and Vault integrations"

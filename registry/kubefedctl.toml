@@ -1,0 +1,6 @@
+backends = ["aqua:kubernetes-retired/kubefed", "asdf:kvokka/asdf-kubefedctl"]
+description = "kubefedctl controls a Kubernetes Cluster Federation"
+test = [
+  "kubefedctl version",
+  "kubefedctl version:",
+] # may not have version in output

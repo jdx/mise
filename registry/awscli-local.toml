@@ -1,0 +1,3 @@
+backends = ["pipx:awscli-local"]
+description = "This package provides the awslocal command, which is a thin wrapper around the aws command line interface for use with LocalStack"
+test = ["awslocal --version", "aws-cli/"]

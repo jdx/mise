@@ -5,7 +5,7 @@
 It relies on asdf plugins for each tool. asdf plugins are more risky to use because they're typically written by a single developer unrelated to the tool vendor. They also generally do not function on Windows because they're written
 in bash which is often not available on Windows and the scripts generally are not written to be cross-platform.
 
-asdf plugins are not used for tools inside the [registry](https://github.com/jdx/mise/blob/main/registry.toml) whenever possible. Sometimes it is not possible to use more secure backends like aqua/ubi because tools have complex install setups or need to export env vars.
+asdf plugins are not used for tools inside the [registry](https://github.com/jdx/mise/blob/main/registry/) whenever possible. Sometimes it is not possible to use more secure backends like aqua/ubi because tools have complex install setups or need to export env vars.
 
 All of these are hosted in the mise-plugins org to secure the supply chain so you do not need to rely on plugins maintained by anyone except me.
 

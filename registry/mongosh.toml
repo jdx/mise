@@ -1,0 +1,2 @@
+backends = ["github:mongodb-js/mongosh", "asdf:itspngu/asdf-mongosh"]
+description = "The MongoDB Shell"

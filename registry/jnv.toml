@@ -1,0 +1,2 @@
+backends = ["aqua:ynqa/jnv", "asdf:raimon49/asdf-jnv"]
+description = "interactive JSON filter using jq"

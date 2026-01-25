@@ -1,0 +1,2 @@
+backends = ["npm:codebuff"]
+description = "Codebuff is a CLI tool that writes code for you"

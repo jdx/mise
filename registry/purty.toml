@@ -1,0 +1,3 @@
+backends = ["npm:purty"]
+description = "PureScript pretty-printer"
+test = ["purty version", "Purty version: {{version}}"]

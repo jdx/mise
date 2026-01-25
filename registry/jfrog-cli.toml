@@ -1,0 +1,2 @@
+backends = ["asdf:mise-plugins/mise-jfrog-cli"]
+description = "Frog CLI is a client that provides a simple interface that automates access to the JFrog products"

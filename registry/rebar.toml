@@ -1,0 +1,3 @@
+backends = ["asdf:mise-plugins/mise-rebar"]
+depends = ["erlang"]
+description = "Erlang build tool that makes it easy to compile and test Erlang applications and releases"

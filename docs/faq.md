@@ -94,7 +94,7 @@ We maintain [an index](https://github.com/mise-plugins/registry) of shorthands t
 base.
 This is regularly updated every time that mise has a release. This repository is stored directly
 into
-the codebase in [registry.toml](https://github.com/jdx/mise/blob/main/registry.toml).
+the codebase in [registry/](https://github.com/jdx/mise/blob/main/registry/).
 
 ## Does "node@20" mean the newest available version of node?
 

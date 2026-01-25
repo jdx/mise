@@ -1,0 +1,6 @@
+backends = ["aqua:pachyderm/pachyderm", "asdf:abatilo/asdf-pachctl"]
+description = "Data-Centric Pipelines and Data Versioning"
+test = [
+  "pachctl help",
+  "",
+] # version subcommand fails with invalid configuration

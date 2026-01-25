@@ -1,0 +1,2 @@
+backends = ["github:jwt-rs/jwt-ui[exe=jwtui]", "cargo:jwt-ui"]
+description = "A command line UI for decoding/encoding JSON Web Tokens"

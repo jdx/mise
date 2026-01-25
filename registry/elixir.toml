@@ -1,0 +1,3 @@
+backends = ["core:elixir"]
+depends = ["erlang"]
+description = "Elixir is a dynamic, functional language for building scalable and maintainable applications"

@@ -1,0 +1,13 @@
+description = "Sentinel is a policy as code tool that lets you control what users of HashiCorp products are allowed to do. It enforces policies proactively, preventing end users from deploying changes that are not allowed"
+test = ["sentinel version", "Sentinel v{{version}}"]
+
+[[backends]]
+full = "http:sentinel"
+
+[backends.options]
+url = 'https://releases.hashicorp.com/sentinel/{{ version }}/sentinel_{{ version }}_{{ os(macos="darwin") }}_{{ arch(x64="amd64") }}.zip'
+version_expr = 'fromJSON(body).versions | keys() | sortVersions()'
+version_list_url = "https://releases.hashicorp.com/sentinel/index.json"
+
+[[backends]]
+full = "asdf:mise-plugins/mise-hashicorp"

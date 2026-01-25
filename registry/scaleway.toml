@@ -1,0 +1,6 @@
+aliases = ["scaleway-cli"]
+backends = [
+  "aqua:scaleway/scaleway-cli",
+  "asdf:albarralnunez/asdf-plugin-scaleway-cli",
+]
+description = "Command Line Interface for Scaleway"

@@ -1,0 +1,3 @@
+backends = ["github:depot/cli[exe=depot]", "asdf:depot/asdf-depot"]
+description = "Depot CLI, build your Docker images in the cloud"
+test = ["depot --version", "depot version {{version}}"]

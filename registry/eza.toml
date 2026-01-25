@@ -1,0 +1,9 @@
+backends = [
+  { full = "aqua:eza-community/eza", platforms = [
+    "linux",
+  ] },
+  "asdf:mise-plugins/mise-eza",
+  "cargo:eza",
+]
+description = "A modern, maintained replacement for ls"
+test = ["eza --version", "v{{version}}"]

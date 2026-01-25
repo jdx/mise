@@ -1,0 +1,5 @@
+backends = ["aqua:oxc-project/oxc/oxlint", "npm:oxlint"]
+description = "This is the linter for oxc."
+# TODO: Re-enable test once the aqua registry is fixed
+# The latest release has incorrect binary naming (oxlint.linux-x64-gnu.node instead of oxlint)
+# test = ["oxlint --version", "Version: {{version}}"]

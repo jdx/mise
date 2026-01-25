@@ -1,0 +1,2 @@
+backends = ["aqua:yannh/kubeconform", "asdf:lirlia/asdf-kubeconform"]
+description = "A FAST Kubernetes manifests validator, with support for Custom Resources"

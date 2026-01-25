@@ -1,0 +1,2 @@
+backends = ["aqua:astral-sh/rye", "asdf:Azuki-bar/asdf-rye", "cargo:rye"]
+description = "a Hassle-Free Python Experience"

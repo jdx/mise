@@ -1,0 +1,2 @@
+backends = ["aqua:ninja-build/ninja", "asdf:asdf-community/asdf-ninja"]
+description = "a small build system with a focus on speed"

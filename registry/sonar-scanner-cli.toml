@@ -1,0 +1,6 @@
+backends = [
+  "aqua:SonarSource/sonar-scanner-cli",
+  "asdf:virtualstaticvoid/asdf-sonarscanner",
+]
+description = "Scanner CLI for SonarQube (Server, Cloud)"
+test = ["sonar-scanner --version", "SonarScanner CLI {{version}}"]

@@ -1,0 +1,2 @@
+backends = ["aqua:smallstep/cli", "asdf:log2/asdf-step"]
+description = "A zero trust swiss army knife for working with X509, OAuth, JWT, OATH OTP, etc"

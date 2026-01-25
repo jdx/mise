@@ -1,0 +1,2 @@
+backends = ["asdf:mise-plugins/mise-minio"]
+description = "MinIO AIStor is a high-performance S3-compatible object store licensed under the MinIO Commercial License"

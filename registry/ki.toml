@@ -1,0 +1,3 @@
+backends = ["aqua:Kotlin/kotlin-interactive-shell", "asdf:comdotlinux/asdf-ki"]
+description = "Kotlin Language Interactive Shell"
+test = ["ki --version", "{{version}}"]

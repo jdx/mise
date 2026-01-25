@@ -1,0 +1,3 @@
+backends = ["asdf:mise-plugins/mise-sbt"]
+depends = ["java"]
+description = "sbt, the interactive build tool"

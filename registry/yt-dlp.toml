@@ -1,0 +1,3 @@
+backends = ["github:yt-dlp/yt-dlp[rename_exe=yt-dlp]", "asdf:duhow/asdf-yt-dlp"]
+description = "A feature-rich command-line audio/video downloader"
+test = ["yt-dlp --version", "{{version}}"]

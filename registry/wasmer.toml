@@ -1,0 +1,2 @@
+backends = ["aqua:wasmerio/wasmer", "asdf:tachyonicbytes/asdf-wasmer"]
+description = "The leading WebAssembly Runtime supporting WASI and Emscripten"

@@ -1,0 +1,6 @@
+backends = ["asdf:mise-plugins/mise-ghcup"]
+description = "The Glorious Glasgow Haskell Compiler."
+test = [
+  "ghc --version",
+  "The Glorious Glasgow Haskell Compilation System, version {{version}}",
+]

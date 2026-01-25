@@ -1,0 +1,2 @@
+backends = ["aqua:fiatjaf/jiq", "asdf:chessmango/asdf-jiq"]
+description = "jid on jq - interactive JSON query tool using jq expressions"

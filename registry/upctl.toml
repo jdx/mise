@@ -1,0 +1,3 @@
+backends = ["aqua:UpCloudLtd/upcloud-cli"]
+description = "UpCloud command line client (upctl)"
+test = ["upctl version", "{{version}}"]

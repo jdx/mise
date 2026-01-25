@@ -4,8 +4,8 @@ set -euxo pipefail
 
 for tool in $(mise registry | awk '{print $1}'); do
 	description="$(mise tool --description "$tool")"
-	if [ "$description" != "[none]" ]; then
-		toml set registry.toml "tools.$tool.description" "$description" >registry.toml.tmp
-		mv registry.toml.tmp registry.toml
+	if [ "$description" != "[none]" ] && [ -f "registry/$tool.toml" ]; then
+		toml set "registry/$tool.toml" "tools.$tool.description" "$description" >"registry/$tool.toml.tmp"
+		mv "registry/$tool.toml.tmp" "registry/$tool.toml"
 	fi
 done

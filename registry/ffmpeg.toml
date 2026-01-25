@@ -1,0 +1,2 @@
+backends = ["asdf:mise-plugins/mise-ffmpeg"]
+description = "A complete, cross-platform solution to record, convert and stream audio and video"

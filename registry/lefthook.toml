@@ -1,0 +1,8 @@
+backends = [
+  "aqua:evilmartians/lefthook",
+  "npm:lefthook",
+  "asdf:jtzero/asdf-lefthook",
+  "go:github.com/evilmartians/lefthook",
+]
+description = "Fast and powerful Git hooks manager for any type of projects"
+test = ["lefthook version", "{{version}}"]

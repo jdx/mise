@@ -1,0 +1,6 @@
+backends = [
+  "github:databus23/helm-diff[bin_path=diff/bin,rename_exe=helm-diff]",
+  "asdf:mise-plugins/mise-helm-diff",
+]
+description = "A helm plugin that shows a diff explaining what a helm upgrade would change"
+test = ["helm-diff version", "{{version}}"]

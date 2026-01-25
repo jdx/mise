@@ -1,0 +1,6 @@
+backends = ["vfox:mise-plugins/vfox-aapt2"]
+description = "Android Asset Packaging Tool (aapt)"
+test = [
+  "aapt2 version 2>&1",
+  "Android Asset Packaging Tool (aapt)",
+] # version doesn't match

@@ -65,7 +65,7 @@ mise install php@latest
 
 The tool name in the environment variable should be in SHOUTY_SNAKE_CASE (uppercase with underscores). For example, `my-tool` becomes `MISE_BACKENDS_MY_TOOL`.
 
-Source: <https://github.com/jdx/mise/blob/main/registry.toml>
+Source: <https://github.com/jdx/mise/blob/main/registry/>
 
 ## Tools {#tools}
 

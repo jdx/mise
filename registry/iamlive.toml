@@ -1,0 +1,2 @@
+backends = ["aqua:iann0036/iamlive", "asdf:chessmango/asdf-iamlive"]
+description = "Generate an IAM policy from AWS calls using client-side monitoring (CSM) or embedded proxy"

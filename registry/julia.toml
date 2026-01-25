@@ -1,0 +1,2 @@
+backends = ["asdf:mise-plugins/mise-julia"]
+description = "The Julia Programming Language"

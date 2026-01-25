@@ -1,0 +1,3 @@
+backends = ["github:databricks/cli[exe=databricks]"]
+description = "Databricks CLI"
+test = ["databricks --version", "Databricks CLI v{{version}}"]

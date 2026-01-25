@@ -1,0 +1,3 @@
+backends = ["aqua:bridgecrewio/checkov", "asdf:bosmak/asdf-checkov"]
+description = "Prevent cloud misconfigurations and find vulnerabilities during build-time in infrastructure as code, container images and open source packages with Checkov by Bridgecrew"
+test = ["checkov -v", "{{version}}"]

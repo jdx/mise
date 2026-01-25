@@ -1430,7 +1430,7 @@ an organization.
 Shorthands make it so when a user runs something like `mise install elixir` mise will
 automatically install the [asdf-elixir](https://github.com/asdf-vm/asdf-elixir) plugin. By
 default, it uses the shorthands in
-[`registry.toml`](https://github.com/jdx/mise/blob/main/registry.toml).
+[`registry/`](https://github.com/jdx/mise/blob/main/registry/).
 
 The file should be in this toml format:
 

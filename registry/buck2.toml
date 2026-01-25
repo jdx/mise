@@ -1,0 +1,3 @@
+backends = ["github:facebook/buck2[bin=buck2]"]
+description = "A fast, hermetic, multi-language build system"
+test = ["buck2 --version", "buck2"]

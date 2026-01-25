@@ -1,0 +1,3 @@
+backends = ["aqua:kellyjonbrazil/jc", "pipx:jc"]
+description = "CLI tool and python library that converts the output of popular command-line tools, file-types, and common strings to JSON, YAML, or Dictionaries. This allows piping of output to tools like jq and simplifying automation scripts"
+test = ["jc --version", "jc version:  {{version}}"]

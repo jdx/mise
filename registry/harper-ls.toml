@@ -1,0 +1,3 @@
+backends = ["aqua:Automattic/harper/harper-ls"]
+description = "harper-ls is the Language Server Protocol frontend for Harper"
+test = ["harper-ls --version", "harper-ls {{version}}"]

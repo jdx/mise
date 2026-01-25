@@ -13,7 +13,7 @@ aqua/ubi is not an option for some reason.
 The only exception is if the tool needs to set env vars or has a complex installation process, as plugins can provide functionality like [setting env vars globally](/environments/#plugin-provided-env-directives) without relying on a tool being installed. They can also provide [aliases for versions](/dev-tools/aliases.html#aliased-versions).
 
 If you want to integrate a new tool into mise, you should either try to get it into the [aqua registry](https://mise.jdx.dev/dev-tools/backends/aqua.html)
-or see if it can be installed with [ubi](https://mise.jdx.dev/dev-tools/backends/ubi.html). Then add it to the [registry](https://github.com/jdx/mise/blob/main/registry.toml).
+or see if it can be installed with [ubi](https://mise.jdx.dev/dev-tools/backends/ubi.html). Then add it to the [registry](https://github.com/jdx/mise/blob/main/registry/).
 Aqua is definitely preferred to ubi as it has better UX and more features like slsa verification and the ability to use different logic for older versions.
 
 You can manage all installed plugins in `mise` with [`mise plugins`](/cli/plugins.html).

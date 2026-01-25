@@ -1,0 +1,7 @@
+backends = [
+  "aqua:typst/typst",
+  "asdf:stephane-klein/asdf-typst",
+  "cargo:typst-cli",
+]
+description = "A new markup-based typesetting system that is powerful and easy to learn"
+test = ["typst --version", "typst {{version}}"]

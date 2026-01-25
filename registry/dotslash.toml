@@ -1,0 +1,3 @@
+backends = ["github:facebook/dotslash"]
+description = "Simplified executable deployment"
+test = ["dotslash --version", "DotSlash"]

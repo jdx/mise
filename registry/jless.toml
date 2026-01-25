@@ -1,0 +1,6 @@
+backends = [
+  "aqua:PaulJuliusMartinez/jless",
+  "asdf:jc00ke/asdf-jless",
+  "cargo:jless",
+]
+description = "jless is a command-line JSON viewer designed for reading, exploring, and searching through JSON data"

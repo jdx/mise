@@ -1,0 +1,3 @@
+backends = ["asdf:mise-plugins/mise-jib"]
+description = "jib is a general-purpose command-line utility for building Docker or OCI container images from file system content as well as JAR files"
+test = ["jib --version", "{{version}}"]

@@ -1,0 +1,3 @@
+backends = ["aqua:barnybug/cli53"]
+description = "Command line tool for Amazon Route 53"
+test = ["cli53 --version", "cli53 version {{version}}"]

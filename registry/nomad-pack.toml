@@ -1,0 +1,13 @@
+description = "Nomad Pack is a templating and packaging tool used with HashiCorp Nomad"
+test = ["nomad-pack version", "{{version}}"]
+
+[[backends]]
+full = "http:nomad-pack"
+
+[backends.options]
+url = 'https://releases.hashicorp.com/nomad-pack/{{ version }}/nomad-pack_{{ version }}_{{ os(macos="darwin") }}_{{ arch(x64="amd64") }}.zip'
+version_expr = 'fromJSON(body).versions | keys() | sortVersions()'
+version_list_url = "https://releases.hashicorp.com/nomad-pack/index.json"
+
+[[backends]]
+full = "asdf:mise-plugins/mise-hashicorp"

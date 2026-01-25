@@ -1,0 +1,6 @@
+backends = ["aqua:Enter-tainer/typstyle", "cargo:typstyle"]
+description = "Beautiful and reliable typst code formatter"
+test = [
+  "typstyle --version | grep 'Version:' | awk '{print $2}'",
+  "{{version}}",
+]

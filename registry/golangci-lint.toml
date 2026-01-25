@@ -1,0 +1,2 @@
+backends = ["aqua:golangci/golangci-lint", "asdf:hypnoglow/asdf-golangci-lint"]
+description = "Fast linters Runner for Go"

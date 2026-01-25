@@ -1,0 +1,2 @@
+backends = ["aqua:j178/prek"]
+test = ["prek --version", "prek {{version}}"]

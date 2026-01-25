@@ -1,0 +1,4 @@
+aliases = ["tssh"]
+backends = ["aqua:trzsz/trzsz-ssh", "go:github.com/trzsz/trzsz-ssh/cmd/tssh"]
+description = "trzsz-ssh ( tssh ) is an ssh client designed as a drop-in replacement for the openssh client. It aims to provide complete compatibility with openssh, mirroring all its features, while also offering additional useful features. Such as login prompt, batch login, remember password, automated interaction, trzsz, zmodem(rz/sz), udp mode like mosh, etc."
+test = ["tssh --version 2>&1", "trzsz ssh {{version}}"]

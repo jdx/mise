@@ -1,0 +1,2 @@
+backends = ["aqua:jckuester/terradozer", "asdf:chessmango/asdf-terradozer"]
+description = "Terraform destroy without configuration files"

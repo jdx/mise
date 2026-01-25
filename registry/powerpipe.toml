@@ -1,0 +1,2 @@
+backends = ["aqua:turbot/powerpipe", "asdf:jc00ke/asdf-powerpipe"]
+description = "Powerpipe: Dashboards for DevOps. Visualize cloud configurations. Assess security posture against a massive library of benchmarks. Build custom dashboards with code"

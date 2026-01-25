@@ -1,0 +1,6 @@
+backends = [
+  "github:kubernetes-sigs/cluster-api-provider-aws[bin=cluster-api-provider-aws,asset_pattern=clusterawsadm-{darwin_os}-{amd64_arch}]",
+  "asdf:kahun/asdf-clusterawsadm",
+]
+description = "clusterawsadm provides helpers for bootstrapping Kubernetes Cluster API Provider AWS"
+test = ["cluster-api-provider-aws version", "clusterawsadm version:"]

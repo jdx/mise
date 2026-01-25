@@ -1,0 +1,2 @@
+backends = ["asdf:mise-plugins/mise-spring-boot"]
+description = "Spring Boot CLI"

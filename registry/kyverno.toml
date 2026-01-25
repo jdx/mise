@@ -1,0 +1,5 @@
+backends = [
+  "aqua:kyverno/kyverno",
+  "asdf:https://github.com/hobaen/asdf-kyverno-cli.git",
+]
+description = "Cloud Native Policy Management"

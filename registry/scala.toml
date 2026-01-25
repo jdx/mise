@@ -1,0 +1,2 @@
+backends = ["asdf:mise-plugins/mise-scala", "vfox:mise-plugins/vfox-scala"]
+description = "Scala language"

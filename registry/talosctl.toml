@@ -1,0 +1,4 @@
+aliases = ["talos"]
+backends = ["aqua:siderolabs/talos"]
+description = "Talos is a modern OS for Kubernetes. talosctl is a CLI for out-of-band management of Kubernetes nodes created by Talos"
+test = ["talosctl version --client --short", "Talos v{{version}}"]

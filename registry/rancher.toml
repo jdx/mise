@@ -1,0 +1,3 @@
+backends = ["aqua:rancher/cli", "asdf:abinet/asdf-rancher"]
+description = "Rancher CLI"
+test = ["rancher --version", "rancher version v{{version}}"]

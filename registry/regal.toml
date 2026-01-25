@@ -1,0 +1,2 @@
+backends = ["aqua:StyraInc/regal", "asdf:mise-plugins/mise-regal"]
+description = "Regal is a linter for Rego, with the goal of making your Rego magnificent"

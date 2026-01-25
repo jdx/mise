@@ -1,0 +1,5 @@
+backends = [
+  "github:warrensbox/terraform-switcher[exe=tfswitch]",
+  "asdf:iul1an/asdf-tfswitch",
+]
+description = "A command line tool to switch between different versions of terraform (install with homebrew and more)"

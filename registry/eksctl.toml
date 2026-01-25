@@ -1,0 +1,2 @@
+backends = ["aqua:eksctl-io/eksctl", "asdf:elementalvoid/asdf-eksctl"]
+description = "The official CLI for Amazon EKS"

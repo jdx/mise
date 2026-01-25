@@ -1576,7 +1576,7 @@ List installed plugins
 
 List all available remote plugins
 
-The full list is here: https://github.com/jdx/mise/blob/main/registry.toml
+The full list is here: https://github.com/jdx/mise/blob/main/registry/
 
 Examples:
 
@@ -2625,7 +2625,7 @@ Test a tool installs and executes
 .PP
 .TP
 \fB\-a, \-\-all\fR
-Test every tool specified in registry.toml
+Test every tool specified in registry/
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
@@ -2635,7 +2635,7 @@ Number of jobs to run in parallel
 Test all tools specified in config files
 .TP
 \fB\-\-include\-non\-defined\fR
-Also test tools not defined in registry.toml, guessing how to test it
+Also test tools not defined in registry/, guessing how to test it
 .TP
 \fB\-\-raw\fR
 Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1

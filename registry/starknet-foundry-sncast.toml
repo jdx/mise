@@ -1,0 +1,2 @@
+backends = ["github:foundry-rs/starknet-foundry[exe=sncast]"]
+description = "All-in-one tool for interacting with Starknet smart contracts, sending transactions and getting chain data"

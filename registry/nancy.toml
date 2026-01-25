@@ -1,0 +1,2 @@
+backends = ["aqua:sonatype-nexus-community/nancy", "asdf:iilyak/asdf-nancy"]
+description = "A tool to check for vulnerabilities in your Golang dependencies, powered by Sonatype OSS Index"

@@ -17,7 +17,7 @@ pub struct TestTool {
     /// Tool(s) to test
     #[clap(required_unless_present_any = ["all", "all_config"])]
     pub tools: Option<Vec<ToolArg>>,
-    /// Test every tool specified in registry.toml
+    /// Test every tool specified in registry/
     #[clap(long, short, conflicts_with = "tools", conflicts_with = "all_config")]
     pub all: bool,
     /// Number of jobs to run in parallel
@@ -27,7 +27,7 @@ pub struct TestTool {
     /// Test all tools specified in config files
     #[clap(long, conflicts_with = "tools", conflicts_with = "all")]
     pub all_config: bool,
-    /// Also test tools not defined in registry.toml, guessing how to test it
+    /// Also test tools not defined in registry/, guessing how to test it
     #[clap(long)]
     pub include_non_defined: bool,
     /// Directly pipe stdin/stdout/stderr from plugin to user

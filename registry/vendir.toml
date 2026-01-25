@@ -1,0 +1,2 @@
+backends = ["aqua:carvel-dev/vendir", "asdf:vmware-tanzu/asdf-carvel"]
+description = "Easy way to vendor portions of git repos, github releases, helm charts, docker image contents, etc. declaratively"

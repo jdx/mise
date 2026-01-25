@@ -1,0 +1,21 @@
+aliases = ["claude-code"]
+description = "Claude Code is an agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster by executing routine tasks, explaining complex code, and handling git workflows -- all through natural language commands"
+os = ["linux", "macos", "windows"]
+test = ["claude --version", "{{version}} (Claude Code)"]
+
+[[backends]]
+full = "http:claude"
+
+[backends.options]
+bin = "claude"
+# NOTE: upstream `/stable` is often stale; prefer `/latest` for correct `mise latest claude`
+# See: https://github.com/jdx/mise/discussions/7329
+url = 'https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/{{ os(macos="darwin") }}-{{ arch() }}/claude'
+version_list_url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/latest"
+
+[backends.options.platforms.windows-x64]
+bin = "claude.exe"
+url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{{ version }}/win32-x64/claude.exe"
+
+[[backends]]
+full = "npm:@anthropic-ai/claude-code"

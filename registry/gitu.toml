@@ -1,0 +1,3 @@
+backends = ["aqua:altsem/gitu", "cargo:gitu"]
+description = "A TUI Git client inspired by Magit"
+# test = ["gitu --version", "gitu v{{version}}"] # DISABLED: upstream bug - v0.40.0 binary reports as v0.39.0-21-g0d1141b

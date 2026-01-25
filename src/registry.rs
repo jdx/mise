@@ -13,7 +13,7 @@ use std::sync::{LazyLock as Lazy, Mutex};
 use strum::IntoEnumIterator;
 use url::Url;
 
-// the registry is generated from registry.toml in the project root
+// the registry is generated from registry/ in the project root
 pub static REGISTRY: Lazy<BTreeMap<&'static str, RegistryTool>> =
     Lazy::new(|| include!(concat!(env!("OUT_DIR"), "/registry.rs")));
 

@@ -1,0 +1,2 @@
+backends = ["aqua:carvel-dev/kwt", "asdf:vmware-tanzu/asdf-carvel"]
+description = "Kubernetes Workstation Tools CLI"

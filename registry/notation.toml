@@ -1,0 +1,2 @@
+backends = ["aqua:notaryproject/notation", "asdf:bodgit/asdf-notation"]
+description = "A CLI tool to sign and verify artifacts"

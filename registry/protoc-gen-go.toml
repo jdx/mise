@@ -1,0 +1,5 @@
+backends = [
+  "aqua:protocolbuffers/protobuf-go/protoc-gen-go",
+  "asdf:pbr0ck3r/asdf-protoc-gen-go",
+]
+description = "protoc-gen-go is a plugin for the Google protocol buffer compiler to generate Go code"

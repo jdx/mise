@@ -3024,7 +3024,7 @@ const completionSpec: Fig.Spec = {
       options: [
         {
           name: ["-a", "--all"],
-          description: "Test every tool specified in registry.toml",
+          description: "Test every tool specified in registry/",
           isRepeatable: false,
         },
         {
@@ -3043,7 +3043,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--include-non-defined",
           description:
-            "Also test tools not defined in registry.toml, guessing how to test it",
+            "Also test tools not defined in registry/, guessing how to test it",
           isRepeatable: false,
         },
         {

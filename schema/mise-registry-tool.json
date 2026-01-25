@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://mise.jdx.dev/schema/mise-registry-tool.json",
+  "title": "mise registry tool schema",
+  "description": "Schema for individual tool files in the mise registry",
+  "type": "object",
+  "properties": {
+    "aliases": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-zA-Z0-9_.-]+$"
+      },
+      "description": "Alternative names for the tool"
+    },
+    "backends": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|gem|github|gitlab|go|http|npm|pipx|spm|ubi|vfox):.+$",
+            "description": "Backend specification as a string (e.g., 'aqua:owner/repo')"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "full": {
+                "type": "string",
+                "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|gem|github|gitlab|go|http|npm|pipx|spm|ubi|vfox):.+$",
+                "description": "Full backend specification"
+              },
+              "platforms": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": ["freebsd", "linux", "macos", "openbsd", "windows"]
+                },
+                "description": "Operating systems this backend supports"
+              },
+              "options": {
+                "type": "object",
+                "description": "Backend-specific options",
+                "properties": {
+                  "platforms": {
+                    "type": "object",
+                    "description": "Platform-specific options (e.g., macos-arm64, linux-x64)",
+                    "propertyNames": {
+                      "pattern": "^(linux|macos|windows)-(x64|arm64|armv7)$"
+                    },
+                    "additionalProperties": {
+                      "type": "object",
+                      "description": "Platform-specific configuration",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["full"],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "description": "List of backends that can install this tool",
+      "minItems": 1
+    },
+    "depends": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-zA-Z0-9_.-]+$"
+      },
+      "description": "Other tools this tool depends on"
+    },
+    "description": {
+      "type": "string",
+      "description": "A brief description of the tool"
+    },
+    "idiomatic_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Files that indicate this tool should be used in a project"
+    },
+    "os": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["freebsd", "linux", "macos", "openbsd", "windows"]
+      },
+      "description": "Operating systems this tool supports (empty means all)"
+    },
+    "overrides": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-zA-Z0-9_.-]+$"
+      },
+      "description": "List of tool IDs that this tool overrides"
+    },
+    "test": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Command to test the tool installation [command, expected_output]",
+      "minItems": 2,
+      "maxItems": 2
+    }
+  },
+  "required": ["backends"],
+  "additionalProperties": false
+}

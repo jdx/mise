@@ -16,7 +16,7 @@ Tool(s) to test
 
 ### `-a --all`
 
-Test every tool specified in registry.toml
+Test every tool specified in registry/
 
 ### `-j --jobs <JOBS>`
 
@@ -29,7 +29,7 @@ Test all tools specified in config files
 
 ### `--include-non-defined`
 
-Also test tools not defined in registry.toml, guessing how to test it
+Also test tools not defined in registry/, guessing how to test it
 
 ### `--raw`
 

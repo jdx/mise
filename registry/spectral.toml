@@ -1,0 +1,2 @@
+backends = ["aqua:stoplightio/spectral", "asdf:vbyrd/asdf-spectral"]
+description = "A flexible JSON/YAML linter for creating automated style guides, with baked in support for OpenAPI (v3.1, v3.0, and v2.0), Arazzo v1.0, as well as AsyncAPI v2.x"

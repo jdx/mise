@@ -1,0 +1,2 @@
+backends = ["asdf:mise-plugins/mise-v"]
+description = "V - https://vlang.io"

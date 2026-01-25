@@ -1,0 +1,2 @@
+backends = ["aqua:common-fate/granted", "asdf:dex4er/asdf-granted"]
+description = "The easiest way to access AWS"

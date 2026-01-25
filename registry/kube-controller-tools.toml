@@ -1,0 +1,5 @@
+backends = [
+  "github:kubernetes-sigs/controller-tools[exe=controller-gen]",
+  "asdf:jimmidyson/asdf-kube-controller-tools",
+]
+description = "Tools to use with the controller-runtime libraries"

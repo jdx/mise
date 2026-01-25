@@ -1,0 +1,2 @@
+backends = ["aqua:ollama/ollama", "asdf:virtualstaticvoid/asdf-ollama"]
+description = "Get up and running with Llama 3.1, Mistral, Gemma 2, and other large language models"

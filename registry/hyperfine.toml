@@ -1,0 +1,6 @@
+backends = [
+  "aqua:sharkdp/hyperfine",
+  "asdf:volf52/asdf-hyperfine",
+  "cargo:hyperfine",
+]
+description = "A command-line benchmarking tool"

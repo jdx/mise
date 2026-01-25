@@ -1,0 +1,2 @@
+backends = ["aqua:inlets/inletsctl", "asdf:nlamirault/asdf-inlets"]
+description = "Create inlets servers on the top cloud platforms"

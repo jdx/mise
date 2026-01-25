@@ -27,10 +27,22 @@ type Tool = {
 };
 
 export default {
-  watch: ["./registry.toml"],
+  watch: ["./registry"],
   load() {
-    const raw = fs.readFileSync("./registry.toml", "utf-8");
-    const { tools } = load(raw) as Registry;
+    const registryDir = "./registry";
+    const files = fs
+      .readdirSync(registryDir)
+      .filter((f) => f.endsWith(".toml"))
+      .sort();
+
+    const tools: Registry["tools"] = {};
+    for (const file of files) {
+      const toolName = file.replace(/\.toml$/, "");
+      const raw = fs.readFileSync(`${registryDir}/${file}`, "utf-8");
+      const toolInfo = load(raw) as Registry["tools"][string];
+      tools[toolName] = toolInfo;
+    }
+
     const registry: Record<string, Tool> = {};
 
     const urlBuilders: Record<

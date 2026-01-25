@@ -1,0 +1,6 @@
+backends = [
+  "github:rancher/k3k[bin=k3k,version_prefix=v,asset_pattern=k3kcli-{darwin_os}-{amd64_arch}]",
+  "asdf:xanmanning/asdf-k3kcli",
+]
+description = "K3k, Kubernetes in Kubernetes, is a tool that empowers you to create and manage isolated K3s clusters within your existing Kubernetes environment"
+test = ["k3k --version", "k3kcli version v{{version}}"]

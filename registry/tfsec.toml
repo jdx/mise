@@ -1,0 +1,2 @@
+backends = ["aqua:aquasecurity/tfsec", "asdf:woneill/asdf-tfsec"]
+description = "Security scanner for your Terraform code"

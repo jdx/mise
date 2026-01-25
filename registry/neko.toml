@@ -1,0 +1,2 @@
+backends = ["github:HaxeFoundation/neko", "asdf:asdf-community/asdf-neko"]
+description = "The Neko Virtual Machine"

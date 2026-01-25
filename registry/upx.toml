@@ -1,0 +1,2 @@
+backends = ["aqua:upx/upx", "asdf:jimmidyson/asdf-upx"]
+description = "UPX - the Ultimate Packer for eXecutables"

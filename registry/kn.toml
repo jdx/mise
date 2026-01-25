@@ -1,0 +1,3 @@
+backends = ["aqua:knative/client", "asdf:joke/asdf-kn"]
+description = "Knative developer experience, docs, reference Knative CLI implementation"
+test = ["kn version", "Version:"]

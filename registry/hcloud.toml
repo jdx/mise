@@ -1,0 +1,2 @@
+backends = ["aqua:hetznercloud/cli", "asdf:chessmango/asdf-hcloud"]
+description = "A command-line interface for Hetzner Cloud"

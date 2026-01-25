@@ -1,0 +1,2 @@
+backends = ["aqua:x-motemen/ghq", "asdf:kajisha/asdf-ghq"]
+description = "Remote repository management made easy"

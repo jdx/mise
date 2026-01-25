@@ -1,0 +1,2 @@
+backends = ["aqua:ahmetb/kubectx", "asdf:https://gitlab.com/wt0f/asdf-kubectx"]
+description = "Faster way to switch between clusters and namespaces in kubectl"

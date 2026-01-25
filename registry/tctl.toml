@@ -1,0 +1,2 @@
+backends = ["aqua:temporalio/tctl", "asdf:eko/asdf-tctl"]
+description = "Temporal CLI"

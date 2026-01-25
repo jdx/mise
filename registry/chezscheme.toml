@@ -1,0 +1,5 @@
+backends = [
+  "vfox:mise-plugins/vfox-chezscheme",
+  "asdf:mise-plugins/mise-chezscheme",
+]
+description = "Chez Scheme is both a programming language and an implementation of that language, with supporting tools and documentation"

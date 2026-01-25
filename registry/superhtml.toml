@@ -1,0 +1,3 @@
+backends = ["github:kristoff-it/superhtml"]
+description = "HTML Validator, Formatter, LSP, and Templating Language Library"
+test = ["superhtml version 2>&1", "{{version}}"]

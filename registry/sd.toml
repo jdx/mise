@@ -1,0 +1,3 @@
+backends = ["aqua:chmln/sd", "cargo:sd"]
+description = "Intuitive find & replace CLI (sed alternative)"
+test = ["sd --version", "sd {{version}}"]

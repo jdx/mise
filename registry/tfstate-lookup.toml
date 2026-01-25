@@ -1,0 +1,5 @@
+backends = [
+  "aqua:fujiwara/tfstate-lookup",
+  "asdf:carnei-ro/asdf-tfstate-lookup",
+]
+description = "Lookup resource attributes in tfstate"

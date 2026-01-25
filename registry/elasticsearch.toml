@@ -1,0 +1,2 @@
+backends = ["asdf:mise-plugins/mise-elasticsearch"]
+description = "Elasticsearch is an open source, distributed search and analytics engine built for speed, scale, and AI applications"
