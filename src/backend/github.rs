@@ -599,12 +599,11 @@ impl UnifiedGitBackend {
             })
             .await
         } else {
-            // Extract repo short name for trying reponame@version format
-            let repo_short_name = repo.split('/').next_back();
+            // Pass full repo for trying reponame@version formats
             try_with_v_prefix_and_repo(
                 version,
                 version_prefix,
-                repo_short_name,
+                Some(repo),
                 |candidate| async move {
                     self.resolve_github_asset_url_for_target(
                         tv, opts, repo, api_url, &candidate, target,
@@ -913,8 +912,19 @@ impl UnifiedGitBackend {
         }
 
         // Handle projectname@version format (e.g., "tectonic@0.15.0" -> "0.15.0")
-        if let Some(caps) = regex!(r"^[^@]+@(\d.*)$").captures(tag_name) {
-            return caps.get(1).unwrap().as_str().to_string();
+        // Only strip if the prefix matches the repo short name or full repo name to ensure
+        // we can reconstruct the tag later during installation. For repos with multiple
+        // packages (e.g., tectonic@ and tectonic_xetex_layout@), users must configure
+        // version_prefix to install packages that don't match the repo name.
+        if let Some(caps) = regex!(r"^([^@]+)@(\d.*)$").captures(tag_name) {
+            let prefix = caps.get(1).unwrap().as_str();
+            let version = caps.get(2).unwrap().as_str();
+            let repo = self.repo();
+            let repo_short_name = repo.split('/').next_back();
+            // Strip if prefix matches repo short name OR full repo name
+            if repo_short_name == Some(prefix) || repo == prefix {
+                return version.to_string();
+            }
         }
 
         // Fall back to stripping 'v' prefix
@@ -1142,26 +1152,21 @@ impl UnifiedGitBackend {
 
         // Try to get the release (with version prefix support)
         let version_prefix = opts.get("version_prefix").map(|s| s.as_str());
-        let repo_short_name = repo.split('/').next_back();
-        let release = match try_with_v_prefix_and_repo(
-            version,
-            version_prefix,
-            repo_short_name,
-            |candidate| {
+        let release =
+            match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
                 let api_url = api_url.clone();
                 let repo = repo.clone();
                 async move { github::get_release_for_url(&api_url, &repo, &candidate).await }
-            },
-        )
-        .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                return Err(VerificationStatus::Error(format!(
-                    "Failed to get release: {e}"
-                )));
-            }
-        };
+            })
+            .await
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    return Err(VerificationStatus::Error(format!(
+                        "Failed to get release: {e}"
+                    )));
+                }
+            };
 
         // Find provenance assets in the release
         let provenance_asset = release.assets.iter().find(|a| {
@@ -1315,11 +1320,20 @@ mod tests {
         assert_eq!(backend.strip_version_prefix("v1.0.0"), "1.0.0");
         assert_eq!(backend.strip_version_prefix("1.0.0"), "1.0.0");
 
-        // Test projectname@version format (e.g., tectonic@0.15.0)
-        assert_eq!(backend.strip_version_prefix("tectonic@0.15.0"), "0.15.0");
-        assert_eq!(backend.strip_version_prefix("project@1.2.3"), "1.2.3");
+        // Test projectname@version format - only strips if prefix matches repo name
+        // Backend uses "github:test/repo" so repo short name is "repo", full name is "test/repo"
+        assert_eq!(backend.strip_version_prefix("repo@0.15.0"), "0.15.0");
+        assert_eq!(backend.strip_version_prefix("repo@1.2.3"), "1.2.3");
+        // Also accepts full repo name as prefix
+        assert_eq!(backend.strip_version_prefix("test/repo@2.0.0"), "2.0.0");
+        // Should NOT strip if prefix doesn't match repo name (prevents listing
+        // versions that can't be installed)
+        assert_eq!(
+            backend.strip_version_prefix("other_package@0.15.0"),
+            "other_package@0.15.0"
+        );
         // Should not match if part after @ doesn't start with a digit
-        assert_eq!(backend.strip_version_prefix("project@beta"), "project@beta");
+        assert_eq!(backend.strip_version_prefix("repo@beta"), "repo@beta");
 
         // Test with custom version prefix
         let mut opts = ToolVersionOptions::default();

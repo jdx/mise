@@ -134,11 +134,11 @@ where
 }
 
 /// Helper to try various tag formats for a resolver function
-/// Tries version_prefix (if set), v prefix, and optionally repo_name@ prefix
+/// Tries version_prefix (if set), v prefix, and optionally repo@version formats
 pub async fn try_with_v_prefix_and_repo<F, Fut, T, E>(
     version: &str,
     version_prefix: Option<&str>,
-    repo_name: Option<&str>,
+    repo: Option<&str>,
     resolver: F,
 ) -> Result<T>
 where
@@ -168,11 +168,17 @@ where
         vec![format!("v{version}"), version.to_string()]
     };
 
-    // Also try reponame@version format (e.g., tectonic@0.15.0) when no prefix is configured
+    // Also try repo@version formats (e.g., tectonic@0.15.0) when no prefix is configured
+    // Try both the repo short name and full repo name
     if version_prefix.is_none()
-        && let Some(name) = repo_name
+        && let Some(full_repo) = repo
     {
-        candidates.push(format!("{}@{}", name, version));
+        // Try short name first (more common), e.g., "tectonic@0.15.0"
+        if let Some(short_name) = full_repo.split('/').next_back() {
+            candidates.push(format!("{}@{}", short_name, version));
+        }
+        // Also try full repo name, e.g., "tectonic-typesetting/tectonic@0.15.0"
+        candidates.push(format!("{}@{}", full_repo, version));
     }
 
     for candidate in candidates {
