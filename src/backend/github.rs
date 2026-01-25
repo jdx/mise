@@ -5,7 +5,7 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
     get_filename_from_url, install_artifact, lookup_platform_key, lookup_platform_key_for_target,
-    template_string, try_with_v_prefix, verify_artifact,
+    template_string, try_with_v_prefix, try_with_v_prefix_and_repo, verify_artifact,
 };
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::{Config, Settings};
@@ -23,6 +23,7 @@ use regex::Regex;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::Arc;
+use xx::regex;
 
 #[derive(Debug)]
 pub struct UnifiedGitBackend {
@@ -598,12 +599,18 @@ impl UnifiedGitBackend {
             })
             .await
         } else {
-            try_with_v_prefix(version, version_prefix, |candidate| async move {
-                self.resolve_github_asset_url_for_target(
-                    tv, opts, repo, api_url, &candidate, target,
-                )
-                .await
-            })
+            // Pass full repo for trying reponame@version formats
+            try_with_v_prefix_and_repo(
+                version,
+                version_prefix,
+                Some(repo),
+                |candidate| async move {
+                    self.resolve_github_asset_url_for_target(
+                        tv, opts, repo, api_url, &candidate, target,
+                    )
+                    .await
+                },
+            )
             .await
         }
     }
@@ -904,6 +911,22 @@ impl UnifiedGitBackend {
             return stripped.to_string();
         }
 
+        // Handle projectname@version format (e.g., "tectonic@0.15.0" -> "0.15.0")
+        // Only strip if the prefix matches the repo short name or full repo name to ensure
+        // we can reconstruct the tag later during installation. For repos with multiple
+        // packages (e.g., tectonic@ and tectonic_xetex_layout@), users must configure
+        // version_prefix to install packages that don't match the repo name.
+        if let Some(caps) = regex!(r"^([^@]+)@(\d.*)$").captures(tag_name) {
+            let prefix = caps.get(1).unwrap().as_str();
+            let version = caps.get(2).unwrap().as_str();
+            let repo = self.repo();
+            let repo_short_name = repo.split('/').next_back();
+            // Strip if prefix matches repo short name OR full repo name
+            if repo_short_name == Some(prefix) || repo == prefix {
+                return version.to_string();
+            }
+        }
+
         // Fall back to stripping 'v' prefix
         if tag_name.starts_with('v') {
             tag_name.trim_start_matches('v').to_string()
@@ -1129,20 +1152,21 @@ impl UnifiedGitBackend {
 
         // Try to get the release (with version prefix support)
         let version_prefix = opts.get("version_prefix").map(|s| s.as_str());
-        let release = match try_with_v_prefix(version, version_prefix, |candidate| {
-            let api_url = api_url.clone();
-            let repo = repo.clone();
-            async move { github::get_release_for_url(&api_url, &repo, &candidate).await }
-        })
-        .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                return Err(VerificationStatus::Error(format!(
-                    "Failed to get release: {e}"
-                )));
-            }
-        };
+        let release =
+            match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
+                let api_url = api_url.clone();
+                let repo = repo.clone();
+                async move { github::get_release_for_url(&api_url, &repo, &candidate).await }
+            })
+            .await
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    return Err(VerificationStatus::Error(format!(
+                        "Failed to get release: {e}"
+                    )));
+                }
+            };
 
         // Find provenance assets in the release
         let provenance_asset = release.assets.iter().find(|a| {
@@ -1295,6 +1319,21 @@ mod tests {
         // Test with no version prefix configured
         assert_eq!(backend.strip_version_prefix("v1.0.0"), "1.0.0");
         assert_eq!(backend.strip_version_prefix("1.0.0"), "1.0.0");
+
+        // Test projectname@version format - only strips if prefix matches repo name
+        // Backend uses "github:test/repo" so repo short name is "repo", full name is "test/repo"
+        assert_eq!(backend.strip_version_prefix("repo@0.15.0"), "0.15.0");
+        assert_eq!(backend.strip_version_prefix("repo@1.2.3"), "1.2.3");
+        // Also accepts full repo name as prefix
+        assert_eq!(backend.strip_version_prefix("test/repo@2.0.0"), "2.0.0");
+        // Should NOT strip if prefix doesn't match repo name (prevents listing
+        // versions that can't be installed)
+        assert_eq!(
+            backend.strip_version_prefix("other_package@0.15.0"),
+            "other_package@0.15.0"
+        );
+        // Should not match if part after @ doesn't start with a digit
+        assert_eq!(backend.strip_version_prefix("repo@beta"), "repo@beta");
 
         // Test with custom version prefix
         let mut opts = ToolVersionOptions::default();
