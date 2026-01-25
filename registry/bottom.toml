@@ -1,0 +1,7 @@
+backends = [
+  "aqua:ClementTsang/bottom",
+  "asdf:carbonteq/asdf-btm",
+  "cargo:bottom",
+]
+description = "Yet another cross-platform graphical process/system monitor"
+test = ["btm --version", "bottom {{version}}"]

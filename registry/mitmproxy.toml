@@ -1,0 +1,2 @@
+backends = ["pipx:mitmproxy", "asdf:mise-plugins/mise-mitmproxy"]
+description = "mitmproxy is a free and open source interactive HTTPS proxy"

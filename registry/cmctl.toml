@@ -1,0 +1,2 @@
+backends = ["aqua:cert-manager/cmctl", "asdf:asdf-community/asdf-cmctl"]
+description = "the command line utility that makes cert-manager'ing easier"

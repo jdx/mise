@@ -1,0 +1,7 @@
+backends = [
+  "github:str4d/age-plugin-yubikey",
+  "asdf:joke/asdf-age-plugin-yubikey",
+  "cargo:age-plugin-yubikey",
+]
+description = "age-plugin-yubikey is a plugin for age clients like age and rage, which enables files to be encrypted to age identities stored on YubiKeys"
+test = ["which age-plugin-yubikey", ""] # libpcsclite.so.1 is missing in CI

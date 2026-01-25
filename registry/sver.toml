@@ -1,0 +1,2 @@
+backends = ["aqua:mitoma/sver", "asdf:robzr/asdf-sver"]
+description = "Version generator based on source code"

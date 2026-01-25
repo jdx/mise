@@ -1,0 +1,3 @@
+backends = ["github:ConduitIO/conduit", "asdf:gmcabrita/asdf-conduit"]
+description = "Conduit streams data between data stores. Kafka Connect replacement. No JVM required"
+test = ["conduit --version", "v{{version}}"]

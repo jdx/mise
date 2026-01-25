@@ -1,0 +1,14 @@
+backends = [
+  { full = "aqua:jdx/usage", platforms = [
+    "linux",
+    "macos",
+  ] },
+  { full = "asdf:mise-plugins/mise-usage", platforms = [
+    "linux",
+    "macos",
+  ] },
+  "cargo:usage-cli",
+]
+description = "A specification for CLIs"
+os = ["linux", "macos", "freebsd"]
+test = ["usage --version", "usage-cli {{version}}"]

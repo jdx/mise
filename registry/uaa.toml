@@ -1,0 +1,7 @@
+aliases = ["uaa-cli"]
+backends = [
+  "aqua:cloudfoundry/uaa-cli",
+  "asdf:mise-plugins/tanzu-plug-in-for-asdf",
+]
+description = "CLI for UAA written in Go"
+test = ["uaa version", "{{version}}"]

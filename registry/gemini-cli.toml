@@ -1,0 +1,4 @@
+aliases = ["gemini"]
+backends = ["npm:@google/gemini-cli"]
+description = "Gemini CLI, a command-line AI workflow tool that connects to your tools, understands your code and accelerates your workflows"
+test = ["gemini --version", "{{version}}"]

@@ -1,0 +1,3 @@
+backends = ["aqua:pnpm/pnpm", "npm:pnpm"]
+description = "Fast, disk space efficient package manager"
+test = ["pnpm --version", "{{version}}"]

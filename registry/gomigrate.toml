@@ -1,0 +1,3 @@
+backends = ["aqua:golang-migrate/migrate", "asdf:joschi/asdf-gomigrate"]
+description = "Database migrations. CLI and Golang library"
+test = ["migrate --version 2>&1", "{{version}}"]

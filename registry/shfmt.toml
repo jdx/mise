@@ -1,0 +1,8 @@
+backends = [
+  "aqua:mvdan/sh",
+  "asdf:luizm/asdf-shfmt",
+  "go:mvdan.cc/sh/v3/cmd/shfmt",
+]
+description = "A shell parser, formatter, and interpreter with bash support; includes shfmt"
+os = ["linux", "macos"]
+test = ["shfmt --version", "v{{version}}"]

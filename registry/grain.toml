@@ -1,0 +1,6 @@
+backends = [
+  "github:grain-lang/grain[version_prefix=grain-v]",
+  "asdf:mise-plugins/mise-grain",
+]
+description = "The Grain compiler toolchain and CLI. Home of the modern web staple"
+test = ["grain --version", "{{version}}"]

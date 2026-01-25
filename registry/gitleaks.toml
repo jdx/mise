@@ -1,0 +1,3 @@
+backends = ["aqua:gitleaks/gitleaks", "asdf:jmcvetta/asdf-gitleaks"]
+description = "Find secrets with Gitleaks"
+test = ["gitleaks --version", "gitleaks version {{version}}"]

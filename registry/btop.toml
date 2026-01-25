@@ -1,0 +1,6 @@
+backends = ["aqua:aristocratos/btop"]
+description = "A monitor of resources"
+test = [
+  '''btop --version | sed -e 's/\x1b\[[0-9;]*m//g'''',
+  "btop version: {{version}}",
+]

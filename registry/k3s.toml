@@ -1,0 +1,3 @@
+backends = ["aqua:k3s-io/k3s", "asdf:mise-plugins/mise-k3s"]
+description = "The certified Kubernetes distribution built for IoT & Edge computing"
+test = ["k3s --version", "k3s version v{{version}}"]

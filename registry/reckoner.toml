@@ -1,0 +1,2 @@
+backends = ["github:FairwindsOps/reckoner", "asdf:FairwindsOps/asdf-reckoner"]
+description = "Declaratively install and manage multiple Helm chart releases"

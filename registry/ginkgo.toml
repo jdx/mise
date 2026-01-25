@@ -1,0 +1,6 @@
+backends = [
+  "go:github.com/onsi/ginkgo/v2/ginkgo",
+  "asdf:mise-plugins/mise-ginkgo",
+]
+description = "A Modern Testing Framework for Go"
+test = ["ginkgo version", "Ginkgo Version {{version}}"]

@@ -1,0 +1,3 @@
+backends = ["aqua:ByteNess/aws-vault"]
+description = "A vault for securely storing and accessing AWS credentials in development environments"
+# test = ["aws-vault --version 2>&1", "v{{version}}"] # TODO: re-enable after versions host update

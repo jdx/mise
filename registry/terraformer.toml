@@ -1,0 +1,5 @@
+backends = [
+  "aqua:GoogleCloudPlatform/terraformer",
+  "asdf:gr1m0h/asdf-terraformer",
+]
+description = "CLI tool to generate terraform files from existing infrastructure (reverse Terraform). Infrastructure to Code"

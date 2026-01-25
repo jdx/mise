@@ -1,0 +1,3 @@
+backends = ["github:railwayapp/cli[exe=railway]", "cargo:railwayapp"]
+description = "Railway CLI"
+test = ["railway --version", "railway {{version}}"]

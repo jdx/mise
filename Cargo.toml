@@ -21,7 +21,7 @@ include = [
   "/build.rs",
   "/completions/*",
   "/minisign.pub",
-  "/registry.toml",
+  "/registry/*.toml",
   "/settings.toml",
   "/zipsign.pub",
   "/src/**/*.rs",

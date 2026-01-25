@@ -1,0 +1,8 @@
+backends = [
+  "aqua:NetApp/trident/tridentctl",
+  "asdf:asdf-community/asdf-tridentctl",
+]
+depends = ["kubectl"]
+description = "Storage orchestrator for containers"
+os = ["linux", "macos"]
+test = ["tridentctl version --client", "{{version}}"]

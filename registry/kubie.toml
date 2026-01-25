@@ -1,0 +1,2 @@
+backends = ["aqua:sbstp/kubie", "asdf:johnhamelink/asdf-kubie"]
+description = "A more powerful alternative to kubectx and kubens"

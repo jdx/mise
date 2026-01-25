@@ -1,0 +1,2 @@
+backends = ["aqua:instrumenta/kubeval", "asdf:stefansedich/asdf-kubeval"]
+description = "Validate your Kubernetes configuration files, supports multiple Kubernetes versions"

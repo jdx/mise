@@ -1,0 +1,2 @@
+backends = ["github:openbao/openbao[exe=bao]"]
+description = "OpenBao exists to provide a software solution to manage, store, and distribute sensitive data including secrets, certificates, and keys"

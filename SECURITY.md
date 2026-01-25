@@ -72,7 +72,7 @@ asdf plugins in asdf (but not with mise's default tools) are dangerous. They are
 unconnected to either asdf or the tool vendor. They may get hacked or maliciously inject code into
 their plugin that could trivially execute code on your machine.
 
-asdf plugins are not used for tools inside the [registry](https://github.com/jdx/mise/blob/main/registry.toml) whenever possible.
+asdf plugins are not used for tools inside the [registry](https://github.com/jdx/mise/blob/main/registry/) whenever possible.
 Sometimes it is not possible to use more secure backends like aqua/ubi because tools have complex install
 setups or need to export env vars. As of 2025-01-08, <25% of tools use asdf plugins as the default backend.
 All of these are hosted in the [mise-plugins org](https://github.com/mise-plugins) to secure the supply
@@ -82,7 +82,7 @@ Of course if you _manually_ add plugins not from the mise-plugins org you will w
 are coming from a trusted source.
 
 Please contribute to this effort to migrate away from asdf plugins by checking if a tool works in ubi or aqua and submitting a PR to
-[registry.toml](https://github.com/jdx/mise/blob/main/registry.toml) to add it. If it doesn't work
+[registry/](https://github.com/jdx/mise/blob/main/registry/) to add it. If it doesn't work
 in ubi or is missing from aqua, submit an issue or PR to the respective project to add it. New tools
 using asdf are **not** likely to be accepted unless they cannot be supported with any other backend.
 

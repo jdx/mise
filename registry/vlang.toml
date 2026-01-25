@@ -1,0 +1,2 @@
+backends = ["vfox:mise-plugins/vfox-vlang"]
+description = "The V Programming Language. Simple, fast, safe, compiled. For developing maintainable software"

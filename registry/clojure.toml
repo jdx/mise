@@ -1,0 +1,2 @@
+backends = ["asdf:mise-plugins/mise-clojure"]
+description = "The Clojure Programming Language"

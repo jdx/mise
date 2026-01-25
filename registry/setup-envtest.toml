@@ -1,0 +1,5 @@
+backends = [
+  "aqua:kubernetes-sigs/controller-runtime/setup-envtest",
+  "asdf:mise-plugins/mise-setup-envtest",
+]
+description = "This is a small tool that manages binaries for envtest. It can be used to download new binaries, list currently installed and available ones, and clean up versions"

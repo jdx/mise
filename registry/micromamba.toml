@@ -1,0 +1,3 @@
+backends = ["github:mamba-org/micromamba-releases"]
+description = "Lightweight conda-compatible package manager"
+test = ["micromamba --version", "{{ version | split(pat='-') | first }}"]

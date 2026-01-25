@@ -1,0 +1,2 @@
+backends = ["aqua:dagger/dagger", "asdf:virtualstaticvoid/asdf-dagger"]
+description = "A portable devkit for CI/CD pipelines"

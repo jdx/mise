@@ -1,0 +1,2 @@
+backends = ["github:kcctl/kcctl", "asdf:joschi/asdf-kcctl"]
+description = "A modern and intuitive command line client for Kafka Connect"

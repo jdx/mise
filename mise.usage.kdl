@@ -622,7 +622,7 @@ cmd plugins help="Manage plugins" {
     }
     cmd ls-remote help="List all available remote plugins" {
         alias list-remote list-all
-        long_help "\nList all available remote plugins\n\nThe full list is here: https://github.com/jdx/mise/blob/main/registry.toml\n\nExamples:\n\n    $ mise plugins ls-remote\n"
+        long_help "\nList all available remote plugins\n\nThe full list is here: https://github.com/jdx/mise/blob/main/registry/\n\nExamples:\n\n    $ mise plugins ls-remote\n"
         flag "-u --urls" help="Show the git url for each plugin e.g.: https://github.com/mise-plugins/mise-poetry.git"
         flag --only-names help="Only show the name of each plugin by default it will show a \"*\" next to installed plugins"
     }
@@ -1049,12 +1049,12 @@ cmd tasks help="Manage tasks" {
 }
 cmd test-tool help="Test a tool installs and executes" {
     after_long_help "Examples:\n\n    $ mise test-tool ripgrep\n"
-    flag "-a --all" help="Test every tool specified in registry.toml"
+    flag "-a --all" help="Test every tool specified in registry/"
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg <JOBS>
     }
     flag --all-config help="Test all tools specified in config files"
-    flag --include-non-defined help="Also test tools not defined in registry.toml, guessing how to test it"
+    flag --include-non-defined help="Also test tools not defined in registry/, guessing how to test it"
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
     arg "[TOOLS]…" help="Tool(s) to test" required=#false var=#true
 }

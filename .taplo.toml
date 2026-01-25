@@ -1,6 +1,6 @@
 # Taplo configuration for mise
 
-exclude = ["docs/registry.toml", "docs/settings.toml"]
+exclude = ["docs/registry/*.toml", "docs/settings.toml"]
 
 
 [formatting]
@@ -12,8 +12,8 @@ indent_tables = false
 reorder_keys = false
 
 [[rule]]
-include = ["registry.toml"]
-schema.path = "./schema/mise-registry.json"
+include = ["registry/*.toml"]
+schema.path = "./schema/mise-registry-tool.json"
 
 [rule.formatting]
 reorder_keys = true

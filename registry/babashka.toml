@@ -1,0 +1,3 @@
+backends = ["github:babashka/babashka[exe=bb]", "asdf:pitch-io/asdf-babashka"]
+description = "Native, fast starting Clojure interpreter for scripting"
+test = ["bb --version", "babashka v{{version}}"]

@@ -1,0 +1,2 @@
+backends = ["aqua:viaduct-ai/kustomize-sops", "asdf:janpieper/asdf-ksops"]
+description = "KSOPS - A Flexible Kustomize Plugin for SOPS Encrypted Resources"

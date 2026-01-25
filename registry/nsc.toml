@@ -1,0 +1,2 @@
+backends = ["github:nats-io/nsc", "asdf:dex4er/asdf-nsc"]
+description = "Tool for creating nkey/jwt based configurations"

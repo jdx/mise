@@ -1,0 +1,4 @@
+backends = ["aqua:pinterest/ktlint", "asdf:mise-plugins/mise-ktlint"]
+depends = ["java"]
+description = "An anti-bikeshedding Kotlin linter with built-in formatter"
+# test = ["ktlint --version", "ktlint version {{version}}"] # DISABLED: upstream bug - release 1.7.2 not found on GitHub

@@ -1,0 +1,7 @@
+backends = [
+  "github:RedMadRobot/figma-export[bin_path=Release]",
+  "asdf:younke/asdf-figma-export",
+]
+description = "Command line utility to export colors, typography, icons and images from Figma to Xcode / Android Studio project"
+os = ["macos"]
+test = ["figma-export --version", "{{version}}"]

@@ -1,0 +1,2 @@
+backends = ["github:apauley/hledger-flow", "asdf:airtonix/asdf-hledger-flow"]
+description = "An hledger/ledger-cli workflow focusing on automated statement import and classification"

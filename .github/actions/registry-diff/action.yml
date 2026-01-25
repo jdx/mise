@@ -1,5 +1,5 @@
 name: "List modified registry tools"
-description: "List tools in registry.toml that have been modified between commits"
+description: "List tools in registry/ that have been modified between commits"
 
 inputs:
   base_sha:
@@ -16,22 +16,18 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
     - id: diff
       shell: bash
       run: |
-        git show ${{ inputs.base_sha }}:registry.toml | mise x yj -- yj -t > old.json
-        mise x yj -- yj -t < registry.toml > new.json
+        # Get modified registry files and extract tool names
+        modified=$(git diff --name-only ${{ inputs.base_sha }} HEAD -- 'registry/*.toml' \
+          | xargs -I{} basename {} .toml \
+          | tr '\n' ' ')
 
-        changed=$(jq -r -s '
-           (.[0].tools) as $old | (.[1].tools) as $new |
-           [ ($new | keys[]) | select($new[.] != $old[.]) ] | join(" ")
-        ' old.json new.json)
+        # Get newly added registry files
+        new=$(git diff --name-only --diff-filter=A ${{ inputs.base_sha }} HEAD -- 'registry/*.toml' \
+          | xargs -I{} basename {} .toml \
+          | tr '\n' ' ')
 
-        new=$(jq -r -s '
-           (.[0].tools) as $old | (.[1].tools) as $new |
-           [ ($new | keys[]) | select($old[.] == null) ] | join(" ")
-        ' old.json new.json)
-
-        echo "modified_tools=$changed" >> "$GITHUB_OUTPUT"
+        echo "modified_tools=$modified" >> "$GITHUB_OUTPUT"
         echo "new_tools=$new" >> "$GITHUB_OUTPUT"

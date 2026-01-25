@@ -37,7 +37,7 @@ jobs:
             exit 0
           fi
           # Check if relevant files changed
-          if git diff --name-only ${{ github.event.pull_request.base.sha }} HEAD | grep -qE '^(registry\.toml|\.github/workflows/registry\.yml|src/cli/test_tool\.rs)$'; then
+          if git diff --name-only ${{ github.event.pull_request.base.sha }} HEAD | grep -qE '^(registry/.*\.toml|\.github/workflows/registry\.yml|src/cli/test_tool\.rs)$'; then
             echo "registry-changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "registry-changed=false" >> "$GITHUB_OUTPUT"
@@ -67,6 +67,7 @@ jobs:
     if: github.event_name == 'pull_request' && needs.check-changes.outputs.registry-changed == 'true'
     outputs:
       tools: ${{ steps.determine-tools.outputs.tools }}
+      new_tools: ${{ steps.registry-diff.outputs.new_tools }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -100,6 +101,33 @@ jobs:
             echo "tools=$tools" >> "$GITHUB_OUTPUT"
           fi
 
+  validate-new-tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: list-changed-tools
+    if: |
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.user.login != 'jdx' &&
+      needs.list-changed-tools.outputs.new_tools != ''
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Check new tools have tests
+        run: |
+          missing_tests=""
+          for tool in ${{ needs.list-changed-tools.outputs.new_tools }}; do
+            if ! grep -q '^test = \[' "registry/$tool.toml"; then
+              missing_tests="$missing_tests $tool"
+            fi
+          done
+          if [ -n "$missing_tests" ]; then
+            echo "::error::New tools missing required 'test' field:$missing_tests"
+            echo ""
+            echo "All new tools must include a test field, e.g.:"
+            echo '  test = ["mytool --version", "v{{version}}"]'
+            exit 1
+          fi
+          echo "All new tools have tests"
+
   test-tool:
     name: test-tool-${{ matrix.tranche }}
     timeout-minutes: 30
@@ -107,10 +135,12 @@ jobs:
     needs:
       - build
       - list-changed-tools
+      - validate-new-tools
     if: |
       !cancelled() &&
       needs.build.result == 'success' &&
-      (needs.list-changed-tools.result == 'success' || needs.list-changed-tools.result == 'skipped')
+      (needs.list-changed-tools.result == 'success' || needs.list-changed-tools.result == 'skipped') &&
+      (needs.validate-new-tools.result == 'success' || needs.validate-new-tools.result == 'skipped')
     strategy:
       fail-fast: false
       matrix:
@@ -151,6 +181,7 @@ jobs:
       - check-changes
       - build
       - list-changed-tools
+      - validate-new-tools
       - test-tool
     if: ${{ !cancelled() }}
     steps:
@@ -170,6 +201,10 @@ jobs:
           fi
           if [ "${{ needs.list-changed-tools.result }}" != "success" ] && [ "${{ needs.list-changed-tools.result }}" != "skipped" ]; then
             echo "list-changed-tools failed"
+            exit 1
+          fi
+          if [ "${{ needs.validate-new-tools.result }}" == "failure" ]; then
+            echo "validate-new-tools failed - new tools must include tests"
             exit 1
           fi
           if [ "${{ needs.test-tool.result }}" != "success" ]; then

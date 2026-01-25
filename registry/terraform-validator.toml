@@ -1,0 +1,5 @@
+backends = [
+  "aqua:thazelart/terraform-validator",
+  "asdf:looztra/asdf-terraform-validator",
+]
+description = "A norms and conventions validator for Terraform"

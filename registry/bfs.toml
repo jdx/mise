@@ -1,0 +1,3 @@
+backends = ["vfox:mise-plugins/vfox-bfs", "asdf:mise-plugins/mise-bfs"]
+description = "Breadth-first search for your files"
+test = ["bfs --version", "bfs {{version}}"]

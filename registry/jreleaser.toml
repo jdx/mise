@@ -1,0 +1,2 @@
+backends = ["aqua:jreleaser/jreleaser", "asdf:joschi/asdf-jreleaser"]
+description = "Release projects quickly and easily with JReleaser"

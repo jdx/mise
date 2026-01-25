@@ -1,0 +1,2 @@
+backends = ["aqua:FairwindsOps/nova", "asdf:elementalvoid/asdf-nova"]
+description = "Find outdated or deprecated Helm charts running in your cluster"

@@ -1,0 +1,2 @@
+backends = ["npm:serverless", "asdf:mise-plugins/mise-serverless"]
+description = "Serverless Framework"

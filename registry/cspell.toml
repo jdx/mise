@@ -1,0 +1,3 @@
+backends = ["npm:cspell"]
+description = "A Spell Checker for Code!"
+test = ["cspell --version", "{{version}}"]

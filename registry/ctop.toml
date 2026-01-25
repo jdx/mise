@@ -1,0 +1,3 @@
+backends = ["aqua:bcicen/ctop", "asdf:NeoHsu/asdf-ctop"]
+description = "Top-like interface for container metrics"
+test = ["ctop -v", "ctop version {{version}}"]

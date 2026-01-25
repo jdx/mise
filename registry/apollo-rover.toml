@@ -1,0 +1,3 @@
+backends = ["github:apollographql/rover"]
+description = "The CLI for Apollo GraphOS"
+test = ["rover --version", "Rover {{version}}"]

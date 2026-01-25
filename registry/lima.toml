@@ -1,0 +1,3 @@
+backends = ["aqua:lima-vm/lima", "asdf:CrouchingMuppet/asdf-lima"]
+description = "Linux virtual machines, with a focus on running containers"
+test = ["lima --version", "limactl version {{version}}"]

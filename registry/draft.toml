@@ -1,0 +1,2 @@
+backends = ["aqua:Azure/draft", "asdf:kristoflemmens/asdf-draft"]
+description = "A day 0 tool for getting your app on k8s fast"

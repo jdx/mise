@@ -1,0 +1,2 @@
+backends = ["aqua:FairwindsOps/rbac-lookup", "asdf:looztra/asdf-rbac-lookup"]
+description = "Easily find roles and cluster roles attached to any user, service account, or group name in your Kubernetes cluster"

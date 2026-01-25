@@ -1,0 +1,3 @@
+backends = ["aqua:brigadecore/brigade", "asdf:Ibotta/asdf-brig"]
+description = "Brigade CLI. Event-driven scripting for Kubernetes"
+test = ["brig version", "Brigade client: version v{{version}}"]

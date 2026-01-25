@@ -1,0 +1,2 @@
+backends = ["aqua:minishift/minishift", "asdf:sqtran/asdf-minishift"]
+description = "Run OpenShift 3.x locally"

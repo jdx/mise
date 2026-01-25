@@ -1,0 +1,2 @@
+backends = ["aqua:hashicorp/levant", "asdf:mise-plugins/mise-hashicorp"]
+description = "An open source templating and deployment tool for HashiCorp Nomad jobs"

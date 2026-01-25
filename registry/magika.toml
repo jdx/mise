@@ -1,0 +1,3 @@
+backends = ["cargo:magika-cli"]
+description = "Fast and accurate AI powered file content types detection"
+test = ["magika --version", "magika {{version | trim_start_matches(pat='v')}}"]

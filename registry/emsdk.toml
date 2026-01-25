@@ -1,0 +1,2 @@
+backends = ["asdf:mise-plugins/mise-emsdk"]
+description = "Emscripten is a complete compiler toolchain to WebAssembly, using LLVM, with a special focus on speed, size, and the Web platform"

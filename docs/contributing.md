@@ -634,7 +634,7 @@ root of the project and run `mise run render` to update the codebase.
 ## Adding Tools
 
 Adding tools to mise involves adding entries to the
-[registry.toml](https://github.com/jdx/mise/blob/main/registry.toml) file. This
+[registry/](https://github.com/jdx/mise/blob/main/registry/) file. This
 allows users to install tools using short names like `mise use ripgrep` instead
 of the full backend specification.
 
@@ -651,7 +651,7 @@ of the full backend specification.
    - **[Core tools](core-tools.md)** - Built-in support for major languages
      (not user-contributed)
 
-2. **Add to registry.toml**:
+2. **Add to registry/**:
 
    ```toml
    [tools.your-tool]
@@ -668,7 +668,7 @@ When adding a new tool, the following requirements apply (automatically
 enforced by [GitHub Actions workflow](https://github.com/jdx/mise/blob/main/.github/workflows/registry_comment.yml)):
 
 - **New asdf plugins are not accepted** - Use aqua/github instead
-- **A test is required in `registry.toml`** - Must include a `test` field to
+- **A test is required in `registry/`** - Must include a `test` field to
   verify installation
 - **Tools may be rejected if they are not notable** - The tool should be
   reasonably popular and well-maintained. There are no specific guidelines for this and
@@ -677,7 +677,7 @@ enforced by [GitHub Actions workflow](https://github.com/jdx/mise/blob/main/.git
 
 ### Registry Format
 
-The `registry.toml` file uses this format:
+The `registry/` file uses this format:
 
 ```toml
 # Tool name "your-tool" (becomes the short name for `mise use`)
@@ -820,7 +820,7 @@ across different installation systems.
 
 4. **Add CLI argument parsing** in `src/cli/args/backend_arg.rs` if needed
 
-5. **Update the registry** in `registry.toml` if it should be available as a
+5. **Update the registry** in `registry/` if it should be available as a
    shorthand
 
 ### Testing Requirements

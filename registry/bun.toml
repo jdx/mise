@@ -1,0 +1,3 @@
+backends = ["core:bun"]
+description = "Bun is a fast JavaScript all-in-one toolkit"
+test = ["bun --version", "{{version}}"]

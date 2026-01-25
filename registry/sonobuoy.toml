@@ -1,0 +1,2 @@
+backends = ["github:vmware-tanzu/sonobuoy", "asdf:Nick-Triller/asdf-sonobuoy"]
+description = "Sonobuoy is a diagnostic tool that makes it easier to understand the state of a Kubernetes cluster by running a set of Kubernetes conformance tests and other plugins in an accessible and non-destructive manner"

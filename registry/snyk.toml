@@ -1,0 +1,2 @@
+backends = ["aqua:snyk/cli", "asdf:nirfuchs/asdf-snyk"]
+description = "Snyk CLI scans and monitors your projects for security vulnerabilities"

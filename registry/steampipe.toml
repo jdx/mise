@@ -1,0 +1,3 @@
+backends = ["aqua:turbot/steampipe", "asdf:carnei-ro/asdf-steampipe"]
+description = "Use SQL to instantly query your cloud services (AWS, Azure, GCP and more). Open source CLI. No DB required"
+test = ["steampipe --version", "Steampipe v{{version}}"]

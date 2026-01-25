@@ -1,0 +1,5 @@
+backends = [
+  "aqua:kubernetes-sigs/cri-tools/crictl",
+  "asdf:FairwindsOps/asdf-crictl",
+]
+description = "crictl is a command-line interface for CRI-compatible container runtimes. You can use it to inspect and debug container runtimes and applications on a Kubernetes node"

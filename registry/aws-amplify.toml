@@ -1,0 +1,7 @@
+aliases = ["amplify"]
+backends = [
+  "github:aws-amplify/amplify-cli[rename_exe=amplify]",
+  "asdf:LozanoMatheus/asdf-aws-amplify-cli",
+]
+description = "The AWS Amplify CLI is a toolchain for simplifying serverless web and mobile development"
+# test = ["amplify --version", "{{version}}"]  # hangs in CI

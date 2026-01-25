@@ -1,0 +1,3 @@
+backends = ["npm:@sourcegraph/amp"]
+description = "An agentic coding tool built by Sourcegraph"
+test = ["amp --version", "{{version}}"]

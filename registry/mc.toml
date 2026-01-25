@@ -1,0 +1,2 @@
+backends = ["aqua:minio/mc", "asdf:mise-plugins/mise-mc"]
+description = "Unix like utilities for object store (minio)"

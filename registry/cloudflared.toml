@@ -1,0 +1,3 @@
+backends = ["aqua:cloudflare/cloudflared", "asdf:threkk/asdf-cloudflared"]
+description = "cloudflared connects your machine or user identity to Cloudflare's global network"
+test = ["cloudflared -v", "cloudflared version {{version}}"]

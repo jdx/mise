@@ -70,18 +70,45 @@ fn parse_options(opts: Option<&toml::Value>) -> Vec<(String, String)> {
     .unwrap_or_default()
 }
 
+fn load_registry_tools() -> toml::map::Map<String, toml::Value> {
+    let mut tools = toml::map::Map::new();
+    let registry_dir = Path::new("registry");
+
+    println!("cargo:rerun-if-changed=registry");
+
+    let mut files: Vec<_> = fs::read_dir(registry_dir)
+        .expect("registry directory not found")
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "toml"))
+        .collect();
+    files.sort();
+
+    for file in files {
+        println!("cargo:rerun-if-changed={}", file.display());
+        let tool_name = file
+            .file_stem()
+            .expect("file has no stem")
+            .to_str()
+            .expect("filename is not valid UTF-8")
+            .to_string();
+        let content = fs::read_to_string(&file)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {}", file.display(), e));
+        let tool_info: toml::Value = content
+            .parse()
+            .unwrap_or_else(|e| panic!("Failed to parse {}: {}", file.display(), e));
+        tools.insert(tool_name, tool_info);
+    }
+    tools
+}
+
 fn codegen_registry() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("registry.rs");
     let mut lines = vec!["[".to_string()];
 
-    let registry: toml::Table = fs::read_to_string("registry.toml")
-        .unwrap()
-        .parse()
-        .unwrap();
-
-    let tools = registry.get("tools").unwrap().as_table().unwrap();
-    for (short, info) in tools {
+    let tools = load_registry_tools();
+    for (short, info) in &tools {
         let info = info.as_table().unwrap();
         let aliases = info
             .get("aliases")

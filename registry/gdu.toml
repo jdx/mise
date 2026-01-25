@@ -1,0 +1,2 @@
+backends = ["aqua:dundee/gdu"]
+description = "Fast disk usage analyzer with console interface written in Go"

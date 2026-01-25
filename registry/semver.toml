@@ -1,0 +1,7 @@
+backends = [
+  # "aqua:fsaintjacques/semver-tool", # see https://github.com/jdx/mise/discussions/5833
+  "vfox:mise-plugins/vfox-semver",
+  "asdf:mathew-fleisch/asdf-semver",
+]
+description = "semver bash implementation"
+test = ["semver --version", "semver: {{version}}"]

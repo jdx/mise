@@ -1,0 +1,2 @@
+backends = ["asdf:mise-plugins/mise-teleport-ent"]
+description = "Teleport provides connectivity, authentication, access controls and audit for infrastructure (Enterprise version)"

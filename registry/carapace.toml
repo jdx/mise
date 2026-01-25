@@ -1,0 +1,3 @@
+backends = ["aqua:carapace-sh/carapace-bin"]
+description = "A multi-shell completion binary"
+test = ["carapace --version 2>&1", "carapace-bin {{version}}"]

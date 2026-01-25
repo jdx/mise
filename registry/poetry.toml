@@ -1,0 +1,3 @@
+backends = ["vfox:mise-plugins/vfox-poetry", "pipx:poetry"]
+description = "Python packaging and dependency management made easy"
+test = ["poetry --version", "Poetry (version {{version}})"]

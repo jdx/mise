@@ -77,7 +77,7 @@ Mise is a Rust CLI tool that manages development environments, tools, tasks, and
 ### Configuration Files
 - `mise.toml` - Main configuration file format
 - `settings.toml` - Global settings definitions (generates code/docs)
-- `registry.toml` - Tool registry mappings
+- `registry/` - Tool registry mappings
 - `tasks.toml` - Project task definitions
 
 ### Test Structure
@@ -110,7 +110,7 @@ All commit messages and PR titles MUST follow conventional commit format:
 - `test:` - Testing changes
 - `chore:` - Maintenance tasks, releases, dependency updates
 - `security:` - Security-related changes
-- `registry:` - New tools in `registry.toml` (no scope needed)
+- `registry:` - New tool additions to `registry/` (no scope needed)
 
 **Scopes:**
 - For command-specific changes, use the command name: `install`, `activate`, `use`, `run`, `exec`, etc.

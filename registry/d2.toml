@@ -1,0 +1,3 @@
+backends = ["aqua:terrastruct/d2", "github:terrastruct/d2[strip_components=1]"]
+description = "Modern diagram scripting language that turns text to diagrams"
+test = ["d2 --version", "v{{version}}"]

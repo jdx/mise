@@ -385,14 +385,14 @@ impl BackendArg {
     /// Returns true if the user explicitly specified the full backend identifier.
     /// When false and the tool is not plugin-based, it may resolve to the current
     /// registry backend on next operation, allowing automatic backend migration
-    /// when registry.toml is updated.
+    /// when registry/ is updated.
     pub fn has_explicit_backend(&self) -> bool {
         self.resolution.explicit
     }
 
     /// Returns the stored backend identifier, preferring the explicitly stored value
     /// over dynamic registry resolution. For non-explicit tools, uses `full()` which
-    /// respects registry updates, allowing automatic backend migration when registry.toml
+    /// respects registry updates, allowing automatic backend migration when registry/
     /// is updated. Used for lockfiles to preserve the actual installed backend when possible.
     /// Options are stripped since lockfiles have a separate options field.
     pub fn stored_full(&self) -> String {

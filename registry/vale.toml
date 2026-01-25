@@ -1,0 +1,2 @@
+backends = ["aqua:errata-ai/vale", "asdf:pdemagny/asdf-vale"]
+description = ":pencil: A markup-aware linter for prose built with speed and extensibility in mind"

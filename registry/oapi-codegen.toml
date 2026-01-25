@@ -1,0 +1,5 @@
+backends = [
+  "go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen",
+  "asdf:dylanrayboss/asdf-oapi-codegen",
+]
+description = "oapi-codegen is a command-line tool and library to convert OpenAPI specifications to Go code, be it server-side implementations, API clients, or simply HTTP models"

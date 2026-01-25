@@ -1,0 +1,4 @@
+backends = ["npm:npm"]
+description = "the package manager for JavaScript"
+overrides = ["node"]
+test = ["npm --version", "{{version}}"]

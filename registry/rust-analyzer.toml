@@ -1,0 +1,2 @@
+backends = ["aqua:rust-lang/rust-analyzer", "asdf:Xyven1/asdf-rust-analyzer"]
+description = "A Rust compiler front-end for IDEs"

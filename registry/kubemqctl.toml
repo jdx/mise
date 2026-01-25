@@ -1,0 +1,2 @@
+backends = ["aqua:kubemq-io/kubemqctl", "asdf:johnlayton/asdf-kubemqctl"]
+description = "Kubemqctl is a command line interface (CLI) for KubeMQ, Kubernetes Message Broker"

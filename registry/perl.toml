@@ -1,0 +1,2 @@
+backends = ["aqua:skaji/relocatable-perl", "asdf:ouest/asdf-perl"]
+description = "self-contained, portable perl binaries"

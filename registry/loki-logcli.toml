@@ -1,0 +1,2 @@
+backends = ["aqua:grafana/loki/logcli", "asdf:comdotlinux/asdf-loki-logcli"]
+description = "LogCLI is a command-line tool for querying and exploring logs in Grafana Loki"

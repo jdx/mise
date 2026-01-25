@@ -1,0 +1,2 @@
+backends = ["aqua:extrawurst/gitui", "asdf:looztra/asdf-gitui", "cargo:gitui"]
+description = "Blazing 💥 fast terminal-ui for git written in rust"

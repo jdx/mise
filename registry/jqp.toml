@@ -1,0 +1,2 @@
+backends = ["aqua:noahgorstein/jqp", "asdf:https://gitlab.com/wt0f/asdf-jqp"]
+description = "A TUI playground to experiment with jq"

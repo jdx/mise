@@ -39,7 +39,7 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 "aqua:BurntSushi/ripgrep" = "latest"
 ```
 
-Some tools will default to use aqua if they're specified in [registry.toml](https://github.com/jdx/mise/blob/main/registry.toml)
+Some tools will default to use aqua if they're specified in [registry/](https://github.com/jdx/mise/blob/main/registry/)
 to use the aqua backend. To see these tools, run `mise registry | grep aqua:`.
 
 ## Tool Options

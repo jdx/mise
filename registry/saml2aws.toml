@@ -1,0 +1,2 @@
+backends = ["aqua:Versent/saml2aws", "asdf:elementalvoid/asdf-saml2aws"]
+description = "CLI tool which enables you to login and retrieve AWS temporary credentials using a SAML IDP"

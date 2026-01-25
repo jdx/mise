@@ -1,0 +1,7 @@
+backends = [
+  "aqua:stepchowfun/docuum",
+  "cargo:docuum",
+  "asdf:bradym/asdf-docuum",
+]
+description = "Docuum performs least recently used (LRU) eviction of Docker images"
+test = ["docuum --version", "Docuum {{version}}"]

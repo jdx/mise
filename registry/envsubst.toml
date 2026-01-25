@@ -1,0 +1,2 @@
+backends = ["aqua:a8m/envsubst", "asdf:dex4er/asdf-envsubst"]
+description = "Environment variables substitution for Go"

@@ -1,0 +1,2 @@
+backends = ["aqua:liqotech/liqo", "asdf:pdemagny/asdf-liqoctl"]
+description = "Enable dynamic and seamless Kubernetes multi-cluster topologies"

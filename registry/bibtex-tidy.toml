@@ -1,0 +1,3 @@
+backends = ["npm:bibtex-tidy"]
+description = "Cleaner and Formatter for BibTeX files"
+test = ["bibtex-tidy --version", "v{{version}}"]

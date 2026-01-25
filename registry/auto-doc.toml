@@ -1,0 +1,3 @@
+backends = ["github:tj-actions/auto-doc", "asdf:mise-plugins/mise-auto-doc"]
+description = "Github action that turns your reusable workflows and custom actions into easy to read markdown tables"
+test = ["auto-doc --help", "auto-doc [flags]"]

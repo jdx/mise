@@ -1,0 +1,5 @@
+backends = [
+  "aqua:google/go-jsonnet",
+  "asdf:https://gitlab.com/craigfurman/asdf-go-jsonnet",
+]
+description = "This an implementation of Jsonnet in pure Go"

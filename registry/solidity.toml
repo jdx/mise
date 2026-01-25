@@ -1,0 +1,5 @@
+backends = [
+  "github:ethereum/solidity[exe=solc]",
+  "asdf:diegodorado/asdf-solidity",
+]
+description = "Solidity, the Smart Contract Programming Language"

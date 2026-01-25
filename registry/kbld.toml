@@ -1,0 +1,2 @@
+backends = ["aqua:carvel-dev/kbld", "asdf:vmware-tanzu/asdf-carvel"]
+description = "kbld seamlessly incorporates image building and image pushing into your development and deployment workflows"

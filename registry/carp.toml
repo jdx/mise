@@ -1,0 +1,3 @@
+backends = ["github:carp-lang/Carp[exe=carp]", "asdf:susurri/asdf-carp"]
+description = "Carp Language"
+test = ["which carp", ""] # hangs in non-interactive shells

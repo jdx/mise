@@ -1,0 +1,2 @@
+backends = ["github:charmbracelet/melt", "asdf:chessmango/asdf-melt"]
+description = "Backup and restore Ed25519 SSH keys with seed words 🫠"

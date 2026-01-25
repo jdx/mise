@@ -1,0 +1,3 @@
+backends = ["npm:esy"]
+description = "Easy package management for native Reason, OCaml and more"
+test = ["esy --version", "{{version}}"]

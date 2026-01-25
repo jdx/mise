@@ -1,0 +1,2 @@
+backends = ["github:transifex/cli[exe=tx]", "asdf:ORCID/asdf-transifex"]
+description = "The Transifex command-line client"

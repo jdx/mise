@@ -1,0 +1,3 @@
+backends = ["github:uber/mockolo", "asdf:mise-plugins/mise-mockolo"]
+description = "Efficient Mock Generator for Swift"
+test = ["mockolo --help", "Show help information"]

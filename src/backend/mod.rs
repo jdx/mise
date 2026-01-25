@@ -383,7 +383,7 @@ pub trait Backend: Debug + Send + Sync {
         }
         let mut deps: IndexSet<_> = deps.into_iter().map(BackendArg::from).collect();
         if let Some(rt) = REGISTRY.get(self.ba().short.as_str()) {
-            // add dependencies from registry.toml
+            // add dependencies from registry/
             deps.extend(rt.depends.iter().map(BackendArg::from));
         }
         deps.retain(|ba| &**self.ba() != ba);
