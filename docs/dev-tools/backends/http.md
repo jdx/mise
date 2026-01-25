@@ -30,7 +30,7 @@ go in `[tools]` in `mise.toml`.
 
 ### `url` (Required)
 
-Specifies the HTTP URL to download the tool from. The URL supports templating with `{{version}}`, `{{os()}}`, and `{{arch()}}`:
+Specifies the HTTP URL to download the tool from. The URL supports templating with variables like `version`, `os()`, and `arch()`:
 
 ```toml
 [tools]
@@ -46,12 +46,12 @@ You can also use static URLs without templating:
 
 #### Template Variables
 
-The following template functions are available in URLs:
+The following template functions are available in URLs (use double curly braces, e.g., `version` becomes <code v-pre>{{version}}</code>):
 
-- `{{version}}` - The tool version
-- `{{os()}}` - Operating system: `macos`, `linux`, or `windows`
-- `{{arch()}}` - Architecture: `x64` or `arm64`
-- `{{os_family()}}` - OS family: `unix` or `windows`
+- `version` - The tool version
+- `os()` - Operating system: `macos`, `linux`, or `windows`
+- `arch()` - Architecture: `x64` or `arm64`
+- `os_family()` - OS family: `unix` or `windows`
 
 The `os()` and `arch()` functions support remapping for tools that use different naming conventions:
 
