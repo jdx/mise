@@ -40,7 +40,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
     let mut tera = Tera::default();
     tera.register_function(
         "arch",
-        move |_args: &HashMap<String, Value>| -> tera::Result<Value> {
+        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
             let arch = if cfg!(target_arch = "x86_64") {
                 "x64"
             } else if cfg!(target_arch = "aarch64") {
@@ -48,6 +48,12 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
             } else {
                 env::consts::ARCH
             };
+            // Check if there's a remap for this arch
+            if let Some(remapped) = args.get(arch) {
+                if let Some(s) = remapped.as_str() {
+                    return Ok(Value::String(s.to_string()));
+                }
+            }
             Ok(Value::String(arch.to_string()))
         },
     );
@@ -60,8 +66,15 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
     );
     tera.register_function(
         "os",
-        move |_args: &HashMap<String, Value>| -> tera::Result<Value> {
-            Ok(Value::String(env::consts::OS.to_string()))
+        move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+            let os = env::consts::OS;
+            // Check if there's a remap for this OS
+            if let Some(remapped) = args.get(os) {
+                if let Some(s) = remapped.as_str() {
+                    return Ok(Value::String(s.to_string()));
+                }
+            }
+            Ok(Value::String(os.to_string()))
         },
     );
     tera.register_function(

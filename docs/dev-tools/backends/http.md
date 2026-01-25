@@ -30,7 +30,7 @@ go in `[tools]` in `mise.toml`.
 
 ### `url` (Required)
 
-Specifies the HTTP URL to download the tool from. The URL supports templating with `{{version}}`:
+Specifies the HTTP URL to download the tool from. The URL supports templating with `{{version}}`, `{{os()}}`, and `{{arch()}}`:
 
 ```toml
 [tools]
@@ -43,6 +43,29 @@ You can also use static URLs without templating:
 [tools]
 "http:my-tool" = { version = "1.0.0", url = "https://example.com/releases/my-tool-v1.0.0.tar.gz" }
 ```
+
+#### Template Variables
+
+The following template functions are available in URLs:
+
+- `{{version}}` - The tool version
+- `{{os()}}` - Operating system: `macos`, `linux`, or `windows`
+- `{{arch()}}` - Architecture: `x64` or `arm64`
+- `{{os_family()}}` - OS family: `unix` or `windows`
+
+The `os()` and `arch()` functions support remapping for tools that use different naming conventions:
+
+```toml
+[tools]
+# HashiCorp tools use "darwin" instead of "macos" and "amd64" instead of "x64"
+"http:sentinel" = { version = "latest", url = 'https://releases.hashicorp.com/sentinel/{{version}}/sentinel_{{version}}_{{os(macos="darwin")}}_{{arch(x64="amd64")}}.zip' }
+```
+
+This produces URLs like:
+
+- macOS arm64: `sentinel_0.26.3_darwin_arm64.zip`
+- macOS x64: `sentinel_0.26.3_darwin_amd64.zip`
+- Linux x64: `sentinel_0.26.3_linux_amd64.zip`
 
 ### Platform-specific URLs
 
