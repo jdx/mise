@@ -114,68 +114,10 @@ fn eval_version_expr(expr_str: &str, body: &str) -> Result<Vec<String>> {
     let mut ctx = Context::default();
     ctx.insert("body".to_string(), Value::String(body.to_string()));
 
-    let mut env = Environment::new();
-
-    // Add fromJSON function to parse JSON strings
-    env.add_function("fromJSON", |c| {
-        let arg = c
-            .args
-            .first()
-            .ok_or_else(|| "fromJSON requires an argument".to_string())?;
-        let s = match arg {
-            Value::String(s) => s,
-            _ => return Err("fromJSON argument must be a string".to_string().into()),
-        };
-        let json: serde_json::Value =
-            serde_json::from_str(s).map_err(|e| format!("Invalid JSON: {e}"))?;
-        Ok(json_to_expr_value(json))
-    });
-
-    // Add keys function to get object keys
-    env.add_function("keys", |c| {
-        let arg = c
-            .args
-            .first()
-            .ok_or_else(|| "keys requires an argument".to_string())?;
-        match arg {
-            Value::Map(map) => {
-                let keys: Vec<Value> = map.keys().cloned().map(Value::String).collect();
-                Ok(Value::Array(keys))
-            }
-            _ => Err("keys argument must be an object/map".to_string().into()),
-        }
-    });
-
+    // expr-lang 0.4+ has built-in fromJSON, keys, values, len, toJSON functions
+    let env = Environment::new();
     let result = env.eval(expr_str, &ctx)?;
     value_to_strings(result)
-}
-
-/// Convert serde_json::Value to expr::Value
-fn json_to_expr_value(json: serde_json::Value) -> Value {
-    match json {
-        serde_json::Value::Null => Value::Nil,
-        serde_json::Value::Bool(b) => Value::Bool(b),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Value::Number(i)
-            } else if let Some(f) = n.as_f64() {
-                Value::Float(f)
-            } else {
-                Value::Nil
-            }
-        }
-        serde_json::Value::String(s) => Value::String(s),
-        serde_json::Value::Array(arr) => {
-            Value::Array(arr.into_iter().map(json_to_expr_value).collect())
-        }
-        serde_json::Value::Object(obj) => {
-            let map = obj
-                .into_iter()
-                .map(|(k, v)| (k, json_to_expr_value(v)))
-                .collect();
-            Value::Map(map)
-        }
-    }
 }
 
 /// Convert expr Value to a list of strings
