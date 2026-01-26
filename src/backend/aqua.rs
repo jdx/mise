@@ -269,14 +269,26 @@ impl Backend for AquaBackend {
         let tag = if existing_platform.is_some() {
             None // We'll determine version from URL instead
         } else {
-            self.get_version_tags()
-                .await
-                .ok()
-                .into_iter()
-                .flatten()
-                .find(|(version, _)| version == &tv.version)
-                .map(|(_, tag)| tag.clone())
+            match self.get_version_tags().await {
+                Ok(tags) => tags
+                    .iter()
+                    .find(|(version, _)| version == &tv.version)
+                    .map(|(_, tag)| tag.clone()),
+                Err(e) => {
+                    warn!(
+                        "[{}] failed to fetch version tags, URL may be incorrect: {e}",
+                        self.id
+                    );
+                    None
+                }
+            }
         };
+        if tag.is_none() && existing_platform.is_none() && !tv.version.starts_with('v') {
+            debug!(
+                "[{}] no tag found for version {}, will try with 'v' prefix",
+                self.id, tv.version
+            );
+        }
         let mut v = tag.clone().unwrap_or_else(|| tv.version.clone());
         let mut v_prefixed =
             (tag.is_none() && !tv.version.starts_with('v')).then(|| format!("v{v}"));
@@ -470,16 +482,28 @@ impl Backend for AquaBackend {
         };
 
         // Get version tag
-        let tag = self
-            .get_version_tags()
-            .await
-            .ok()
-            .into_iter()
-            .flatten()
-            .find(|(version, _)| version == &tv.version)
-            .map(|(_, tag)| tag);
-        let mut v = tag.cloned().unwrap_or_else(|| tv.version.clone());
-        let v_prefixed = (tag.is_none() && !tv.version.starts_with('v')).then(|| format!("v{v}"));
+        let tag = match self.get_version_tags().await {
+            Ok(tags) => tags
+                .iter()
+                .find(|(version, _)| version == &tv.version)
+                .map(|(_, tag)| tag.clone()),
+            Err(e) => {
+                warn!(
+                    "[{}] failed to fetch version tags for lockfile, URL may be incorrect: {e}",
+                    self.id
+                );
+                None
+            }
+        };
+        let tag_is_none = tag.is_none();
+        if tag_is_none && !tv.version.starts_with('v') {
+            debug!(
+                "[{}] no tag found for version {} during lock, will try with 'v' prefix",
+                self.id, tv.version
+            );
+        }
+        let mut v = tag.unwrap_or_else(|| tv.version.clone());
+        let v_prefixed = (tag_is_none && !tv.version.starts_with('v')).then(|| format!("v{v}"));
         let versions = match &v_prefixed {
             Some(v_prefixed) => vec![v.as_str(), v_prefixed.as_str()],
             None => vec![v.as_str()],
