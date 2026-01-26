@@ -228,9 +228,14 @@ impl Ls {
         } else if self.local {
             trs = trs
                 .iter()
-                .filter(|(.., ts)| match ts {
-                    ToolSource::MiseToml(p) => !config::is_global_config(p),
-                    _ => false,
+                .filter(|(.., ts)| {
+                    matches!(
+                        ts,
+                        ToolSource::MiseToml(p)
+                        | ToolSource::IdiomaticVersionFile(p)
+                        | ToolSource::ToolVersions(p)
+                        if !config::is_global_config(p)
+                    )
                 })
                 .map(|(fa, tv, ts)| (fa.clone(), tv.clone(), ts.clone()))
                 .collect()
