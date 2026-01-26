@@ -303,10 +303,10 @@ impl Task {
                     "remove old syntax `# mise`"
                 );
                 if let Some(captures) =
-                    regex!(r"^(?:#|//|::)(?:MISE| ?\[MISE\]) ([a-z_]+=.+)$").captures(line)
+                    regex!(r"^(?:#|//|::)(?:MISE| ?\[MISE\]) ([a-z0-9_.-]+=[^\n]+)$").captures(line)
                 {
                     Some(captures)
-                } else if let Some(captures) = regex!(r"^(?:#|//) mise ([a-z_]+=.+)$")
+                } else if let Some(captures) = regex!(r"^(?:#|//) mise ([a-z0-9_.-]+=[^\n]+)$")
                     .captures(line)
                 {
                     deprecated!(
@@ -328,7 +328,25 @@ impl Task {
             .filter_map(|toml| toml.as_table().cloned())
             .flatten()
             .fold(toml::Table::new(), |mut map, (key, value)| {
-                map.insert(key, value);
+                // Deep-merge tables when both existing and new values are tables
+                // This allows multiple #MISE lines like:
+                //   #MISE tools.terraform="1"
+                //   #MISE tools.tflint="0"
+                // to be merged into a single tools table
+                // See: https://github.com/jdx/mise/discussions/7839
+                if let Some(existing) = map.get_mut(&key) {
+                    if let (toml::Value::Table(existing_table), toml::Value::Table(new_table)) =
+                        (existing, &value)
+                    {
+                        for (k, v) in new_table {
+                            existing_table.insert(k.clone(), v.clone());
+                        }
+                    } else {
+                        map.insert(key, value);
+                    }
+                } else {
+                    map.insert(key, value);
+                }
                 map
             });
         let info = toml::Value::Table(info);
@@ -2189,5 +2207,110 @@ echo "test"
             script_lines,
             parsed_fields
         );
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_multi_line_tools_merge() {
+        // Regression test for https://github.com/jdx/mise/discussions/7839
+        // Multiple #MISE tools.X=Y lines should be merged into a single tools table
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let tasks_dir = temp_dir.path().join("tasks");
+        fs::create_dir(&tasks_dir).unwrap();
+        let task_file = tasks_dir.join("multi-tools-task");
+
+        // Create a file task with multiple tools on separate lines
+        let script_content = r#"#!/usr/bin/env bash
+#MISE tools.node="20"
+#MISE tools.python="3.11"
+#MISE tools.ruby="3.2"
+echo "test"
+"#;
+        fs::write(&task_file, script_content).unwrap();
+        fs::set_permissions(&task_file, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let config = Config::get().await.unwrap();
+        let task = Task::from_path(&config, &task_file, &tasks_dir, temp_dir.path())
+            .await
+            .unwrap();
+
+        // All three tools should be present
+        assert_eq!(
+            task.tools.len(),
+            3,
+            "Expected 3 tools, got: {:?}",
+            task.tools
+        );
+        assert!(
+            task.tools.contains_key("node"),
+            "Expected 'node' in tools: {:?}",
+            task.tools
+        );
+        assert!(
+            task.tools.contains_key("python"),
+            "Expected 'python' in tools: {:?}",
+            task.tools
+        );
+        assert!(
+            task.tools.contains_key("ruby"),
+            "Expected 'ruby' in tools: {:?}",
+            task.tools
+        );
+        assert_eq!(task.tools.get("node").unwrap(), "20");
+        assert_eq!(task.tools.get("python").unwrap(), "3.11");
+        assert_eq!(task.tools.get("ruby").unwrap(), "3.2");
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_hyphenated_and_numeric_tool_names() {
+        // Test that tool names with hyphens and numbers are parsed correctly
+        // e.g., git-cliff, 1password
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let tasks_dir = temp_dir.path().join("tasks");
+        fs::create_dir(&tasks_dir).unwrap();
+        let task_file = tasks_dir.join("hyphenated-tools-task");
+
+        // Create a file task with hyphenated and numeric tool names
+        let script_content = r#"#!/usr/bin/env bash
+#MISE tools.git-cliff="1.0"
+#MISE tools.1password-cli="2.0"
+echo "test"
+"#;
+        fs::write(&task_file, script_content).unwrap();
+        fs::set_permissions(&task_file, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let config = Config::get().await.unwrap();
+        let task = Task::from_path(&config, &task_file, &tasks_dir, temp_dir.path())
+            .await
+            .unwrap();
+
+        // Both tools should be present
+        assert_eq!(
+            task.tools.len(),
+            2,
+            "Expected 2 tools, got: {:?}",
+            task.tools
+        );
+        assert!(
+            task.tools.contains_key("git-cliff"),
+            "Expected 'git-cliff' in tools: {:?}",
+            task.tools
+        );
+        assert!(
+            task.tools.contains_key("1password-cli"),
+            "Expected '1password-cli' in tools: {:?}",
+            task.tools
+        );
+        assert_eq!(task.tools.get("git-cliff").unwrap(), "1.0");
+        assert_eq!(task.tools.get("1password-cli").unwrap(), "2.0");
     }
 }
