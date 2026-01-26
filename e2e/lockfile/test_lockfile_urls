@@ -3,30 +3,24 @@
 export MISE_LOCKFILE=1
 export MISE_EXPERIMENTAL=1
 
-# Detect platform key and expected URL for ripgrep
-OS=$(uname -s)
-ARCH=$(uname -m)
-case "$OS" in
-Darwin)
-	if [ "$ARCH" = "arm64" ]; then
-		PLATFORM="macos-arm64"
-		URL="https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-apple-darwin.tar.gz"
-	else
-		PLATFORM="macos-x64"
-		URL="https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-apple-darwin.tar.gz"
-	fi
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+# Expected URL for ripgrep based on platform
+case "$MISE_PLATFORM" in
+macos-arm64)
+	URL="https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-apple-darwin.tar.gz"
 	;;
-Linux)
-	if [ "$ARCH" = "aarch64" ]; then
-		PLATFORM="linux-arm64"
-		URL="https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-unknown-linux-musl.tar.gz"
-	else
-		PLATFORM="linux-x64"
-		URL="https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz"
-	fi
+macos-x64)
+	URL="https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-apple-darwin.tar.gz"
+	;;
+linux-arm64)
+	URL="https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-unknown-linux-musl.tar.gz"
+	;;
+linux-x64)
+	URL="https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz"
 	;;
 *)
-	PLATFORM="unknown"
 	URL=""
 	;;
 esac

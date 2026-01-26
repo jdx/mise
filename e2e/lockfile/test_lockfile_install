@@ -3,28 +3,8 @@
 export MISE_LOCKFILE=1
 export MISE_EXPERIMENTAL=1
 
-# Detect platform key
-OS=$(uname -s)
-ARCH=$(uname -m)
-case "$OS" in
-Darwin)
-	if [ "$ARCH" = "arm64" ]; then
-		PLATFORM="macos-arm64"
-	else
-		PLATFORM="macos-x64"
-	fi
-	;;
-Linux)
-	if [ "$ARCH" = "aarch64" ]; then
-		PLATFORM="linux-arm64"
-	else
-		PLATFORM="linux-x64"
-	fi
-	;;
-*)
-	PLATFORM="unknown"
-	;;
-esac
+detect_platform
+PLATFORM="$MISE_PLATFORM"
 
 touch mise.lock
 mise use tiny

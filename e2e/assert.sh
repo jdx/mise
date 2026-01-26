@@ -223,3 +223,32 @@ require_cmd() {
 		exit 2
 	fi
 }
+
+# Detect platform key for lockfile tests
+# Sets: MISE_PLATFORM, MISE_PLATFORM_OS, MISE_PLATFORM_ARCH
+detect_platform() {
+	local os arch
+	os=$(uname -s)
+	arch=$(uname -m)
+	case "$os" in
+	Darwin)
+		MISE_PLATFORM_OS="macos"
+		;;
+	Linux)
+		MISE_PLATFORM_OS="linux"
+		;;
+	*)
+		MISE_PLATFORM_OS="unknown"
+		;;
+	esac
+	case "$arch" in
+	arm64 | aarch64)
+		MISE_PLATFORM_ARCH="arm64"
+		;;
+	*)
+		MISE_PLATFORM_ARCH="x64"
+		;;
+	esac
+	MISE_PLATFORM="${MISE_PLATFORM_OS}-${MISE_PLATFORM_ARCH}"
+	export MISE_PLATFORM MISE_PLATFORM_OS MISE_PLATFORM_ARCH
+}

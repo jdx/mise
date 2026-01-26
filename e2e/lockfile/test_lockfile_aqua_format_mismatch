@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+# Test that lockfile URLs are invalidated when registry format changes
+# This simulates the terragrunt issue where the registry changed from
+# raw binary to tar.gz format, but lockfile had the old URL cached
+
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+detect_platform
+
+# Map platform to aqua asset naming
+case "$MISE_PLATFORM_OS" in
+macos) ASSET_OS="darwin" ;;
+linux) ASSET_OS="linux" ;;
+*) ASSET_OS="unknown" ;;
+esac
+
+case "$MISE_PLATFORM_ARCH" in
+arm64) ASSET_ARCH="arm64" ;;
+*) ASSET_ARCH="amd64" ;;
+esac
+
+# Use a tool that has tar.gz format (terragrunt >= 0.93.6)
+# Create a lockfile with an "old" URL that doesn't have the .tar.gz extension
+# This simulates what would happen if the lockfile was created before
+# the registry was updated to use tar.gz format
+
+cat <<EOF >mise.toml
+[tools]
+terragrunt = "0.97.0"
+EOF
+
+# Create lockfile with intentionally wrong asset name (missing .tar.gz)
+# The registry expects terragrunt_linux_amd64.tar.gz but we provide the old raw binary name
+OLD_WRONG_URL="https://github.com/gruntwork-io/terragrunt/releases/download/v0.97.0/terragrunt_${ASSET_OS}_${ASSET_ARCH}"
+cat <<EOF >mise.lock
+[[tools.terragrunt]]
+version = "0.97.0"
+backend = "aqua:gruntwork-io/terragrunt"
+"platforms.$MISE_PLATFORM" = { url = "$OLD_WRONG_URL" }
+EOF
+
+rm -rf "$MISE_DATA_DIR/installs/terragrunt"
+rm -rf "$MISE_DATA_DIR/downloads/terragrunt"
+
+# Run mise install and capture output
+# It should detect the mismatch and download the correct asset
+OUTPUT=$(mise install 2>&1)
+
+# Should warn about the mismatch
+assert_contains "echo \"$OUTPUT\"" "doesn't match registry"
+
+# Should successfully install
+assert "mise x terragrunt -- terragrunt --version" "terragrunt version v0.97.0"
