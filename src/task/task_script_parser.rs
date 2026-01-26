@@ -588,9 +588,10 @@ impl TaskScriptParser {
 
         // Don't insert env for spec-only parsing to avoid expensive environment rendering
         // Render scripts to trigger spec collection via Tera template functions
-        // (arg/option/flag), but discard the results
+        // (arg/option/flag), but discard the results. Ignore rendering errors since we only
+        // care about collecting arg/flag definitions from the deprecated Tera syntax.
         for script in scripts {
-            Self::render_script_with_context(&mut tera, script, &tera_ctx)?;
+            let _ = Self::render_script_with_context(&mut tera, script, &tera_ctx);
         }
         let mut cmd = usage::SpecCommand::default();
         // TODO: ensure no gaps in args, e.g.: 1,2,3,4,5
@@ -682,7 +683,11 @@ impl TaskScriptParser {
             .into_iter()
             .chain(args.iter().cloned())
             .collect::<Vec<_>>();
-        let m = match usage::parse(spec, &args) {
+        // Pass env vars to Parser so it can resolve env= defaults in usage specs
+        // This is needed for monorepo tasks where child config env vars aren't in the process env
+        let env_map: std::collections::HashMap<String, String> =
+            env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let m = match usage::Parser::new(spec).with_env(env_map).parse(&args) {
             Ok(m) => m,
             Err(e) => {
                 // just print exactly what usage returns so the error output isn't double-wrapped
