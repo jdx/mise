@@ -244,13 +244,12 @@ impl AssetPicker {
         // These should be penalized on non-Windows platforms
         // See: https://github.com/jdx/mise/discussions/7837
         let lower = asset.to_lowercase();
-        if lower.ends_with(".msi") || lower.ends_with(".exe") {
-            if self.target_os != "windows" {
+        if (lower.ends_with(".msi") || lower.ends_with(".exe"))
+            && self.target_os != "windows" {
                 return -100;
             }
             // On Windows, these are valid but don't need a boost - let other
             // factors (arch match, format preferences) determine the best asset
-        }
         0
     }
 
