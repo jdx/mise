@@ -301,64 +301,102 @@ impl Backend for AquaBackend {
             });
         }
         validate(&pkg)?;
-        let (url, v, filename, api_digest) =
-            if let Some(existing_platform) = existing_platform.clone() {
-                let url = existing_platform;
-                let filename = get_filename_from_url(&url);
-                // Determine which version variant was used based on the URL or filename
-                // Check for version_prefix (e.g., "jq-" for jq), "v" prefix, or raw version
-                let v = if let Some(prefix) = &pkg.version_prefix {
-                    let prefixed_version = format!("{prefix}{}", tv.version);
-                    if url.contains(&prefixed_version) || filename.contains(&prefixed_version) {
-                        prefixed_version
-                    } else if url.contains(&format!("v{}", tv.version))
-                        || filename.contains(&format!("v{}", tv.version))
-                    {
-                        format!("v{}", tv.version)
-                    } else {
-                        tv.version.clone()
-                    }
+
+        // Validate lockfile URL matches expected asset pattern from registry
+        // This handles cases where the registry format changed (e.g., raw binary -> tar.gz)
+        // Only validate for GithubRelease packages - other types use fixed URL formats
+        let validated_url = if let Some(ref url) = existing_platform {
+            if pkg.r#type != AquaPackageType::GithubRelease {
+                existing_platform // Skip validation for non-release package types
+            } else {
+                let cached_filename = get_filename_from_url(url);
+                let cached_filename_lower = cached_filename.to_lowercase();
+                // Check assets for both version variants (with and without v prefix)
+                let version_variants: Vec<&str> = match &v_prefixed {
+                    Some(vp) => vec![v.as_str(), vp.as_str()],
+                    None => vec![v.as_str()],
+                };
+                let matches = version_variants.iter().any(|ver| {
+                    pkg.asset_strs(ver, os(), arch())
+                        .unwrap_or_default()
+                        .iter()
+                        .any(|expected| {
+                            // Case-insensitive match to align with github_release_asset behavior
+                            cached_filename == *expected
+                                || cached_filename_lower == expected.to_lowercase()
+                        })
+                });
+                if matches {
+                    existing_platform
+                } else {
+                    warn!(
+                        "lockfile asset '{}' doesn't match registry, refreshing",
+                        cached_filename
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        let (url, v, filename, api_digest) = if let Some(validated_url) = validated_url.clone() {
+            let url = validated_url;
+            let filename = get_filename_from_url(&url);
+            // Determine which version variant was used based on the URL or filename
+            // Check for version_prefix (e.g., "jq-" for jq), "v" prefix, or raw version
+            let v = if let Some(prefix) = &pkg.version_prefix {
+                let prefixed_version = format!("{prefix}{}", tv.version);
+                if url.contains(&prefixed_version) || filename.contains(&prefixed_version) {
+                    prefixed_version
                 } else if url.contains(&format!("v{}", tv.version))
                     || filename.contains(&format!("v{}", tv.version))
                 {
                     format!("v{}", tv.version)
                 } else {
                     tv.version.clone()
-                };
-                (url, v, filename, None)
+                }
+            } else if url.contains(&format!("v{}", tv.version))
+                || filename.contains(&format!("v{}", tv.version))
+            {
+                format!("v{}", tv.version)
             } else {
-                let (url, v, digest) = if let Some(v_prefixed) = v_prefixed {
-                    // Try v-prefixed version first because most aqua packages use v-prefixed versions
-                    match self.get_url(&pkg, v_prefixed.as_ref()).await {
-                        // If the url is already checked, use it
-                        Ok((url, true, digest)) => (url, v_prefixed, digest),
-                        Ok((url_prefixed, false, digest_prefixed)) => {
-                            let (url, _, digest) = self.get_url(&pkg, &v).await?;
-                            // If the v-prefixed URL is the same as the non-prefixed URL, use it
-                            if url == url_prefixed {
-                                (url_prefixed, v_prefixed, digest_prefixed)
-                            } else {
-                                // If they are different, check existence
-                                match HTTP.head(&url_prefixed).await {
-                                    Ok(_) => (url_prefixed, v_prefixed, digest_prefixed),
-                                    Err(_) => (url, v, digest),
-                                }
+                tv.version.clone()
+            };
+            (url, v, filename, None)
+        } else {
+            let (url, v, digest) = if let Some(v_prefixed) = v_prefixed {
+                // Try v-prefixed version first because most aqua packages use v-prefixed versions
+                match self.get_url(&pkg, v_prefixed.as_ref()).await {
+                    // If the url is already checked, use it
+                    Ok((url, true, digest)) => (url, v_prefixed, digest),
+                    Ok((url_prefixed, false, digest_prefixed)) => {
+                        let (url, _, digest) = self.get_url(&pkg, &v).await?;
+                        // If the v-prefixed URL is the same as the non-prefixed URL, use it
+                        if url == url_prefixed {
+                            (url_prefixed, v_prefixed, digest_prefixed)
+                        } else {
+                            // If they are different, check existence
+                            match HTTP.head(&url_prefixed).await {
+                                Ok(_) => (url_prefixed, v_prefixed, digest_prefixed),
+                                Err(_) => (url, v, digest),
                             }
                         }
-                        Err(err) => {
-                            let (url, _, digest) =
-                                self.get_url(&pkg, &v).await.map_err(|e| err.wrap_err(e))?;
-                            (url, v, digest)
-                        }
                     }
-                } else {
-                    let (url, _, digest) = self.get_url(&pkg, &v).await?;
-                    (url, v, digest)
-                };
-                let filename = get_filename_from_url(&url);
-
-                (url, v.to_string(), filename, digest)
+                    Err(err) => {
+                        let (url, _, digest) =
+                            self.get_url(&pkg, &v).await.map_err(|e| err.wrap_err(e))?;
+                        (url, v, digest)
+                    }
+                }
+            } else {
+                let (url, _, digest) = self.get_url(&pkg, &v).await?;
+                (url, v, digest)
             };
+            let filename = get_filename_from_url(&url);
+
+            (url, v.to_string(), filename, digest)
+        };
 
         // Determine operation count for progress reporting
         let format = pkg.format(&v, os(), arch()).unwrap_or_default();
@@ -367,7 +405,7 @@ impl Backend for AquaBackend {
 
         self.download(ctx, &tv, &url, &filename).await?;
 
-        if existing_platform.is_none() {
+        if validated_url.is_none() {
             // Store the asset URL and digest (if available) in the tool version
             let platform_info = tv.lock_platforms.entry(platform_key).or_default();
             platform_info.url = Some(url.clone());
