@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Test that monorepo tasks can use env vars in usage spec (issue #7828)
+# When a task uses `env="NAME"` in its usage spec, the env var from the
+# child config should be available at parse time.
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config
+cat <<EOF >mise.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["backend"]
+EOF
+
+# Create backend project with env and task using usage with env= attribute
+mkdir -p backend
+cat <<EOF >backend/mise.toml
+[env]
+NAME = "john"
+
+[tasks.test]
+usage = '''
+  flag "--name <name>" env="NAME"
+'''
+run = '''
+echo "Name: {{usage.name}}"
+'''
+EOF
+
+# Test 1: Running monorepo task with usage env should work
+echo "=== Test 1: Monorepo task with usage env= attribute ==="
+output=$(mise run '//backend:test' 2>&1)
+echo "$output"
+echo "$output" | grep -q "Name: john" || (echo "FAIL: Expected 'Name: john' in output" && exit 1)
+
+# Test 2: Passing explicit arg should override env default
+echo "=== Test 2: Explicit arg overrides env default ==="
+output=$(mise run '//backend:test' -- --name="alice" 2>&1)
+echo "$output"
+echo "$output" | grep -q "Name: alice" || (echo "FAIL: Expected 'Name: alice' when passing --name" && exit 1)
+
+# Test 3: Task help should display without error
+echo "=== Test 3: Task help displays correctly ==="
+output=$(mise run '//backend:test' --help 2>&1)
+echo "$output"
+# Should show the flag in help output
+echo "$output" | grep -q "\-\-name" || (echo "FAIL: Expected --name flag in help output" && exit 1)
+
+echo "=== All tests passed! ==="
