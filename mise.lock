@@ -77,7 +77,7 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [[tools."cargo:usage-cli"]]
-version = "2.13.1"
+version = "2.15.0"
 backend = "cargo:usage-cli"
 
 [[tools.fd]]
