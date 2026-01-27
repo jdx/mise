@@ -126,6 +126,17 @@ When `cacheable = true`, mise will cache the environment variables and only re-e
 - The mise configuration changes
 - The cache TTL expires (configured via `env_cache_ttl` setting)
 
+::: tip
+For caching to work, users must enable the `env_cache` setting:
+
+```toml
+# ~/.config/mise/config.toml
+[settings]
+env_cache = true
+```
+
+:::
+
 ### hooks/mise_path.lua
 
 The `MisePath` hook returns directories to add to PATH (optional):
@@ -313,6 +324,8 @@ This is preferred over manual caching because:
 - Cache is encrypted with session-scoped keys
 - Integrates with `mise cache clear` and `mise cache prune`
 - Respects the `env_cache_ttl` setting
+
+Note: Users must enable `env_cache = true` in their settings for caching to work.
 
 ### 5. Support Multiple Environments
 
