@@ -1,10 +1,54 @@
 # Changelog
 
+## [2026.1.8](https://github.com/jdx/mise/compare/v2026.1.7..v2026.1.8) - 2026-01-27
+
+### 🐛 Bug Fixes
+
+- **(aqua)** invalidate lockfile when asset doesn't match registry by @jdx in [#7830](https://github.com/jdx/mise/pull/7830)
+- **(aqua)** add warnings when version tag lookup fails by @jdx in [#7831](https://github.com/jdx/mise/pull/7831)
+- **(github)** penalize Windows-specific extensions on non-Windows platforms by @jdx in [#7838](https://github.com/jdx/mise/pull/7838)
+- **(task)** resolve monorepo task env vars in usage spec by @jdx in [#7832](https://github.com/jdx/mise/pull/7832)
+- **(task)** support dotted keys and deep-merge in file task headers by @jdx in [#7840](https://github.com/jdx/mise/pull/7840)
+- don't thank @jdx in LLM-generated release notes by @jdx in [#7835](https://github.com/jdx/mise/pull/7835)
+- ensure that idiomatic and toolversions show in ls --local by @offbyone in [#7836](https://github.com/jdx/mise/pull/7836)
+
+### 🚜 Refactor
+
+- **(registry)** split registry.toml into one file per tool by @jdx in [#7820](https://github.com/jdx/mise/pull/7820)
+
+### 📚 Documentation
+
+- improve conventional commit guidance in CLAUDE.md by @jdx in [cbf2f74](https://github.com/jdx/mise/commit/cbf2f7472a8aea858fc8008a30aedfd10f5f6382)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#7826](https://github.com/jdx/mise/pull/7826)
+- lock file maintenance by @renovate[bot] in [#7827](https://github.com/jdx/mise/pull/7827)
+
+### Chore
+
+- **(ci)** add CI failure feedback to pr-closer workflow by @jdx in [#7821](https://github.com/jdx/mise/pull/7821)
+- **(ci)** add FORGEJO_TOKEN for Codeberg API authentication by @jdx in [#7841](https://github.com/jdx/mise/pull/7841)
+
+### Registry
+
+- **(claude)** add aqua backend as default by @jdx in [#7842](https://github.com/jdx/mise/pull/7842)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`carthage-software/mago`](https://github.com/carthage-software/mago)
+
+#### Updated Packages (1)
+
+- [`golangci/golangci-lint`](https://github.com/golangci/golangci-lint)
 ## [2026.1.7](https://github.com/jdx/mise/compare/v2026.1.6..v2026.1.7) - 2026-01-25
 
 ### 🐛 Bug Fixes
 
 - **(backend)** resolve registry mismatch for previously installed tools by @smorimoto in [#7773](https://github.com/jdx/mise/pull/7773)
+- **(env_cache)** use cached watch_files to avoid plugin re-execution by @jdx in [#7817](https://github.com/jdx/mise/pull/7817)
 - **(github)** handle projectname@version tag format by @jdx in [#7788](https://github.com/jdx/mise/pull/7788)
 - **(http)** add fromJSON/keys to version_expr for HashiCorp tools by @jdx in [#7816](https://github.com/jdx/mise/pull/7816)
 
@@ -23,24 +67,6 @@
 - @smorimoto made their first contribution in [#7773](https://github.com/jdx/mise/pull/7773)
 - @nguyenvulong made their first contribution in [#7805](https://github.com/jdx/mise/pull/7805)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (5)
-
-- [`Epistates/treemd`](https://github.com/Epistates/treemd)
-- [`anthropics/claude-code`](https://github.com/anthropics/claude-code)
-- [`k1LoW/git-wt`](https://github.com/k1LoW/git-wt)
-- [`odigos-io/odigos`](https://github.com/odigos-io/odigos)
-- [`raskell-io/hx`](https://github.com/raskell-io/hx)
-
-#### Updated Packages (6)
-
-- [`checkmake/checkmake`](https://github.com/checkmake/checkmake)
-- [`gruntwork-io/terragrunt`](https://github.com/gruntwork-io/terragrunt)
-- [`interlynk-io/sbomqs`](https://github.com/interlynk-io/sbomqs)
-- [`maxpert/marmot`](https://github.com/maxpert/marmot)
-- [`pranshuparmar/witr`](https://github.com/pranshuparmar/witr)
-- [`skim-rs/skim`](https://github.com/skim-rs/skim)
 ## [2026.1.6](https://github.com/jdx/mise/compare/v2026.1.5..v2026.1.6) - 2026-01-21
 
 ### 🚀 Features
