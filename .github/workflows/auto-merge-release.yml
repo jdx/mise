@@ -14,7 +14,7 @@ jobs:
       - name: Merge release into main
         run: |
           # Check if there's an open PR from release to main
-          PR_NUMBER=$(gh pr list -R jdx/mise --base main --head release --state open --json number --jq '.[0].number')
+          PR_NUMBER=$(gh pr list -R jdx/mise --base main --head release --state open --json number --jq '.[0].number // empty')
           if [ -z "$PR_NUMBER" ]; then
             echo "No open PR from release to main"
             exit 0
