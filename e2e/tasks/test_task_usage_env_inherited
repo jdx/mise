@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Test that usage env= attributes can read from inherited shell environment
+# This tests issue jdx/usage#468 where env-backed arguments always used defaults
+
+# Set a test env var in the shell environment
+export TEST_HOST="myhost.local"
+
+# Create a task that uses env= to read from inherited environment
+cat <<EOF >mise.toml
+[tasks.test]
+usage = '''
+arg "[host]" env="TEST_HOST" default="localhost"
+'''
+run = 'echo "Host: \${usage_host}"'
+EOF
+
+# Test 1: env= should read from inherited shell environment
+echo "=== Test 1: env= reads from inherited shell environment ==="
+output=$(mise run test 2>&1)
+echo "$output"
+echo "$output" | grep -q "Host: myhost.local" || (echo "FAIL: Expected 'Host: myhost.local' but env var wasn't read" && exit 1)
+
+# Test 2: Explicit arg should override env default
+echo "=== Test 2: Explicit arg overrides env ==="
+output=$(mise run test "explicit.host" 2>&1)
+echo "$output"
+echo "$output" | grep -q "Host: explicit.host" || (echo "FAIL: Expected 'Host: explicit.host' when passing explicit arg" && exit 1)
+
+# Test 3: Without env var set, should use default
+echo "=== Test 3: Falls back to default when env not set ==="
+unset TEST_HOST
+output=$(mise run test 2>&1)
+echo "$output"
+echo "$output" | grep -q "Host: localhost" || (echo "FAIL: Expected 'Host: localhost' as default" && exit 1)
+
+echo "=== All tests passed! ==="
