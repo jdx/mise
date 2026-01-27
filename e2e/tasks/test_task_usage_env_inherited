@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Test that usage env= attributes can read from inherited shell environment
+# This tests issue jdx/usage#468 where env-backed arguments always used defaults
+
+# Set a test env var in the shell environment
+export TEST_HOST="myhost.local"
+
+# Create a task that uses env= to read from inherited environment
+cat <<'EOF' >mise.toml
+[tasks.test]
+usage = '''
+arg "[host]" env="TEST_HOST" default="localhost"
+'''
+run = 'echo "Host: ${usage_host}"'
+EOF
+
+# Test 1: env= should read from inherited shell environment
+assert_contains "mise run test" "Host: myhost.local"
+
+# Test 2: Explicit arg should override env default
+assert_contains "mise run test explicit.host" "Host: explicit.host"
+
+# Test 3: Without env var set, should use default
+unset TEST_HOST
+assert_contains "mise run test" "Host: localhost"

@@ -804,7 +804,13 @@ impl TaskExecutor {
         if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
             let args: Vec<String> = get_args();
             trace!("Parsing usage spec for {:?}", args);
-            let po = usage::parse(&spec, &args).map_err(|err| eyre!(err))?;
+            // Pass env vars to Parser so it can resolve env= defaults in usage specs
+            let env_map: std::collections::HashMap<String, String> =
+                env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            let po = usage::Parser::new(&spec)
+                .with_env(env_map)
+                .parse(&args)
+                .map_err(|err| eyre!(err))?;
             for (k, v) in po.as_env() {
                 trace!("Adding key {} value {} in env", k, v);
                 env.insert(k, v);
