@@ -19,6 +19,7 @@ env:
   MISE_LOCKFILE: 1
   RUST_BACKTRACE: 1
   GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+  FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
 
 permissions:
   pull-requests: write
