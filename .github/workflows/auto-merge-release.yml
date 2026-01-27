@@ -2,7 +2,7 @@ name: auto-merge-release
 
 on:
   schedule:
-    # 4am Central Standard Time = 10:00 UTC (5am during daylight saving)
+    # 10:00 UTC = 4am CST (winter) / 5am CDT (summer)
     - cron: "0 10 * * *"
   workflow_dispatch:
 
@@ -14,7 +14,7 @@ jobs:
       - name: Merge release into main
         run: |
           # Check if there's an open PR from release to main
-          PR_NUMBER=$(gh pr list --base main --head release --state open --json number --jq '.[0].number')
+          PR_NUMBER=$(gh pr list -R jdx/mise --base main --head release --state open --json number --jq '.[0].number')
           if [ -z "$PR_NUMBER" ]; then
             echo "No open PR from release to main"
             exit 0
@@ -23,7 +23,7 @@ jobs:
           echo "Found PR #$PR_NUMBER"
 
           # Enable auto-merge which waits for CI checks to pass
-          gh pr merge "$PR_NUMBER" --merge --auto || {
+          gh pr merge "$PR_NUMBER" -R jdx/mise --merge --auto || {
             echo "Merge failed or PR not ready, will retry tomorrow"
             exit 0
           }
