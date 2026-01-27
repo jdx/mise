@@ -210,6 +210,37 @@ impl AssetPicker {
             .map(|(_, asset)| asset.clone())
     }
 
+    /// Picks the best provenance file for the current platform from available assets.
+    /// Returns the provenance file that best matches the target OS and architecture.
+    pub fn pick_best_provenance(&self, assets: &[String]) -> Option<String> {
+        // Filter to only provenance files
+        let provenance_assets: Vec<&String> = assets
+            .iter()
+            .filter(|a| {
+                let name = a.to_lowercase();
+                name.contains(".intoto.jsonl")
+                    || name.contains("provenance")
+                    || name.ends_with(".attestation")
+            })
+            .collect();
+
+        if provenance_assets.is_empty() {
+            return None;
+        }
+
+        // Score by platform match only (no format/build penalties)
+        let mut scored: Vec<(i32, &String)> = provenance_assets
+            .into_iter()
+            .map(|asset| {
+                let score = self.score_os_match(asset) + self.score_arch_match(asset);
+                (score, asset)
+            })
+            .collect();
+
+        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        scored.first().map(|(_, asset)| (*asset).clone())
+    }
+
     fn score_all_assets(&self, assets: &[String]) -> Vec<(i32, String)> {
         assets
             .iter()
@@ -1215,5 +1246,107 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
 
         // Metadata should have negative score contribution from penalties
         assert!(score_asc < 0 || score_asc < score_tar - 50);
+    }
+
+    // ========== Provenance Picker Tests ==========
+
+    #[test]
+    fn test_pick_best_provenance_selects_matching_platform() {
+        // Regression test for https://github.com/jdx/mise/discussions/7462
+        // When multiple provenance files exist, select the one matching the target platform
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let assets = vec![
+            "buildx-v0.30.1.linux-amd64".to_string(),
+            "buildx-v0.30.1.darwin-amd64.provenance.json".to_string(),
+            "buildx-v0.30.1.linux-amd64.provenance.json".to_string(),
+            "buildx-v0.30.1.windows-amd64.provenance.json".to_string(),
+        ];
+
+        let picked = picker.pick_best_provenance(&assets).unwrap();
+        assert_eq!(
+            picked, "buildx-v0.30.1.linux-amd64.provenance.json",
+            "Should select Linux provenance for Linux target"
+        );
+    }
+
+    #[test]
+    fn test_pick_best_provenance_darwin() {
+        let picker = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None);
+        let assets = vec![
+            "tool-1.0.0-linux-amd64.provenance.json".to_string(),
+            "tool-1.0.0-darwin-arm64.provenance.json".to_string(),
+            "tool-1.0.0-darwin-amd64.provenance.json".to_string(),
+        ];
+
+        let picked = picker.pick_best_provenance(&assets).unwrap();
+        assert_eq!(
+            picked, "tool-1.0.0-darwin-arm64.provenance.json",
+            "Should select darwin-arm64 provenance for macOS arm64 target"
+        );
+    }
+
+    #[test]
+    fn test_pick_best_provenance_windows() {
+        let picker = AssetPicker::with_libc("windows".to_string(), "x86_64".to_string(), None);
+        let assets = vec![
+            "buildkit-v0.26.3.darwin-amd64.provenance.json".to_string(),
+            "buildkit-v0.26.3.linux-amd64.provenance.json".to_string(),
+            "buildkit-v0.26.3.windows-amd64.provenance.json".to_string(),
+            "buildkit-v0.26.3.windows-amd64.tar.gz".to_string(),
+        ];
+
+        let picked = picker.pick_best_provenance(&assets).unwrap();
+        assert_eq!(
+            picked, "buildkit-v0.26.3.windows-amd64.provenance.json",
+            "Should select Windows provenance for Windows target"
+        );
+    }
+
+    #[test]
+    fn test_pick_best_provenance_intoto() {
+        // Test with .intoto.jsonl format (SLSA provenance)
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let assets = vec![
+            "tool-linux-amd64.tar.gz".to_string(),
+            "tool-darwin-amd64.intoto.jsonl".to_string(),
+            "tool-linux-amd64.intoto.jsonl".to_string(),
+        ];
+
+        let picked = picker.pick_best_provenance(&assets).unwrap();
+        assert_eq!(
+            picked, "tool-linux-amd64.intoto.jsonl",
+            "Should select Linux .intoto.jsonl for Linux target"
+        );
+    }
+
+    #[test]
+    fn test_pick_best_provenance_none_available() {
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let assets = vec![
+            "tool-1.0.0-linux-amd64.tar.gz".to_string(),
+            "tool-1.0.0-linux-amd64.sha256".to_string(),
+        ];
+
+        let picked = picker.pick_best_provenance(&assets);
+        assert!(
+            picked.is_none(),
+            "Should return None when no provenance files exist"
+        );
+    }
+
+    #[test]
+    fn test_pick_best_provenance_single_provenance() {
+        // When only one provenance exists, return it even if platform doesn't match
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let assets = vec![
+            "tool-1.0.0-linux-amd64.tar.gz".to_string(),
+            "tool-1.0.0.provenance.json".to_string(), // No platform info
+        ];
+
+        let picked = picker.pick_best_provenance(&assets).unwrap();
+        assert_eq!(
+            picked, "tool-1.0.0.provenance.json",
+            "Should return the only provenance file available"
+        );
     }
 }

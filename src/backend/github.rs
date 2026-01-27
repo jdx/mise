@@ -1,6 +1,6 @@
 use crate::backend::SecurityFeature;
 use crate::backend::VersionInfo;
-use crate::backend::asset_matcher::{self, Asset, ChecksumFetcher};
+use crate::backend::asset_matcher::{self, Asset, AssetPicker, ChecksumFetcher};
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
@@ -1168,18 +1168,25 @@ impl UnifiedGitBackend {
                 }
             };
 
-        // Find provenance assets in the release
-        let provenance_asset = release.assets.iter().find(|a| {
-            let name = a.name.to_lowercase();
-            name.contains(".intoto.jsonl")
-                || name.contains("provenance")
-                || name.ends_with(".attestation")
-        });
+        // Find the best provenance asset for the current platform
+        let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
+        let current_platform = PlatformTarget::from_current();
+        let picker = AssetPicker::with_libc(
+            current_platform.os_name().to_string(),
+            current_platform.arch_name().to_string(),
+            current_platform.qualifier().map(|s| s.to_string()),
+        );
 
-        let provenance_asset = match provenance_asset {
-            Some(a) => a,
+        let provenance_name = match picker.pick_best_provenance(&asset_names) {
+            Some(name) => name,
             None => return Err(VerificationStatus::NoAttestations),
         };
+
+        let provenance_asset = release
+            .assets
+            .iter()
+            .find(|a| a.name == provenance_name)
+            .expect("provenance asset should exist since we found its name");
 
         // Download the provenance file
         let download_dir = tv.download_path();
