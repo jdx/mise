@@ -5,6 +5,7 @@ test = ["claude --version", "{{version}} (Claude Code)"]
 
 [[backends]]
 full = "aqua:anthropics/claude-code"
+platforms = ["linux", "macos"]
 
 [[backends]]
 full = "http:claude"
