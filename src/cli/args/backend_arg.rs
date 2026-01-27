@@ -267,7 +267,7 @@ impl BackendArg {
             if let Some(stored_full) = &self.full
                 && stored_full != registry_full
             {
-                info!(
+                debug!(
                     "backend for '{short}' changed from stored '{stored_full}' to registry '{registry_full}'"
                 );
             }
