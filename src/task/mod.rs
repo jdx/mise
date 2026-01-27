@@ -234,6 +234,10 @@ pub struct Task {
     pub hide: bool,
     #[serde(default)]
     pub global: bool,
+    /// Whether this task was inherited from a parent config in a monorepo
+    /// (vs explicitly defined at this path). Used to filter wildcard matches.
+    #[serde(skip)]
+    pub inherited: bool,
     #[serde(default)]
     pub raw: bool,
     #[serde(default)]
@@ -1070,9 +1074,12 @@ fn match_tasks_with_context(
     parent_task: Option<&Task>,
 ) -> Result<Vec<Task>> {
     let resolved_pattern = resolve_task_pattern(&td.task, parent_task);
+    // When using wildcard patterns (containing "..."), filter out inherited tasks
+    let filter_inherited = resolved_pattern.contains("...");
     let matches = tasks
         .get_matching(&resolved_pattern)?
         .into_iter()
+        .filter(|t| !filter_inherited || !t.inherited)
         .map(|t| {
             let mut t = (*t).clone();
             t.args = td.args.clone();
@@ -1139,6 +1146,7 @@ impl Default for Task {
             dir: None,
             hide: false,
             global: false,
+            inherited: false,
             raw: false,
             sources: vec![],
             outputs: Default::default(),

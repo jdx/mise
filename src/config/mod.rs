@@ -1726,6 +1726,14 @@ async fn load_local_tasks_with_context(
                     // dir = "{{cwd}}" if they want the task to run from wherever it's invoked.
                     let mut all_tasks: Vec<Task> = task_map.into_values().collect();
 
+                    // Mark tasks as inherited if they come from a parent config
+                    // (their config_root differs from the subdir we're loading for)
+                    for task in all_tasks.iter_mut() {
+                        if let Some(ref config_root) = task.config_root {
+                            task.inherited = config_root != &subdir;
+                        }
+                    }
+
                     prefix_monorepo_task_names(&mut all_tasks, &subdir, &monorepo_root);
 
                     Ok::<Vec<Task>, eyre::Report>(all_tasks)

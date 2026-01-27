@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Test that wildcard patterns (//...:task) do NOT match inherited tasks
+# Only tasks explicitly defined in a subdirectory should match wildcards
+# See: https://github.com/jdx/mise/discussions/6564#discussioncomment-15607613
+
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root with a "test" task
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+
+[tasks.test]
+run = 'echo "root test"'
+
+[tasks.root-only]
+run = 'echo "root only task"'
+TOML
+
+# Create package-a WITH its own test task (should match //...:test)
+mkdir -p packages/package-a
+cat <<'TOML' >packages/package-a/mise.toml
+[tasks.test]
+run = 'echo "package-a test"'
+TOML
+
+# Create package-b WITHOUT its own test task (should NOT match //...:test due to inheritance)
+mkdir -p packages/package-b
+cat <<'TOML' >packages/package-b/mise.toml
+[tasks.build]
+run = 'echo "package-b build"'
+TOML
+
+# Create package-c WITH its own test task (should match //...:test)
+mkdir -p packages/package-c
+cat <<'TOML' >packages/package-c/mise.toml
+[tasks.test]
+run = 'echo "package-c test"'
+TOML
+
+mise trust --all
+
+# --- Test 1: Wildcard should only match explicitly defined tasks ---
+echo "=== Test 1: Wildcard should only match package-a and package-c (not package-b) ==="
+
+# Should include package-a and package-c (they define test explicitly)
+assert_contains "mise run '//packages/...:test'" "package-a test"
+assert_contains "mise run '//packages/...:test'" "package-c test"
+
+# Should NOT include package-b (its test is inherited from root)
+assert_not_contains "mise run '//packages/...:test'" "root test"
+
+# --- Test 2: Explicit paths still work for inherited tasks ---
+echo "=== Test 2: Explicit path should work for inherited task ==="
+assert_contains "mise run //packages/package-b:test" "root test"
+
+# --- Test 3: Root wildcard with root task should still work ---
+echo "=== Test 3: Root task still visible ==="
+assert_contains "mise run //:test" "root test"
+
+# --- Test 4: Task that only exists at root should NOT match //packages/...: wildcard ---
+echo "=== Test 4: Root-only task should not match subdirectory wildcard ==="
+# This should fail with "task not found" since no package explicitly defines root-only
+assert_fail "mise run '//packages/...:root-only'"
+
+# --- Test 5: Inherited tasks still visible in task list (with --all) ---
+echo "=== Test 5: Inherited tasks visible in task list ==="
+# Inherited tasks should still be listed
+assert_contains "mise tasks --all" "//packages/package-b:test"
+assert_contains "mise tasks --all" "//packages/package-b:root-only"
+
+# --- Test 6: Circular dependency should NOT occur ---
+# This was the original bug: root defines test = { depends = ['//...:test'] }
+# which would create a cycle through inherited tasks
+echo "=== Test 6: No circular dependency with wildcard depends ==="
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+
+[tasks.test]
+depends = ['//packages/...:test']
+run = 'echo "root test complete"'
+description = 'run all tests'
+TOML
+
+# This should work without circular dependency error
+assert_contains "mise run //:test" "package-a test"
+assert_contains "mise run //:test" "package-c test"
+assert_contains "mise run //:test" "root test complete"

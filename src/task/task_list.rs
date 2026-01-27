@@ -288,6 +288,11 @@ pub async fn get_task_lists(
         let cur_tasks = tasks_with_aliases
             .get_matching(&t)?
             .into_iter()
+            // When using wildcard patterns (containing "..."), filter out inherited tasks
+            // to avoid matching tasks that exist only due to inheritance from parent configs.
+            // This prevents issues like circular dependencies when root defines
+            // `test = { depends = ['//...:test'] }` and subdirs inherit that task.
+            .filter(|task| !t.contains("...") || !task.inherited)
             .cloned()
             .collect_vec();
         if cur_tasks.is_empty() {
