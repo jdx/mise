@@ -1,0 +1,30 @@
+name: auto-merge-release
+
+on:
+  schedule:
+    # 4am Central Standard Time = 10:00 UTC (5am during daylight saving)
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+
+jobs:
+  merge:
+    if: github.repository == 'jdx/mise'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.MISE_GH_TOKEN }}
+      - name: Merge release into main
+        run: |
+          git config user.name "mise-en-dev"
+          git config user.email "mise-en-dev@users.noreply.github.com"
+          git fetch origin release main
+          git checkout main
+          git merge origin/release --no-edit || {
+            echo "Merge conflict detected, skipping auto-merge"
+            exit 0
+          }
+          git push origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
