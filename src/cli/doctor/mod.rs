@@ -14,6 +14,8 @@ use crate::file::display_path;
 use crate::git::Git;
 use crate::plugins::PluginType;
 use crate::plugins::core::CORE_PLUGINS;
+use crate::registry::REGISTRY;
+use crate::toolset::install_state;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::{info, style};
 use crate::{backend, dirs, duration, env, file, shims};
@@ -114,6 +116,7 @@ impl Doctor {
         let ts = config.get_toolset().await?;
         self.analyze_shims(&config, ts).await;
         self.analyze_plugins();
+        self.analyze_backend_mismatches();
         data.insert(
             "paths".into(),
             self.paths(ts)
@@ -217,6 +220,7 @@ impl Doctor {
         }
 
         self.analyze_plugins();
+        self.analyze_backend_mismatches();
 
         let env_vars = mise_env_vars()
             .into_iter()
@@ -395,6 +399,53 @@ impl Doctor {
             if is_core && matches!(plugin_type, Some(PluginType::Asdf | PluginType::Vfox)) {
                 self.warnings
                     .push(format!("plugin {} overrides a core plugin", &plugin.id()));
+            }
+        }
+    }
+
+    fn analyze_backend_mismatches(&mut self) {
+        for (short, ist) in install_state::list_tools().iter() {
+            // Skip plugin-based tools (they use the plugin as backend)
+            if install_state::get_plugin_type(short).is_some() {
+                continue;
+            }
+
+            // Get stored backend, skip if none
+            let Some(stored_full) = &ist.full else {
+                continue;
+            };
+
+            // Get registry entry, skip if not in registry
+            let Some(rt) = REGISTRY.get(short.as_str()) else {
+                continue;
+            };
+
+            // Get recommended backend for current platform
+            let backends = rt.backends();
+            let Some(registry_full) = backends.first() else {
+                continue;
+            };
+
+            // Strip options for comparison (e.g., "github:repo[exe=bin]" -> "github:repo")
+            let stored_stripped = stored_full.split('[').next().unwrap_or(stored_full);
+            let registry_stripped = registry_full.split('[').next().unwrap_or(registry_full);
+
+            // Compare backends
+            if stored_stripped != registry_stripped {
+                let msg = if ist.explicit_backend {
+                    formatdoc!(
+                        r#"tool '{short}' installed with explicit backend '{stored_full}'
+                           differs from registry recommendation '{registry_full}'.
+                           To switch: mise uninstall --all {short} && mise install {short}"#
+                    )
+                } else {
+                    formatdoc!(
+                        r#"tool '{short}' installed with backend '{stored_full}'
+                           but registry now recommends '{registry_full}'.
+                           To migrate: mise uninstall --all {short} && mise install {short}"#
+                    )
+                };
+                self.warnings.push(msg);
             }
         }
     }
