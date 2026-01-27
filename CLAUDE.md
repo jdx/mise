@@ -102,19 +102,19 @@ All commit messages and PR titles MUST follow conventional commit format:
 
 **Types:**
 - `feat:` - New features
-- `fix:` - Bug fixes
+- `fix:` - Bug fixes that affect the CLI behavior (not CI, docs, or infrastructure)
 - `refactor:` - Code refactoring
 - `docs:` - Documentation changes
 - `style:` - Code style/formatting (no logic changes)
 - `perf:` - Performance improvements
 - `test:` - Testing changes
-- `chore:` - Maintenance tasks, releases, dependency updates
+- `chore:` - Maintenance tasks, releases, dependency updates, CI/infrastructure changes
 - `security:` - Security-related changes
 - `registry:` - New tool additions to `registry/` (no scope needed)
 
 **Scopes:**
 - For command-specific changes, use the command name: `install`, `activate`, `use`, `run`, `exec`, etc.
-- For subsystem changes: `config`, `backend`, `env`, `task`, `vfox`, `python`, `github`, `release`, `completions`, `http`, `schema`, `doctor`, `shim`, `core`, `deps`
+- For subsystem changes: `config`, `backend`, `env`, `task`, `vfox`, `python`, `github`, `release`, `completions`, `http`, `schema`, `doctor`, `shim`, `core`, `deps`, `ci`
 
 **Description Style:**
 - Use lowercase after the colon
@@ -128,6 +128,7 @@ All commit messages and PR titles MUST follow conventional commit format:
 - `feat(env): add environment caching with module cacheability support`
 - `docs(contributing): update hk usages`
 - `chore: release 2026.1.6`
+- `chore(ci): add FORGEJO_TOKEN for API authentication`
 - `registry: add miller`
 
 ### Pre-commit Process
