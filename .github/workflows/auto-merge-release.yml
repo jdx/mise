@@ -1,0 +1,31 @@
+name: auto-merge-release
+
+on:
+  schedule:
+    # 10:00 UTC = 4am CST (winter) / 5am CDT (summer)
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+
+jobs:
+  merge:
+    if: github.repository == 'jdx/mise'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge release into main
+        run: |
+          # Check if there's an open PR from release to main
+          PR_NUMBER=$(gh pr list -R jdx/mise --base main --head release --state open --json number --jq '.[0].number // empty')
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No open PR from release to main"
+            exit 0
+          fi
+
+          echo "Found PR #$PR_NUMBER"
+
+          # Enable auto-merge which waits for CI checks to pass
+          gh pr merge "$PR_NUMBER" -R jdx/mise --merge --auto || {
+            echo "Merge failed or PR not ready, will retry tomorrow"
+            exit 0
+          }
+        env:
+          GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
