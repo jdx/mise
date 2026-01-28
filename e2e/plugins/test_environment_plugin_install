@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# Test that environment plugins are installed automatically during mise install
+cat >mise.toml <<EOF
+[env]
+_.fnox-env = { }
+
+[plugins]
+fnox-env = "https://github.com/jdx/mise-env-fnox.git"
+EOF
+
+assert_not_contains "mise plugin ls" "fnox-env"
+mise install
+assert_contains "mise plugin ls" "fnox-env"

@@ -5,9 +5,16 @@ use std::sync::Arc;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::config::Settings;
+use crate::config::config_file::ConfigFile;
+use crate::config::config_file::mise_toml::MiseToml;
+use crate::config::env_directive::EnvDirective;
+use crate::dirs;
 use crate::duration::parse_into_timestamp;
 use crate::hooks::Hooks;
+use crate::plugins::Plugin;
+use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset};
+use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{config, env, hooks};
 use eyre::Result;
 use itertools::Itertools;
@@ -219,6 +226,11 @@ impl Install {
             config.get_tool_request_set().await?
         });
 
+        // Install any missing environment plugins
+        if !self.dry_run {
+            self.install_missing_env_plugins(&config).await?;
+        }
+
         // Check for tools that don't exist in the registry
         // These were tracked during build() before being filtered out
         for ba in &trs.unknown_tools {
@@ -258,6 +270,42 @@ impl Install {
                 config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
             });
         }
+        Ok(())
+    }
+
+    async fn install_missing_env_plugins(&self, config: &Arc<Config>) -> eyre::Result<()> {
+        let mut env_plugins: Vec<VfoxPlugin> = vec![];
+
+        for (config_path, _config_file) in config.config_files.clone() {
+            let toml_config = MiseToml::from_file(&config_path).unwrap_or_default();
+            let env_entries = toml_config.env_entries()?;
+            env_entries
+                .iter()
+                .filter_map(|ev| match ev {
+                    EnvDirective::Module(k, _v, _) => Some((k.clone(), Some(ev))),
+                    _ => None,
+                })
+                .for_each(|(key, _env)| {
+                    if let Some(plugin_url) = config.get_repo_url(&key) {
+                        let plugin_path = dirs::PLUGINS.join(&key);
+                        let plugin = VfoxPlugin::new(key.clone(), plugin_path.clone());
+                        plugin.set_remote_url(plugin_url);
+                        env_plugins.push(plugin);
+                    }
+                });
+        }
+
+        if env_plugins.is_empty() {
+            return Ok(());
+        }
+
+        let mpr = MultiProgressReport::get();
+        for plugin in env_plugins {
+            plugin
+                .ensure_installed(config, &mpr, self.force, self.dry_run)
+                .await?;
+        }
+
         Ok(())
     }
 }

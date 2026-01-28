@@ -72,6 +72,7 @@ impl PluginsLs {
                 }
                 (short, plugin)
             })
+            .filter(|(_, p)| p.is_installed())
             .collect::<BTreeMap<_, _>>();
 
         if self.urls || self.refs {
