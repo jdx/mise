@@ -184,6 +184,10 @@ impl TaskExecutor {
         if !self.timings {
             env.insert("MISE_TASK_TIMINGS".to_string(), "0".to_string());
         }
+        // Propagate MISE_ENV to child tasks so -E flag works for nested mise invocations
+        if !crate::env::MISE_ENV.is_empty() {
+            env.insert("MISE_ENV".to_string(), crate::env::MISE_ENV.join(","));
+        }
         if let Some(cwd) = &*crate::dirs::CWD {
             env.insert("MISE_ORIGINAL_CWD".into(), cwd.display().to_string());
         }

@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+# Test that -E/--env flag is propagated to child tasks
+# See: https://github.com/jdx/mise/discussions/7865
+
+# Create env-specific config with env vars
+cat <<EOF >mise.dev.toml
+[env]
+MY_DEV_VAR = "dev-value"
+EOF
+
+# Create main config with tasks that depend on each other
+cat <<EOF >mise.toml
+[tasks.child]
+run = 'echo "MY_DEV_VAR=\$MY_DEV_VAR"'
+
+[tasks.parent]
+depends = ["child"]
+run = 'echo "parent done"'
+
+# A task that invokes mise run internally (simulates nested mise invocation)
+[tasks.nested-mise]
+run = 'mise run child'
+EOF
+
+# Test 1: Child task should see env vars when called with -E
+assert_contains "mise -E dev run child" "MY_DEV_VAR=dev-value"
+
+# Test 2: Parent task should see env vars in its child when called with -E
+assert_contains "mise -E dev run parent" "MY_DEV_VAR=dev-value"
+
+# Test 3: Nested mise invocation should inherit MISE_ENV
+assert_contains "mise -E dev run nested-mise" "MY_DEV_VAR=dev-value"
+
+# Test 4: Same tests with --env instead of -E
+assert_contains "mise --env dev run child" "MY_DEV_VAR=dev-value"
+assert_contains "mise --env dev run parent" "MY_DEV_VAR=dev-value"
+assert_contains "mise --env dev run nested-mise" "MY_DEV_VAR=dev-value"
