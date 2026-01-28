@@ -219,6 +219,10 @@ impl Install {
             config.get_tool_request_set().await?
         });
 
+        // Install plugins from [plugins] config section first
+        // This must happen before checking for missing tools so env-only plugins get installed
+        Toolset::ensure_config_plugins_installed(&config, self.dry_run).await?;
+
         // Check for tools that don't exist in the registry
         // These were tracked during build() before being filtered out
         for ba in &trs.unknown_tools {

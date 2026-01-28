@@ -11,6 +11,7 @@ use crate::config::settings::Settings;
 use crate::errors::Error;
 use crate::hooks::{Hooks, InstalledToolInfo};
 use crate::install_context::InstallContext;
+use crate::plugins::PluginType;
 use crate::toolset::Toolset;
 use crate::toolset::helpers::{get_leaf_dependencies, show_python_install_hint};
 use crate::toolset::install_options::InstallOptions;
@@ -87,6 +88,11 @@ impl Toolset {
         mut versions: Vec<ToolRequest>,
         opts: &InstallOptions,
     ) -> Result<Vec<ToolVersion>> {
+        // Install all plugins from [plugins] config section first
+        // This must happen before the empty check so plugins are installed
+        // even when there are no tools to install (e.g., env-only plugins)
+        Self::ensure_config_plugins_installed(config, opts.dry_run).await?;
+
         if versions.is_empty() {
             return Ok(vec![]);
         }
@@ -463,5 +469,51 @@ impl Toolset {
             }
         }
         Ok(None)
+    }
+
+    /// Install all plugins defined in [plugins] config section
+    pub async fn ensure_config_plugins_installed(
+        config: &Arc<Config>,
+        dry_run: bool,
+    ) -> Result<()> {
+        if config.repo_urls.is_empty() {
+            return Ok(());
+        }
+
+        let mpr = MultiProgressReport::get();
+
+        for (plugin_key, url) in &config.repo_urls {
+            let (plugin_type, name) = Self::parse_plugin_key(plugin_key, url);
+
+            // Skip empty plugin names (e.g., from malformed keys like "" or "vfox:")
+            if name.is_empty() {
+                warn!("skipping empty plugin name from key: {plugin_key}");
+                continue;
+            }
+
+            let plugin = plugin_type.plugin(name.to_string());
+
+            if !plugin.is_installed() {
+                plugin
+                    .ensure_installed(config, &mpr, false, dry_run)
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
+    fn parse_plugin_key<'a>(key: &'a str, url: &str) -> (PluginType, &'a str) {
+        if let Some(name) = key.strip_prefix("vfox:") {
+            (PluginType::Vfox, name)
+        } else if let Some(name) = key.strip_prefix("vfox-backend:") {
+            (PluginType::VfoxBackend, name)
+        } else if let Some(name) = key.strip_prefix("asdf:") {
+            (PluginType::Asdf, name)
+        } else if url.contains("vfox-") {
+            // Match existing behavior from config/mod.rs:226-228
+            (PluginType::Vfox, key)
+        } else {
+            (PluginType::Asdf, key)
+        }
     }
 }
