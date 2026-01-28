@@ -1037,6 +1037,13 @@ pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
 }
 
 /// Inspects the top-level contents of a tar archive without extracting it
+/// Skips leading CurDir (".") components from a path's components iterator.
+/// Archives often have paths like "./foo/bar" where the leading "." should be ignored.
+fn skip_curdir_components(path: &Path) -> impl Iterator<Item = std::path::Component<'_>> {
+    path.components()
+        .skip_while(|c| matches!(c, std::path::Component::CurDir))
+}
+
 pub fn inspect_tar_contents(archive: &Path, format: TarFormat) -> Result<Vec<(String, bool)>> {
     let tar = open_tar(format, archive)?;
     let mut archive = Archive::new(tar);
@@ -1047,12 +1054,15 @@ pub fn inspect_tar_contents(archive: &Path, format: TarFormat) -> Result<Vec<(St
         let path = entry.path()?;
         let header = entry.header();
 
-        // Get the first component of the path (top-level directory/file)
-        if let Some(first_component) = path.components().next() {
+        // Get the first non-CurDir component of the path (top-level directory/file)
+        let mut components = skip_curdir_components(&path);
+
+        if let Some(first_component) = components.next() {
             let name = first_component.as_os_str().to_string_lossy().to_string();
 
             // Check if this entry indicates the component is a directory
-            let is_directory = header.entry_type().is_dir() || path.components().count() > 1; // If there are nested components, it's a directory
+            // It's a directory if the entry type is dir OR if there are more components after the first
+            let is_directory = header.entry_type().is_dir() || components.next().is_some();
 
             // Update the component's directory status
             // A component is a directory if ANY entry indicates it's a directory
@@ -1073,16 +1083,20 @@ pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
 
     for i in 0..archive.len() {
         let file = archive.by_index(i)?;
-        if let Some(path) = file.enclosed_name()
-            && let Some(first_component) = path.components().next()
-        {
-            let name = first_component.as_os_str().to_string_lossy().to_string();
+        if let Some(path) = file.enclosed_name() {
+            // Get the first non-CurDir component of the path (top-level directory/file)
+            let mut components = skip_curdir_components(&path);
 
-            // Check if this entry indicates the component is a directory
-            let is_directory = file.is_dir() || path.components().count() > 1; // If there are nested components, it's a directory
+            if let Some(first_component) = components.next() {
+                let name = first_component.as_os_str().to_string_lossy().to_string();
 
-            let existing = top_level_components.entry(name.clone()).or_insert(false);
-            *existing = *existing || is_directory;
+                // Check if this entry indicates the component is a directory
+                // It's a directory if the entry type is dir OR if there are more components after the first
+                let is_directory = file.is_dir() || components.next().is_some();
+
+                let existing = top_level_components.entry(name.clone()).or_insert(false);
+                *existing = *existing || is_directory;
+            }
         }
     }
 
@@ -1098,9 +1112,13 @@ pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     for file in &sevenz.archive().files {
         let path = PathBuf::from(file.name());
 
-        if let Some(first_component) = path.components().next() {
+        // Get the first non-CurDir component of the path (top-level directory/file)
+        let mut components = skip_curdir_components(&path);
+
+        if let Some(first_component) = components.next() {
             let name = first_component.as_os_str().to_string_lossy().to_string();
-            let is_directory = file.is_directory() || path.components().count() > 1;
+            // It's a directory if the entry type is dir OR if there are more components after the first
+            let is_directory = file.is_directory() || components.next().is_some();
 
             let existing = top_level_components.entry(name.clone()).or_insert(false);
             *existing = *existing || is_directory;
@@ -1235,6 +1253,83 @@ mod tests {
         // This simulates what would happen if inspect_tar_contents returned this
         let should_strip = result.len() == 1 && result[0].1;
         assert!(should_strip);
+    }
+
+    #[test]
+    fn test_inspect_tar_contents_curdir_prefix() {
+        // Test that archives with "./" prefixed paths are handled correctly
+        // This reproduces the bug from https://github.com/jdx/mise/discussions/7862
+        use flate2::Compression;
+        use flate2::write::GzEncoder;
+        use tar::Builder;
+        use tempfile::NamedTempFile;
+
+        // Create a temp tar.gz with "./" prefixed paths (like unison's archive)
+        let temp_file = NamedTempFile::new().unwrap();
+        let gz = GzEncoder::new(temp_file.as_file(), Compression::default());
+        let mut builder = Builder::new(gz);
+
+        // Add entries with "./" prefix - simulating archive structure like:
+        // ./dir1/file1
+        // ./dir2/file2
+        // ./standalone
+        let mut header = tar::Header::new_gnu();
+        header.set_size(0);
+        header.set_mode(0o755);
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_cksum();
+
+        // Add ./dir1/file1
+        builder
+            .append_data(&mut header.clone(), "./dir1/file1", std::io::empty())
+            .unwrap();
+
+        // Add ./dir2/file2
+        builder
+            .append_data(&mut header.clone(), "./dir2/file2", std::io::empty())
+            .unwrap();
+
+        // Add ./standalone (file at root with ./ prefix)
+        builder
+            .append_data(&mut header.clone(), "./standalone", std::io::empty())
+            .unwrap();
+
+        let gz = builder.into_inner().unwrap();
+        gz.finish().unwrap();
+
+        // Now test inspect_tar_contents
+        let result = inspect_tar_contents(temp_file.path(), TarFormat::TarGz).unwrap();
+
+        // Should have 3 top-level entries: dir1, dir2, standalone
+        // NOT a single "." entry
+        assert_eq!(
+            result.len(),
+            3,
+            "Expected 3 top-level entries, got: {:?}",
+            result
+        );
+
+        let names: std::collections::HashSet<_> = result.iter().map(|(n, _)| n.as_str()).collect();
+        assert!(names.contains("dir1"), "Should contain dir1");
+        assert!(names.contains("dir2"), "Should contain dir2");
+        assert!(names.contains("standalone"), "Should contain standalone");
+        assert!(!names.contains("."), "Should NOT contain '.' (CurDir)");
+
+        // dir1 and dir2 should be marked as directories (have nested content)
+        for (name, is_dir) in &result {
+            if name == "dir1" || name == "dir2" {
+                assert!(*is_dir, "{} should be marked as directory", name);
+            } else if name == "standalone" {
+                assert!(!*is_dir, "standalone should NOT be marked as directory");
+            }
+        }
+
+        // Verify should_strip_components returns false (multiple top-level entries)
+        let should_strip = should_strip_components(temp_file.path(), TarFormat::TarGz).unwrap();
+        assert!(
+            !should_strip,
+            "Should NOT strip components for multi-entry archive"
+        );
     }
 
     #[test]
