@@ -1,5 +1,53 @@
 # Changelog
 
+## [2026.1.9](https://github.com/jdx/mise/compare/v2026.1.8..v2026.1.9) - 2026-01-28
+
+### 🚀 Features
+
+- **(doctor)** add backend mismatch warnings by @jdx in [#7847](https://github.com/jdx/mise/pull/7847)
+- **(http)** add rename_exe support for archive extraction by @jdx in [#7874](https://github.com/jdx/mise/pull/7874)
+- **(http)** send x-mise-ci header for CI environment tracking by @jdx in [#7875](https://github.com/jdx/mise/pull/7875)
+- **(install)** auto-install plugins from [plugins] config section by @jdx in [#7856](https://github.com/jdx/mise/pull/7856)
+- **(registry)** add vercel by @mikecurtis in [#7844](https://github.com/jdx/mise/pull/7844)
+- **(task)** support glob patterns in task_config.includes by @jdx in [#7870](https://github.com/jdx/mise/pull/7870)
+- **(task)** add task templates for reusable task definitions by @jdx in [#7873](https://github.com/jdx/mise/pull/7873)
+
+### 🐛 Bug Fixes
+
+- **(backend)** change registry mismatch log from info to debug by @jdx in [#7858](https://github.com/jdx/mise/pull/7858)
+- **(ci)** use squash merge for auto-merge-release workflow by @jdx in [7e5e71e](https://github.com/jdx/mise/commit/7e5e71e3b065518f08c2fb187789c13b594c0c9d)
+- **(ci)** remove --auto flag to merge immediately when CI passes by @jdx in [23ed2ed](https://github.com/jdx/mise/commit/23ed2edf03d7f28640b0516e1f02d0f240626d4e)
+- **(github)** select platform-matching provenance file for SLSA verification by @jdx in [#7853](https://github.com/jdx/mise/pull/7853)
+- **(go)** filter out version "1" from available versions by @jdx in [#7871](https://github.com/jdx/mise/pull/7871)
+- **(install)** skip CurDir components when detecting archive structure by @jdx in [#7868](https://github.com/jdx/mise/pull/7868)
+- **(pipx)** ensure Python minor version symlink exists for postinstall hooks by @jdx in [#7869](https://github.com/jdx/mise/pull/7869)
+- **(registry)** prevent duplicate -stable suffix in Flutter download URLs by @jdx in [#7872](https://github.com/jdx/mise/pull/7872)
+- **(task)** pass env to usage parser for env-backed arguments by @jdx in [#7848](https://github.com/jdx/mise/pull/7848)
+- **(task)** propagate MISE_ENV to child tasks when using -E flag by @jdx in [06ee776](https://github.com/jdx/mise/commit/06ee77643fcebfe03b37e6a235cf4f1c258a4e34)
+- **(vfox-dotnet)** use os.execute() to fix Windows installation by @prodrigues1912 in [#7843](https://github.com/jdx/mise/pull/7843)
+
+### 📚 Documentation
+
+- update cache-behavior with env_cache information by @jdx in [#7849](https://github.com/jdx/mise/pull/7849)
+
+### ◀️ Revert
+
+- remove task inheritance from parent configs in monorepos by @jdx in [#7851](https://github.com/jdx/mise/pull/7851)
+- Revert "fix(ci): remove --auto flag to merge immediately when CI passes" by @jdx in [0606187](https://github.com/jdx/mise/commit/06061878d2abfd5194425f11f7a47237cd5039e3)
+
+### 📦 Registry
+
+- add mago ([aqua:carthage-software/mago](https://github.com/carthage-software/mago)) by @scop in [#7845](https://github.com/jdx/mise/pull/7845)
+
+### Chore
+
+- **(ci)** auto-merge release branch into main daily at 4am CST by @jdx in [#7852](https://github.com/jdx/mise/pull/7852)
+
+### New Contributors
+
+- @mikecurtis made their first contribution in [#7844](https://github.com/jdx/mise/pull/7844)
+- @prodrigues1912 made their first contribution in [#7843](https://github.com/jdx/mise/pull/7843)
+
 ## [2026.1.8](https://github.com/jdx/mise/compare/v2026.1.7..v2026.1.8) - 2026-01-27
 
 ### 🐛 Bug Fixes
@@ -34,15 +82,6 @@
 
 - **(claude)** add aqua backend as default by @jdx in [#7842](https://github.com/jdx/mise/pull/7842)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (1)
-
-- [`carthage-software/mago`](https://github.com/carthage-software/mago)
-
-#### Updated Packages (1)
-
-- [`golangci/golangci-lint`](https://github.com/golangci/golangci-lint)
 ## [2026.1.7](https://github.com/jdx/mise/compare/v2026.1.6..v2026.1.7) - 2026-01-25
 
 ### 🐛 Bug Fixes
@@ -317,7 +356,7 @@
 
 - **(config)** mise use writes to lowest precedence config file by @jdx in [#7598](https://github.com/jdx/mise/pull/7598)
 - **(python)** sort miniconda versions by conda version instead of version string by @jdx in [#7595](https://github.com/jdx/mise/pull/7595)
-- Rust channel updates installing twice by @x9xhack in [#7565](https://github.com/jdx/mise/pull/7565)
+- Rust channel updates installing twice by @rjvkn in [#7565](https://github.com/jdx/mise/pull/7565)
 - use Bearer instead of token in authorization headers by @risu729 in [#7593](https://github.com/jdx/mise/pull/7593)
 
 ### 📚 Documentation
@@ -493,7 +532,7 @@
 - add vfox backend for pipenv by @jdx in [#7439](https://github.com/jdx/mise/pull/7439)
 - use github backend for xchtmlreport by @jdx in [#7442](https://github.com/jdx/mise/pull/7442)
 - use npm backend for purty by @jdx in [#7443](https://github.com/jdx/mise/pull/7443)
-- add micromamba tool definition by @x9xhack in [#7475](https://github.com/jdx/mise/pull/7475)
+- add micromamba tool definition by @rjvkn in [#7475](https://github.com/jdx/mise/pull/7475)
 - add github backend for rumdl by @kvokka in [#7494](https://github.com/jdx/mise/pull/7494)
 - add github backend for ty by @kvokka in [#7495](https://github.com/jdx/mise/pull/7495)
 - add kopia by @ldrouard in [#7501](https://github.com/jdx/mise/pull/7501)
@@ -513,7 +552,7 @@
 - @muzimuzhi made their first contribution in [#7513](https://github.com/jdx/mise/pull/7513)
 - @just-be-dev made their first contribution in [#7509](https://github.com/jdx/mise/pull/7509)
 - @kvokka made their first contribution in [#7495](https://github.com/jdx/mise/pull/7495)
-- @x9xhack made their first contribution in [#7475](https://github.com/jdx/mise/pull/7475)
+- @rjvkn made their first contribution in [#7475](https://github.com/jdx/mise/pull/7475)
 - @anp made their first contribution in [#7441](https://github.com/jdx/mise/pull/7441)
 
 ## [2025.12.12](https://github.com/jdx/mise/compare/v2025.12.11..v2025.12.12) - 2025-12-18
@@ -1222,6 +1261,7 @@
 
 ### New Contributors
 
+- @azais-corentin made their first contribution in [#6874](https://github.com/jdx/mise/pull/6874)
 - @dragoscirjan made their first contribution in [#6853](https://github.com/jdx/mise/pull/6853)
 
 ## [2025.11.1](https://github.com/jdx/mise/compare/v2025.11.0..v2025.11.1) - 2025-11-01
@@ -1522,7 +1562,7 @@
 
 ### 🐛 Bug Fixes
 
-- **(docs)** add missing config file path by @azais-corentin in [#6658](https://github.com/jdx/mise/pull/6658)
+- **(docs)** add missing config file path by @haellsigh in [#6658](https://github.com/jdx/mise/pull/6658)
 - **(task)** resolve monorepo dependency chains with local task references by @jdx in [#6665](https://github.com/jdx/mise/pull/6665)
 - **(ui)** add terminal detection for OSC 9;4 progress sequences by @jdx in [#6657](https://github.com/jdx/mise/pull/6657)
 
@@ -1532,7 +1572,7 @@
 
 ### New Contributors
 
-- @azais-corentin made their first contribution in [#6658](https://github.com/jdx/mise/pull/6658)
+- @haellsigh made their first contribution in [#6658](https://github.com/jdx/mise/pull/6658)
 
 ## [2025.10.8](https://github.com/jdx/mise/compare/v2025.10.7..v2025.10.8) - 2025-10-13
 
