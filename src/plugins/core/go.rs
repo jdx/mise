@@ -33,6 +33,13 @@ impl GoPlugin {
         }
     }
 
+    /// Check if a Go version string is valid (not "1" and not beta/rc)
+    /// - "1" corresponds to the `go1` tag which has no installable download
+    /// - beta/rc versions are pre-release and should be excluded by default
+    fn is_valid_version(v: &str) -> bool {
+        v != "1" && !regex!(r"(beta|rc)[0-9]*$").is_match(v)
+    }
+
     // Represents go binary path
     fn go_bin(&self, tv: &ToolVersion) -> PathBuf {
         tv.install_path().join("bin").join("go")
@@ -224,8 +231,7 @@ impl Backend for GoPlugin {
                 .await?
                 .into_iter()
                 .filter_map(|t| t.name.strip_prefix("go").map(|v| (v.to_string(), t.date)))
-                // remove beta, rc versions and "1" (go1 is not installable via modern URLs)
-                .filter(|(v, _)| v != "1" && !regex!(r"(beta|rc)[0-9]*$").is_match(v))
+                .filter(|(v, _)| Self::is_valid_version(v))
                 .unique_by(|(v, _)| v.clone())
                 .sorted_by_cached_key(|(v, _)| (Versioning::new(v), v.to_string()))
                 .map(|(version, created_at)| VersionInfo {
@@ -252,8 +258,7 @@ impl Backend for GoPlugin {
                     .lines()
                     .filter_map(|line| line.split("/go").last())
                     .filter(|s| !s.is_empty())
-                    // remove beta, rc versions and "1" (go1 is not installable via modern URLs)
-                    .filter(|s| *s != "1" && !regex!(r"(beta|rc)[0-9]*$").is_match(s))
+                    .filter(|s| Self::is_valid_version(s))
                     .map(|s| s.to_string())
                     .unique()
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
