@@ -19,7 +19,7 @@ use crate::hash::hash_to_str;
 use crate::hooks::Hook;
 use crate::prepare::PrepareConfig;
 use crate::redactions::Redactions;
-use crate::task::Task;
+use crate::task::{Task, TaskTemplate};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, Toolset};
 use crate::ui::{prompt, style};
 use crate::watch_files::WatchFile;
@@ -108,6 +108,10 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn task_config(&self) -> &TaskConfig {
         static DEFAULT_TASK_CONFIG: Lazy<TaskConfig> = Lazy::new(TaskConfig::default);
         &DEFAULT_TASK_CONFIG
+    }
+
+    fn task_templates(&self) -> IndexMap<String, TaskTemplate> {
+        IndexMap::new()
     }
 
     fn experimental_monorepo_root(&self) -> Option<bool> {

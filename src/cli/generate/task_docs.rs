@@ -1,8 +1,7 @@
-use crate::config::Config;
+use crate::config::{self, Config, Settings};
 use crate::{dirs, file};
+use indexmap::IndexMap;
 use std::path::PathBuf;
-
-use crate::config;
 
 /// Generate documentation for tasks in a project
 #[derive(Debug, clap::Args)]
@@ -44,7 +43,19 @@ impl TaskDocs {
     pub async fn run(self) -> eyre::Result<()> {
         let config = Config::get().await?;
         let dir = dirs::CWD.as_ref().unwrap();
-        let tasks = config::load_tasks_in_dir(&config, dir, &config.config_files).await?;
+        // Collect task templates from config hierarchy
+        let templates = if Settings::get().experimental {
+            config
+                .config_files
+                .values()
+                .rev()
+                .flat_map(|cf| cf.task_templates())
+                .collect()
+        } else {
+            IndexMap::new()
+        };
+        let tasks =
+            config::load_tasks_in_dir(&config, dir, &config.config_files, &templates).await?;
         let mut out = vec![];
         for task in tasks.iter().filter(|t| !t.hide) {
             out.push(task.render_markdown(&config).await?);
