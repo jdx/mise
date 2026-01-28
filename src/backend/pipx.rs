@@ -514,7 +514,7 @@ fn path_with_minor_version(path: &Path) -> Option<PathBuf> {
 
 /// Ensure the minor version symlink exists for a Python installation path.
 /// For example, if the path is `.../python/3.12.1/bin/python3`, this ensures
-/// that `.../python/3.12` exists as a symlink to `3.12.1`.
+/// that `.../python/3.12` exists as a symlink to `./3.12.1`.
 ///
 /// This is normally done by `runtime_symlinks::rebuild()`, but that runs after
 /// postinstall hooks. We need to create it early so that venv symlinks work
@@ -522,7 +522,8 @@ fn path_with_minor_version(path: &Path) -> Option<PathBuf> {
 #[cfg(unix)]
 fn ensure_minor_version_symlink(full_version_path: &Path) -> Result<()> {
     // Extract version components from path like .../python/3.12.1/bin/python3
-    let re = regex!(r"/python/(\d+\.\d+)\.(\d+)/");
+    // Use same regex pattern as path_with_minor_version for consistency
+    let re = regex!(r"/python/(\d+)\.(\d+)\.(\d+)/");
     let path_str = match full_version_path.to_str() {
         Some(s) => s,
         None => return Ok(()),
@@ -533,22 +534,23 @@ fn ensure_minor_version_symlink(full_version_path: &Path) -> Result<()> {
         None => return Ok(()),
     };
 
-    let minor_version = &caps[1]; // e.g., "3.12"
-    let full_version = format!("{}.{}", minor_version, &caps[2]); // e.g., "3.12.1"
+    let minor_version = format!("{}.{}", &caps[1], &caps[2]); // e.g., "3.12"
+    let full_version = format!("{}.{}.{}", &caps[1], &caps[2], &caps[3]); // e.g., "3.12.1"
 
     let installs_dir = &*env::MISE_INSTALLS_DIR;
     let python_installs = installs_dir.join("python");
-    let minor_version_dir = python_installs.join(minor_version);
+    let minor_version_dir = python_installs.join(&minor_version);
     let full_version_dir = python_installs.join(&full_version);
 
     // Only create if the minor version symlink doesn't exist but the full version does
     if !minor_version_dir.exists() && full_version_dir.exists() {
         trace!(
-            "Creating early minor version symlink: {:?} -> {:?}",
+            "Creating early minor version symlink: {:?} -> ./{:?}",
             minor_version_dir, full_version
         );
-        // Use relative symlink like runtime_symlinks does
-        file::make_symlink(&PathBuf::from(&full_version), &minor_version_dir)?;
+        // Use relative symlink with "./" prefix like runtime_symlinks does
+        // This allows is_runtime_symlink() to identify it for cleanup/updates
+        file::make_symlink(&PathBuf::from(".").join(&full_version), &minor_version_dir)?;
     }
 
     Ok(())
