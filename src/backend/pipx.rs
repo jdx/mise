@@ -512,6 +512,48 @@ fn path_with_minor_version(path: &Path) -> Option<PathBuf> {
     }
 }
 
+/// Ensure the minor version symlink exists for a Python installation path.
+/// For example, if the path is `.../python/3.12.1/bin/python3`, this ensures
+/// that `.../python/3.12` exists as a symlink to `3.12.1`.
+///
+/// This is normally done by `runtime_symlinks::rebuild()`, but that runs after
+/// postinstall hooks. We need to create it early so that venv symlinks work
+/// immediately for postinstall hooks.
+#[cfg(unix)]
+fn ensure_minor_version_symlink(full_version_path: &Path) -> Result<()> {
+    // Extract version components from path like .../python/3.12.1/bin/python3
+    let re = regex!(r"/python/(\d+\.\d+)\.(\d+)/");
+    let path_str = match full_version_path.to_str() {
+        Some(s) => s,
+        None => return Ok(()),
+    };
+
+    let caps = match re.captures(path_str) {
+        Some(c) => c,
+        None => return Ok(()),
+    };
+
+    let minor_version = &caps[1]; // e.g., "3.12"
+    let full_version = format!("{}.{}", minor_version, &caps[2]); // e.g., "3.12.1"
+
+    let installs_dir = &*env::MISE_INSTALLS_DIR;
+    let python_installs = installs_dir.join("python");
+    let minor_version_dir = python_installs.join(minor_version);
+    let full_version_dir = python_installs.join(&full_version);
+
+    // Only create if the minor version symlink doesn't exist but the full version does
+    if !minor_version_dir.exists() && full_version_dir.exists() {
+        trace!(
+            "Creating early minor version symlink: {:?} -> {:?}",
+            minor_version_dir, full_version
+        );
+        // Use relative symlink like runtime_symlinks does
+        file::make_symlink(&PathBuf::from(&full_version), &minor_version_dir)?;
+    }
+
+    Ok(())
+}
+
 /// Fix the venv Python symlinks to use mise's minor version path
 /// This allows patch upgrades (3.12.1 → 3.12.2) to work without reinstalling
 ///
@@ -565,11 +607,13 @@ fn fix_venv_python_symlink(install_path: &Path, pkg_name: &str) -> Result<()> {
             }
 
             if let Some(minor_path) = path_with_minor_version(&target) {
-                // The minor version symlink (e.g., python/3.12) might not exist yet
-                // as runtime_symlinks::rebuild runs after all tools are installed.
-                // Check if the full version path exists instead (e.g., python/3.12.12/bin/python3).
-                // The symlink might be temporarily broken but will work after runtime symlinks are created.
                 if target.exists() {
+                    // Create the minor version symlink (e.g., python/3.12 -> python/3.12.1)
+                    // if it doesn't exist yet. This is normally done by runtime_symlinks::rebuild,
+                    // but that runs after postinstall hooks, so we need to create it now
+                    // to ensure the venv symlink works immediately for postinstall hooks.
+                    ensure_minor_version_symlink(&target)?;
+
                     trace!(
                         "Updating venv Python symlink {:?} to use minor version: {:?}",
                         symlink_path, minor_path

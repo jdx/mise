@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+require_cmd python3
+
+# Test that pipx postinstall hooks can invoke the installed tool when using uvx.
+# This validates the fix for https://github.com/jdx/mise/discussions/7864
+# The bug was that uvx creates venv symlinks pointing to minor version paths
+# (e.g., python/3.12/) but the symlink didn't exist yet when postinstall ran.
+
+# Create a system pipx that always fails and push it to the front of PATH
+cat >"$HOME/bin/pipx" <<'EOF'
+#!/usr/bin/env bash
+echo "CALL TO SYSTEM pipx! args: $*" >&2
+exit 1
+EOF
+chmod +x "$HOME"/bin/pipx
+export PATH="$HOME/bin:$PATH"
+
+# Just to be sure...
+assert_fail "pipx"
+
+# Use precompiled python and uvx (the default)
+export MISE_PYTHON_COMPILE=0
+export MISE_PIPX_UVX=1
+
+# Set up mise-managed Python with a pipx package that has a postinstall hook
+# The hook invokes the installed tool, which requires the Python symlink to work
+cat >.mise.toml <<EOF
+[tools]
+python = "3.12.3"
+uv = "0.5.5"
+
+[tools."pipx:mkdocs"]
+version = "1.6.0"
+postinstall = "mkdocs --version"
+EOF
+
+# Install the tools - this should succeed with the postinstall hook
+mise install
+
+# Verify mkdocs is installed and works
+assert_contains "mise x -- mkdocs --version" "1.6.0"
+
+# Verify the minor version symlink was created early (before runtime_symlinks::rebuild)
+MINOR_VERSION_DIR="$MISE_DATA_DIR/installs/python/3.12"
+if [[ -L $MINOR_VERSION_DIR ]]; then
+	ok "Minor version symlink 3.12 was created"
+elif [[ -d $MINOR_VERSION_DIR ]]; then
+	ok "Minor version directory 3.12 exists"
+else
+	fail "Minor version symlink/directory 3.12 does not exist"
+fi
