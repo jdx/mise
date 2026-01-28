@@ -2033,6 +2033,50 @@ async fn resolve_git_url_to_path(git_url: &str) -> Result<PathBuf> {
     }
 }
 
+/// Check if a pattern contains glob metacharacters
+fn is_glob_pattern(pattern: &str) -> bool {
+    // Check for unescaped glob metacharacters: *, ?, [, ], {, }
+    // Note: This is a simple check that may have false positives with escaped chars,
+    // but glob() will handle those correctly
+    pattern.contains('*')
+        || pattern.contains('?')
+        || pattern.contains('[')
+        || pattern.contains(']')
+        || pattern.contains('{')
+        || pattern.contains('}')
+}
+
+/// Expand a task include pattern (which may be a glob) to a list of paths
+fn expand_task_include(dir: &Path, pattern: &str) -> Vec<PathBuf> {
+    if is_glob_pattern(pattern) {
+        match glob(dir, pattern) {
+            Ok(paths) => paths,
+            Err(err) => {
+                warn!(
+                    "failed to expand glob pattern '{}' in '{}': {}",
+                    pattern,
+                    display_path(dir),
+                    err
+                );
+                vec![]
+            }
+        }
+    } else {
+        // Literal path
+        let path = PathBuf::from(pattern);
+        let resolved = if path.is_absolute() {
+            path
+        } else {
+            dir.join(path)
+        };
+        if resolved.exists() {
+            vec![resolved]
+        } else {
+            vec![]
+        }
+    }
+}
+
 async fn load_file_tasks(
     config: &Arc<Config>,
     cf: Arc<dyn ConfigFile>,
@@ -2046,14 +2090,17 @@ async fn load_file_tasks(
 
     let mut tasks = vec![];
     let config_root = Arc::new(config_root.to_path_buf());
+    let cf_dir = cf.get_path().parent().unwrap();
 
     for include in includes {
-        let path = if include.starts_with("git::") {
-            resolve_git_url_to_path(&include).await?
+        let paths = if include.starts_with("git::") {
+            vec![resolve_git_url_to_path(&include).await?]
         } else {
-            cf.get_path().parent().unwrap().join(&include)
+            expand_task_include(cf_dir, &include)
         };
-        tasks.extend(load_tasks_includes(config, &path, &config_root).await?);
+        for path in paths {
+            tasks.extend(load_tasks_includes(config, &path, &config_root).await?);
+        }
     }
     Ok(tasks)
 }
@@ -2065,23 +2112,12 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBu
         .find_map(|cf| cf.task_config().includes.clone())
         .unwrap_or_else(default_task_includes)
         .into_iter()
-        .filter_map(|p| {
-            // Git URLs will be handled by load_file_tasks
+        .flat_map(|p| {
+            // Git URLs are handled by load_file_tasks, not here
             if p.starts_with("git::") {
-                None
-            } else {
-                let path = PathBuf::from(p);
-                let resolved = if path.is_absolute() {
-                    path
-                } else {
-                    dir.join(path)
-                };
-                if resolved.exists() {
-                    Some(resolved)
-                } else {
-                    None
-                }
+                return vec![];
             }
+            expand_task_include(dir, &p)
         })
         .unique()
         .collect::<Vec<_>>()
