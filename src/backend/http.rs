@@ -3,7 +3,7 @@ use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::static_helpers::{
     clean_binary_name, get_filename_from_url, list_available_platforms_with_key,
-    lookup_platform_key, template_string, verify_artifact,
+    lookup_platform_key, rename_executable_in_dir, template_string, verify_artifact,
 };
 use crate::backend::version_list;
 use crate::cli::args::BackendArg;
@@ -397,6 +397,23 @@ impl HttpBackend {
         };
 
         file::untar(file_path, dest, &tar_opts)?;
+
+        // Handle rename_exe option for archives
+        if let Some(rename_to) = get_opt(opts, "rename_exe") {
+            let search_dir = if let Some(bin_path) = get_opt(opts, "bin_path") {
+                dest.join(&bin_path)
+            } else {
+                dest.to_path_buf()
+            };
+            let tool_name = self
+                .ba
+                .tool_name
+                .rsplit('/')
+                .next()
+                .unwrap_or(&self.ba.tool_name);
+            rename_executable_in_dir(&search_dir, &rename_to, Some(tool_name))?;
+        }
+
         Ok(ExtractionType::Archive)
     }
 
@@ -574,6 +591,7 @@ pub fn install_time_option_keys() -> Vec<String> {
         "version_json_path".into(),
         "version_expr".into(),
         "format".into(),
+        "rename_exe".into(),
     ]
 }
 
