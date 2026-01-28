@@ -1,4 +1,3 @@
-aliases = ["vc"]
 backends = ["npm:vercel"]
 description = "Build and deploy on the Vercel cloud"
 test = ["vc --version", "{{version}}"]
