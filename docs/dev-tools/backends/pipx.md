@@ -23,13 +23,11 @@ The code for this is inside of the mise repository at [`./src/backend/pipx.rs`](
 
 ## Dependencies
 
-This relies on having `uvx` or `pipx` installed.
+This relies on having `uvx` (recommended) or `pipx` installed.
 
-If you have `uv` installed you _probably_ don't need `pipx` to run the commands from the Usage section below, even the ones that mention `pipx`.
+If you have `uv` installed, `uvx` is installed along with it and you don't need to install `pipx` to run the commands containing "pipx:".
 
-`uvx` is usually installed with `uv` and, by default, mise detects when `uvx` is installed and uses it instead of `pipx`.
-
-In case you are tied to `pipx` you can install it with or without mise.
+In case you need `pipx` for other reasons, you can install it with or without mise.
 Here is how to install `pipx` with mise:
 
 ```sh
