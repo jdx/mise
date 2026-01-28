@@ -167,25 +167,6 @@ extends = "python:test"
 extends = "python:lint"
 ```
 
-## Error Handling
-
-### Missing Template
-
-If a task extends a template that doesn't exist, you'll get a clear error:
-
-```
-Error: Task 'build' extends template 'nonexistent:template' which was not found.
-Available templates: python:build, python:test
-```
-
-### Missing Experimental Flag
-
-If you use `extends` without enabling experimental mode:
-
-```
-Error: Task 'build' uses 'extends = "python:build"' which requires 'experimental = true' in settings
-```
-
 ## Future Enhancements
 
 The following features are planned for future releases:
