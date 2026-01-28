@@ -2065,21 +2065,27 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBu
         .find_map(|cf| cf.task_config().includes.clone())
         .unwrap_or_else(default_task_includes)
         .into_iter()
-        .filter_map(|p| {
+        .flat_map(|p| {
             // Git URLs will be handled by load_file_tasks
             if p.starts_with("git::") {
-                None
+                return vec![];
+            }
+            // Check if pattern contains glob characters
+            if p.contains('*') || p.contains('?') || p.contains('[') {
+                // Use glob expansion
+                glob(dir, &p).unwrap_or_default()
             } else {
-                let path = PathBuf::from(p);
+                // Literal path - use existing logic
+                let path = PathBuf::from(&p);
                 let resolved = if path.is_absolute() {
                     path
                 } else {
                     dir.join(path)
                 };
                 if resolved.exists() {
-                    Some(resolved)
+                    vec![resolved]
                 } else {
-                    None
+                    vec![]
                 }
             }
         })
