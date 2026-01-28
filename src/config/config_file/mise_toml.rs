@@ -28,7 +28,7 @@ use crate::hooks::{Hook, Hooks};
 use crate::prepare::PrepareConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
-use crate::task::Task;
+use crate::task::{Task, TaskTemplate};
 use crate::tera::{BASE_CONTEXT, get_tera};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
 use crate::watch_files::WatchFile;
@@ -74,6 +74,8 @@ pub struct MiseToml {
     #[serde(default)]
     tasks: Tasks,
     #[serde(default)]
+    task_templates: TaskTemplates,
+    #[serde(default)]
     watch_files: Vec<WatchFile>,
     #[serde(default)]
     prepare: Option<PrepareConfig>,
@@ -100,6 +102,9 @@ pub struct MiseTomlTool {
 
 #[derive(Debug, Default, Clone)]
 pub struct Tasks(pub BTreeMap<String, Task>);
+
+#[derive(Debug, Default, Clone)]
+pub struct TaskTemplates(pub IndexMap<String, TaskTemplate>);
 
 #[derive(Debug, Default, Clone)]
 pub struct EnvList(pub(crate) Vec<EnvDirective>);
@@ -508,6 +513,10 @@ impl ConfigFile for MiseToml {
         self.tasks.0.values().collect()
     }
 
+    fn task_templates(&self) -> IndexMap<String, TaskTemplate> {
+        self.task_templates.0.clone()
+    }
+
     fn remove_tool(&self, fa: &BackendArg) -> eyre::Result<()> {
         let mut tools = self.tools.lock().unwrap();
         tools.shift_remove(fa);
@@ -865,6 +874,7 @@ impl Clone for MiseToml {
             redactions: self.redactions.clone(),
             plugins: self.plugins.clone(),
             tasks: self.tasks.clone(),
+            task_templates: self.task_templates.clone(),
             task_config: self.task_config.clone(),
             settings: self.settings.clone(),
             watch_files: self.watch_files.clone(),
@@ -1714,6 +1724,36 @@ impl<'de> de::Deserialize<'de> for Tasks {
         }
 
         deserializer.deserialize_any(TasksVisitor)
+    }
+}
+
+impl<'de> de::Deserialize<'de> for TaskTemplates {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct TaskTemplatesVisitor;
+
+        impl<'de> Visitor<'de> for TaskTemplatesVisitor {
+            type Value = TaskTemplates;
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("map of task template names to template definitions")
+            }
+
+            fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
+            where
+                M: de::MapAccess<'de>,
+            {
+                let mut templates = IndexMap::new();
+                while let Some(name) = map.next_key::<String>()? {
+                    let template: TaskTemplate = map.next_value()?;
+                    templates.insert(name, template);
+                }
+                Ok(TaskTemplates(templates))
+            }
+        }
+
+        deserializer.deserialize_any(TaskTemplatesVisitor)
     }
 }
 

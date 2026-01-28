@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+
+# Test task templates feature (requires experimental = true)
+
+# First, test that extends fails without experimental flag
+cat <<'EOF' >mise.toml
+[task_templates."python:build"]
+run = "echo building python"
+description = "Build a Python project"
+
+[tasks.build]
+extends = "python:build"
+EOF
+
+# Should fail without experimental mode (override the env var)
+assert_fail "MISE_EXPERIMENTAL=0 mise run build" "experimental = true"
+
+# Now enable experimental mode and test basic template functionality
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."python:build"]
+run = "echo building python"
+description = "Build a Python project"
+
+[tasks.build]
+extends = "python:build"
+EOF
+
+# Basic template extension should work
+assert "mise run build" "building python"
+
+# Test local override of run command
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."python:build"]
+run = "echo template build"
+description = "Template description"
+
+[tasks.build]
+extends = "python:build"
+run = "echo local build"
+EOF
+
+assert "mise run build" "local build"
+
+# Test tools deep merge
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."python:build"]
+run = "echo tools: python={{ env.MISE_TOOL_OPTS_PYTHON | default(value='none') }} node={{ env.MISE_TOOL_OPTS_NODE | default(value='none') }}"
+tools = { python = "3.12", node = "18" }
+
+[tasks.build]
+extends = "python:build"
+tools = { node = "20" }  # Override node version, keep python from template
+EOF
+
+# The tools should be merged - task list should show both tools
+assert_contains "mise tasks build" "python"
+assert_contains "mise tasks build" "node"
+
+# Test env deep merge
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."python:build"]
+run = "echo FOO=$FOO BAR=$BAR"
+env = { FOO = "template_foo", BAR = "template_bar" }
+
+[tasks.build]
+extends = "python:build"
+env = { FOO = "local_foo" }  # Override FOO, keep BAR from template
+EOF
+
+assert "mise run build" "FOO=local_foo BAR=template_bar"
+
+# Test description from template (when local is empty)
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."python:build"]
+run = "echo build"
+description = "Template description"
+
+[tasks.build]
+extends = "python:build"
+EOF
+
+assert_contains "mise tasks build" "Template description"
+
+# Test local description overrides template
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."python:build"]
+run = "echo build"
+description = "Template description"
+
+[tasks.build]
+extends = "python:build"
+description = "Local description"
+EOF
+
+assert_contains "mise tasks build" "Local description"
+assert_not_contains "mise tasks build" "Template description"
+
+# Test depends from template (using task name, not :prefix syntax)
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."python:test"]
+run = "echo testing"
+depends = ["build"]
+
+[tasks.build]
+run = "echo building"
+
+[tasks.test]
+extends = "python:test"
+EOF
+
+assert "mise run test" "building
+testing"
+
+# Test depends local override (local takes precedence completely)
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."python:test"]
+run = "echo testing"
+depends = ["prep"]
+
+[tasks.prep]
+run = "echo prep"
+
+[tasks.lint]
+run = "echo linting"
+
+[tasks.test]
+extends = "python:test"
+depends = ["lint"]  # Override, should NOT also run prep
+EOF
+
+assert "mise run test" "linting
+testing"
+assert_not_contains "mise run test" "prep"
+
+# Test template not found error
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.build]
+extends = "nonexistent:template"
+EOF
+
+assert_fail "mise run build" "not found"
+
+# Test namespaced template names with colons
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_templates."rust:cargo:build"]
+run = "echo cargo build"
+
+[tasks.build]
+extends = "rust:cargo:build"
+EOF
+
+assert "mise run build" "cargo build"
+
+echo '' >mise.toml

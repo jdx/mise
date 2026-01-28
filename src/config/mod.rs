@@ -26,8 +26,8 @@ use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
-use crate::task::Task;
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
+use crate::task::{Task, TaskTemplate};
 use crate::toolset::{
     ToolRequestSet, ToolRequestSetBuilder, ToolVersion, ToolVersionOptions, Toolset, install_state,
 };
@@ -470,8 +470,16 @@ impl Config {
     ) -> Result<BTreeMap<String, Task>> {
         let config = Config::get().await?;
         time!("load_all_tasks");
-        let local_tasks = load_local_tasks_with_context(&config, ctx).await?;
-        let global_tasks = load_global_tasks(&config).await?;
+
+        // Collect all task templates from config hierarchy (experimental feature)
+        let templates = if Settings::get().experimental {
+            collect_task_templates(&config.config_files)
+        } else {
+            IndexMap::new()
+        };
+
+        let local_tasks = load_local_tasks_with_context(&config, ctx, &templates).await?;
+        let global_tasks = load_global_tasks(&config, &templates).await?;
         let mut tasks: BTreeMap<String, Task> = local_tasks
             .into_iter()
             .chain(global_tasks)
@@ -1479,6 +1487,55 @@ impl Debug for Config {
     }
 }
 
+/// Collect all task templates from the config file hierarchy.
+/// Templates from child configs (closer to cwd) override templates from parent configs.
+fn collect_task_templates(config_files: &ConfigMap) -> IndexMap<String, TaskTemplate> {
+    let mut templates = IndexMap::new();
+
+    // Iterate in reverse order (global -> local) so child directories override parent configs
+    for cf in config_files.values().rev() {
+        for (name, template) in cf.task_templates() {
+            templates.insert(name, template);
+        }
+    }
+
+    templates
+}
+
+/// Resolve a task template and merge it into the task.
+/// Returns an error if the template is not found or if experimental mode is not enabled.
+fn resolve_task_template(
+    task: &mut Task,
+    templates: &IndexMap<String, TaskTemplate>,
+) -> Result<()> {
+    if let Some(template_name) = &task.extends {
+        if !Settings::get().experimental {
+            bail!(
+                "Task '{}' uses 'extends = \"{}\"' which requires 'experimental = true' in settings",
+                task.name,
+                template_name
+            );
+        }
+
+        let template = templates.get(template_name).ok_or_else(|| {
+            eyre!(
+                "Task '{}' extends template '{}' which was not found. \
+                 Available templates: {}",
+                task.name,
+                template_name,
+                if templates.is_empty() {
+                    "(none)".to_string()
+                } else {
+                    templates.keys().join(", ")
+                }
+            )
+        })?;
+
+        task.merge_template(template);
+    }
+    Ok(())
+}
+
 fn default_task_includes() -> Vec<String> {
     vec![
         "mise-tasks".to_string(),
@@ -1533,6 +1590,7 @@ fn prefix_monorepo_task_names(tasks: &mut [Task], dir: &Path, monorepo_root: &Pa
 async fn load_local_tasks_with_context(
     config: &Arc<Config>,
     ctx: Option<&crate::task::TaskLoadContext>,
+    templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let mut tasks = vec![];
     let monorepo_config = find_monorepo_config(&config.config_files);
@@ -1550,7 +1608,7 @@ async fn load_local_tasks_with_context(
         if cfg!(test) && !d.starts_with(*dirs::HOME) {
             continue;
         }
-        let mut dir_tasks = load_tasks_in_dir(config, &d, &local_config_files).await?;
+        let mut dir_tasks = load_tasks_in_dir(config, &d, &local_config_files, templates).await?;
 
         if let Some(ref monorepo_root) = monorepo_root {
             prefix_monorepo_task_names(&mut dir_tasks, &d, monorepo_root);
@@ -1587,6 +1645,7 @@ async fn load_local_tasks_with_context(
             .map(|subdir| {
                 let config = config.clone();
                 let monorepo_root = monorepo_root.clone();
+                let templates = templates.clone();
                 async move {
                     // Use IndexMap to deduplicate tasks by name within this subdirectory
                     // Later inserts win, so file tasks override config tasks with the same name
@@ -1624,7 +1683,7 @@ async fn load_local_tasks_with_context(
                         match config_file::parse(&config_path).await {
                             Ok(cf) => {
                                 let mut subdir_tasks =
-                                    load_config_and_file_tasks(&config, cf.clone()).await?;
+                                    load_config_and_file_tasks(&config, cf.clone(), &templates).await?;
 
                                 prefix_monorepo_task_names(&mut subdir_tasks, &subdir, &monorepo_root);
                                 for task in subdir_tasks.iter_mut() {
@@ -1931,7 +1990,10 @@ fn discover_monorepo_subdirs(
     Ok(subdirs)
 }
 
-async fn load_global_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
+async fn load_global_tasks(
+    config: &Arc<Config>,
+    templates: &IndexMap<String, TaskTemplate>,
+) -> Result<Vec<Task>> {
     let config_files = config
         .config_files
         .values()
@@ -1939,7 +2001,7 @@ async fn load_global_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
         .collect::<Vec<_>>();
     let mut tasks = vec![];
     for cf in config_files {
-        tasks.extend(load_config_and_file_tasks(config, cf.clone()).await?);
+        tasks.extend(load_config_and_file_tasks(config, cf.clone(), templates).await?);
     }
     Ok(tasks)
 }
@@ -1947,9 +2009,10 @@ async fn load_global_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
 async fn load_config_and_file_tasks(
     config: &Arc<Config>,
     cf: Arc<dyn ConfigFile>,
+    templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let config_root = cf.config_root();
-    let tasks = load_config_tasks(config, cf.clone(), &config_root).await?;
+    let tasks = load_config_tasks(config, cf.clone(), &config_root, templates).await?;
     let file_tasks = load_file_tasks(config, cf.clone(), &config_root).await?;
     Ok(tasks.into_iter().chain(file_tasks).collect())
 }
@@ -1958,6 +2021,7 @@ async fn load_config_tasks(
     config: &Arc<Config>,
     cf: Arc<dyn ConfigFile>,
     config_root: &Path,
+    templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let is_global = is_global_config(cf.get_path());
     let config_root = Arc::new(config_root.to_path_buf());
@@ -1969,6 +2033,8 @@ async fn load_config_tasks(
         if is_global {
             t.global = true;
         }
+        // Resolve template if the task extends one
+        resolve_task_template(&mut t, templates)?;
         match t.render(&config, &config_root).await {
             Ok(()) => {
                 tasks.push(t);
@@ -2127,6 +2193,7 @@ pub async fn load_tasks_in_dir(
     config: &Arc<Config>,
     dir: &Path,
     config_files: &ConfigMap,
+    templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let configs = configs_at_root(dir, config_files);
 
@@ -2142,7 +2209,7 @@ pub async fn load_tasks_in_dir(
     let mut config_tasks = vec![];
     for cf in &configs {
         let dir = dir.to_path_buf();
-        config_tasks.extend(load_config_tasks(config, (*cf).clone(), &dir).await?);
+        config_tasks.extend(load_config_tasks(config, (*cf).clone(), &dir, templates).await?);
     }
 
     let mut file_tasks = vec![];

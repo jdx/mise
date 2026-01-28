@@ -52,11 +52,13 @@ pub mod task_scheduler;
 mod task_script_parser;
 pub mod task_source_checker;
 pub mod task_sources;
+pub mod task_template;
 pub mod task_tool_installer;
 
 pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax};
 pub use task_output::TaskOutput;
 pub use task_script_parser::has_any_args_defined;
+pub use task_template::TaskTemplate;
 
 use crate::config::config_file::ConfigFile;
 use crate::env_diff::EnvMap;
@@ -276,6 +278,10 @@ pub struct Task {
     // This is used to determine if the task should use monorepo config file context
     #[serde(skip)]
     pub remote_file_source: Option<String>,
+
+    /// Name of the task template to extend (requires experimental = true)
+    #[serde(default)]
+    pub extends: Option<String>,
 }
 
 impl Task {
@@ -1153,6 +1159,7 @@ impl Default for Task {
             usage: "".to_string(),
             timeout: None,
             remote_file_source: None,
+            extends: None,
         }
     }
 }

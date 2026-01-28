@@ -435,8 +435,43 @@ mise's Monorepo Tasks aims to hit the sweet spot between simplicity and power:
 
 The best tool is the one that fits your team's needs. mise's Monorepo Tasks is designed for teams who want powerful monorepo management without the complexity overhead, especially when working across multiple languages.
 
+## Task Templates
+
+For monorepos with similar task patterns across projects, [task templates](/tasks/templates) allow you to define reusable task definitions at the monorepo root:
+
+```toml
+# Root mise.toml
+[settings]
+experimental = true
+experimental_monorepo_root = true
+
+[task_templates."python:build"]
+run = "uv build"
+tools = { python = "3.12", uv = "latest" }
+
+[task_templates."python:test"]
+run = "pytest"
+tools = { python = "3.12" }
+depends = ["build"]
+```
+
+Projects can then extend these templates:
+
+```toml
+# packages/api/mise.toml
+[tasks.build]
+extends = "python:build"
+
+[tasks.test]
+extends = "python:test"
+run = "pytest --cov"  # Override with coverage
+```
+
+See [Task Templates](/tasks/templates) for complete documentation.
+
 ## Related
 
+- [Task Templates](/tasks/templates) - Reusable task definitions
 - [Task Configuration](/tasks/task-configuration) - All task configuration options
 - [Running Tasks](/tasks/running-tasks) - How to execute tasks
 - [Configuration](/configuration) - General mise configuration
