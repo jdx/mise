@@ -1271,6 +1271,83 @@ mod tests {
     }
 
     #[test]
+    fn test_inspect_tar_contents_curdir_prefix() {
+        // Test that archives with "./" prefixed paths are handled correctly
+        // This reproduces the bug from https://github.com/jdx/mise/discussions/7862
+        use flate2::Compression;
+        use flate2::write::GzEncoder;
+        use tar::Builder;
+        use tempfile::NamedTempFile;
+
+        // Create a temp tar.gz with "./" prefixed paths (like unison's archive)
+        let temp_file = NamedTempFile::new().unwrap();
+        let gz = GzEncoder::new(temp_file.as_file(), Compression::default());
+        let mut builder = Builder::new(gz);
+
+        // Add entries with "./" prefix - simulating archive structure like:
+        // ./dir1/file1
+        // ./dir2/file2
+        // ./standalone
+        let mut header = tar::Header::new_gnu();
+        header.set_size(0);
+        header.set_mode(0o755);
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_cksum();
+
+        // Add ./dir1/file1
+        builder
+            .append_data(&mut header.clone(), "./dir1/file1", std::io::empty())
+            .unwrap();
+
+        // Add ./dir2/file2
+        builder
+            .append_data(&mut header.clone(), "./dir2/file2", std::io::empty())
+            .unwrap();
+
+        // Add ./standalone (file at root with ./ prefix)
+        builder
+            .append_data(&mut header.clone(), "./standalone", std::io::empty())
+            .unwrap();
+
+        let gz = builder.into_inner().unwrap();
+        gz.finish().unwrap();
+
+        // Now test inspect_tar_contents
+        let result = inspect_tar_contents(temp_file.path(), TarFormat::TarGz).unwrap();
+
+        // Should have 3 top-level entries: dir1, dir2, standalone
+        // NOT a single "." entry
+        assert_eq!(
+            result.len(),
+            3,
+            "Expected 3 top-level entries, got: {:?}",
+            result
+        );
+
+        let names: std::collections::HashSet<_> = result.iter().map(|(n, _)| n.as_str()).collect();
+        assert!(names.contains("dir1"), "Should contain dir1");
+        assert!(names.contains("dir2"), "Should contain dir2");
+        assert!(names.contains("standalone"), "Should contain standalone");
+        assert!(!names.contains("."), "Should NOT contain '.' (CurDir)");
+
+        // dir1 and dir2 should be marked as directories (have nested content)
+        for (name, is_dir) in &result {
+            if name == "dir1" || name == "dir2" {
+                assert!(*is_dir, "{} should be marked as directory", name);
+            } else if name == "standalone" {
+                assert!(!*is_dir, "standalone should NOT be marked as directory");
+            }
+        }
+
+        // Verify should_strip_components returns false (multiple top-level entries)
+        let should_strip = should_strip_components(temp_file.path(), TarFormat::TarGz).unwrap();
+        assert!(
+            !should_strip,
+            "Should NOT strip components for multi-entry archive"
+        );
+    }
+
+    #[test]
     fn test_all_dirs_no_ceiling() {
         let start_dir = Path::new("/a/b/c");
         let ceiling_dirs = HashSet::new();
