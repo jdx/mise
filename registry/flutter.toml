@@ -14,6 +14,10 @@ url = 'https://storage.googleapis.com/flutter_infra_release/releases/stable/{{ o
 [backends.options.platforms.linux-x64]
 url = 'https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_{{ version | replace(from="-stable", to="") }}-stable.tar.xz'
 
+# Note: Flutter doesn't officially provide linux-arm64 builds, but use correct format if they add support
+[backends.options.platforms.linux-arm64]
+url = 'https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_arm64_{{ version | replace(from="-stable", to="") }}-stable.tar.xz'
+
 [[backends]]
 full = "asdf:mise-plugins/mise-flutter"
 
