@@ -224,8 +224,8 @@ impl Backend for GoPlugin {
                 .await?
                 .into_iter()
                 .filter_map(|t| t.name.strip_prefix("go").map(|v| (v.to_string(), t.date)))
-                // remove beta and rc versions
-                .filter(|(v, _)| !regex!(r"(beta|rc)[0-9]*$").is_match(v))
+                // remove beta, rc versions and "1" (go1 is not installable via modern URLs)
+                .filter(|(v, _)| v != "1" && !regex!(r"(beta|rc)[0-9]*$").is_match(v))
                 .unique_by(|(v, _)| v.clone())
                 .sorted_by_cached_key(|(v, _)| (Versioning::new(v), v.to_string()))
                 .map(|(version, created_at)| VersionInfo {
@@ -252,8 +252,8 @@ impl Backend for GoPlugin {
                     .lines()
                     .filter_map(|line| line.split("/go").last())
                     .filter(|s| !s.is_empty())
-                    // remove beta and rc versions
-                    .filter(|s| !regex!(r"(beta|rc)[0-9]*$").is_match(s))
+                    // remove beta, rc versions and "1" (go1 is not installable via modern URLs)
+                    .filter(|s| *s != "1" && !regex!(r"(beta|rc)[0-9]*$").is_match(s))
                     .map(|s| s.to_string())
                     .unique()
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
