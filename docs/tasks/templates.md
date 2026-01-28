@@ -62,6 +62,7 @@ When a task extends a template, fields are merged according to these rules:
 | `dir`                                   | Local overrides; defaults to config_root if not in template |
 | `sources`, `outputs`                    | Local overrides completely                                  |
 | `description`, `shell`, `timeout`, etc. | Local overrides template (if set)                           |
+| `quiet`, `hide`, `raw`                  | Not inherited (must be set explicitly in task)              |
 
 ### Example: Deep Merge for Tools
 

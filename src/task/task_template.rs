@@ -138,26 +138,17 @@ impl Task {
             self.shell = template.shell.clone();
         }
 
-        // quiet: use template only if template has explicit value and local is false
-        if !self.quiet && template.quiet == Some(true) {
-            self.quiet = true;
-        }
+        // Note: quiet, hide, and raw are `bool` in Task (not Option<bool>), so we cannot
+        // distinguish between "not set" (defaults to false) and "explicitly set to false".
+        // Therefore, we do NOT merge these boolean fields from templates to avoid the case
+        // where a task explicitly sets `quiet = false` but gets overridden by a template's
+        // `quiet = true`. Users must explicitly set these in their task if needed.
 
-        // silent: use template only if local is Off
+        // silent: use template only if local is Off (Silent is an enum, so we can distinguish)
         if matches!(self.silent, Silent::Off)
             && let Some(ref silent) = template.silent
         {
             self.silent = silent.clone();
-        }
-
-        // hide: use template only if template has explicit value and local is false
-        if !self.hide && template.hide == Some(true) {
-            self.hide = true;
-        }
-
-        // raw: use template only if template has explicit value and local is false
-        if !self.raw && template.raw == Some(true) {
-            self.raw = true;
         }
 
         // usage: use template only if local is empty
