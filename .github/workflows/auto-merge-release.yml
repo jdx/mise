@@ -23,7 +23,7 @@ jobs:
           echo "Found PR #$PR_NUMBER"
 
           # Enable auto-merge which waits for CI checks to pass
-          gh pr merge "$PR_NUMBER" -R jdx/mise --merge --auto || {
+          gh pr merge "$PR_NUMBER" -R jdx/mise --squash --auto || {
             echo "Merge failed or PR not ready, will retry tomorrow"
             exit 0
           }
