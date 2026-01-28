@@ -130,14 +130,25 @@ impl Client {
     }
 
     pub async fn get_text<U: IntoUrl>(&self, url: U) -> Result<String> {
+        self.get_text_with_headers(url, &HeaderMap::new()).await
+    }
+
+    pub async fn get_text_with_headers<U: IntoUrl>(
+        &self,
+        url: U,
+        extra_headers: &HeaderMap,
+    ) -> Result<String> {
         let mut url = url.into_url().unwrap();
-        let resp = self.get_async(url.clone()).await?;
+        // Merge GitHub headers with any extra headers provided
+        let mut headers = github_headers(&url);
+        headers.extend(extra_headers.clone());
+        let resp = self.get_async_with_headers(url.clone(), &headers).await?;
         let text = resp.text().await?;
         if text.starts_with("<!DOCTYPE html>") {
             if url.scheme() == "http" {
                 // try with https since http may be blocked
                 url.set_scheme("https").unwrap();
-                return Box::pin(self.get_text(url)).await;
+                return Box::pin(self.get_text_with_headers(url, extra_headers)).await;
             }
             bail!("Got HTML instead of text from {}", url);
         }
@@ -243,10 +254,22 @@ impl Client {
 
     /// POST JSON data to a URL. Returns Ok(true) on success, Ok(false) on non-success status.
     /// Errors only on network/connection failures.
+    #[allow(dead_code)]
     pub async fn post_json<U: IntoUrl, T: serde::Serialize>(
         &self,
         url: U,
         body: &T,
+    ) -> Result<bool> {
+        self.post_json_with_headers(url, body, &HeaderMap::new())
+            .await
+    }
+
+    /// POST JSON data to a URL with custom headers.
+    pub async fn post_json_with_headers<U: IntoUrl, T: serde::Serialize>(
+        &self,
+        url: U,
+        body: &T,
+        headers: &HeaderMap,
     ) -> Result<bool> {
         ensure!(!*env::OFFLINE, "offline mode is enabled");
         let url = url.into_url()?;
@@ -255,6 +278,7 @@ impl Client {
             .reqwest
             .post(url)
             .header("Content-Type", "application/json")
+            .headers(headers.clone())
             .json(body)
             .send()
             .await?;
