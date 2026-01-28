@@ -606,8 +606,8 @@ fn fix_venv_python_symlink(install_path: &Path, pkg_name: &str) -> Result<()> {
                 continue; // Leave non-mise Python alone (homebrew, uv, etc.)
             }
 
-            if let Some(minor_path) = path_with_minor_version(&target) {
-                if target.exists() {
+            if let Some(minor_path) = path_with_minor_version(&target)
+                && target.exists() {
                     // Create the minor version symlink (e.g., python/3.12 -> python/3.12.1)
                     // if it doesn't exist yet. This is normally done by runtime_symlinks::rebuild,
                     // but that runs after postinstall hooks, so we need to create it now
@@ -620,7 +620,6 @@ fn fix_venv_python_symlink(install_path: &Path, pkg_name: &str) -> Result<()> {
                     );
                     file::make_symlink(&minor_path, &symlink_path)?;
                 }
-            }
         }
     }
     Ok(())
