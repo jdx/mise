@@ -1037,6 +1037,13 @@ pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
 }
 
 /// Inspects the top-level contents of a tar archive without extracting it
+/// Skips leading CurDir (".") components from a path's components iterator.
+/// Archives often have paths like "./foo/bar" where the leading "." should be ignored.
+fn skip_curdir_components(path: &Path) -> impl Iterator<Item = std::path::Component<'_>> {
+    path.components()
+        .skip_while(|c| matches!(c, std::path::Component::CurDir))
+}
+
 pub fn inspect_tar_contents(archive: &Path, format: TarFormat) -> Result<Vec<(String, bool)>> {
     let tar = open_tar(format, archive)?;
     let mut archive = Archive::new(tar);
@@ -1048,15 +1055,7 @@ pub fn inspect_tar_contents(archive: &Path, format: TarFormat) -> Result<Vec<(St
         let header = entry.header();
 
         // Get the first non-CurDir component of the path (top-level directory/file)
-        // Skip CurDir (".") components since archives often have paths like "./foo/bar"
-        let mut components = path.components().peekable();
-        while let Some(c) = components.peek() {
-            if matches!(c, std::path::Component::CurDir) {
-                components.next();
-            } else {
-                break;
-            }
-        }
+        let mut components = skip_curdir_components(&path);
 
         if let Some(first_component) = components.next() {
             let name = first_component.as_os_str().to_string_lossy().to_string();
@@ -1085,15 +1084,8 @@ pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     for i in 0..archive.len() {
         let file = archive.by_index(i)?;
         if let Some(path) = file.enclosed_name() {
-            // Skip CurDir (".") components since archives often have paths like "./foo/bar"
-            let mut components = path.components().peekable();
-            while let Some(c) = components.peek() {
-                if matches!(c, std::path::Component::CurDir) {
-                    components.next();
-                } else {
-                    break;
-                }
-            }
+            // Get the first non-CurDir component of the path (top-level directory/file)
+            let mut components = skip_curdir_components(&path);
 
             if let Some(first_component) = components.next() {
                 let name = first_component.as_os_str().to_string_lossy().to_string();
@@ -1120,15 +1112,8 @@ pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     for file in &sevenz.archive().files {
         let path = PathBuf::from(file.name());
 
-        // Skip CurDir (".") components since archives often have paths like "./foo/bar"
-        let mut components = path.components().peekable();
-        while let Some(c) = components.peek() {
-            if matches!(c, std::path::Component::CurDir) {
-                components.next();
-            } else {
-                break;
-            }
-        }
+        // Get the first non-CurDir component of the path (top-level directory/file)
+        let mut components = skip_curdir_components(&path);
 
         if let Some(first_component) = components.next() {
             let name = first_component.as_os_str().to_string_lossy().to_string();
