@@ -171,6 +171,11 @@ impl HttpBackend {
         // Include rename_exe in cache key since it modifies the extracted content
         if let Some(rename) = get_opt(opts, "rename_exe") {
             parts.push(format!("rename_{rename}"));
+            // When rename_exe is used, bin_path affects where the rename happens,
+            // so different bin_path values result in different cached content
+            if let Some(bin_path) = get_opt(opts, "bin_path") {
+                parts.push(format!("binpath_{bin_path}"));
+            }
         }
 
         let key = parts.join("_");
@@ -415,7 +420,7 @@ impl HttpBackend {
                 dest.to_path_buf()
             };
             // rsplit('/') always yields at least one element (the full string if no delimiter)
-            let tool_name = self.ba.tool_name.rsplit('/').next().unwrap_or_default();
+            let tool_name = self.ba.tool_name.rsplit('/').next().unwrap();
             rename_executable_in_dir(&search_dir, &rename_to, Some(tool_name))?;
         }
 
