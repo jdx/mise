@@ -472,7 +472,10 @@ impl Toolset {
     }
 
     /// Install all plugins defined in [plugins] config section
-    async fn ensure_config_plugins_installed(config: &Arc<Config>, dry_run: bool) -> Result<()> {
+    pub async fn ensure_config_plugins_installed(
+        config: &Arc<Config>,
+        dry_run: bool,
+    ) -> Result<()> {
         if config.repo_urls.is_empty() {
             return Ok(());
         }
