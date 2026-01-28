@@ -8,16 +8,16 @@ version_json_path = ".releases[?channel=stable].version"
 version_list_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json"
 
 [backends.options.platforms.macos-x64]
-url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_{{ version }}-stable.zip"
+url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_{{ version | replace(from='-stable', to='') }}-stable.zip"
 
 [backends.options.platforms.macos-arm64]
-url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_arm64_{{ version }}-stable.zip"
+url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_arm64_{{ version | replace(from='-stable', to='') }}-stable.zip"
 
 [backends.options.platforms.linux-x64]
-url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_{{ version }}-stable.tar.xz"
+url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_{{ version | replace(from='-stable', to='') }}-stable.tar.xz"
 
 [backends.options.platforms.windows-x64]
-url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_{{ version }}-stable.zip"
+url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_{{ version | replace(from='-stable', to='') }}-stable.zip"
 
 [[backends]]
 full = "asdf:mise-plugins/mise-flutter"
