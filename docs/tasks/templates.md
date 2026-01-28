@@ -113,10 +113,10 @@ env = { PROJECT = "{{ config_root | basename }}" }
 
 Available variables (same as regular tasks):
 
-- `{{ config_root }}` - The project using the template (NOT where template is defined)
-- `{{ env.VAR }}` - Environment variables
-- `{{ cwd }}` - Current working directory
-- `{{ vars.* }}` - User-defined variables from config
+- <code v-pre>{{ config_root }}</code> - The project using the template (NOT where template is defined)
+- <code v-pre>{{ env.VAR }}</code> - Environment variables
+- <code v-pre>{{ cwd }}</code> - Current working directory
+- <code v-pre>{{ vars.* }}</code> - User-defined variables from config
 
 ## Monorepo Usage
 
