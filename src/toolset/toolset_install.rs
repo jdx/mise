@@ -484,6 +484,13 @@ impl Toolset {
 
         for (plugin_key, url) in &config.repo_urls {
             let (plugin_type, name) = Self::parse_plugin_key(plugin_key, url);
+
+            // Skip empty plugin names (e.g., from malformed keys like "" or "vfox:")
+            if name.is_empty() {
+                warn!("skipping empty plugin name from key: {plugin_key}");
+                continue;
+            }
+
             let plugin = plugin_type.plugin(name.to_string());
 
             if !plugin.is_installed() {
