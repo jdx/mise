@@ -168,6 +168,11 @@ impl HttpBackend {
             parts.push(format!("strip_{strip}"));
         }
 
+        // Include rename_exe in cache key since it modifies the extracted content
+        if let Some(rename) = get_opt(opts, "rename_exe") {
+            parts.push(format!("rename_{rename}"));
+        }
+
         let key = parts.join("_");
         debug!("Cache key: {}", key);
         Ok(key)
@@ -236,6 +241,7 @@ impl HttpBackend {
     /// Extract artifact to cache with atomic rename
     fn extract_to_cache(
         &self,
+        tv: &ToolVersion,
         file_path: &Path,
         cache_key: &str,
         url: &str,
@@ -261,7 +267,7 @@ impl HttpBackend {
         }
 
         // Perform extraction
-        let extraction_type = self.extract_artifact(&tmp_path, file_path, opts, pr)?;
+        let extraction_type = self.extract_artifact(tv, &tmp_path, file_path, opts, pr)?;
 
         // Atomic replace
         if cache_path.exists() {
@@ -278,6 +284,7 @@ impl HttpBackend {
     /// Extract a single artifact to the given directory
     fn extract_artifact(
         &self,
+        tv: &ToolVersion,
         dest: &Path,
         file_path: &Path,
         opts: &ToolVersionOptions,
@@ -292,7 +299,7 @@ impl HttpBackend {
         } else if file_info.format == file::TarFormat::Raw {
             self.extract_raw_file(dest, file_path, &file_info, opts, pr)
         } else {
-            self.extract_archive(dest, file_path, &file_info, opts, pr)
+            self.extract_archive(tv, dest, file_path, &file_info, opts, pr)
         }
     }
 
@@ -371,6 +378,7 @@ impl HttpBackend {
     /// Extract an archive (tar, zip, etc.)
     fn extract_archive(
         &self,
+        tv: &ToolVersion,
         dest: &Path,
         file_path: &Path,
         file_info: &FileInfo,
@@ -400,17 +408,14 @@ impl HttpBackend {
 
         // Handle rename_exe option for archives
         if let Some(rename_to) = get_opt(opts, "rename_exe") {
-            let search_dir = if let Some(bin_path) = get_opt(opts, "bin_path") {
+            let search_dir = if let Some(bin_path_template) = get_opt(opts, "bin_path") {
+                let bin_path = template_string(&bin_path_template, tv);
                 dest.join(&bin_path)
             } else {
                 dest.to_path_buf()
             };
-            let tool_name = self
-                .ba
-                .tool_name
-                .rsplit('/')
-                .next()
-                .unwrap_or(&self.ba.tool_name);
+            // rsplit('/') always yields at least one element (the full string if no delimiter)
+            let tool_name = self.ba.tool_name.rsplit('/').next().unwrap_or_default();
             rename_executable_in_dir(&search_dir, &rename_to, Some(tool_name))?;
         }
 
@@ -698,7 +703,14 @@ impl Backend for HttpBackend {
             self.extraction_type_from_cache(&cache_key, &file_info)
         } else {
             ctx.pr.set_message("extracting to cache".into());
-            self.extract_to_cache(&file_path, &cache_key, &url, &opts, Some(ctx.pr.as_ref()))?
+            self.extract_to_cache(
+                &tv,
+                &file_path,
+                &cache_key,
+                &url,
+                &opts,
+                Some(ctx.pr.as_ref()),
+            )?
         };
 
         // Create symlinks
