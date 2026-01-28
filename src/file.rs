@@ -1047,12 +1047,23 @@ pub fn inspect_tar_contents(archive: &Path, format: TarFormat) -> Result<Vec<(St
         let path = entry.path()?;
         let header = entry.header();
 
-        // Get the first component of the path (top-level directory/file)
-        if let Some(first_component) = path.components().next() {
+        // Get the first non-CurDir component of the path (top-level directory/file)
+        // Skip CurDir (".") components since archives often have paths like "./foo/bar"
+        let mut components = path.components().peekable();
+        while let Some(c) = components.peek() {
+            if matches!(c, std::path::Component::CurDir) {
+                components.next();
+            } else {
+                break;
+            }
+        }
+
+        if let Some(first_component) = components.next() {
             let name = first_component.as_os_str().to_string_lossy().to_string();
 
             // Check if this entry indicates the component is a directory
-            let is_directory = header.entry_type().is_dir() || path.components().count() > 1; // If there are nested components, it's a directory
+            // It's a directory if the entry type is dir OR if there are more components after the first
+            let is_directory = header.entry_type().is_dir() || components.next().is_some();
 
             // Update the component's directory status
             // A component is a directory if ANY entry indicates it's a directory
@@ -1073,16 +1084,27 @@ pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
 
     for i in 0..archive.len() {
         let file = archive.by_index(i)?;
-        if let Some(path) = file.enclosed_name()
-            && let Some(first_component) = path.components().next()
-        {
-            let name = first_component.as_os_str().to_string_lossy().to_string();
+        if let Some(path) = file.enclosed_name() {
+            // Skip CurDir (".") components since archives often have paths like "./foo/bar"
+            let mut components = path.components().peekable();
+            while let Some(c) = components.peek() {
+                if matches!(c, std::path::Component::CurDir) {
+                    components.next();
+                } else {
+                    break;
+                }
+            }
 
-            // Check if this entry indicates the component is a directory
-            let is_directory = file.is_dir() || path.components().count() > 1; // If there are nested components, it's a directory
+            if let Some(first_component) = components.next() {
+                let name = first_component.as_os_str().to_string_lossy().to_string();
 
-            let existing = top_level_components.entry(name.clone()).or_insert(false);
-            *existing = *existing || is_directory;
+                // Check if this entry indicates the component is a directory
+                // It's a directory if the entry type is dir OR if there are more components after the first
+                let is_directory = file.is_dir() || components.next().is_some();
+
+                let existing = top_level_components.entry(name.clone()).or_insert(false);
+                *existing = *existing || is_directory;
+            }
         }
     }
 
@@ -1098,9 +1120,20 @@ pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     for file in &sevenz.archive().files {
         let path = PathBuf::from(file.name());
 
-        if let Some(first_component) = path.components().next() {
+        // Skip CurDir (".") components since archives often have paths like "./foo/bar"
+        let mut components = path.components().peekable();
+        while let Some(c) = components.peek() {
+            if matches!(c, std::path::Component::CurDir) {
+                components.next();
+            } else {
+                break;
+            }
+        }
+
+        if let Some(first_component) = components.next() {
             let name = first_component.as_os_str().to_string_lossy().to_string();
-            let is_directory = file.is_directory() || path.components().count() > 1;
+            // It's a directory if the entry type is dir OR if there are more components after the first
+            let is_directory = file.is_directory() || components.next().is_some();
 
             let existing = top_level_components.entry(name.clone()).or_insert(false);
             *existing = *existing || is_directory;
