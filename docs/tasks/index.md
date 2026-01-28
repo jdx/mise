@@ -17,7 +17,7 @@ Here's my favorite features about mise's task runner:
 - ability to write tasks as actual bash script files and not inside yml/json/toml strings that lack
   syntax highlighting and linting/checking support
 
-There are 2 ways to define tasks: [inside of `mise.toml` files](./toml-tasks.html) or as [standalone shell scripts](./file-tasks.html).
+There are 2 ways to define tasks: [inside of `mise.toml` files](./toml-tasks.html) or as [standalone shell scripts](./file-tasks.html). You can also use [task templates](./templates.html) to create reusable task definitions.
 
 ## Tasks in `mise.toml` files
 
