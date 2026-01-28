@@ -290,6 +290,27 @@ pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<Stri
     }
 }
 
+/// Normalize idiomatic file contents by removing comments and empty lines.
+/// Full-line and inline comments are supported by .python-version, .nvmrc, etc.
+pub(crate) fn normalize_idiomatic_contents(contents: &str) -> String {
+    contents
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                return None;
+            }
+            let without_inline = trimmed.split('#').next().unwrap_or("").trim();
+            if without_inline.is_empty() {
+                None
+            } else {
+                Some(without_inline)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[async_trait]
 pub trait Backend: Debug + Send + Sync {
     fn id(&self) -> &str {
@@ -819,7 +840,7 @@ pub trait Backend: Debug + Send + Sync {
     }
     async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<String> {
         let contents = file::read_to_string(path)?;
-        Ok(contents.trim().to_string())
+        Ok(normalize_idiomatic_contents(&contents))
     }
     fn plugin(&self) -> Option<&PluginEnum> {
         None
