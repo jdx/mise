@@ -170,6 +170,23 @@ bin = "docker-compose"  # Rename from docker-compose-linux-x86_64 to docker-comp
 When downloading single binaries (not archives), mise automatically removes OS/arch suffixes from the filename. For example, `docker-compose-linux-x86_64` becomes `docker-compose` automatically. Use the `bin` option only when you need a specific custom name.
 :::
 
+### `rename_exe`
+
+Rename the executable inside an extracted archive to a specific name. This is useful when archives contain binaries with platform-specific names or when installing kubectl plugins that need specific naming:
+
+```toml
+[tools."http:openunison-cli"]
+version = "1.0.0"
+url = "https://nexus.tremolo.io/repository/openunison-cli/openunison-cli-v{{version}}-linux.zip"
+rename_exe = "kubectl-openunison-cli"  # Rename extracted binary for kubectl plugin
+```
+
+This works by searching for the first executable in the extracted directory (or `bin_path` if specified) and renaming it to the specified name.
+
+::: tip
+Use `bin` for renaming single binary downloads, and `rename_exe` for renaming executables inside archives.
+:::
+
 ### `format`
 
 Explicitly specify the archive format when the URL lacks a file extension or has an incorrect extension:

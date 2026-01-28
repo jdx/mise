@@ -3,7 +3,7 @@ use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::static_helpers::{
     clean_binary_name, get_filename_from_url, list_available_platforms_with_key,
-    lookup_platform_key, template_string, verify_artifact,
+    lookup_platform_key, rename_executable_in_dir, template_string, verify_artifact,
 };
 use crate::backend::version_list;
 use crate::cli::args::BackendArg;
@@ -168,6 +168,16 @@ impl HttpBackend {
             parts.push(format!("strip_{strip}"));
         }
 
+        // Include rename_exe in cache key since it modifies the extracted content
+        if let Some(rename) = get_opt(opts, "rename_exe") {
+            parts.push(format!("rename_{rename}"));
+            // When rename_exe is used, bin_path affects where the rename happens,
+            // so different bin_path values result in different cached content
+            if let Some(bin_path) = get_opt(opts, "bin_path") {
+                parts.push(format!("binpath_{bin_path}"));
+            }
+        }
+
         let key = parts.join("_");
         debug!("Cache key: {}", key);
         Ok(key)
@@ -236,6 +246,7 @@ impl HttpBackend {
     /// Extract artifact to cache with atomic rename
     fn extract_to_cache(
         &self,
+        tv: &ToolVersion,
         file_path: &Path,
         cache_key: &str,
         url: &str,
@@ -261,7 +272,7 @@ impl HttpBackend {
         }
 
         // Perform extraction
-        let extraction_type = self.extract_artifact(&tmp_path, file_path, opts, pr)?;
+        let extraction_type = self.extract_artifact(tv, &tmp_path, file_path, opts, pr)?;
 
         // Atomic replace
         if cache_path.exists() {
@@ -278,6 +289,7 @@ impl HttpBackend {
     /// Extract a single artifact to the given directory
     fn extract_artifact(
         &self,
+        tv: &ToolVersion,
         dest: &Path,
         file_path: &Path,
         opts: &ToolVersionOptions,
@@ -292,7 +304,7 @@ impl HttpBackend {
         } else if file_info.format == file::TarFormat::Raw {
             self.extract_raw_file(dest, file_path, &file_info, opts, pr)
         } else {
-            self.extract_archive(dest, file_path, &file_info, opts, pr)
+            self.extract_archive(tv, dest, file_path, &file_info, opts, pr)
         }
     }
 
@@ -371,6 +383,7 @@ impl HttpBackend {
     /// Extract an archive (tar, zip, etc.)
     fn extract_archive(
         &self,
+        tv: &ToolVersion,
         dest: &Path,
         file_path: &Path,
         file_info: &FileInfo,
@@ -397,6 +410,20 @@ impl HttpBackend {
         };
 
         file::untar(file_path, dest, &tar_opts)?;
+
+        // Handle rename_exe option for archives
+        if let Some(rename_to) = get_opt(opts, "rename_exe") {
+            let search_dir = if let Some(bin_path_template) = get_opt(opts, "bin_path") {
+                let bin_path = template_string(&bin_path_template, tv);
+                dest.join(&bin_path)
+            } else {
+                dest.to_path_buf()
+            };
+            // rsplit('/') always yields at least one element (the full string if no delimiter)
+            let tool_name = self.ba.tool_name.rsplit('/').next().unwrap();
+            rename_executable_in_dir(&search_dir, &rename_to, Some(tool_name))?;
+        }
+
         Ok(ExtractionType::Archive)
     }
 
@@ -574,6 +601,7 @@ pub fn install_time_option_keys() -> Vec<String> {
         "version_json_path".into(),
         "version_expr".into(),
         "format".into(),
+        "rename_exe".into(),
     ]
 }
 
@@ -680,7 +708,14 @@ impl Backend for HttpBackend {
             self.extraction_type_from_cache(&cache_key, &file_info)
         } else {
             ctx.pr.set_message("extracting to cache".into());
-            self.extract_to_cache(&file_path, &cache_key, &url, &opts, Some(ctx.pr.as_ref()))?
+            self.extract_to_cache(
+                &tv,
+                &file_path,
+                &cache_key,
+                &url,
+                &opts,
+                Some(ctx.pr.as_ref()),
+            )?
         };
 
         // Create symlinks
