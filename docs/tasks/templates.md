@@ -174,3 +174,4 @@ The following features are planned for future releases:
 - **Global templates**: Define templates in `~/.config/mise/config.toml` for use across all projects
 - **Template packages**: Import templates from external sources
 - **Pattern-matching rules**: Auto-apply templates based on file detection (e.g., auto-apply `python:*` templates when `pyproject.toml` exists)
+- **File task templates**: Define templates as standalone script files, similar to [file tasks](/tasks/file-tasks)
