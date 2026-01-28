@@ -144,11 +144,10 @@ impl Task {
         }
 
         // silent: use template only if local is Off
-        if matches!(self.silent, Silent::Off) {
-            if let Some(ref silent) = template.silent {
+        if matches!(self.silent, Silent::Off)
+            && let Some(ref silent) = template.silent {
                 self.silent = silent.clone();
             }
-        }
 
         // hide: use template only if template has explicit value and local is false
         if !self.hide && template.hide == Some(true) {
@@ -171,11 +170,10 @@ impl Task {
         }
 
         // file: use template only if local not set
-        if self.file.is_none() {
-            if let Some(ref file) = template.file {
+        if self.file.is_none()
+            && let Some(ref file) = template.file {
                 self.file = Some(file.into());
             }
-        }
     }
 }
 
