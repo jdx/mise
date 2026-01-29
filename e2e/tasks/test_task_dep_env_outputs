@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# Test that output caching works correctly with dependency env overrides
+cat <<EOF >mise.toml
+[tasks.build]
+run = 'mkdir -p out && echo built > out/result.txt && echo built'
+sources = ['src/**/*']
+outputs = ['out/result.txt']
+
+[tasks.deploy]
+depends = ["build"]
+run = 'echo deployed'
+EOF
+
+mkdir -p src
+echo "v1" >src/main.txt
+
+# First run builds
+assert_contains "mise run deploy" "built"
+# Second run uses cache
+assert_not_contains "mise run deploy" "built"
+# Touch source invalidates cache
+touch src/main.txt
+assert_contains "mise run deploy" "built"

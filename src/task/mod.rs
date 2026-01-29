@@ -67,7 +67,7 @@ use crate::toolset::Toolset;
 use crate::ui::style;
 pub use deps::Deps;
 use task_dep::TaskDep;
-use task_sources::TaskOutputs;
+use task_sources::{RawOutputTemplates, TaskOutputs};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[serde(untagged)]
@@ -242,6 +242,8 @@ pub struct Task {
     pub sources: Vec<String>,
     #[serde(default)]
     pub outputs: TaskOutputs,
+    #[serde(skip)]
+    pub raw_outputs: RawOutputTemplates,
     #[serde(default)]
     pub shell: Option<String>,
     #[serde(default)]
@@ -630,9 +632,26 @@ impl Task {
         let wait_for = self
             .wait_for
             .iter()
-            .map(|td| match_tasks_with_context(&tasks, td, Some(self)))
+            .map(|td| {
+                match_tasks_with_context(&tasks, td, Some(self))
+                    .map(|tasks| tasks.into_iter().map(|t| (t, td)).collect_vec())
+            })
             .flatten_ok()
-            .filter_ok(|t| tasks_to_run.contains(t))
+            .filter_map_ok(|(t, td)| {
+                if td.env.is_empty() {
+                    // Name-based matching: wait for any running instance of this task
+                    // regardless of env variant (e.g., "VERBOSE=1 setup" matches "setup").
+                    // Return the actual task from tasks_to_run so the dependency graph
+                    // gets the correct env-variant node.
+                    tasks_to_run
+                        .iter()
+                        .find(|tr| tr.name == t.name)
+                        .map(|tr| (*tr).clone())
+                } else {
+                    // Full identity matching: user explicitly wants a specific env variant
+                    tasks_to_run.contains(&t).then(|| t)
+                }
+            })
             .collect_vec();
         let depends_post = self
             .depends_post
@@ -888,7 +907,7 @@ impl Task {
         if !self.sources.is_empty() && self.outputs.is_empty() {
             self.outputs = TaskOutputs::Auto;
         }
-        self.outputs.render(&mut tera, &tera_ctx)?;
+        self.raw_outputs = self.outputs.render(&mut tera, &tera_ctx)?;
         for d in &mut self.depends {
             d.render(&mut tera, &tera_ctx)?;
         }
@@ -1090,10 +1109,15 @@ fn match_tasks_with_context(
                     .map(|(k, v)| EnvDirective::Val(k.clone(), v.clone(), Default::default()))
                     .collect();
                 t = t.with_dependency_env(&env_directives);
+                if let Some(config_root) = &t.config_root {
+                    let config_root = config_root.clone();
+                    t.outputs
+                        .re_render_with_env(&t.raw_outputs.clone(), &td.env, &config_root)?;
+                }
             }
-            t
+            Ok(t)
         })
-        .collect_vec();
+        .collect::<Result<Vec<_>>>()?;
     if matches.is_empty() {
         let mut err_msg = format!("task not found: {}", td.task);
 
@@ -1148,6 +1172,7 @@ impl Default for Task {
             raw: false,
             sources: vec![],
             outputs: Default::default(),
+            raw_outputs: Default::default(),
             shell: None,
             silent: Silent::Off,
             run: vec![],

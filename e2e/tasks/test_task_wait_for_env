@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# Test that wait_for works when the target task has env overrides via depends
+cat <<EOF >mise.toml
+[tasks.setup]
+run = 'echo setup'
+
+[tasks.build]
+depends = ["VERBOSE=1 setup"]
+run = 'echo build'
+
+[tasks.test]
+depends = ["build"]
+wait_for = ["setup"]
+run = 'echo test'
+EOF
+
+# "test" should succeed - wait_for should match "setup" even though
+# it's being run as "VERBOSE=1 setup" via build's depends
+assert_contains "mise run test" "test"
+assert_contains "mise run test" "setup"

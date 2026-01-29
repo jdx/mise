@@ -10,6 +10,14 @@ pub enum TaskOutputs {
     Auto,
 }
 
+/// Stores raw (pre-render) output templates and the original env context so they
+/// can be re-rendered when dependency env overrides are applied after initial rendering.
+#[derive(Debug, Clone, Default)]
+pub struct RawOutputTemplates {
+    pub templates: Option<Vec<String>>,
+    pub original_env: Option<std::collections::BTreeMap<String, String>>,
+}
+
 impl Default for TaskOutputs {
     fn default() -> Self {
         TaskOutputs::Files(vec![])
@@ -43,14 +51,53 @@ impl TaskOutputs {
             .to_string()
     }
 
-    pub fn render(&mut self, tera: &mut tera::Tera, ctx: &tera::Context) -> eyre::Result<()> {
+    pub fn render(
+        &mut self,
+        tera: &mut tera::Tera,
+        ctx: &tera::Context,
+    ) -> eyre::Result<RawOutputTemplates> {
         match self {
             TaskOutputs::Files(files) => {
+                let raw = files.clone();
+                let original_env = ctx
+                    .get("env")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok());
                 for file in files.iter_mut() {
                     *file = tera.render_str(file, ctx)?;
                 }
+                Ok(RawOutputTemplates {
+                    templates: Some(raw),
+                    original_env,
+                })
             }
-            TaskOutputs::Auto => {}
+            TaskOutputs::Auto => Ok(RawOutputTemplates::default()),
+        }
+    }
+
+    /// Re-render output templates with additional env vars injected into the
+    /// tera context. Used after dependency env overrides are applied.
+    pub fn re_render_with_env(
+        &mut self,
+        raw: &RawOutputTemplates,
+        env: &indexmap::IndexMap<String, String>,
+        config_root: &std::path::Path,
+    ) -> eyre::Result<()> {
+        if let TaskOutputs::Files(files) = self {
+            if let Some(raw_templates) = raw.templates.as_ref() {
+                let mut tera = crate::tera::get_tera(Some(config_root));
+                let mut ctx = tera::Context::new();
+                // Start with original env from initial render, then overlay dependency env
+                let mut env_map = raw.original_env.clone().unwrap_or_default();
+                for (k, v) in env {
+                    env_map.insert(k.clone(), v.clone());
+                }
+                ctx.insert("env", &env_map);
+                ctx.insert("config_root", &config_root.to_string_lossy().to_string());
+                *files = raw_templates
+                    .iter()
+                    .map(|tmpl| tera.render_str(tmpl, &ctx))
+                    .collect::<Result<Vec<_>, _>>()?;
+            }
         }
         Ok(())
     }
