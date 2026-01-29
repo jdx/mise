@@ -88,9 +88,9 @@ fn write_manifest(manifest: &Manifest) -> Result<()> {
 fn read_legacy_backend_meta(short: &str) -> Option<(String, Option<String>, bool)> {
     // Try .mise.backend.json first (oldest format)
     let json_path = dirs::INSTALLS.join(short).join(".mise.backend.json");
-    if json_path.exists() {
-        if let std::result::Result::Ok(f) = file::open(&json_path) {
-            if let std::result::Result::Ok(json) =
+    if json_path.exists()
+        && let std::result::Result::Ok(f) = file::open(&json_path)
+            && let std::result::Result::Ok(json) =
                 serde_json::from_reader::<_, serde_json::Value>(f)
             {
                 let full = json.get("id").and_then(|id| id.as_str()).map(String::from);
@@ -101,8 +101,6 @@ fn read_legacy_backend_meta(short: &str) -> Option<(String, Option<String>, bool
                     .to_string();
                 return Some((s, full, true));
             }
-        }
-    }
 
     // Try .mise.backend (text format)
     let path = dirs::INSTALLS
@@ -249,11 +247,10 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
     }
 
     // Write updated manifest if we migrated any legacy entries
-    if migrated {
-        if let Err(err) = write_manifest(&updated_manifest) {
+    if migrated
+        && let Err(err) = write_manifest(&updated_manifest) {
             warn!("failed to write install manifest: {err:#}");
         }
-    }
 
     for (short, pt) in init_plugins().await?.iter() {
         let full = match pt {
