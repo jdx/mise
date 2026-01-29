@@ -7,11 +7,11 @@ use crate::{dirs, file, runtime_symlinks};
 use eyre::{Ok, Result};
 use heck::ToKebabCase;
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use tokio::task::JoinSet;
 use versions::Versioning;
 
 /// Normalize a version string for sorting by stripping leading 'v' or 'V' prefix.
@@ -34,8 +34,99 @@ pub struct InstallStateTool {
     pub explicit_backend: bool,
 }
 
+/// Entry in the consolidated manifest file (.mise-installs.toml).
+/// Versions are NOT stored here — they come from the filesystem.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ManifestTool {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    full: Option<String>,
+    #[serde(default = "default_true")]
+    explicit_backend: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// In-memory representation of the manifest keyed by short name.
+type Manifest = BTreeMap<String, ManifestTool>;
+
 static INSTALL_STATE_PLUGINS: Mutex<Option<Arc<InstallStatePlugins>>> = Mutex::new(None);
 static INSTALL_STATE_TOOLS: Mutex<Option<Arc<InstallStateTools>>> = Mutex::new(None);
+
+fn manifest_path() -> PathBuf {
+    dirs::INSTALLS.join(".mise-installs.toml")
+}
+
+/// Read the consolidated manifest file. Returns empty map if it doesn't exist.
+fn read_manifest() -> Manifest {
+    let path = manifest_path();
+    match file::read_to_string(&path) {
+        std::result::Result::Ok(body) => match toml::from_str(&body) {
+            std::result::Result::Ok(m) => m,
+            Err(err) => {
+                warn!(
+                    "failed to parse manifest at {}: {err:#}",
+                    display_path(&path)
+                );
+                Default::default()
+            }
+        },
+        Err(_) => Default::default(),
+    }
+}
+
+/// Write the consolidated manifest file.
+fn write_manifest(manifest: &Manifest) -> Result<()> {
+    let path = manifest_path();
+    let body = toml::to_string_pretty(manifest)?;
+    file::write(&path, body.trim())?;
+    Ok(())
+}
+
+/// Read a legacy `.mise.backend` file for migration purposes.
+fn read_legacy_backend_meta(short: &str) -> Option<(String, Option<String>, bool)> {
+    // Try .mise.backend.json first (oldest format)
+    let json_path = dirs::INSTALLS.join(short).join(".mise.backend.json");
+    if json_path.exists() {
+        if let std::result::Result::Ok(f) = file::open(&json_path) {
+            if let std::result::Result::Ok(json) =
+                serde_json::from_reader::<_, serde_json::Value>(f)
+            {
+                let full = json.get("id").and_then(|id| id.as_str()).map(String::from);
+                let s = json
+                    .get("short")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or(short)
+                    .to_string();
+                return Some((s, full, true));
+            }
+        }
+    }
+
+    // Try .mise.backend (text format)
+    let path = dirs::INSTALLS
+        .join(short.to_kebab_case())
+        .join(".mise.backend");
+    if !path.exists() {
+        return None;
+    }
+    let body = match file::read_to_string(&path) {
+        std::result::Result::Ok(body) => body,
+        Err(err) => {
+            warn!(
+                "failed to read backend meta at {}: {err:?}",
+                display_path(&path)
+            );
+            return None;
+        }
+    };
+    let lines: Vec<&str> = body.lines().filter(|f| !f.is_empty()).collect();
+    let s = lines.first().unwrap_or(&short).to_string();
+    let full = lines.get(1).map(|f| f.to_string());
+    let explicit_backend = lines.get(2).is_none_or(|v| *v == "1");
+    Some((s, full, explicit_backend))
+}
 
 pub(crate) async fn init() -> Result<()> {
     let (plugins, tools) = tokio::join!(
@@ -93,48 +184,77 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
     {
         return Ok(tools);
     }
-    let mut jset = JoinSet::new();
-    for dir in file::dir_subdirs(&dirs::INSTALLS)? {
-        jset.spawn(async move {
-            let backend_meta = read_backend_meta(&dir).unwrap_or_default();
-            let short = backend_meta.first().unwrap_or(&dir).to_string();
-            let full = backend_meta.get(1).cloned();
-            // Default to true for backward compatibility: existing installations
-            // without this flag should preserve their installed backend
-            let explicit_backend = backend_meta.get(2).is_none_or(|v| v == "1");
-            let dir = dirs::INSTALLS.join(&dir);
-            let versions = file::dir_subdirs(&dir)
-                .unwrap_or_else(|err| {
-                    warn!("reading versions in {} failed: {err:?}", display_path(&dir));
-                    Default::default()
-                })
-                .into_iter()
-                .filter(|v| !v.starts_with('.'))
-                .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
-                .filter(|v| !dir.join(v).join("incomplete").exists())
-                .sorted_by_cached_key(|v| {
-                    // Normalize version for sorting to handle mixed v-prefix versions
-                    // e.g., "v2.0.51" and "2.0.35" should sort by numeric value
-                    let normalized = normalize_version_for_sort(v);
-                    (Versioning::new(normalized), v.to_string())
-                })
-                .collect();
-            let tool = InstallStateTool {
-                short: short.clone(),
-                full,
-                versions,
-                explicit_backend,
-            };
-            time!("init_tools {short}");
-            (short, tool)
-        });
+
+    // 1. Read manifest (1 syscall)
+    let manifest = read_manifest();
+
+    // 2. List install dirs (1 syscall)
+    let subdirs = file::dir_subdirs(&dirs::INSTALLS)?;
+
+    // 3. Track whether we need to update the manifest (migration happened)
+    let mut migrated = false;
+    let mut updated_manifest = manifest.clone();
+
+    // 4. For each dir, read versions from filesystem and merge with manifest metadata
+    let mut tools = BTreeMap::new();
+    for dir_name in subdirs {
+        let dir = dirs::INSTALLS.join(&dir_name);
+
+        // Read versions from filesystem (1 syscall per tool — unavoidable)
+        let versions: Vec<String> = file::dir_subdirs(&dir)
+            .unwrap_or_else(|err| {
+                warn!("reading versions in {} failed: {err:?}", display_path(&dir));
+                Default::default()
+            })
+            .into_iter()
+            .filter(|v| !v.starts_with('.'))
+            .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
+            .filter(|v| !dir.join(v).join("incomplete").exists())
+            .sorted_by_cached_key(|v| {
+                let normalized = normalize_version_for_sort(v);
+                (Versioning::new(normalized), v.to_string())
+            })
+            .collect();
+
+        if versions.is_empty() {
+            continue;
+        }
+
+        // Get metadata: prefer manifest, fall back to legacy .mise.backend
+        let (short, full, explicit_backend) = if let Some(mt) = manifest.get(&dir_name) {
+            (dir_name.clone(), mt.full.clone(), mt.explicit_backend)
+        } else if let Some((s, full, explicit)) = read_legacy_backend_meta(&dir_name) {
+            // Migration: absorb into manifest
+            updated_manifest.insert(
+                dir_name.clone(),
+                ManifestTool {
+                    full: full.clone(),
+                    explicit_backend: explicit,
+                },
+            );
+            migrated = true;
+            (s, full, explicit)
+        } else {
+            (dir_name.clone(), None, true)
+        };
+
+        let tool = InstallStateTool {
+            short: short.clone(),
+            full,
+            versions,
+            explicit_backend,
+        };
+        time!("init_tools {short}");
+        tools.insert(short, tool);
     }
-    let mut tools = jset
-        .join_all()
-        .await
-        .into_iter()
-        .filter(|(_, tool)| !tool.versions.is_empty())
-        .collect::<BTreeMap<_, _>>();
+
+    // Write updated manifest if we migrated any legacy entries
+    if migrated {
+        if let Err(err) = write_manifest(&updated_manifest) {
+            warn!("failed to write install manifest: {err:#}");
+        }
+    }
+
     for (short, pt) in init_plugins().await?.iter() {
         let full = match pt {
             PluginType::Asdf => format!("asdf:{short}"),
@@ -232,75 +352,23 @@ pub async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
     Ok(())
 }
 
-fn backend_meta_path(short: &str) -> PathBuf {
-    dirs::INSTALLS
-        .join(short.to_kebab_case())
-        .join(".mise.backend")
-}
-
-fn migrate_backend_meta_json(dir: &str) {
-    let old = dirs::INSTALLS.join(dir).join(".mise.backend.json");
-    let migrate = || {
-        let json: serde_json::Value = serde_json::from_reader(file::open(&old)?)?;
-        if let Some(full) = json.get("id").and_then(|id| id.as_str()) {
-            let short = json
-                .get("short")
-                .and_then(|short| short.as_str())
-                .unwrap_or(dir);
-            // Migrated tools default to explicit_backend=true to preserve their installed backend
-            let doc = format!("{short}\n{full}\n1");
-            file::write(backend_meta_path(dir), doc.trim())?;
-        }
-        Ok(())
-    };
-    if old.exists() {
-        if let Err(err) = migrate() {
-            warn!("failed to migrate backend meta for {dir}: {err:#}");
-            return; // Don't delete the old file if migration failed
-        }
-        if let Err(err) = file::remove_file(&old) {
-            warn!("failed to remove old backend meta for {dir}: {err:#}");
-        }
-    }
-}
-
-fn read_backend_meta(short: &str) -> Option<Vec<String>> {
-    migrate_backend_meta_json(short);
-    let path = backend_meta_path(short);
-    if !path.exists() {
-        return None;
-    }
-    let body = match file::read_to_string(&path) {
-        std::result::Result::Ok(body) => body,
-        std::result::Result::Err(err) => {
-            warn!(
-                "failed to read backend meta at {}: {err:?}",
-                display_path(&path)
-            );
-            return None;
-        }
-    };
-    Some(
-        body.lines()
-            .filter(|f| !f.is_empty())
-            .map(|f| f.to_string())
-            .collect(),
-    )
-}
-
-/// Writes backend metadata to `.mise.backend` file.
-/// Format: 3 lines
-/// - Line 1: short name (e.g., "bun")
-/// - Line 2: full backend identifier (e.g., "aqua:oven-sh/bun")
-/// - Line 3: explicit flag ("1" if user specified full backend, "0" if resolved from registry)
+/// Writes backend metadata to the consolidated manifest file.
 pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
     let full = match ba.full() {
         full if full.starts_with("core:") => ba.full(),
         _ => ba.full_with_opts(),
     };
-    let explicit = if ba.has_explicit_backend() { "1" } else { "0" };
-    let doc = format!("{}\n{}\n{}", ba.short, full, explicit);
-    file::write(backend_meta_path(&ba.short), doc.trim())?;
+    let explicit = ba.has_explicit_backend();
+
+    let mut manifest = read_manifest();
+    manifest.insert(
+        ba.short.to_kebab_case(),
+        ManifestTool {
+            full: Some(full),
+            explicit_backend: explicit,
+        },
+    );
+    write_manifest(&manifest)?;
     Ok(())
 }
 
@@ -391,5 +459,47 @@ mod tests {
 
         // 2.0.35 should be first
         assert_eq!(**sorted_with_norm.first().unwrap(), "2.0.35");
+    }
+
+    #[test]
+    fn test_manifest_roundtrip() {
+        use super::{Manifest, ManifestTool};
+
+        let mut manifest = Manifest::new();
+        manifest.insert(
+            "node".to_string(),
+            ManifestTool {
+                full: Some("core:node".to_string()),
+                explicit_backend: true,
+            },
+        );
+        manifest.insert(
+            "bun".to_string(),
+            ManifestTool {
+                full: Some("aqua:oven-sh/bun".to_string()),
+                explicit_backend: false,
+            },
+        );
+        manifest.insert(
+            "tiny".to_string(),
+            ManifestTool {
+                full: None,
+                explicit_backend: true,
+            },
+        );
+
+        let serialized = toml::to_string_pretty(&manifest).unwrap();
+        let deserialized: Manifest = toml::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.len(), 3);
+        assert_eq!(deserialized["node"].full.as_deref(), Some("core:node"));
+        assert!(deserialized["node"].explicit_backend);
+        assert_eq!(
+            deserialized["bun"].full.as_deref(),
+            Some("aqua:oven-sh/bun")
+        );
+        assert!(!deserialized["bun"].explicit_backend);
+        assert!(deserialized["tiny"].full.is_none());
+        assert!(deserialized["tiny"].explicit_backend);
     }
 }
