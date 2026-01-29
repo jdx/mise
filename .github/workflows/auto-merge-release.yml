@@ -20,7 +20,8 @@ jobs:
           fi
 
           BODY=$(gh pr view "$PR_NUMBER" -R jdx/mise --json body --jq '.body // ""')
-          if [ -z "$(echo "$BODY" | tr -d '[:space:]')" ]; then
+          TRIMMED_BODY=$(echo "$BODY" | tr -d '[:space:]')
+          if [ -z "$TRIMMED_BODY" ]; then
             echo "PR #$PR_NUMBER has no description, never merging"
             exit 0
           fi
@@ -28,13 +29,23 @@ jobs:
           # Parse description for section headers (release-plz groups commits by type)
           # Substantive sections (daily): Features, Bug Fixes, Performance, Security
           # Non-substantive sections (weekly): Refactor, Revert, Documentation, Chore, Registry, Dependency Updates
-          SUBSTANTIVE=$(echo "$BODY" | grep -E '^###.*(Features|Bug Fixes|Performance|Security)' || true)
+          SUBSTANTIVE=$(echo "$BODY" | grep -E '^[[:space:]]*###.*(Features|Bug Fixes|Performance|Security)' || true)
 
           if [ -n "$SUBSTANTIVE" ]; then
             echo "PR #$PR_NUMBER has substantive changes (Features/Bug Fixes/Performance/Security), merging daily"
           else
             CREATED=$(gh pr view "$PR_NUMBER" -R jdx/mise --json createdAt --jq '.createdAt')
-            CREATED_EPOCH=$(date -d "$CREATED" +%s)
+            if [ -z "$CREATED" ]; then
+              echo "ERROR: Failed to get PR creation date"
+              exit 1
+            fi
+
+            CREATED_EPOCH=$(date -d "$CREATED" +%s 2>/dev/null)
+            if [ -z "$CREATED_EPOCH" ]; then
+              echo "ERROR: Failed to parse PR creation date: $CREATED"
+              exit 1
+            fi
+
             NOW_EPOCH=$(date +%s)
             DAYS_OLD=$(( (NOW_EPOCH - CREATED_EPOCH) / 86400 ))
             if [ "$DAYS_OLD" -lt 7 ]; then
