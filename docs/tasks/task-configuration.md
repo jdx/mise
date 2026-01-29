@@ -159,6 +159,11 @@ run = "eslint ."
 
 Supports the same argument and environment variable syntax as `depends`.
 
+`wait_for` matches tasks differently depending on whether args or env vars are specified:
+
+- `wait_for = ["setup"]` — matches by name, regardless of args or env overrides. If another task runs `depends = ["DEBUG=1 setup"]`, this will still match and wait for it.
+- `wait_for = ["setup arg1"]` or `wait_for = ["DEBUG=1 setup"]` — matches only tasks running with that exact args/env configuration.
+
 ### `env`
 
 - **Type**: `{ [key]: string | int | bool }`
