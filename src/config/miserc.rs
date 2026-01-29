@@ -59,7 +59,7 @@ pub fn get_override_tool_versions_filenames() -> Option<&'static Vec<String>> {
 
 /// Load and merge all miserc settings files.
 /// Precedence (highest to lowest):
-/// 1. Local .miserc.toml (closest to cwd wins)
+/// 1. Local .miserc.toml and .config/miserc.toml (closest to cwd wins)
 /// 2. Global ~/.config/mise/miserc.toml
 /// 3. System /etc/mise/miserc.toml
 fn load_miserc_settings() -> Result<MisercSettings> {
@@ -107,7 +107,7 @@ fn merge_settings(target: &mut MisercSettings, source: MisercSettings) {
 fn find_miserc_files() -> Vec<PathBuf> {
     let mut files = Vec::new();
 
-    // Local hierarchy: .miserc.toml in cwd and ancestors
+    // Local hierarchy: .miserc.toml and .config/miserc.toml in cwd and ancestors
     // Use raw std::env to avoid depending on our lazy statics
     if let Ok(cwd) = std::env::current_dir() {
         // Walk up the directory tree, but stop at home or root
@@ -120,6 +120,10 @@ fn find_miserc_files() -> Vec<PathBuf> {
             // Stop at home directory to avoid searching too far
             if dir == home || dir.parent().is_none() {
                 break;
+            }
+            let path = dir.join(".config").join("miserc.toml");
+            if path.is_file() {
+                files.push(path);
             }
         }
     }
