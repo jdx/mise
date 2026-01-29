@@ -1,6 +1,5 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::SystemTime;
 
 use eyre::Result;
@@ -16,7 +15,7 @@ use super::providers::{
     GoPrepareProvider, NpmPrepareProvider, PipPrepareProvider, PnpmPrepareProvider,
     PoetryPrepareProvider, UvPrepareProvider, YarnPrepareProvider,
 };
-use super::rule::{BUILTIN_PROVIDERS, PrepareConfig};
+use super::rule::BUILTIN_PROVIDERS;
 
 /// Options for running prepare steps
 #[derive(Debug, Default)]
@@ -68,22 +67,25 @@ impl PrepareResult {
 
 /// Engine that discovers and runs prepare providers
 pub struct PrepareEngine {
-    config: Arc<Config>,
     providers: Vec<Box<dyn PrepareProvider>>,
 }
 
 impl PrepareEngine {
     /// Create a new PrepareEngine, discovering all applicable providers
-    pub fn new(config: Arc<Config>) -> Result<Self> {
-        let providers = Self::discover_providers(&config)?;
+    pub fn new(config: &Config) -> Result<Self> {
+        let providers = Self::discover_providers(config)?;
         // Only require experimental when prepare is actually configured
         if !providers.is_empty() {
             Settings::get().ensure_experimental("prepare")?;
         }
-        Ok(Self { config, providers })
+        Ok(Self { providers })
     }
 
     /// Discover all applicable prepare providers for the current project
+    ///
+    /// Each config file's prepare providers are scoped to that config file's directory.
+    /// Prepare configs are NOT inherited from parent directories - a `[prepare.pnpm]`
+    /// defined in a root mise.toml only runs from the root, not from subdirectories.
     fn discover_providers(config: &Config) -> Result<Vec<Box<dyn PrepareProvider>>> {
         let project_root = config
             .project_root
@@ -91,82 +93,106 @@ impl PrepareEngine {
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
         let mut providers: Vec<Box<dyn PrepareProvider>> = vec![];
+        let mut seen_ids: HashSet<String> = HashSet::new();
+        let mut disabled: Vec<String> = vec![];
 
-        // Load prepare config from mise.toml
-        let prepare_config = config
-            .config_files
-            .values()
-            .filter_map(|cf| cf.prepare_config())
-            .fold(PrepareConfig::default(), |acc, pc| acc.merge(&pc));
-
-        // Iterate over all configured providers
-        for (id, provider_config) in &prepare_config.providers {
-            let provider: Box<dyn PrepareProvider> = if BUILTIN_PROVIDERS.contains(&id.as_str()) {
-                // Built-in provider with specialized implementation
-                match id.as_str() {
-                    // Node.js package managers
-                    "npm" => Box::new(NpmPrepareProvider::new(
-                        &project_root,
-                        provider_config.clone(),
-                    )),
-                    "yarn" => Box::new(YarnPrepareProvider::new(
-                        &project_root,
-                        provider_config.clone(),
-                    )),
-                    "pnpm" => Box::new(PnpmPrepareProvider::new(
-                        &project_root,
-                        provider_config.clone(),
-                    )),
-                    "bun" => Box::new(BunPrepareProvider::new(
-                        &project_root,
-                        provider_config.clone(),
-                    )),
-                    // Go
-                    "go" => Box::new(GoPrepareProvider::new(
-                        &project_root,
-                        provider_config.clone(),
-                    )),
-                    // Python
-                    "pip" => Box::new(PipPrepareProvider::new(
-                        &project_root,
-                        provider_config.clone(),
-                    )),
-                    "poetry" => Box::new(PoetryPrepareProvider::new(
-                        &project_root,
-                        provider_config.clone(),
-                    )),
-                    "uv" => Box::new(UvPrepareProvider::new(
-                        &project_root,
-                        provider_config.clone(),
-                    )),
-                    // Ruby
-                    "bundler" => Box::new(BundlerPrepareProvider::new(
-                        &project_root,
-                        provider_config.clone(),
-                    )),
-                    // PHP
-                    "composer" => Box::new(ComposerPrepareProvider::new(
-                        &project_root,
-                        provider_config.clone(),
-                    )),
-                    _ => continue, // Skip unimplemented built-ins
-                }
-            } else {
-                // Custom provider
-                Box::new(CustomPrepareProvider::new(
-                    id.clone(),
-                    provider_config.clone(),
-                    project_root.clone(),
-                ))
+        // Process each config file's prepare config independently, using that
+        // config file's directory as the project root for its providers.
+        // Only include config files that belong to the current project root
+        // (not inherited from parent directories).
+        for cf in config.config_files.values() {
+            let Some(prepare_config) = cf.prepare_config() else {
+                continue;
             };
 
-            if provider.is_applicable() {
-                providers.push(provider);
+            // Skip config files from parent directories - prepare providers
+            // should only run from the directory where they are defined.
+            // Global/system configs (project_root() == None) are always included.
+            if let Some(cf_project_root) = cf.project_root()
+                && cf_project_root != project_root
+            {
+                continue;
+            }
+
+            // Collect disable list scoped to this project root
+            disabled.extend(prepare_config.disable.iter().cloned());
+
+            let config_root = cf.config_root();
+
+            for (id, provider_config) in &prepare_config.providers {
+                // Skip duplicate provider IDs (first config file wins)
+                if !seen_ids.insert(id.clone()) {
+                    continue;
+                }
+
+                let provider: Box<dyn PrepareProvider> = if BUILTIN_PROVIDERS.contains(&id.as_str())
+                {
+                    // Built-in provider with specialized implementation
+                    match id.as_str() {
+                        // Node.js package managers
+                        "npm" => Box::new(NpmPrepareProvider::new(
+                            &config_root,
+                            provider_config.clone(),
+                        )),
+                        "yarn" => Box::new(YarnPrepareProvider::new(
+                            &config_root,
+                            provider_config.clone(),
+                        )),
+                        "pnpm" => Box::new(PnpmPrepareProvider::new(
+                            &config_root,
+                            provider_config.clone(),
+                        )),
+                        "bun" => Box::new(BunPrepareProvider::new(
+                            &config_root,
+                            provider_config.clone(),
+                        )),
+                        // Go
+                        "go" => Box::new(GoPrepareProvider::new(
+                            &config_root,
+                            provider_config.clone(),
+                        )),
+                        // Python
+                        "pip" => Box::new(PipPrepareProvider::new(
+                            &config_root,
+                            provider_config.clone(),
+                        )),
+                        "poetry" => Box::new(PoetryPrepareProvider::new(
+                            &config_root,
+                            provider_config.clone(),
+                        )),
+                        "uv" => Box::new(UvPrepareProvider::new(
+                            &config_root,
+                            provider_config.clone(),
+                        )),
+                        // Ruby
+                        "bundler" => Box::new(BundlerPrepareProvider::new(
+                            &config_root,
+                            provider_config.clone(),
+                        )),
+                        // PHP
+                        "composer" => Box::new(ComposerPrepareProvider::new(
+                            &config_root,
+                            provider_config.clone(),
+                        )),
+                        _ => continue, // Skip unimplemented built-ins
+                    }
+                } else {
+                    // Custom provider
+                    Box::new(CustomPrepareProvider::new(
+                        id.clone(),
+                        provider_config.clone(),
+                        config_root.clone(),
+                    ))
+                };
+
+                if provider.is_applicable() {
+                    providers.push(provider);
+                }
             }
         }
 
         // Filter disabled providers
-        providers.retain(|p| !prepare_config.disable.contains(&p.id().to_string()));
+        providers.retain(|p| !disabled.contains(&p.id().to_string()));
 
         Ok(providers)
     }
@@ -243,33 +269,19 @@ impl PrepareEngine {
         // Run stale providers in parallel
         if !to_run.is_empty() {
             let mpr = MultiProgressReport::get();
-            let project_root = self
-                .config
-                .project_root
-                .clone()
-                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
             let toolset_env = opts.env.clone();
 
             // Include all data in the tuple so closure doesn't capture anything
             let to_run_with_context: Vec<_> = to_run
                 .into_iter()
-                .map(|(id, cmd, outputs)| {
-                    (
-                        id,
-                        cmd,
-                        outputs,
-                        mpr.clone(),
-                        project_root.clone(),
-                        toolset_env.clone(),
-                    )
-                })
+                .map(|(id, cmd, outputs)| (id, cmd, outputs, mpr.clone(), toolset_env.clone()))
                 .collect();
 
             let run_results = parallel::parallel(
                 to_run_with_context,
-                |(id, cmd, outputs, mpr, project_root, toolset_env)| async move {
+                |(id, cmd, outputs, mpr, toolset_env)| async move {
                     let pr = mpr.add(&cmd.description);
-                    match Self::execute_prepare_static(&cmd, &toolset_env, &project_root) {
+                    match Self::execute_prepare_static(&cmd, &toolset_env) {
                         Ok(()) => {
                             pr.finish_with_message(format!("{} done", cmd.description));
                             // Return outputs along with result so we can clear stale status
@@ -376,12 +388,11 @@ impl PrepareEngine {
     fn execute_prepare_static(
         cmd: &super::PrepareCommand,
         toolset_env: &BTreeMap<String, String>,
-        default_project_root: &Path,
     ) -> Result<()> {
-        let cwd = cmd
-            .cwd
-            .clone()
-            .unwrap_or_else(|| default_project_root.to_path_buf());
+        let cwd = match cmd.cwd.clone() {
+            Some(dir) => dir,
+            None => std::env::current_dir()?,
+        };
 
         let mut runner = CmdLineRunner::new(&cmd.program)
             .args(&cmd.args)

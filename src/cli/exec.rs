@@ -129,7 +129,7 @@ impl Exec {
 
         // Run auto-enabled prepare steps (unless --no-prepare)
         if !self.no_prepare {
-            let engine = PrepareEngine::new(config.clone())?;
+            let engine = PrepareEngine::new(&config)?;
             engine
                 .run(PrepareOptions {
                     auto_only: true, // Only run providers with auto=true
