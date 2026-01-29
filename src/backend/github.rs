@@ -503,6 +503,13 @@ impl UnifiedGitBackend {
             return Ok(vec![bin_path]);
         }
 
+        // Check for macOS .app bundle structure at root (happens when auto-strip removed .app wrapper)
+        // Look for Contents/MacOS/ which indicates a stripped .app bundle
+        let contents_macos = tv.install_path().join("Contents").join("MacOS");
+        if contents_macos.is_dir() {
+            return Ok(vec![contents_macos]);
+        }
+
         // Check if the root directory contains an executable file
         // If so, use the root directory as a bin path
         if let Ok(entries) = std::fs::read_dir(tv.install_path()) {
@@ -520,6 +527,15 @@ impl UnifiedGitBackend {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
+                    // Check for macOS .app bundles (e.g., SwiftFormat.app/Contents/MacOS/)
+                    let path_str = path.file_name().unwrap_or_default().to_string_lossy();
+                    if path_str.ends_with(".app") {
+                        let macos_dir = path.join("Contents").join("MacOS");
+                        if macos_dir.is_dir() {
+                            paths.push(macos_dir);
+                            continue;
+                        }
+                    }
                     // Check for {subdir}/bin
                     let sub_bin_path = path.join("bin");
                     if sub_bin_path.exists() {

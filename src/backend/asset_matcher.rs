@@ -337,6 +337,10 @@ impl AssetPicker {
         if asset.ends_with(".artifactbundle") || asset.contains(".artifactbundle.") {
             penalty -= 30;
         }
+        // Penalize macOS .app bundles on non-macOS platforms
+        if asset.contains(".app.") && self.target_os != "macos" {
+            penalty -= 100;
+        }
 
         // Penalize metadata/checksum/signature files
         if asset.ends_with(".asc")
