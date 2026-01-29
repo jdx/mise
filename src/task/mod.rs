@@ -649,7 +649,7 @@ impl Task {
                         .map(|tr| (*tr).clone())
                 } else {
                     // Full identity matching: user explicitly wants a specific env variant
-                    tasks_to_run.contains(&t).then(|| t)
+                    tasks_to_run.contains(&t).then_some(t)
                 }
             })
             .collect_vec();

@@ -82,8 +82,8 @@ impl TaskOutputs {
         env: &indexmap::IndexMap<String, String>,
         config_root: &std::path::Path,
     ) -> eyre::Result<()> {
-        if let TaskOutputs::Files(files) = self {
-            if let Some(raw_templates) = raw.templates.as_ref() {
+        if let TaskOutputs::Files(files) = self
+            && let Some(raw_templates) = raw.templates.as_ref() {
                 let mut tera = crate::tera::get_tera(Some(config_root));
                 let mut ctx = tera::Context::new();
                 // Start with original env from initial render, then overlay dependency env
@@ -98,7 +98,6 @@ impl TaskOutputs {
                     .map(|tmpl| tera.render_str(tmpl, &ctx))
                     .collect::<Result<Vec<_>, _>>()?;
             }
-        }
         Ok(())
     }
 }
