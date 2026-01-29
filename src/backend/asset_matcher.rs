@@ -6,14 +6,12 @@
 //! # Example
 //!
 //! ```ignore
-//! use crate::backend::asset_matcher::{AssetMatcher, detect_asset_for_target};
+//! use crate::backend::asset_matcher::AssetMatcher;
 //!
 //! // Auto-detect best asset for a target platform
-//! let asset = detect_asset_for_target(&assets, &target)?;
-//!
-//! // Or use the builder
 //! let asset = AssetMatcher::new()
 //!     .for_target(&target)
+//!     .with_no_app(true) // optional: avoid .app bundles
 //!     .pick_from(&assets)?;
 //! ```
 
@@ -178,6 +176,7 @@ pub struct AssetPicker {
     target_os: String,
     target_arch: String,
     target_libc: String,
+    no_app: bool,
 }
 
 impl AssetPicker {
@@ -197,7 +196,14 @@ impl AssetPicker {
             target_os,
             target_arch,
             target_libc,
+            no_app: false,
         }
+    }
+
+    /// Set whether to avoid .app bundles (prefer standalone CLI tools)
+    pub fn with_no_app(mut self, no_app: bool) -> Self {
+        self.no_app = no_app;
+        self
     }
 
     /// Picks the best asset from available options
@@ -341,6 +347,11 @@ impl AssetPicker {
         if asset.contains(".app.") && self.target_os != "macos" {
             penalty -= 100;
         }
+        // Penalize .app bundles if no_app option is set
+        // .app bundles often contain Xcode extensions or GUI apps, not CLI tools
+        if self.no_app && asset.contains(".app.") {
+            penalty -= 50;
+        }
 
         // Penalize metadata/checksum/signature files
         if asset.ends_with(".asc")
@@ -466,6 +477,8 @@ pub struct AssetMatcher {
     target_arch: Option<String>,
     /// Target libc variant (e.g., "gnu", "musl")
     target_libc: Option<String>,
+    /// Whether to avoid .app bundles
+    no_app: bool,
 }
 
 impl AssetMatcher {
@@ -479,6 +492,12 @@ impl AssetMatcher {
         self.target_os = Some(target.os_name().to_string());
         self.target_arch = Some(target.arch_name().to_string());
         self.target_libc = target.qualifier().map(|s| s.to_string());
+        self
+    }
+
+    /// Set whether to avoid .app bundles (prefer standalone CLI tools)
+    pub fn with_no_app(mut self, no_app: bool) -> Self {
+        self.no_app = no_app;
         self
     }
 
@@ -525,11 +544,10 @@ impl AssetMatcher {
     fn create_picker(&self) -> Option<AssetPicker> {
         let os = self.target_os.as_ref()?;
         let arch = self.target_arch.as_ref()?;
-        Some(AssetPicker::with_libc(
-            os.clone(),
-            arch.clone(),
-            self.target_libc.clone(),
-        ))
+        Some(
+            AssetPicker::with_libc(os.clone(), arch.clone(), self.target_libc.clone())
+                .with_no_app(self.no_app),
+        )
     }
 
     fn match_by_auto_detection(&self, assets: &[String]) -> Result<MatchedAsset> {
@@ -550,14 +568,6 @@ impl AssetMatcher {
 
         Ok(MatchedAsset { name: best })
     }
-}
-
-/// Convenience function to detect the best asset for a target platform
-pub fn detect_asset_for_target(assets: &[String], target: &PlatformTarget) -> Result<String> {
-    AssetMatcher::new()
-        .for_target(target)
-        .pick_from(assets)
-        .map(|m| m.name)
 }
 
 // ========== Checksum Fetching Helpers ==========

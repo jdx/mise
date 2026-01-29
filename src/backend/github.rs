@@ -55,6 +55,7 @@ pub fn install_time_option_keys() -> Vec<String> {
         "asset_pattern".into(),
         "url".into(),
         "version_prefix".into(),
+        "no_app".into(),
     ]
 }
 
@@ -687,7 +688,15 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to auto-detection for target platform
-        let asset_name = asset_matcher::detect_asset_for_target(&available_assets, target)?;
+        let no_app = opts
+            .get("no_app")
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+        let asset_name = asset_matcher::AssetMatcher::new()
+            .for_target(target)
+            .with_no_app(no_app)
+            .pick_from(&available_assets)?
+            .name;
         let asset = self
             .find_asset_case_insensitive(&release.assets, &asset_name, |a| &a.name)
             .ok_or_else(|| {
@@ -774,7 +783,15 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to auto-detection for target platform
-        let asset_name = asset_matcher::detect_asset_for_target(&available_assets, target)?;
+        let no_app = opts
+            .get("no_app")
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+        let asset_name = asset_matcher::AssetMatcher::new()
+            .for_target(target)
+            .with_no_app(no_app)
+            .pick_from(&available_assets)?
+            .name;
         let asset = self
             .find_asset_case_insensitive(&release.assets.links, &asset_name, |a| &a.name)
             .ok_or_else(|| {
@@ -860,7 +877,15 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to auto-detection for target platform
-        let asset_name = asset_matcher::detect_asset_for_target(&available_assets, target)?;
+        let no_app = opts
+            .get("no_app")
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+        let asset_name = asset_matcher::AssetMatcher::new()
+            .for_target(target)
+            .with_no_app(no_app)
+            .pick_from(&available_assets)?
+            .name;
         let asset = self
             .find_asset_case_insensitive(&release.assets, &asset_name, |a| &a.name)
             .ok_or_else(|| {
