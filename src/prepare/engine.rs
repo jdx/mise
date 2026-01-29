@@ -118,11 +118,10 @@ impl PrepareEngine {
             // Skip config files from parent directories - prepare providers
             // should only run from the directory where they are defined.
             // Global/system configs (project_root() == None) are always included.
-            if let Some(cf_project_root) = cf.project_root() {
-                if cf_project_root != project_root {
+            if let Some(cf_project_root) = cf.project_root()
+                && cf_project_root != project_root {
                     continue;
                 }
-            }
 
             for (id, provider_config) in &prepare_config.providers {
                 let provider: Box<dyn PrepareProvider> = if BUILTIN_PROVIDERS.contains(&id.as_str())
