@@ -99,7 +99,7 @@ pub fn notify_if_stale(config: &Arc<Config>) {
         return;
     }
 
-    let Ok(engine) = PrepareEngine::new(config.clone()) else {
+    let Ok(engine) = PrepareEngine::new(config) else {
         return;
     };
 

@@ -281,7 +281,7 @@ impl Run {
         // Run auto-enabled prepare steps (unless --no-prepare)
         if !self.no_prepare {
             let env = ts.env_with_path(&config).await?;
-            let engine = PrepareEngine::new(config.clone())?;
+            let engine = PrepareEngine::new(&config)?;
             engine
                 .run(PrepareOptions {
                     auto_only: true, // Only run providers with auto=true

@@ -1,6 +1,5 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::SystemTime;
 
 use eyre::Result;
@@ -68,19 +67,18 @@ impl PrepareResult {
 
 /// Engine that discovers and runs prepare providers
 pub struct PrepareEngine {
-    config: Arc<Config>,
     providers: Vec<Box<dyn PrepareProvider>>,
 }
 
 impl PrepareEngine {
     /// Create a new PrepareEngine, discovering all applicable providers
-    pub fn new(config: Arc<Config>) -> Result<Self> {
-        let providers = Self::discover_providers(&config)?;
+    pub fn new(config: &Config) -> Result<Self> {
+        let providers = Self::discover_providers(config)?;
         // Only require experimental when prepare is actually configured
         if !providers.is_empty() {
             Settings::get().ensure_experimental("prepare")?;
         }
-        Ok(Self { config, providers })
+        Ok(Self { providers })
     }
 
     /// Discover all applicable prepare providers for the current project
@@ -95,14 +93,8 @@ impl PrepareEngine {
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
         let mut providers: Vec<Box<dyn PrepareProvider>> = vec![];
-
-        // Collect disable lists from all config files
-        let disabled: Vec<String> = config
-            .config_files
-            .values()
-            .filter_map(|cf| cf.prepare_config())
-            .flat_map(|pc| pc.disable)
-            .collect();
+        let mut seen_ids: HashSet<String> = HashSet::new();
+        let mut disabled: Vec<String> = vec![];
 
         // Process each config file's prepare config independently, using that
         // config file's directory as the project root for its providers.
@@ -113,8 +105,6 @@ impl PrepareEngine {
                 continue;
             };
 
-            let config_root = cf.config_root();
-
             // Skip config files from parent directories - prepare providers
             // should only run from the directory where they are defined.
             // Global/system configs (project_root() == None) are always included.
@@ -124,7 +114,17 @@ impl PrepareEngine {
                 continue;
             }
 
+            // Collect disable list scoped to this project root
+            disabled.extend(prepare_config.disable.iter().cloned());
+
+            let config_root = cf.config_root();
+
             for (id, provider_config) in &prepare_config.providers {
+                // Skip duplicate provider IDs (first config file wins)
+                if !seen_ids.insert(id.clone()) {
+                    continue;
+                }
+
                 let provider: Box<dyn PrepareProvider> = if BUILTIN_PROVIDERS.contains(&id.as_str())
                 {
                     // Built-in provider with specialized implementation
@@ -389,10 +389,10 @@ impl PrepareEngine {
         cmd: &super::PrepareCommand,
         toolset_env: &BTreeMap<String, String>,
     ) -> Result<()> {
-        let cwd = cmd
-            .cwd
-            .clone()
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        let cwd = match cmd.cwd.clone() {
+            Some(dir) => dir,
+            None => std::env::current_dir()?,
+        };
 
         let mut runner = CmdLineRunner::new(&cmd.program)
             .args(&cmd.args)
