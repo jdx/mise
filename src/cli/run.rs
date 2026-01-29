@@ -9,6 +9,7 @@ use crate::cli::{Cli, unescape_task_args};
 use crate::config::{Config, Settings};
 use crate::duration;
 use crate::env;
+use crate::file::display_path;
 use crate::prepare::{PrepareEngine, PrepareOptions};
 use crate::task::has_any_args_defined;
 use crate::task::task_helpers::task_needs_permit;
@@ -17,7 +18,7 @@ use crate::task::task_output::TaskOutput;
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::{Deps, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
-use crate::ui::{ctrlc, style};
+use crate::ui::{ctrlc, info, style};
 use clap::{CommandFactory, ValueHint};
 use eyre::{Result, bail, eyre};
 use itertools::Itertools;
@@ -249,14 +250,14 @@ impl Run {
                 // Get usage spec to check if task has defined args/flags
                 let spec = task.parse_usage_spec_for_display(&config).await?;
 
-                // Only show mise help if the task has usage args/flags defined
-                // Otherwise, pass --help through to the underlying command
                 if has_any_args_defined(&spec) {
-                    // Render help using usage library
+                    // Task has usage args/flags defined, render help using usage library
                     println!("{}", usage::docs::cli::render_help(&spec, &spec.cmd, true));
-                    return Ok(());
+                } else {
+                    // Task has no usage defined, show basic task info
+                    display_task_help(task)?;
                 }
-                // Task has no usage defined - fall through to execute with --help passed to task
+                return Ok(());
             } else {
                 // No task found, show run command help
                 self.get_clap_command().print_long_help()?;
@@ -646,6 +647,25 @@ impl Run {
     fn quiet(&self, task: Option<&Task>) -> bool {
         self.output_handler.as_ref().unwrap().quiet(task)
     }
+}
+
+fn display_task_help(task: &Task) -> Result<()> {
+    info::inline_section("Task", &task.display_name)?;
+    if !task.aliases.is_empty() {
+        info::inline_section("Aliases", task.aliases.join(", "))?;
+    }
+    if !task.description.is_empty() {
+        info::inline_section("Description", &task.description)?;
+    }
+    info::inline_section("Source", display_path(&task.config_source))?;
+    if !task.depends.is_empty() {
+        info::inline_section("Depends on", task.depends.iter().join(", "))?;
+    }
+    let run = task.run();
+    if !run.is_empty() {
+        info::section("Run", run.iter().map(|e| e.to_string()).join("\n"))?;
+    }
+    Ok(())
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
