@@ -652,15 +652,14 @@ impl ConfigFile for MiseToml {
             && let Some(env_results) = config.env_results_cached()
         {
             let mut env_vars: EnvMap =
-                if let Some(TeraValue::Object(existing_env)) = context.get("env")
-            {
-                existing_env
-                    .iter()
-                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                    .collect()
-            } else {
-                env::PRISTINE_ENV.clone().into_iter().collect()
-            };
+                if let Some(TeraValue::Object(existing_env)) = context.get("env") {
+                    existing_env
+                        .iter()
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                        .collect()
+                } else {
+                    env::PRISTINE_ENV.clone().into_iter().collect()
+                };
             for key in &env_results.env_remove {
                 env_vars.remove(key);
             }
