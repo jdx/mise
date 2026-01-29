@@ -23,20 +23,22 @@ use crate::{config, hooks};
 
 impl Toolset {
     #[async_backtrace::framed]
+    /// Installs missing tool versions and returns (installed_versions, still_missing_versions).
+    /// This avoids callers needing to re-compute the missing versions list.
     pub async fn install_missing_versions(
         &mut self,
         config: &mut Arc<Config>,
         opts: &InstallOptions,
-    ) -> Result<Vec<ToolVersion>> {
-        // If auto-install is explicitly disabled, skip all automatic installation
+    ) -> Result<(Vec<ToolVersion>, Vec<ToolVersion>)> {
+        let missing = self.list_missing_versions(config).await;
+
+        // If auto-install is explicitly disabled, skip installation but return what's missing
         if opts.skip_auto_install {
-            return Ok(vec![]);
+            return Ok((vec![], missing));
         }
 
-        let mut versions = self
-            .list_missing_versions(config)
-            .await
-            .into_iter()
+        let mut versions = missing
+            .iter()
             .filter(|tv| {
                 !opts.missing_args_only
                     || matches!(self.versions[tv.ba()].source, ToolSource::Argument)
@@ -48,16 +50,20 @@ impl Toolset {
                     true
                 }
             })
-            .map(|tv| tv.request)
+            .map(|tv| tv.request.clone())
             .collect_vec();
         // Ensure options from toolset are preserved during auto-install
         self.init_request_options(&mut versions);
-        let versions = self.install_all_versions(config, versions, opts).await?;
-        if !versions.is_empty() {
+        let installed = self.install_all_versions(config, versions, opts).await?;
+        if !installed.is_empty() {
             let ts = config.get_toolset().await?;
-            config::rebuild_shims_and_runtime_symlinks(config, ts, &versions).await?;
+            config::rebuild_shims_and_runtime_symlinks(config, ts, &installed).await?;
+            // Re-check what's still missing after installation
+            let still_missing = self.list_missing_versions(config).await;
+            return Ok((installed, still_missing));
         }
-        Ok(versions)
+        // Nothing was installed, the missing list is unchanged
+        Ok((installed, missing))
     }
 
     /// sets the options on incoming requests to install to whatever is already in the toolset

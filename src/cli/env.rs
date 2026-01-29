@@ -50,9 +50,10 @@ impl Env {
             .with_args(&self.tool)
             .build(&config)
             .await?;
-        ts.install_missing_versions(&mut config, &InstallOptions::default())
+        let (_, missing) = ts
+            .install_missing_versions(&mut config, &InstallOptions::default())
             .await?;
-        ts.notify_if_versions_missing(&config).await;
+        ts.notify_missing_versions(missing);
 
         // Get redacted keys if needed
         let redacted_keys = if self.redacted {

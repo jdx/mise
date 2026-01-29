@@ -276,7 +276,7 @@ impl Run {
             raw: self.raw,
             ..Default::default()
         };
-        ts.install_missing_versions(&mut config, &opts).await?;
+        let _ = ts.install_missing_versions(&mut config, &opts).await?;
 
         // Run auto-enabled prepare steps (unless --no-prepare)
         if !self.no_prepare {
