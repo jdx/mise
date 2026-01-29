@@ -665,6 +665,22 @@ fn display_task_help(task: &Task) -> Result<()> {
     if !run.is_empty() {
         info::section("Run", run.iter().map(|e| e.to_string()).join("\n"))?;
     }
+    miseprintln!();
+    if task.file.is_some() {
+        miseprintln!("This task does not accept any arguments.");
+        miseprintln!("To define arguments, add #USAGE comments to the script file.");
+        miseprintln!(
+            "See https://mise.jdx.dev/tasks/task-configuration.html for more information."
+        );
+    } else {
+        miseprintln!("This task does not accept any arguments.");
+        miseprintln!(
+            "To define arguments, add a `usage` field to the task definition in the config file."
+        );
+        miseprintln!(
+            "See https://mise.jdx.dev/tasks/task-configuration.html for more information."
+        );
+    }
     Ok(())
 }
 
