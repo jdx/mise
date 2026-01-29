@@ -358,11 +358,15 @@ impl Toolset {
     }
 
     pub async fn notify_if_versions_missing(&self, config: &Arc<Config>) {
+        let missing_versions = self.list_missing_versions(config).await;
+        self.notify_missing_versions(missing_versions);
+    }
+
+    pub fn notify_missing_versions(&self, missing_versions: Vec<ToolVersion>) {
         if Settings::get().status.missing_tools() == SettingsStatusMissingTools::Never {
             return;
         }
         let mut missing = vec![];
-        let missing_versions = self.list_missing_versions(config).await;
         for tv in missing_versions.into_iter() {
             if Settings::get().status.missing_tools() == SettingsStatusMissingTools::Always {
                 missing.push(tv);

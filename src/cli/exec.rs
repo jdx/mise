@@ -111,7 +111,7 @@ impl Exec {
             resolve_options,
             ..Default::default()
         };
-        measure!("install_arg_versions", {
+        let (_, missing) = measure!("install_arg_versions", {
             ts.install_missing_versions(&mut config, &opts).await?
         });
 
@@ -121,7 +121,7 @@ impl Exec {
         }
 
         measure!("notify_if_versions_missing", {
-            ts.notify_if_versions_missing(&config).await;
+            ts.notify_missing_versions(missing);
         });
 
         let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);

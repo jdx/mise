@@ -67,8 +67,8 @@ impl Shell {
             raw: self.raw,
             ..Default::default()
         };
-        ts.install_missing_versions(&mut config, &opts).await?;
-        ts.notify_if_versions_missing(&config).await;
+        let (_, missing) = ts.install_missing_versions(&mut config, &opts).await?;
+        ts.notify_missing_versions(missing);
 
         for (p, tv) in ts.list_current_installed_versions(&config) {
             let source = &ts.versions.get(p.ba().as_ref()).unwrap().source;

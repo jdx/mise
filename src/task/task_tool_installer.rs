@@ -166,16 +166,17 @@ impl<'a> TaskToolInstaller<'a> {
 
     /// Install missing versions from the toolset
     async fn install_toolset(&self, config: &mut Arc<Config>, mut ts: Toolset) -> Result<()> {
-        ts.install_missing_versions(
-            config,
-            &InstallOptions {
-                missing_args_only: !Settings::get().task_run_auto_install,
-                skip_auto_install: !Settings::get().task_run_auto_install
-                    || !Settings::get().auto_install,
-                ..Default::default()
-            },
-        )
-        .await?;
+        let _ = ts
+            .install_missing_versions(
+                config,
+                &InstallOptions {
+                    missing_args_only: !Settings::get().task_run_auto_install,
+                    skip_auto_install: !Settings::get().task_run_auto_install
+                        || !Settings::get().auto_install,
+                    ..Default::default()
+                },
+            )
+            .await?;
 
         Ok(())
     }
