@@ -215,8 +215,8 @@ impl TestTool {
             raw: self.raw,
             ..Default::default()
         };
-        ts.install_missing_versions(config, &opts).await?;
-        ts.notify_if_versions_missing(config).await;
+        let (_, missing) = ts.install_missing_versions(config, &opts).await?;
+        ts.notify_missing_versions(missing);
         let tv = if let Some(tv) = ts
             .versions
             .get(tool.ba.as_ref())

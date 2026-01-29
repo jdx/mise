@@ -535,7 +535,13 @@ async fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
         .and_then(|f| f.to_str())
         .unwrap_or("mise.toml")
     {
-        f if filename_is_idiomatic(f.to_string()).await => Some(ConfigFileType::IdiomaticVersion),
+        // Check .toml and known mise config filenames before the expensive idiomatic
+        // lookup which may trigger Lua VM initialization for vfox plugins.
+        // Idiomatic .toml files (e.g. rust-toolchain.toml) are handled earlier in
+        // parse_config_file() via the pre-computed idiomatic_filenames map.
+        f if f.ends_with(".toml") => Some(ConfigFileType::MiseToml),
+        f if env::MISE_OVERRIDE_CONFIG_FILENAMES.contains(f) => Some(ConfigFileType::MiseToml),
+        f if env::MISE_DEFAULT_CONFIG_FILENAME.as_str() == f => Some(ConfigFileType::MiseToml),
         f if env::MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES
             .as_ref()
             .is_some_and(|o| o.contains(f)) =>
@@ -545,9 +551,7 @@ async fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
         f if env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str() == f => {
             Some(ConfigFileType::ToolVersions)
         }
-        f if f.ends_with(".toml") => Some(ConfigFileType::MiseToml),
-        f if env::MISE_OVERRIDE_CONFIG_FILENAMES.contains(f) => Some(ConfigFileType::MiseToml),
-        f if env::MISE_DEFAULT_CONFIG_FILENAME.as_str() == f => Some(ConfigFileType::MiseToml),
+        f if filename_is_idiomatic(f.to_string()).await => Some(ConfigFileType::IdiomaticVersion),
         _ => None,
     }
 }
@@ -604,10 +608,6 @@ mod tests {
         assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/mise.toml")).await,
             Some(ConfigFileType::MiseToml)
-        );
-        assert_eq!(
-            detect_config_file_type(Path::new("/foo/bar/rust-toolchain.toml")).await,
-            Some(ConfigFileType::IdiomaticVersion)
         );
     }
 }
