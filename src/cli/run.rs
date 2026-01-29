@@ -650,7 +650,12 @@ impl Run {
 }
 
 fn display_task_help(task: &Task) -> Result<()> {
-    info::inline_section("Task", &task.display_name)?;
+    let name = if task.display_name.is_empty() {
+        &task.name
+    } else {
+        &task.display_name
+    };
+    info::inline_section("Task", name)?;
     if !task.aliases.is_empty() {
         info::inline_section("Aliases", task.aliases.join(", "))?;
     }
