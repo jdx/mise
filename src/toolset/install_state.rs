@@ -38,6 +38,9 @@ pub struct InstallStateTool {
 /// Versions are NOT stored here — they come from the filesystem.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ManifestTool {
+    /// Original short name (e.g. "github:jdx/mise-test-fixtures").
+    /// May differ from the manifest key (which is the kebab-cased dir name).
+    short: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     full: Option<String>,
     #[serde(default = "default_true")]
@@ -53,6 +56,7 @@ type Manifest = BTreeMap<String, ManifestTool>;
 
 static INSTALL_STATE_PLUGINS: Mutex<Option<Arc<InstallStatePlugins>>> = Mutex::new(None);
 static INSTALL_STATE_TOOLS: Mutex<Option<Arc<InstallStateTools>>> = Mutex::new(None);
+static MANIFEST_LOCK: Mutex<()> = Mutex::new(());
 
 fn manifest_path() -> PathBuf {
     dirs::INSTALLS.join(".mise-installs.toml")
@@ -219,12 +223,13 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
 
         // Get metadata: prefer manifest, fall back to legacy .mise.backend
         let (short, full, explicit_backend) = if let Some(mt) = manifest.get(&dir_name) {
-            (dir_name.clone(), mt.full.clone(), mt.explicit_backend)
+            (mt.short.clone(), mt.full.clone(), mt.explicit_backend)
         } else if let Some((s, full, explicit)) = read_legacy_backend_meta(&dir_name) {
             // Migration: absorb into manifest
             updated_manifest.insert(
                 dir_name.clone(),
                 ManifestTool {
+                    short: s.clone(),
                     full: full.clone(),
                     explicit_backend: explicit,
                 },
@@ -355,10 +360,12 @@ pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
     };
     let explicit = ba.has_explicit_backend();
 
+    let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
     let mut manifest = read_manifest();
     manifest.insert(
         ba.short.to_kebab_case(),
         ManifestTool {
+            short: ba.short.clone(),
             full: Some(full),
             explicit_backend: explicit,
         },
@@ -464,6 +471,7 @@ mod tests {
         manifest.insert(
             "node".to_string(),
             ManifestTool {
+                short: "node".to_string(),
                 full: Some("core:node".to_string()),
                 explicit_backend: true,
             },
@@ -471,6 +479,7 @@ mod tests {
         manifest.insert(
             "bun".to_string(),
             ManifestTool {
+                short: "bun".to_string(),
                 full: Some("aqua:oven-sh/bun".to_string()),
                 explicit_backend: false,
             },
@@ -478,6 +487,7 @@ mod tests {
         manifest.insert(
             "tiny".to_string(),
             ManifestTool {
+                short: "tiny".to_string(),
                 full: None,
                 explicit_backend: true,
             },
