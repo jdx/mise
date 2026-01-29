@@ -638,17 +638,17 @@ impl Task {
             })
             .flatten_ok()
             .filter_map_ok(|(t, td)| {
-                if td.env.is_empty() {
+                if td.env.is_empty() && td.args.is_empty() {
                     // Name-based matching: wait for any running instance of this task
-                    // regardless of env variant (e.g., "VERBOSE=1 setup" matches "setup").
+                    // regardless of env/args variant (e.g., "VERBOSE=1 setup" matches "setup").
                     // Return the actual task from tasks_to_run so the dependency graph
-                    // gets the correct env-variant node.
+                    // gets the correct env/args-variant node.
                     tasks_to_run
                         .iter()
                         .find(|tr| tr.name == t.name)
                         .map(|tr| (*tr).clone())
                 } else {
-                    // Full identity matching: user explicitly wants a specific env variant
+                    // Full identity matching: user explicitly wants a specific env/args variant
                     tasks_to_run.contains(&t).then_some(t)
                 }
             })

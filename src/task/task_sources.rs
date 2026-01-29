@@ -83,21 +83,22 @@ impl TaskOutputs {
         config_root: &std::path::Path,
     ) -> eyre::Result<()> {
         if let TaskOutputs::Files(files) = self
-            && let Some(raw_templates) = raw.templates.as_ref() {
-                let mut tera = crate::tera::get_tera(Some(config_root));
-                let mut ctx = tera::Context::new();
-                // Start with original env from initial render, then overlay dependency env
-                let mut env_map = raw.original_env.clone().unwrap_or_default();
-                for (k, v) in env {
-                    env_map.insert(k.clone(), v.clone());
-                }
-                ctx.insert("env", &env_map);
-                ctx.insert("config_root", &config_root.to_string_lossy().to_string());
-                *files = raw_templates
-                    .iter()
-                    .map(|tmpl| tera.render_str(tmpl, &ctx))
-                    .collect::<Result<Vec<_>, _>>()?;
+            && let Some(raw_templates) = raw.templates.as_ref()
+        {
+            let mut tera = crate::tera::get_tera(Some(config_root));
+            let mut ctx = tera::Context::new();
+            // Start with original env from initial render, then overlay dependency env
+            let mut env_map = raw.original_env.clone().unwrap_or_default();
+            for (k, v) in env {
+                env_map.insert(k.clone(), v.clone());
             }
+            ctx.insert("env", &env_map);
+            ctx.insert("config_root", &config_root.to_string_lossy().to_string());
+            *files = raw_templates
+                .iter()
+                .map(|tmpl| tera.render_str(tmpl, &ctx))
+                .collect::<Result<Vec<_>, _>>()?;
+        }
         Ok(())
     }
 }
