@@ -274,3 +274,4 @@ backend = "aqua:tamasfe/taplo"
 version = "1.1.1"
 backend = "ubi:jdx/wait-for-gh-rate-limit"
 "platforms.linux-x64-wait-for-gh-rate-limit" = { checksum = "blake3:35c2fa30b45ee4a1437624f21c36b3a0b03f57c286429f45f7a4f31d83a15ee9"}
+"platforms.macos-arm64-wait-for-gh-rate-limit" = { checksum = "blake3:e9508be5750b178b11e3091395de5329a830e241d7b6020c00d43a139e415c70"}

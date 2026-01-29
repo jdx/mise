@@ -251,6 +251,7 @@ impl Config {
         });
 
         let config = Arc::new(config);
+        config.env_results().await?;
         *_CONFIG.write().unwrap() = Some(config.clone());
         Ok(config)
     }
@@ -308,13 +309,16 @@ impl Config {
             .await
     }
 
+    pub fn env_results_cached(&self) -> Option<&EnvResults> {
+        self.env.get()
+    }
     pub fn vars_results_cached(&self) -> Option<&EnvResults> {
         self.vars_results.get()
     }
     pub async fn path_dirs(self: &Arc<Self>) -> eyre::Result<&Vec<PathBuf>> {
         Ok(&self.env_results().await?.env_paths)
     }
-    pub async fn get_tool_request_set(&self) -> eyre::Result<&ToolRequestSet> {
+    pub async fn get_tool_request_set(self: &Arc<Self>) -> eyre::Result<&ToolRequestSet> {
         self.tool_request_set
             .get_or_try_init(async || ToolRequestSetBuilder::new().build(self).await)
             .await
