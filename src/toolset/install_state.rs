@@ -89,6 +89,8 @@ fn write_manifest(manifest: &Manifest) -> Result<()> {
 }
 
 /// Read a legacy `.mise.backend` file for migration purposes.
+///
+/// Returns `Some((short, full, explicit_backend))` if legacy metadata is found.
 fn read_legacy_backend_meta(short: &str) -> Option<(String, Option<String>, bool)> {
     // Try .mise.backend.json first (oldest format)
     let json_path = dirs::INSTALLS.join(short).join(".mise.backend.json");
@@ -192,11 +194,9 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
     // 2. List install dirs (1 syscall)
     let subdirs = file::dir_subdirs(&dirs::INSTALLS)?;
 
-    // 3. Track whether we need to update the manifest (migration happened)
-    let mut migrated = false;
-    let mut updated_manifest = manifest.clone();
-
-    // 4. For each dir, read versions from filesystem and merge with manifest metadata
+    // 3. For each dir, read versions from filesystem and merge with manifest metadata.
+    //    Only clone the manifest for mutation if we actually need to migrate legacy entries.
+    let mut updated_manifest: Option<Manifest> = None;
     let mut tools = BTreeMap::new();
     for dir_name in subdirs {
         let dir = dirs::INSTALLS.join(&dir_name);
@@ -225,8 +225,9 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
         let (short, full, explicit_backend) = if let Some(mt) = manifest.get(&dir_name) {
             (mt.short.clone(), mt.full.clone(), mt.explicit_backend)
         } else if let Some((s, full, explicit)) = read_legacy_backend_meta(&dir_name) {
-            // Migration: absorb into manifest
-            updated_manifest.insert(
+            // Migration: absorb into manifest (clone on first migration)
+            let m = updated_manifest.get_or_insert_with(|| manifest.clone());
+            m.insert(
                 dir_name.clone(),
                 ManifestTool {
                     short: s.clone(),
@@ -234,7 +235,6 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                     explicit_backend: explicit,
                 },
             );
-            migrated = true;
             (s, full, explicit)
         } else {
             (dir_name.clone(), None, true)
@@ -251,8 +251,11 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
     }
 
     // Write updated manifest if we migrated any legacy entries
-    if migrated && let Err(err) = write_manifest(&updated_manifest) {
-        warn!("failed to write install manifest: {err:#}");
+    if let Some(ref m) = updated_manifest {
+        let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
+        if let Err(err) = write_manifest(m) {
+            warn!("failed to write install manifest: {err:#}");
+        }
     }
 
     for (short, pt) in init_plugins().await?.iter() {
