@@ -55,6 +55,7 @@ pub fn install_time_option_keys() -> Vec<String> {
         "asset_pattern".into(),
         "url".into(),
         "version_prefix".into(),
+        "no_app".into(),
     ]
 }
 
@@ -503,6 +504,13 @@ impl UnifiedGitBackend {
             return Ok(vec![bin_path]);
         }
 
+        // Check for macOS .app bundle structure at root (happens when auto-strip removed .app wrapper)
+        // Look for Contents/MacOS/ which indicates a stripped .app bundle
+        let contents_macos = tv.install_path().join("Contents").join("MacOS");
+        if contents_macos.is_dir() {
+            return Ok(vec![contents_macos]);
+        }
+
         // Check if the root directory contains an executable file
         // If so, use the root directory as a bin path
         if let Ok(entries) = std::fs::read_dir(tv.install_path()) {
@@ -520,6 +528,15 @@ impl UnifiedGitBackend {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
+                    // Check for macOS .app bundles (e.g., SwiftFormat.app/Contents/MacOS/)
+                    let path_str = path.file_name().unwrap_or_default().to_string_lossy();
+                    if path_str.ends_with(".app") {
+                        let macos_dir = path.join("Contents").join("MacOS");
+                        if macos_dir.is_dir() {
+                            paths.push(macos_dir);
+                            continue;
+                        }
+                    }
                     // Check for {subdir}/bin
                     let sub_bin_path = path.join("bin");
                     if sub_bin_path.exists() {
@@ -671,7 +688,15 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to auto-detection for target platform
-        let asset_name = asset_matcher::detect_asset_for_target(&available_assets, target)?;
+        let no_app = opts
+            .get("no_app")
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+        let asset_name = asset_matcher::AssetMatcher::new()
+            .for_target(target)
+            .with_no_app(no_app)
+            .pick_from(&available_assets)?
+            .name;
         let asset = self
             .find_asset_case_insensitive(&release.assets, &asset_name, |a| &a.name)
             .ok_or_else(|| {
@@ -758,7 +783,15 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to auto-detection for target platform
-        let asset_name = asset_matcher::detect_asset_for_target(&available_assets, target)?;
+        let no_app = opts
+            .get("no_app")
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+        let asset_name = asset_matcher::AssetMatcher::new()
+            .for_target(target)
+            .with_no_app(no_app)
+            .pick_from(&available_assets)?
+            .name;
         let asset = self
             .find_asset_case_insensitive(&release.assets.links, &asset_name, |a| &a.name)
             .ok_or_else(|| {
@@ -844,7 +877,15 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to auto-detection for target platform
-        let asset_name = asset_matcher::detect_asset_for_target(&available_assets, target)?;
+        let no_app = opts
+            .get("no_app")
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+        let asset_name = asset_matcher::AssetMatcher::new()
+            .for_target(target)
+            .with_no_app(no_app)
+            .pick_from(&available_assets)?
+            .name;
         let asset = self
             .find_asset_case_insensitive(&release.assets, &asset_name, |a| &a.name)
             .ok_or_else(|| {

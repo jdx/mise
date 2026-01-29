@@ -168,6 +168,27 @@ rename_exe = "yt-dlp"  # Rename the extracted binary to yt-dlp
 Use `rename_exe` for archives where the binary inside has a different name than desired. Use `bin` for single binary downloads (non-archives).
 :::
 
+### `no_app`
+
+Skip macOS .app bundle assets during autodetection and prefer standalone CLI binaries instead. This is useful when a repository provides both a macOS .app bundle (often an Xcode extension or GUI application) and a standalone command-line tool:
+
+```toml
+[tools."github:nicklockwood/SwiftFormat"]
+version = "latest"
+rename_exe = "swiftformat"
+no_app = true  # Skip SwiftFormat.for.Xcode.app.zip, use swiftformat.zip instead
+```
+
+When `no_app = true`:
+
+- Assets containing `.app.` (e.g., `Tool.app.zip`, `Tool.for.Xcode.app.zip`) are penalized during autodetection
+- Standalone archives (e.g., `tool.zip`, `tool-macos.tar.gz`) are preferred
+- Only affects macOS; has no effect on Linux/Windows
+
+::: info
+Without this option, mise's autodetection might select .app bundles on macOS, which can be problematic if the bundle contains a GUI application or Xcode extension rather than a standalone CLI tool.
+:::
+
 ### `bin_path`
 
 Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports Tera templating with variables like `{{ version }}`, `{{ os }}`, `{{ arch }}`, and arch aliases (`{{ darwin_os }}`, `{{ amd64_arch }}`, `{{ x86_64_arch }}`, `{{ gnu_arch }}`):

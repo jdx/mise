@@ -1,5 +1,5 @@
 backends = [
-  "github:nicklockwood/SwiftFormat[rename_exe=swiftformat]",
+  "github:nicklockwood/SwiftFormat[rename_exe=swiftformat,no_app=true]",
   "asdf:mise-plugins/mise-swiftformat",
 ]
 description = "A command-line tool and Xcode Extension for formatting Swift code"
