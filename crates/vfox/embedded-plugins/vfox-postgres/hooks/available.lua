@@ -31,9 +31,9 @@ function PLUGIN:Available(ctx)
         end
     end
 
-    -- Sort versions semantically (ascending order - oldest first)
+    -- Sort versions semantically (descending order - newest first)
     table.sort(result, function(a, b)
-        return compare_versions(a.version, b.version)
+        return compare_versions(b.version, a.version)
     end)
 
     return result
