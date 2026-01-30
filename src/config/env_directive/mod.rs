@@ -531,7 +531,19 @@ impl EnvResults {
                     .await?;
                 }
                 EnvDirective::Module(name, value, _opts) => {
-                    Self::module(&mut r, source, name, &value, redact.unwrap_or(false)).await?;
+                    let env_map: IndexMap<String, String> = env
+                        .iter()
+                        .map(|(k, (v, _))| (k.clone(), v.clone()))
+                        .collect();
+                    Self::module(
+                        &mut r,
+                        source,
+                        name,
+                        &value,
+                        redact.unwrap_or(false),
+                        env_map,
+                    )
+                    .await?;
                 }
             };
         }

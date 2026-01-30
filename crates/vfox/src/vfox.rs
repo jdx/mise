@@ -229,11 +229,17 @@ impl Vfox {
         sdk.env_keys(ctx).await
     }
 
-    pub async fn mise_env<T: serde::Serialize>(&self, sdk: &str, opts: T) -> Result<MiseEnvResult> {
+    pub async fn mise_env<T: serde::Serialize>(
+        &self,
+        sdk: &str,
+        opts: T,
+        env: &indexmap::IndexMap<String, String>,
+    ) -> Result<MiseEnvResult> {
         let plugin = self.get_sdk(sdk)?;
         if !plugin.get_metadata()?.hooks.contains("mise_env") {
             return Ok(MiseEnvResult::default());
         }
+        plugin.set_cmd_env(env)?;
         let ctx = MiseEnvContext {
             args: vec![],
             options: opts,
@@ -282,11 +288,17 @@ impl Vfox {
         plugin.backend_exec_env(ctx).await.map(|r| r.env_vars)
     }
 
-    pub async fn mise_path<T: serde::Serialize>(&self, sdk: &str, opts: T) -> Result<Vec<String>> {
+    pub async fn mise_path<T: serde::Serialize>(
+        &self,
+        sdk: &str,
+        opts: T,
+        env: &indexmap::IndexMap<String, String>,
+    ) -> Result<Vec<String>> {
         let plugin = self.get_sdk(sdk)?;
         if !plugin.get_metadata()?.hooks.contains("mise_path") {
             return Ok(vec![]);
         }
+        plugin.set_cmd_env(env)?;
         let ctx = MisePathContext {
             args: vec![],
             options: opts,

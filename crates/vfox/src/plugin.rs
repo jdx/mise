@@ -89,6 +89,17 @@ impl Plugin {
         matches!(self.source, PluginSource::Embedded(_))
     }
 
+    /// Store an environment map in the Lua registry for use by cmd.exec().
+    /// This allows env module hooks to run commands that find mise-managed tools on PATH.
+    pub fn set_cmd_env(&self, env: &indexmap::IndexMap<String, String>) -> Result<()> {
+        let table = self.lua.create_table()?;
+        for (k, v) in env {
+            table.set(k.as_str(), v.as_str())?;
+        }
+        self.lua.set_named_registry_value("mise_env", table)?;
+        Ok(())
+    }
+
     pub fn list() -> Result<Vec<String>> {
         let config = Config::get();
         if !config.plugin_dir.exists() {

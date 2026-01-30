@@ -72,9 +72,13 @@ impl VfoxPlugin {
         vfox_to_url(url)
     }
 
-    pub async fn mise_env(&self, opts: &toml::Value) -> Result<Option<MiseEnvResponse>> {
+    pub async fn mise_env(
+        &self,
+        opts: &toml::Value,
+        env: &IndexMap<String, String>,
+    ) -> Result<Option<MiseEnvResponse>> {
         let (vfox, _) = self.vfox();
-        let result = vfox.mise_env(&self.name, opts).await?;
+        let result = vfox.mise_env(&self.name, opts, env).await?;
         let mut env = indexmap!();
         for ek in result.env {
             env.insert(ek.key, ek.value);
@@ -86,10 +90,14 @@ impl VfoxPlugin {
         }))
     }
 
-    pub async fn mise_path(&self, opts: &toml::Value) -> Result<Option<Vec<String>>> {
+    pub async fn mise_path(
+        &self,
+        opts: &toml::Value,
+        env: &IndexMap<String, String>,
+    ) -> Result<Option<Vec<String>>> {
         let (vfox, _) = self.vfox();
         let mut out = vec![];
-        let results = vfox.mise_path(&self.name, opts).await?;
+        let results = vfox.mise_path(&self.name, opts, env).await?;
         for env in results {
             out.push(env);
         }

@@ -3,6 +3,7 @@ use crate::config::env_directive::EnvResults;
 use crate::dirs;
 use crate::plugins::vfox_plugin::VfoxPlugin;
 use heck::ToKebabCase;
+use indexmap::IndexMap;
 use std::path::PathBuf;
 use toml::Value;
 
@@ -13,10 +14,11 @@ impl EnvResults {
         name: String,
         value: &Value,
         redact: bool,
+        env: IndexMap<String, String>,
     ) -> Result<()> {
         let path = dirs::PLUGINS.join(name.to_kebab_case());
         let plugin = VfoxPlugin::new(name, path.clone());
-        if let Some(response) = plugin.mise_env(value).await? {
+        if let Some(response) = plugin.mise_env(value, &env).await? {
             // Track cacheability
             if !response.cacheable {
                 r.has_uncacheable = true;
@@ -46,7 +48,7 @@ impl EnvResults {
                 r.env.insert(k, (v, source.clone()));
             }
         }
-        if let Some(path) = plugin.mise_path(value).await? {
+        if let Some(path) = plugin.mise_path(value, &env).await? {
             for p in path {
                 r.env_paths.push(p.into());
             }
