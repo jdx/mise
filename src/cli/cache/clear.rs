@@ -3,6 +3,7 @@ use crate::file::{display_path, remove_all};
 use crate::toolset::env_cache::CachedEnv;
 use eyre::Result;
 use filetime::set_file_times;
+use heck::ToKebabCase;
 use walkdir::WalkDir;
 
 /// Deletes all cache files in mise
@@ -21,7 +22,18 @@ pub struct CacheClear {
 impl CacheClear {
     pub fn run(self) -> Result<()> {
         let cache_dirs = match &self.plugin {
-            Some(plugins) => plugins.iter().map(|p| CACHE.join(p)).collect(),
+            Some(plugins) => plugins
+                .iter()
+                .filter_map(|p| {
+                    let kebab = p.to_kebab_case();
+                    if kebab.is_empty() {
+                        warn!("invalid plugin name: {p}");
+                        None
+                    } else {
+                        Some(CACHE.join(kebab))
+                    }
+                })
+                .collect(),
             None => vec![CACHE.to_path_buf()],
         };
         if self.outdate {
