@@ -5,7 +5,7 @@ test = ["daytona version", "Daytona CLI version v{{version}}"]
 full = "github:daytonaio/daytona[bin=daytona]"
 
 [backends.options]
-asset_pattern = "daytona-cli-v{{ version }}-{{ os(macos='darwin') }}-{{ arch(x64='amd64') }}{% if os() == 'windows' %}.exe{% endif %}"
+asset_pattern = "daytona-{{ os(macos='darwin') }}-{{ arch(x64='amd64') }}{% if os() == 'windows' %}.exe{% endif %}"
 
 [backends.options.platforms.windows-x64]
 bin = "daytona.exe"
