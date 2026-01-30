@@ -1335,30 +1335,17 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
     let mut tera = crate::tera::get_tera(None);
     // Register target-aware os() and arch() functions that use the target platform
     // instead of the compile-time platform
-    let target_os = os.to_string();
-    tera.register_function(
-        "os",
+    let make_remapping_fn = |value: String| {
         move |args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
-            if let Some(remapped) = args.get(target_os.as_str())
-                && let Some(s) = remapped.as_str()
-            {
-                return Ok(tera::Value::String(s.to_string()));
+            if let Some(s) = args.get(value.as_str()).and_then(|v| v.as_str()) {
+                Ok(tera::Value::String(s.to_string()))
+            } else {
+                Ok(tera::Value::String(value.clone()))
             }
-            Ok(tera::Value::String(target_os.clone()))
-        },
-    );
-    let target_arch = arch.to_string();
-    tera.register_function(
-        "arch",
-        move |args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
-            if let Some(remapped) = args.get(target_arch.as_str())
-                && let Some(s) = remapped.as_str()
-            {
-                return Ok(tera::Value::String(s.to_string()));
-            }
-            Ok(tera::Value::String(target_arch.clone()))
-        },
-    );
+        }
+    };
+    tera.register_function("os", make_remapping_fn(os.to_string()));
+    tera.register_function("arch", make_remapping_fn(arch.to_string()));
 
     match tera.render_str(template, &ctx) {
         Ok(rendered) => rendered,
