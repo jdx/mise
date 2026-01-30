@@ -4,17 +4,8 @@ test = ["daytona version", "Daytona CLI version v{{version}}"]
 [[backends]]
 full = "github:daytonaio/daytona[bin=daytona]"
 
-[backends.options.platforms.macos-arm64]
-asset_pattern = "daytona-darwin-arm64"
-
-[backends.options.platforms.macos-x64]
-asset_pattern = "daytona-darwin-amd64"
-
-[backends.options.platforms.linux-x64]
-asset_pattern = "daytona-linux-amd64"
-
-[backends.options.platforms.linux-arm64]
-asset_pattern = "daytona-linux-arm64"
+[backends.options]
+asset_pattern = "daytona-cli-v{{ version }}-{{ os(macos='darwin') }}-{{ arch(x64='amd64') }}{% if os() == 'windows' %}.exe{% endif %}"
 
 [[backends]]
 full = "asdf:mise-plugins/mise-daytona"
