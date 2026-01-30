@@ -28,12 +28,18 @@ def get_repo(tool: str) -> str | None:
             return None
         data = json.loads(result.stdout)
         backend = data.get("backend", "")
-        # backend looks like "github:owner/repo[bin=x]" or "aqua:owner/repo"
+        # backend looks like "github:owner/repo[bin=x]" or "aqua:owner/repo/subpath"
         for prefix in ("github:", "aqua:"):
             if backend.startswith(prefix):
                 repo = backend[len(prefix):]
                 # strip any trailing [options]
-                return repo.split("[")[0]
+                repo = repo.split("[")[0]
+                # aqua backends can have subpaths (e.g. kubernetes/kubernetes/kubectl)
+                # extract just owner/repo for the GitHub API
+                parts = repo.split("/")
+                if len(parts) >= 2:
+                    return f"{parts[0]}/{parts[1]}"
+                return None
         return None
     except (subprocess.TimeoutExpired, json.JSONDecodeError, KeyError):
         return None
