@@ -74,11 +74,17 @@ impl FromIterator<PathBuf> for PathEnv {
     }
 }
 
+impl PathEnv {
+    pub fn from_path_str(path: &str) -> Self {
+        Self::from_iter(split_paths(path))
+    }
+}
+
 impl FromStr for PathEnv {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self::from_iter(split_paths(s)))
+        Ok(Self::from_path_str(s))
     }
 }
 

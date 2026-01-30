@@ -1263,8 +1263,14 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             env.extend(flatten_directives(directives.path, EnvDirective::Path));
                             env.extend(flatten_directives(directives.file, EnvDirective::File));
                             env.extend(flatten_directives(directives.source, EnvDirective::Source));
-                            for (key, value) in directives.other {
-                                env.push(EnvDirective::Module(key, value, Default::default()));
+                            for (key, mut value) in directives.other {
+                                let mut opts = EnvDirectiveOptions::default();
+                                if let Some(table) = value.as_table_mut() {
+                                    if let Some(tools) = table.remove("tools") {
+                                        opts.tools = tools.as_bool().unwrap_or(false);
+                                    }
+                                }
+                                env.push(EnvDirective::Module(key, value, opts));
                             }
                             if let Some(venv) = directives.python.venv {
                                 env.push(EnvDirective::PythonVenv {

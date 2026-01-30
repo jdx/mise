@@ -89,6 +89,10 @@ function PLUGIN:MiseEnv(ctx)
 end
 ```
 
+::: tip
+When `cmd.exec()` is called from `MiseEnv` or `MisePath` hooks, it inherits the mise-constructed environment — including `_.path` entries and environment variables from preceding directives. If the module directive is configured with `tools = true` (e.g., `_.my-plugin = { tools = true }`), tool installation bin paths are also included, so mise-managed tools are directly callable (e.g., `cmd.exec("node --version")`).
+:::
+
 **Return value**: Either a simple array of env keys, or a table with caching metadata.
 
 Simple format - array of tables, each with:

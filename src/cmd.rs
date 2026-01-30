@@ -23,6 +23,7 @@ use crate::env;
 use crate::env::PATH_KEY;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
+use crate::path_env::PathEnv;
 use crate::ui::progress_report::SingleReport;
 
 /// Create a command with any number of of positional arguments
@@ -227,11 +228,11 @@ impl<'a> CmdLineRunner<'a> {
             .get_env(&PATH_KEY)
             .map(|c| c.to_owned())
             .unwrap_or_else(|| env::var_os(&*PATH_KEY).unwrap());
-        let paths = paths
-            .into_iter()
-            .chain(env::split_paths(&existing))
-            .collect::<Vec<_>>();
-        self.cmd.env(&*PATH_KEY, env::join_paths(paths)?);
+        let mut path_env = PathEnv::from_iter(env::split_paths(&existing));
+        for p in paths {
+            path_env.add(p);
+        }
+        self.cmd.env(&*PATH_KEY, path_env.join());
         Ok(self)
     }
 

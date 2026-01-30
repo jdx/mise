@@ -3,6 +3,7 @@ use crate::dirs;
 use crate::env;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
+use crate::path_env::PathEnv;
 use crate::tera::{get_tera, tera_exec};
 use eyre::{Context, eyre};
 use indexmap::IndexMap;
@@ -540,23 +541,17 @@ impl EnvResults {
                     if !paths.is_empty() {
                         let config_root =
                             crate::config::config_file::config_root::config_root(&source);
-                        let extra: Vec<PathBuf> = paths
+                        let existing_path =
+                            env_map.get(&*env::PATH_KEY).cloned().unwrap_or_default();
+                        let mut path_env = PathEnv::from_path_str(&existing_path);
+                        for p in paths
                             .iter()
                             .flat_map(|(p, _)| env::split_paths(p))
                             .map(|s| normalize_path(&config_root, s))
-                            .collect();
-                        let existing_path =
-                            env_map.get(&*env::PATH_KEY).cloned().unwrap_or_default();
-                        let all: Vec<PathBuf> = extra
-                            .into_iter()
-                            .chain(env::split_paths(&existing_path))
-                            .collect();
-                        if let Ok(joined) = env::join_paths(&all) {
-                            env_map.insert(
-                                env::PATH_KEY.to_string(),
-                                joined.to_string_lossy().to_string(),
-                            );
+                        {
+                            path_env.add(p);
                         }
+                        env_map.insert(env::PATH_KEY.to_string(), path_env.to_string());
                     }
                     Self::module(
                         &mut r,
