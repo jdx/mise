@@ -1,5 +1,59 @@
 # Changelog
 
+## [2026.1.11](https://github.com/jdx/mise/compare/v2026.1.10..v2026.1.11) - 2026-01-30
+
+### 🚀 Features
+
+- **(config)** load local .config/miserc.toml too by @scop in [#7896](https://github.com/jdx/mise/pull/7896)
+- **(vfox)** pass constructed env to module hooks for cmd.exec by @jdx in [#7908](https://github.com/jdx/mise/pull/7908)
+
+### 🐛 Bug Fixes
+
+- **(cache)** resolve correct cache path when clearing GitHub backend tools by @jdx in [#7907](https://github.com/jdx/mise/pull/7907)
+- **(ci)** handle aqua subpath backends in grace period check by @jdx in [3dcf20c](https://github.com/jdx/mise/commit/3dcf20cd3054e5038e7e81a736dfe9187656eead)
+- **(github)** support macOS .app bundle binary discovery by @jdx in [#7885](https://github.com/jdx/mise/pull/7885)
+- **(prepare)** scope prepare providers to their defining config file by @jdx in [#7889](https://github.com/jdx/mise/pull/7889)
+- **(registry)** update daytona asset pattern for new release naming by @jdx in [#7897](https://github.com/jdx/mise/pull/7897)
+- **(registry)** revert daytona asset pattern to simple naming by @jdx in [#7911](https://github.com/jdx/mise/pull/7911)
+- **(run)** show task info instead of executing when --help used without usage spec by @jdx in [#7893](https://github.com/jdx/mise/pull/7893)
+- **(task)** fix wait_for with env overrides and re-render outputs by @jdx in [#7888](https://github.com/jdx/mise/pull/7888)
+- use correct MISE comment format and remove invalid usage field by @jdx in [89d87ba](https://github.com/jdx/mise/commit/89d87ba1331a60ffa5c1f55ee8da96e6be59c59c)
+- add #USAGE arg spec for check-release-failures task by @jdx in [8bfab84](https://github.com/jdx/mise/commit/8bfab845d310ec26337f24f154e2b63fc12cdf86)
+- use mise tool --json instead of regex parsing registry files by @jdx in [22d1513](https://github.com/jdx/mise/commit/22d1513eb7a3e97f1f806960dafa3a06732eafbb)
+
+### 🚜 Refactor
+
+- consolidate retry + grace period logic into mise task by @jdx in [794efb4](https://github.com/jdx/mise/commit/794efb40ff0b8c5be1bdbb78146b7358b255fac7)
+
+### 📚 Documentation
+
+- **(gitlab)** explain MISE_GITLAB_TOKEN for private repo by @lchagnoleau in [#7902](https://github.com/jdx/mise/pull/7902)
+
+### ⚡ Performance
+
+- **(exec)** reduce startup overhead for `mise x` by @jdx in [#7890](https://github.com/jdx/mise/pull/7890)
+- **(install)** replace per-tool .mise.backend with consolidated manifest by @jdx in [#7892](https://github.com/jdx/mise/pull/7892)
+
+### 📦️ Dependency Updates
+
+- update docker/login-action digest to c94ce9f by @renovate[bot] in [#7899](https://github.com/jdx/mise/pull/7899)
+- update alpine:edge docker digest to 9a341ff by @renovate[bot] in [#7898](https://github.com/jdx/mise/pull/7898)
+- update ghcr.io/jdx/mise:alpine docker digest to 3a67fe5 by @renovate[bot] in [#7900](https://github.com/jdx/mise/pull/7900)
+- update ghcr.io/jdx/mise:copr docker digest to 4dc8174 by @renovate[bot] in [#7901](https://github.com/jdx/mise/pull/7901)
+- update ghcr.io/jdx/mise:deb docker digest to af0c0b5 by @renovate[bot] in [#7903](https://github.com/jdx/mise/pull/7903)
+- update ghcr.io/jdx/mise:rpm docker digest to a53bf55 by @renovate[bot] in [#7904](https://github.com/jdx/mise/pull/7904)
+
+### Chore
+
+- **(ci)** only auto-merge release PRs with substantive changes by @jdx in [#7884](https://github.com/jdx/mise/pull/7884)
+- **(ci)** ignore test-tool failures from recent upstream releases on release branch by @jdx in [9ca4e8d](https://github.com/jdx/mise/commit/9ca4e8d273da94a8ef1fcdaa3ba4489bd8561a37)
+- **(registry)** disable buck2 test due to checksum race condition by @jdx in [a658eaa](https://github.com/jdx/mise/commit/a658eaa6d5ce56040c48dcb4a3f34b6abb15cca9)
+
+### New Contributors
+
+- @autofix-ci[bot] made their first contribution
+- @lchagnoleau made their first contribution in [#7902](https://github.com/jdx/mise/pull/7902)
+
 ## [2026.1.9](https://github.com/jdx/mise/compare/v2026.1.8..v2026.1.9) - 2026-01-28
 
 ### 🚀 Features

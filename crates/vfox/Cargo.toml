@@ -1,6 +1,6 @@
 [package]
 name = "vfox"
-version = "2026.1.3"
+version = "2026.1.4"
 edition = "2024"
 license = "MIT"
 description = "Interface to vfox plugins"

@@ -27,19 +27,19 @@ backend = "aqua:FiloSottile/age"
 "platforms.windows-x64-baseline" = { checksum = "sha256:c56e8ce22f7e80cb85ad946cc82d198767b056366201d3e1a2b93d865be38154", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-windows-amd64.zip"}
 
 [[tools.bun]]
-version = "1.3.7"
+version = "1.3.8"
 backend = "core:bun"
-"platforms.linux-arm64" = { checksum = "sha256:d5c7d651423c2bc5ae3f92d36837ffb2ddc6ee91849672500b7fe8e5a5159fbc", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.7/bun-linux-aarch64.zip"}
-"platforms.linux-arm64-musl" = { checksum = "sha256:c3ec285016f567bc89bce46751a6425bbc256ec85ec5795d9a3b9edb039ddc8d", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.7/bun-linux-aarch64-musl.zip"}
-"platforms.linux-x64" = { checksum = "sha256:2bd2e0e0bdf09483be67a704607848ebe72c28420824e4ce772ce3da62c23d65", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.7/bun-linux-x64.zip"}
-"platforms.linux-x64-baseline" = { checksum = "sha256:cc14546006bf49419f3a20d2f591c8e167d112e1aa2ef1d8c77e1aec5ead372d", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.7/bun-linux-x64-baseline.zip"}
-"platforms.linux-x64-musl" = { checksum = "sha256:a38045aeeb7fb2d2dbc93aece67e92940571293abb040aef3334bf0f8dfe9b51", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.7/bun-linux-x64-musl.zip"}
-"platforms.linux-x64-musl-baseline" = { checksum = "sha256:8da029b5d0ca5105cde7e33618402756ec4eff88bbc10de47bc0bc06f8d6d12c", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.7/bun-linux-x64-musl-baseline.zip"}
-"platforms.macos-arm64" = { checksum = "sha256:16701e494998e4764d49af2fbe62d25ec59cf3c79ee696eba1def2cfe9049d64", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.7/bun-darwin-aarch64.zip"}
-"platforms.macos-x64" = { checksum = "sha256:cdfe9c71cacbdd9a73f098c3b050671957a7414e1321dfedd9a410d7794dae51", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.7/bun-darwin-x64.zip"}
-"platforms.macos-x64-baseline" = { checksum = "sha256:9c2c1aee6d72e96195c3051f91232504759507aaaeb093d5b70f88697e1a8eaf", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.7/bun-darwin-x64-baseline.zip"}
-"platforms.windows-x64" = { checksum = "sha256:659af6415800976c40338d5e1b9c0a4d61c503b880656cb00b43865a3a99e3bf", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.7/bun-windows-x64.zip"}
-"platforms.windows-x64-baseline" = { checksum = "sha256:b00d56268700b200881fd755893e45f5567720b4fa9b17fd590aa4887b49341a", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.7/bun-windows-x64-baseline.zip"}
+"platforms.linux-arm64" = { checksum = "sha256:4e9deb6814a7ec7f68725ddd97d0d7b4065bcda9a850f69d497567e995a7fa33", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-linux-aarch64.zip"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:76dddebfd8c011c8b774991eb8ba47da770e4ce06ddc2b045aa0d659ef5fbe44", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-linux-aarch64-musl.zip"}
+"platforms.linux-x64" = { checksum = "sha256:0322b17f0722da76a64298aad498225aedcbf6df1008a1dee45e16ecb226a3f1", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-linux-x64.zip"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:bbe4632ac03d7495177d542ecefa8f21f9849273106525f6bb13172ec8e4ab2c", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-linux-x64-baseline.zip"}
+"platforms.linux-x64-musl" = { checksum = "sha256:a810b5083a830596cff3715402371917a200940efdeed6189bcde191e79d4633", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-linux-x64-musl.zip"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:f05311fc12304ff8eaca136fc934eede6728055ba3d00cdb7e7dac394853f159", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-linux-x64-musl-baseline.zip"}
+"platforms.macos-arm64" = { checksum = "sha256:672a0a9a7b744d085a1d2219ca907e3e26f5579fca9e783a9510a4f98a36212f", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-darwin-aarch64.zip"}
+"platforms.macos-x64" = { checksum = "sha256:4a0ecd703b37d66abaf51e5bc24fd1249e8dc392c17ee6235710cf51a0988b85", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-darwin-x64.zip"}
+"platforms.macos-x64-baseline" = { checksum = "sha256:9812e5f6c7f818ef9c491e05a77481ab2e7a4a1580b378526e1611c102fe7ca3", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-darwin-x64-baseline.zip"}
+"platforms.windows-x64" = { checksum = "sha256:4c0a82866424e23d1bdaa9517307ec2f143ed513c15546dba0b859c6c55c47c7", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-windows-x64.zip"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:74f4dad7b4873ee70f63add9918400334e31acab9ba3fce9ef9906d96646e231", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-windows-x64-baseline.zip"}
 
 [[tools.cargo-binstall]]
 version = "1.17.4"
@@ -77,7 +77,7 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [[tools."cargo:usage-cli"]]
-version = "2.15.1"
+version = "2.16.0"
 backend = "cargo:usage-cli"
 
 [[tools.fd]]
