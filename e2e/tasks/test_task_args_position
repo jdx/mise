@@ -36,9 +36,9 @@ assert_contains "mise run echo-args arg1 ::: echo-args arg2" "args: arg2"
 # Test 6: Backward compat - explicit -- still works
 assert "mise run echo-args -- --help" "args: --help"
 
-# Test 7: --help on task WITHOUT usage defined should pass through
-# (task has no formal args, so --help goes to the underlying command)
-assert "mise run echo-args --help" "args: --help"
+# Test 7: --help on task WITHOUT usage defined should show task info
+# (task has no formal args, so mise shows help instead of executing)
+assert_contains "mise run echo-args --help" "Task: echo-args"
 
 # Test 8: --help on task WITH usage defined should show mise help
 assert_contains "mise run echo-with-usage --help" "myarg"
