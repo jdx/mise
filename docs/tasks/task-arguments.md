@@ -133,6 +133,10 @@ done
 touch "${files[@]}"
 ```
 
+> **Note:** `readarray`/`mapfile` are alternatives in bash 4.0+, but macOS ships with
+> bash 3.2 by default which doesn't include them. The `eval` pattern above works
+> with all bash versions.
+
 :::
 
 #### Environment Variable Backing
@@ -711,6 +715,10 @@ for f in "${files[@]}"; do
 done
 '''
 ```
+
+> **Note:** `readarray`/`mapfile` are alternatives in bash 4.0+, but macOS ships with
+> bash 3.2 by default which doesn't include them. The `eval` pattern above works
+> with all bash versions.
 
 :::
 
