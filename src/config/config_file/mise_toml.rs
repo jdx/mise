@@ -1266,9 +1266,10 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             for (key, mut value) in directives.other {
                                 let mut opts = EnvDirectiveOptions::default();
                                 if let Some(table) = value.as_table_mut()
-                                    && let Some(tools) = table.remove("tools") {
-                                        opts.tools = tools.as_bool().unwrap_or(false);
-                                    }
+                                    && let Some(tools) = table.remove("tools")
+                                {
+                                    opts.tools = tools.as_bool().unwrap_or(false);
+                                }
                                 env.push(EnvDirective::Module(key, value, opts));
                             }
                             if let Some(venv) = directives.python.venv {
