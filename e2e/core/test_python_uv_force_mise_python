@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export MISE_EXPERIMENTAL=1
+unset UV_PYTHON
+
+cat >.mise.toml <<EOF
+[tools]
+python = "3.12.3"
+uv = "0.5.4"
+
+EOF
+
+mise i
+
+assert_not_contains "mise env -D" "UV_PYTHON="
+
+cat >.mise.toml <<EOF
+[tools]
+python = "3.12.3"
+uv = "0.5.4"
+
+[settings]
+python.uv_force_mise_python = true
+EOF
+
+python_bin="$(mise which python --tool python@3.12.3)"
+assert_contains "mise env -D" "UV_PYTHON=$python_bin"

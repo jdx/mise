@@ -1,4 +1,3 @@
-use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -29,7 +28,7 @@ pub async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> &'static Option<Venv
             let (Some(venv_path), Some(uv_path)) = (venv_path(), uv_path(config, ts).await) else {
                 return None;
             };
-            match get_or_create_venv(ts, venv_path, uv_path).await {
+            match get_or_create_venv(venv_path, uv_path).await {
                 Ok(venv) => Some(venv),
                 Err(e) => {
                     warn!("uv venv failed: {e}");
@@ -40,7 +39,7 @@ pub async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> &'static Option<Venv
         .await
 }
 
-async fn get_or_create_venv(ts: &Toolset, venv_path: PathBuf, uv_path: PathBuf) -> Result<Venv> {
+async fn get_or_create_venv(venv_path: PathBuf, uv_path: PathBuf) -> Result<Venv> {
     #[cfg(windows)]
     let venv_bin_dir = "Scripts";
     #[cfg(not(windows))]
@@ -49,14 +48,6 @@ async fn get_or_create_venv(ts: &Toolset, venv_path: PathBuf, uv_path: PathBuf) 
         env: Default::default(),
         venv_path: venv_path.join(venv_bin_dir),
     };
-    if let Some(python_tv) = ts
-        .versions
-        .get(&BackendArg::from("python"))
-        .and_then(|tvl| tvl.versions.first())
-    {
-        venv.env
-            .insert("UV_PYTHON".to_string(), python_tv.version.to_string());
-    }
     if !venv_path.exists() {
         let mpr = MultiProgressReport::get();
         let pr = mpr.add("Creating uv venv");

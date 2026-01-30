@@ -982,6 +982,10 @@
               "description": "Integrate with uv to automatically create/source venvs if uv.lock is present.",
               "type": "boolean"
             },
+            "uv_force_mise_python": {
+              "description": "Force uv to use the mise-managed python by setting UV_PYTHON to the interpreter path.",
+              "type": "boolean"
+            },
             "uv_venv_create_args": {
               "description": "Arguments to pass to uv when creating a venv.",
               "type": "array",

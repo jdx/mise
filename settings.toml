@@ -1173,6 +1173,11 @@ description = "Integrate with uv to automatically create/source venvs if uv.lock
 env = "MISE_PYTHON_UV_VENV_AUTO"
 type = "Bool"
 
+[python.uv_force_mise_python]
+description = "Force uv to use the mise-managed python by setting UV_PYTHON to the interpreter path."
+env = "MISE_PYTHON_UV_FORCE_MISE_PYTHON"
+type = "Bool"
+
 [python.uv_venv_create_args]
 description = "Arguments to pass to uv when creating a venv."
 env = "MISE_PYTHON_UV_VENV_CREATE_ARGS"

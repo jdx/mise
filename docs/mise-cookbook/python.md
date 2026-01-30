@@ -87,6 +87,9 @@ which python
 # ./uv-project/.venv/bin/python
 ```
 
+If you want `uv` to use the Python that `mise` manages, set `python.uv_force_mise_python = true`.
+This sets `UV_PYTHON` to the `mise`-managed interpreter path, which is then used by `uv`.
+
 Another option is to use `_.python.venv` in your `mise.toml` file to specify the path to the virtual environment created by `uv`.
 
 ```toml [mise.toml]

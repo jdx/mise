@@ -547,6 +547,15 @@ impl Backend for PythonPlugin {
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
         let mut hm = BTreeMap::new();
+        if Settings::get().python.uv_force_mise_python {
+            let python_bin = python_path(tv);
+            if python_bin.exists() {
+                hm.insert(
+                    "UV_PYTHON".into(),
+                    python_bin.to_string_lossy().into(),
+                );
+            }
+        }
         match self.get_virtualenv(config, tv, None).await {
             Err(e) => warn!("failed to get virtualenv: {e}"),
             Ok(Some(virtualenv)) => {
