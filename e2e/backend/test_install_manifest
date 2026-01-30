@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Test the consolidated install manifest (.mise-installs.toml)
+
+set -euo pipefail
+
+MANIFEST="$MISE_DATA_DIR/installs/.mise-installs.toml"
+
+# Install a tool — manifest should be created
+mise install tiny@3.1.0
+assert_contains "cat $MANIFEST" "tiny"
+assert_contains "cat $MANIFEST" "full"
+
+# Verify the tool is installed
+assert_contains "mise ls tiny" "3.1.0"
+
+# Install a second version — manifest entry should persist
+mise install tiny@2.1.0
+assert_contains "cat $MANIFEST" "tiny"
+assert_contains "mise ls tiny" "2.1.0"
+
+# Remove the tool dir (rm -rf workflow) — mise should handle it cleanly
+rm -rf "$MISE_DATA_DIR/installs/tiny"
+# The manifest still references tiny, but the dir is gone — mise should not error
+assert_succeed "mise ls"
+# tiny should no longer appear as installed
+assert_not_contains "mise ls tiny 2>&1" "3.1.0"
+
+# Re-install — manifest should be updated and tool should work
+mise install tiny@3.1.0
+assert_contains "mise ls tiny" "3.1.0"
+
+# Test migration from legacy .mise.backend files
+# Create a fake tool with a legacy .mise.backend file and no manifest entry
+mkdir -p "$MISE_DATA_DIR/installs/legacy-test/1.0.0"
+echo -e "legacy-test\nasdf:legacy-test\n0" >"$MISE_DATA_DIR/installs/legacy-test/.mise.backend"
+
+# Remove manifest so migration is triggered on next init
+rm -f "$MANIFEST"
+
+# Running mise should migrate the legacy entry into the manifest
+assert_succeed "mise ls"
+assert_contains "cat $MANIFEST" "legacy-test"
+assert_contains "cat $MANIFEST" "asdf:legacy-test"
