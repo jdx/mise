@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-#MISE description="Check if test-tool failures are from recent upstream releases (<7 days)"
-#USAGE arg "<tools>..." help="Failed tools to check"
-"""For each failed tool, looks up its registry entry to find the GitHub repo,
-then checks if the latest release was published within the last 7 days.
-Tools with recent releases are assumed to have transient asset issues
-and their failures are ignored."""
+#MISE description="Retry failed test-tools with grace period for recent upstream releases"
+#USAGE flag "--grace-period" help="Ignore failures from tools whose upstream released <7 days ago"
+#USAGE arg "<tools>..." help="Failed tools to retry"
+"""Retries failed test-tool runs. With --grace-period, tools backed by
+GitHub/aqua whose latest upstream release is less than 7 days old have
+their failures treated as warnings instead of errors."""
 
+import os
 import re
 import subprocess
 import sys
@@ -17,6 +18,7 @@ REGISTRY_DIR = Path(__file__).resolve().parent.parent / "registry"
 
 
 def get_repo(tool: str) -> str | None:
+    """Extract the GitHub owner/repo from a tool's registry entry."""
     toml_path = REGISTRY_DIR / f"{tool}.toml"
     if not toml_path.exists():
         return None
@@ -28,6 +30,7 @@ def get_repo(tool: str) -> str | None:
 
 
 def get_latest_release_date(repo: str) -> datetime | None:
+    """Get the published_at date of the latest GitHub release."""
     try:
         result = subprocess.run(
             ["gh", "api", f"repos/{repo}/releases/latest", "--jq", ".published_at"],
@@ -40,12 +43,31 @@ def get_latest_release_date(repo: str) -> datetime | None:
         return None
 
 
-def main():
-    tools = sys.argv[1:]
-    if not tools:
-        print("Usage: check-release-failures <tool1> [tool2] ...")
-        sys.exit(1)
+def get_failed_tools_from_summary() -> list[str]:
+    """Parse failed tools from GITHUB_STEP_SUMMARY."""
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not summary_path or not Path(summary_path).exists():
+        return []
+    content = Path(summary_path).read_text()
+    failed = []
+    for line in content.splitlines():
+        if "Failed Tools" in line:
+            cleaned = re.sub(r"\*\*Failed Tools\*\*:\s*", "", line).strip()
+            failed = [t.strip() for t in cleaned.split(",") if t.strip()]
+    return failed
 
+
+def retry_tools(tools: list[str]) -> list[str]:
+    """Retry failed tools and return any that still fail."""
+    result = subprocess.run(["mise", "test-tool"] + tools)
+    if result.returncode == 0:
+        return []
+    failed = get_failed_tools_from_summary()
+    return failed if failed else tools
+
+
+def check_grace_period(tools: list[str]) -> list[str]:
+    """Return tools that are NOT within the grace period."""
     hard_failures = []
     now = datetime.now(timezone.utc)
 
@@ -70,6 +92,27 @@ def main():
             print(f"::error::{tool}: latest release of {repo} is {age.days}d old")
             hard_failures.append(tool)
 
+    return hard_failures
+
+
+def main():
+    grace_period = "--grace-period" in sys.argv
+    tools = [a for a in sys.argv[1:] if not a.startswith("-")]
+
+    if not tools:
+        print("Usage: test-tool-retry [--grace-period] <tool1> [tool2] ...")
+        sys.exit(1)
+
+    still_failing = retry_tools(tools)
+    if not still_failing:
+        print("All tools passed on retry.")
+        sys.exit(0)
+
+    if not grace_period:
+        print(f"Failed tools: {', '.join(still_failing)}")
+        sys.exit(1)
+
+    hard_failures = check_grace_period(still_failing)
     if hard_failures:
         print(f"\nHard failures: {', '.join(hard_failures)}")
         sys.exit(1)
