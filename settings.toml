@@ -1165,9 +1165,23 @@ env = "MISE_PYENV_REPO"
 type = "String"
 
 [python.uv_venv_auto]
-description = "Integrate with uv to automatically create/source venvs if uv.lock is present."
+default = false
+description = "Integrate with uv to manage project venvs when uv.lock is present."
+docs = """
+Controls how mise handles uv project venvs when a uv.lock file is present.
+
+The legacy `true` value (will be deprecated in a future release) is treated like "create|source", with one difference:
+When using this, mise also exports `UV_PYTHON` to force uv to use the python version managed by mise.
+"""
+enum = [
+  { value = false, description = "disable uv venv integration" },
+  { value = "source", description = "only source an existing `.venv`" },
+  { value = "create|source", description = "create the venv if missing and source it" },
+  { value = true, description = "(create|source) with UV_PYTHON export (legacy)" },
+]
 env = "MISE_PYTHON_UV_VENV_AUTO"
-type = "Bool"
+rust_type = "PythonUvVenvAuto"
+type = "BoolOrString"
 
 [python.uv_venv_create_args]
 description = "Arguments to pass to uv when creating a venv."

@@ -313,19 +313,24 @@ pub struct Settings {"#
         let type_ = props
             .get("rust_type")
             .map(|rt| rt.as_str().unwrap())
-            .or(props.get("type").map(|t| match t.as_str().unwrap() {
-                "Bool" => "bool",
-                "String" => "String",
-                "Integer" => "i64",
-                "Url" => "String",
-                "Path" => "PathBuf",
-                "Duration" => "String",
-                "ListString" => "Vec<String>",
-                "ListPath" => "Vec<PathBuf>",
-                "SetString" => "BTreeSet<String>",
-                "IndexMap<String, String>" => "IndexMap<String, String>",
-                t => panic!("Unknown type: {t}"),
-            }));
+            .or_else(|| {
+                props.get("type").map(|t| match t.as_str().unwrap() {
+                    "Bool" => "bool",
+                    "String" => "String",
+                    "Integer" => "i64",
+                    "Url" => "String",
+                    "Path" => "PathBuf",
+                    "Duration" => "String",
+                    "ListString" => "Vec<String>",
+                    "ListPath" => "Vec<PathBuf>",
+                    "SetString" => "BTreeSet<String>",
+                    "IndexMap<String, String>" => "IndexMap<String, String>",
+                    "BoolOrString" => {
+                        panic!(r#"type \"BoolOrString\" requires a `rust_type` to be specified"#)
+                    }
+                    t => panic!("Unknown type: {t}"),
+                })
+            });
         if let Some(type_) = type_ {
             let type_ = if props.get("optional").is_some_and(|v| v.as_bool().unwrap()) {
                 format!("Option<{type_}>")
@@ -481,19 +486,24 @@ pub struct MisercSettings {"#
             let type_ = props
                 .get("rust_type")
                 .map(|rt| rt.as_str().unwrap())
-                .or(props.get("type").map(|t| match t.as_str().unwrap() {
-                    "Bool" => "bool",
-                    "String" => "String",
-                    "Integer" => "i64",
-                    "Url" => "String",
-                    "Path" => "PathBuf",
-                    "Duration" => "String",
-                    "ListString" => "Vec<String>",
-                    "ListPath" => "Vec<PathBuf>",
-                    "SetString" => "BTreeSet<String>",
-                    "IndexMap<String, String>" => "IndexMap<String, String>",
-                    t => panic!("Unknown type: {t}"),
-                }));
+                .or_else(|| {
+                    props.get("type").map(|t| match t.as_str().unwrap() {
+                        "Bool" => "bool",
+                        "String" => "String",
+                        "Integer" => "i64",
+                        "Url" => "String",
+                        "Path" => "PathBuf",
+                        "Duration" => "String",
+                        "ListString" => "Vec<String>",
+                        "ListPath" => "Vec<PathBuf>",
+                        "SetString" => "BTreeSet<String>",
+                        "IndexMap<String, String>" => "IndexMap<String, String>",
+                        "BoolOrString" => panic!(
+                            r#"type \"BoolOrString\" requires a `rust_type` to be specified"#
+                        ),
+                        t => panic!("Unknown type: {t}"),
+                    })
+                });
             if let Some(type_) = type_ {
                 // All miserc settings are optional
                 let type_ = format!("Option<{type_}>");

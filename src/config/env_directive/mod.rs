@@ -20,7 +20,7 @@ mod file;
 mod module;
 mod path;
 mod source;
-mod venv;
+pub(crate) mod venv;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum RequiredValue {

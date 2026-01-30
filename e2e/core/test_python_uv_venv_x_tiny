@@ -12,7 +12,7 @@ uv = "0.5.4"
 tiny = "3"
 
 [settings]
-python.uv_venv_auto = true
+python.uv_venv_auto = "create|source"
 EOF
 
 # Ensure tiny plugin is available
