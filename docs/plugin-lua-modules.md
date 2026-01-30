@@ -564,8 +564,33 @@ local result = cmd.exec("npm install package-name", {cwd = "/path/to/project"})
 The options table supports the following keys:
 
 - **`cwd`** (string): Set the working directory for the command
-- **`env`** (table): Set environment variables for the command execution
+- **`env`** (table): Set environment variables for the command execution. These are merged on top of the inherited environment (see below).
 - **`timeout`** (number): Set a timeout for command execution (future feature)
+
+### Environment Inheritance in Env Module Hooks
+
+When `cmd.exec()` is called from environment module hooks (`MiseEnv`, `MisePath`), the command automatically inherits the mise-constructed environment instead of the process environment. This includes environment variables set by preceding directives and `_.path` entries accumulated so far.
+
+When the module directive has `tools = true`, the inherited environment also includes tool installation bin paths. This means mise-managed tools are directly callable:
+
+```toml
+[env]
+_.my-plugin = { tools = true }
+```
+
+```lua
+function PLUGIN:MiseEnv(ctx)
+    -- With tools=true, mise-managed tools are on PATH
+    local version = cmd.exec("node --version")
+    return {
+        {key = "NODE_VERSION", value = version:gsub("%s+", "")}
+    }
+end
+```
+
+Without `tools = true`, only `_.path` directive entries and the original system PATH are available to `cmd.exec()`.
+
+Any explicit `env` options passed to `cmd.exec()` are merged on top of the inherited environment, allowing selective overrides.
 
 ### Platform-Specific Commands
 
