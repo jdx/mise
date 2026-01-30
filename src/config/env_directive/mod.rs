@@ -539,17 +539,15 @@ impl EnvResults {
                     // Incorporate _.path entries accumulated so far into PATH
                     // so that cmd.exec in the plugin can find tools on PATH.
                     if !paths.is_empty() {
-                        let config_root =
-                            crate::config::config_file::config_root::config_root(&source);
                         let existing_path =
                             env_map.get(&*env::PATH_KEY).cloned().unwrap_or_default();
                         let mut path_env = PathEnv::from_path_str(&existing_path);
-                        for p in paths
-                            .iter()
-                            .flat_map(|(p, _)| env::split_paths(p))
-                            .map(|s| normalize_path(&config_root, s))
-                        {
-                            path_env.add(p);
+                        for (p, path_source) in &paths {
+                            let config_root =
+                                crate::config::config_file::config_root::config_root(path_source);
+                            for s in env::split_paths(p) {
+                                path_env.add(normalize_path(&config_root, s));
+                            }
                         }
                         env_map.insert(env::PATH_KEY.to_string(), path_env.to_string());
                     }

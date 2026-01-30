@@ -79,12 +79,12 @@ impl VfoxPlugin {
     ) -> Result<Option<MiseEnvResponse>> {
         let (vfox, _) = self.vfox();
         let result = vfox.mise_env(&self.name, opts, env).await?;
-        let mut env = indexmap!();
+        let mut result_env = indexmap!();
         for ek in result.env {
-            env.insert(ek.key, ek.value);
+            result_env.insert(ek.key, ek.value);
         }
         Ok(Some(MiseEnvResponse {
-            env,
+            env: result_env,
             cacheable: result.cacheable,
             watch_files: result.watch_files,
         }))
@@ -98,8 +98,8 @@ impl VfoxPlugin {
         let (vfox, _) = self.vfox();
         let mut out = vec![];
         let results = vfox.mise_path(&self.name, opts, env).await?;
-        for env in results {
-            out.push(env);
+        for entry in results {
+            out.push(entry);
         }
         Ok(Some(out))
     }
