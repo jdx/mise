@@ -531,10 +531,33 @@ impl EnvResults {
                     .await?;
                 }
                 EnvDirective::Module(name, value, _opts) => {
-                    let env_map: IndexMap<String, String> = env
+                    let mut env_map: IndexMap<String, String> = env
                         .iter()
                         .map(|(k, (v, _))| (k.clone(), v.clone()))
                         .collect();
+                    // Incorporate _.path entries accumulated so far into PATH
+                    // so that cmd.exec in the plugin can find tools on PATH.
+                    if !paths.is_empty() {
+                        let config_root =
+                            crate::config::config_file::config_root::config_root(&source);
+                        let extra: Vec<PathBuf> = paths
+                            .iter()
+                            .flat_map(|(p, _)| env::split_paths(p))
+                            .map(|s| normalize_path(&config_root, s))
+                            .collect();
+                        let existing_path =
+                            env_map.get(&*env::PATH_KEY).cloned().unwrap_or_default();
+                        let all: Vec<PathBuf> = extra
+                            .into_iter()
+                            .chain(env::split_paths(&existing_path))
+                            .collect();
+                        if let Ok(joined) = env::join_paths(&all) {
+                            env_map.insert(
+                                env::PATH_KEY.to_string(),
+                                joined.to_string_lossy().to_string(),
+                            );
+                        }
+                    }
                     Self::module(
                         &mut r,
                         source,
