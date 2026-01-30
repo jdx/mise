@@ -110,7 +110,7 @@ All commit messages and PR titles MUST follow conventional commit format:
 - `test:` - Testing changes
 - `chore:` - Maintenance tasks, releases, dependency updates, CI/infrastructure changes
 - `security:` - Security-related changes
-- `registry:` - New tool additions to `registry/` (no scope needed)
+- `registry:` - Any changes to `registry/` (no scope needed, use for both new tools and fixes)
 
 **Scopes:**
 - For command-specific changes, use the command name: `install`, `activate`, `use`, `run`, `exec`, etc.

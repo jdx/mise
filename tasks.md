@@ -276,6 +276,24 @@ update test snapshots
 
 run all tests
 
+## `test-tool-retry`
+
+- **Usage**: `test-tool-retry [--grace-period] <tools>…`
+
+Retry failed test-tools with grace period for recent upstream releases
+
+### Arguments
+
+#### `<tools>…`
+
+Failed tools to retry
+
+### Flags
+
+#### `--grace-period`
+
+Ignore failures from tools whose upstream released &lt;7 days ago
+
 ## `test:build-perf-workspace`
 
 - **Usage**: `test:build-perf-workspace`
