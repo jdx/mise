@@ -24,7 +24,15 @@ impl CacheClear {
         let cache_dirs = match &self.plugin {
             Some(plugins) => plugins
                 .iter()
-                .map(|p| CACHE.join(p.to_kebab_case()))
+                .filter_map(|p| {
+                    let kebab = p.to_kebab_case();
+                    if kebab.is_empty() {
+                        warn!("invalid plugin name: {p}");
+                        None
+                    } else {
+                        Some(CACHE.join(kebab))
+                    }
+                })
                 .collect(),
             None => vec![CACHE.to_path_buf()],
         };
