@@ -225,6 +225,14 @@ For self-hosted GitLab instances, specify the API URL:
 "gitlab:myorg/mytool" = { version = "latest", api_url = "https://gitlab.mycompany.com/api/v4" }
 ```
 
+## Private GitLab repositories
+
+If you want to install a tool from a private repository on `gitlab.com`, set the `MISE_GITLAB_TOKEN` environment variable for authentication:
+
+```sh
+export MISE_GITLAB_TOKEN="your-token"
+```
+
 ## Self-hosted GitLab
 
 If you are using a self-hosted GitLab instance, set the `api_url` tool option and optionally the `MISE_GITLAB_ENTERPRISE_TOKEN` environment variable for authentication:
