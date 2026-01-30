@@ -283,7 +283,7 @@ Available themes:
 If you're using a light terminal and the default theme is hard to read,
 try setting this to `base16`.
 """
-enum = [["default"], ["charm"], ["base16"], ["catppuccin"], ["dracula"]]
+enum = ["default", "charm", "base16", "catppuccin", "dracula"]
 env = "MISE_COLOR_THEME"
 type = "String"
 
@@ -867,7 +867,7 @@ type = "Bool"
 [log_level]
 default = "info"
 description = "Show more/less output."
-enum = [["trace"], ["debug"], ["info"], ["warn"], ["error"]]
+enum = ["trace", "debug", "info", "warn", "error"]
 env = "MISE_LOG_LEVEL"
 hide = true
 type = "String"
@@ -1575,34 +1575,13 @@ docs = """
 Change output style when executing tasks. This controls the output of `mise run`.
 """
 enum = [
-  [
-    "prefix",
-    "(default if jobs > 1) print by line with the prefix of the task name",
-  ],
-  [
-    "interleave",
-    "(default if jobs == 1 or all tasks run sequentially) print output as it comes in",
-  ],
-  [
-    "keep-order",
-    "print output from tasks in the order they are defined",
-  ],
-  [
-    "replacing",
-    "replace stdout each time a line is printed-this uses similar logic as `mise install`",
-  ],
-  [
-    "timed",
-    "only show stdout lines that take longer than 1s to complete",
-  ],
-  [
-    "quiet",
-    "print only stdout/stderr from tasks and nothing from mise",
-  ],
-  [
-    "silent",
-    "print nothing from tasks or mise",
-  ],
+  { value = "prefix", description = "(default if jobs > 1) print by line with the prefix of the task name" },
+  { value = "interleave", description = "(default if jobs == 1 or all tasks run sequentially) print output as it comes in" },
+  { value = "keep-order", description = "print output from tasks in the order they are defined" },
+  { value = "replacing", description = "replace stdout each time a line is printed-this uses similar logic as `mise install`" },
+  { value = "timed", description = "only show stdout lines that take longer than 1s to complete" },
+  { value = "quiet", description = "print only stdout/stderr from tasks and nothing from mise" },
+  { value = "silent", description = "print nothing from tasks or mise" },
 ]
 env = "MISE_TASK_OUTPUT"
 optional = true

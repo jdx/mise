@@ -77,6 +77,10 @@ impl ConfigSet {
             }
         }
 
+        let infer_bool_or_string = |value: &str| match value {
+            "true" | "false" => TomlValueTypes::Bool,
+            _ => TomlValueTypes::String,
+        };
         let type_to_use = match self.type_ {
             TomlValueTypes::Infer => {
                 let expected_type = if !self.key.starts_with("settings.") {
@@ -87,6 +91,7 @@ impl ConfigSet {
                 match expected_type {
                     Some(meta) => match meta.type_ {
                         SettingsType::Bool => TomlValueTypes::Bool,
+                        SettingsType::BoolOrString => infer_bool_or_string(&self.value),
                         SettingsType::String => TomlValueTypes::String,
                         SettingsType::Integer => TomlValueTypes::Integer,
                         SettingsType::Duration => TomlValueTypes::String,
@@ -97,10 +102,7 @@ impl ConfigSet {
                         SettingsType::SetString => TomlValueTypes::Set,
                         SettingsType::IndexMap => TomlValueTypes::String,
                     },
-                    None => match self.value.as_str() {
-                        "true" | "false" => TomlValueTypes::Bool,
-                        _ => TomlValueTypes::String,
-                    },
+                    None => infer_bool_or_string(&self.value),
                 }
             }
             _ => self.type_,

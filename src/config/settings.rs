@@ -40,6 +40,7 @@ pub enum SettingsType {
     ListPath,
     SetString,
     IndexMap,
+    BoolOrString,
 }
 
 pub struct SettingsMeta {

@@ -21,32 +21,30 @@ export default {
       return undefined;
     }
 
+    const typeMap = {
+      String: "string",
+      Path: "string",
+      Url: "string",
+      Duration: "string",
+      Bool: "boolean",
+      Integer: "integer",
+      ListString: "string[]",
+      ListPath: "string[]",
+      SetString: "string[]",
+      "IndexMap<String, String>": "object",
+      BoolOrString: "boolean | string",
+    };
+
     function buildElement(key, props) {
-      let type = props.type;
-      type = type.replaceAll("PathBuf", "String");
+      const type = typeMap[props.type] || props.type;
       let default_ = props.default_docs ?? props.default;
-      if (default_ === undefined && type === "Bool" && !props.optional) {
+      if (default_ === undefined && type === "boolean" && !props.optional) {
         default_ = false;
       }
       if (default_ === undefined && props.optional) {
         default_ = "None";
       }
-      if (type === "Integer") {
-        type = "integer";
-      } else if (type === "String") {
-        type = "string";
-      } else if (type === "ListString" || type === "ListPath") {
-        type = "string[]";
-      } else if (type === "IndexMap<String, String>") {
-        type = "object";
-      }
-      // } else if (type === "String" || type === "PathBuf") {
-      //   type = 'string';
-      // } else if (type === "usize" || type === "u64") {
-      //   type = 'number';
-      // } else {
-      //   throw new Error(`Unknown type: ${type}`);
-      // }
+
       const ele = {
         key,
         default: default_,
