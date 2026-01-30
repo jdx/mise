@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-# MISE description="Check if test-tool failures are from recent upstream releases (<7 days)"
-# MISE hide=true
-# MISE usage="arg \"<tools>...\" help=\"Failed tools to check\""
+#MISE description="Check if test-tool failures are from recent upstream releases (<7 days)"
 """For each failed tool, looks up its registry entry to find the GitHub repo,
 then checks if the latest release was published within the last 7 days.
 Tools with recent releases are assumed to have transient asset issues
