@@ -658,7 +658,7 @@ impl ConfigFile for MiseToml {
                         .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
                         .collect()
                 } else {
-                    env::PRISTINE_ENV.clone().into_iter().collect()
+                    env::PRISTINE_ENV.clone()
                 };
             for key in &env_results.env_remove {
                 env_vars.remove(key);
