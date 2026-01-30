@@ -276,3 +276,37 @@ assert_contains "mise prepare --dry-run" "custom_venv"
 # Clean up
 rm -rf .venv requirements.txt
 rm -f composer.lock composer.json package.json mise.toml schema.graphql
+
+# Test that prepare providers are NOT inherited from parent config files
+# (monorepo scenario: root defines [prepare.pnpm], subdirectory should not inherit it)
+mkdir -p subproject
+
+cat >mise.toml <<'EOF'
+[prepare.custom_root]
+sources = ["root_input.txt"]
+outputs = ["root_output.txt"]
+run = "echo root_ran"
+EOF
+touch root_input.txt
+
+cat >subproject/mise.toml <<'EOF'
+[prepare.custom_sub]
+sources = ["sub_input.txt"]
+outputs = ["sub_output.txt"]
+run = "echo sub_ran"
+EOF
+touch subproject/sub_input.txt
+
+# From root: only root provider should be visible
+assert_contains "mise prepare --list" "custom_root"
+assert_not_contains "mise prepare --list" "custom_sub"
+
+# From subdirectory: only subdirectory provider should be visible, not inherited root
+(
+	cd subproject
+	assert_contains "mise prepare --list" "custom_sub"
+	assert_not_contains "mise prepare --list" "custom_root"
+)
+
+# Clean up
+rm -rf subproject root_input.txt root_output.txt mise.toml

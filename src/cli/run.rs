@@ -276,12 +276,12 @@ impl Run {
             raw: self.raw,
             ..Default::default()
         };
-        ts.install_missing_versions(&mut config, &opts).await?;
+        let _ = ts.install_missing_versions(&mut config, &opts).await?;
 
         // Run auto-enabled prepare steps (unless --no-prepare)
         if !self.no_prepare {
             let env = ts.env_with_path(&config).await?;
-            let engine = PrepareEngine::new(config.clone())?;
+            let engine = PrepareEngine::new(&config)?;
             engine
                 .run(PrepareOptions {
                     auto_only: true, // Only run providers with auto=true

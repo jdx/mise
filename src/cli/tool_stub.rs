@@ -512,10 +512,10 @@ async fn execute_with_tool_request(
         ..Default::default()
     };
 
-    toolset
+    let (_, missing) = toolset
         .install_missing_versions(config, &install_opts)
         .await?;
-    toolset.notify_if_versions_missing(config).await;
+    toolset.notify_missing_versions(missing);
 
     // Find the binary path using cache
     match find_cached_or_resolve_bin_path(&toolset, &*config, stub, stub_path).await? {

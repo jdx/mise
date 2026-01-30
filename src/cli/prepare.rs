@@ -40,7 +40,7 @@ pub struct Prepare {
 impl Prepare {
     pub async fn run(self) -> Result<()> {
         let mut config = Config::get().await?;
-        let engine = PrepareEngine::new(config.clone())?;
+        let engine = PrepareEngine::new(&config)?;
 
         if self.list {
             self.list_providers(&engine)?;
