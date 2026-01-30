@@ -20,7 +20,7 @@ use crate::{backend::Backend, forgejo, github, gitlab};
 use async_trait::async_trait;
 use eyre::Result;
 use regex::Regex;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::sync::Arc;
 use xx::regex;
@@ -1332,7 +1332,22 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
     ctx.insert("x86_64_arch", x86_64_arch);
     ctx.insert("gnu_arch", gnu_arch);
 
-    match crate::tera::get_tera(None).render_str(template, &ctx) {
+    let mut tera = crate::tera::get_tera(None);
+    // Register target-aware os() and arch() functions that use the target platform
+    // instead of the compile-time platform
+    let make_remapping_fn = |value: String| {
+        move |args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
+            if let Some(s) = args.get(value.as_str()).and_then(|v| v.as_str()) {
+                Ok(tera::Value::String(s.to_string()))
+            } else {
+                Ok(tera::Value::String(value.clone()))
+            }
+        }
+    };
+    tera.register_function("os", make_remapping_fn(os.to_string()));
+    tera.register_function("arch", make_remapping_fn(arch.to_string()));
+
+    match tera.render_str(template, &ctx) {
         Ok(rendered) => rendered,
         Err(e) => {
             warn!("Failed to render template '{}': {}", template, e);

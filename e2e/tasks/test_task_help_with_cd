@@ -8,11 +8,11 @@ run = 'echo "Building project"'
 description = 'Build the project'
 EOF
 
-# For tasks WITHOUT usage spec, --help is passed through to the task
-assert "mise run --cd subdir build --help 2>&1 || true" "[build] $ echo \"Building project\" --help
-Building project --help"
+# For tasks WITHOUT usage spec, --help shows task info instead of executing
+assert_contains "mise run --cd subdir build --help 2>&1 || true" "Task: build"
+assert_contains "mise run --cd subdir build --help 2>&1 || true" "Description: Build the project"
 
-# -- separator also passes --help through
+# -- separator still passes --help through to the task
 assert "mise run --cd subdir build -- --help 2>&1 || true" "[build] $ echo \"Building project\" --help
 Building project --help"
 

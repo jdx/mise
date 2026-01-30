@@ -16,9 +16,8 @@ assert_contains "mise --help 2>&1 || true" "Usage: mise [OPTIONS] [TASK] [COMMAN
 assert_contains "mise install --help 2>&1 || true" "Usage: mise install [OPTIONS] [TOOL@VERSION]..."
 assert_contains "mise run --help 2>&1 || true" "Usage: run [OPTIONS] [TASK] [ARGS]..."
 assert_contains "mise atask -- --help 2>&1 || true" "Usage: atask <myarg>"
-# If task has no usage defined, --help is passed through to the task
-# (npm task just does 'echo npm', so --help is appended to output)
-assert "mise run -q npm --help 2>&1 || true" "npm --help"
+# If task has no usage defined, --help shows task info
+assert_contains "mise run npm --help 2>&1 || true" "Task: npm"
 # With --, --help is passed to the task script
 assert "mise -q npm -- --help 2>&1 || true" "npm --help"
 assert "mise atask -q -- -- --help 2>&1 || true" "--help"
