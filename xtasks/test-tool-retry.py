@@ -6,6 +6,7 @@
 GitHub/aqua whose latest upstream release is less than 7 days old have
 their failures treated as warnings instead of errors."""
 
+import json
 import os
 import re
 import subprocess
@@ -14,19 +15,28 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 GRACE_PERIOD = timedelta(days=7)
-REGISTRY_DIR = Path(__file__).resolve().parent.parent / "registry"
 
 
 def get_repo(tool: str) -> str | None:
-    """Extract the GitHub owner/repo from a tool's registry entry."""
-    toml_path = REGISTRY_DIR / f"{tool}.toml"
-    if not toml_path.exists():
+    """Extract the GitHub owner/repo from a tool's backend via mise."""
+    try:
+        result = subprocess.run(
+            ["mise", "tool", "--json", tool],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            return None
+        data = json.loads(result.stdout)
+        backend = data.get("backend", "")
+        # backend looks like "github:owner/repo[bin=x]" or "aqua:owner/repo"
+        for prefix in ("github:", "aqua:"):
+            if backend.startswith(prefix):
+                repo = backend[len(prefix):]
+                # strip any trailing [options]
+                return repo.split("[")[0]
         return None
-    content = toml_path.read_text()
-    m = re.search(r'(?:github|aqua):([^"\]\s]+)', content)
-    if not m:
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, KeyError):
         return None
-    return re.sub(r"\[.*", "", m.group(1))
 
 
 def get_latest_release_date(repo: str) -> datetime | None:
@@ -39,7 +49,7 @@ def get_latest_release_date(repo: str) -> datetime | None:
         if result.returncode != 0 or not result.stdout.strip():
             return None
         return datetime.fromisoformat(result.stdout.strip().replace("Z", "+00:00"))
-    except (subprocess.TimeoutExpired, Exception):
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError, ValueError):
         return None
 
 
@@ -74,7 +84,7 @@ def check_grace_period(tools: list[str]) -> list[str]:
     for tool in tools:
         repo = get_repo(tool)
         if not repo:
-            print(f"::error::{tool}: no github/aqua backend found in registry")
+            print(f"::error::{tool}: no github/aqua backend found")
             hard_failures.append(tool)
             continue
 
