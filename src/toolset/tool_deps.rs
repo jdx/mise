@@ -3,7 +3,8 @@ use std::collections::{HashMap, HashSet};
 use eyre::Result;
 use indexmap::IndexSet;
 use petgraph::Direction;
-use petgraph::graph::{DiGraph, NodeIndex};
+use petgraph::algo::is_cyclic_directed;
+use petgraph::stable_graph::{NodeIndex, StableGraph};
 use tokio::sync::mpsc;
 
 use crate::toolset::tool_request::ToolRequest;
@@ -22,8 +23,9 @@ fn tool_key(tr: &ToolRequest) -> ToolKey {
 #[derive(Debug)]
 pub struct ToolDeps {
     /// The dependency graph where edges point from a tool to its dependencies
-    /// (i.e., edge A→B means "A depends on B", so B must be installed first)
-    graph: DiGraph<ToolRequest, ()>,
+    /// (i.e., edge A→B means "A depends on B", so B must be installed first).
+    /// Uses StableGraph to maintain valid node indices after removals.
+    graph: StableGraph<ToolRequest, ()>,
     /// Maps tool keys to their node indices in the graph
     node_indices: HashMap<ToolKey, NodeIndex>,
     /// Tools that have already been sent for installation
@@ -32,9 +34,11 @@ pub struct ToolDeps {
     completed: HashSet<ToolKey>,
     /// Tools that failed to install
     failed: HashSet<ToolKey>,
-    /// Tools that are blocked due to dependency failures
+    /// Tools that are blocked due to dependency failures or cycles
     blocked: HashSet<ToolKey>,
-    /// Channel sender for emitting ready tools (None signals completion)
+    /// Channel sender for emitting ready tools (None signals completion).
+    /// Initially created with a dummy receiver that is dropped; the real
+    /// receiver is created when `subscribe()` is called.
     tx: mpsc::UnboundedSender<Option<ToolRequest>>,
 }
 
@@ -42,7 +46,7 @@ impl ToolDeps {
     /// Creates a new ToolDeps from a list of tool requests.
     /// Builds the dependency graph based on each tool's dependencies.
     pub fn new(requests: Vec<ToolRequest>) -> Result<Self> {
-        let mut graph = DiGraph::new();
+        let mut graph = StableGraph::new();
         let mut node_indices = HashMap::new();
 
         // First pass: add all requested tools to the graph
@@ -86,9 +90,10 @@ impl ToolDeps {
             }
         }
 
+        // Create a dummy channel - the real one is created in subscribe()
         let (tx, _) = mpsc::unbounded_channel();
 
-        Ok(Self {
+        let mut deps = Self {
             graph,
             node_indices,
             sent: HashSet::new(),
@@ -96,7 +101,12 @@ impl ToolDeps {
             failed: HashSet::new(),
             blocked: HashSet::new(),
             tx,
-        })
+        };
+
+        // Detect and block any cycles
+        deps.detect_and_block_cycles();
+
+        Ok(deps)
     }
 
     /// Subscribe to receive tools that are ready to install.
@@ -113,7 +123,7 @@ impl ToolDeps {
     pub fn complete_success(&mut self, tr: &ToolRequest) {
         let key = tool_key(tr);
         self.completed.insert(key.clone());
-        self.remove_node(tr);
+        self.remove_node(&key);
         self.emit_leaves();
     }
 
@@ -123,17 +133,18 @@ impl ToolDeps {
         self.completed.insert(key.clone());
         self.failed.insert(key.clone());
 
-        // Find and block all transitive dependents
+        // Find and block all transitive dependents before removing the node
         if let Some(&idx) = self.node_indices.get(&key) {
             let dependents = self.get_transitive_dependents(idx);
             for dep_idx in dependents {
-                let dep_tr = &self.graph[dep_idx];
-                let dep_key = tool_key(dep_tr);
-                self.blocked.insert(dep_key);
+                if let Some(dep_tr) = self.graph.node_weight(dep_idx) {
+                    let dep_key = tool_key(dep_tr);
+                    self.blocked.insert(dep_key);
+                }
             }
         }
 
-        self.remove_node(tr);
+        self.remove_node(&key);
         self.emit_leaves();
     }
 
@@ -142,16 +153,79 @@ impl ToolDeps {
         self.graph.node_count() == 0
     }
 
-    /// Returns the list of blocked tools (those whose dependencies failed)
+    /// Returns the list of blocked tools (those whose dependencies failed or are in cycles)
     pub fn blocked_tools(&self) -> Vec<ToolRequest> {
         self.graph
             .node_indices()
-            .filter(|&idx| {
-                let tr = &self.graph[idx];
-                self.blocked.contains(&tool_key(tr))
+            .filter_map(|idx| {
+                let tr = self.graph.node_weight(idx)?;
+                if self.blocked.contains(&tool_key(tr)) {
+                    Some(tr.clone())
+                } else {
+                    None
+                }
             })
-            .map(|idx| self.graph[idx].clone())
             .collect()
+    }
+
+    /// Detect cycles in the graph and mark all nodes in cycles as blocked
+    fn detect_and_block_cycles(&mut self) {
+        if !is_cyclic_directed(&self.graph) {
+            return;
+        }
+
+        // Find all nodes that are part of cycles by checking which nodes
+        // have no path to a leaf (a node with out-degree 0)
+        let mut can_reach_leaf: HashSet<NodeIndex> = HashSet::new();
+
+        // Start with all leaf nodes
+        for idx in self.graph.node_indices() {
+            if self
+                .graph
+                .neighbors_directed(idx, Direction::Outgoing)
+                .next()
+                .is_none()
+            {
+                can_reach_leaf.insert(idx);
+            }
+        }
+
+        // Propagate backwards: if a node points to a node that can reach a leaf,
+        // then it can also reach a leaf
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for idx in self.graph.node_indices() {
+                if can_reach_leaf.contains(&idx) {
+                    continue;
+                }
+                // Check if any dependency can reach a leaf
+                let deps_can_reach = self
+                    .graph
+                    .neighbors_directed(idx, Direction::Outgoing)
+                    .all(|dep_idx| can_reach_leaf.contains(&dep_idx));
+                if deps_can_reach
+                    && self
+                        .graph
+                        .neighbors_directed(idx, Direction::Outgoing)
+                        .next()
+                        .is_some()
+                {
+                    can_reach_leaf.insert(idx);
+                    changed = true;
+                }
+            }
+        }
+
+        // Any node that cannot reach a leaf is in a cycle - block it
+        for idx in self.graph.node_indices() {
+            if !can_reach_leaf.contains(&idx) {
+                if let Some(tr) = self.graph.node_weight(idx) {
+                    let key = tool_key(tr);
+                    self.blocked.insert(key);
+                }
+            }
+        }
     }
 
     /// Emit all tools that have no remaining dependencies (leaf nodes)
@@ -187,7 +261,7 @@ impl ToolDeps {
     fn find_leaves(&self) -> Vec<ToolRequest> {
         self.graph
             .externals(Direction::Outgoing)
-            .map(|idx| self.graph[idx].clone())
+            .filter_map(|idx| self.graph.node_weight(idx).cloned())
             .collect()
     }
 
@@ -200,20 +274,19 @@ impl ToolDeps {
 
         // Or if all remaining tools are blocked
         self.graph.node_indices().all(|idx| {
-            let tr = &self.graph[idx];
-            let key = tool_key(tr);
-            self.blocked.contains(&key)
+            self.graph
+                .node_weight(idx)
+                .map(|tr| self.blocked.contains(&tool_key(tr)))
+                .unwrap_or(true)
         })
     }
 
-    /// Remove a node from the graph
-    fn remove_node(&mut self, tr: &ToolRequest) {
-        let key = tool_key(tr);
-        if let Some(&idx) = self.node_indices.get(&key) {
+    /// Remove a node from the graph by its key.
+    /// Uses StableGraph so other node indices remain valid.
+    fn remove_node(&mut self, key: &ToolKey) {
+        if let Some(&idx) = self.node_indices.get(key) {
             self.graph.remove_node(idx);
-            // Note: petgraph may reuse indices, so we should rebuild node_indices
-            // However, since we never add new nodes after construction, we can just
-            // leave stale entries (they won't match anything)
+            self.node_indices.remove(key);
         }
     }
 

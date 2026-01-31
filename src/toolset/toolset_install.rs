@@ -315,6 +315,9 @@ impl Toolset {
 
         loop {
             tokio::select! {
+                // Use `biased` to ensure completed installations are handled before starting new ones.
+                // This priority ordering ensures dependency tracking stays correct: we must process
+                // completions (which may unblock dependents) before spawning new installations.
                 biased;
 
                 // Handle completed installations first (higher priority)
@@ -343,7 +346,9 @@ impl Toolset {
                             let permit = match semaphore.clone().acquire_owned().await {
                                 Ok(p) => p,
                                 Err(e) => {
-                                    failed.push((tr, eyre::eyre!("Failed to acquire semaphore: {}", e)));
+                                    // Mark as failed and notify tool_deps so dependents are blocked
+                                    failed.push((tr.clone(), eyre::eyre!("Failed to acquire semaphore: {}", e)));
+                                    tool_deps.lock().await.complete_failure(&tr);
                                     continue;
                                 }
                             };
