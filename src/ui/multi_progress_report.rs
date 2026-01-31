@@ -16,8 +16,6 @@ pub struct MultiProgressReport {
     force_progress: bool,
     total_count: Mutex<usize>,
     completed_count: Mutex<usize>,
-    /// Track whether progress has been initialized
-    initialized: Mutex<bool>,
     /// Header job for updating progress display
     header_job: Mutex<Option<Arc<progress::ProgressJob>>>,
 }
@@ -79,7 +77,6 @@ impl MultiProgressReport {
             force_progress,
             total_count: Mutex::new(0),
             completed_count: Mutex::new(0),
-            initialized: Mutex::new(false),
             header_job: Mutex::new(None),
         }
     }
@@ -118,12 +115,10 @@ impl MultiProgressReport {
     }
 
     pub fn init_footer(&self, dry_run: bool, _message: &str, total_count: usize) {
-        let mut initialized = self.initialized.lock().unwrap();
-        if *initialized {
+        // Only create header once - check if already initialized
+        if self.header_job.lock().unwrap().is_some() {
             return;
         }
-        *initialized = true;
-        drop(initialized);
 
         // Set total count for progress tracking
         *self.total_count.lock().unwrap() = total_count;
