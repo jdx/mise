@@ -142,7 +142,18 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
         "hash",
         move |input: &Value, args: &HashMap<String, Value>| match input {
             Value::String(s) => {
-                let mut hash = hash::hash_blake3_to_str(s);
+                // Get the algorithm, default to sha256
+                let algorithm = args
+                    .get("algorithm")
+                    .and_then(Value::as_str)
+                    .unwrap_or("sha256");
+
+                let mut hash = match algorithm {
+                    "sha256" => hash::hash_sha256_to_str(s),
+                    "blake3" => hash::hash_blake3_to_str(s),
+                    _ => return Err(format!("unknown hash algorithm: {algorithm}").into()),
+                };
+
                 if let Some(len) = args.get("len").and_then(Value::as_u64) {
                     hash = hash.chars().take(len as usize).collect();
                 }
@@ -642,7 +653,14 @@ mod tests {
     #[tokio::test]
     async fn test_hash() {
         let _config = Config::get().await.unwrap();
+        // SHA256 of "foo" is 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
         let s = render("{{ \"foo\" | hash(len=8) }}");
+        assert_eq!(s, "2c26b46b");
+        // Test explicit sha256
+        let s = render("{{ \"foo\" | hash(algorithm=\"sha256\", len=8) }}");
+        assert_eq!(s, "2c26b46b");
+        // Test blake3 - BLAKE3 of "foo" starts with 04e0bb39
+        let s = render("{{ \"foo\" | hash(algorithm=\"blake3\", len=8) }}");
         assert_eq!(s, "04e0bb39");
     }
 
