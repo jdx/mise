@@ -278,6 +278,13 @@ impl Toolset {
             return (vec![], vec![]);
         }
 
+        // Build index map to preserve original request order
+        let request_order: HashMap<String, usize> = versions
+            .iter()
+            .enumerate()
+            .map(|(i, tr)| (format!("{}@{}", tr.ba().full(), tr.version()), i))
+            .collect();
+
         // Build dependency graph
         let tool_deps = match ToolDeps::new(versions.clone()) {
             Ok(deps) => Arc::new(Mutex::new(deps)),
@@ -413,6 +420,12 @@ impl Toolset {
             failed.push((tr.clone(), eyre::eyre!("Skipped due to failed dependency")));
             MultiProgressReport::get().footer_inc(1);
         }
+
+        // Sort installed versions by original request order to preserve user's intended ordering
+        installed.sort_by_key(|tv| {
+            let key = format!("{}@{}", tv.ba().full(), tv.request.version());
+            request_order.get(&key).copied().unwrap_or(usize::MAX)
+        });
 
         (installed, failed)
     }
