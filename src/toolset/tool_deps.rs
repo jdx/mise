@@ -83,10 +83,11 @@ impl ToolDeps {
                             if dep_fulls.iter().any(|f| other_fulls.contains(f)) {
                                 let other_key = tool_key(other_tr);
                                 if tr_key != other_key
-                                    && let Some(&other_idx) = node_indices.get(&other_key) {
-                                        // Edge from tr to dep means "tr depends on dep"
-                                        graph.update_edge(tr_idx, other_idx, ());
-                                    }
+                                    && let Some(&other_idx) = node_indices.get(&other_key)
+                                {
+                                    // Edge from tr to dep means "tr depends on dep"
+                                    graph.update_edge(tr_idx, other_idx, ());
+                                }
                             }
                         }
                     }
