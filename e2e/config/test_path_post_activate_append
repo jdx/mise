@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+
+# Test that paths appended to PATH after `mise activate` are not reordered
+# to the front. Paths added after activation that appear at the end of PATH
+# should stay at the end after hook-env runs.
+#
+# Regression test for https://github.com/jdx/mise/discussions/7694
+# where `mise activate` would move post-activation appended paths to the
+# beginning of PATH, changing the intended priority order.
+
+# Create test directories
+mkdir -p "$HOME/system/bin"
+mkdir -p "$HOME/appended/bin"
+
+# Create executables in both dirs with the same name
+cat >"$HOME/system/bin/test-priority" <<'EOF'
+#!/usr/bin/env bash
+echo "system version"
+EOF
+
+cat >"$HOME/appended/bin/test-priority" <<'EOF'
+#!/usr/bin/env bash
+echo "appended version"
+EOF
+
+chmod +x "$HOME/system/bin/test-priority"
+chmod +x "$HOME/appended/bin/test-priority"
+
+# Set up initial PATH with system/bin
+export PATH="$HOME/system/bin:$PATH"
+
+# Activate mise (this captures __MISE_ORIG_PATH)
+eval "$(mise activate bash)"
+
+# Simulate a user appending a path AFTER mise activation (e.g., path+=$FOO/bin in .zshrc)
+export PATH="$PATH:$HOME/appended/bin"
+
+# Create an empty mise.toml so hook-env has something to work with
+cat >mise.toml <<'EOF'
+EOF
+
+# Run hook-env to reconstruct PATH
+eval "$(mise hook-env)"
+
+echo "DEBUG: Final PATH=$PATH"
+echo "DEBUG: __MISE_ORIG_PATH=${__MISE_ORIG_PATH:-not set}"
+
+# The system version should still win because system/bin was earlier in PATH
+# and appended/bin was added at the end
+assert_contains "test-priority" "system version"
+
+# Verify appended/bin is AFTER system/bin in PATH (not moved to front)
+SYSTEM_POS=$(echo "$PATH" | tr ':' '\n' | grep -n "system/bin" | head -1 | cut -d: -f1)
+APPENDED_POS=$(echo "$PATH" | tr ':' '\n' | grep -n "appended/bin" | head -1 | cut -d: -f1)
+
+echo "DEBUG: system/bin at position $SYSTEM_POS, appended/bin at position $APPENDED_POS"
+
+if [[ $APPENDED_POS -gt $SYSTEM_POS ]]; then
+	echo "SUCCESS: appended/bin stays after system/bin in PATH"
+else
+	echo "FAIL: appended/bin ($APPENDED_POS) was moved before system/bin ($SYSTEM_POS)"
+	exit 1
+fi
