@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use clap::ValueHint;
-use demand::{Confirm, DemandOption, Input, MultiSelect, Select};
+use demand::{DemandOption, Input, MultiSelect, Select};
 use eyre::{Result, eyre};
 use indoc::formatdoc;
 use itertools::Itertools;
@@ -119,26 +119,16 @@ impl ConfigGenerate {
         let theme = get_theme();
         let mut state = WizardState::default();
 
-        // First, check for detected tools and offer to add them
+        // Auto-add detected tools (users can remove via edit menu)
         let detected = self.detect_tools();
         if !detected.is_empty() {
             miseprintln!("Detected tools from project files:\n");
             for tool in &detected {
                 miseprintln!("  • {tool}");
+                let version = tool.version.clone().unwrap_or_else(|| "latest".to_string());
+                state.tools.insert(tool.name.clone(), version);
             }
             miseprintln!();
-
-            let use_detected = Confirm::new("Use detected tools?")
-                .theme(&theme)
-                .run()
-                .map_err(handle_interrupt)?;
-
-            if use_detected {
-                for tool in &detected {
-                    let version = tool.version.clone().unwrap_or_else(|| "latest".to_string());
-                    state.tools.insert(tool.name.clone(), version);
-                }
-            }
         }
 
         // Main menu loop
