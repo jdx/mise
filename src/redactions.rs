@@ -69,14 +69,15 @@ impl Redactor {
         Self::new(patterns)
     }
 
-    /// Returns true if there are no patterns to redact.
-    pub fn is_empty(&self) -> bool {
-        self.patterns.is_empty()
-    }
-
     /// Returns the patterns being redacted.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn patterns(&self) -> &IndexSet<String> {
         &self.patterns
+    }
+
+    /// Returns the patterns as an Arc for efficient sharing.
+    pub fn patterns_arc(&self) -> Arc<IndexSet<String>> {
+        Arc::clone(&self.patterns)
     }
 
     /// Redact all matching patterns in the input string, replacing them with `[redacted]`.
@@ -90,16 +91,16 @@ impl Redactor {
                 let replacements: Vec<&str> = vec!["[redacted]"; self.patterns.len()];
                 ac.replace_all(input, &replacements)
             }
-            None => input.to_string(),
+            None if self.patterns.is_empty() => input.to_string(),
+            None => {
+                // Fallback to naive approach if automaton failed to build
+                let mut result = input.to_string();
+                for pattern in self.patterns.iter() {
+                    result = result.replace(pattern, "[redacted]");
+                }
+                result
+            }
         }
-    }
-
-    /// Redact in place, returning the same String if no changes were made.
-    pub fn redact_string(&self, input: String) -> String {
-        if self.automaton.is_none() {
-            return input;
-        }
-        self.redact(&input)
     }
 }
 

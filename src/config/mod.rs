@@ -699,14 +699,9 @@ impl Config {
         *r = r.with_additional(new_redactions);
     }
 
-    /// Get the current redactor (with cached Aho-Corasick automaton).
-    pub fn redactor(&self) -> Redactor {
-        _REDACTOR.lock().unwrap().clone()
-    }
-
     /// Get the current redaction patterns.
     pub fn redactions(&self) -> Arc<IndexSet<String>> {
-        Arc::new(_REDACTOR.lock().unwrap().patterns().clone())
+        _REDACTOR.lock().unwrap().patterns_arc()
     }
 
     /// Redact sensitive values from a string using Aho-Corasick for efficiency.
