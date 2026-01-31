@@ -61,17 +61,17 @@ function PLUGIN:PostInstall(ctx)
 
     -- Install LuaRocks for Lua 5.x
     if major and major >= 5 then
-        -- Get latest LuaRocks version from GitHub
+        -- Get latest LuaRocks version from GitHub releases
         local luarocksVersion = "3.11.1" -- Default fallback
 
         local resp, err = http.get({
-            url = "https://api.github.com/repos/luarocks/luarocks/tags?per_page=1",
+            url = "https://api.github.com/repos/luarocks/luarocks/releases/latest",
         })
 
         if err == nil and resp.status_code == 200 then
             local data = json.decode(resp.body)
-            if data ~= nil and type(data) == "table" and #data > 0 then
-                local tag = data[1]["name"]
+            if data ~= nil and type(data) == "table" then
+                local tag = data["tag_name"]
                 if tag then
                     -- Remove 'v' prefix if present
                     luarocksVersion = string.gsub(tag, "^v", "")
@@ -80,7 +80,7 @@ function PLUGIN:PostInstall(ctx)
         end
 
         -- Download and install LuaRocks
-        local luarocksUrl = "https://luarocks.org/releases/luarocks-" .. luarocksVersion .. ".tar.gz"
+        local luarocksUrl = "https://github.com/luarocks/luarocks/archive/refs/tags/v" .. luarocksVersion .. ".tar.gz"
         local luarocksArchive = sdkPath .. "/luarocks.tar.gz"
 
         local downloadCmd = string.format("curl -sL '%s' -o '%s'", luarocksUrl, luarocksArchive)

@@ -1,5 +1,16 @@
 # Changelog
 
+## [2026.1.12](https://github.com/jdx/mise/compare/v2026.1.11..v2026.1.12) - 2026-01-31
+
+### 🐛 Bug Fixes
+
+- **(task)** resolve monorepo task includes relative to config file directory by @jdx in [#7917](https://github.com/jdx/mise/pull/7917)
+- disable autocrlf on git clone to fix WSL issues by @jdx in [#7916](https://github.com/jdx/mise/pull/7916)
+
+### 📚 Documentation
+
+- **(tasks)** add bash array pattern for variadic args by @jdx in [#7914](https://github.com/jdx/mise/pull/7914)
+
 ## [2026.1.11](https://github.com/jdx/mise/compare/v2026.1.10..v2026.1.11) - 2026-01-30
 
 ### 🚀 Features
