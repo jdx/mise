@@ -76,55 +76,10 @@ fn normal_prefix(pad: usize, prefix: &str) -> String {
     pad_prefix(pad, prefix)
 }
 
-/// Format bytes as human-readable string (e.g., "5.2 MB")
-fn format_bytes(bytes: u64) -> String {
-    const KB: f64 = 1024.0;
-    const MB: f64 = KB * 1024.0;
-    const GB: f64 = MB * 1024.0;
-
-    let bytes_f = bytes as f64;
-    if bytes_f >= GB {
-        format!("{:.1} GB", bytes_f / GB)
-    } else if bytes_f >= MB {
-        format!("{:.1} MB", bytes_f / MB)
-    } else if bytes_f >= KB {
-        format!("{:.1} KB", bytes_f / KB)
-    } else {
-        format!("{} B", bytes)
-    }
-}
-
-/// Progress state for tracking multi-operation progress
-#[derive(Debug)]
-struct ProgressState {
-    total_operations: Option<usize>,
-    current_operation: usize,
-    operation_count: u32,
-    operation_base: u64,
-    operation_length: u64,
-    position: u64,
-    length: Option<u64>,
-}
-
-impl Default for ProgressState {
-    fn default() -> Self {
-        Self {
-            total_operations: None,
-            current_operation: 0,
-            operation_count: 0,
-            operation_base: 0,
-            operation_length: 1_000_000,
-            position: 0,
-            length: None,
-        }
-    }
-}
-
 /// clx-based progress report implementation
 #[derive(Debug)]
 pub struct ProgressReport {
     job: Arc<ProgressJob>,
-    state: Mutex<ProgressState>,
 }
 
 impl ProgressReport {
@@ -136,53 +91,18 @@ impl ProgressReport {
         // Template: prefix + message + optional bytes/progress bar + spinner on right
         // Use flex_fill to pad message and push progress bar to right edge
         // Use "arc" spinner style instead of default mini_dot
-        // bytes prop is set separately with actual byte values (not the mapped 0-1M progress scale)
-        let body = "{{ prefix }} {{ message | flex_fill }} {% if total %}{{ bytes }} {{ eta(hide_complete=true) }} {{ progress_bar(width=20, hide_complete=true) }} {% endif %}{{ spinner(name=\"arc\") }}";
+        // clx's bytes() function shows actual byte values for the current operation
+        // while clx handles the multi-operation mapping internally for OSC progress
+        // Use bytes(total=false, hide_complete=true) to show only current bytes and hide on completion
+        let body = "{{ prefix }} {{ message | flex_fill }} {% if total %}{{ bytes(total=false, hide_complete=true) }} {{ eta(hide_complete=true) }} {{ progress_bar(width=20, hide_complete=true) }} {% endif %}{{ spinner(name=\"arc\") }}";
 
         let job = ProgressJobBuilder::new()
             .body(body)
             .prop("prefix", &formatted_prefix)
             .prop("message", "")
-            .prop("bytes", "")
             .start();
 
-        ProgressReport {
-            job,
-            state: Mutex::new(ProgressState::default()),
-        }
-    }
-
-    fn update_terminal_progress(&self) {
-        let state = self.state.lock().unwrap();
-
-        // If no length set, we're spinning - report minimal progress
-        if state.length.is_none() {
-            return;
-        }
-
-        let pb_len = state.length.unwrap();
-        let pb_progress = if pb_len > 0 {
-            (state.position as f64 / pb_len as f64).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-
-        // Map to allocated range
-        let mapped_position =
-            state.operation_base + (pb_progress * state.operation_length as f64) as u64;
-
-        // Update bytes display with actual values
-        let bytes_str = format!(
-            "{} / {}",
-            format_bytes(state.position),
-            format_bytes(pb_len)
-        );
-        drop(state);
-        self.job.prop("bytes", &bytes_str);
-
-        // Update clx progress job
-        self.job.progress_current(mapped_position as usize);
-        self.job.progress_total(1_000_000);
+        ProgressReport { job }
     }
 }
 
@@ -192,80 +112,19 @@ impl SingleReport for ProgressReport {
     }
 
     fn set_message(&self, message: String) {
-        let state = self.state.lock().unwrap();
-        let formatted = if let Some(total) = state.total_operations {
-            format!("[{}/{}] {}", state.current_operation, total, message)
-        } else {
-            message
-        };
-        drop(state);
-        self.job.prop("message", &formatted.replace('\r', ""));
+        self.job.prop("message", &message.replace('\r', ""));
     }
 
     fn inc(&self, delta: u64) {
-        {
-            let mut state = self.state.lock().unwrap();
-            state.position += delta;
-        }
-        self.update_terminal_progress();
-
-        // Check if we've completed the current operation
-        let state = self.state.lock().unwrap();
-        if state.length.is_some() && state.position >= state.length.unwrap() {
-            drop(state);
-            // Reset to spinning state and clear bytes display
-            self.job.prop("bytes", "");
-            self.job.progress_current(0);
-            self.job.progress_total(0);
-        }
+        self.job.increment(delta as usize);
     }
 
     fn set_position(&self, pos: u64) {
-        {
-            let mut state = self.state.lock().unwrap();
-            state.position = pos;
-        }
-        self.update_terminal_progress();
-
-        // Check if we've completed the current operation
-        let state = self.state.lock().unwrap();
-        if state.length.is_some() && state.position >= state.length.unwrap() {
-            drop(state);
-            // Reset to spinning state and clear bytes display
-            self.job.prop("bytes", "");
-            self.job.progress_current(0);
-            self.job.progress_total(0);
-        }
+        self.job.progress_current(pos as usize);
     }
 
     fn set_length(&self, length: u64) {
-        let mut state = self.state.lock().unwrap();
-
-        // Increment operation count
-        state.operation_count += 1;
-        let count = state.operation_count;
-
-        // When starting a new operation (count > 1), complete the previous operation first
-        if count > 1 {
-            let completed_position = state.operation_base + state.operation_length;
-            state.operation_base = completed_position;
-
-            // Report completion of previous operation
-            self.job.progress_current(completed_position as usize);
-            self.job.progress_total(1_000_000);
-        }
-
-        // Calculate allocation for this operation
-        let total = state.total_operations.unwrap_or(1).max(1);
-        let per_operation = 1_000_000 / total as u64;
-        state.operation_length = per_operation;
-
-        // Reset position for new operation
-        state.position = 0;
-        state.length = Some(length);
-
-        drop(state);
-        self.update_terminal_progress();
+        self.job.progress_total(length as usize);
     }
 
     fn abandon(&self) {
@@ -273,11 +132,6 @@ impl SingleReport for ProgressReport {
     }
 
     fn finish_with_icon(&self, _message: String, icon: ProgressIcon) {
-        // Mark this report as complete (100%)
-        // Set total first, then current, because progress_current clamps to total
-        self.job.progress_total(1_000_000);
-        self.job.progress_current(1_000_000);
-
         // Set status based on icon
         match icon {
             ProgressIcon::Success => self.job.set_status(ProgressStatus::Done),
@@ -288,16 +142,11 @@ impl SingleReport for ProgressReport {
     }
 
     fn start_operations(&self, count: usize) {
-        let mut state = self.state.lock().unwrap();
-        state.total_operations = Some(count.max(1));
-        state.current_operation = 1;
+        self.job.start_operations(count);
     }
 
     fn next_operation(&self) {
-        let mut state = self.state.lock().unwrap();
-        if state.total_operations.is_some() {
-            state.current_operation += 1;
-        }
+        self.job.next_operation();
     }
 }
 

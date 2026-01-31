@@ -320,12 +320,9 @@ impl HttpBackend {
         let filename = self.dest_filename(file_path, file_info, opts);
         let dest_file = dest.join(&filename);
 
-        // Report extraction progress
+        // Report extraction progress (no bytes - we don't know total for extraction)
         if let Some(pr) = pr {
             pr.set_message(format!("extract {}", file_info.file_name()));
-            if let Ok(metadata) = file_path.metadata() {
-                pr.set_length(metadata.len());
-            }
         }
 
         match file_info.extension.as_str() {
@@ -334,13 +331,6 @@ impl HttpBackend {
             "bz2" => file::un_bz2(file_path, &dest_file)?,
             "zst" => file::un_zst(file_path, &dest_file)?,
             _ => unreachable!(),
-        }
-
-        // Mark extraction complete
-        if let Some(pr) = pr
-            && let Ok(metadata) = file_path.metadata()
-        {
-            pr.set_position(metadata.len());
         }
 
         file::make_executable(&dest_file)?;
@@ -359,22 +349,12 @@ impl HttpBackend {
         let filename = self.dest_filename(file_path, file_info, opts);
         let dest_file = dest.join(&filename);
 
-        // Report extraction progress
+        // Report extraction progress (no bytes - we don't know total for extraction)
         if let Some(pr) = pr {
             pr.set_message(format!("extract {}", file_info.file_name()));
-            if let Ok(metadata) = file_path.metadata() {
-                pr.set_length(metadata.len());
-            }
         }
 
         file::copy(file_path, &dest_file)?;
-
-        // Mark extraction complete
-        if let Some(pr) = pr
-            && let Ok(metadata) = file_path.metadata()
-        {
-            pr.set_position(metadata.len());
-        }
 
         file::make_executable(&dest_file)?;
         Ok(ExtractionType::RawFile { filename })

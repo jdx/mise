@@ -798,13 +798,6 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
     // }
     create_dir_all(dest).wrap_err_with(err)?;
 
-    // Set progress length once at the beginning with archive size
-    if let Some(pr) = &opts.pr
-        && let Ok(metadata) = archive.metadata()
-    {
-        pr.set_length(metadata.len());
-    }
-
     // Try to extract using the tar crate, detecting sparse files during extraction
     let mut needs_system_tar = false;
     for entry in Archive::new(tar).entries().wrap_err_with(err)? {
@@ -825,10 +818,6 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
 
         trace!("extracting {}", entry.path().wrap_err_with(err)?.display());
         entry.unpack_in(dest).wrap_err_with(err)?;
-        // Update position as we extract files
-        if let Some(pr) = &opts.pr {
-            pr.set_position(entry.raw_file_position());
-        }
     }
 
     // Check for the GNUSparseFile.0 directory which indicates the tar crate
