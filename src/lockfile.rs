@@ -67,6 +67,36 @@ impl PlatformInfo {
             && self.url_api.is_none()
             && self.conda_deps.is_none()
     }
+
+    /// Merge this PlatformInfo with another, preserving important data.
+    /// - Prefers sha256 checksums over blake3 (more portable/verifiable)
+    /// - Preserves URL if missing in self
+    /// - Preserves url_api if missing in self
+    pub fn merge_with(&self, other: &PlatformInfo) -> PlatformInfo {
+        // For checksums, prefer sha256 over blake3 since sha256 comes from
+        // official releases and is more portable/verifiable
+        let checksum = match (&self.checksum, &other.checksum) {
+            (Some(self_cs), Some(other_cs)) => {
+                let self_is_sha256 = self_cs.starts_with("sha256:");
+                let other_is_sha256 = other_cs.starts_with("sha256:");
+                match (self_is_sha256, other_is_sha256) {
+                    (true, _) => Some(self_cs.clone()),
+                    (false, true) => Some(other_cs.clone()),
+                    (false, false) => Some(self_cs.clone()), // both blake3, use self
+                }
+            }
+            (Some(cs), None) | (None, Some(cs)) => Some(cs.clone()),
+            (None, None) => None,
+        };
+
+        PlatformInfo {
+            checksum,
+            size: self.size.or(other.size),
+            url: self.url.clone().or_else(|| other.url.clone()),
+            url_api: self.url_api.clone().or_else(|| other.url_api.clone()),
+            conda_deps: self.conda_deps.clone().or_else(|| other.conda_deps.clone()),
+        }
+    }
 }
 
 impl TryFrom<toml::Value> for PlatformInfo {
@@ -563,9 +593,14 @@ fn merge_tool_entries_with_env(
             .entry(key)
             .or_insert_with(|| (tool.clone(), BTreeSet::new(), false));
 
-        // Merge platforms
+        // Merge platforms - properly combine platform info to preserve URLs and prefer sha256
         for (platform, info) in tool.platforms {
-            entry.0.platforms.entry(platform).or_insert(info);
+            entry
+                .0
+                .platforms
+                .entry(platform)
+                .and_modify(|existing| *existing = info.merge_with(existing))
+                .or_insert(info);
         }
 
         // Track env - if any entry has no env, mark as base
@@ -581,12 +616,13 @@ fn merge_tool_entries_with_env(
         for existing_tool in existing {
             let key = (existing_tool.version.clone(), existing_tool.options.clone());
             if let Some(entry) = by_key.get_mut(&key) {
-                // Merge platform info from existing
+                // Merge platform info from existing - preserve URLs and prefer sha256
                 for (platform, info) in &existing_tool.platforms {
                     entry
                         .0
                         .platforms
                         .entry(platform.clone())
+                        .and_modify(|existing| *existing = existing.merge_with(info))
                         .or_insert(info.clone());
                 }
                 // Preserve existing env if we have no new env info
