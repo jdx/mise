@@ -6,7 +6,10 @@ use crate::config::{Config, Settings, config_file};
 use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
 use crate::toolset::outdated_info::OutdatedInfo;
-use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder};
+use crate::toolset::{
+    InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder,
+    get_versions_needed_by_tracked_configs,
+};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{config, ui};
@@ -169,8 +172,7 @@ impl Upgrade {
                     if &o.latest == current {
                         return None;
                     }
-
-                    Some((o, current))
+                    Some((o, current.clone()))
                 })
             })
             .collect();
@@ -241,12 +243,33 @@ impl Upgrade {
             }
         }
 
+        // Reset config after upgrades so tracked configs resolve with new versions
+        *config = Config::reset().await?;
+
+        // Get versions needed by tracked configs AFTER upgrade
+        // This ensures we don't uninstall versions still needed by other projects
+        let versions_needed_by_tracked = get_versions_needed_by_tracked_configs(config).await?;
+
         // Only uninstall old versions of tools that were successfully upgraded
+        // and are not needed by any tracked config
         for (o, tv) in to_remove {
             if successful_versions
                 .iter()
                 .any(|v| v.ba() == o.tool_version.ba())
             {
+                // Check if this version is still needed by another tracked config
+                let version_key = (
+                    o.tool_version.ba().short.to_string(),
+                    o.tool_version.tv_pathname(),
+                );
+                if versions_needed_by_tracked.contains(&version_key) {
+                    debug!(
+                        "Keeping {}@{} because it's still needed by a tracked config",
+                        o.name, tv
+                    );
+                    continue;
+                }
+
                 let pr = mpr.add(&format!("uninstall {}@{}", o.name, tv));
                 if let Err(e) = self
                     .uninstall_old_version(config, &o.tool_version, pr.as_ref())
@@ -257,7 +280,6 @@ impl Upgrade {
             }
         }
 
-        *config = Config::reset().await?;
         let ts = config.get_toolset().await?;
         config::rebuild_shims_and_runtime_symlinks(config, ts, &successful_versions).await?;
 
