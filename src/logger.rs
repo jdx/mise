@@ -39,15 +39,14 @@ impl log::Log for Logger {
             args
         };
 
-        if will_log_file {
-            if let Some(log_file) = &self.log_file {
+        if will_log_file
+            && let Some(log_file) = &self.log_file {
                 let mut log_file = log_file.lock().unwrap();
                 let out = self.render(record, self.file_level, &args);
                 if !out.is_empty() {
                     let _ = writeln!(log_file, "{}", console::strip_ansi_codes(&out));
                 }
             }
-        }
         if will_log_term {
             let out = self.render(record, term_level, &args);
             if !out.is_empty() {
