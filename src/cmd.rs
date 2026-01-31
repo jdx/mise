@@ -8,10 +8,10 @@ use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 
+use crate::redactions::Redactor;
 use color_eyre::Result;
 use duct::{Expression, IntoExecutablePath};
 use eyre::Context;
-use indexmap::IndexSet;
 #[cfg(not(any(test, target_os = "windows")))]
 use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
 #[cfg(not(any(test, target_os = "windows")))]
@@ -102,7 +102,7 @@ pub struct CmdLineRunner<'a> {
     pr: Option<&'a dyn SingleReport>,
     pr_arc: Option<Arc<Box<dyn SingleReport>>>,
     stdin: Option<String>,
-    redactions: IndexSet<String>,
+    redactor: Redactor,
     raw: bool,
     pass_signals: bool,
     on_stdout: Option<Box<dyn Fn(String) + Send + 'a>>,
@@ -125,7 +125,7 @@ impl<'a> CmdLineRunner<'a> {
             pr: None,
             pr_arc: None,
             stdin: None,
-            redactions: Default::default(),
+            redactor: Default::default(),
             raw: false,
             pass_signals: false,
             on_stdout: None,
@@ -177,11 +177,7 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     pub fn redact(mut self, redactions: impl IntoIterator<Item = String>) -> Self {
-        for r in redactions {
-            if !r.is_empty() {
-                self.redactions.insert(r);
-            }
-        }
+        self.redactor = self.redactor.with_additional(redactions);
         self
     }
 
@@ -380,18 +376,12 @@ impl<'a> CmdLineRunner<'a> {
         for line in rx {
             match line {
                 ChildProcessOutput::Stdout(line) => {
-                    let line = self
-                        .redactions
-                        .iter()
-                        .fold(line, |acc, r| acc.replace(r, "[redacted]"));
+                    let line = self.redactor.redact(&line);
                     self.on_stdout(line.clone());
                     combined_output.push(line);
                 }
                 ChildProcessOutput::Stderr(line) => {
-                    let line = self
-                        .redactions
-                        .iter()
-                        .fold(line, |acc, r| acc.replace(r, "[redacted]"));
+                    let line = self.redactor.redact(&line);
                     self.on_stderr(line.clone());
                     combined_output.push(line);
                 }

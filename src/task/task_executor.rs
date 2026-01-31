@@ -464,7 +464,7 @@ impl TaskExecutor {
         let script = script.trim_start();
         let cmd = format!("$ {script} {args}", args = args.join(" ")).to_string();
         if !self.quiet(Some(task)) {
-            let msg = style::ebold(trunc(prefix, config.redact(cmd).trim()))
+            let msg = style::ebold(trunc(prefix, config.redact(&cmd).trim()))
                 .bright()
                 .to_string();
             self.eprint(task, prefix, &msg)
@@ -570,7 +570,7 @@ impl TaskExecutor {
                 .trim()
                 .to_string();
             let cmd = style::ebold(format!("$ {cmd}")).bright().to_string();
-            let cmd = trunc(prefix, config.redact(cmd).trim());
+            let cmd = trunc(prefix, config.redact(&cmd).trim());
             self.eprint(task, prefix, &cmd);
         }
 
