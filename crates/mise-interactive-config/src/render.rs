@@ -16,8 +16,9 @@ pub enum PickerKind {
     /// Picking a backend type for a tool
     Backend(usize), // section_idx
     /// Picking a setting to add
-    #[allow(dead_code)]
     Setting(usize), // section_idx
+    /// Picking a hook to add
+    Hook(usize), // section_idx
     /// Picking a section to add
     Section,
 }
@@ -560,6 +561,7 @@ impl Renderer {
                     AddButtonKind::EnvVariable(_) => "    [+ Add variable]",
                     AddButtonKind::Task(_) => "    [+ Add task]",
                     AddButtonKind::Setting(_) => "    [+ Add setting]",
+                    AddButtonKind::Hook(_) => "    [+ Add hook]",
                     AddButtonKind::ArrayItem(_, _) => "        [+ Add item]",
                     AddButtonKind::InlineTableField(_, _) => "        [+ Add field]",
                 };
@@ -599,7 +601,8 @@ impl Renderer {
                             | AddButtonKind::EnvSource(_)
                             | AddButtonKind::EnvVariable(_)
                             | AddButtonKind::Task(_)
-                            | AddButtonKind::Setting(_) => "    ",
+                            | AddButtonKind::Setting(_)
+                            | AddButtonKind::Hook(_) => "    ",
                             AddButtonKind::ArrayItem(_, _)
                             | AddButtonKind::InlineTableField(_, _) => "        ",
                             AddButtonKind::Section => "",
@@ -615,6 +618,7 @@ impl Renderer {
                             AddButtonKind::EnvVariable(_) => "KEY=value: ",
                             AddButtonKind::Task(_) => "Task name: ",
                             AddButtonKind::Setting(_) => "Setting: ",
+                            AddButtonKind::Hook(_) => "Hook name: ",
                             AddButtonKind::ArrayItem(_, _) => "Value: ",
                             AddButtonKind::InlineTableField(_, _) => "Field name: ",
                         };
@@ -682,6 +686,7 @@ impl Renderer {
             PickerKind::Tool(_) => "Add Tool from Registry",
             PickerKind::Backend(_) => "Select Backend",
             PickerKind::Setting(_) => "Add Setting",
+            PickerKind::Hook(_) => "Add Hook",
             PickerKind::Section => "Add Section",
         };
         output.push(format!("{}", header_style.apply_to(picker_title)));

@@ -543,6 +543,17 @@ impl InteractiveConfig {
                                 self.cursor.goto(&self.doc, &target);
                                 self.mode = Mode::Edit(InlineEdit::new(""));
                             }
+                            PickerKind::Hook(section_idx) => {
+                                // Add the selected hook with empty value
+                                self.doc.add_entry(*section_idx, tool_name, String::new());
+                                let entry_idx = self.doc.sections[*section_idx].entries.len() - 1;
+                                // Track undo for added entry
+                                self.undo_stack
+                                    .push(UndoAction::AddEntry(*section_idx, entry_idx));
+                                let target = CursorTarget::Entry(*section_idx, entry_idx);
+                                self.cursor.goto(&self.doc, &target);
+                                self.mode = Mode::Edit(InlineEdit::new(""));
+                            }
                             PickerKind::Section => {
                                 // Add the selected section
                                 self.doc.add_section(tool_name.clone());
@@ -884,10 +895,46 @@ impl InteractiveConfig {
                     self.mode = Mode::NewKey(InlineEdit::new(""));
                 }
                 AddButtonKind::Setting(section_idx) => {
-                    // For now, fall back to manual entry
-                    // TODO: Add setting picker when SettingProvider is implemented
-                    let _ = section_idx;
-                    self.mode = Mode::NewKey(InlineEdit::new(""));
+                    // Open setting picker with valid settings from schema
+                    let existing_keys: std::collections::HashSet<_> = self.doc.sections
+                        [section_idx]
+                        .entries
+                        .iter()
+                        .map(|e| e.key.as_str())
+                        .collect();
+                    let items: Vec<PickerItem> = crate::schema::SCHEMA_SETTINGS
+                        .iter()
+                        .filter(|(name, _)| !existing_keys.contains(*name))
+                        .map(|(name, desc)| PickerItem::new(*name).with_description(*desc))
+                        .collect();
+                    if items.is_empty() {
+                        // All settings already exist, fall back to manual entry
+                        self.mode = Mode::NewKey(InlineEdit::new(""));
+                    } else {
+                        let picker = PickerState::new(items).with_visible_height(10);
+                        self.mode = Mode::Picker(PickerKind::Setting(section_idx), picker);
+                    }
+                }
+                AddButtonKind::Hook(section_idx) => {
+                    // Open hook picker with common hooks from schema
+                    let existing_keys: std::collections::HashSet<_> = self.doc.sections
+                        [section_idx]
+                        .entries
+                        .iter()
+                        .map(|e| e.key.as_str())
+                        .collect();
+                    let items: Vec<PickerItem> = crate::schema::SCHEMA_HOOKS
+                        .iter()
+                        .filter(|(name, _)| !existing_keys.contains(*name))
+                        .map(|(name, desc)| PickerItem::new(*name).with_description(*desc))
+                        .collect();
+                    if items.is_empty() {
+                        // All common hooks already exist, fall back to manual entry
+                        self.mode = Mode::NewKey(InlineEdit::new(""));
+                    } else {
+                        let picker = PickerState::new(items).with_visible_height(10);
+                        self.mode = Mode::Picker(PickerKind::Hook(section_idx), picker);
+                    }
                 }
                 AddButtonKind::ArrayItem(_, _) => {
                     // For arrays, go straight to value entry

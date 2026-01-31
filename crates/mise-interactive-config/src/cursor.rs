@@ -49,6 +49,8 @@ pub enum AddButtonKind {
     Task(usize),
     /// Add a setting via picker (section index) - for [settings] section
     Setting(usize),
+    /// Add a hook via picker (section index) - for [hooks] section
+    Hook(usize),
     /// Add an item to an array (section index, entry index)
     ArrayItem(usize, usize),
     /// Add a field to an inline table (section index, entry index)
@@ -296,6 +298,9 @@ impl Cursor {
             }
             "settings" => {
                 items.push(CursorTarget::AddButton(AddButtonKind::Setting(section_idx)));
+            }
+            "hooks" => {
+                items.push(CursorTarget::AddButton(AddButtonKind::Hook(section_idx)));
             }
             _ => {
                 // Generic entry button for unknown sections
