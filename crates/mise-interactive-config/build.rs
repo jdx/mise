@@ -233,12 +233,11 @@ fn get_schema_type(prop: &Value, defs: Option<&Value>) -> SchemaType {
     }
 
     // Handle $ref
-    if let Some(ref_val) = prop.get("$ref").and_then(|r| r.as_str()) {
-        if let Some(def_name) = ref_val.strip_prefix("#/$defs/") {
-            if let Some(def) = defs.and_then(|d| d.get(def_name)) {
-                return get_schema_type(def, defs);
-            }
-        }
+    if let Some(ref_val) = prop.get("$ref").and_then(|r| r.as_str())
+        && let Some(def_name) = ref_val.strip_prefix("#/$defs/")
+        && let Some(def) = defs.and_then(|d| d.get(def_name))
+    {
+        return get_schema_type(def, defs);
     }
 
     // Handle oneOf - return the first simple type found
@@ -370,22 +369,21 @@ fn is_section_property(prop: &Value, defs: Option<&Value>) -> bool {
     }
 
     // Handle $ref - look up the definition
-    if let Some(ref_val) = prop.get("$ref").and_then(|r| r.as_str()) {
-        if let Some(def_name) = ref_val.strip_prefix("#/$defs/") {
-            if let Some(def) = defs.and_then(|d| d.get(def_name)) {
-                return is_section_property(def, defs);
-            }
-        }
+    if let Some(ref_val) = prop.get("$ref").and_then(|r| r.as_str())
+        && let Some(def_name) = ref_val.strip_prefix("#/$defs/")
+        && let Some(def) = defs.and_then(|d| d.get(def_name))
+    {
+        return is_section_property(def, defs);
     }
 
     // Handle oneOf - if any option is a simple type, treat as entry
     if let Some(one_of) = prop.get("oneOf").and_then(|o| o.as_array()) {
         // If oneOf includes a simple type (string, number), it's an entry
         for option in one_of {
-            if let Some(type_val) = option.get("type").and_then(|t| t.as_str()) {
-                if matches!(type_val, "string" | "number" | "boolean" | "integer") {
-                    return false;
-                }
+            if let Some(type_val) = option.get("type").and_then(|t| t.as_str())
+                && matches!(type_val, "string" | "number" | "boolean" | "integer")
+            {
+                return false;
             }
         }
         // If all options are objects/refs, check if any has additionalProperties

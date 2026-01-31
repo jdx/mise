@@ -103,10 +103,11 @@ impl TomlDocument {
         // Collect top-level entries (non-table items like min_version)
         let mut root_entries = Vec::new();
         for (key, item) in doc.iter() {
-            if !item.is_table() && !item.is_array_of_tables() {
-                if let Some(entry) = Self::parse_entry(key, item) {
-                    root_entries.push(entry);
-                }
+            if !item.is_table()
+                && !item.is_array_of_tables()
+                && let Some(entry) = Self::parse_entry(key, item)
+            {
+                root_entries.push(entry);
             }
         }
 
@@ -122,19 +123,19 @@ impl TomlDocument {
 
         // Add known sections first (in order)
         for name in &known_sections {
-            if let Some(item) = doc.get(name) {
-                if let Some(table) = item.as_table() {
-                    sections.push(Self::parse_section(name, table));
-                }
+            if let Some(item) = doc.get(name)
+                && let Some(table) = item.as_table()
+            {
+                sections.push(Self::parse_section(name, table));
             }
         }
 
         // Add any other sections
         for (key, item) in doc.iter() {
-            if !known_sections.contains(&key) {
-                if let Some(table) = item.as_table() {
-                    sections.push(Self::parse_section(key, table));
-                }
+            if !known_sections.contains(&key)
+                && let Some(table) = item.as_table()
+            {
+                sections.push(Self::parse_section(key, table));
             }
         }
 
@@ -258,7 +259,7 @@ impl TomlDocument {
     fn parse_value(value: &Value) -> EntryValue {
         match value {
             Value::Array(arr) => {
-                let items: Vec<String> = arr.iter().map(|v| Self::value_to_string(v)).collect();
+                let items: Vec<String> = arr.iter().map(Self::value_to_string).collect();
                 EntryValue::Array(items)
             }
             Value::InlineTable(t) => {
@@ -442,33 +443,32 @@ impl TomlDocument {
 
     /// Delete an entry from a section
     pub fn delete_entry(&mut self, section_idx: usize, entry_idx: usize) {
-        if let Some(section) = self.sections.get_mut(section_idx) {
-            if entry_idx < section.entries.len() {
-                section.entries.remove(entry_idx);
-                self.modified = true;
-            }
+        if let Some(section) = self.sections.get_mut(section_idx)
+            && entry_idx < section.entries.len()
+        {
+            section.entries.remove(entry_idx);
+            self.modified = true;
         }
     }
 
     /// Update an entry's value
     pub fn update_entry(&mut self, section_idx: usize, entry_idx: usize, value: String) {
-        if let Some(section) = self.sections.get_mut(section_idx) {
-            if let Some(entry) = section.entries.get_mut(entry_idx) {
-                entry.value = EntryValue::Simple(value);
-                self.modified = true;
-            }
+        if let Some(section) = self.sections.get_mut(section_idx)
+            && let Some(entry) = section.entries.get_mut(entry_idx)
+        {
+            entry.value = EntryValue::Simple(value);
+            self.modified = true;
         }
     }
 
     /// Add an item to an array entry
     pub fn add_array_item(&mut self, section_idx: usize, entry_idx: usize, value: String) {
-        if let Some(section) = self.sections.get_mut(section_idx) {
-            if let Some(entry) = section.entries.get_mut(entry_idx) {
-                if let EntryValue::Array(ref mut items) = entry.value {
-                    items.push(value);
-                    self.modified = true;
-                }
-            }
+        if let Some(section) = self.sections.get_mut(section_idx)
+            && let Some(entry) = section.entries.get_mut(entry_idx)
+            && let EntryValue::Array(ref mut items) = entry.value
+        {
+            items.push(value);
+            self.modified = true;
         }
     }
 
@@ -480,29 +480,25 @@ impl TomlDocument {
         array_idx: usize,
         value: String,
     ) {
-        if let Some(section) = self.sections.get_mut(section_idx) {
-            if let Some(entry) = section.entries.get_mut(entry_idx) {
-                if let EntryValue::Array(ref mut items) = entry.value {
-                    if let Some(item) = items.get_mut(array_idx) {
-                        *item = value;
-                        self.modified = true;
-                    }
-                }
-            }
+        if let Some(section) = self.sections.get_mut(section_idx)
+            && let Some(entry) = section.entries.get_mut(entry_idx)
+            && let EntryValue::Array(ref mut items) = entry.value
+            && let Some(item) = items.get_mut(array_idx)
+        {
+            *item = value;
+            self.modified = true;
         }
     }
 
     /// Delete an array item
     pub fn delete_array_item(&mut self, section_idx: usize, entry_idx: usize, array_idx: usize) {
-        if let Some(section) = self.sections.get_mut(section_idx) {
-            if let Some(entry) = section.entries.get_mut(entry_idx) {
-                if let EntryValue::Array(ref mut items) = entry.value {
-                    if array_idx < items.len() {
-                        items.remove(array_idx);
-                        self.modified = true;
-                    }
-                }
-            }
+        if let Some(section) = self.sections.get_mut(section_idx)
+            && let Some(entry) = section.entries.get_mut(entry_idx)
+            && let EntryValue::Array(ref mut items) = entry.value
+            && array_idx < items.len()
+        {
+            items.remove(array_idx);
+            self.modified = true;
         }
     }
 
@@ -515,10 +511,10 @@ impl TomlDocument {
 
     /// Toggle entry expanded state (for arrays/inline tables)
     pub fn toggle_entry(&mut self, section_idx: usize, entry_idx: usize) {
-        if let Some(section) = self.sections.get_mut(section_idx) {
-            if let Some(entry) = section.entries.get_mut(entry_idx) {
-                entry.expanded = !entry.expanded;
-            }
+        if let Some(section) = self.sections.get_mut(section_idx)
+            && let Some(entry) = section.entries.get_mut(entry_idx)
+        {
+            entry.expanded = !entry.expanded;
         }
     }
 
@@ -533,17 +529,15 @@ impl TomlDocument {
     /// Convert a simple entry value to an inline table with version key
     /// Returns true if conversion was successful
     pub fn convert_to_inline_table(&mut self, section_idx: usize, entry_idx: usize) -> bool {
-        if let Some(section) = self.sections.get_mut(section_idx) {
-            if let Some(entry) = section.entries.get_mut(entry_idx) {
-                if let EntryValue::Simple(value) = &entry.value {
-                    // Convert "value" to { version = "value" }
-                    entry.value =
-                        EntryValue::InlineTable(vec![("version".to_string(), value.clone())]);
-                    entry.expanded = true;
-                    self.modified = true;
-                    return true;
-                }
-            }
+        if let Some(section) = self.sections.get_mut(section_idx)
+            && let Some(entry) = section.entries.get_mut(entry_idx)
+            && let EntryValue::Simple(value) = &entry.value
+        {
+            // Convert "value" to { version = "value" }
+            entry.value = EntryValue::InlineTable(vec![("version".to_string(), value.clone())]);
+            entry.expanded = true;
+            self.modified = true;
+            return true;
         }
         false
     }
@@ -557,13 +551,12 @@ impl TomlDocument {
         key: String,
         value: String,
     ) {
-        if let Some(section) = self.sections.get_mut(section_idx) {
-            if let Some(entry) = section.entries.get_mut(entry_idx) {
-                if let EntryValue::InlineTable(ref mut pairs) = entry.value {
-                    pairs.push((key, value));
-                    self.modified = true;
-                }
-            }
+        if let Some(section) = self.sections.get_mut(section_idx)
+            && let Some(entry) = section.entries.get_mut(entry_idx)
+            && let EntryValue::InlineTable(ref mut pairs) = entry.value
+        {
+            pairs.push((key, value));
+            self.modified = true;
         }
     }
 }

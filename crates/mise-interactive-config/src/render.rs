@@ -74,6 +74,52 @@ impl VersionSelectState {
     }
 }
 
+/// State for boolean selection mode
+#[derive(Debug, Clone)]
+pub struct BooleanSelectState {
+    /// Key being set
+    pub key: String,
+    /// Currently selected value (true or false)
+    pub selected: bool,
+    /// Section index
+    pub section_idx: usize,
+    /// Entry index (if editing existing) or None (if adding new)
+    pub entry_idx: Option<usize>,
+}
+
+impl BooleanSelectState {
+    /// Create a new boolean select state for a new entry
+    pub fn new_entry(key: String, section_idx: usize) -> Self {
+        Self {
+            key,
+            selected: true, // Default to true
+            section_idx,
+            entry_idx: None,
+        }
+    }
+
+    /// Create a new boolean select state for editing existing entry
+    #[allow(dead_code)]
+    pub fn edit_entry(key: String, current: bool, section_idx: usize, entry_idx: usize) -> Self {
+        Self {
+            key,
+            selected: current,
+            section_idx,
+            entry_idx: Some(entry_idx),
+        }
+    }
+
+    /// Toggle the selection
+    pub fn toggle(&mut self) {
+        self.selected = !self.selected;
+    }
+
+    /// Get the current selection as a string
+    pub fn value_str(&self) -> &'static str {
+        if self.selected { "true" } else { "false" }
+    }
+}
+
 /// Editor mode
 #[derive(Debug, Clone)]
 pub enum Mode {
@@ -88,11 +134,13 @@ pub enum Mode {
     /// Confirming quit with unsaved changes
     ConfirmQuit,
     /// Picking from a list (tool picker, setting picker)
-    Picker(PickerKind, PickerState),
+    Picker(PickerKind, Box<PickerState>),
     /// Selecting a version for a tool (arrow left/right to cycle)
     VersionSelect(VersionSelectState),
     /// Entering a tool name after selecting a backend (backend_name, section_idx, edit)
     BackendToolName(String, usize, InlineEdit),
+    /// Selecting a boolean value (true/false)
+    BooleanSelect(BooleanSelectState),
 }
 
 /// Renderer for the interactive config editor
@@ -140,6 +188,7 @@ impl Renderer {
     }
 
     /// Render the document
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
         doc: &TomlDocument,
@@ -296,6 +345,7 @@ impl Renderer {
                 "Type to filter • ↑/↓ select • Enter add • Esc cancel".to_string()
             }
             Mode::VersionSelect(_) => "←/→ select version • Enter confirm • Esc cancel".to_string(),
+            Mode::BooleanSelect(_) => "←/→ or t/f toggle • Enter confirm • Esc cancel".to_string(),
         };
         output.push(format!("{}", dim_style.apply_to(&footer)));
 
@@ -382,53 +432,75 @@ impl Renderer {
                     }
 
                     // Check if we're renaming the key
-                    if let Mode::RenameKey(s_idx, e_idx, edit) = mode {
-                        if *s_idx == *section_idx && *e_idx == *entry_idx {
-                            let cursor_pos = edit.cursor();
-                            let buffer = edit.buffer();
-                            let chars: Vec<char> = buffer.chars().collect();
-                            let before: String = chars[..cursor_pos].iter().collect();
-                            let at_cursor = chars.get(cursor_pos).copied().unwrap_or(' ');
-                            let after: String = chars
-                                .get(cursor_pos + 1..)
-                                .map(|c| c.iter().collect())
-                                .unwrap_or_default();
+                    if let Mode::RenameKey(s_idx, e_idx, edit) = mode
+                        && *s_idx == *section_idx
+                        && *e_idx == *entry_idx
+                    {
+                        let cursor_pos = edit.cursor();
+                        let buffer = edit.buffer();
+                        let chars: Vec<char> = buffer.chars().collect();
+                        let before: String = chars[..cursor_pos].iter().collect();
+                        let at_cursor = chars.get(cursor_pos).copied().unwrap_or(' ');
+                        let after: String = chars
+                            .get(cursor_pos + 1..)
+                            .map(|c| c.iter().collect())
+                            .unwrap_or_default();
 
-                            let value_display = match &entry.value {
-                                EntryValue::Simple(s) => format!("\"{}\"", s),
-                                EntryValue::Array(_) => "[...]".to_string(),
-                                EntryValue::InlineTable(_) => "{...}".to_string(),
-                            };
+                        let value_display = match &entry.value {
+                            EntryValue::Simple(s) => format!("\"{}\"", s),
+                            EntryValue::Array(_) => "[...]".to_string(),
+                            EntryValue::InlineTable(_) => "{...}".to_string(),
+                        };
 
-                            return format!(
-                                "    {}{}{} = {}",
-                                key_style.apply_to(&before),
-                                cursor_style.apply_to(at_cursor),
-                                key_style.apply_to(&after),
-                                value_style.apply_to(&value_display)
-                            );
-                        }
+                        return format!(
+                            "    {}{}{} = {}",
+                            key_style.apply_to(&before),
+                            cursor_style.apply_to(at_cursor),
+                            key_style.apply_to(&after),
+                            value_style.apply_to(&value_display)
+                        );
                     }
 
                     // Check if we're selecting a version
-                    if let Mode::VersionSelect(vs) = mode {
-                        if vs.section_idx == *section_idx && vs.entry_idx == *entry_idx {
-                            let key_part = format!("    {} = ", key_style.apply_to(&entry.key));
-                            // Show all variants with current one highlighted
-                            let variants_display: Vec<String> = vs
-                                .variants
-                                .iter()
-                                .enumerate()
-                                .map(|(i, v)| {
-                                    if i == vs.selected {
-                                        format!("{}", cursor_style.apply_to(format!("[{}]", v)))
-                                    } else {
-                                        format!("{}", dim_style.apply_to(v))
-                                    }
-                                })
-                                .collect();
-                            return format!("{}{}", key_part, variants_display.join("  "));
-                        }
+                    if let Mode::VersionSelect(vs) = mode
+                        && vs.section_idx == *section_idx
+                        && vs.entry_idx == *entry_idx
+                    {
+                        let key_part = format!("    {} = ", key_style.apply_to(&entry.key));
+                        // Show all variants with current one highlighted
+                        let variants_display: Vec<String> = vs
+                            .variants
+                            .iter()
+                            .enumerate()
+                            .map(|(i, v)| {
+                                if i == vs.selected {
+                                    format!("{}", cursor_style.apply_to(format!("[{}]", v)))
+                                } else {
+                                    format!("{}", dim_style.apply_to(v))
+                                }
+                            })
+                            .collect();
+                        return format!("{}{}", key_part, variants_display.join("  "));
+                    }
+
+                    // Check if we're selecting a boolean (for existing entries being edited)
+                    if let Mode::BooleanSelect(bs) = mode
+                        && let Some(editing_entry_idx) = bs.entry_idx
+                        && bs.section_idx == *section_idx
+                        && editing_entry_idx == *entry_idx
+                    {
+                        let key_part = format!("    {} = ", key_style.apply_to(&entry.key));
+                        let true_display = if bs.selected {
+                            format!("{}", cursor_style.apply_to("[true]"))
+                        } else {
+                            format!("{}", dim_style.apply_to("true"))
+                        };
+                        let false_display = if !bs.selected {
+                            format!("{}", cursor_style.apply_to("[false]"))
+                        } else {
+                            format!("{}", dim_style.apply_to("false"))
+                        };
+                        return format!("{}{}  {}", key_part, true_display, false_display);
                     }
                 }
 
@@ -475,25 +547,23 @@ impl Renderer {
                     let value = &items[*array_idx];
 
                     // Check if we're editing this item
-                    if is_cursor {
-                        if let Mode::Edit(edit) = mode {
-                            let cursor_pos = edit.cursor();
-                            let buffer = edit.buffer();
-                            let chars: Vec<char> = buffer.chars().collect();
-                            let before: String = chars[..cursor_pos].iter().collect();
-                            let at_cursor = chars.get(cursor_pos).copied().unwrap_or(' ');
-                            let after: String = chars
-                                .get(cursor_pos + 1..)
-                                .map(|c| c.iter().collect())
-                                .unwrap_or_default();
+                    if is_cursor && let Mode::Edit(edit) = mode {
+                        let cursor_pos = edit.cursor();
+                        let buffer = edit.buffer();
+                        let chars: Vec<char> = buffer.chars().collect();
+                        let before: String = chars[..cursor_pos].iter().collect();
+                        let at_cursor = chars.get(cursor_pos).copied().unwrap_or(' ');
+                        let after: String = chars
+                            .get(cursor_pos + 1..)
+                            .map(|c| c.iter().collect())
+                            .unwrap_or_default();
 
-                            return format!(
-                                "        \"{}{}{}\"",
-                                value_style.apply_to(&before),
-                                cursor_style.apply_to(at_cursor),
-                                value_style.apply_to(&after)
-                            );
-                        }
+                        return format!(
+                            "        \"{}{}{}\"",
+                            value_style.apply_to(&before),
+                            cursor_style.apply_to(at_cursor),
+                            value_style.apply_to(&after)
+                        );
                     }
 
                     let text = format!("\"{}\"", value);
@@ -517,27 +587,25 @@ impl Renderer {
                     let (key, value) = &pairs[*field_idx];
 
                     // Check if we're editing this field
-                    if is_cursor {
-                        if let Mode::Edit(edit) = mode {
-                            let prefix = format!("        {} = ", key_style.apply_to(key));
-                            let cursor_pos = edit.cursor();
-                            let buffer = edit.buffer();
-                            let chars: Vec<char> = buffer.chars().collect();
-                            let before: String = chars[..cursor_pos].iter().collect();
-                            let at_cursor = chars.get(cursor_pos).copied().unwrap_or(' ');
-                            let after: String = chars
-                                .get(cursor_pos + 1..)
-                                .map(|c| c.iter().collect())
-                                .unwrap_or_default();
+                    if is_cursor && let Mode::Edit(edit) = mode {
+                        let prefix = format!("        {} = ", key_style.apply_to(key));
+                        let cursor_pos = edit.cursor();
+                        let buffer = edit.buffer();
+                        let chars: Vec<char> = buffer.chars().collect();
+                        let before: String = chars[..cursor_pos].iter().collect();
+                        let at_cursor = chars.get(cursor_pos).copied().unwrap_or(' ');
+                        let after: String = chars
+                            .get(cursor_pos + 1..)
+                            .map(|c| c.iter().collect())
+                            .unwrap_or_default();
 
-                            return format!(
-                                "{}\"{}{}{}\"",
-                                prefix,
-                                value_style.apply_to(&before),
-                                cursor_style.apply_to(at_cursor),
-                                value_style.apply_to(&after)
-                            );
-                        }
+                        return format!(
+                            "{}\"{}{}{}\"",
+                            prefix,
+                            value_style.apply_to(&before),
+                            cursor_style.apply_to(at_cursor),
+                            value_style.apply_to(&after)
+                        );
                     }
 
                     let text = format!("{} = \"{}\"", key, value);
@@ -580,86 +648,108 @@ impl Renderer {
                 };
 
                 // Check if we're entering a backend tool name (shows as "backend:_")
-                if is_cursor {
-                    if let Mode::BackendToolName(backend_name, _, edit) = mode {
-                        let cursor_pos = edit.cursor();
-                        let buffer = edit.buffer();
-                        let chars: Vec<char> = buffer.chars().collect();
-                        let before: String = chars[..cursor_pos].iter().collect();
-                        let at_cursor = chars.get(cursor_pos).copied().unwrap_or(' ');
-                        let after: String = chars
-                            .get(cursor_pos + 1..)
-                            .map(|c| c.iter().collect())
-                            .unwrap_or_default();
+                if is_cursor && let Mode::BackendToolName(backend_name, _, edit) = mode {
+                    let cursor_pos = edit.cursor();
+                    let buffer = edit.buffer();
+                    let chars: Vec<char> = buffer.chars().collect();
+                    let before: String = chars[..cursor_pos].iter().collect();
+                    let at_cursor = chars.get(cursor_pos).copied().unwrap_or(' ');
+                    let after: String = chars
+                        .get(cursor_pos + 1..)
+                        .map(|c| c.iter().collect())
+                        .unwrap_or_default();
 
-                        return format!(
-                            "    {}:{}{}{}",
-                            key_style.apply_to(backend_name),
-                            value_style.apply_to(&before),
-                            cursor_style.apply_to(at_cursor),
-                            value_style.apply_to(&after)
-                        );
-                    }
+                    return format!(
+                        "    {}:{}{}{}",
+                        key_style.apply_to(backend_name),
+                        value_style.apply_to(&before),
+                        cursor_style.apply_to(at_cursor),
+                        value_style.apply_to(&after)
+                    );
                 }
 
                 // Check if we're entering a new key
-                if is_cursor {
-                    if let Mode::NewKey(edit) = mode {
-                        let prefix = match kind {
-                            AddButtonKind::Entry(_)
-                            | AddButtonKind::ToolRegistry(_)
-                            | AddButtonKind::ToolBackend(_)
-                            | AddButtonKind::EnvPath(_)
-                            | AddButtonKind::EnvDotenv(_)
-                            | AddButtonKind::EnvSource(_)
-                            | AddButtonKind::EnvVariable(_)
-                            | AddButtonKind::Task(_)
-                            | AddButtonKind::Prepare(_)
-                            | AddButtonKind::Setting(_)
-                            | AddButtonKind::Hook(_)
-                            | AddButtonKind::TaskConfig(_)
-                            | AddButtonKind::Monorepo(_) => "    ",
-                            AddButtonKind::ArrayItem(_, _)
-                            | AddButtonKind::InlineTableField(_, _) => "        ",
-                            AddButtonKind::Section => "",
-                        };
-                        let prompt = match kind {
-                            AddButtonKind::Section => "Section name: ",
-                            AddButtonKind::Entry(_) => "Key: ",
-                            AddButtonKind::ToolRegistry(_) => "Tool: ",
-                            AddButtonKind::ToolBackend(_) => "Tool (e.g. cargo:ripgrep): ",
-                            AddButtonKind::EnvPath(_) => "Path: ",
-                            AddButtonKind::EnvDotenv(_) => "File: ",
-                            AddButtonKind::EnvSource(_) => "Script: ",
-                            AddButtonKind::EnvVariable(_) => "KEY=value: ",
-                            AddButtonKind::Task(_) => "Task name: ",
-                            AddButtonKind::Prepare(_) => "Provider name: ",
-                            AddButtonKind::Setting(_) => "Setting: ",
-                            AddButtonKind::Hook(_) => "Hook name: ",
-                            AddButtonKind::TaskConfig(_) => "Config key: ",
-                            AddButtonKind::Monorepo(_) => "Config key: ",
-                            AddButtonKind::ArrayItem(_, _) => "Value: ",
-                            AddButtonKind::InlineTableField(_, _) => "Field name: ",
-                        };
-                        let cursor_pos = edit.cursor();
-                        let buffer = edit.buffer();
-                        let chars: Vec<char> = buffer.chars().collect();
-                        let before: String = chars[..cursor_pos].iter().collect();
-                        let at_cursor = chars.get(cursor_pos).copied().unwrap_or(' ');
-                        let after: String = chars
-                            .get(cursor_pos + 1..)
-                            .map(|c| c.iter().collect())
-                            .unwrap_or_default();
+                if is_cursor && let Mode::NewKey(edit) = mode {
+                    let prefix = match kind {
+                        AddButtonKind::Entry(_)
+                        | AddButtonKind::ToolRegistry(_)
+                        | AddButtonKind::ToolBackend(_)
+                        | AddButtonKind::EnvPath(_)
+                        | AddButtonKind::EnvDotenv(_)
+                        | AddButtonKind::EnvSource(_)
+                        | AddButtonKind::EnvVariable(_)
+                        | AddButtonKind::Task(_)
+                        | AddButtonKind::Prepare(_)
+                        | AddButtonKind::Setting(_)
+                        | AddButtonKind::Hook(_)
+                        | AddButtonKind::TaskConfig(_)
+                        | AddButtonKind::Monorepo(_) => "    ",
+                        AddButtonKind::ArrayItem(_, _) | AddButtonKind::InlineTableField(_, _) => {
+                            "        "
+                        }
+                        AddButtonKind::Section => "",
+                    };
+                    let prompt = match kind {
+                        AddButtonKind::Section => "Section name: ",
+                        AddButtonKind::Entry(_) => "Key: ",
+                        AddButtonKind::ToolRegistry(_) => "Tool: ",
+                        AddButtonKind::ToolBackend(_) => "Tool (e.g. cargo:ripgrep): ",
+                        AddButtonKind::EnvPath(_) => "Path: ",
+                        AddButtonKind::EnvDotenv(_) => "File: ",
+                        AddButtonKind::EnvSource(_) => "Script: ",
+                        AddButtonKind::EnvVariable(_) => "KEY=value: ",
+                        AddButtonKind::Task(_) => "Task name: ",
+                        AddButtonKind::Prepare(_) => "Provider name: ",
+                        AddButtonKind::Setting(_) => "Setting: ",
+                        AddButtonKind::Hook(_) => "Hook name: ",
+                        AddButtonKind::TaskConfig(_) => "Config key: ",
+                        AddButtonKind::Monorepo(_) => "Config key: ",
+                        AddButtonKind::ArrayItem(_, _) => "Value: ",
+                        AddButtonKind::InlineTableField(_, _) => "Field name: ",
+                    };
+                    let cursor_pos = edit.cursor();
+                    let buffer = edit.buffer();
+                    let chars: Vec<char> = buffer.chars().collect();
+                    let before: String = chars[..cursor_pos].iter().collect();
+                    let at_cursor = chars.get(cursor_pos).copied().unwrap_or(' ');
+                    let after: String = chars
+                        .get(cursor_pos + 1..)
+                        .map(|c| c.iter().collect())
+                        .unwrap_or_default();
 
-                        return format!(
-                            "{}{}{}{}{}",
-                            prefix,
-                            dim_style.apply_to(prompt),
-                            value_style.apply_to(&before),
-                            cursor_style.apply_to(at_cursor),
-                            value_style.apply_to(&after)
-                        );
-                    }
+                    return format!(
+                        "{}{}{}{}{}",
+                        prefix,
+                        dim_style.apply_to(prompt),
+                        value_style.apply_to(&before),
+                        cursor_style.apply_to(at_cursor),
+                        value_style.apply_to(&after)
+                    );
+                }
+
+                // Check if we're showing a boolean picker for a new entry
+                if is_cursor
+                    && let Mode::BooleanSelect(bs) = mode
+                    && bs.entry_idx.is_none()
+                {
+                    // New entry - show key = [true] false or key = true [false]
+                    let (true_display, false_display) = if bs.selected {
+                        (
+                            cursor_style.apply_to("[true]").to_string(),
+                            dim_style.apply_to("false").to_string(),
+                        )
+                    } else {
+                        (
+                            dim_style.apply_to("true").to_string(),
+                            cursor_style.apply_to("[false]").to_string(),
+                        )
+                    };
+                    return format!(
+                        "    {} = {}  {}",
+                        key_style.apply_to(&bs.key),
+                        true_display,
+                        false_display
+                    );
                 }
 
                 if is_cursor {

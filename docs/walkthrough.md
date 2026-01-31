@@ -36,13 +36,10 @@ node = "24"
 
 ## `mise.toml` Configuration
 
-You can create a `mise.toml` file manually or use the interactive wizard:
+You can create a `mise.toml` file manually or with the CLI.
 
-```bash
-mise config generate
-```
-
-This will detect tools from your project files (like `package.json`, `go.mod`, `pyproject.toml`) and guide you through configuring tools, environment variables, and other settings.
+> [!TIP]
+> Use `mise edit` to open an interactive editor for your configuration. It provides a TUI where you can navigate sections, add tools from the registry with fuzzy search, and configure settings with schema-aware autocompletion.
 
 Use [`mise.toml`](/configuration#mise-toml) to share your tool configurations with others. This file should be committed to version control and contains the common toolset needed for your project.
 
