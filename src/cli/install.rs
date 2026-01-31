@@ -7,7 +7,9 @@ use crate::config::Config;
 use crate::config::Settings;
 use crate::duration::parse_into_timestamp;
 use crate::hooks::Hooks;
-use crate::toolset::{InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion, Toolset};
+use crate::toolset::{
+    InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion, Toolset,
+};
 use crate::{config, env, hooks};
 use eyre::Result;
 use itertools::Itertools;
