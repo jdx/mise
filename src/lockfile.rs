@@ -933,15 +933,14 @@ pub fn get_locked_backend(config: &Config, short: &str) -> Option<String> {
 fn handle_lockfile_read_error(err: Report, lockfile_path: &Path) -> Lockfile {
     // Differentiate between "file not found" (fine) and "parse error" (problem)
     // File not found is expected when lockfile doesn't exist yet
-    if let Some(io_err) = err.downcast_ref::<std::io::Error>() {
-        if io_err.kind() == std::io::ErrorKind::NotFound {
+    if let Some(io_err) = err.downcast_ref::<std::io::Error>()
+        && io_err.kind() == std::io::ErrorKind::NotFound {
             trace!(
                 "lockfile {} not found, using empty lockfile",
                 display_path(lockfile_path)
             );
             return Lockfile::default();
         }
-    }
     // For other errors (parse errors, permission issues), warn the user
     // as this could indicate data loss or corruption
     warn!(
