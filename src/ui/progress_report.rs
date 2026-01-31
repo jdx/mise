@@ -117,8 +117,8 @@ impl ProgressReport {
 
         // Template: prefix + message + optional progress bar + spinner on right
         // Use flex_fill to pad message and push progress bar to right edge
-        // Use "dot" spinner style instead of default mini_dot
-        let body = "{{ prefix }} {{ message | flex_fill }} {% if total %}{{ eta(hide_complete=true) }} {{ progress_bar(width=20, hide_complete=true) }} {% endif %}{{ spinner(name=\"arc\") }}";
+        // Use "arc" spinner style instead of default mini_dot
+        let body = "{{ prefix }} {{ message | flex_fill }} {% if total %}{{ bytes(hide_complete=true) }} {{ eta(hide_complete=true) }} {{ progress_bar(width=20, hide_complete=true) }} {% endif %}{{ spinner(name=\"arc\") }}";
 
         let job = ProgressJobBuilder::new()
             .body(body)
