@@ -427,7 +427,7 @@ impl Backend for S3Backend {
         if Self::get_opt(&opts, "checksum").is_some() {
             count += 1;
         }
-        let lockfile_enabled = settings.lockfile && settings.experimental;
+        let lockfile_enabled = settings.lockfile;
         let has_lockfile_checksum = tv
             .lock_platforms
             .get(&platform_key)
