@@ -26,3 +26,6 @@ xx = { version = "2", default-features = false } # For display_path
 
 [build-dependencies]
 serde_json = "1"
+
+[package.metadata.cargo-machete]
+ignored = ["serde_json"]
