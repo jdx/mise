@@ -64,7 +64,8 @@ impl MultiProgressReport {
         // Configure OSC progress based on settings
         if !settings.terminal_progress {
             // Disable OSC progress if terminal_progress is disabled
-            // Note: clx::osc::configure can only be called once, so we check first
+            // clx::osc::configure panics if called more than once (singleton pattern),
+            // so we use catch_unwind to safely ignore duplicate calls
             let _ = std::panic::catch_unwind(|| {
                 clx::osc::configure(false);
             });
@@ -148,8 +149,8 @@ impl MultiProgressReport {
             let version_text = format!("{}", style::edim(&*VERSION_PLAIN));
             let by_text = format!("{}", style::edim("by @jdx"));
 
-            // Template showing: "mise VERSION by @jdx                  [cur/total]  "
-            let header_body = "{{ mise }} {{ version }} {{ by | flex_fill }} {{ progress }}  ";
+            // Template showing: "mise VERSION by @jdx                  [cur/total]"
+            let header_body = "{{ mise }} {{ version }} {{ by | flex_fill }} {{ progress }}";
 
             let job = ProgressJobBuilder::new()
                 .body(header_body)
@@ -191,17 +192,6 @@ impl MultiProgressReport {
 
         // Stop clx progress
         progress::stop();
-    }
-
-    /// Allocate a new report ID for progress tracking (legacy compatibility)
-    pub fn allocate_report_id(&self) -> usize {
-        // With clx, we don't need explicit IDs - each ProgressJob tracks itself
-        0
-    }
-
-    /// Update a report's progress (legacy compatibility)
-    pub fn update_report_progress(&self, _report_id: usize, _position: u64, _length: u64) {
-        // With clx, progress is tracked by each ProgressJob directly
     }
 
     /// Pause progress display and execute a function

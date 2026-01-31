@@ -615,11 +615,7 @@ impl Backend for HttpBackend {
         &self.ba
     }
 
-    async fn install_operation_count(
-        &self,
-        tv: &ToolVersion,
-        _ctx: &InstallContext,
-    ) -> usize {
+    async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         let opts = tv.request.options();
         let platform_key = self.get_platform_key();
         let settings = Settings::get();

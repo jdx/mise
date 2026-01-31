@@ -369,7 +369,7 @@ pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
 pub static NO_COLOR: Lazy<bool> = Lazy::new(|| var("NO_COLOR").is_ok_and(|v| !v.is_empty()));
 
 /// Force progress bars even in non-TTY (for debugging)
-pub static MISE_FORCE_PROGRESS: Lazy<bool> = Lazy::new(|| var("MISE_FORCE_PROGRESS").is_ok());
+pub static MISE_FORCE_PROGRESS: Lazy<bool> = Lazy::new(|| var_is_true("MISE_FORCE_PROGRESS"));
 
 // python
 pub static PYENV_ROOT: Lazy<PathBuf> =

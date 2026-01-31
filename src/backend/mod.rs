@@ -847,8 +847,7 @@ pub trait Backend: Debug + Send + Sync {
             plugin.is_installed_err()?;
         }
 
-        let will_uninstall =
-            ctx.force && self.is_version_installed(&ctx.config, &tv, true);
+        let will_uninstall = ctx.force && self.is_version_installed(&ctx.config, &tv, true);
 
         // Query backend for operation count and set up progress tracking
         let install_ops = self.install_operation_count(&tv, &ctx).await;
@@ -977,11 +976,7 @@ pub trait Backend: Debug + Send + Sync {
     /// Returns the number of operations for installation progress tracking.
     /// Override this if your backend has a different number of operations.
     /// Default is 3: download, checksum, extract
-    async fn install_operation_count(
-        &self,
-        _tv: &ToolVersion,
-        _ctx: &InstallContext,
-    ) -> usize {
+    async fn install_operation_count(&self, _tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         3
     }
 

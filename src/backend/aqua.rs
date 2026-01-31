@@ -54,11 +54,7 @@ impl Backend for AquaBackend {
             .and_then(|p| p.description.clone())
     }
 
-    async fn install_operation_count(
-        &self,
-        tv: &ToolVersion,
-        _ctx: &InstallContext,
-    ) -> usize {
+    async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         let pkg = match AQUA_REGISTRY
             .package_with_version(&self.id, &[&tv.version])
             .await
@@ -69,7 +65,11 @@ impl Backend for AquaBackend {
         let format = pkg.format(&tv.version, os(), arch()).unwrap_or_default();
 
         let mut count = 1; // download
-        if pkg.checksum.as_ref().is_some_and(|c| c.enabled()) {
+        // Count checksum operation if explicitly configured OR if this is a GitHub release
+        // (GitHub API may provide a digest even without explicit checksum config)
+        if pkg.checksum.as_ref().is_some_and(|c| c.enabled())
+            || pkg.r#type == AquaPackageType::GithubRelease
+        {
             count += 1;
         }
         if (!format.is_empty() && format != "raw")

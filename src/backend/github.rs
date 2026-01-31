@@ -388,17 +388,6 @@ impl UnifiedGitBackend {
             .or_else(|| opts.get("checksum").cloned())
             .is_some();
 
-        // Check if we'll extract (archives need extraction)
-        let _needs_extraction = filename.ends_with(".tar.gz")
-            || filename.ends_with(".tar.xz")
-            || filename.ends_with(".tar.bz2")
-            || filename.ends_with(".tar.zst")
-            || filename.ends_with(".tar")
-            || filename.ends_with(".tgz")
-            || filename.ends_with(".txz")
-            || filename.ends_with(".tbz2")
-            || filename.ends_with(".zip");
-
         // Store the asset URL and digest (if available) in the tool version
         let platform_key = self.get_platform_key();
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
