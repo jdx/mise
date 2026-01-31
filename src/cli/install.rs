@@ -7,7 +7,7 @@ use crate::config::Config;
 use crate::config::Settings;
 use crate::duration::parse_into_timestamp;
 use crate::hooks::Hooks;
-use crate::toolset::{InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset};
+use crate::toolset::{InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion, Toolset};
 use crate::{config, env, hooks};
 use eyre::Result;
 use itertools::Itertools;
@@ -146,6 +146,7 @@ impl Install {
         if !self.dry_run {
             config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
         }
+        self.print_summary(&versions)?;
         Ok(())
     }
 
@@ -261,6 +262,19 @@ impl Install {
                 let ts = config.get_toolset().await?;
                 config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
             });
+        }
+        self.print_summary(&versions)?;
+        Ok(())
+    }
+
+    fn print_summary(&self, versions: &[ToolVersion]) -> Result<()> {
+        if versions.is_empty() || self.dry_run {
+            return Ok(());
+        }
+        let s = if versions.len() == 1 { "" } else { "s" };
+        miseprintln!("\nInstalled {} tool{}:", versions.len(), s);
+        for tv in versions {
+            miseprintln!("  {} {}", tv.ba(), tv.version);
         }
         Ok(())
     }

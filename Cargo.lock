@@ -1280,6 +1280,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cbd0f76e066e64fdc5631e3bb46381254deab9ef1158292f27c8c57e3bf3fe59"
 
 [[package]]
+name = "clx"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e611bca0268508d2e8e00a160976a04d491dfeec3b2ed6d45dae46c24870ce21"
+dependencies = [
+ "console 0.16.2",
+ "indicatif 0.18.3",
+ "nix 0.31.1",
+ "serde",
+ "serde_json",
+ "strum",
+ "tera",
+ "terminal_size",
+ "thiserror 2.0.18",
+ "tokio",
+ "unicode-width 0.2.2",
+]
+
+[[package]]
 name = "cmake"
 version = "0.1.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3778,7 +3797,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68df315d2857b2d8d2898be54a85e1d001bbbe0dbb5f8ef847b48dd3a23c4527"
 dependencies = [
  "cfg-if",
- "nix",
+ "nix 0.30.1",
  "widestring",
  "windows 0.61.3",
 ]
@@ -4293,7 +4312,6 @@ checksum = "9375e112e4b463ec1b1c6c011953545c65a30164fbab5b581df32b3abf0dcb88"
 dependencies = [
  "console 0.16.2",
  "portable-atomic",
- "unicode-segmentation",
  "unicode-width 0.2.2",
  "unit-prefix",
  "web-time",
@@ -5048,6 +5066,7 @@ dependencies = [
  "ci_info",
  "clap",
  "clap-sort",
+ "clx",
  "color-eyre",
  "color-print",
  "comfy-table",
@@ -5077,7 +5096,6 @@ dependencies = [
  "ignore",
  "indenter",
  "indexmap 2.13.0",
- "indicatif 0.18.3",
  "indoc",
  "insta",
  "itertools 0.14.0",
@@ -5090,7 +5108,7 @@ dependencies = [
  "mise-interactive-config",
  "mockito",
  "netrc-rs",
- "nix",
+ "nix 0.30.1",
  "num_cpus",
  "number_prefix",
  "once_cell",
@@ -5278,6 +5296,18 @@ name = "nix"
 version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "74523f3a35e05aba87a1d978330aef40f67b0304ac79c1c00b294c9830543db6"
+dependencies = [
+ "bitflags",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+]
+
+[[package]]
+name = "nix"
+version = "0.31.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "225e7cfe711e0ba79a68baeddb2982723e4235247aefce1482f2f16c27865b66"
 dependencies = [
  "bitflags",
  "cfg-if",
