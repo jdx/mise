@@ -533,15 +533,23 @@ impl InteractiveConfig {
                                 );
                             }
                             PickerKind::Setting(section_idx) => {
-                                // Add the selected setting with empty value
-                                self.doc.add_entry(*section_idx, tool_name, String::new());
+                                // Add the selected setting with type-appropriate value
+                                let schema_type = crate::schema::setting_type(&tool_name);
+                                let (value, needs_edit) =
+                                    Self::type_appropriate_default(schema_type);
+                                self.doc
+                                    .add_entry_with_value(*section_idx, tool_name, value);
                                 let entry_idx = self.doc.sections[*section_idx].entries.len() - 1;
                                 // Track undo for added entry
                                 self.undo_stack
                                     .push(UndoAction::AddEntry(*section_idx, entry_idx));
                                 let target = CursorTarget::Entry(*section_idx, entry_idx);
                                 self.cursor.goto(&self.doc, &target);
-                                self.mode = Mode::Edit(InlineEdit::new(""));
+                                if needs_edit {
+                                    self.mode = Mode::Edit(InlineEdit::new(""));
+                                } else {
+                                    self.mode = Mode::Navigate;
+                                }
                             }
                             PickerKind::Hook(section_idx) => {
                                 // Add the selected hook with empty value
@@ -555,26 +563,42 @@ impl InteractiveConfig {
                                 self.mode = Mode::Edit(InlineEdit::new(""));
                             }
                             PickerKind::TaskConfig(section_idx) => {
-                                // Add the selected task_config key with empty value
-                                self.doc.add_entry(*section_idx, tool_name, String::new());
+                                // Add the selected task_config key with type-appropriate value
+                                let schema_type = crate::schema::task_config_type(&tool_name);
+                                let (value, needs_edit) =
+                                    Self::type_appropriate_default(schema_type);
+                                self.doc
+                                    .add_entry_with_value(*section_idx, tool_name, value);
                                 let entry_idx = self.doc.sections[*section_idx].entries.len() - 1;
                                 // Track undo for added entry
                                 self.undo_stack
                                     .push(UndoAction::AddEntry(*section_idx, entry_idx));
                                 let target = CursorTarget::Entry(*section_idx, entry_idx);
                                 self.cursor.goto(&self.doc, &target);
-                                self.mode = Mode::Edit(InlineEdit::new(""));
+                                if needs_edit {
+                                    self.mode = Mode::Edit(InlineEdit::new(""));
+                                } else {
+                                    self.mode = Mode::Navigate;
+                                }
                             }
                             PickerKind::Monorepo(section_idx) => {
-                                // Add the selected monorepo key with empty value
-                                self.doc.add_entry(*section_idx, tool_name, String::new());
+                                // Add the selected monorepo key with type-appropriate value
+                                let schema_type = crate::schema::monorepo_type(&tool_name);
+                                let (value, needs_edit) =
+                                    Self::type_appropriate_default(schema_type);
+                                self.doc
+                                    .add_entry_with_value(*section_idx, tool_name, value);
                                 let entry_idx = self.doc.sections[*section_idx].entries.len() - 1;
                                 // Track undo for added entry
                                 self.undo_stack
                                     .push(UndoAction::AddEntry(*section_idx, entry_idx));
                                 let target = CursorTarget::Entry(*section_idx, entry_idx);
                                 self.cursor.goto(&self.doc, &target);
-                                self.mode = Mode::Edit(InlineEdit::new(""));
+                                if needs_edit {
+                                    self.mode = Mode::Edit(InlineEdit::new(""));
+                                } else {
+                                    self.mode = Mode::Navigate;
+                                }
                             }
                             PickerKind::Section => {
                                 // Check if the selected item is a section or a top-level entry
@@ -615,17 +639,26 @@ impl InteractiveConfig {
                                         0
                                     };
 
-                                    // Add the entry to the root section
-                                    self.doc
-                                        .add_entry(root_idx, tool_name.clone(), String::new());
+                                    // Add the entry with type-appropriate value
+                                    let schema_type = crate::schema::entry_type(&tool_name);
+                                    let (value, needs_edit) =
+                                        Self::type_appropriate_default(schema_type);
+                                    self.doc.add_entry_with_value(
+                                        root_idx,
+                                        tool_name.clone(),
+                                        value,
+                                    );
                                     let entry_idx = self.doc.sections[root_idx].entries.len() - 1;
                                     // Track undo for added entry
                                     self.undo_stack
                                         .push(UndoAction::AddEntry(root_idx, entry_idx));
                                     let target = CursorTarget::Entry(root_idx, entry_idx);
                                     self.cursor.goto(&self.doc, &target);
-                                    // Start editing the value
-                                    self.mode = Mode::Edit(InlineEdit::new(""));
+                                    if needs_edit {
+                                        self.mode = Mode::Edit(InlineEdit::new(""));
+                                    } else {
+                                        self.mode = Mode::Navigate;
+                                    }
                                 }
                             }
                         }
@@ -873,14 +906,14 @@ impl InteractiveConfig {
                     // These get added at the file level, not as sections
                     let entry_items: Vec<PickerItem> = crate::schema::SCHEMA_ENTRIES
                         .iter()
-                        .filter(|(name, _)| {
+                        .filter(|(name, _, _)| {
                             // Filter out entries that already exist in any section at root level
                             // (top-level entries are stored in a virtual "" section or handled specially)
                             !self.doc.sections.iter().any(|s| {
                                 s.name.is_empty() && s.entries.iter().any(|e| e.key == *name)
                             })
                         })
-                        .map(|(name, desc)| PickerItem::new(*name).with_description(*desc))
+                        .map(|(name, desc, _)| PickerItem::new(*name).with_description(*desc))
                         .collect();
                     items.extend(entry_items);
                     items.sort_by(|a, b| a.name.cmp(&b.name));
@@ -970,6 +1003,10 @@ impl InteractiveConfig {
                     // Standard key=value flow for now
                     self.mode = Mode::NewKey(InlineEdit::new(""));
                 }
+                AddButtonKind::Prepare(_) => {
+                    // Standard key=value flow for prepare providers
+                    self.mode = Mode::NewKey(InlineEdit::new(""));
+                }
                 AddButtonKind::Setting(section_idx) => {
                     // Open setting picker with valid settings from schema
                     let existing_keys: std::collections::HashSet<_> = self.doc.sections
@@ -980,8 +1017,8 @@ impl InteractiveConfig {
                         .collect();
                     let items: Vec<PickerItem> = crate::schema::SCHEMA_SETTINGS
                         .iter()
-                        .filter(|(name, _)| !existing_keys.contains(*name))
-                        .map(|(name, desc)| PickerItem::new(*name).with_description(*desc))
+                        .filter(|(name, _, _)| !existing_keys.contains(*name))
+                        .map(|(name, desc, _)| PickerItem::new(*name).with_description(*desc))
                         .collect();
                     if items.is_empty() {
                         // All settings already exist, fall back to manual entry
@@ -1022,8 +1059,8 @@ impl InteractiveConfig {
                         .collect();
                     let items: Vec<PickerItem> = crate::schema::SCHEMA_TASK_CONFIG
                         .iter()
-                        .filter(|(name, _)| !existing_keys.contains(*name))
-                        .map(|(name, desc)| PickerItem::new(*name).with_description(*desc))
+                        .filter(|(name, _, _)| !existing_keys.contains(*name))
+                        .map(|(name, desc, _)| PickerItem::new(*name).with_description(*desc))
                         .collect();
                     if items.is_empty() {
                         // All task_config keys already exist, fall back to manual entry
@@ -1043,8 +1080,8 @@ impl InteractiveConfig {
                         .collect();
                     let items: Vec<PickerItem> = crate::schema::SCHEMA_MONOREPO
                         .iter()
-                        .filter(|(name, _)| !existing_keys.contains(*name))
-                        .map(|(name, desc)| PickerItem::new(*name).with_description(*desc))
+                        .filter(|(name, _, _)| !existing_keys.contains(*name))
+                        .map(|(name, desc, _)| PickerItem::new(*name).with_description(*desc))
                         .collect();
                     if items.is_empty() {
                         // All monorepo keys already exist, fall back to manual entry
@@ -1570,6 +1607,26 @@ impl InteractiveConfig {
                 self.cursor.goto(&self.doc, &target);
                 self.mode = Mode::Edit(InlineEdit::new(""));
             }
+            Some(CursorTarget::AddButton(AddButtonKind::Prepare(section_idx))) => {
+                // Create prepare provider as inline table (e.g., npm = { disable = true })
+                self.doc.sections[section_idx]
+                    .entries
+                    .push(crate::document::Entry {
+                        key: key_name,
+                        value: EntryValue::InlineTable(Vec::new()),
+                        expanded: true,
+                        comments: Vec::new(),
+                    });
+                self.doc.modified = true;
+                // Track undo for added entry
+                let new_entry_idx = self.doc.sections[section_idx].entries.len() - 1;
+                self.undo_stack
+                    .push(UndoAction::AddEntry(section_idx, new_entry_idx));
+                // Move cursor to the new entry
+                let target = CursorTarget::Entry(section_idx, new_entry_idx);
+                self.cursor.goto(&self.doc, &target);
+                self.mode = Mode::Navigate;
+            }
             Some(CursorTarget::AddButton(AddButtonKind::EnvVariable(section_idx))) => {
                 // Parse KEY=value format
                 if let Some((key, value)) = key_name.split_once('=') {
@@ -1680,5 +1737,35 @@ impl InteractiveConfig {
             self.renderer.flash_message("Saved")?;
         }
         Ok(())
+    }
+
+    /// Get a type-appropriate default value for a schema type.
+    /// Returns (value, needs_edit) where needs_edit indicates if the user should be prompted.
+    fn type_appropriate_default(
+        schema_type: Option<crate::schema::SchemaType>,
+    ) -> (EntryValue, bool) {
+        use crate::schema::SchemaType;
+        match schema_type {
+            Some(SchemaType::Boolean) => {
+                // Booleans default to true, no edit needed
+                (EntryValue::Simple("true".to_string()), false)
+            }
+            Some(SchemaType::Array) => {
+                // Arrays start empty
+                (EntryValue::Array(Vec::new()), false)
+            }
+            Some(SchemaType::Object) => {
+                // Objects start as empty inline tables
+                (EntryValue::InlineTable(Vec::new()), false)
+            }
+            Some(SchemaType::Integer) | Some(SchemaType::Number) => {
+                // Numbers need user input, start with "0"
+                (EntryValue::Simple("0".to_string()), true)
+            }
+            Some(SchemaType::String) | Some(SchemaType::Unknown) | None => {
+                // Strings need user input
+                (EntryValue::Simple(String::new()), true)
+            }
+        }
     }
 }

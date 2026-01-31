@@ -18,28 +18,44 @@ pub fn section_description(name: &str) -> Option<&'static str> {
 
 /// Check if a top-level entry name is valid according to the schema
 pub fn is_valid_entry(name: &str) -> bool {
-    SCHEMA_ENTRIES.iter().any(|(n, _)| *n == name)
+    SCHEMA_ENTRIES.iter().any(|(n, _, _)| *n == name)
 }
 
 /// Get the description for a top-level entry, if it exists
 pub fn entry_description(name: &str) -> Option<&'static str> {
     SCHEMA_ENTRIES
         .iter()
-        .find(|(n, _)| *n == name)
-        .map(|(_, desc)| *desc)
+        .find(|(n, _, _)| *n == name)
+        .map(|(_, desc, _)| *desc)
+}
+
+/// Get the type for a top-level entry, if it exists
+pub fn entry_type(name: &str) -> Option<SchemaType> {
+    SCHEMA_ENTRIES
+        .iter()
+        .find(|(n, _, _)| *n == name)
+        .map(|(_, _, t)| *t)
 }
 
 /// Check if a setting key is valid according to the schema
 pub fn is_valid_setting(name: &str) -> bool {
-    SCHEMA_SETTINGS.iter().any(|(n, _)| *n == name)
+    SCHEMA_SETTINGS.iter().any(|(n, _, _)| *n == name)
 }
 
 /// Get the description for a setting key, if it exists
 pub fn setting_description(name: &str) -> Option<&'static str> {
     SCHEMA_SETTINGS
         .iter()
-        .find(|(n, _)| *n == name)
-        .map(|(_, desc)| *desc)
+        .find(|(n, _, _)| *n == name)
+        .map(|(_, desc, _)| *desc)
+}
+
+/// Get the type for a setting key, if it exists
+pub fn setting_type(name: &str) -> Option<SchemaType> {
+    SCHEMA_SETTINGS
+        .iter()
+        .find(|(n, _, _)| *n == name)
+        .map(|(_, _, t)| *t)
 }
 
 /// Check if a hook name is a common/known hook
@@ -57,28 +73,44 @@ pub fn hook_description(name: &str) -> Option<&'static str> {
 
 /// Check if a task_config key is valid according to the schema
 pub fn is_valid_task_config(name: &str) -> bool {
-    SCHEMA_TASK_CONFIG.iter().any(|(n, _)| *n == name)
+    SCHEMA_TASK_CONFIG.iter().any(|(n, _, _)| *n == name)
 }
 
 /// Get the description for a task_config key, if it exists
 pub fn task_config_description(name: &str) -> Option<&'static str> {
     SCHEMA_TASK_CONFIG
         .iter()
-        .find(|(n, _)| *n == name)
-        .map(|(_, desc)| *desc)
+        .find(|(n, _, _)| *n == name)
+        .map(|(_, desc, _)| *desc)
+}
+
+/// Get the type for a task_config key, if it exists
+pub fn task_config_type(name: &str) -> Option<SchemaType> {
+    SCHEMA_TASK_CONFIG
+        .iter()
+        .find(|(n, _, _)| *n == name)
+        .map(|(_, _, t)| *t)
 }
 
 /// Check if a monorepo key is valid according to the schema
 pub fn is_valid_monorepo(name: &str) -> bool {
-    SCHEMA_MONOREPO.iter().any(|(n, _)| *n == name)
+    SCHEMA_MONOREPO.iter().any(|(n, _, _)| *n == name)
 }
 
 /// Get the description for a monorepo key, if it exists
 pub fn monorepo_description(name: &str) -> Option<&'static str> {
     SCHEMA_MONOREPO
         .iter()
-        .find(|(n, _)| *n == name)
-        .map(|(_, desc)| *desc)
+        .find(|(n, _, _)| *n == name)
+        .map(|(_, desc, _)| *desc)
+}
+
+/// Get the type for a monorepo key, if it exists
+pub fn monorepo_type(name: &str) -> Option<SchemaType> {
+    SCHEMA_MONOREPO
+        .iter()
+        .find(|(n, _, _)| *n == name)
+        .map(|(_, _, t)| *t)
 }
 
 #[cfg(test)]
@@ -117,6 +149,17 @@ mod tests {
     }
 
     #[test]
+    fn test_entry_types() {
+        // redactions is an array
+        assert_eq!(entry_type("redactions"), Some(SchemaType::Array));
+        // experimental_monorepo_root is a boolean
+        assert_eq!(
+            entry_type("experimental_monorepo_root"),
+            Some(SchemaType::Boolean)
+        );
+    }
+
+    #[test]
     fn test_valid_settings() {
         // Common settings should be valid
         assert!(is_valid_setting("experimental"));
@@ -131,6 +174,14 @@ mod tests {
     fn test_setting_descriptions() {
         assert!(setting_description("experimental").is_some());
         assert!(setting_description("invalid").is_none());
+    }
+
+    #[test]
+    fn test_setting_types() {
+        // quiet is a boolean
+        assert_eq!(setting_type("quiet"), Some(SchemaType::Boolean));
+        // jobs is a number
+        assert_eq!(setting_type("jobs"), Some(SchemaType::Number));
     }
 
     #[test]

@@ -315,13 +315,48 @@ impl TomlDocument {
 
             for entry in &section.entries {
                 let item = Self::entry_value_to_item(&entry.value);
-                table.insert(&entry.key, item);
+
+                // Handle dotted keys (like _.path in env section) by creating nested tables
+                if entry.key.contains('.') && section.name == "env" {
+                    Self::insert_dotted_key(&mut table, &entry.key, item);
+                } else {
+                    table.insert(&entry.key, item);
+                }
             }
 
             doc.insert(&section.name, Item::Table(table));
         }
 
         doc.to_string()
+    }
+
+    /// Insert a dotted key into a table by creating nested structure
+    /// e.g., "_.path" becomes _: { path: value }
+    fn insert_dotted_key(table: &mut Table, key: &str, item: Item) {
+        let parts: Vec<&str> = key.splitn(2, '.').collect();
+        if parts.len() == 2 {
+            let parent_key = parts[0];
+            let child_key = parts[1];
+
+            // Get or create the parent subtable
+            if !table.contains_key(parent_key) {
+                let mut subtable = Table::new();
+                subtable.set_implicit(true);
+                table.insert(parent_key, Item::Table(subtable));
+            }
+
+            if let Some(Item::Table(subtable)) = table.get_mut(parent_key) {
+                // Recursively handle if child_key also contains a dot
+                if child_key.contains('.') {
+                    Self::insert_dotted_key(subtable, child_key, item);
+                } else {
+                    subtable.insert(child_key, item);
+                }
+            }
+        } else {
+            // No dot, insert directly
+            table.insert(key, item);
+        }
     }
 
     fn entry_value_to_item(value: &EntryValue) -> Item {
@@ -387,12 +422,17 @@ impl TomlDocument {
         }
     }
 
-    /// Add an entry to a section
+    /// Add an entry to a section with a simple string value
     pub fn add_entry(&mut self, section_idx: usize, key: String, value: String) {
+        self.add_entry_with_value(section_idx, key, EntryValue::Simple(value));
+    }
+
+    /// Add an entry to a section with a specific value type
+    pub fn add_entry_with_value(&mut self, section_idx: usize, key: String, value: EntryValue) {
         if let Some(section) = self.sections.get_mut(section_idx) {
             section.entries.push(Entry {
                 key,
-                value: EntryValue::Simple(value),
+                value,
                 expanded: false,
                 comments: Vec::new(),
             });
@@ -662,5 +702,35 @@ node = "22"
         assert!(output.contains("min_version = \"2024.1.0\""));
         assert!(output.contains("[tools]"));
         assert!(output.contains("node = \"22\""));
+    }
+
+    #[test]
+    fn test_env_dotted_key_serialization() {
+        // Create a document with _.path in the env section
+        let mut doc = TomlDocument::new();
+        let env_idx = doc.sections.iter().position(|s| s.name == "env").unwrap();
+
+        // Add _.path as an array
+        doc.sections[env_idx].entries.push(Entry {
+            key: "_.path".to_string(),
+            value: EntryValue::Array(vec!["./bin".to_string(), "./node_modules/.bin".to_string()]),
+            expanded: false,
+            comments: Vec::new(),
+        });
+
+        let output = doc.to_toml();
+        // Should output as dotted key, not quoted key
+        // _.path = [...] means _: { path: [...] }
+        assert!(
+            output.contains("_.path") || output.contains("[env._]"),
+            "Output should contain dotted key notation: {}",
+            output
+        );
+        // Should NOT contain quoted key
+        assert!(
+            !output.contains("\"_.path\""),
+            "Output should not contain quoted key: {}",
+            output
+        );
     }
 }
