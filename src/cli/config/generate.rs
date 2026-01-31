@@ -188,31 +188,34 @@ impl ConfigGenerate {
 
         // Path suggestions based on detected tools
         if (state.tools.contains_key("node") || cwd.join("package.json").exists())
-            && !state.path_dirs.contains(&"./node_modules/.bin".to_string()) {
-                suggestions.push(Suggestion::new(
-                    "path_node",
-                    "_.path = \"./node_modules/.bin\"",
-                    "Add node_modules binaries to PATH",
-                ));
-            }
+            && !state.path_dirs.contains(&"./node_modules/.bin".to_string())
+        {
+            suggestions.push(Suggestion::new(
+                "path_node",
+                "_.path = \"./node_modules/.bin\"",
+                "Add node_modules binaries to PATH",
+            ));
+        }
 
         if (state.tools.contains_key("python") || cwd.join("pyproject.toml").exists())
-            && !state.path_dirs.contains(&"./.venv/bin".to_string()) {
-                suggestions.push(Suggestion::new(
-                    "path_venv",
-                    "_.path = \"./.venv/bin\"",
-                    "Add Python venv binaries to PATH",
-                ));
-            }
+            && !state.path_dirs.contains(&"./.venv/bin".to_string())
+        {
+            suggestions.push(Suggestion::new(
+                "path_venv",
+                "_.path = \"./.venv/bin\"",
+                "Add Python venv binaries to PATH",
+            ));
+        }
 
         if (state.tools.contains_key("go") || cwd.join("go.mod").exists())
-            && !state.path_dirs.contains(&"./bin".to_string()) {
-                suggestions.push(Suggestion::new(
-                    "path_go",
-                    "_.path = \"./bin\"",
-                    "Add local bin directory to PATH",
-                ));
-            }
+            && !state.path_dirs.contains(&"./bin".to_string())
+        {
+            suggestions.push(Suggestion::new(
+                "path_go",
+                "_.path = \"./bin\"",
+                "Add local bin directory to PATH",
+            ));
+        }
 
         // Python + uv auto venv
         if (state.tools.contains_key("python") || cwd.join("pyproject.toml").exists())
