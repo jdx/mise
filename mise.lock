@@ -35,7 +35,7 @@ backend = "core:bun"
 "platforms.linux-x64-baseline" = { checksum = "sha256:bbe4632ac03d7495177d542ecefa8f21f9849273106525f6bb13172ec8e4ab2c", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-linux-x64-baseline.zip"}
 "platforms.linux-x64-musl" = { checksum = "sha256:a810b5083a830596cff3715402371917a200940efdeed6189bcde191e79d4633", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-linux-x64-musl.zip"}
 "platforms.linux-x64-musl-baseline" = { checksum = "sha256:f05311fc12304ff8eaca136fc934eede6728055ba3d00cdb7e7dac394853f159", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-linux-x64-musl-baseline.zip"}
-"platforms.macos-arm64" = { checksum = "sha256:672a0a9a7b744d085a1d2219ca907e3e26f5579fca9e783a9510a4f98a36212f", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-darwin-aarch64.zip"}
+"platforms.macos-arm64" = { checksum = "blake3:167831b90e59f60eafdd5be230bd031885a0dcb7ce31fd9023a74634038b4900"}
 "platforms.macos-x64" = { checksum = "sha256:4a0ecd703b37d66abaf51e5bc24fd1249e8dc392c17ee6235710cf51a0988b85", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-darwin-x64.zip"}
 "platforms.macos-x64-baseline" = { checksum = "sha256:9812e5f6c7f818ef9c491e05a77481ab2e7a4a1580b378526e1611c102fe7ca3", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-darwin-x64-baseline.zip"}
 "platforms.windows-x64" = { checksum = "sha256:4c0a82866424e23d1bdaa9517307ec2f143ed513c15546dba0b859c6c55c47c7", url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-windows-x64.zip"}
@@ -61,7 +61,7 @@ version = "0.13.8"
 backend = "cargo:cargo-edit"
 
 [[tools."cargo:cargo-insta"]]
-version = "1.46.1"
+version = "1.46.2"
 backend = "cargo:cargo-insta"
 
 [[tools."cargo:cargo-release"]]
@@ -77,7 +77,7 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [[tools."cargo:usage-cli"]]
-version = "2.16.0"
+version = "2.16.1"
 backend = "cargo:usage-cli"
 
 [[tools.fd]]
@@ -272,5 +272,5 @@ backend = "aqua:tamasfe/taplo"
 
 [[tools.wait-for-gh-rate-limit]]
 version = "1.1.1"
-backend = "ubi:jdx/wait-for-gh-rate-limit"
+backend = "github:jdx/wait-for-gh-rate-limit"
 "platforms.linux-x64-wait-for-gh-rate-limit" = { checksum = "blake3:35c2fa30b45ee4a1437624f21c36b3a0b03f57c286429f45f7a4f31d83a15ee9"}
