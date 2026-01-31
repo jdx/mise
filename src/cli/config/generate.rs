@@ -423,7 +423,7 @@ impl ConfigGenerate {
             for detect_file in tool.detect.iter() {
                 let path = cwd.join(detect_file);
                 if path.exists() && !seen_tools.contains(*name) {
-                    let version = self.extract_version(*name, &path);
+                    let version = self.extract_version(name, &path);
                     detected.push(DetectedTool {
                         name: name.to_string(),
                         version,
