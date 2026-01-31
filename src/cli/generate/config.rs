@@ -1,7 +1,7 @@
 use crate::Result;
 use crate::cli::config::generate;
 
-/// [experimental] Generate a mise.toml file
+/// Generate a mise.toml file
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = generate::AFTER_LONG_HELP)]
 pub struct Config {
