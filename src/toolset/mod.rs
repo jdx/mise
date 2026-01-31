@@ -35,6 +35,7 @@ mod helpers;
 mod install_options;
 pub(crate) mod install_state;
 pub(crate) mod outdated_info;
+mod tool_deps;
 pub(crate) mod tool_request;
 mod tool_request_set;
 mod tool_source;
