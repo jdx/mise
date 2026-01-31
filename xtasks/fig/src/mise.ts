@@ -744,34 +744,6 @@ const completionSpec: Fig.Spec = {
       description: "Manage config files",
       subcommands: [
         {
-          name: ["generate", "g"],
-          description: "Generate a mise.toml file",
-          options: [
-            {
-              name: ["-o", "--output"],
-              description: "Output to file instead of stdout",
-              isRepeatable: false,
-              args: {
-                name: "output",
-              },
-            },
-            {
-              name: ["-t", "--tool-versions"],
-              description: "Path to a .tool-versions file to import tools from",
-              isRepeatable: false,
-              args: {
-                name: "tool_versions",
-              },
-            },
-            {
-              name: ["-n", "--dry-run"],
-              description:
-                "Show what would be generated without writing to file",
-              isRepeatable: false,
-            },
-          ],
-        },
-        {
           name: "get",
           description: "Display the value of a setting in a mise.toml file",
           options: [
@@ -1099,16 +1071,14 @@ const completionSpec: Fig.Spec = {
           ],
         },
         {
-          name: ["config", "g"],
+          name: "config",
           description: "Generate a mise.toml file",
           options: [
             {
-              name: ["-o", "--output"],
-              description: "Output to file instead of stdout",
+              name: ["-n", "--dry-run"],
+              description:
+                "Show what would be generated without writing to file",
               isRepeatable: false,
-              args: {
-                name: "output",
-              },
             },
             {
               name: ["-t", "--tool-versions"],
@@ -1118,13 +1088,13 @@ const completionSpec: Fig.Spec = {
                 name: "tool_versions",
               },
             },
-            {
-              name: ["-n", "--dry-run"],
-              description:
-                "Show what would be generated without writing to file",
-              isRepeatable: false,
-            },
           ],
+          args: {
+            name: "path",
+            description: "Path to the config file to create",
+            isOptional: true,
+            template: "filepaths",
+          },
         },
         {
           name: "devcontainer",
@@ -1393,6 +1363,31 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
       ],
+    },
+    {
+      name: "edit",
+      description: "Edit mise.toml interactively",
+      options: [
+        {
+          name: ["-n", "--dry-run"],
+          description: "Show what would be generated without writing to file",
+          isRepeatable: false,
+        },
+        {
+          name: ["-t", "--tool-versions"],
+          description: "Path to a .tool-versions file to import tools from",
+          isRepeatable: false,
+          args: {
+            name: "tool_versions",
+          },
+        },
+      ],
+      args: {
+        name: "path",
+        description: "Path to the config file to create",
+        isOptional: true,
+        template: "filepaths",
+      },
     },
     {
       name: ["install", "i"],
