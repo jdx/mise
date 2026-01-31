@@ -514,7 +514,6 @@ impl Backend for NodePlugin {
         let settings = Settings::get();
         let opts = BuildOpts::new(ctx, &tv).await?;
         trace!("node build opts: {:#?}", opts);
-        ctx.pr.start_operations(3);
 
         if cfg!(windows) {
             self.install_windows(ctx, &mut tv, &opts).await?;

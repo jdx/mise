@@ -615,6 +615,31 @@ impl Backend for HttpBackend {
         &self.ba
     }
 
+    async fn install_operation_count(
+        &self,
+        tv: &ToolVersion,
+        _ctx: &InstallContext,
+    ) -> usize {
+        let opts = tv.request.options();
+        let platform_key = self.get_platform_key();
+        let settings = Settings::get();
+
+        let mut count = 2; // download + extraction
+        if get_opt(&opts, "checksum").is_some() {
+            count += 1;
+        }
+        let lockfile_enabled = settings.lockfile && settings.experimental;
+        let has_lockfile_checksum = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|p| p.checksum.as_ref())
+            .is_some();
+        if lockfile_enabled || has_lockfile_checksum {
+            count += 1;
+        }
+        count
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let versions = self.fetch_versions(config).await?;
         Ok(versions
@@ -661,14 +686,7 @@ impl Backend for HttpBackend {
             .or_default()
             .url = Some(url.clone());
 
-        // Determine operation count for progress reporting
-        let mut op_count = 1; // download
-        if get_opt(&opts, "checksum").is_some() {
-            op_count += 1;
-        }
-        op_count += 1; // extraction
-
-        // Account for lockfile checksum verification/generation
+        // For lockfile checksum verification
         let settings = Settings::get();
         let lockfile_enabled = settings.lockfile;
         let has_lockfile_checksum = tv
@@ -676,11 +694,6 @@ impl Backend for HttpBackend {
             .get(&platform_key)
             .and_then(|p| p.checksum.as_ref())
             .is_some();
-        if lockfile_enabled || has_lockfile_checksum {
-            op_count += 1;
-        }
-
-        ctx.pr.start_operations(op_count);
 
         ctx.pr.set_message(format!("download {filename}"));
         HTTP.download_file(&url, &file_path, Some(ctx.pr.as_ref()))

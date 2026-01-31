@@ -847,13 +847,24 @@ pub trait Backend: Debug + Send + Sync {
             plugin.is_installed_err()?;
         }
 
-        if self.is_version_installed(&ctx.config, &tv, true) {
-            if ctx.force {
-                self.uninstall_version(&ctx.config, &tv, ctx.pr.as_ref(), false)
-                    .await?;
-            } else {
-                return Ok(tv);
-            }
+        let will_uninstall =
+            ctx.force && self.is_version_installed(&ctx.config, &tv, true);
+
+        // Query backend for operation count and set up progress tracking
+        let install_ops = self.install_operation_count(&tv, &ctx).await;
+        let total_ops = if will_uninstall {
+            install_ops + 1
+        } else {
+            install_ops
+        };
+        ctx.pr.start_operations(total_ops);
+
+        if will_uninstall {
+            self.uninstall_version(&ctx.config, &tv, ctx.pr.as_ref(), false)
+                .await?;
+            ctx.pr.next_operation();
+        } else if self.is_version_installed(&ctx.config, &tv, true) {
+            return Ok(tv);
         }
         // Check for --locked mode: if enabled and no lockfile URL exists, fail early
         // Exempt tool stubs from lockfile requirements since they are ephemeral
@@ -962,6 +973,18 @@ pub trait Backend: Debug + Send + Sync {
             .execute()?;
         Ok(())
     }
+
+    /// Returns the number of operations for installation progress tracking.
+    /// Override this if your backend has a different number of operations.
+    /// Default is 3: download, checksum, extract
+    async fn install_operation_count(
+        &self,
+        _tv: &ToolVersion,
+        _ctx: &InstallContext,
+    ) -> usize {
+        3
+    }
+
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion>;
     async fn uninstall_version(
         &self,

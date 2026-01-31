@@ -54,6 +54,35 @@ impl Backend for AquaBackend {
             .and_then(|p| p.description.clone())
     }
 
+    async fn install_operation_count(
+        &self,
+        tv: &ToolVersion,
+        _ctx: &InstallContext,
+    ) -> usize {
+        let pkg = match AQUA_REGISTRY
+            .package_with_version(&self.id, &[&tv.version])
+            .await
+        {
+            Ok(pkg) => pkg,
+            Err(_) => return 3, // fallback to default
+        };
+        let format = pkg.format(&tv.version, os(), arch()).unwrap_or_default();
+
+        let mut count = 1; // download
+        if pkg.checksum.as_ref().is_some_and(|c| c.enabled()) {
+            count += 1;
+        }
+        if (!format.is_empty() && format != "raw")
+            || matches!(
+                pkg.r#type,
+                AquaPackageType::GithubArchive | AquaPackageType::GithubContent
+            )
+        {
+            count += 1;
+        }
+        count
+    }
+
     async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
         use crate::backend::SecurityFeature;
 
@@ -410,10 +439,7 @@ impl Backend for AquaBackend {
             (url, v.to_string(), filename, digest)
         };
 
-        // Determine operation count for progress reporting
         let format = pkg.format(&v, os(), arch()).unwrap_or_default();
-        let op_count = Self::calculate_op_count(&pkg, &api_digest, format);
-        ctx.pr.start_operations(op_count);
 
         self.download(ctx, &tv, &url, &filename).await?;
 
@@ -707,29 +733,6 @@ impl AquaBackend {
             AquaPackageType::Http => pkg.url(v, os(), arch()).map(|url| (url, false, None)),
             ref t => bail!("unsupported aqua package type: {t}"),
         }
-    }
-
-    /// Calculate the number of operations for progress reporting.
-    /// Operations: download (always), checksum (if enabled or api_digest), extraction (if needed)
-    fn calculate_op_count(pkg: &AquaPackage, api_digest: &Option<String>, format: &str) -> usize {
-        let mut op_count = 1; // download
-
-        // Checksum verification (from pkg config or GitHub API digest)
-        if pkg.checksum.as_ref().is_some_and(|c| c.enabled()) || api_digest.is_some() {
-            op_count += 1;
-        }
-
-        // Extraction (for archives, or GithubArchive/GithubContent which always extract)
-        if (!format.is_empty() && format != "raw")
-            || matches!(
-                pkg.r#type,
-                AquaPackageType::GithubArchive | AquaPackageType::GithubContent
-            )
-        {
-            op_count += 1;
-        }
-
-        op_count
     }
 
     async fn github_release_url(
