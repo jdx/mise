@@ -141,6 +141,8 @@ pub enum Mode {
     BackendToolName(String, usize, InlineEdit),
     /// Selecting a boolean value (true/false)
     BooleanSelect(BooleanSelectState),
+    /// Loading indicator during async operations
+    Loading(String),
 }
 
 /// Renderer for the interactive config editor
@@ -346,6 +348,7 @@ impl Renderer {
             }
             Mode::VersionSelect(_) => "←/→ select version • Enter confirm • Esc cancel".to_string(),
             Mode::BooleanSelect(_) => "←/→ or t/f toggle • Enter confirm • Esc cancel".to_string(),
+            Mode::Loading(_) => "Please wait...".to_string(),
         };
         output.push(format!("{}", dim_style.apply_to(&footer)));
 
@@ -768,6 +771,42 @@ impl Renderer {
         self.term.flush()?;
         std::thread::sleep(std::time::Duration::from_millis(500));
         self.term.clear_last_lines(1)?;
+        Ok(())
+    }
+
+    /// Render a loading indicator
+    pub fn render_loading(&mut self, message: &str, title: &str, path: &str) -> io::Result<()> {
+        self.clear()?;
+
+        let mut output = Vec::new();
+
+        // Styles
+        let header_style = Style::new().cyan().bold();
+        let dim_style = Style::new().dim();
+        let loading_style = Style::new().yellow();
+
+        // Header
+        output.push(format!("{}", header_style.apply_to(title)));
+        output.push(format!("{}", dim_style.apply_to(path)));
+        output.push(String::new());
+
+        // Loading message with spinner character
+        output.push(format!("{} {}", loading_style.apply_to("⠋"), message));
+        output.push(String::new());
+
+        // Footer hint
+        output.push(format!(
+            "{}",
+            dim_style.apply_to("Fetching version information...")
+        ));
+
+        // Write output
+        for line in &output {
+            writeln!(self.term, "{}", line)?;
+        }
+        self.last_rendered_lines = output.len();
+
+        self.term.flush()?;
         Ok(())
     }
 

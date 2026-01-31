@@ -28,44 +28,51 @@ impl InteractiveConfig {
                 let section_name = self.doc.sections[section_idx].name.clone();
                 let entry = &self.doc.sections[section_idx].entries[entry_idx];
                 let tool_name = entry.key.clone();
+                let current_value_opt = match &entry.value {
+                    EntryValue::Simple(v) => Some(v.clone()),
+                    _ => None,
+                };
+                let is_complex = matches!(
+                    entry.value,
+                    EntryValue::Array(_) | EntryValue::InlineTable(_)
+                );
 
-                match &entry.value {
-                    EntryValue::Simple(current_value) => {
-                        // For tools section, try to use version selector
-                        if section_name == "tools" {
-                            if let Some(latest) =
-                                self.version_provider.latest_version(&tool_name).await
-                            {
-                                let variants = version_variants(&latest);
-                                // Find which variant matches the current value, if any
-                                let mut vs = VersionSelectState::new(
-                                    tool_name,
-                                    variants.clone(),
-                                    section_idx,
-                                    entry_idx,
-                                );
-                                // Try to match current value to a variant, or select "other..."
-                                if let Some(pos) = variants.iter().position(|v| v == current_value)
-                                {
-                                    vs.selected = pos;
-                                } else {
-                                    // Current value is custom, select "other..."
-                                    vs.selected = variants.len().saturating_sub(1);
-                                }
-                                self.mode = Mode::VersionSelect(vs);
+                if let Some(current_value) = current_value_opt {
+                    // For tools section, try to use version selector
+                    if section_name == "tools" {
+                        // Show loading indicator while fetching version info
+                        self.mode =
+                            Mode::Loading(format!("Fetching versions for {}...", tool_name));
+                        let _ = self.render_current_mode();
+                        if let Some(latest) = self.version_provider.latest_version(&tool_name).await
+                        {
+                            let variants = version_variants(&latest);
+                            // Find which variant matches the current value, if any
+                            let mut vs = VersionSelectState::new(
+                                tool_name,
+                                variants.clone(),
+                                section_idx,
+                                entry_idx,
+                            );
+                            // Try to match current value to a variant, or select "other..."
+                            if let Some(pos) = variants.iter().position(|v| v == &current_value) {
+                                vs.selected = pos;
                             } else {
-                                // Fall back to inline edit if no version info available
-                                self.mode = Mode::Edit(InlineEdit::new(current_value));
+                                // Current value is custom, select "other..."
+                                vs.selected = variants.len().saturating_sub(1);
                             }
+                            self.mode = Mode::VersionSelect(vs);
                         } else {
-                            // Non-tools section: use regular inline edit
-                            self.mode = Mode::Edit(InlineEdit::new(current_value));
+                            // Fall back to inline edit if no version info available
+                            self.mode = Mode::Edit(InlineEdit::new(&current_value));
                         }
+                    } else {
+                        // Non-tools section: use regular inline edit
+                        self.mode = Mode::Edit(InlineEdit::new(&current_value));
                     }
-                    EntryValue::Array(_) | EntryValue::InlineTable(_) => {
-                        // Toggle expansion
-                        self.doc.toggle_entry(section_idx, entry_idx);
-                    }
+                } else if is_complex {
+                    // Toggle expansion for arrays/inline tables
+                    self.doc.toggle_entry(section_idx, entry_idx);
                 }
             }
 
@@ -679,10 +686,13 @@ impl InteractiveConfig {
 
         match target {
             Some(CursorTarget::AddButton(AddButtonKind::Section)) => {
+                let count_before = self.doc.sections.len();
                 self.doc.add_section(key_name);
-                // Track undo for added section
-                let section_idx = self.doc.sections.len() - 1;
-                self.undo_stack.push(UndoAction::AddSection(section_idx));
+                // Only track undo if a section was actually added
+                if self.doc.sections.len() > count_before {
+                    let section_idx = self.doc.sections.len() - 1;
+                    self.undo_stack.push(UndoAction::AddSection(section_idx));
+                }
                 // Move cursor to the new section
                 self.cursor.clamp(&self.doc);
             }
@@ -744,9 +754,10 @@ impl InteractiveConfig {
                 if let Some((key, value)) = key_name.split_once('=') {
                     let key = key.trim().to_string();
                     let value = value.trim();
-                    // Strip surrounding quotes (single or double)
-                    let value = if (value.starts_with('"') && value.ends_with('"'))
-                        || (value.starts_with('\'') && value.ends_with('\''))
+                    // Strip surrounding quotes (single or double) - must be at least 2 chars
+                    let value = if value.len() >= 2
+                        && ((value.starts_with('"') && value.ends_with('"'))
+                            || (value.starts_with('\'') && value.ends_with('\'')))
                     {
                         value[1..value.len() - 1].to_string()
                     } else {

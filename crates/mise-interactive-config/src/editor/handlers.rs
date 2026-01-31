@@ -24,6 +24,10 @@ impl InteractiveConfig {
             Mode::VersionSelect(_) => self.handle_version_select_key(key),
             Mode::BackendToolName(_, _, _) => self.handle_backend_tool_name_key(key),
             Mode::BooleanSelect(_) => self.handle_boolean_select_key(key),
+            Mode::Loading(_) => {
+                // Loading mode doesn't handle key presses - it's a transient state
+                Ok(None)
+            }
         }
     }
 
@@ -295,6 +299,10 @@ impl InteractiveConfig {
         let target = CursorTarget::Entry(section_idx, entry_idx);
         self.cursor.goto(&self.doc, &target);
 
+        // Show loading indicator while fetching version info
+        self.mode = Mode::Loading(format!("Fetching versions for {}...", tool_name));
+        let _ = self.render_current_mode();
+
         // Try to use version selector if we have version info
         if let Some(latest) = self.version_provider.latest_version(tool_name).await {
             let variants = version_variants(&latest);
@@ -405,11 +413,14 @@ impl InteractiveConfig {
 
         if is_section {
             // Add as a new section
+            let count_before = self.doc.sections.len();
             self.doc.add_section(tool_name.to_string());
             // Find and move cursor to the new section
             if let Some(idx) = self.doc.sections.iter().position(|s| s.name == tool_name) {
-                // Track undo for added section
-                self.undo_stack.push(UndoAction::AddSection(idx));
+                // Only track undo if a section was actually added
+                if self.doc.sections.len() > count_before {
+                    self.undo_stack.push(UndoAction::AddSection(idx));
+                }
                 let target = CursorTarget::SectionHeader(idx);
                 self.cursor.goto(&self.doc, &target);
             }
@@ -422,6 +433,8 @@ impl InteractiveConfig {
                     idx
                 } else {
                     // Create root section at the beginning
+                    // This shifts all section indices, so clear undo stack to avoid corruption
+                    self.undo_stack.clear();
                     self.doc.sections.insert(
                         0,
                         crate::document::Section {

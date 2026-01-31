@@ -45,11 +45,14 @@ pub struct InteractiveConfig {
     pub(crate) preferred_specificity: usize,
     /// Undo stack for deleted items
     pub(crate) undo_stack: Vec<UndoAction>,
+    /// Cached display path for rendering
+    pub(crate) path_display: String,
 }
 
 impl InteractiveConfig {
     /// Create a new config editor for a new file with default sections
     pub fn new(path: PathBuf) -> Self {
+        let path_display = Self::compute_path_display(&path);
         Self {
             path,
             doc: TomlDocument::new(),
@@ -63,6 +66,7 @@ impl InteractiveConfig {
             backend_provider: Box::new(EmptyBackendProvider),
             preferred_specificity: 0, // Default to "latest"
             undo_stack: Vec::new(),
+            path_display,
         }
     }
 
@@ -76,6 +80,7 @@ impl InteractiveConfig {
 
         // Infer preferred specificity from last tool in the file
         let preferred_specificity = Self::infer_specificity_from_doc(&doc);
+        let path_display = Self::compute_path_display(&path);
 
         Ok(Self {
             path,
@@ -90,6 +95,7 @@ impl InteractiveConfig {
             backend_provider: Box::new(EmptyBackendProvider),
             preferred_specificity,
             undo_stack: Vec::new(),
+            path_display,
         })
     }
 
@@ -120,6 +126,18 @@ impl InteractiveConfig {
             let dots = version.chars().filter(|c| *c == '.').count();
             dots + 1
         }
+    }
+
+    /// Compute the display path for rendering
+    fn compute_path_display(path: &std::path::Path) -> String {
+        let abs_path = if path.is_relative() {
+            std::env::current_dir()
+                .map(|cwd| cwd.join(path))
+                .unwrap_or_else(|_| path.to_path_buf())
+        } else {
+            path.to_path_buf()
+        };
+        xx::file::display_path(&abs_path)
     }
 
     /// Set dry-run mode (no file writes)
@@ -210,18 +228,8 @@ impl InteractiveConfig {
 
     /// Run the interactive editor
     pub async fn run(mut self) -> io::Result<ConfigResult> {
-        // Absolutize the path for display
-        let abs_path = if self.path.is_relative() {
-            std::env::current_dir()
-                .map(|cwd| cwd.join(&self.path))
-                .unwrap_or_else(|_| self.path.clone())
-        } else {
-            self.path.clone()
-        };
-        let path_str = xx::file::display_path(&abs_path);
-
         // Initial render
-        self.render_current_mode(&path_str)?;
+        self.render_current_mode()?;
 
         loop {
             // Read key in blocking task to not block the async runtime
@@ -238,15 +246,20 @@ impl InteractiveConfig {
             }
 
             // Re-render
-            self.render_current_mode(&path_str)?;
+            self.render_current_mode()?;
         }
     }
 
     /// Render based on current mode
-    fn render_current_mode(&mut self, path_str: &str) -> io::Result<()> {
+    pub(crate) fn render_current_mode(&mut self) -> io::Result<()> {
         match &self.mode {
             Mode::Picker(kind, picker) => {
-                self.renderer.render_picker(picker, kind, path_str)?;
+                self.renderer
+                    .render_picker(picker, kind, &self.path_display)?;
+            }
+            Mode::Loading(message) => {
+                self.renderer
+                    .render_loading(message, &self.title, &self.path_display)?;
             }
             _ => {
                 self.renderer.render(
@@ -254,7 +267,7 @@ impl InteractiveConfig {
                     &self.cursor,
                     &self.mode,
                     &self.title,
-                    path_str,
+                    &self.path_display,
                     self.dry_run,
                     !self.undo_stack.is_empty(),
                 )?;
