@@ -879,6 +879,48 @@ impl InteractiveConfig {
                         .push(UndoAction::AddEntry(section_idx, new_entry_idx));
                 }
             }
+            Some(CursorTarget::AddButton(AddButtonKind::Hook(section_idx))) => {
+                // Add custom hook entry (e.g., custom_hook = "echo hello")
+                if !key_name.is_empty() {
+                    self.doc.add_entry(section_idx, key_name, String::new());
+                    // Track undo for added entry
+                    let new_entry_idx = self.doc.sections[section_idx].entries.len() - 1;
+                    self.undo_stack
+                        .push(UndoAction::AddEntry(section_idx, new_entry_idx));
+                    // Move cursor to the new entry to edit its value
+                    let target = CursorTarget::Entry(section_idx, new_entry_idx);
+                    self.cursor.goto(&self.doc, &target);
+                    self.mode = Mode::Edit(InlineEdit::new(""));
+                }
+            }
+            Some(CursorTarget::AddButton(AddButtonKind::TaskConfig(section_idx))) => {
+                // Add custom task_config entry
+                if !key_name.is_empty() {
+                    self.doc.add_entry(section_idx, key_name, String::new());
+                    // Track undo for added entry
+                    let new_entry_idx = self.doc.sections[section_idx].entries.len() - 1;
+                    self.undo_stack
+                        .push(UndoAction::AddEntry(section_idx, new_entry_idx));
+                    // Move cursor to the new entry to edit its value
+                    let target = CursorTarget::Entry(section_idx, new_entry_idx);
+                    self.cursor.goto(&self.doc, &target);
+                    self.mode = Mode::Edit(InlineEdit::new(""));
+                }
+            }
+            Some(CursorTarget::AddButton(AddButtonKind::Monorepo(section_idx))) => {
+                // Add custom monorepo entry
+                if !key_name.is_empty() {
+                    self.doc.add_entry(section_idx, key_name, String::new());
+                    // Track undo for added entry
+                    let new_entry_idx = self.doc.sections[section_idx].entries.len() - 1;
+                    self.undo_stack
+                        .push(UndoAction::AddEntry(section_idx, new_entry_idx));
+                    // Move cursor to the new entry to edit its value
+                    let target = CursorTarget::Entry(section_idx, new_entry_idx);
+                    self.cursor.goto(&self.doc, &target);
+                    self.mode = Mode::Edit(InlineEdit::new(""));
+                }
+            }
             _ => {}
         }
     }
