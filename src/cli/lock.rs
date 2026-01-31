@@ -12,7 +12,6 @@ use crate::platform::Platform;
 use crate::toolset::Toolset;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{cli::args::ToolArg, config::Settings};
-use clx::progress;
 use console::style;
 use eyre::Result;
 use tokio::sync::Semaphore;
@@ -453,7 +452,6 @@ impl Lock {
         }
 
         pr.finish_with_message(format!("{} platform entries", total_tasks));
-        progress::stop();
         Ok(results)
     }
 }
