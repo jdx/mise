@@ -21,6 +21,7 @@ use crate::file::display_path;
 use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state;
+use crate::ui::progress_report::{ProgressIcon, SingleReport};
 use crate::{env, file};
 
 /// Tool provider that lists tools from the mise REGISTRY
@@ -183,10 +184,17 @@ impl Edit {
     }
 
     async fn interactive(&self, path: &Path) -> Result<()> {
+        use crate::ui::progress_report::ProgressReport;
+
         let title = format!("mise {} by @jdx", &*VERSION_PLAIN);
+
+        // Show loading spinner while setting up
+        let pr = ProgressReport::new("edit".into());
+        pr.set_message("Loading...".into());
 
         // Create the interactive config editor
         let mut editor = if path.exists() {
+            pr.set_message("Loading config...".into());
             InteractiveConfig::open(path.to_path_buf()).map_err(|e| eyre!(e))?
         } else {
             InteractiveConfig::new(path.to_path_buf())
@@ -200,6 +208,7 @@ impl Edit {
             .with_backend_provider(Box::new(MiseBackendProvider));
 
         // Auto-detect tools and add them
+        pr.set_message("Detecting tools...".into());
         let detected = detect_tools();
         for tool in detected {
             let version = tool.version.unwrap_or_else(|| "latest".to_string());
@@ -208,12 +217,16 @@ impl Edit {
 
         // Auto-detect prepare providers if experimental is enabled
         if Settings::get().experimental {
+            pr.set_message("Detecting prepare providers...".into());
             let cwd = env::current_dir().unwrap_or_default();
             let prepare_providers = crate::prepare::detect_applicable_providers(&cwd);
             for provider in prepare_providers {
                 editor.add_prepare(&provider);
             }
         }
+
+        // Clear the loading spinner before starting the TUI
+        pr.finish_with_icon("Ready".into(), ProgressIcon::Success);
 
         // Run the editor (now async)
         match editor.run().await {
