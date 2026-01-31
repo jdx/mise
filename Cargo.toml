@@ -1,5 +1,9 @@
 [workspace]
-members = ["crates/vfox", "crates/aqua-registry"]
+members = [
+  "crates/vfox",
+  "crates/aqua-registry",
+  "crates/mise-interactive-config",
+]
 
 [package]
 name = "mise"
@@ -85,7 +89,7 @@ confique = { version = "0.3", default-features = false }
 console = "0.16"
 contracts = "0.6"
 dashmap = "6"
-demand = "1"
+demand = { path = "../demand" }
 digest = "0.10.7"
 dotenvy = "0.15"
 duct = "0.13"
@@ -177,6 +181,7 @@ usage-lib = { version = "2", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }
+mise-interactive-config = { path = "crates/mise-interactive-config" }
 walkdir = "2"
 which = "7"
 xx = { version = "2", default-features = false, features = ["glob"] }

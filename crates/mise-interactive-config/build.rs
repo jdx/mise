@@ -1,0 +1,228 @@
+//! Build script to generate schema data from mise.json
+
+use serde_json::Value;
+use std::env;
+use std::fs;
+use std::path::Path;
+
+fn main() {
+    let out_dir = env::var("OUT_DIR").unwrap();
+    let dest_path = Path::new(&out_dir).join("schema_sections.rs");
+
+    // Read the schema file
+    let schema_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("schema/mise.json");
+
+    println!("cargo:rerun-if-changed={}", schema_path.display());
+
+    let schema_content = fs::read_to_string(&schema_path)
+        .unwrap_or_else(|e| panic!("Failed to read schema at {}: {}", schema_path.display(), e));
+
+    let schema: Value = serde_json::from_str(&schema_content)
+        .unwrap_or_else(|e| panic!("Failed to parse schema JSON: {}", e));
+
+    let defs = schema.get("$defs");
+
+    // Extract top-level properties and classify them
+    let mut sections = Vec::new();
+    let mut entries = Vec::new();
+
+    if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
+        for (name, prop) in properties {
+            // Skip deprecated and internal properties
+            if prop
+                .get("deprecated")
+                .and_then(|d| d.as_bool())
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            if name == "_" {
+                continue;
+            }
+
+            let description = prop
+                .get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("");
+
+            let is_section = is_section_property(prop, defs);
+
+            if is_section {
+                sections.push((name.clone(), description.to_string()));
+            } else {
+                entries.push((name.clone(), description.to_string()));
+            }
+        }
+    }
+
+    // Extract settings keys from $defs/settings
+    let mut settings_keys = Vec::new();
+    if let Some(settings_def) = defs.and_then(|d| d.get("settings")) {
+        extract_settings_keys(settings_def, "", &mut settings_keys);
+    }
+
+    // Sort by name for consistent output
+    sections.sort_by(|a, b| a.0.cmp(&b.0));
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    settings_keys.sort_by(|a, b| a.0.cmp(&b.0));
+
+    // Generate the Rust code
+    let mut code = String::new();
+
+    // Generate sections constant
+    code.push_str("/// Valid top-level sections in mise.toml (tables with user-defined keys)\n");
+    code.push_str("pub const SCHEMA_SECTIONS: &[(&str, &str)] = &[\n");
+    for (name, description) in &sections {
+        let escaped_desc = escape_string(description);
+        code.push_str(&format!("    (\"{}\", \"{}\"),\n", name, escaped_desc));
+    }
+    code.push_str("];\n\n");
+
+    // Generate entries constant
+    code.push_str("/// Valid top-level entries in mise.toml (scalar values, not sections)\n");
+    code.push_str("pub const SCHEMA_ENTRIES: &[(&str, &str)] = &[\n");
+    for (name, description) in &entries {
+        let escaped_desc = escape_string(description);
+        code.push_str(&format!("    (\"{}\", \"{}\"),\n", name, escaped_desc));
+    }
+    code.push_str("];\n\n");
+
+    // Generate settings keys constant
+    code.push_str("/// Valid settings keys in mise.toml [settings] section\n");
+    code.push_str("pub const SCHEMA_SETTINGS: &[(&str, &str)] = &[\n");
+    for (name, description) in &settings_keys {
+        let escaped_desc = escape_string(description);
+        code.push_str(&format!("    (\"{}\", \"{}\"),\n", name, escaped_desc));
+    }
+    code.push_str("];\n\n");
+
+    // Generate common hooks constant
+    code.push_str("/// Common hook names in mise.toml [hooks] section\n");
+    code.push_str("pub const SCHEMA_HOOKS: &[(&str, &str)] = &[\n");
+    code.push_str("    (\"enter\", \"Run when entering a directory with this mise.toml\"),\n");
+    code.push_str("    (\"leave\", \"Run when leaving a directory with this mise.toml\"),\n");
+    code.push_str("    (\"cd\", \"Run on any directory change\"),\n");
+    code.push_str("    (\"preinstall\", \"Run before installing a tool\"),\n");
+    code.push_str("    (\"postinstall\", \"Run after installing a tool\"),\n");
+    code.push_str("];\n");
+
+    fs::write(&dest_path, code).unwrap();
+}
+
+/// Extract settings keys recursively, with dot notation for nested settings
+fn extract_settings_keys(prop: &Value, prefix: &str, keys: &mut Vec<(String, String)>) {
+    if let Some(properties) = prop.get("properties").and_then(|p| p.as_object()) {
+        for (name, prop_value) in properties {
+            // Skip deprecated properties
+            if prop_value
+                .get("deprecated")
+                .and_then(|d| d.as_bool())
+                .unwrap_or(false)
+            {
+                continue;
+            }
+
+            let full_name = if prefix.is_empty() {
+                name.clone()
+            } else {
+                format!("{}.{}", prefix, name)
+            };
+
+            let description = prop_value
+                .get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("");
+
+            // Check if this is a nested object with properties (like aqua, cargo, etc.)
+            let is_nested_object = prop_value.get("type").and_then(|t| t.as_str())
+                == Some("object")
+                && prop_value.get("properties").is_some()
+                && prop_value
+                    .get("additionalProperties")
+                    .and_then(|a| a.as_bool())
+                    == Some(false);
+
+            if is_nested_object {
+                // Recurse into nested settings
+                extract_settings_keys(prop_value, &full_name, keys);
+            } else {
+                // Add this as a leaf setting
+                keys.push((full_name, description.to_string()));
+            }
+        }
+    }
+}
+
+/// Escape special characters in strings for Rust string literals
+fn escape_string(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+}
+
+/// Determine if a property represents a TOML section (table with user-defined keys)
+/// vs a simple entry (scalar, array, or fixed-structure object)
+fn is_section_property(prop: &Value, defs: Option<&Value>) -> bool {
+    // Check if it directly has additionalProperties (user-defined keys)
+    if prop.get("additionalProperties").is_some() {
+        return true;
+    }
+
+    // Check the type
+    if let Some(type_val) = prop.get("type").and_then(|t| t.as_str()) {
+        match type_val {
+            "array" => return false, // Arrays are entries, not sections
+            "string" | "number" | "boolean" | "integer" => return false, // Scalars
+            "object" => {
+                // Object type - check if it has additionalProperties or is just fixed properties
+                if prop.get("additionalProperties").is_some() {
+                    return true;
+                }
+                // Check if this is a fixed-structure object (like min_version with hard/soft)
+                // If it only has "properties" without additionalProperties, treat as entry
+                if prop.get("properties").is_some() && prop.get("additionalProperties").is_none() {
+                    return false;
+                }
+                // Default to section for plain objects
+                return true;
+            }
+            _ => {}
+        }
+    }
+
+    // Handle $ref - look up the definition
+    if let Some(ref_val) = prop.get("$ref").and_then(|r| r.as_str()) {
+        if let Some(def_name) = ref_val.strip_prefix("#/$defs/") {
+            if let Some(def) = defs.and_then(|d| d.get(def_name)) {
+                return is_section_property(def, defs);
+            }
+        }
+    }
+
+    // Handle oneOf - if any option is a simple type, treat as entry
+    if let Some(one_of) = prop.get("oneOf").and_then(|o| o.as_array()) {
+        // If oneOf includes a simple type (string, number), it's an entry
+        for option in one_of {
+            if let Some(type_val) = option.get("type").and_then(|t| t.as_str()) {
+                if matches!(type_val, "string" | "number" | "boolean" | "integer") {
+                    return false;
+                }
+            }
+        }
+        // If all options are objects/refs, check if any has additionalProperties
+        for option in one_of {
+            if is_section_property(option, defs) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Default to section (most mise.toml properties are sections)
+    true
+}

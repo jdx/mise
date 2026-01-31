@@ -1866,14 +1866,12 @@ checksum = "26bf8fc351c5ed29b5c2f0cbbac1b209b74f60ecd62e675a998df72c49af5204"
 
 [[package]]
 name = "demand"
-version = "1.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a167645cb3938cc9a14662834cee23210db096ed56bf1de295348bd909292a7"
+version = "1.8.2"
 dependencies = [
  "console 0.16.2",
  "fuzzy-matcher",
  "itertools 0.14.0",
- "signal-hook 0.3.18",
+ "signal-hook 0.4.3",
  "termcolor",
 ]
 
@@ -5087,6 +5085,7 @@ dependencies = [
  "md-5",
  "miette",
  "minisign-verify",
+ "mise-interactive-config",
  "mockito",
  "netrc-rs",
  "nix",
@@ -5146,6 +5145,20 @@ dependencies = [
  "xz2",
  "zip 3.0.0",
  "zstd",
+]
+
+[[package]]
+name = "mise-interactive-config"
+version = "2026.1.12"
+dependencies = [
+ "async-trait",
+ "console 0.16.2",
+ "fuzzy-matcher",
+ "serde_json",
+ "tokio",
+ "toml_edit",
+ "unicode-width 0.2.2",
+ "xx",
 ]
 
 [[package]]
