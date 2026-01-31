@@ -66,8 +66,8 @@ impl ToolDeps {
             let tr_idx = node_indices[&tr_key];
 
             // Get all dependencies for this tool
-            if let Ok(backend) = tr.backend() {
-                if let Ok(deps) = backend.get_all_dependencies(true) {
+            if let Ok(backend) = tr.backend()
+                && let Ok(deps) = backend.get_all_dependencies(true) {
                     for dep_ba in deps {
                         // Check if this dependency is being installed
                         let dep_fulls = dep_ba.all_fulls();
@@ -87,7 +87,6 @@ impl ToolDeps {
                         }
                     }
                 }
-            }
         }
 
         // Create a dummy channel - the real one is created in subscribe()
@@ -219,12 +218,11 @@ impl ToolDeps {
 
         // Any node that cannot reach a leaf is in a cycle - block it
         for idx in self.graph.node_indices() {
-            if !can_reach_leaf.contains(&idx) {
-                if let Some(tr) = self.graph.node_weight(idx) {
+            if !can_reach_leaf.contains(&idx)
+                && let Some(tr) = self.graph.node_weight(idx) {
                     let key = tool_key(tr);
                     self.blocked.insert(key);
                 }
-            }
         }
     }
 

@@ -234,9 +234,9 @@ impl Toolset {
             }
             checked_backends.insert(ba.clone());
 
-            if let Ok(backend) = tr.backend() {
-                if let Some(plugin) = backend.plugin() {
-                    if !plugin.is_installed() {
+            if let Ok(backend) = tr.backend()
+                && let Some(plugin) = backend.plugin()
+                    && !plugin.is_installed() {
                         let mpr = MultiProgressReport::get();
                         if let Err(e) = plugin
                             .ensure_installed(config, &mpr, false, opts.dry_run)
@@ -266,8 +266,6 @@ impl Toolset {
                             }
                         }
                     }
-                }
-            }
         }
 
         plugin_errors
