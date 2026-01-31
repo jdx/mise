@@ -76,6 +76,24 @@ fn normal_prefix(pad: usize, prefix: &str) -> String {
     pad_prefix(pad, prefix)
 }
 
+/// Format bytes as human-readable string (e.g., "5.2 MB")
+fn format_bytes(bytes: u64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = KB * 1024.0;
+    const GB: f64 = MB * 1024.0;
+
+    let bytes_f = bytes as f64;
+    if bytes_f >= GB {
+        format!("{:.1} GB", bytes_f / GB)
+    } else if bytes_f >= MB {
+        format!("{:.1} MB", bytes_f / MB)
+    } else if bytes_f >= KB {
+        format!("{:.1} KB", bytes_f / KB)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
 /// Progress state for tracking multi-operation progress
 #[derive(Debug)]
 struct ProgressState {
@@ -115,15 +133,17 @@ impl ProgressReport {
         let pad = *LONGEST_PLUGIN_NAME;
         let formatted_prefix = normal_prefix(pad, &prefix);
 
-        // Template: prefix + message + optional progress bar + spinner on right
+        // Template: prefix + message + optional bytes/progress bar + spinner on right
         // Use flex_fill to pad message and push progress bar to right edge
         // Use "arc" spinner style instead of default mini_dot
-        let body = "{{ prefix }} {{ message | flex_fill }} {% if total %}{{ bytes(hide_complete=true) }} {{ eta(hide_complete=true) }} {{ progress_bar(width=20, hide_complete=true) }} {% endif %}{{ spinner(name=\"arc\") }}";
+        // bytes prop is set separately with actual byte values (not the mapped 0-1M progress scale)
+        let body = "{{ prefix }} {{ message | flex_fill }} {% if total %}{{ bytes }} {{ eta(hide_complete=true) }} {{ progress_bar(width=20, hide_complete=true) }} {% endif %}{{ spinner(name=\"arc\") }}";
 
         let job = ProgressJobBuilder::new()
             .body(body)
             .prop("prefix", &formatted_prefix)
             .prop("message", "")
+            .prop("bytes", "")
             .start();
 
         ProgressReport {
@@ -150,6 +170,15 @@ impl ProgressReport {
         // Map to allocated range
         let mapped_position =
             state.operation_base + (pb_progress * state.operation_length as f64) as u64;
+
+        // Update bytes display with actual values
+        let bytes_str = format!(
+            "{} / {}",
+            format_bytes(state.position),
+            format_bytes(pb_len)
+        );
+        drop(state);
+        self.job.prop("bytes", &bytes_str);
 
         // Update clx progress job
         self.job.progress_current(mapped_position as usize);
@@ -184,7 +213,8 @@ impl SingleReport for ProgressReport {
         let state = self.state.lock().unwrap();
         if state.length.is_some() && state.position >= state.length.unwrap() {
             drop(state);
-            // Reset to spinning state
+            // Reset to spinning state and clear bytes display
+            self.job.prop("bytes", "");
             self.job.progress_current(0);
             self.job.progress_total(0);
         }
@@ -201,7 +231,8 @@ impl SingleReport for ProgressReport {
         let state = self.state.lock().unwrap();
         if state.length.is_some() && state.position >= state.length.unwrap() {
             drop(state);
-            // Reset to spinning state
+            // Reset to spinning state and clear bytes display
+            self.job.prop("bytes", "");
             self.job.progress_current(0);
             self.job.progress_total(0);
         }
