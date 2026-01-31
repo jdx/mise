@@ -19,6 +19,10 @@ pub enum PickerKind {
     Setting(usize), // section_idx
     /// Picking a hook to add
     Hook(usize), // section_idx
+    /// Picking a task_config key to add
+    TaskConfig(usize), // section_idx
+    /// Picking a monorepo key to add
+    Monorepo(usize), // section_idx
     /// Picking a section to add
     Section,
 }
@@ -562,6 +566,8 @@ impl Renderer {
                     AddButtonKind::Task(_) => "    [+ Add task]",
                     AddButtonKind::Setting(_) => "    [+ Add setting]",
                     AddButtonKind::Hook(_) => "    [+ Add hook]",
+                    AddButtonKind::TaskConfig(_) => "    [+ Add task config]",
+                    AddButtonKind::Monorepo(_) => "    [+ Add monorepo config]",
                     AddButtonKind::ArrayItem(_, _) => "        [+ Add item]",
                     AddButtonKind::InlineTableField(_, _) => "        [+ Add field]",
                 };
@@ -602,7 +608,9 @@ impl Renderer {
                             | AddButtonKind::EnvVariable(_)
                             | AddButtonKind::Task(_)
                             | AddButtonKind::Setting(_)
-                            | AddButtonKind::Hook(_) => "    ",
+                            | AddButtonKind::Hook(_)
+                            | AddButtonKind::TaskConfig(_)
+                            | AddButtonKind::Monorepo(_) => "    ",
                             AddButtonKind::ArrayItem(_, _)
                             | AddButtonKind::InlineTableField(_, _) => "        ",
                             AddButtonKind::Section => "",
@@ -619,6 +627,8 @@ impl Renderer {
                             AddButtonKind::Task(_) => "Task name: ",
                             AddButtonKind::Setting(_) => "Setting: ",
                             AddButtonKind::Hook(_) => "Hook name: ",
+                            AddButtonKind::TaskConfig(_) => "Config key: ",
+                            AddButtonKind::Monorepo(_) => "Config key: ",
                             AddButtonKind::ArrayItem(_, _) => "Value: ",
                             AddButtonKind::InlineTableField(_, _) => "Field name: ",
                         };
@@ -687,6 +697,8 @@ impl Renderer {
             PickerKind::Backend(_) => "Select Backend",
             PickerKind::Setting(_) => "Add Setting",
             PickerKind::Hook(_) => "Add Hook",
+            PickerKind::TaskConfig(_) => "Add Task Config",
+            PickerKind::Monorepo(_) => "Add Monorepo Config",
             PickerKind::Section => "Add Section",
         };
         output.push(format!("{}", header_style.apply_to(picker_title)));

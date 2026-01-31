@@ -554,6 +554,28 @@ impl InteractiveConfig {
                                 self.cursor.goto(&self.doc, &target);
                                 self.mode = Mode::Edit(InlineEdit::new(""));
                             }
+                            PickerKind::TaskConfig(section_idx) => {
+                                // Add the selected task_config key with empty value
+                                self.doc.add_entry(*section_idx, tool_name, String::new());
+                                let entry_idx = self.doc.sections[*section_idx].entries.len() - 1;
+                                // Track undo for added entry
+                                self.undo_stack
+                                    .push(UndoAction::AddEntry(*section_idx, entry_idx));
+                                let target = CursorTarget::Entry(*section_idx, entry_idx);
+                                self.cursor.goto(&self.doc, &target);
+                                self.mode = Mode::Edit(InlineEdit::new(""));
+                            }
+                            PickerKind::Monorepo(section_idx) => {
+                                // Add the selected monorepo key with empty value
+                                self.doc.add_entry(*section_idx, tool_name, String::new());
+                                let entry_idx = self.doc.sections[*section_idx].entries.len() - 1;
+                                // Track undo for added entry
+                                self.undo_stack
+                                    .push(UndoAction::AddEntry(*section_idx, entry_idx));
+                                let target = CursorTarget::Entry(*section_idx, entry_idx);
+                                self.cursor.goto(&self.doc, &target);
+                                self.mode = Mode::Edit(InlineEdit::new(""));
+                            }
                             PickerKind::Section => {
                                 // Add the selected section
                                 self.doc.add_section(tool_name.clone());
@@ -934,6 +956,48 @@ impl InteractiveConfig {
                     } else {
                         let picker = PickerState::new(items).with_visible_height(10);
                         self.mode = Mode::Picker(PickerKind::Hook(section_idx), picker);
+                    }
+                }
+                AddButtonKind::TaskConfig(section_idx) => {
+                    // Open task_config picker with valid keys from schema
+                    let existing_keys: std::collections::HashSet<_> = self.doc.sections
+                        [section_idx]
+                        .entries
+                        .iter()
+                        .map(|e| e.key.as_str())
+                        .collect();
+                    let items: Vec<PickerItem> = crate::schema::SCHEMA_TASK_CONFIG
+                        .iter()
+                        .filter(|(name, _)| !existing_keys.contains(*name))
+                        .map(|(name, desc)| PickerItem::new(*name).with_description(*desc))
+                        .collect();
+                    if items.is_empty() {
+                        // All task_config keys already exist, fall back to manual entry
+                        self.mode = Mode::NewKey(InlineEdit::new(""));
+                    } else {
+                        let picker = PickerState::new(items).with_visible_height(10);
+                        self.mode = Mode::Picker(PickerKind::TaskConfig(section_idx), picker);
+                    }
+                }
+                AddButtonKind::Monorepo(section_idx) => {
+                    // Open monorepo picker with valid keys from schema
+                    let existing_keys: std::collections::HashSet<_> = self.doc.sections
+                        [section_idx]
+                        .entries
+                        .iter()
+                        .map(|e| e.key.as_str())
+                        .collect();
+                    let items: Vec<PickerItem> = crate::schema::SCHEMA_MONOREPO
+                        .iter()
+                        .filter(|(name, _)| !existing_keys.contains(*name))
+                        .map(|(name, desc)| PickerItem::new(*name).with_description(*desc))
+                        .collect();
+                    if items.is_empty() {
+                        // All monorepo keys already exist, fall back to manual entry
+                        self.mode = Mode::NewKey(InlineEdit::new(""));
+                    } else {
+                        let picker = PickerState::new(items).with_visible_height(10);
+                        self.mode = Mode::Picker(PickerKind::Monorepo(section_idx), picker);
                     }
                 }
                 AddButtonKind::ArrayItem(_, _) => {

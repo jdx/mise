@@ -51,6 +51,10 @@ pub enum AddButtonKind {
     Setting(usize),
     /// Add a hook via picker (section index) - for [hooks] section
     Hook(usize),
+    /// Add a task_config key via picker (section index) - for [task_config] section
+    TaskConfig(usize),
+    /// Add a monorepo key via picker (section index) - for [monorepo] section
+    Monorepo(usize),
     /// Add an item to an array (section index, entry index)
     ArrayItem(usize, usize),
     /// Add a field to an inline table (section index, entry index)
@@ -301,6 +305,16 @@ impl Cursor {
             }
             "hooks" => {
                 items.push(CursorTarget::AddButton(AddButtonKind::Hook(section_idx)));
+            }
+            "task_config" => {
+                items.push(CursorTarget::AddButton(AddButtonKind::TaskConfig(
+                    section_idx,
+                )));
+            }
+            "monorepo" => {
+                items.push(CursorTarget::AddButton(AddButtonKind::Monorepo(
+                    section_idx,
+                )));
             }
             _ => {
                 // Generic entry button for unknown sections

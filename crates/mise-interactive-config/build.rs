@@ -66,10 +66,24 @@ fn main() {
         extract_settings_keys(settings_def, "", &mut settings_keys);
     }
 
+    // Extract task_config keys from $defs/task_config
+    let mut task_config_keys = Vec::new();
+    if let Some(task_config_def) = defs.and_then(|d| d.get("task_config")) {
+        extract_simple_properties(task_config_def, &mut task_config_keys);
+    }
+
+    // Extract monorepo keys from $defs/monorepo
+    let mut monorepo_keys = Vec::new();
+    if let Some(monorepo_def) = defs.and_then(|d| d.get("monorepo")) {
+        extract_simple_properties(monorepo_def, &mut monorepo_keys);
+    }
+
     // Sort by name for consistent output
     sections.sort_by(|a, b| a.0.cmp(&b.0));
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     settings_keys.sort_by(|a, b| a.0.cmp(&b.0));
+    task_config_keys.sort_by(|a, b| a.0.cmp(&b.0));
+    monorepo_keys.sort_by(|a, b| a.0.cmp(&b.0));
 
     // Generate the Rust code
     let mut code = String::new();
@@ -109,9 +123,50 @@ fn main() {
     code.push_str("    (\"cd\", \"Run on any directory change\"),\n");
     code.push_str("    (\"preinstall\", \"Run before installing a tool\"),\n");
     code.push_str("    (\"postinstall\", \"Run after installing a tool\"),\n");
+    code.push_str("];\n\n");
+
+    // Generate task_config keys constant
+    code.push_str("/// Valid keys in mise.toml [task_config] section\n");
+    code.push_str("pub const SCHEMA_TASK_CONFIG: &[(&str, &str)] = &[\n");
+    for (name, description) in &task_config_keys {
+        let escaped_desc = escape_string(description);
+        code.push_str(&format!("    (\"{}\", \"{}\"),\n", name, escaped_desc));
+    }
+    code.push_str("];\n\n");
+
+    // Generate monorepo keys constant
+    code.push_str("/// Valid keys in mise.toml [monorepo] section\n");
+    code.push_str("pub const SCHEMA_MONOREPO: &[(&str, &str)] = &[\n");
+    for (name, description) in &monorepo_keys {
+        let escaped_desc = escape_string(description);
+        code.push_str(&format!("    (\"{}\", \"{}\"),\n", name, escaped_desc));
+    }
     code.push_str("];\n");
 
     fs::write(&dest_path, code).unwrap();
+}
+
+/// Extract simple properties from a schema object (non-recursive)
+fn extract_simple_properties(prop: &Value, keys: &mut Vec<(String, String)>) {
+    if let Some(properties) = prop.get("properties").and_then(|p| p.as_object()) {
+        for (name, prop_value) in properties {
+            // Skip deprecated properties
+            if prop_value
+                .get("deprecated")
+                .and_then(|d| d.as_bool())
+                .unwrap_or(false)
+            {
+                continue;
+            }
+
+            let description = prop_value
+                .get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("");
+
+            keys.push((name.clone(), description.to_string()));
+        }
+    }
 }
 
 /// Extract settings keys recursively, with dot notation for nested settings

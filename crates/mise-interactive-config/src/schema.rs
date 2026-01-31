@@ -55,6 +55,32 @@ pub fn hook_description(name: &str) -> Option<&'static str> {
         .map(|(_, desc)| *desc)
 }
 
+/// Check if a task_config key is valid according to the schema
+pub fn is_valid_task_config(name: &str) -> bool {
+    SCHEMA_TASK_CONFIG.iter().any(|(n, _)| *n == name)
+}
+
+/// Get the description for a task_config key, if it exists
+pub fn task_config_description(name: &str) -> Option<&'static str> {
+    SCHEMA_TASK_CONFIG
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, desc)| *desc)
+}
+
+/// Check if a monorepo key is valid according to the schema
+pub fn is_valid_monorepo(name: &str) -> bool {
+    SCHEMA_MONOREPO.iter().any(|(n, _)| *n == name)
+}
+
+/// Get the description for a monorepo key, if it exists
+pub fn monorepo_description(name: &str) -> Option<&'static str> {
+    SCHEMA_MONOREPO
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, desc)| *desc)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,5 +146,30 @@ mod tests {
     fn test_hook_descriptions() {
         assert!(hook_description("enter").is_some());
         assert!(hook_description("invalid").is_none());
+    }
+
+    #[test]
+    fn test_valid_task_config() {
+        assert!(is_valid_task_config("dir"));
+        assert!(is_valid_task_config("includes"));
+        assert!(!is_valid_task_config("invalid"));
+    }
+
+    #[test]
+    fn test_task_config_descriptions() {
+        assert!(task_config_description("dir").is_some());
+        assert!(task_config_description("invalid").is_none());
+    }
+
+    #[test]
+    fn test_valid_monorepo() {
+        assert!(is_valid_monorepo("config_roots"));
+        assert!(!is_valid_monorepo("invalid"));
+    }
+
+    #[test]
+    fn test_monorepo_descriptions() {
+        assert!(monorepo_description("config_roots").is_some());
+        assert!(monorepo_description("invalid").is_none());
     }
 }
