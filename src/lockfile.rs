@@ -7,6 +7,7 @@ use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset};
 use eyre::{Report, Result, bail};
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::Mutex;
@@ -16,6 +17,22 @@ use std::{
 };
 use toml_edit::DocumentMut;
 use xx::regex;
+
+/// Global caches for lockfile data - declared here so invalidation can access them
+static ALL_LOCKFILES_CACHE: Lazy<Mutex<HashMap<Vec<PathBuf>, Arc<Lockfile>>>> =
+    Lazy::new(Default::default);
+static SINGLE_LOCKFILE_CACHE: Lazy<Mutex<HashMap<PathBuf, Arc<Lockfile>>>> =
+    Lazy::new(Default::default);
+
+/// Invalidate all lockfile caches. Call this after modifying a lockfile.
+pub fn invalidate_caches() {
+    if let Ok(mut cache) = ALL_LOCKFILES_CACHE.lock() {
+        cache.clear();
+    }
+    if let Ok(mut cache) = SINGLE_LOCKFILE_CACHE.lock() {
+        cache.clear();
+    }
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -213,8 +230,10 @@ impl Lockfile {
     }
 
     fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let path = path.as_ref();
         if self.is_empty() {
             let _ = file::remove_file(path);
+            invalidate_caches();
         } else {
             let mut lockfile = toml::Table::new();
 
@@ -252,7 +271,14 @@ impl Lockfile {
 
             let content = toml::to_string_pretty(&toml::Value::Table(lockfile))?;
             let content = format(content.parse()?);
-            file::write(path, content)?;
+
+            // Use atomic write: write to temp file, then rename
+            // This prevents partial writes from corrupting the lockfile
+            let temp_path = path.with_extension("lock.tmp");
+            file::write(&temp_path, &content)?;
+            fs::rename(&temp_path, path)?;
+
+            invalidate_caches();
         }
         Ok(())
     }
@@ -646,13 +672,10 @@ fn merge_tool_entries_with_env(
 }
 
 fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
-    // Cache by sorted config paths to avoid recomputing on every call
-    static CACHE: Lazy<Mutex<HashMap<Vec<PathBuf>, Arc<Lockfile>>>> = Lazy::new(Default::default);
-
     // Create a cache key from the config file paths
     let cache_key: Vec<PathBuf> = config.config_files.keys().cloned().collect();
 
-    let mut cache = CACHE.lock().unwrap();
+    let mut cache = ALL_LOCKFILES_CACHE.lock().unwrap();
     if let Some(cached) = cache.get(&cache_key) {
         return Arc::clone(cached);
     }
@@ -704,10 +727,7 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
 }
 
 fn read_lockfile_for(path: &Path) -> Arc<Lockfile> {
-    // Cache by config path to avoid recomputing lockfile_path_for_config on every call
-    static CACHE: Lazy<Mutex<HashMap<PathBuf, Arc<Lockfile>>>> = Lazy::new(Default::default);
-
-    let mut cache = CACHE.lock().unwrap();
+    let mut cache = SINGLE_LOCKFILE_CACHE.lock().unwrap();
     if let Some(cached) = cache.get(path) {
         return Arc::clone(cached);
     }
