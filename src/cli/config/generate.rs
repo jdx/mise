@@ -54,9 +54,30 @@ impl std::fmt::Display for DetectedTool {
 struct WizardState {
     tools: BTreeMap<String, String>,
     env_vars: BTreeMap<String, String>,
+    path_dirs: Vec<String>,
     load_dotenv: bool,
     create_lockfile: bool,
     min_mise_version: Option<String>,
+    // Settings
+    idiomatic_version_file: bool,
+    python_uv_venv_auto: bool,
+}
+
+/// A suggested setting based on project context
+struct Suggestion {
+    id: &'static str,
+    label: String,
+    description: &'static str,
+}
+
+impl Suggestion {
+    fn new(id: &'static str, label: impl Into<String>, description: &'static str) -> Self {
+        Self {
+            id,
+            label: label.into(),
+            description,
+        }
+    }
 }
 
 impl ConfigGenerate {
@@ -134,12 +155,133 @@ impl ConfigGenerate {
                     state.create_lockfile = !state.create_lockfile;
                 }
                 "min_version" => self.set_min_version(&theme, &mut state)?,
+                "suggestions" => self.show_suggestions(&theme, &mut state)?,
                 "done" => break,
                 _ => {}
             }
         }
 
         Ok(self.generate_config(&state))
+    }
+
+    /// Detect suggestions based on project context
+    fn detect_suggestions(&self, state: &WizardState) -> Vec<Suggestion> {
+        let cwd = env::current_dir().unwrap_or_default();
+        let mut suggestions = Vec::new();
+
+        // Check for idiomatic version files
+        let idiomatic_files = [
+            ".nvmrc",
+            ".node-version",
+            ".python-version",
+            ".ruby-version",
+            ".go-version",
+        ];
+        let has_idiomatic = idiomatic_files.iter().any(|f| cwd.join(f).exists());
+        if has_idiomatic {
+            suggestions.push(Suggestion::new(
+                "idiomatic",
+                "idiomatic_version_file = true",
+                "Read .nvmrc, .python-version, etc.",
+            ));
+        }
+
+        // Path suggestions based on detected tools
+        if state.tools.contains_key("node") || cwd.join("package.json").exists() {
+            if !state.path_dirs.contains(&"./node_modules/.bin".to_string()) {
+                suggestions.push(Suggestion::new(
+                    "path_node",
+                    "_.path = \"./node_modules/.bin\"",
+                    "Add node_modules binaries to PATH",
+                ));
+            }
+        }
+
+        if state.tools.contains_key("python") || cwd.join("pyproject.toml").exists() {
+            if !state.path_dirs.contains(&"./.venv/bin".to_string()) {
+                suggestions.push(Suggestion::new(
+                    "path_venv",
+                    "_.path = \"./.venv/bin\"",
+                    "Add Python venv binaries to PATH",
+                ));
+            }
+        }
+
+        if state.tools.contains_key("go") || cwd.join("go.mod").exists() {
+            if !state.path_dirs.contains(&"./bin".to_string()) {
+                suggestions.push(Suggestion::new(
+                    "path_go",
+                    "_.path = \"./bin\"",
+                    "Add local bin directory to PATH",
+                ));
+            }
+        }
+
+        // Python + uv auto venv
+        if (state.tools.contains_key("python") || cwd.join("pyproject.toml").exists())
+            && (state.tools.contains_key("uv") || cwd.join("uv.lock").exists())
+        {
+            suggestions.push(Suggestion::new(
+                "uv_venv",
+                "python.uv_venv_auto = true",
+                "Auto-create venv with uv",
+            ));
+        }
+
+        suggestions
+    }
+
+    fn show_suggestions(&self, theme: &demand::Theme, state: &mut WizardState) -> Result<()> {
+        let suggestions = self.detect_suggestions(state);
+
+        if suggestions.is_empty() {
+            miseprintln!("No suggestions detected for this project.");
+            return Ok(());
+        }
+
+        let mut ms = MultiSelect::new("Suggested settings")
+            .description("Based on your project, these settings may be useful")
+            .theme(theme);
+
+        for s in &suggestions {
+            ms = ms.option(
+                DemandOption::new(s.id)
+                    .label(&s.label)
+                    .description(s.description),
+            );
+        }
+
+        let selected: Vec<String> = match ms.run() {
+            Ok(s) => s.into_iter().map(|s| s.to_string()).collect(),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => return Ok(()),
+            Err(e) => return Err(eyre!(e)),
+        };
+
+        // Apply selected suggestions
+        for id in selected {
+            match id.as_str() {
+                "idiomatic" => state.idiomatic_version_file = true,
+                "path_node" => {
+                    if !state.path_dirs.contains(&"./node_modules/.bin".to_string()) {
+                        state.path_dirs.push("./node_modules/.bin".to_string());
+                    }
+                }
+                "path_venv" => {
+                    if !state.path_dirs.contains(&"./.venv/bin".to_string()) {
+                        state.path_dirs.push("./.venv/bin".to_string());
+                    }
+                }
+                "path_go" => {
+                    if !state.path_dirs.contains(&"./bin".to_string()) {
+                        state.path_dirs.push("./bin".to_string());
+                    }
+                }
+                "uv_venv" => state.python_uv_venv_auto = true,
+                _ => {}
+            }
+        }
+
+        Ok(())
     }
 
     fn show_config_preview(&self, state: &WizardState) -> Result<()> {
@@ -208,6 +350,17 @@ impl ConfigGenerate {
                 .label(&min_version_label)
                 .description("Require a minimum mise version"),
         );
+
+        // Only show suggestions if there are any
+        let suggestions = self.detect_suggestions(state);
+        if !suggestions.is_empty() {
+            let suggestions_label = format!("Suggested settings ({})", suggestions.len());
+            select = select.option(
+                DemandOption::new("suggestions")
+                    .label(&suggestions_label)
+                    .description("Auto-detected settings for your project"),
+            );
+        }
 
         select = select.option(
             DemandOption::new("done")
@@ -492,16 +645,45 @@ impl ConfigGenerate {
             config.push_str(&format!("min_version = \"{}\"\n\n", version));
         }
 
-        // Add lockfile setting if requested
-        if state.create_lockfile {
-            config.push_str("[settings]\nlockfile = true\n\n");
+        // Add settings section if needed
+        let has_settings =
+            state.create_lockfile || state.idiomatic_version_file || state.python_uv_venv_auto;
+        if has_settings {
+            config.push_str("[settings]\n");
+            if state.create_lockfile {
+                config.push_str("lockfile = true\n");
+            }
+            if state.idiomatic_version_file {
+                config.push_str("idiomatic_version_file = true\n");
+            }
+            if state.python_uv_venv_auto {
+                config.push_str("python.uv_venv_auto = true\n");
+            }
+            config.push('\n');
         }
 
         // Add env section if needed
-        if !state.env_vars.is_empty() || state.load_dotenv {
+        let has_env =
+            !state.env_vars.is_empty() || state.load_dotenv || !state.path_dirs.is_empty();
+        if has_env {
             config.push_str("[env]\n");
             if state.load_dotenv {
                 config.push_str("mise.file = \".env\"\n");
+            }
+            if !state.path_dirs.is_empty() {
+                if state.path_dirs.len() == 1 {
+                    config.push_str(&format!(
+                        "_.path = {}\n",
+                        quote_toml_value(&state.path_dirs[0])
+                    ));
+                } else {
+                    let paths: Vec<String> = state
+                        .path_dirs
+                        .iter()
+                        .map(|p| quote_toml_value(p))
+                        .collect();
+                    config.push_str(&format!("_.path = [{}]\n", paths.join(", ")));
+                }
             }
             for (key, value) in &state.env_vars {
                 config.push_str(&format!("{key} = {}\n", quote_toml_value(value)));
