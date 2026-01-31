@@ -326,7 +326,7 @@ impl Backend for UbiBackend {
             } else {
                 bail!("Invalid checksum: {platform_key}");
             }
-        } else if Settings::get().lockfile && Settings::get().experimental {
+        } else if Settings::get().lockfile {
             ctx.pr
                 .set_message(format!("checksum generate {platform_key}"));
             let hash = hash::file_hash_blake3(file, Some(ctx.pr.as_ref()))?;

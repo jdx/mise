@@ -313,7 +313,7 @@ impl S3Backend {
     ) -> Result<()> {
         let settings = Settings::get();
         let filename = file_path.file_name().unwrap().to_string_lossy();
-        let lockfile_enabled = settings.lockfile && settings.experimental;
+        let lockfile_enabled = settings.lockfile;
 
         let platform_key = self.get_platform_key();
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
@@ -464,7 +464,7 @@ impl Backend for S3Backend {
 
         // Account for lockfile checksum verification/generation
         let settings = Settings::get();
-        let lockfile_enabled = settings.lockfile && settings.experimental;
+        let lockfile_enabled = settings.lockfile;
         let has_lockfile_checksum = tv
             .lock_platforms
             .get(&platform_key)
