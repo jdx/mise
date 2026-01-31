@@ -59,23 +59,27 @@ struct WizardState {
     create_lockfile: bool,
     min_mise_version: Option<String>,
     // Settings
-    idiomatic_version_file: bool,
+    idiomatic_version_file_tools: Vec<String>,
     python_uv_venv_auto: bool,
 }
 
 /// A suggested setting based on project context
 struct Suggestion {
-    id: &'static str,
+    id: String,
     label: String,
-    description: &'static str,
+    description: String,
 }
 
 impl Suggestion {
-    fn new(id: &'static str, label: impl Into<String>, description: &'static str) -> Self {
+    fn new(
+        id: impl Into<String>,
+        label: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Self {
         Self {
-            id,
+            id: id.into(),
             label: label.into(),
-            description,
+            description: description.into(),
         }
     }
 }
@@ -169,21 +173,27 @@ impl ConfigGenerate {
         let cwd = env::current_dir().unwrap_or_default();
         let mut suggestions = Vec::new();
 
-        // Check for idiomatic version files
-        let idiomatic_files = [
-            ".nvmrc",
-            ".node-version",
-            ".python-version",
-            ".ruby-version",
-            ".go-version",
+        // Check for idiomatic version files - suggest per-tool
+        let idiomatic_tools: &[(&str, &[&str])] = &[
+            ("node", &[".nvmrc", ".node-version"]),
+            ("python", &[".python-version"]),
+            ("ruby", &[".ruby-version"]),
+            ("go", &[".go-version"]),
         ];
-        let has_idiomatic = idiomatic_files.iter().any(|f| cwd.join(f).exists());
-        if has_idiomatic {
-            suggestions.push(Suggestion::new(
-                "idiomatic",
-                "idiomatic_version_file = true",
-                "Read .nvmrc, .python-version, etc.",
-            ));
+        for (tool, files) in idiomatic_tools {
+            if !state
+                .idiomatic_version_file_tools
+                .contains(&tool.to_string())
+            {
+                let detected_file = files.iter().find(|f| cwd.join(f).exists());
+                if let Some(file) = detected_file {
+                    suggestions.push(Suggestion::new(
+                        format!("idiomatic_{tool}"),
+                        format!("idiomatic_version_file_enable_tools += {tool}"),
+                        format!("Read {file} for {tool} version"),
+                    ));
+                }
+            }
         }
 
         // Path suggestions based on detected tools
@@ -245,9 +255,9 @@ impl ConfigGenerate {
 
         for s in &suggestions {
             ms = ms.option(
-                DemandOption::new(s.id)
+                DemandOption::new(&s.id)
                     .label(&s.label)
-                    .description(s.description),
+                    .description(&s.description),
             );
         }
 
@@ -259,8 +269,16 @@ impl ConfigGenerate {
 
         // Apply selected suggestions
         for id in selected {
+            if let Some(tool) = id.strip_prefix("idiomatic_") {
+                if !state
+                    .idiomatic_version_file_tools
+                    .contains(&tool.to_string())
+                {
+                    state.idiomatic_version_file_tools.push(tool.to_string());
+                }
+                continue;
+            }
             match id.as_str() {
-                "idiomatic" => state.idiomatic_version_file = true,
                 "path_node" => {
                     if !state.path_dirs.contains(&"./node_modules/.bin".to_string()) {
                         state.path_dirs.push("./node_modules/.bin".to_string());
@@ -646,15 +664,24 @@ impl ConfigGenerate {
         }
 
         // Add settings section if needed
-        let has_settings =
-            state.create_lockfile || state.idiomatic_version_file || state.python_uv_venv_auto;
+        let has_settings = state.create_lockfile
+            || !state.idiomatic_version_file_tools.is_empty()
+            || state.python_uv_venv_auto;
         if has_settings {
             config.push_str("[settings]\n");
             if state.create_lockfile {
                 config.push_str("lockfile = true\n");
             }
-            if state.idiomatic_version_file {
-                config.push_str("idiomatic_version_file = true\n");
+            if !state.idiomatic_version_file_tools.is_empty() {
+                let tools: Vec<String> = state
+                    .idiomatic_version_file_tools
+                    .iter()
+                    .map(|t| quote_toml_value(t))
+                    .collect();
+                config.push_str(&format!(
+                    "idiomatic_version_file_enable_tools = [{}]\n",
+                    tools.join(", ")
+                ));
             }
             if state.python_uv_venv_auto {
                 config.push_str("python.uv_venv_auto = true\n");
