@@ -207,8 +207,12 @@ impl TomlDocument {
     }
 
     fn parse_entry(key: &str, item: &Item) -> Option<Entry> {
-        // Extract comments from the item's decor
-        let comments = Self::extract_comments_from_decor(item.as_value()?.decor().prefix());
+        // Extract comments from the item's decor (handle both Values and Tables)
+        let comments = match item {
+            Item::Value(v) => Self::extract_comments_from_decor(v.decor().prefix()),
+            Item::Table(t) => Self::extract_comments_from_decor(t.decor().prefix()),
+            _ => Vec::new(),
+        };
 
         let value = match item {
             Item::Value(v) => Self::parse_value(v),

@@ -581,6 +581,15 @@ impl InteractiveConfig {
                         self.mode = Mode::Edit(InlineEdit::new(&current));
                     } else {
                         // Confirm selection and update the entry
+                        // Save old value for undo
+                        let old_value = self.doc.sections[vs.section_idx].entries[vs.entry_idx]
+                            .value
+                            .clone();
+                        self.undo_stack.push(UndoAction::EditEntry(
+                            vs.section_idx,
+                            vs.entry_idx,
+                            old_value,
+                        ));
                         self.doc
                             .update_entry(vs.section_idx, vs.entry_idx, version.clone());
                         // Remember this specificity for future tools
