@@ -236,36 +236,31 @@ impl Toolset {
 
             if let Ok(backend) = tr.backend()
                 && let Some(plugin) = backend.plugin()
-                    && !plugin.is_installed() {
-                        let mpr = MultiProgressReport::get();
-                        if let Err(e) = plugin
-                            .ensure_installed(config, &mpr, false, opts.dry_run)
-                            .await
-                            .or_else(|err| {
-                                if let Some(&Error::PluginNotInstalled(_)) =
-                                    err.downcast_ref::<Error>()
-                                {
-                                    Ok(())
-                                } else {
-                                    Err(err)
-                                }
-                            })
-                        {
-                            // Collect errors for all tools using this plugin
-                            for tr2 in versions {
-                                if tr2.ba() == ba {
-                                    plugin_errors.push((
-                                        tr2.clone(),
-                                        eyre::eyre!(
-                                            "Plugin '{}' installation failed: {}",
-                                            ba.short,
-                                            e
-                                        ),
-                                    ));
-                                }
-                            }
+                && !plugin.is_installed()
+            {
+                let mpr = MultiProgressReport::get();
+                if let Err(e) = plugin
+                    .ensure_installed(config, &mpr, false, opts.dry_run)
+                    .await
+                    .or_else(|err| {
+                        if let Some(&Error::PluginNotInstalled(_)) = err.downcast_ref::<Error>() {
+                            Ok(())
+                        } else {
+                            Err(err)
+                        }
+                    })
+                {
+                    // Collect errors for all tools using this plugin
+                    for tr2 in versions {
+                        if tr2.ba() == ba {
+                            plugin_errors.push((
+                                tr2.clone(),
+                                eyre::eyre!("Plugin '{}' installation failed: {}", ba.short, e),
+                            ));
                         }
                     }
+                }
+            }
         }
 
         plugin_errors

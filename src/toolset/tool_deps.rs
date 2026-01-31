@@ -67,26 +67,27 @@ impl ToolDeps {
 
             // Get all dependencies for this tool
             if let Ok(backend) = tr.backend()
-                && let Ok(deps) = backend.get_all_dependencies(true) {
-                    for dep_ba in deps {
-                        // Check if this dependency is being installed
-                        let dep_fulls = dep_ba.all_fulls();
-                        if dep_fulls.iter().any(|full| versions_hash.contains(full)) {
-                            // Find the matching tool request in our set
-                            for other_tr in &requests {
-                                let other_fulls = other_tr.ba().all_fulls();
-                                if dep_fulls.iter().any(|f| other_fulls.contains(f)) {
-                                    let other_key = tool_key(other_tr);
-                                    if tr_key != other_key {
-                                        let other_idx = node_indices[&other_key];
-                                        // Edge from tr to dep means "tr depends on dep"
-                                        graph.update_edge(tr_idx, other_idx, ());
-                                    }
+                && let Ok(deps) = backend.get_all_dependencies(true)
+            {
+                for dep_ba in deps {
+                    // Check if this dependency is being installed
+                    let dep_fulls = dep_ba.all_fulls();
+                    if dep_fulls.iter().any(|full| versions_hash.contains(full)) {
+                        // Find the matching tool request in our set
+                        for other_tr in &requests {
+                            let other_fulls = other_tr.ba().all_fulls();
+                            if dep_fulls.iter().any(|f| other_fulls.contains(f)) {
+                                let other_key = tool_key(other_tr);
+                                if tr_key != other_key {
+                                    let other_idx = node_indices[&other_key];
+                                    // Edge from tr to dep means "tr depends on dep"
+                                    graph.update_edge(tr_idx, other_idx, ());
                                 }
                             }
                         }
                     }
                 }
+            }
         }
 
         // Create a dummy channel - the real one is created in subscribe()
@@ -219,10 +220,11 @@ impl ToolDeps {
         // Any node that cannot reach a leaf is in a cycle - block it
         for idx in self.graph.node_indices() {
             if !can_reach_leaf.contains(&idx)
-                && let Some(tr) = self.graph.node_weight(idx) {
-                    let key = tool_key(tr);
-                    self.blocked.insert(key);
-                }
+                && let Some(tr) = self.graph.node_weight(idx)
+            {
+                let key = tool_key(tr);
+                self.blocked.insert(key);
+            }
         }
     }
 
