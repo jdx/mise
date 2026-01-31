@@ -473,6 +473,9 @@ impl UnifiedGitBackend {
             .await?;
 
         // Verify and install
+        if has_checksum {
+            ctx.pr.next_operation();
+        }
         verify_artifact(tv, &file_path, opts, Some(ctx.pr.as_ref()))?;
         self.verify_checksum(ctx, tv, &file_path)?;
 
@@ -480,6 +483,9 @@ impl UnifiedGitBackend {
         self.verify_attestations_or_slsa(ctx, tv, &file_path)
             .await?;
 
+        if needs_extraction {
+            ctx.pr.next_operation();
+        }
         install_artifact(tv, &file_path, opts, Some(ctx.pr.as_ref()))?;
 
         if let Some(bins) = self.get_filter_bins(tv) {

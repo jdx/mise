@@ -483,12 +483,19 @@ impl Backend for S3Backend {
             .await?;
 
         // Verify artifact (checksum/size from options)
+        if Self::get_opt(&opts, "checksum").is_some() {
+            ctx.pr.next_operation();
+        }
         verify_artifact(&tv, &file_path, &opts, Some(ctx.pr.as_ref()))?;
 
         // Verify/generate lockfile checksum (before extraction for security)
+        if lockfile_enabled || has_lockfile_checksum {
+            ctx.pr.next_operation();
+        }
         self.verify_checksum(ctx, &mut tv, &file_path)?;
 
         // Extract and install
+        ctx.pr.next_operation();
         ctx.pr.set_message("extract".into());
         install_artifact(&tv, &file_path, &opts, Some(ctx.pr.as_ref()))?;
 

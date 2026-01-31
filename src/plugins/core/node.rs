@@ -72,6 +72,7 @@ impl NodePlugin {
             Err(e) => return Err(e),
         };
 
+        ctx.pr.next_operation();
         let tarball_name = &opts.binary_tarball_name;
         ctx.pr.set_message(format!("extract {tarball_name}"));
         debug!("{:?}: extracting precompiled node", self);
@@ -165,6 +166,7 @@ impl NodePlugin {
             &opts.version,
         )
         .await?;
+        ctx.pr.next_operation();
         ctx.pr.set_message(format!("extract {tarball_name}"));
         file::remove_all(&opts.build_dir)?;
         file::untar(
@@ -198,6 +200,7 @@ impl NodePlugin {
             pr.set_message(format!("download {tarball_name}"));
             HTTP.download_file(url.clone(), local, Some(pr)).await?;
         }
+        ctx.pr.next_operation();
         let platform_info = tv
             .lock_platforms
             .entry(self.get_platform_key())

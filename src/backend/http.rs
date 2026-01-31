@@ -686,7 +686,10 @@ impl Backend for HttpBackend {
         HTTP.download_file(&url, &file_path, Some(ctx.pr.as_ref()))
             .await?;
 
-        // Verify artifact
+        // Verify artifact (checksum if provided)
+        if get_opt(&opts, "checksum").is_some() {
+            ctx.pr.next_operation();
+        }
         verify_artifact(&tv, &file_path, &opts, Some(ctx.pr.as_ref()))?;
 
         // Generate cache key
@@ -700,6 +703,7 @@ impl Backend for HttpBackend {
         // Determine extraction type based on whether we're using cache or extracting fresh
         // On cache hit, we need to detect the actual filename from the cache (which may differ
         // from current options if a previous extraction used different `bin` name)
+        ctx.pr.next_operation();
         let extraction_type = if self.is_cached(&cache_key) {
             ctx.pr.set_message("using cached tarball".into());
             // Report extraction operation as complete (instant since we're using cache)
@@ -723,6 +727,9 @@ impl Backend for HttpBackend {
         self.create_version_alias_symlink(&tv, &cache_key)?;
 
         // Verify checksum for lockfile
+        if lockfile_enabled || has_lockfile_checksum {
+            ctx.pr.next_operation();
+        }
         self.verify_checksum(ctx, &mut tv, &file_path)?;
 
         Ok(tv)

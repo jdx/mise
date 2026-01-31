@@ -421,13 +421,27 @@ impl Backend for AquaBackend {
             // Store the asset URL and digest (if available) in the tool version
             let platform_info = tv.lock_platforms.entry(platform_key).or_default();
             platform_info.url = Some(url.clone());
-            if let Some(digest) = api_digest {
+            if let Some(digest) = api_digest.clone() {
                 debug!("using GitHub API digest for checksum verification");
                 platform_info.checksum = Some(digest);
             }
         }
 
+        // Advance to checksum operation if applicable
+        if pkg.checksum.as_ref().is_some_and(|c| c.enabled()) || api_digest.is_some() {
+            ctx.pr.next_operation();
+        }
         self.verify(ctx, &mut tv, &pkg, &v, &filename).await?;
+
+        // Advance to extraction operation if applicable
+        if (!format.is_empty() && format != "raw")
+            || matches!(
+                pkg.r#type,
+                AquaPackageType::GithubArchive | AquaPackageType::GithubContent
+            )
+        {
+            ctx.pr.next_operation();
+        }
         self.install(ctx, &tv, &pkg, &v, &filename)?;
 
         Ok(tv)

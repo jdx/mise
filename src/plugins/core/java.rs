@@ -471,7 +471,9 @@ impl Backend for JavaPlugin {
                 (metadata, tarball_path)
             };
 
+        ctx.pr.next_operation();
         self.install(&tv, ctx.pr.as_ref(), &tarball_path, metadata)?;
+        ctx.pr.next_operation();
         self.verify(&tv, ctx.pr.as_ref())?;
 
         Ok(tv)

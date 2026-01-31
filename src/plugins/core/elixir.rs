@@ -141,7 +141,9 @@ impl Backend for ElixirPlugin {
     ) -> Result<ToolVersion> {
         ctx.pr.start_operations(3);
         let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
+        ctx.pr.next_operation();
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
+        ctx.pr.next_operation();
         self.install(ctx, &tv, &tarball_path).await?;
         self.verify(ctx, &tv).await?;
         Ok(tv)

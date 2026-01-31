@@ -110,7 +110,7 @@ hex = "0.4"
 humansize = "2"
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
-clx = "1"
+clx = { path = "../clx" }
 indoc = "2"
 itertools = "0.14"
 jiff = "0.2"

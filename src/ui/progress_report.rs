@@ -53,6 +53,10 @@ pub trait SingleReport: Send + Sync + std::fmt::Debug {
     ///
     /// Then each set_length() call will allocate 33.33% of the total progress
     fn start_operations(&self, _count: usize) {}
+
+    /// Advance to the next operation
+    /// Call this before each new stage (after the first one)
+    fn next_operation(&self) {}
 }
 
 static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
@@ -69,14 +73,14 @@ fn pad_prefix(w: usize, s: &str) -> String {
 }
 
 fn normal_prefix(pad: usize, prefix: &str) -> String {
-    let prefix = format!("{} {prefix}", style::edim("mise"));
-    pad_prefix(pad, &prefix)
+    pad_prefix(pad, prefix)
 }
 
 /// Progress state for tracking multi-operation progress
 #[derive(Debug)]
 struct ProgressState {
     total_operations: Option<usize>,
+    current_operation: usize,
     operation_count: u32,
     operation_base: u64,
     operation_length: u64,
@@ -87,7 +91,8 @@ struct ProgressState {
 impl Default for ProgressState {
     fn default() -> Self {
         Self {
-            total_operations: Some(1),
+            total_operations: None,
+            current_operation: 0,
             operation_count: 0,
             operation_base: 0,
             operation_length: 1_000_000,
@@ -158,7 +163,14 @@ impl SingleReport for ProgressReport {
     }
 
     fn set_message(&self, message: String) {
-        self.job.prop("message", &message.replace('\r', ""));
+        let state = self.state.lock().unwrap();
+        let formatted = if let Some(total) = state.total_operations {
+            format!("[{}/{}] {}", state.current_operation, total, message)
+        } else {
+            message
+        };
+        drop(state);
+        self.job.prop("message", &formatted.replace('\r', ""));
     }
 
     fn inc(&self, delta: u64) {
@@ -247,6 +259,14 @@ impl SingleReport for ProgressReport {
     fn start_operations(&self, count: usize) {
         let mut state = self.state.lock().unwrap();
         state.total_operations = Some(count.max(1));
+        state.current_operation = 1;
+    }
+
+    fn next_operation(&self) {
+        let mut state = self.state.lock().unwrap();
+        if state.total_operations.is_some() {
+            state.current_operation += 1;
+        }
     }
 }
 
@@ -266,6 +286,8 @@ pub struct VerboseReport {
     prefix: String,
     prev_message: Mutex<String>,
     pad: usize,
+    total_operations: Mutex<Option<usize>>,
+    current_operation: Mutex<usize>,
 }
 
 impl VerboseReport {
@@ -274,6 +296,8 @@ impl VerboseReport {
             prefix,
             prev_message: Mutex::new("".to_string()),
             pad: *LONGEST_PLUGIN_NAME,
+            total_operations: Mutex::new(None),
+            current_operation: Mutex::new(0),
         }
     }
 }
@@ -287,9 +311,16 @@ impl SingleReport for VerboseReport {
         if *prev_message == message {
             return;
         }
+        let total = *self.total_operations.lock().unwrap();
+        let current = *self.current_operation.lock().unwrap();
+        let formatted = if let Some(total) = total {
+            format!("[{}/{}] {}", current, total, message)
+        } else {
+            message.clone()
+        };
         let prefix = pad_prefix(self.pad, &self.prefix);
-        log::info!("{prefix} {message}");
-        *prev_message = message.clone();
+        log::info!("{prefix} {formatted}");
+        *prev_message = message;
     }
     fn finish(&self) {
         self.finish_with_message(style::egreen("done").to_string());
@@ -297,6 +328,17 @@ impl SingleReport for VerboseReport {
     fn finish_with_icon(&self, message: String, icon: ProgressIcon) {
         let prefix = pad_prefix(self.pad - 2, &self.prefix);
         log::info!("{prefix} {icon} {message}");
+    }
+    fn start_operations(&self, count: usize) {
+        *self.total_operations.lock().unwrap() = Some(count.max(1));
+        *self.current_operation.lock().unwrap() = 1;
+    }
+    fn next_operation(&self) {
+        let total = *self.total_operations.lock().unwrap();
+        if total.is_some() {
+            let mut current = self.current_operation.lock().unwrap();
+            *current += 1;
+        }
     }
 }
 
