@@ -85,6 +85,8 @@ pub struct BooleanSelectState {
     pub section_idx: usize,
     /// Entry index (if editing existing) or None (if adding new)
     pub entry_idx: Option<usize>,
+    /// Field index for inline table fields (if editing a field within an entry)
+    pub field_idx: Option<usize>,
 }
 
 impl BooleanSelectState {
@@ -95,17 +97,35 @@ impl BooleanSelectState {
             selected: true, // Default to true
             section_idx,
             entry_idx: None,
+            field_idx: None,
         }
     }
 
     /// Create a new boolean select state for editing existing entry
-    #[allow(dead_code)]
     pub fn edit_entry(key: String, current: bool, section_idx: usize, entry_idx: usize) -> Self {
         Self {
             key,
             selected: current,
             section_idx,
             entry_idx: Some(entry_idx),
+            field_idx: None,
+        }
+    }
+
+    /// Create a new boolean select state for editing an inline table field
+    pub fn edit_inline_table_field(
+        key: String,
+        current: bool,
+        section_idx: usize,
+        entry_idx: usize,
+        field_idx: usize,
+    ) -> Self {
+        Self {
+            key,
+            selected: current,
+            section_idx,
+            entry_idx: Some(entry_idx),
+            field_idx: Some(field_idx),
         }
     }
 
@@ -508,7 +528,14 @@ impl Renderer {
                 }
 
                 let value_display = match &entry.value {
-                    EntryValue::Simple(s) => format!("\"{}\"", s),
+                    EntryValue::Simple(s) => {
+                        // Don't quote booleans
+                        if s == "true" || s == "false" {
+                            s.clone()
+                        } else {
+                            format!("\"{}\"", s)
+                        }
+                    }
                     EntryValue::Array(_) if entry.expanded => "▼".to_string(),
                     EntryValue::Array(items) => {
                         let preview: Vec<_> =
@@ -521,7 +548,14 @@ impl Renderer {
                         let preview: Vec<_> = pairs
                             .iter()
                             .take(2)
-                            .map(|(k, v)| format!("{} = \"{}\"", k, v))
+                            .map(|(k, v)| {
+                                // Don't quote booleans in inline table preview
+                                if v == "true" || v == "false" {
+                                    format!("{} = {}", k, v)
+                                } else {
+                                    format!("{} = \"{}\"", k, v)
+                                }
+                            })
                             .collect();
                         let suffix = if pairs.len() > 2 { ", ..." } else { "" };
                         format!("▶ {{ {}{} }}", preview.join(", "), suffix)
@@ -588,8 +622,31 @@ impl Renderer {
                 let entry = &doc.sections[*section_idx].entries[*entry_idx];
                 if let EntryValue::InlineTable(pairs) = &entry.value {
                     let (key, value) = &pairs[*field_idx];
+                    let is_boolean = value == "true" || value == "false";
 
-                    // Check if we're editing this field
+                    // Check if we're editing this field with boolean selector
+                    if is_cursor
+                        && let Mode::BooleanSelect(bs) = mode
+                        && let Some(f_idx) = bs.field_idx
+                        && bs.section_idx == *section_idx
+                        && bs.entry_idx == Some(*entry_idx)
+                        && f_idx == *field_idx
+                    {
+                        let key_part = format!("        {} = ", key_style.apply_to(key));
+                        let true_display = if bs.selected {
+                            format!("{}", cursor_style.apply_to("[true]"))
+                        } else {
+                            format!("{}", dim_style.apply_to("true"))
+                        };
+                        let false_display = if !bs.selected {
+                            format!("{}", cursor_style.apply_to("[false]"))
+                        } else {
+                            format!("{}", dim_style.apply_to("false"))
+                        };
+                        return format!("{}{}  {}", key_part, true_display, false_display);
+                    }
+
+                    // Check if we're editing this field with text editor
                     if is_cursor && let Mode::Edit(edit) = mode {
                         let prefix = format!("        {} = ", key_style.apply_to(key));
                         let cursor_pos = edit.cursor();
@@ -611,7 +668,13 @@ impl Renderer {
                         );
                     }
 
-                    let text = format!("{} = \"{}\"", key, value);
+                    // Display value - don't quote booleans
+                    let value_display = if is_boolean {
+                        value.clone()
+                    } else {
+                        format!("\"{}\"", value)
+                    };
+                    let text = format!("{} = {}", key, value_display);
                     if is_cursor {
                         format!(
                             "      {} {}",
@@ -622,7 +685,7 @@ impl Renderer {
                         format!(
                             "        {} = {}",
                             key_style.apply_to(key),
-                            value_style.apply_to(&format!("\"{}\"", value))
+                            value_style.apply_to(&value_display)
                         )
                     }
                 } else {

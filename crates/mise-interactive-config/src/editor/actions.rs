@@ -9,7 +9,7 @@ use crate::document::EntryValue;
 use crate::inline_edit::InlineEdit;
 use crate::picker::{PickerItem, PickerState};
 use crate::providers::version_variants;
-use crate::render::{Mode, PickerKind, VersionSelectState};
+use crate::render::{BooleanSelectState, Mode, PickerKind, VersionSelectState};
 
 impl InteractiveConfig {
     pub(super) async fn handle_enter(&mut self) -> io::Result<()> {
@@ -67,8 +67,28 @@ impl InteractiveConfig {
                             self.mode = Mode::Edit(InlineEdit::new(&current_value));
                         }
                     } else {
-                        // Non-tools section: use regular inline edit
-                        self.mode = Mode::Edit(InlineEdit::new(&current_value));
+                        // Non-tools section: check if it's a boolean setting
+                        let schema_type = match section_name.as_str() {
+                            "settings" => crate::schema::setting_type(&tool_name),
+                            "task_config" => crate::schema::task_config_type(&tool_name),
+                            "monorepo" => crate::schema::monorepo_type(&tool_name),
+                            "" => crate::schema::entry_type(&tool_name),
+                            _ => None,
+                        };
+
+                        if schema_type == Some(crate::schema::SchemaType::Boolean) {
+                            // Use boolean selector for boolean settings
+                            let current_bool = current_value == "true";
+                            self.mode = Mode::BooleanSelect(BooleanSelectState::edit_entry(
+                                tool_name,
+                                current_bool,
+                                section_idx,
+                                entry_idx,
+                            ));
+                        } else {
+                            // Use regular inline edit
+                            self.mode = Mode::Edit(InlineEdit::new(&current_value));
+                        }
                     }
                 } else if is_complex {
                     // Toggle expansion for arrays/inline tables
@@ -89,8 +109,21 @@ impl InteractiveConfig {
                 if let EntryValue::InlineTable(pairs) =
                     &self.doc.sections[section_idx].entries[entry_idx].value
                 {
-                    let (_, value) = &pairs[field_idx];
-                    self.mode = Mode::Edit(InlineEdit::new(value));
+                    let (key, value) = &pairs[field_idx];
+                    // Check if it's a boolean value
+                    if value == "true" || value == "false" {
+                        let current_bool = value == "true";
+                        self.mode =
+                            Mode::BooleanSelect(BooleanSelectState::edit_inline_table_field(
+                                key.clone(),
+                                current_bool,
+                                section_idx,
+                                entry_idx,
+                                field_idx,
+                            ));
+                    } else {
+                        self.mode = Mode::Edit(InlineEdit::new(value));
+                    }
                 }
             }
 

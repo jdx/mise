@@ -621,7 +621,17 @@ impl InteractiveConfig {
                 Key::Enter => {
                     // Confirm selection
                     let value = bs.value_str().to_string();
-                    if let Some(entry_idx) = bs.entry_idx {
+                    if let (Some(entry_idx), Some(field_idx)) = (bs.entry_idx, bs.field_idx) {
+                        // Editing inline table field
+                        if let Some(section) = self.doc.sections.get_mut(bs.section_idx)
+                            && let Some(entry) = section.entries.get_mut(entry_idx)
+                            && let EntryValue::InlineTable(ref mut pairs) = entry.value
+                            && let Some((_, v)) = pairs.get_mut(field_idx)
+                        {
+                            *v = value;
+                            self.doc.modified = true;
+                        }
+                    } else if let Some(entry_idx) = bs.entry_idx {
                         // Editing existing entry
                         self.doc.update_entry(bs.section_idx, entry_idx, value);
                     } else {
