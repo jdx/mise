@@ -2172,18 +2172,33 @@ async fn load_file_tasks(
 }
 
 pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBuf> {
-    configs_at_root(dir, config_files)
+    let configs = configs_at_root(dir, config_files);
+
+    // Find the first config that has explicit task_config.includes
+    // and resolve paths relative to that config file's directory
+    let (includes, resolve_dir) = configs
         .iter()
         .rev()
-        .find_map(|cf| cf.task_config().includes.clone())
-        .unwrap_or_else(default_task_includes)
+        .find_map(|cf| {
+            cf.task_config().includes.clone().map(|includes| {
+                // Resolve relative paths from the config file's directory, not the search directory
+                let cf_dir = cf.get_path().parent().unwrap_or(dir);
+                (includes, cf_dir.to_path_buf())
+            })
+        })
+        .unwrap_or_else(|| {
+            // Default includes should be resolved relative to the search directory
+            (default_task_includes(), dir.to_path_buf())
+        });
+
+    includes
         .into_iter()
         .flat_map(|p| {
             // Git URLs are handled by load_file_tasks, not here
             if p.starts_with("git::") {
                 return vec![];
             }
-            expand_task_include(dir, &p)
+            expand_task_include(&resolve_dir, &p)
         })
         .unique()
         .collect::<Vec<_>>()

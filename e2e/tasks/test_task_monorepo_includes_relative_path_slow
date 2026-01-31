@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+
+# Test that task_config.includes with relative paths resolve correctly
+# relative to the config file's directory, not the search directory.
+# Also tests that bare task names (like "build") work from package directories.
+# See: https://github.com/jdx/mise/discussions/6564#discussioncomment-15655346
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo structure similar to the reported issue:
+# mise-monorepo/
+#   mise/
+#     config.toml (root config with experimental_monorepo_root)
+#     common.tasks.toml (shared tasks)
+#   packages/
+#     foo/
+#       mise/
+#         config.toml (includes ../../../mise/common.tasks.toml)
+
+mkdir -p mise
+mkdir -p packages/foo/mise
+
+# Create root config
+cat <<EOF >mise/config.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+
+[settings]
+experimental = true
+
+[tasks.root-task]
+run = "echo root-task ran"
+
+[tasks.build]
+description = "monorepo-wide build"
+run = "echo monorepo root build ran"
+EOF
+
+# Create common tasks file
+cat <<EOF >mise/common.tasks.toml
+[common-task]
+run = "echo common-task ran"
+
+[build]
+description = "common build task"
+run = "echo common build ran"
+EOF
+
+# Create package config with includes pointing to common tasks
+# The path is relative to the config file's directory (packages/foo/mise/)
+cat <<EOF >packages/foo/mise/config.toml
+[task_config]
+includes = ["../../../mise/common.tasks.toml"]
+
+[tasks.foo-task]
+run = "echo foo-task ran"
+EOF
+
+# --- Test from root directory ---
+
+# Verify all tasks are discovered with --all
+assert_contains "mise tasks --all" "//:build"
+assert_contains "mise tasks --all" "//:root-task"
+assert_contains "mise tasks --all" "//packages/foo:build"
+assert_contains "mise tasks --all" "//packages/foo:common-task"
+assert_contains "mise tasks --all" "//packages/foo:foo-task"
+
+# Verify running tasks from root
+assert_contains "mise run //packages/foo:common-task" "common-task ran"
+assert_contains "mise run //packages/foo:build" "common build ran"
+assert_contains "mise run //packages/foo:foo-task" "foo-task ran"
+
+# --- Test from package directory ---
+cd packages/foo
+
+# Verify tasks are visible when running mise tasks from package directory
+# (This tests the first bug - tasks from includes not showing)
+assert_contains "mise tasks" "//packages/foo:foo-task"
+assert_contains "mise tasks" "//packages/foo:build"
+assert_contains "mise tasks" "//packages/foo:common-task"
+
+# Verify running tasks with :task syntax
+assert_contains "mise run :common-task" "common-task ran"
+assert_contains "mise run :build" "common build ran"
+assert_contains "mise run :foo-task" "foo-task ran"
+
+# Verify running tasks with bare names
+# (This tests the second bug - bare names should work after expansion)
+assert_contains "mise run foo-task" "foo-task ran"
+assert_contains "mise run build" "common build ran"
+assert_contains "mise run common-task" "common-task ran"
+
+cd ../..
+
+# --- Additional edge case: deeper nesting ---
+mkdir -p packages/bar/src/mise
+
+# Create a more deeply nested config with include going back multiple levels
+cat <<EOF >packages/bar/src/mise/config.toml
+[task_config]
+includes = ["../../../../mise/common.tasks.toml"]
+
+[tasks.bar-task]
+run = "echo bar-task ran"
+EOF
+
+# Update monorepo config_roots to include deeper path
+cat <<EOF >mise/config.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*", "packages/bar/src"]
+
+[settings]
+experimental = true
+
+[tasks.root-task]
+run = "echo root-task ran"
+
+[tasks.build]
+description = "monorepo-wide build"
+run = "echo monorepo root build ran"
+EOF
+
+# Verify deeply nested includes work
+assert_contains "mise tasks --all" "//packages/bar/src:bar-task"
+assert_contains "mise tasks --all" "//packages/bar/src:build"
+assert_contains "mise tasks --all" "//packages/bar/src:common-task"
+
+# Run from deeply nested directory
+cd packages/bar/src
+assert_contains "mise run :bar-task" "bar-task ran"
+assert_contains "mise run :common-task" "common-task ran"
+assert_contains "mise run bar-task" "bar-task ran"
+cd ../../..
