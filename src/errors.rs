@@ -60,10 +60,17 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
     }
 
     // For multiple failures, show a summary and then each error
-    let mut output = vec![];
-    let failed_tools: Vec<String> = failed_installations
+    // Sort by tool name for deterministic output (parallel installs complete in arbitrary order)
+    let mut sorted_failures: Vec<_> = failed_installations
         .iter()
-        .map(|(tr, _)| format!("{}@{}", tr.ba().full(), tr.version()))
+        .map(|(tr, err)| (format!("{}@{}", tr.ba().full(), tr.version()), err))
+        .collect();
+    sorted_failures.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut output = vec![];
+    let failed_tools: Vec<&str> = sorted_failures
+        .iter()
+        .map(|(name, _)| name.as_str())
         .collect();
 
     output.push(format!(
@@ -71,15 +78,10 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
         failed_tools.join(", ")
     ));
 
-    // Show detailed errors for each failure
+    // Show detailed errors for each failure (in sorted order)
     // Use {:#} to show full error chain (includes wrapped errors)
-    for (tr, error) in failed_installations.iter() {
-        output.push(format!(
-            "\n{}@{}: {:#}",
-            tr.ba().full(),
-            tr.version(),
-            error
-        ));
+    for (name, error) in sorted_failures.iter() {
+        output.push(format!("\n{}: {:#}", name, error));
     }
 
     output.join("\n")
