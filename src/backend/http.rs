@@ -597,23 +597,11 @@ impl Backend for HttpBackend {
 
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         let opts = tv.request.options();
-        let platform_key = self.get_platform_key();
-        let settings = Settings::get();
-
-        let mut count = 2; // download + extraction
-        if get_opt(&opts, "checksum").is_some() {
-            count += 1;
-        }
-        let lockfile_enabled = settings.lockfile;
-        let has_lockfile_checksum = tv
-            .lock_platforms
-            .get(&platform_key)
-            .and_then(|p| p.checksum.as_ref())
-            .is_some();
-        if lockfile_enabled || has_lockfile_checksum {
-            count += 1;
-        }
-        count
+        super::http_install_operation_count(
+            get_opt(&opts, "checksum").is_some(),
+            &self.get_platform_key(),
+            tv,
+        )
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {

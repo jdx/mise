@@ -1442,6 +1442,30 @@ pub trait Backend: Debug + Send + Sync {
     }
 }
 
+/// Helper function for calculating install operation count in HTTP/S3-style backends.
+/// Used by HttpBackend and S3Backend to avoid code duplication.
+pub fn http_install_operation_count(
+    has_checksum_opt: bool,
+    platform_key: &str,
+    tv: &ToolVersion,
+) -> usize {
+    let settings = Settings::get();
+    let mut count = 2; // download + extraction
+    if has_checksum_opt {
+        count += 1;
+    }
+    let lockfile_enabled = settings.lockfile;
+    let has_lockfile_checksum = tv
+        .lock_platforms
+        .get(platform_key)
+        .and_then(|p| p.checksum.as_ref())
+        .is_some();
+    if lockfile_enabled || has_lockfile_checksum {
+        count += 1;
+    }
+    count
+}
+
 fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
     match list.contains(&query.to_string()) {
         true => Some(query.to_string()),
