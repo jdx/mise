@@ -127,7 +127,7 @@ While using [`mise x|exec`](/cli/exec.html) is useful, for interactive shells, y
 For interactive shells, `mise activate` is recommended. In non-interactive sessions, like CI/CD, IDEs, and scripts, using `shims` might work best. You can also not use any and call `mise exec/run` directly instead.
 See [this guide](dev-tools/shims.md) for more information.
 
-Here is how you can activate `mise` depending on your shell and the installation method:
+To set up your shell to activate mise: below, click the first tab for your installation method (curl, Homebrew, Windows, Debian/Ubuntu, etc). Then select your shell in the second tab. Finally, copy and paste the line(s) into your terminal.
 
 :::tabs key:installing-mise
 
