@@ -59,7 +59,7 @@ local_assert_fail "mise install github:nonexistent-org/nonexistent-repo@latest" 
 # Test 4: Plugin not found
 echo "Test 4: Plugin not found"
 local_assert_fail "mise install nonexistent-tool@1.0.0" \
-	"mise ERROR nonexistent-tool not found in mise tool registry"
+	"mise ERROR Failed to install nonexistent-tool@1.0.0: nonexistent-tool not found in mise tool registry"
 
 # Test 5: Multiple tool failures (could be single or multiple depending on timing)
 echo "Test 5: Multiple tool failures"

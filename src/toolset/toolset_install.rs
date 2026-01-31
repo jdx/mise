@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use eyre::Result;
@@ -305,6 +305,8 @@ impl Toolset {
         let mut installed = vec![];
         let mut failed = vec![];
         let mut jset: JoinSet<(ToolRequest, Result<ToolVersion>)> = JoinSet::new();
+        // Track in-flight tools to recover from task panics
+        let mut in_flight: HashMap<tokio::task::Id, ToolRequest> = HashMap::new();
 
         loop {
             tokio::select! {
@@ -315,18 +317,27 @@ impl Toolset {
 
                 // Handle completed installations first (higher priority)
                 Some(result) = jset.join_next() => {
+                    let mpr = MultiProgressReport::get();
                     match result {
                         Ok((tr, Ok(tv))) => {
+                            mpr.footer_inc(1);
                             installed.push(tv);
                             tool_deps.lock().await.complete_success(&tr);
                         }
                         Ok((tr, Err(e))) => {
+                            mpr.footer_inc(1);
                             failed.push((tr.clone(), e));
                             tool_deps.lock().await.complete_failure(&tr);
                         }
                         Err(e) => {
-                            // JoinSet error - this shouldn't happen normally
-                            warn!("Task join error: {e:#}");
+                            // Task panicked - try to recover the tool request from in_flight tracking
+                            mpr.footer_inc(1);
+                            if let Some(tr) = in_flight.remove(&e.id()) {
+                                failed.push((tr.clone(), eyre::eyre!("Installation task panicked: {e:#}")));
+                                tool_deps.lock().await.complete_failure(&tr);
+                            } else {
+                                warn!("Task panicked but tool request not found: {e:#}");
+                            }
                         }
                     }
                 }
@@ -340,6 +351,7 @@ impl Toolset {
                                 Ok(p) => p,
                                 Err(e) => {
                                     // Mark as failed and notify tool_deps so dependents are blocked
+                                    MultiProgressReport::get().footer_inc(1);
                                     failed.push((tr.clone(), eyre::eyre!("Failed to acquire semaphore: {}", e)));
                                     tool_deps.lock().await.complete_failure(&tr);
                                     continue;
@@ -349,12 +361,14 @@ impl Toolset {
                             let config = config.clone();
                             let ts = ts.clone();
                             let opts = opts.clone();
+                            let tr_clone = tr.clone();
 
-                            jset.spawn(async move {
+                            let handle = jset.spawn(async move {
                                 let _permit = permit;
                                 let result = Self::install_single_tool(&config, &ts, &tr, &opts).await;
                                 (tr, result)
                             });
+                            in_flight.insert(handle.id(), tr_clone);
                         }
                         None => {
                             // All tools have been emitted, wait for remaining tasks
@@ -369,17 +383,26 @@ impl Toolset {
 
         // Wait for all remaining tasks to complete
         while let Some(result) = jset.join_next().await {
+            let mpr = MultiProgressReport::get();
             match result {
                 Ok((tr, Ok(tv))) => {
+                    mpr.footer_inc(1);
                     installed.push(tv);
                     tool_deps.lock().await.complete_success(&tr);
                 }
                 Ok((tr, Err(e))) => {
+                    mpr.footer_inc(1);
                     failed.push((tr.clone(), e));
                     tool_deps.lock().await.complete_failure(&tr);
                 }
                 Err(e) => {
-                    warn!("Task join error: {e:#}");
+                    mpr.footer_inc(1);
+                    if let Some(tr) = in_flight.remove(&e.id()) {
+                        failed.push((tr.clone(), eyre::eyre!("Installation task panicked: {e:#}")));
+                        tool_deps.lock().await.complete_failure(&tr);
+                    } else {
+                        warn!("Task panicked but tool request not found: {e:#}");
+                    }
                 }
             }
         }
@@ -415,12 +438,7 @@ impl Toolset {
             locked: opts.locked,
         };
 
-        let result = backend.install_version(ctx, tv).await;
-
-        // Bump footer for completed tool
-        mpr.footer_inc(1);
-
-        result
+        backend.install_version(ctx, tv).await
     }
 
     pub async fn install_missing_bin(

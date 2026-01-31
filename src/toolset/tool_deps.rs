@@ -30,10 +30,6 @@ pub struct ToolDeps {
     node_indices: HashMap<ToolKey, NodeIndex>,
     /// Tools that have already been sent for installation
     sent: HashSet<ToolKey>,
-    /// Tools that have completed installation (success or failure)
-    completed: HashSet<ToolKey>,
-    /// Tools that failed to install
-    failed: HashSet<ToolKey>,
     /// Tools that are blocked due to dependency failures or cycles
     blocked: HashSet<ToolKey>,
     /// Channel sender for emitting ready tools (None signals completion).
@@ -45,13 +41,18 @@ pub struct ToolDeps {
 impl ToolDeps {
     /// Creates a new ToolDeps from a list of tool requests.
     /// Builds the dependency graph based on each tool's dependencies.
+    /// Duplicate tool requests (same backend and version) are deduplicated.
     pub fn new(requests: Vec<ToolRequest>) -> Result<Self> {
         let mut graph = StableGraph::new();
         let mut node_indices = HashMap::new();
 
-        // First pass: add all requested tools to the graph
+        // First pass: add all requested tools to the graph, deduplicating by key
         for tr in &requests {
             let key = tool_key(tr);
+            // Skip duplicates - only add the first occurrence
+            if node_indices.contains_key(&key) {
+                continue;
+            }
             let idx = graph.add_node(tr.clone());
             node_indices.insert(key, idx);
         }
@@ -63,7 +64,10 @@ impl ToolDeps {
         // Second pass: add edges for dependencies
         for tr in &requests {
             let tr_key = tool_key(tr);
-            let tr_idx = node_indices[&tr_key];
+            // Skip if this is a duplicate we didn't add
+            let Some(&tr_idx) = node_indices.get(&tr_key) else {
+                continue;
+            };
 
             // Get all dependencies for this tool
             if let Ok(backend) = tr.backend()
@@ -79,9 +83,10 @@ impl ToolDeps {
                             if dep_fulls.iter().any(|f| other_fulls.contains(f)) {
                                 let other_key = tool_key(other_tr);
                                 if tr_key != other_key {
-                                    let other_idx = node_indices[&other_key];
-                                    // Edge from tr to dep means "tr depends on dep"
-                                    graph.update_edge(tr_idx, other_idx, ());
+                                    if let Some(&other_idx) = node_indices.get(&other_key) {
+                                        // Edge from tr to dep means "tr depends on dep"
+                                        graph.update_edge(tr_idx, other_idx, ());
+                                    }
                                 }
                             }
                         }
@@ -97,8 +102,6 @@ impl ToolDeps {
             graph,
             node_indices,
             sent: HashSet::new(),
-            completed: HashSet::new(),
-            failed: HashSet::new(),
             blocked: HashSet::new(),
             tx,
         };
@@ -122,7 +125,6 @@ impl ToolDeps {
     /// Mark a tool as successfully installed and emit any newly-ready tools.
     pub fn complete_success(&mut self, tr: &ToolRequest) {
         let key = tool_key(tr);
-        self.completed.insert(key.clone());
         self.remove_node(&key);
         self.emit_leaves();
     }
@@ -130,8 +132,6 @@ impl ToolDeps {
     /// Mark a tool as failed and block all transitive dependents.
     pub fn complete_failure(&mut self, tr: &ToolRequest) {
         let key = tool_key(tr);
-        self.completed.insert(key.clone());
-        self.failed.insert(key.clone());
 
         // Find and block all transitive dependents before removing the node
         if let Some(&idx) = self.node_indices.get(&key) {
