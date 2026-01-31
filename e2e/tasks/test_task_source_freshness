@@ -30,8 +30,9 @@ assert_empty "mise run -q sizetest"
 
 # Change file content/size - this changes the metadata hash
 echo "much larger content now" >sized.txt
-# Copy mtime from output to source (so mtime comparison alone would say fresh)
-touch -r sizeout.txt sized.txt
+# Make output NEWER than source (so mtime comparison alone would say fresh)
+sleep 0.1
+touch sizeout.txt
 # Should rebuild because size changed in the metadata hash
 assert "mise run -q sizetest" "rebuilt"
 
@@ -75,8 +76,9 @@ assert_empty "mise run -q rename"
 
 # Rename the source file (same content, same size, but different path)
 mv original.src renamed.src
-# Copy mtime from output so only the path change triggers rebuild
-touch -r rename.out renamed.src
+# Make output NEWER than source so only the path change triggers rebuild
+sleep 0.1
+touch rename.out
 # Should rebuild because path changed in the metadata hash
 assert "mise run -q rename" "rebuilt"
 
