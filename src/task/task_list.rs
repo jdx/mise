@@ -277,7 +277,18 @@ pub async fn get_task_lists(
             }
         }
         // Load tasks with the appropriate context
-        let all_tasks = if let Some(ref ctx) = task_context {
+        // If the task was expanded to monorepo syntax (e.g., bare "build" -> "//packages/foo:build"),
+        // we need to create a context from the expanded name to load tasks from that location
+        let effective_context = if task_context.is_some() {
+            task_context.clone()
+        } else if t.starts_with("//") {
+            // Task was expanded to monorepo syntax, create context from the expanded name
+            Some(TaskLoadContext::from_pattern(&t))
+        } else {
+            None
+        };
+
+        let all_tasks = if let Some(ref ctx) = effective_context {
             config.tasks_with_context(Some(ctx)).await?
         } else {
             config.tasks().await?
