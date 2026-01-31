@@ -21,7 +21,7 @@ macro_rules! git_cmd {
     ( $dir:expr $(, $arg:expr )* $(,)? ) => {
         {
             let safe = format!("safe.directory={}", $dir.display());
-            cmd!("git", "-C", $dir, "-c", safe $(, $arg)*)
+            cmd!("git", "-C", $dir, "-c", safe, "-c", "core.autocrlf=false" $(, $arg)*)
         }
     }
 }
@@ -151,6 +151,8 @@ impl Git {
         let mut cmd = CmdLineRunner::new("git")
             .arg("clone")
             .arg("-q")
+            .arg("-c")
+            .arg("core.autocrlf=false")
             .arg("--depth")
             .arg("1")
             .arg(url)
