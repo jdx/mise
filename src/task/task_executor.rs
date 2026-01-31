@@ -131,12 +131,6 @@ impl TaskExecutor {
             }
             return Ok(());
         }
-        if let Some(message) = &task.confirm
-            && !Settings::get().yes
-            && !crate::ui::confirm(message).unwrap_or(false)
-        {
-            return Err(eyre!("aborted by user"));
-        }
 
         let mut tools = self.tool.clone();
         for (k, v) in &task.tools {
@@ -239,6 +233,9 @@ impl TaskExecutor {
             };
             self.parse_usage_spec_and_init_env(config, task, &mut env, get_args)
                 .await?;
+
+            // Check confirmation after usage args are parsed
+            self.check_confirmation(config, task, &env).await?;
 
             let exec_start = std::time::Instant::now();
             self.exec_task_run_entries(
@@ -565,6 +562,9 @@ impl TaskExecutor {
         self.parse_usage_spec_and_init_env(config, task, &mut env, get_args)
             .await?;
 
+        // Check confirmation after usage args are parsed
+        self.check_confirmation(config, task, &env).await?;
+
         if !self.quiet(Some(task)) {
             let cmd = format!("{} {}", display_path(file), args.join(" "))
                 .trim()
@@ -795,6 +795,36 @@ impl TaskExecutor {
     #[allow(unused_variables)]
     fn is_text_file_busy(err: &Report) -> bool {
         false
+    }
+
+    async fn check_confirmation(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        env: &BTreeMap<String, String>,
+    ) -> Result<()> {
+        if let Some(confirm_template) = &task.confirm
+            && !Settings::get().yes
+        {
+            let config_root = task.config_root.clone().unwrap_or_default();
+            let mut tera = crate::tera::get_tera(Some(&config_root));
+            let mut tera_ctx = task.tera_ctx(config).await?;
+
+            // Add usage values from parsed environment
+            let mut usage_ctx = std::collections::HashMap::new();
+            for (key, value) in env {
+                if let Some(usage_key) = key.strip_prefix("usage_") {
+                    usage_ctx.insert(usage_key.to_string(), tera::Value::String(value.clone()));
+                }
+            }
+            tera_ctx.insert("usage", &usage_ctx);
+
+            let message = tera.render_str(confirm_template, &tera_ctx)?;
+            if !crate::ui::confirm(&message).unwrap_or(false) {
+                return Err(eyre!("aborted by user"));
+            }
+        }
+        Ok(())
     }
 
     async fn parse_usage_spec_and_init_env(

@@ -818,7 +818,7 @@ impl TaskScriptParser {
     ///   - Count flags (`count = true`) use a `Vec<bool>` whose length is
     ///     derived from the default (parsed as a usize) or an empty array.
     ///   - Simple flags use `false`.
-    fn make_usage_ctx_from_spec_defaults(spec: &usage::Spec) -> HashMap<String, tera::Value> {
+    pub fn make_usage_ctx_from_spec_defaults(spec: &usage::Spec) -> HashMap<String, tera::Value> {
         let mut usage_ctx: HashMap<String, tera::Value> = HashMap::new();
 
         // Args

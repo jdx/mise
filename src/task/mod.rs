@@ -895,11 +895,7 @@ impl Task {
         for a in &mut self.aliases {
             *a = tera.render_str(a, &tera_ctx)?;
         }
-        self.confirm = self
-            .confirm
-            .as_ref()
-            .map(|c| tera.render_str(c, &tera_ctx))
-            .transpose()?;
+
         self.description = tera.render_str(&self.description, &tera_ctx)?;
         for s in &mut self.sources {
             *s = tera.render_str(s, &tera_ctx)?;
