@@ -321,9 +321,9 @@ Tera offers more filters. Read more on [tera documentation](https://keats.github
   - `algorithm: "sha256" | "blake3"`: hash algorithm to use (default: `"sha256"`)
   - `len: usize`: truncates the hash string to the given size
   - Examples:
-    - `{{ "foo" | hash }}` – SHA256 hash (default)
-    - `{{ "foo" | hash(algorithm="blake3") }}` – BLAKE3 hash
-    - `{{ "foo" | hash(len=8) }}` – SHA256 hash truncated to 8 characters
+    - <span v-pre>`{{ "foo" | hash }}`</span> – SHA256 hash (default)
+    - <span v-pre>`{{ "foo" | hash(algorithm="blake3") }}`</span> – BLAKE3 hash
+    - <span v-pre>`{{ "foo" | hash(len=8) }}`</span> – SHA256 hash truncated to 8 characters
 - `path | hash_file([len]) -> String` – Returns the BLAKE3 hash of the file
   at the given path.
   - `len: usize`: truncates the hash string to the given size
