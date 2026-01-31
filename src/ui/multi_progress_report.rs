@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use indicatif::{MultiProgress, ProgressBar};
+use indicatif::MultiProgress;
 
 use crate::cli::version::VERSION_PLAIN;
 use crate::config::Settings;
+use crate::ui::diagnostic_log;
 use crate::ui::osc::{self, ProgressState};
 use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, VerboseReport};
 use crate::ui::style;
@@ -13,8 +14,7 @@ use crate::ui::style;
 pub struct MultiProgressReport {
     mp: Option<MultiProgress>,
     quiet: bool,
-    footer: Mutex<Option<Box<dyn SingleReport>>>,
-    footer_pb: Mutex<Option<ProgressBar>>, // Reference to footer bar for inserting before it
+    header: Mutex<Option<Box<dyn SingleReport>>>,
     // Track overall progress: total expected progress units and current progress per report
     total_count: Mutex<usize>,
     report_progress: Mutex<HashMap<usize, (u64, u64)>>, // report_id -> (position, length)
@@ -66,8 +66,7 @@ impl MultiProgressReport {
         MultiProgressReport {
             mp,
             quiet: settings.quiet,
-            footer: Mutex::new(None),
-            footer_pb: Mutex::new(None),
+            header: Mutex::new(None),
             total_count: Mutex::new(0),
             report_progress: Mutex::new(HashMap::new()),
             next_report_id: Mutex::new(0),
@@ -79,6 +78,7 @@ impl MultiProgressReport {
     }
 
     pub fn add_with_options(&self, prefix: &str, dry_run: bool) -> Box<dyn SingleReport> {
+        diagnostic_log::tool_start(prefix);
         match &self.mp {
             _ if self.quiet => {
                 progress_trace!(
@@ -93,13 +93,8 @@ impl MultiProgressReport {
                     prefix
                 );
                 let mut pr = ProgressReport::new(prefix.into());
-                // Insert before footer if it exists, otherwise just add
-                let footer_pb = self.footer_pb.lock().unwrap();
-                pr.pb = if let Some(footer) = footer_pb.as_ref() {
-                    mp.insert_before(footer, pr.pb)
-                } else {
-                    mp.add(pr.pb)
-                };
+                // Tool bars append below header
+                pr.pb = mp.add(pr.pb);
                 Box::new(pr)
             }
             _ => {
@@ -113,21 +108,23 @@ impl MultiProgressReport {
             }
         }
     }
-    pub fn init_footer(&self, dry_run: bool, message: &str, total_count: usize) {
-        let mut footer = self.footer.lock().unwrap();
-        if let Some(_footer) = footer.as_ref() {
+    pub fn init_header(&self, dry_run: bool, message: &str, total_count: usize) {
+        let mut header = self.header.lock().unwrap();
+        if let Some(_header) = header.as_ref() {
             return;
         }
+
+        diagnostic_log::session_start(total_count, message);
 
         // Set total count for overall progress tracking
         *self.total_count.lock().unwrap() = total_count;
         progress_trace!(
-            "init_footer: total_count={}, total_units={}",
+            "init_header: total_count={}, total_units={}",
             total_count,
             total_count * 1_000_000
         );
 
-        // Don't show footer when there's only 1 tool - individual progress bar is sufficient
+        // Don't show header when there's only 1 tool - individual progress bar is sufficient
         if total_count == 1 {
             return;
         }
@@ -135,31 +132,29 @@ impl MultiProgressReport {
         // Initialize OSC progress if enabled
         if Settings::get().terminal_progress {
             osc::set_progress(ProgressState::Normal, 0);
-            progress_trace!("init_footer: initialized OSC progress at 0%");
+            progress_trace!("init_header: initialized OSC progress at 0%");
         }
 
         let version = &*VERSION_PLAIN;
         let version_text = format!("{version} by @jdx");
-        *footer = Some(match &self.mp {
+        *header = Some(match &self.mp {
             _ if self.quiet => return,
             Some(mp) if !dry_run => {
-                // Footer text with "mise" prefix for progress bar overlay
-                let footer_text = format!(
+                // Header text with "mise" prefix for progress bar overlay
+                let header_text = format!(
                     "{} {}",
                     style::emagenta("mise").bold(),
                     style::edim(&version_text),
                 );
-                // Footer length is total_count * 1,000,000 to show progress with high granularity
-                let footer_length = (total_count * 1_000_000) as u64;
-                let mut footer_bar =
-                    ProgressReport::new_footer(footer_text, footer_length, message.to_string());
-                // Add footer to the end (it will be the last bar initially)
-                footer_bar.pb = mp.add(footer_bar.pb);
-                // Store reference to footer bar for inserting other bars before it
-                *self.footer_pb.lock().unwrap() = Some(footer_bar.pb.clone());
+                // Header length is total_count * 1,000,000 to show progress with high granularity
+                let header_length = (total_count * 1_000_000) as u64;
+                let mut header_bar =
+                    ProgressReport::new_header(header_text, header_length, message.to_string());
+                // Add header first so it's pinned at the top
+                header_bar.pb = mp.add(header_bar.pb);
                 // Set initial message AFTER adding to MultiProgress to prevent ghost output
-                footer_bar.set_position(0);
-                Box::new(footer_bar)
+                header_bar.set_position(0);
+                Box::new(header_bar)
             }
             _ => {
                 // Don't include "mise" prefix for VerboseReport since logger already adds it
@@ -169,18 +164,19 @@ impl MultiProgressReport {
             }
         });
     }
-    pub fn footer_inc(&self, n: usize) {
+    pub fn header_inc(&self, n: usize) {
         if n == 0 {
             return;
         }
-        if let Some(f) = &*self.footer.lock().unwrap() {
+        if let Some(f) = &*self.header.lock().unwrap() {
             f.inc(n as u64);
         }
     }
-    pub fn footer_finish(&self) {
-        if let Some(f) = &*self.footer.lock().unwrap() {
+    pub fn header_finish(&self) {
+        if let Some(f) = &*self.header.lock().unwrap() {
             f.finish();
         }
+        diagnostic_log::session_end();
         // Clear terminal progress when finished
         if Settings::get().terminal_progress {
             osc::clear_progress();
@@ -259,10 +255,10 @@ impl MultiProgressReport {
             total_progress
         );
 
-        // Update footer bar - convert to units for display
-        let footer_units = (total_progress * (total_count * 1_000_000) as f64).round() as u64;
-        if let Some(f) = &*self.footer.lock().unwrap() {
-            f.set_position(footer_units);
+        // Update header bar - convert to units for display
+        let header_units = (total_progress * (total_count * 1_000_000) as f64).round() as u64;
+        if let Some(f) = &*self.header.lock().unwrap() {
+            f.set_position(header_units);
         }
 
         // Update terminal OSC progress - only if percentage changed

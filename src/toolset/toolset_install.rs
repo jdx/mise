@@ -103,14 +103,14 @@ impl Toolset {
             return Ok(vec![]);
         }
 
-        // Initialize a footer for the entire install session once (before batching)
+        // Initialize a header for the entire install session once (before batching)
         let mpr = MultiProgressReport::get();
-        let footer_reason = if opts.dry_run {
+        let header_reason = if opts.dry_run {
             format!("{} (dry-run)", opts.reason)
         } else {
             opts.reason.clone()
         };
-        mpr.init_footer(opts.dry_run, &footer_reason, versions.len());
+        mpr.init_header(opts.dry_run, &header_reason, versions.len());
 
         // Skip hooks in dry-run mode
         if !opts.dry_run {
@@ -136,8 +136,8 @@ impl Toolset {
                     successful_installations,
                     failed_installations,
                 }) => {
-                    // Count both successes and failures toward footer progress
-                    mpr.footer_inc(successful_installations.len() + failed_installations.len());
+                    // Count both successes and failures toward header progress
+                    mpr.header_inc(successful_installations.len() + failed_installations.len());
                     installed.extend(successful_installations);
 
                     return Err(Error::InstallFailed {
@@ -203,9 +203,9 @@ impl Toolset {
             .await;
         }
 
-        // Finish the global footer
+        // Finish the global header
         if !opts.dry_run {
-            mpr.footer_finish();
+            mpr.header_finish();
         }
         Ok(installed)
     }
@@ -356,8 +356,8 @@ impl Toolset {
                     .await;
 
                     results.push((tr, result));
-                    // Bump footer for each completed tool
-                    MultiProgressReport::get().footer_inc(1);
+                    // Bump header for each completed tool
+                    MultiProgressReport::get().header_inc(1);
                 }
                 results
             });

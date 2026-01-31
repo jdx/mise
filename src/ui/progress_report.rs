@@ -1,7 +1,7 @@
 #![allow(unknown_lints)]
 #![allow(clippy::literal_string_with_formatting_args)]
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{
     fmt::{Display, Formatter},
     sync::Mutex,
@@ -10,7 +10,7 @@ use std::{
 use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::LazyLock as Lazy;
 
-use crate::ui::style;
+use crate::ui::{diagnostic_log, style};
 use crate::{backend, env, ui};
 
 #[derive(Debug, Clone, Copy)]
@@ -132,7 +132,7 @@ fn render_progress_bar_with_overlay(text: &str, progress: f64, width: usize) -> 
     result
 }
 
-static FOOTER_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
+static HEADER_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
     // Simple template - we'll update the message with our custom rendered bar
     ProgressStyle::with_template("{wide_msg}").unwrap()
 });
@@ -140,12 +140,14 @@ static FOOTER_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
 #[derive(Debug)]
 pub struct ProgressReport {
     pub pb: ProgressBar,
+    prefix_raw: String, // Unformatted tool name for diagnostic log
     report_id: Option<usize>,
     total_operations: Mutex<Option<usize>>, // Total operations declared upfront (None if unknown)
     operation_count: Mutex<u32>,            // How many operations have started (1, 2, 3...)
     operation_base: Mutex<u64>, // Base progress for current operation (0, 333333, 666666...)
     operation_length: Mutex<u64>, // Allocated length for current operation
-    footer_text: Option<String>, // If set, this is a footer bar with text overlay
+    header_text: Option<String>, // If set, this is a header bar with text overlay
+    last_diagnostic_log: Mutex<Option<Instant>>, // Throttle diagnostic progress events
 }
 
 static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
@@ -181,20 +183,22 @@ impl ProgressReport {
 
         ProgressReport {
             pb,
+            prefix_raw: prefix,
             report_id,
             total_operations: Mutex::new(Some(1)), // Default to 1 operation (100% of progress)
             operation_count: Mutex::new(0),
             operation_base: Mutex::new(0),
             operation_length: Mutex::new(1_000_000), // Full range initially
-            footer_text: None,
+            header_text: None,
+            last_diagnostic_log: Mutex::new(None),
         }
     }
 
-    pub fn new_footer(footer_text: String, length: u64, _message: String) -> ProgressReport {
+    pub fn new_header(header_text: String, length: u64, _message: String) -> ProgressReport {
         ui::ctrlc::show_cursor_after_ctrl_c();
-        // Footer shows text inside the progress bar with custom overlay rendering
-        let pb = ProgressBar::new(length).with_style(FOOTER_TEMPLATE.clone());
-        // Don't enable steady tick for footer - it doesn't use a spinner template
+        // Header shows text inside the progress bar with custom overlay rendering
+        let pb = ProgressBar::new(length).with_style(HEADER_TEMPLATE.clone());
+        // Don't enable steady tick for header - it doesn't use a spinner template
         // and the tick causes unnecessary redraws
 
         // Don't set initial message here - it will be set after adding to MultiProgress
@@ -202,18 +206,20 @@ impl ProgressReport {
 
         ProgressReport {
             pb,
+            prefix_raw: String::new(),
             report_id: None,
             total_operations: Mutex::new(None),
             operation_count: Mutex::new(0),
             operation_base: Mutex::new(0),
             operation_length: Mutex::new(length),
-            footer_text: Some(footer_text),
+            header_text: Some(header_text),
+            last_diagnostic_log: Mutex::new(None),
         }
     }
 
-    fn update_footer_display(&self) {
-        // Update footer bar with custom text overlay rendering
-        if let Some(footer_text) = &self.footer_text {
+    fn update_header_display(&self) {
+        // Update header bar with custom text overlay rendering
+        if let Some(header_text) = &self.header_text {
             let pos = self.pb.position();
             let len = self.pb.length().unwrap_or(1);
             let progress = if len > 0 {
@@ -222,9 +228,26 @@ impl ProgressReport {
                 0.0
             };
             let width = *env::TERM_WIDTH;
-            let rendered = render_progress_bar_with_overlay(footer_text, progress, width);
+            let rendered = render_progress_bar_with_overlay(header_text, progress, width);
             self.pb.set_message(rendered);
         }
+    }
+
+    fn emit_diagnostic_progress(&self) {
+        if !diagnostic_log::is_enabled() || self.prefix_raw.is_empty() {
+            return;
+        }
+        let mut last = self.last_diagnostic_log.lock().unwrap();
+        let now = Instant::now();
+        if let Some(prev) = *last
+            && now.duration_since(prev) < Duration::from_millis(500)
+        {
+            return;
+        }
+        *last = Some(now);
+        let pos = self.pb.position();
+        let len = self.pb.length().unwrap_or(0);
+        diagnostic_log::progress(&self.prefix_raw, pos, len);
     }
 
     fn update_terminal_progress(&self) {
@@ -279,12 +302,13 @@ impl ProgressReport {
 
 impl SingleReport for ProgressReport {
     fn println(&self, message: String) {
-        // Suspend the entire MultiProgress to prevent footer duplication
+        // Suspend the entire MultiProgress to prevent header duplication
         crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
             eprintln!("{message}");
         });
     }
     fn set_message(&self, message: String) {
+        diagnostic_log::message(&self.prefix_raw, &message);
         self.pb.set_message(message.replace('\r', ""));
     }
     fn inc(&self, delta: u64) {
@@ -295,6 +319,7 @@ impl SingleReport for ProgressReport {
             delta,
             self.pb.position()
         );
+        self.emit_diagnostic_progress();
         self.update_terminal_progress();
         if Some(self.pb.position()) == self.pb.length() {
             self.pb.set_style(SPIN_TEMPLATE.clone());
@@ -304,8 +329,9 @@ impl SingleReport for ProgressReport {
     fn set_position(&self, pos: u64) {
         self.pb.set_position(pos);
         progress_trace!("set_position[{:?}]: pos={}", self.report_id, pos);
+        self.emit_diagnostic_progress();
         self.update_terminal_progress();
-        self.update_footer_display();
+        self.update_header_display();
         if Some(self.pb.position()) == self.pb.length() {
             self.pb.set_style(SPIN_TEMPLATE.clone());
             self.pb.enable_steady_tick(Duration::from_millis(250));
@@ -377,6 +403,7 @@ impl SingleReport for ProgressReport {
         self.pb.set_style(PROG_TEMPLATE.clone());
         self.pb.disable_steady_tick();
         self.pb.set_length(length);
+        diagnostic_log::operation(&self.prefix_raw, count, length);
         self.update_terminal_progress();
     }
     fn abandon(&self) {
@@ -384,8 +411,15 @@ impl SingleReport for ProgressReport {
     }
     fn finish_with_icon(&self, _message: String, _icon: ProgressIcon) {
         progress_trace!("finish_with_icon[{:?}]", self.report_id);
-        // For footer bars with text overlay, use finish_with_message to clear it
-        if self.footer_text.is_some() {
+        let status = match _icon {
+            ProgressIcon::Success => "success",
+            ProgressIcon::Skipped => "skipped",
+            ProgressIcon::Warning => "warning",
+            ProgressIcon::Error => "error",
+        };
+        diagnostic_log::tool_complete(&self.prefix_raw, status);
+        // For header bars with text overlay, use finish_with_message to clear it
+        if self.header_text.is_some() {
             self.pb.finish_with_message("");
         } else {
             self.pb.finish_and_clear();
@@ -442,6 +476,7 @@ impl SingleReport for VerboseReport {
         eprintln!("{message}");
     }
     fn set_message(&self, message: String) {
+        diagnostic_log::message(&self.prefix, &message);
         let mut prev_message = self.prev_message.lock().unwrap();
         if *prev_message == message {
             return;
@@ -454,6 +489,13 @@ impl SingleReport for VerboseReport {
         self.finish_with_message(style::egreen("done").to_string());
     }
     fn finish_with_icon(&self, message: String, icon: ProgressIcon) {
+        let status = match icon {
+            ProgressIcon::Success => "success",
+            ProgressIcon::Skipped => "skipped",
+            ProgressIcon::Warning => "warning",
+            ProgressIcon::Error => "error",
+        };
+        diagnostic_log::tool_complete(&self.prefix, status);
         let prefix = pad_prefix(self.pad - 2, &self.prefix);
         log::info!("{prefix} {icon} {message}");
     }

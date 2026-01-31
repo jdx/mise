@@ -601,6 +601,7 @@ impl Cli {
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
         let _ = measure!("settings", { Settings::try_get() });
         measure!("logger", { logger::init() });
+        ui::diagnostic_log::init();
         measure!("migrate", { migrate::run().await });
         if let Err(err) = crate::cache::auto_prune() {
             warn!("auto_prune failed: {err:?}");

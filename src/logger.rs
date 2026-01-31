@@ -23,6 +23,16 @@ impl log::Log for Logger {
     }
 
     fn log(&self, record: &Record) {
+        if record.level() <= Level::Warn {
+            ui::diagnostic_log::log_message(
+                match record.level() {
+                    Level::Error => "error",
+                    Level::Warn => "warn",
+                    _ => "info",
+                },
+                &record.args().to_string(),
+            );
+        }
         if record.level() <= self.file_level
             && let Some(log_file) = &self.log_file
         {

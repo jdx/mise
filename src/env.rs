@@ -198,6 +198,8 @@ pub static MISE_LIST_ALL_VERSIONS: Lazy<bool> = Lazy::new(|| var_is_true("MISE_L
 pub static ARGV0: Lazy<String> = Lazy::new(|| ARGS.read().unwrap()[0].to_string());
 pub static MISE_BIN_NAME: Lazy<&str> = Lazy::new(|| filename(&ARGV0));
 pub static MISE_LOG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("MISE_LOG_FILE"));
+pub static MISE_DIAGNOSTIC_LOG: Lazy<Option<PathBuf>> =
+    Lazy::new(|| var_path("MISE_DIAGNOSTIC_LOG"));
 pub static MISE_LOG_FILE_LEVEL: Lazy<Option<LevelFilter>> = Lazy::new(log_file_level);
 fn find_in_tree(base: &Path, rels: &[&[&str]]) -> Option<PathBuf> {
     for rel in rels {
