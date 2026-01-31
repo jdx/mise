@@ -810,10 +810,6 @@ type = "Bool"
 default = true
 description = "Create and read lockfiles for tool versions."
 docs = """
-
-> [!NOTE]
-> This feature is [experimental](#experimental) and may change in the future.
-
 Read/update lockfiles for tool versions. This is useful when you'd like to have loose versions in mise.toml like this:
 
 ```toml
@@ -846,7 +842,7 @@ description = "Require lockfile URLs to be present during installation."
 docs = """
 
 > [!NOTE]
-> This setting requires both [lockfile](#lockfile) and [experimental](#experimental) to be enabled.
+> This setting requires [lockfile](#lockfile) to be enabled.
 
 When enabled, `mise install` will fail if tools don't have pre-resolved URLs in the lockfile
 for the current platform. This prevents API calls to GitHub, aqua registry, etc. and ensures

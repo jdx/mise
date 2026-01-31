@@ -1254,7 +1254,7 @@ pub trait Backend: Debug + Send + Sync {
     ) -> Result<()> {
         let settings = Settings::get();
         let filename = file.file_name().unwrap().to_string_lossy().to_string();
-        let lockfile_enabled = settings.lockfile && settings.experimental;
+        let lockfile_enabled = settings.lockfile;
 
         // Get the platform key for this tool and platform
         let platform_key = self.get_platform_key();
