@@ -1871,3 +1871,15 @@ when discovering tasks in a monorepo.
 """
 env = "MISE_TASK_MONOREPO_RESPECT_GITIGNORE"
 type = "Bool"
+
+[task.source_freshness_equal_mtime_is_fresh]
+default = false
+description = "When source mtime equals output mtime, consider sources fresh (use <=). Default false uses strict < comparison."
+env = "MISE_TASK_SOURCE_FRESHNESS_EQUAL_MTIME_IS_FRESH"
+type = "Bool"
+
+[task.source_freshness_hash_contents]
+default = false
+description = "Use content hashing (blake3) instead of metadata for source freshness. More accurate but slower."
+env = "MISE_TASK_SOURCE_FRESHNESS_HASH_CONTENTS"
+type = "Bool"

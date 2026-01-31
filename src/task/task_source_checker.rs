@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::dirs;
 use crate::file::{self, display_path};
 use crate::hash;
@@ -11,7 +11,7 @@ use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Check if a path is a glob pattern
 pub fn is_glob_pattern(path: &str) -> bool {
@@ -102,6 +102,10 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
     if task.sources.is_empty() {
         return Ok(false);
     }
+    let settings = Settings::get();
+    let use_content_hash = settings.task.source_freshness_hash_contents;
+    let equal_mtime_is_fresh = settings.task.source_freshness_equal_mtime_is_fresh;
+
     // TODO: We should benchmark this and find out if it might be possible to do some caching around this or something
     // perhaps using some manifest in a state directory or something, maybe leveraging atime?
     let run = async || -> Result<bool> {
@@ -109,25 +113,64 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
         let mut sources = task.sources.clone();
         sources.push(task.config_source.to_string_lossy().to_string());
         let source_metadatas = get_file_metadatas(&root, &sources)?;
-        let source_metadata_hash = file_metadatas_to_hash(&source_metadatas);
-        let source_metadata_hash_path = sources_hash_path(task);
-        if let Some(dir) = source_metadata_hash_path.parent() {
+
+        // Check if sources resolved to no files (likely a config mistake)
+        if source_metadatas.is_empty() {
+            warn!(
+                "task {} has sources defined but no matching files found",
+                task.name
+            );
+            return Ok(false);
+        }
+
+        // Check for epoch timestamps (files extracted from tarballs without preserved timestamps)
+        // These are considered stale since we can't trust the mtime
+        for (path, metadata) in &source_metadatas {
+            if let Ok(mtime) = metadata.modified() {
+                if mtime == UNIX_EPOCH {
+                    debug!(
+                        "source file {} has epoch timestamp, treating as stale",
+                        display_path(path)
+                    );
+                    return Ok(false);
+                }
+            }
+        }
+
+        let source_hash = if use_content_hash {
+            file_contents_to_hash(&source_metadatas)?
+        } else {
+            file_metadatas_to_hash(&source_metadatas)
+        };
+        let source_hash_path = sources_hash_path(task, use_content_hash);
+        if let Some(dir) = source_hash_path.parent() {
             file::create_dir_all(dir)?;
         }
-        if source_metadata_existing_hash(task).is_some_and(|h| h != source_metadata_hash) {
+        if source_existing_hash(task, use_content_hash).is_some_and(|h| h != source_hash) {
             debug!(
-                "source metadata hash mismatch in {}",
-                source_metadata_hash_path.display()
+                "source {} hash mismatch in {}",
+                if use_content_hash {
+                    "content"
+                } else {
+                    "metadata"
+                },
+                source_hash_path.display()
             );
-            file::write(&source_metadata_hash_path, &source_metadata_hash)?;
+            file::write(&source_hash_path, &source_hash)?;
             return Ok(false);
         }
         let sources = get_last_modified_from_metadatas(&source_metadatas);
         let outputs = get_last_modified(&root, &task.outputs.paths(task))?;
-        file::write(&source_metadata_hash_path, &source_metadata_hash)?;
+        file::write(&source_hash_path, &source_hash)?;
         trace!("sources: {sources:?}, outputs: {outputs:?}");
         match (sources, outputs) {
-            (Some(sources), Some(outputs)) => Ok(sources < outputs),
+            (Some(sources), Some(outputs)) => {
+                if equal_mtime_is_fresh {
+                    Ok(sources <= outputs)
+                } else {
+                    Ok(sources < outputs)
+                }
+            }
             _ => Ok(false),
         }
     };
@@ -138,7 +181,7 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
 }
 
 /// Save a checksum file after a task completes successfully
-pub fn save_checksum(task: &Task) -> Result<()> {
+pub async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<()> {
     if task.sources.is_empty() {
         return Ok(());
     }
@@ -147,22 +190,53 @@ pub fn save_checksum(task: &Task) -> Result<()> {
             debug!("touching auto output file: {p}");
             file::touch_file(&PathBuf::from(&p))?;
         }
+    } else {
+        // Check if explicitly defined outputs were generated
+        // Use task_cwd to respect the task's dir setting, matching sources_are_fresh behavior
+        let root = task_cwd(task, config).await?;
+        for output in task.outputs.paths(task) {
+            let output_exists = if is_glob_pattern(&output) {
+                // For glob patterns, check if any files match
+                let pattern = root.join(&output);
+                glob(pattern.to_str().unwrap_or_default())
+                    .map(|paths| paths.flatten().next().is_some())
+                    .unwrap_or(false)
+            } else {
+                // For regular paths, check if file exists
+                let path = Path::new(&output);
+                let full_path = if path.is_relative() {
+                    root.join(path)
+                } else {
+                    path.to_path_buf()
+                };
+                full_path.exists()
+            };
+            if !output_exists {
+                warn!(
+                    "task {} did not generate expected output: {}",
+                    task.name, output
+                );
+            }
+        }
     }
     Ok(())
 }
 
 /// Get the path to store source hashes for a task
-fn sources_hash_path(task: &Task) -> PathBuf {
+fn sources_hash_path(task: &Task, content_hash: bool) -> PathBuf {
     let mut hasher = DefaultHasher::new();
     task.hash(&mut hasher);
     task.config_source.hash(&mut hasher);
     let hash = format!("{:x}", hasher.finish());
-    dirs::STATE.join("task-sources").join(&hash)
+    let suffix = if content_hash { "-content" } else { "" };
+    dirs::STATE
+        .join("task-sources")
+        .join(format!("{hash}{suffix}"))
 }
 
 /// Get the existing source hash for a task, if it exists
-fn source_metadata_existing_hash(task: &Task) -> Option<String> {
-    let path = sources_hash_path(task);
+fn source_existing_hash(task: &Task, content_hash: bool) -> Option<String> {
+    let path = sources_hash_path(task, content_hash);
     if path.exists() {
         Some(file::read_to_string(&path).unwrap_or_default())
     } else {
@@ -207,9 +281,21 @@ fn get_file_metadatas(
 }
 
 /// Convert file metadata to a hash string for comparison
+/// Includes path and file size to detect changes even when mtimes are unreliable
 fn file_metadatas_to_hash(metadatas: &[(PathBuf, fs::Metadata)]) -> String {
-    let paths: Vec<_> = metadatas.iter().map(|(p, _)| p).collect();
-    hash::hash_to_str(&paths)
+    let path_and_sizes: Vec<_> = metadatas.iter().map(|(p, m)| (p, m.len())).collect();
+    hash::hash_to_str(&path_and_sizes)
+}
+
+/// Convert file contents to a hash string for comparison using blake3
+/// More accurate than metadata hashing but slower since it reads all file contents
+fn file_contents_to_hash(metadatas: &[(PathBuf, fs::Metadata)]) -> Result<String> {
+    let mut content_hashes: Vec<(&PathBuf, String)> = Vec::new();
+    for (path, _) in metadatas {
+        let file_hash = hash::file_hash_blake3(path, None)?;
+        content_hashes.push((path, file_hash));
+    }
+    Ok(hash::hash_to_str(&content_hashes))
 }
 
 /// Get the last modified time from file metadata
