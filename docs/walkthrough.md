@@ -36,6 +36,14 @@ node = "24"
 
 ## `mise.toml` Configuration
 
+You can create a `mise.toml` file manually or use the interactive wizard:
+
+```bash
+mise config generate
+```
+
+This will detect tools from your project files (like `package.json`, `go.mod`, `pyproject.toml`) and guide you through configuring tools, environment variables, and other settings.
+
 Use [`mise.toml`](/configuration#mise-toml) to share your tool configurations with others. This file should be committed to version control and contains the common toolset needed for your project.
 
 For tools or settings you want to keep private, use [`mise.local.toml`](/configuration#mise-toml). This file should be added to `.gitignore` and is perfect for personal preferences or configurations.

@@ -15,6 +15,8 @@ use crate::ui::ctrlc::show_cursor_after_ctrl_c;
 use crate::ui::theme::get_theme;
 use crate::{env, file};
 
+const MAX_DESCRIPTION_LEN: usize = 60;
+
 /// Generate a mise.toml file
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "g", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
@@ -54,6 +56,7 @@ struct WizardState {
     env_vars: BTreeMap<String, String>,
     load_dotenv: bool,
     create_lockfile: bool,
+    min_mise_version: Option<String>,
 }
 
 impl ConfigGenerate {
@@ -115,10 +118,14 @@ impl ConfigGenerate {
 
         // Main menu loop
         loop {
+            // Show current config preview
+            self.show_config_preview(&state)?;
+
             let choice = self.show_main_menu(&theme, &state)?;
 
             match choice.as_str() {
-                "tools" => self.add_tools(&theme, &mut state)?,
+                "add_tools" => self.add_tools(&theme, &mut state)?,
+                "edit_tools" => self.edit_tools(&theme, &mut state)?,
                 "env" => self.add_env_vars(&theme, &mut state)?,
                 "dotenv" => {
                     state.load_dotenv = !state.load_dotenv;
@@ -126,6 +133,7 @@ impl ConfigGenerate {
                 "lockfile" => {
                     state.create_lockfile = !state.create_lockfile;
                 }
+                "min_version" => self.set_min_version(&theme, &mut state)?,
                 "done" => break,
                 _ => {}
             }
@@ -134,27 +142,51 @@ impl ConfigGenerate {
         Ok(self.generate_config(&state))
     }
 
+    fn show_config_preview(&self, state: &WizardState) -> Result<()> {
+        let config = self.generate_config(state);
+        if config != self.default() {
+            miseprintln!("\n--- Current mise.toml preview ---");
+            miseprintln!("{}", config.trim());
+            miseprintln!("---------------------------------\n");
+        }
+        Ok(())
+    }
+
     fn show_main_menu(&self, theme: &demand::Theme, state: &WizardState) -> Result<String> {
-        let tools_label = format!("Add/edit tools ({})", state.tools.len());
-        let env_label = format!("Add/edit environment variables ({})", state.env_vars.len());
+        let tools_label = format!("Add tools ({})", state.tools.len());
+        let edit_tools_label = "Edit/remove tools";
+        let env_label = format!("Add environment variables ({})", state.env_vars.len());
         let dotenv_status = if state.load_dotenv { "✓" } else { " " };
         let dotenv_label = format!("[{}] Load .env file", dotenv_status);
         let lockfile_status = if state.create_lockfile { "✓" } else { " " };
         let lockfile_label = format!("[{}] Enable mise.lock", lockfile_status);
+        let min_version_label = match &state.min_mise_version {
+            Some(v) => format!("Set min mise version ({})", v),
+            None => "Set min mise version".to_string(),
+        };
 
         let mut select = Select::new("Configure mise.toml")
             .description("Select an option")
             .theme(theme);
 
         select = select.option(
-            DemandOption::new("tools")
+            DemandOption::new("add_tools")
                 .label(&tools_label)
-                .description("Select tools from the registry"),
+                .description("Search and add tools from the registry"),
         );
+
+        if !state.tools.is_empty() {
+            select = select.option(
+                DemandOption::new("edit_tools")
+                    .label(edit_tools_label)
+                    .description("Change versions or remove tools"),
+            );
+        }
+
         select = select.option(
             DemandOption::new("env")
                 .label(&env_label)
-                .description("Set environment variables"),
+                .description("Set environment variables (FOO=bar format)"),
         );
 
         if Path::new(".env").exists() {
@@ -169,6 +201,12 @@ impl ConfigGenerate {
             DemandOption::new("lockfile")
                 .label(&lockfile_label)
                 .description("Create lockfile for reproducible installs"),
+        );
+
+        select = select.option(
+            DemandOption::new("min_version")
+                .label(&min_version_label)
+                .description("Require a minimum mise version"),
         );
 
         select = select.option(
@@ -190,21 +228,27 @@ impl ConfigGenerate {
         let tools: Vec<(&str, &RegistryTool)> = REGISTRY
             .iter()
             .map(|(name, tool)| (*name, tool))
+            .filter(|(name, _)| !state.tools.contains_key(*name))
             .sorted_by_key(|(name, _)| *name)
             .collect();
 
-        let mut ms = MultiSelect::new("Select tools")
-            .description("Space to select, Enter to confirm")
+        if tools.is_empty() {
+            miseprintln!("All registry tools have already been added.");
+            return Ok(());
+        }
+
+        let mut ms = MultiSelect::new("Select tools to add")
+            .description("Type to filter, Space to select, Enter to confirm")
             .filterable(true)
             .theme(theme);
 
         for (name, tool) in tools {
-            let description = tool.description.unwrap_or_default();
-            let mut opt = DemandOption::new(name).label(name).description(description);
-            if state.tools.contains_key(name) {
-                opt = opt.selected(true);
-            }
-            ms = ms.option(opt);
+            let description = truncate_description(tool.description.unwrap_or_default());
+            ms = ms.option(
+                DemandOption::new(name)
+                    .label(name)
+                    .description(&description),
+            );
         }
 
         let selected: Vec<String> = match ms.run() {
@@ -213,65 +257,153 @@ impl ConfigGenerate {
             Err(e) => return Err(eyre!(e)),
         };
 
-        // Remove tools that were deselected
-        state.tools.retain(|k, _| selected.contains(k));
-
-        // Add newly selected tools (prompt for version)
+        // Prompt for version for each newly selected tool
         for tool_name in selected {
-            if !state.tools.contains_key(&tool_name) {
-                let version = Input::new(format!("Version for {tool_name}"))
-                    .description("e.g., '20', '3.12', 'latest'")
-                    .placeholder("latest")
+            let version = Input::new(format!("Version for {tool_name}"))
+                .description("e.g., '20', '3.12', 'latest'")
+                .placeholder("latest")
+                .theme(theme)
+                .run()
+                .map_err(handle_interrupt)?;
+            let version = if version.is_empty() {
+                "latest".to_string()
+            } else {
+                version
+            };
+            state.tools.insert(tool_name, version);
+        }
+
+        Ok(())
+    }
+
+    fn edit_tools(&self, theme: &demand::Theme, state: &mut WizardState) -> Result<()> {
+        if state.tools.is_empty() {
+            return Ok(());
+        }
+
+        let tool_names: Vec<String> = state.tools.keys().cloned().collect();
+
+        let mut select = Select::new("Select tool to edit")
+            .description("Choose a tool to modify or remove")
+            .filterable(true)
+            .theme(theme);
+
+        for name in &tool_names {
+            let version = state.tools.get(name).unwrap();
+            let label = format!("{} = \"{}\"", name, version);
+            select = select.option(DemandOption::new(name.as_str()).label(&label));
+        }
+
+        select = select.option(DemandOption::new("__back__").label("← Back to menu"));
+
+        let selected = match select.run() {
+            Ok(s) => s.to_string(),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => return Ok(()),
+            Err(e) => return Err(eyre!(e)),
+        };
+
+        if selected == "__back__" {
+            return Ok(());
+        }
+
+        // Show edit options for the selected tool
+        let current_version = state.tools.get(&selected).cloned().unwrap_or_default();
+        let edit_label = format!("Change version (current: {})", current_version);
+
+        let action_select = Select::new(format!("Edit {}", selected))
+            .theme(theme)
+            .option(DemandOption::new("edit").label(&edit_label))
+            .option(DemandOption::new("remove").label("Remove tool"))
+            .option(DemandOption::new("back").label("← Back"));
+
+        let action = match action_select.run() {
+            Ok(a) => a.to_string(),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => return Ok(()),
+            Err(e) => return Err(eyre!(e)),
+        };
+
+        match action.as_str() {
+            "edit" => {
+                let new_version = Input::new(format!("New version for {}", selected))
+                    .placeholder(&current_version)
                     .theme(theme)
                     .run()
                     .map_err(handle_interrupt)?;
-                let version = if version.is_empty() {
-                    "latest".to_string()
-                } else {
-                    version
-                };
-                state.tools.insert(tool_name, version);
+                if !new_version.is_empty() {
+                    state.tools.insert(selected, new_version);
+                }
             }
+            "remove" => {
+                state.tools.remove(&selected);
+            }
+            _ => {}
         }
 
         Ok(())
     }
 
     fn add_env_vars(&self, theme: &demand::Theme, state: &mut WizardState) -> Result<()> {
-        loop {
-            // Show current env vars
-            if !state.env_vars.is_empty() {
-                miseprintln!("\nCurrent environment variables:");
-                for (k, v) in &state.env_vars {
-                    miseprintln!("  {k} = {v}");
-                }
-                miseprintln!();
+        // Show current env vars
+        if !state.env_vars.is_empty() {
+            miseprintln!("\nCurrent environment variables:");
+            for (k, v) in &state.env_vars {
+                miseprintln!("  {k}={v}");
             }
+            miseprintln!();
+        }
 
-            let key = Input::new("Environment variable name")
-                .description("Leave empty to finish")
+        loop {
+            let input = Input::new("Add environment variable")
+                .description("Format: KEY=value (empty to finish, KEY= to remove)")
                 .theme(theme)
                 .run()
                 .map_err(handle_interrupt)?;
 
-            if key.is_empty() {
+            if input.is_empty() {
                 break;
             }
 
-            let default_value = state.env_vars.get(&key).cloned().unwrap_or_default();
-            let mut input = Input::new(format!("Value for {key}")).theme(theme);
-            if !default_value.is_empty() {
-                input = input.placeholder(&default_value);
-            }
+            if let Some((key, value)) = input.split_once('=') {
+                let key = key.trim().to_string();
+                let value = value.trim().to_string();
 
-            let value = input.run().map_err(handle_interrupt)?;
+                if key.is_empty() {
+                    miseprintln!("Invalid format. Use KEY=value");
+                    continue;
+                }
 
-            if value.is_empty() && !default_value.is_empty() {
-                // Keep existing value
+                if value.is_empty() {
+                    // Remove the variable
+                    if state.env_vars.remove(&key).is_some() {
+                        miseprintln!("Removed {key}");
+                    }
+                } else {
+                    state.env_vars.insert(key.clone(), value.clone());
+                    miseprintln!("Set {key}={value}");
+                }
             } else {
-                state.env_vars.insert(key, value);
+                miseprintln!("Invalid format. Use KEY=value");
             }
         }
+
+        Ok(())
+    }
+
+    fn set_min_version(&self, theme: &demand::Theme, state: &mut WizardState) -> Result<()> {
+        let current = state.min_mise_version.as_deref().unwrap_or("not set");
+        let desc = format!("Current: {} (empty to clear)", current);
+        let version = Input::new("Minimum mise version")
+            .description(&desc)
+            .placeholder("2024.0.0")
+            .theme(theme)
+            .run()
+            .map_err(handle_interrupt)?;
+
+        state.min_mise_version = if version.is_empty() {
+            None
+        } else {
+            Some(version)
+        };
 
         Ok(())
     }
@@ -355,6 +487,11 @@ impl ConfigGenerate {
     fn generate_config(&self, state: &WizardState) -> String {
         let mut config = String::new();
 
+        // Add min_version if set
+        if let Some(ref version) = state.min_mise_version {
+            config.push_str(&format!("min_version = \"{}\"\n\n", version));
+        }
+
         // Add lockfile setting if requested
         if state.create_lockfile {
             config.push_str("[settings]\nlockfile = true\n\n");
@@ -423,6 +560,14 @@ impl ConfigGenerate {
             # python = "3.12"
             # go = "latest"
         "#}
+    }
+}
+
+fn truncate_description(desc: &str) -> String {
+    if desc.len() <= MAX_DESCRIPTION_LEN {
+        desc.to_string()
+    } else {
+        format!("{}…", &desc[..MAX_DESCRIPTION_LEN - 1])
     }
 }
 
