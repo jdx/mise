@@ -277,6 +277,9 @@ impl Cursor {
     /// Add the appropriate add button(s) for a section based on its name
     fn add_section_buttons(items: &mut Vec<CursorTarget>, section_idx: usize, section_name: &str) {
         match section_name {
+            // Root section (empty name) doesn't have add buttons
+            // Users add top-level entries via the section picker
+            "" => {}
             "tools" => {
                 items.push(CursorTarget::AddButton(AddButtonKind::ToolRegistry(
                     section_idx,

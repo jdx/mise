@@ -577,18 +577,56 @@ impl InteractiveConfig {
                                 self.mode = Mode::Edit(InlineEdit::new(""));
                             }
                             PickerKind::Section => {
-                                // Add the selected section
-                                self.doc.add_section(tool_name.clone());
-                                // Find and move cursor to the new section
-                                if let Some(idx) =
-                                    self.doc.sections.iter().position(|s| s.name == tool_name)
-                                {
-                                    // Track undo for added section
-                                    self.undo_stack.push(UndoAction::AddSection(idx));
-                                    let target = CursorTarget::SectionHeader(idx);
+                                // Check if the selected item is a section or a top-level entry
+                                let is_section = crate::schema::is_valid_section(&tool_name);
+
+                                if is_section {
+                                    // Add as a new section
+                                    self.doc.add_section(tool_name.clone());
+                                    // Find and move cursor to the new section
+                                    if let Some(idx) =
+                                        self.doc.sections.iter().position(|s| s.name == tool_name)
+                                    {
+                                        // Track undo for added section
+                                        self.undo_stack.push(UndoAction::AddSection(idx));
+                                        let target = CursorTarget::SectionHeader(idx);
+                                        self.cursor.goto(&self.doc, &target);
+                                    }
+                                    self.mode = Mode::Navigate;
+                                } else {
+                                    // Add as a top-level entry (in root section with empty name)
+                                    // Find or create the root section
+                                    let root_idx = if let Some(idx) =
+                                        self.doc.sections.iter().position(|s| s.name.is_empty())
+                                    {
+                                        idx
+                                    } else {
+                                        // Create root section at the beginning
+                                        self.doc.sections.insert(
+                                            0,
+                                            crate::document::Section {
+                                                name: String::new(),
+                                                entries: Vec::new(),
+                                                expanded: true,
+                                                comments: Vec::new(),
+                                            },
+                                        );
+                                        self.doc.modified = true;
+                                        0
+                                    };
+
+                                    // Add the entry to the root section
+                                    self.doc
+                                        .add_entry(root_idx, tool_name.clone(), String::new());
+                                    let entry_idx = self.doc.sections[root_idx].entries.len() - 1;
+                                    // Track undo for added entry
+                                    self.undo_stack
+                                        .push(UndoAction::AddEntry(root_idx, entry_idx));
+                                    let target = CursorTarget::Entry(root_idx, entry_idx);
                                     self.cursor.goto(&self.doc, &target);
+                                    // Start editing the value
+                                    self.mode = Mode::Edit(InlineEdit::new(""));
                                 }
-                                self.mode = Mode::Navigate;
                             }
                         }
                     } else {
@@ -821,8 +859,9 @@ impl InteractiveConfig {
 
             Some(CursorTarget::AddButton(kind)) => match kind {
                 AddButtonKind::Section => {
-                    // Open section picker with valid sections from schema
-                    let items: Vec<PickerItem> = crate::schema::SCHEMA_SECTIONS
+                    // Open section picker with valid sections AND top-level entries from schema
+                    // We include both so users can add things like min_version at the top level
+                    let mut items: Vec<PickerItem> = crate::schema::SCHEMA_SECTIONS
                         .iter()
                         .filter(|(name, _)| {
                             // Filter out sections that already exist
@@ -830,6 +869,21 @@ impl InteractiveConfig {
                         })
                         .map(|(name, desc)| PickerItem::new(*name).with_description(*desc))
                         .collect();
+                    // Also add top-level entries (like min_version, redactions)
+                    // These get added at the file level, not as sections
+                    let entry_items: Vec<PickerItem> = crate::schema::SCHEMA_ENTRIES
+                        .iter()
+                        .filter(|(name, _)| {
+                            // Filter out entries that already exist in any section at root level
+                            // (top-level entries are stored in a virtual "" section or handled specially)
+                            !self.doc.sections.iter().any(|s| {
+                                s.name.is_empty() && s.entries.iter().any(|e| e.key == *name)
+                            })
+                        })
+                        .map(|(name, desc)| PickerItem::new(*name).with_description(*desc))
+                        .collect();
+                    items.extend(entry_items);
+                    items.sort_by(|a, b| a.name.cmp(&b.name));
                     if items.is_empty() {
                         // All sections already exist, fall back to manual entry
                         self.mode = Mode::NewKey(InlineEdit::new(""));

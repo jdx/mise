@@ -338,7 +338,13 @@ impl Renderer {
                 } else {
                     format!(" ({})", section.entries.len())
                 };
-                let text = format!("{} [{}]{}", arrow, section.name, count);
+                // Display "(root)" for the root section (empty name)
+                let section_label = if section.name.is_empty() {
+                    "(root)".to_string()
+                } else {
+                    format!("[{}]", section.name)
+                };
+                let text = format!("{} {}{}", arrow, section_label, count);
                 if is_cursor {
                     format!("{}", cursor_style.apply_to(&text))
                 } else {

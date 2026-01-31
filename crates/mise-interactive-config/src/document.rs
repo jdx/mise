@@ -100,6 +100,26 @@ impl TomlDocument {
         // Known sections in preferred order
         let known_sections = ["tools", "env", "tasks", "prepare", "settings"];
 
+        // Collect top-level entries (non-table items like min_version)
+        let mut root_entries = Vec::new();
+        for (key, item) in doc.iter() {
+            if !item.is_table() && !item.is_array_of_tables() {
+                if let Some(entry) = Self::parse_entry(key, item) {
+                    root_entries.push(entry);
+                }
+            }
+        }
+
+        // Add root section (empty name) if we have top-level entries
+        if !root_entries.is_empty() {
+            sections.push(Section {
+                name: String::new(),
+                entries: root_entries,
+                expanded: true,
+                comments: Vec::new(),
+            });
+        }
+
         // Add known sections first (in order)
         for name in &known_sections {
             if let Some(item) = doc.get(name) {
@@ -130,13 +150,17 @@ impl TomlDocument {
             }
         }
 
-        // Sort to maintain preferred order
+        // Sort to maintain preferred order (empty name for root entries comes first)
         sections.sort_by(|a, b| {
             let order = |n: &str| {
+                if n.is_empty() {
+                    return 0; // Root entries come first
+                }
                 known_sections
                     .iter()
                     .position(|&s| s == n)
-                    .unwrap_or(known_sections.len())
+                    .map(|p| p + 1)
+                    .unwrap_or(known_sections.len() + 1)
             };
             order(&a.name).cmp(&order(&b.name))
         });
@@ -275,6 +299,15 @@ impl TomlDocument {
 
         for section in &self.sections {
             if section.entries.is_empty() {
+                continue;
+            }
+
+            // Handle root-level entries (section with empty name)
+            if section.name.is_empty() {
+                for entry in &section.entries {
+                    let item = Self::entry_value_to_item(&entry.value);
+                    doc.insert(&entry.key, item);
+                }
                 continue;
             }
 
@@ -601,5 +634,33 @@ NODE_ENV = "development"
         assert!(output.contains("node = \"22\""));
         assert!(output.contains("python = \"3.12\""));
         assert!(output.contains("NODE_ENV = \"development\""));
+    }
+
+    #[test]
+    fn test_parse_top_level_entries() {
+        let content = r#"min_version = "2024.1.0"
+
+[tools]
+node = "22"
+"#;
+        let doc = TomlDocument::parse(content).unwrap();
+        // Root section (empty name) should be first
+        let root_section = doc.sections.iter().find(|s| s.name.is_empty()).unwrap();
+        assert_eq!(root_section.entries.len(), 1);
+        assert_eq!(root_section.entries[0].key, "min_version");
+    }
+
+    #[test]
+    fn test_top_level_entries_roundtrip() {
+        let content = r#"min_version = "2024.1.0"
+
+[tools]
+node = "22"
+"#;
+        let doc = TomlDocument::parse(content).unwrap();
+        let output = doc.to_toml();
+        assert!(output.contains("min_version = \"2024.1.0\""));
+        assert!(output.contains("[tools]"));
+        assert!(output.contains("node = \"22\""));
     }
 }
