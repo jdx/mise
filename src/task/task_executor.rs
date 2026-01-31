@@ -265,7 +265,7 @@ impl TaskExecutor {
             );
         }
 
-        save_checksum(task)?;
+        save_checksum(task, config).await?;
 
         Ok(())
     }

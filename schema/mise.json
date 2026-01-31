@@ -1424,6 +1424,16 @@
               "default": true,
               "description": "Whether to respect .gitignore files when discovering monorepo subdirectories.",
               "type": "boolean"
+            },
+            "source_freshness_equal_mtime_is_fresh": {
+              "default": false,
+              "description": "When source mtime equals output mtime, consider sources fresh (use <=). Default false uses strict < comparison.",
+              "type": "boolean"
+            },
+            "source_freshness_hash_contents": {
+              "default": false,
+              "description": "Use content hashing (blake3) instead of metadata for source freshness. More accurate but slower.",
+              "type": "boolean"
             }
           }
         }
