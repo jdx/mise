@@ -231,8 +231,9 @@ impl SingleReport for ProgressReport {
 
     fn finish_with_icon(&self, _message: String, icon: ProgressIcon) {
         // Mark this report as complete (100%)
-        self.job.progress_current(1_000_000);
+        // Set total first, then current, because progress_current clamps to total
         self.job.progress_total(1_000_000);
+        self.job.progress_current(1_000_000);
 
         // Set status based on icon
         match icon {
