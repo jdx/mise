@@ -1100,7 +1100,7 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: ["config", "g"],
-          description: "[experimental] Generate a mise.toml file",
+          description: "Generate a mise.toml file",
           options: [
             {
               name: ["-o", "--output"],

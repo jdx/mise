@@ -314,7 +314,7 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
             arg <LOCALIZED_DIR>
         }
     }
-    cmd config help="[experimental] Generate a mise.toml file" {
+    cmd config help="Generate a mise.toml file" {
         alias g
         after_long_help "Examples:\n\n    $ mise config generate         # creates mise.toml\n    $ mise config generate -o .mise.toml\n    $ mise config generate -y      # skip interactive wizard\n    $ mise config generate -n      # preview without writing\n"
         flag "-o --output" help="Output to file instead of stdout" {
