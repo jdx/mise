@@ -180,13 +180,14 @@ cmd config help="Manage config files" {
     flag --tracked-configs help="List all tracked config files"
     cmd generate help="Generate a mise.toml file" {
         alias g
-        after_long_help "Examples:\n\n    $ mise cf generate > mise.toml\n    $ mise cf generate --output=mise.toml\n"
+        after_long_help "Examples:\n\n    $ mise config generate         # creates mise.toml\n    $ mise config generate -o .mise.toml\n    $ mise config generate -y      # skip interactive wizard\n    $ mise config generate -n      # preview without writing\n"
         flag "-o --output" help="Output to file instead of stdout" {
             arg <OUTPUT>
         }
         flag "-t --tool-versions" help="Path to a .tool-versions file to import tools from" {
             arg <TOOL_VERSIONS>
         }
+        flag "-n --dry-run" help="Show what would be generated without writing to file"
     }
     cmd get help="Display the value of a setting in a mise.toml file" {
         after_long_help "Examples:\n\n    $ mise toml get tools.python\n    3.12\n"
@@ -315,13 +316,14 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
     }
     cmd config help="[experimental] Generate a mise.toml file" {
         alias g
-        after_long_help "Examples:\n\n    $ mise cf generate > mise.toml\n    $ mise cf generate --output=mise.toml\n"
+        after_long_help "Examples:\n\n    $ mise config generate         # creates mise.toml\n    $ mise config generate -o .mise.toml\n    $ mise config generate -y      # skip interactive wizard\n    $ mise config generate -n      # preview without writing\n"
         flag "-o --output" help="Output to file instead of stdout" {
             arg <OUTPUT>
         }
         flag "-t --tool-versions" help="Path to a .tool-versions file to import tools from" {
             arg <TOOL_VERSIONS>
         }
+        flag "-n --dry-run" help="Show what would be generated without writing to file"
     }
     cmd devcontainer help="Generate a devcontainer to execute mise" {
         after_long_help "Examples:\n\n    $ mise generate devcontainer\n"

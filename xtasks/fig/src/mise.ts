@@ -763,6 +763,12 @@ const completionSpec: Fig.Spec = {
                 name: "tool_versions",
               },
             },
+            {
+              name: ["-n", "--dry-run"],
+              description:
+                "Show what would be generated without writing to file",
+              isRepeatable: false,
+            },
           ],
         },
         {
@@ -1111,6 +1117,12 @@ const completionSpec: Fig.Spec = {
               args: {
                 name: "tool_versions",
               },
+            },
+            {
+              name: ["-n", "--dry-run"],
+              description:
+                "Show what would be generated without writing to file",
+              isRepeatable: false,
             },
           ],
         },
