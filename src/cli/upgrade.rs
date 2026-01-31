@@ -161,13 +161,8 @@ impl Upgrade {
             })
             .collect::<Vec<_>>();
 
-        // Get versions needed by tracked configs BEFORE filtering or dry-run output
-        // This ensures dry-run output accurately reflects what will actually happen
-        let versions_needed_by_tracked = get_versions_needed_by_tracked_configs(config).await?;
-
         // Determine which old versions should be uninstalled after upgrade
         // Skip uninstall when current == latest (channel-based versions that update in-place)
-        // Also skip versions that are still needed by tracked configs
         let to_remove: Vec<_> = outdated
             .iter()
             .filter_map(|o| {
@@ -177,21 +172,7 @@ impl Upgrade {
                     if &o.latest == current {
                         return None;
                     }
-
-                    // Skip if this version is still needed by another tracked config
-                    let version_key = (
-                        o.tool_version.ba().short.to_string(),
-                        o.tool_version.tv_pathname(),
-                    );
-                    if versions_needed_by_tracked.contains(&version_key) {
-                        debug!(
-                            "Would keep {}@{} because it's still needed by a tracked config",
-                            o.name, current
-                        );
-                        return None;
-                    }
-
-                    Some((o, current))
+                    Some((o, current.clone()))
                 })
             })
             .collect();
@@ -262,13 +243,33 @@ impl Upgrade {
             }
         }
 
+        // Reset config after upgrades so tracked configs resolve with new versions
+        *config = Config::reset().await?;
+
+        // Get versions needed by tracked configs AFTER upgrade
+        // This ensures we don't uninstall versions still needed by other projects
+        let versions_needed_by_tracked = get_versions_needed_by_tracked_configs(config).await?;
+
         // Only uninstall old versions of tools that were successfully upgraded
-        // (tracked config filtering was already done when building to_remove)
+        // and are not needed by any tracked config
         for (o, tv) in to_remove {
             if successful_versions
                 .iter()
                 .any(|v| v.ba() == o.tool_version.ba())
             {
+                // Check if this version is still needed by another tracked config
+                let version_key = (
+                    o.tool_version.ba().short.to_string(),
+                    o.tool_version.tv_pathname(),
+                );
+                if versions_needed_by_tracked.contains(&version_key) {
+                    debug!(
+                        "Keeping {}@{} because it's still needed by a tracked config",
+                        o.name, tv
+                    );
+                    continue;
+                }
+
                 let pr = mpr.add(&format!("uninstall {}@{}", o.name, tv));
                 if let Err(e) = self
                     .uninstall_old_version(config, &o.tool_version, pr.as_ref())
@@ -279,7 +280,6 @@ impl Upgrade {
             }
         }
 
-        *config = Config::reset().await?;
         let ts = config.get_toolset().await?;
         config::rebuild_shims_and_runtime_symlinks(config, ts, &successful_versions).await?;
 
