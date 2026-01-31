@@ -6,7 +6,7 @@ use crate::config::{Config, Settings, config_file};
 use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
 use crate::toolset::outdated_info::OutdatedInfo;
-use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{config, ui};
@@ -242,11 +242,26 @@ impl Upgrade {
         }
 
         // Only uninstall old versions of tools that were successfully upgraded
+        // and are not needed by any tracked config (consistent with `mise prune`)
+        let versions_needed_by_tracked = self.get_versions_needed_by_tracked_configs(config).await;
         for (o, tv) in to_remove {
             if successful_versions
                 .iter()
                 .any(|v| v.ba() == o.tool_version.ba())
             {
+                // Check if this version is still needed by another tracked config
+                let version_key = (
+                    o.tool_version.ba().short.to_string(),
+                    o.tool_version.tv_pathname(),
+                );
+                if versions_needed_by_tracked.contains(&version_key) {
+                    debug!(
+                        "Keeping {}@{} because it's still needed by a tracked config",
+                        o.name, tv
+                    );
+                    continue;
+                }
+
                 let pr = mpr.add(&format!("uninstall {}@{}", o.name, tv));
                 if let Err(e) = self
                     .uninstall_old_version(config, &o.tool_version, pr.as_ref())
@@ -286,6 +301,33 @@ impl Upgrade {
             .wrap_err_with(|| format!("failed to uninstall {tv}"))?;
         pr.finish();
         Ok(())
+    }
+
+    /// Get all tool versions that are needed by tracked config files.
+    /// This ensures we don't uninstall versions that other projects still need.
+    async fn get_versions_needed_by_tracked_configs(
+        &self,
+        config: &Arc<Config>,
+    ) -> std::collections::HashSet<(String, String)> {
+        let mut needed = std::collections::HashSet::new();
+        match config.get_tracked_config_files().await {
+            Ok(tracked_configs) => {
+                for cf in tracked_configs.values() {
+                    if let Ok(trs) = cf.to_tool_request_set() {
+                        let mut ts = Toolset::from(trs);
+                        if ts.resolve(config).await.is_ok() {
+                            for (_, tv) in ts.list_current_versions() {
+                                needed.insert((tv.ba().short.to_string(), tv.tv_pathname()));
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                debug!("Failed to get tracked config files: {}", e);
+            }
+        }
+        needed
     }
 
     fn print_summary(outdated: &[OutdatedInfo], successful_versions: &[ToolVersion]) -> Result<()> {
