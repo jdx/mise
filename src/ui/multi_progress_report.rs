@@ -187,19 +187,11 @@ impl MultiProgressReport {
 
         // Stop clx progress
         progress::stop();
-    }
 
-    /// Pause progress display and execute a function
-    /// Used for clean logging output during progress display
-    pub fn suspend_if_active<F: FnOnce() -> R, R>(f: F) -> R {
-        progress::pause();
-        let result = f();
-        progress::resume();
-        result
-    }
-
-    pub fn suspend<F: FnOnce() -> R, R>(&self, f: F) -> R {
-        Self::suspend_if_active(f)
+        // Reset state for subsequent install operations (e.g., in daemon mode)
+        *self.header_job.lock().unwrap() = None;
+        *self.completed_count.lock().unwrap() = 0;
+        *self.total_count.lock().unwrap() = 0;
     }
 
     pub fn stop(&self) -> eyre::Result<()> {

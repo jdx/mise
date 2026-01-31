@@ -72,12 +72,7 @@ impl Backend for AquaBackend {
         {
             count += 1;
         }
-        if (!format.is_empty() && format != "raw")
-            || matches!(
-                pkg.r#type,
-                AquaPackageType::GithubArchive | AquaPackageType::GithubContent
-            )
-        {
+        if needs_extraction(&format, &pkg.r#type) {
             count += 1;
         }
         count
@@ -460,12 +455,7 @@ impl Backend for AquaBackend {
         self.verify(ctx, &mut tv, &pkg, &v, &filename).await?;
 
         // Advance to extraction operation if applicable
-        if (!format.is_empty() && format != "raw")
-            || matches!(
-                pkg.r#type,
-                AquaPackageType::GithubArchive | AquaPackageType::GithubContent
-            )
-        {
+        if needs_extraction(&format, &pkg.r#type) {
             ctx.pr.next_operation();
         }
         self.install(ctx, &tv, &pkg, &v, &filename)?;
@@ -1635,6 +1625,15 @@ fn resolve_repo_info(
         .cloned()
         .unwrap_or_else(|| pkg.repo_name.clone());
     (owner, name)
+}
+
+/// Check if extraction is needed based on format and package type.
+fn needs_extraction(format: &str, pkg_type: &AquaPackageType) -> bool {
+    (!format.is_empty() && format != "raw")
+        || matches!(
+            pkg_type,
+            AquaPackageType::GithubArchive | AquaPackageType::GithubContent
+        )
 }
 
 /// Check if a platform is supported by the package's supported_envs.
