@@ -1,0 +1,3 @@
+backends = ["cargo:git-sumi", "github:welpo/git-sumi"]
+description = "Non-opinionated commit message linter"
+test = ["git-sumi --version", "git-sumi {{version}}"]
