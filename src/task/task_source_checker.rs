@@ -126,15 +126,14 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
         // Check for epoch timestamps (files extracted from tarballs without preserved timestamps)
         // These are considered stale since we can't trust the mtime
         for (path, metadata) in &source_metadatas {
-            if let Ok(mtime) = metadata.modified() {
-                if mtime == UNIX_EPOCH {
+            if let Ok(mtime) = metadata.modified()
+                && mtime == UNIX_EPOCH {
                     debug!(
                         "source file {} has epoch timestamp, treating as stale",
                         display_path(path)
                     );
                     return Ok(false);
                 }
-            }
         }
 
         let source_hash = if use_content_hash {
