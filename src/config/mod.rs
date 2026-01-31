@@ -6,7 +6,6 @@ pub use settings::Settings;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::iter::once;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::{Arc, Mutex, RwLock};
@@ -44,6 +43,7 @@ use crate::env_diff::EnvMap;
 use crate::hook_env::WatchFilePattern;
 use crate::hooks::Hook;
 use crate::plugins::PluginType;
+use crate::redactions::Redactor;
 use crate::tera::BASE_CONTEXT;
 use crate::watch_files::WatchFile;
 use crate::wildcard::Wildcard;
@@ -79,7 +79,7 @@ pub struct Alias {
 }
 
 static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
-static _REDACTIONS: Lazy<Mutex<Arc<IndexSet<String>>>> = Lazy::new(Default::default);
+static _REDACTOR: Lazy<Mutex<Redactor>> = Lazy::new(Default::default);
 
 pub fn is_loaded() -> bool {
     _CONFIG.read().unwrap().is_some()
@@ -688,60 +688,30 @@ impl Config {
             .collect()
     }
     pub fn add_redactions(&self, redactions: impl IntoIterator<Item = String>, env: &EnvMap) {
-        let mut r = _REDACTIONS.lock().unwrap();
-        let redactions = redactions.into_iter().flat_map(|r| {
-            let matcher = Wildcard::new(vec![r]);
+        let mut r = _REDACTOR.lock().unwrap();
+        let new_redactions = redactions.into_iter().flat_map(|pattern| {
+            let matcher = Wildcard::new(vec![pattern]);
             env.iter()
                 .filter(|(k, _)| matcher.match_any(k))
                 .map(|(_, v)| v.clone())
                 .collect::<Vec<_>>()
         });
-        *r = Arc::new(r.iter().cloned().chain(redactions).collect());
+        *r = r.with_additional(new_redactions);
     }
 
+    /// Get the current redactor (with cached Aho-Corasick automaton).
+    pub fn redactor(&self) -> Redactor {
+        _REDACTOR.lock().unwrap().clone()
+    }
+
+    /// Get the current redaction patterns.
     pub fn redactions(&self) -> Arc<IndexSet<String>> {
-        let r = _REDACTIONS.lock().unwrap();
-        r.deref().clone()
-
-        // self.redactions.get_or_try_init(|| {
-        //     let mut redactions = Redactions::default();
-        //     for cf in self.config_files.values() {
-        //         let r = cf.redactions();
-        //         if !r.is_empty() {
-        //             let mut r = r.clone();
-        //             let (tera, ctx) = self.tera(&cf.config_root());
-        //             r.render(&mut tera.clone(), &ctx)?;
-        //             redactions.merge(r);
-        //         }
-        //     }
-        //     if redactions.is_empty() {
-        //         return Ok(Default::default());
-        //     }
-        //
-        //     let ts = self.get_toolset()?;
-        //     let env = ts.full_env()?;
-        //
-        //     let env_matcher = Wildcard::new(redactions.env.clone());
-        //     let var_matcher = Wildcard::new(redactions.vars.clone());
-        //
-        //     let env_vals = env
-        //         .into_iter()
-        //         .filter(|(k, _)| env_matcher.match_any(k))
-        //         .map(|(_, v)| v);
-        //     let var_vals = self
-        //         .vars
-        //         .iter()
-        //         .filter(|(k, _)| var_matcher.match_any(k))
-        //         .map(|(_, v)| v.to_string());
-        //     Ok(env_vals.chain(var_vals).collect())
-        // })
+        Arc::new(_REDACTOR.lock().unwrap().patterns().clone())
     }
 
-    pub fn redact(&self, mut input: String) -> String {
-        for redaction in self.redactions().deref() {
-            input = input.replace(redaction, "[redacted]");
-        }
-        input
+    /// Redact sensitive values from a string using Aho-Corasick for efficiency.
+    pub fn redact(&self, input: &str) -> String {
+        _REDACTOR.lock().unwrap().redact(input)
     }
 }
 
