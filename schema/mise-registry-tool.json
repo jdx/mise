@@ -82,6 +82,13 @@
       "type": "string",
       "description": "A brief description of the tool"
     },
+    "detect": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Files that indicate this tool should be suggested during config generation"
+    },
     "idiomatic_files": {
       "type": "array",
       "items": {

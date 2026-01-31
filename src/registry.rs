@@ -29,6 +29,7 @@ pub struct RegistryTool {
     pub os: &'static [&'static str],
     pub depends: &'static [&'static str],
     pub idiomatic_files: &'static [&'static str],
+    pub detect: &'static [&'static str],
 }
 
 #[derive(Debug, Clone)]

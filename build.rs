@@ -214,6 +214,17 @@ fn codegen_registry() {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
+        let detect = info
+            .get("detect")
+            .map(|detect| {
+                detect
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|f| f.as_str().unwrap().to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         let overrides = info
             .get("overrides")
             .map(|overrides| {
@@ -226,7 +237,7 @@ fn codegen_registry() {
             })
             .unwrap_or_default();
         let rt = format!(
-            r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}], idiomatic_files: &[{idiomatic_files}], overrides: &[{overrides}]}}"#,
+            r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
             description = description
                 .map(|d| format!("Some({})", raw_string_literal(&d)))
                 .unwrap_or("None".to_string()),
@@ -254,6 +265,11 @@ fn codegen_registry() {
                 .collect::<Vec<_>>()
                 .join(", "),
             idiomatic_files = idiomatic_files
+                .iter()
+                .map(|f| format!("\"{f}\""))
+                .collect::<Vec<_>>()
+                .join(", "),
+            detect = detect
                 .iter()
                 .map(|f| format!("\"{f}\""))
                 .collect::<Vec<_>>()

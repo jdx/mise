@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use clap::ValueHint;
-use demand::{Confirm, DemandOption, Input, MultiSelect};
+use demand::{Confirm, DemandOption, Input, MultiSelect, Select};
 use eyre::{Result, eyre};
 use indoc::formatdoc;
 use itertools::Itertools;
@@ -47,6 +47,15 @@ impl std::fmt::Display for DetectedTool {
     }
 }
 
+/// State for the interactive wizard
+#[derive(Default)]
+struct WizardState {
+    tools: BTreeMap<String, String>,
+    env_vars: BTreeMap<String, String>,
+    load_dotenv: bool,
+    create_lockfile: bool,
+}
+
 impl ConfigGenerate {
     pub async fn run(self) -> Result<()> {
         let doc = if let Some(tool_versions) = &self.tool_versions {
@@ -80,12 +89,10 @@ impl ConfigGenerate {
     async fn interactive(&self) -> Result<String> {
         show_cursor_after_ctrl_c();
         let theme = get_theme();
+        let mut state = WizardState::default();
 
-        // Step 1: Detect tools from project files
-        let detected = self.detect_tools().await;
-        let mut tools: BTreeMap<String, String> = BTreeMap::new();
-
-        // Step 2: If we detected tools, ask user to confirm them
+        // First, check for detected tools and offer to add them
+        let detected = self.detect_tools();
         if !detected.is_empty() {
             miseprintln!("Detected tools from project files:\n");
             for tool in &detected {
@@ -101,301 +108,85 @@ impl ConfigGenerate {
             if use_detected {
                 for tool in &detected {
                     let version = tool.version.clone().unwrap_or_else(|| "latest".to_string());
-                    tools.insert(tool.name.clone(), version);
+                    state.tools.insert(tool.name.clone(), version);
                 }
             }
         }
 
-        // Step 3: Ask if user wants to add more tools
-        let add_more = Confirm::new("Add additional tools?")
-            .theme(&theme)
-            .run()
-            .map_err(handle_interrupt)?;
+        // Main menu loop
+        loop {
+            let choice = self.show_main_menu(&theme, &state)?;
 
-        if add_more {
-            let additional = self.select_tools(&theme)?;
-            for tool_name in additional {
-                if !tools.contains_key(&tool_name) {
-                    // Ask for version
-                    let version = Input::new(format!("Version for {tool_name}"))
-                        .description("Enter version (e.g., '20', '3.12', 'latest')")
-                        .placeholder("latest")
-                        .theme(&theme)
-                        .run()
-                        .map_err(handle_interrupt)?;
-                    let version = if version.is_empty() {
-                        "latest".to_string()
-                    } else {
-                        version
-                    };
-                    tools.insert(tool_name, version);
+            match choice.as_str() {
+                "tools" => self.add_tools(&theme, &mut state)?,
+                "env" => self.add_env_vars(&theme, &mut state)?,
+                "dotenv" => {
+                    state.load_dotenv = !state.load_dotenv;
                 }
-            }
-        }
-
-        // Step 4: Ask about environment variables
-        let mut env_vars: BTreeMap<String, String> = BTreeMap::new();
-        let add_env = Confirm::new("Add environment variables?")
-            .theme(&theme)
-            .run()
-            .map_err(handle_interrupt)?;
-
-        if add_env {
-            loop {
-                let key = Input::new("Environment variable name")
-                    .description("Leave empty to finish")
-                    .theme(&theme)
-                    .run()
-                    .map_err(handle_interrupt)?;
-
-                if key.is_empty() {
-                    break;
+                "lockfile" => {
+                    state.create_lockfile = !state.create_lockfile;
                 }
-
-                let value = Input::new(format!("Value for {key}"))
-                    .theme(&theme)
-                    .run()
-                    .map_err(handle_interrupt)?;
-
-                env_vars.insert(key, value);
+                "done" => break,
+                _ => {}
             }
         }
 
-        // Step 5: Ask about .env file
-        let load_dotenv = if Path::new(".env").exists() {
-            Confirm::new("Load variables from .env file?")
-                .theme(&theme)
-                .run()
-                .map_err(handle_interrupt)?
-        } else {
-            false
-        };
-
-        // Generate the config
-        Ok(self.generate_config(&tools, &env_vars, load_dotenv))
+        Ok(self.generate_config(&state))
     }
 
-    async fn detect_tools(&self) -> Vec<DetectedTool> {
-        let mut detected = Vec::new();
-        let cwd = env::current_dir().unwrap_or_default();
+    fn show_main_menu(&self, theme: &demand::Theme, state: &WizardState) -> Result<String> {
+        let tools_label = format!("Add/edit tools ({})", state.tools.len());
+        let env_label = format!("Add/edit environment variables ({})", state.env_vars.len());
+        let dotenv_status = if state.load_dotenv { "✓" } else { " " };
+        let dotenv_label = format!("[{}] Load .env file", dotenv_status);
+        let lockfile_status = if state.create_lockfile { "✓" } else { " " };
+        let lockfile_label = format!("[{}] Enable mise.lock", lockfile_status);
 
-        // Detect Node.js from package.json
-        if let Some(tool) = self.detect_node(&cwd).await {
-            detected.push(tool);
+        let mut select = Select::new("Configure mise.toml")
+            .description("Select an option")
+            .theme(theme);
+
+        select = select.option(
+            DemandOption::new("tools")
+                .label(&tools_label)
+                .description("Select tools from the registry"),
+        );
+        select = select.option(
+            DemandOption::new("env")
+                .label(&env_label)
+                .description("Set environment variables"),
+        );
+
+        if Path::new(".env").exists() {
+            select = select.option(
+                DemandOption::new("dotenv")
+                    .label(&dotenv_label)
+                    .description("Include mise.file = \".env\" in config"),
+            );
         }
 
-        // Detect Node.js from .nvmrc or .node-version
-        if let Some(tool) = self.detect_node_version_file(&cwd) {
-            // Only add if we didn't already detect node
-            if !detected.iter().any(|t| t.name == "node") {
-                detected.push(tool);
+        select = select.option(
+            DemandOption::new("lockfile")
+                .label(&lockfile_label)
+                .description("Create lockfile for reproducible installs"),
+        );
+
+        select = select.option(
+            DemandOption::new("done")
+                .label("Done - generate config")
+                .description("Write the configuration file"),
+        );
+
+        match select.run() {
+            Ok(choice) => Ok(choice.to_string()),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
+                std::process::exit(130);
             }
+            Err(e) => Err(eyre!(e)),
         }
-
-        // Detect Python from pyproject.toml or .python-version
-        if let Some(tool) = self.detect_python(&cwd).await {
-            detected.push(tool);
-        }
-
-        // Detect Go from go.mod
-        if let Some(tool) = self.detect_go(&cwd).await {
-            detected.push(tool);
-        }
-
-        // Detect Ruby from .ruby-version or Gemfile
-        if let Some(tool) = self.detect_ruby(&cwd) {
-            detected.push(tool);
-        }
-
-        // Detect package managers
-        detected.extend(self.detect_package_managers(&cwd));
-
-        detected
     }
 
-    async fn detect_node(&self, cwd: &Path) -> Option<DetectedTool> {
-        let package_json = cwd.join("package.json");
-        if !package_json.exists() {
-            return None;
-        }
-
-        let content = file::read_to_string(&package_json).ok()?;
-        let json: serde_json::Value = serde_json::from_str(&content).ok()?;
-
-        let version = json
-            .get("engines")
-            .and_then(|e| e.get("node"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-
-        Some(DetectedTool {
-            name: "node".to_string(),
-            version,
-            source: "package.json".to_string(),
-        })
-    }
-
-    fn detect_node_version_file(&self, cwd: &Path) -> Option<DetectedTool> {
-        for (filename, source) in [(".nvmrc", ".nvmrc"), (".node-version", ".node-version")] {
-            let path = cwd.join(filename);
-            if path.exists() {
-                let version = file::read_to_string(&path)
-                    .ok()
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty());
-                return Some(DetectedTool {
-                    name: "node".to_string(),
-                    version,
-                    source: source.to_string(),
-                });
-            }
-        }
-        None
-    }
-
-    async fn detect_python(&self, cwd: &Path) -> Option<DetectedTool> {
-        // Check .python-version first
-        let python_version = cwd.join(".python-version");
-        if python_version.exists() {
-            let version = file::read_to_string(&python_version)
-                .ok()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty());
-            return Some(DetectedTool {
-                name: "python".to_string(),
-                version,
-                source: ".python-version".to_string(),
-            });
-        }
-
-        // Check pyproject.toml
-        let pyproject = cwd.join("pyproject.toml");
-        if pyproject.exists() {
-            let content = file::read_to_string(&pyproject).ok()?;
-            let version = self.parse_python_version_from_pyproject(&content);
-            return Some(DetectedTool {
-                name: "python".to_string(),
-                version,
-                source: "pyproject.toml".to_string(),
-            });
-        }
-
-        None
-    }
-
-    fn parse_python_version_from_pyproject(&self, content: &str) -> Option<String> {
-        // Try to parse requires-python from pyproject.toml
-        let doc: toml::Value = toml::from_str(content).ok()?;
-        doc.get("project")
-            .and_then(|p| p.get("requires-python"))
-            .and_then(|v| v.as_str())
-            .map(|s| {
-                // Convert ">=3.10" to "3.10", etc.
-                s.trim_start_matches(|c: char| !c.is_ascii_digit())
-                    .to_string()
-            })
-            .filter(|s| !s.is_empty())
-    }
-
-    async fn detect_go(&self, cwd: &Path) -> Option<DetectedTool> {
-        let go_mod = cwd.join("go.mod");
-        if !go_mod.exists() {
-            return None;
-        }
-
-        let content = file::read_to_string(&go_mod).ok()?;
-        let version = content
-            .lines()
-            .find(|line| line.starts_with("go "))
-            .map(|line| line.trim_start_matches("go ").trim().to_string());
-
-        Some(DetectedTool {
-            name: "go".to_string(),
-            version,
-            source: "go.mod".to_string(),
-        })
-    }
-
-    fn detect_ruby(&self, cwd: &Path) -> Option<DetectedTool> {
-        // Check .ruby-version
-        let ruby_version = cwd.join(".ruby-version");
-        if ruby_version.exists() {
-            let version = file::read_to_string(&ruby_version)
-                .ok()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty());
-            return Some(DetectedTool {
-                name: "ruby".to_string(),
-                version,
-                source: ".ruby-version".to_string(),
-            });
-        }
-
-        // Check Gemfile for ruby version
-        let gemfile = cwd.join("Gemfile");
-        if gemfile.exists() {
-            return Some(DetectedTool {
-                name: "ruby".to_string(),
-                version: None,
-                source: "Gemfile".to_string(),
-            });
-        }
-
-        None
-    }
-
-    fn detect_package_managers(&self, cwd: &Path) -> Vec<DetectedTool> {
-        let mut detected = Vec::new();
-
-        // Detect pnpm
-        if cwd.join("pnpm-lock.yaml").exists() {
-            detected.push(DetectedTool {
-                name: "pnpm".to_string(),
-                version: None,
-                source: "pnpm-lock.yaml".to_string(),
-            });
-        }
-
-        // Detect yarn
-        if cwd.join("yarn.lock").exists() {
-            detected.push(DetectedTool {
-                name: "yarn".to_string(),
-                version: None,
-                source: "yarn.lock".to_string(),
-            });
-        }
-
-        // Detect bun
-        if cwd.join("bun.lockb").exists() || cwd.join("bun.lock").exists() {
-            detected.push(DetectedTool {
-                name: "bun".to_string(),
-                version: None,
-                source: "bun.lock".to_string(),
-            });
-        }
-
-        // Detect uv
-        if cwd.join("uv.lock").exists() {
-            detected.push(DetectedTool {
-                name: "uv".to_string(),
-                version: None,
-                source: "uv.lock".to_string(),
-            });
-        }
-
-        // Detect poetry
-        if cwd.join("poetry.lock").exists() {
-            detected.push(DetectedTool {
-                name: "poetry".to_string(),
-                version: None,
-                source: "poetry.lock".to_string(),
-            });
-        }
-
-        detected
-    }
-
-    fn select_tools(&self, theme: &demand::Theme) -> Result<Vec<String>> {
+    fn add_tools(&self, theme: &demand::Theme, state: &mut WizardState) -> Result<()> {
         let tools: Vec<(&str, &RegistryTool)> = REGISTRY
             .iter()
             .map(|(name, tool)| (*name, tool))
@@ -403,46 +194,188 @@ impl ConfigGenerate {
             .collect();
 
         let mut ms = MultiSelect::new("Select tools")
-            .description("Use arrows to move, space to select, enter to confirm")
+            .description("Space to select, Enter to confirm")
             .filterable(true)
             .theme(theme);
 
         for (name, tool) in tools {
             let description = tool.description.unwrap_or_default();
-            ms = ms.option(DemandOption::new(name).label(name).description(description));
+            let mut opt = DemandOption::new(name).label(name).description(description);
+            if state.tools.contains_key(name) {
+                opt = opt.selected(true);
+            }
+            ms = ms.option(opt);
         }
 
-        match ms.run() {
-            Ok(selected) => Ok(selected.into_iter().map(|s| s.to_string()).collect()),
-            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => Ok(vec![]),
-            Err(e) => Err(eyre!(e)),
+        let selected: Vec<String> = match ms.run() {
+            Ok(s) => s.into_iter().map(|s| s.to_string()).collect(),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => return Ok(()),
+            Err(e) => return Err(eyre!(e)),
+        };
+
+        // Remove tools that were deselected
+        state.tools.retain(|k, _| selected.contains(k));
+
+        // Add newly selected tools (prompt for version)
+        for tool_name in selected {
+            if !state.tools.contains_key(&tool_name) {
+                let version = Input::new(format!("Version for {tool_name}"))
+                    .description("e.g., '20', '3.12', 'latest'")
+                    .placeholder("latest")
+                    .theme(theme)
+                    .run()
+                    .map_err(handle_interrupt)?;
+                let version = if version.is_empty() {
+                    "latest".to_string()
+                } else {
+                    version
+                };
+                state.tools.insert(tool_name, version);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn add_env_vars(&self, theme: &demand::Theme, state: &mut WizardState) -> Result<()> {
+        loop {
+            // Show current env vars
+            if !state.env_vars.is_empty() {
+                miseprintln!("\nCurrent environment variables:");
+                for (k, v) in &state.env_vars {
+                    miseprintln!("  {k} = {v}");
+                }
+                miseprintln!();
+            }
+
+            let key = Input::new("Environment variable name")
+                .description("Leave empty to finish")
+                .theme(theme)
+                .run()
+                .map_err(handle_interrupt)?;
+
+            if key.is_empty() {
+                break;
+            }
+
+            let default_value = state.env_vars.get(&key).cloned().unwrap_or_default();
+            let mut input = Input::new(format!("Value for {key}")).theme(theme);
+            if !default_value.is_empty() {
+                input = input.placeholder(&default_value);
+            }
+
+            let value = input.run().map_err(handle_interrupt)?;
+
+            if value.is_empty() && !default_value.is_empty() {
+                // Keep existing value
+            } else {
+                state.env_vars.insert(key, value);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Detect tools by scanning for files listed in registry detect fields
+    fn detect_tools(&self) -> Vec<DetectedTool> {
+        let cwd = env::current_dir().unwrap_or_default();
+        let mut detected = Vec::new();
+        let mut seen_tools = std::collections::HashSet::new();
+
+        // Scan registry for tools with detect files
+        for (name, tool) in REGISTRY.iter() {
+            if tool.detect.is_empty() {
+                continue;
+            }
+
+            for detect_file in tool.detect.iter() {
+                let path = cwd.join(detect_file);
+                if path.exists() && !seen_tools.contains(*name) {
+                    let version = self.extract_version(*name, &path);
+                    detected.push(DetectedTool {
+                        name: name.to_string(),
+                        version,
+                        source: detect_file.to_string(),
+                    });
+                    seen_tools.insert(*name);
+                    break; // Only detect once per tool
+                }
+            }
+        }
+
+        // Sort by tool name for consistent output
+        detected.sort_by(|a, b| a.name.cmp(&b.name));
+        detected
+    }
+
+    /// Try to extract version from a detected file
+    fn extract_version(&self, tool: &str, path: &Path) -> Option<String> {
+        let filename = path.file_name()?.to_str()?;
+        let content = file::read_to_string(path).ok()?;
+
+        match (tool, filename) {
+            // Node.js version from package.json engines
+            ("node", "package.json") => {
+                let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+                json.get("engines")
+                    .and_then(|e| e.get("node"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            }
+            // Python version from pyproject.toml
+            ("python", "pyproject.toml") => {
+                let doc: toml::Value = toml::from_str(&content).ok()?;
+                doc.get("project")
+                    .and_then(|p| p.get("requires-python"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| {
+                        s.trim_start_matches(|c: char| !c.is_ascii_digit())
+                            .to_string()
+                    })
+                    .filter(|s| !s.is_empty())
+            }
+            // Go version from go.mod
+            ("go", "go.mod") => content
+                .lines()
+                .find(|line| line.starts_with("go "))
+                .map(|line| line.trim_start_matches("go ").trim().to_string()),
+            // Version files (simple text content)
+            (_, f) if f.starts_with('.') && f.ends_with("-version") => {
+                let v = content.trim().to_string();
+                if v.is_empty() { None } else { Some(v) }
+            }
+            (_, ".nvmrc") => {
+                let v = content.trim().to_string();
+                if v.is_empty() { None } else { Some(v) }
+            }
+            _ => None,
         }
     }
 
-    fn generate_config(
-        &self,
-        tools: &BTreeMap<String, String>,
-        env_vars: &BTreeMap<String, String>,
-        load_dotenv: bool,
-    ) -> String {
+    fn generate_config(&self, state: &WizardState) -> String {
         let mut config = String::new();
 
+        // Add lockfile setting if requested
+        if state.create_lockfile {
+            config.push_str("[settings]\nlockfile = true\n\n");
+        }
+
         // Add env section if needed
-        if !env_vars.is_empty() || load_dotenv {
+        if !state.env_vars.is_empty() || state.load_dotenv {
             config.push_str("[env]\n");
-            if load_dotenv {
+            if state.load_dotenv {
                 config.push_str("mise.file = \".env\"\n");
             }
-            for (key, value) in env_vars {
+            for (key, value) in &state.env_vars {
                 config.push_str(&format!("{key} = {}\n", quote_toml_value(value)));
             }
             config.push('\n');
         }
 
         // Add tools section
-        if !tools.is_empty() {
+        if !state.tools.is_empty() {
             config.push_str("[tools]\n");
-            for (name, version) in tools {
+            for (name, version) in &state.tools {
                 config.push_str(&format!("{name} = {}\n", quote_toml_value(version)));
             }
         }
