@@ -36,8 +36,10 @@ impl Plugin {
         }
         let lua = Lua::new();
         lua.set_named_registry_value("plugin_dir", dir.to_path_buf())?;
+        let name = dir.file_name().unwrap().to_string_lossy().to_string();
+        lua.set_named_registry_value("plugin_name", name.clone())?;
         Ok(Self {
-            name: dir.file_name().unwrap().to_string_lossy().to_string(),
+            name,
             dir: dir.to_path_buf(),
             source: PluginSource::Filesystem(dir.to_path_buf()),
             lua,
@@ -51,6 +53,7 @@ impl Plugin {
         let dummy_dir = PathBuf::from(format!("embedded:{}", name));
         lua.set_named_registry_value("plugin_dir", dummy_dir.clone())?;
         lua.set_named_registry_value("embedded_plugin", true)?;
+        lua.set_named_registry_value("plugin_name", name.to_string())?;
         Ok(Self {
             name: name.to_string(),
             dir: dummy_dir,
@@ -190,6 +193,7 @@ impl Plugin {
             lua_mod::semver(&self.lua)?;
             lua_mod::strings(&self.lua)?;
             lua_mod::env(&self.lua)?;
+            lua_mod::log(&self.lua)?;
 
             // For embedded plugins, load lib modules AFTER standard modules
             // (lib files may require http, json, etc.)

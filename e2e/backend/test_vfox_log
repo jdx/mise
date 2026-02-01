@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# Install the dummy vfox plugin from GitHub
+mise plugin install vfox-dummy https://github.com/jdx/vfox-dummy
+
+# Test with MISE_DEBUG=1 to capture debug+ level output
+assert_contains "TEST_VFOX_LOG=1 MISE_DEBUG=1 mise ls-remote vfox-dummy 2>&1" "[vfox-dummy] log.debug msg"
+assert_contains "TEST_VFOX_LOG=1 MISE_DEBUG=1 mise ls-remote vfox-dummy 2>&1" "[vfox-dummy] log.info msg"
+assert_contains "TEST_VFOX_LOG=1 MISE_DEBUG=1 mise ls-remote vfox-dummy 2>&1" "[vfox-dummy] log.warn msg"
+assert_contains "TEST_VFOX_LOG=1 MISE_DEBUG=1 mise ls-remote vfox-dummy 2>&1" "[vfox-dummy] log.error msg"
+assert_contains "TEST_VFOX_LOG=1 MISE_DEBUG=1 mise ls-remote vfox-dummy 2>&1" "[vfox-dummy] print msg"
+assert_contains "TEST_VFOX_LOG=1 MISE_DEBUG=1 mise ls-remote vfox-dummy 2>&1" "[vfox-dummy] multi	arg	123"
+
+# Test with MISE_TRACE=1 to capture trace level
+assert_contains "TEST_VFOX_LOG=1 MISE_TRACE=1 mise ls-remote vfox-dummy 2>&1" "[vfox-dummy] log.trace msg"
+
+# Verify direct stderr write passes through
+assert_contains "TEST_VFOX_LOG=1 mise ls-remote vfox-dummy 2>&1" "stderr msg"
+
+# Verify log.debug is NOT shown at default log level
+assert_not_contains "TEST_VFOX_LOG=1 mise ls-remote vfox-dummy 2>&1" "log.debug msg"
+assert_not_contains "TEST_VFOX_LOG=1 mise ls-remote vfox-dummy 2>&1" "log.trace msg"
