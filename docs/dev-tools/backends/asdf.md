@@ -1,7 +1,7 @@
 # asdf Backend
 
 > [!WARNING]
-> asdf plugins are considered legacy. For new plugin development, use [vfox (tool plugins)](./vfox.md) instead. Vfox plugins are written in Lua, work on all platforms including Windows, and have access to [built-in modules](/plugin-lua-modules.html) for HTTP, JSON, HTML parsing, and more.
+> asdf plugins are considered legacy. For new plugin development, use [vfox (tool plugins)](./vfox.md) instead. Vfox plugins are written in Luau, work on all platforms including Windows, and have access to [built-in modules](/plugin-lua-modules.html) for HTTP, JSON, HTML parsing, and more.
 
 `asdf` is the original backend for mise.
 

@@ -14,7 +14,7 @@ Backend plugins extend the standard vfox plugin system with enhanced backend met
 
 Backend plugins are generally a git repository but can also be a directory (via `mise link`).
 
-Backend plugins are implemented in Lua (version 5.1 at the moment). They use three main backend methods implemented as individual files:
+Backend plugins are implemented in [Luau](https://luau.org/), a fast, small, safe, gradually typed embeddable scripting language derived from Lua. They use three main backend methods implemented as individual files:
 
 - `hooks/backend_list_versions.lua` - Lists available versions for a tool
 - `hooks/backend_install.lua` - Installs a specific version of a tool

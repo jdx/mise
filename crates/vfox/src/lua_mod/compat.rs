@@ -73,6 +73,8 @@ fn setup_os(lua: &Lua) -> mlua::Result<()> {
 struct FileHandle {
     content: Option<String>,
     path: String,
+    /// Whether the file was opened in write/append mode
+    writable: bool,
     /// Accumulated write buffer (populated in write mode)
     write_buf: std::cell::RefCell<Option<String>>,
 }
@@ -100,6 +102,9 @@ impl UserData for FileHandle {
             Ok(())
         });
         methods.add_method("write", |_lua, this, data: String| {
+            if !this.writable {
+                return Err(mlua::Error::external("attempt to write to read-only file"));
+            }
             let mut wb = this.write_buf.borrow_mut();
             if let Some(buf) = wb.as_mut() {
                 buf.push_str(&data);
@@ -157,6 +162,7 @@ fn setup_io(lua: &Lua) -> mlua::Result<()> {
                 let handle = FileHandle {
                     content: None,
                     path,
+                    writable: true,
                     write_buf: std::cell::RefCell::new(Some(String::new())),
                 };
                 Ok((Value::UserData(lua.create_userdata(handle)?), Value::Nil))
@@ -166,6 +172,7 @@ fn setup_io(lua: &Lua) -> mlua::Result<()> {
                 let handle = FileHandle {
                     content: None,
                     path,
+                    writable: true,
                     write_buf: std::cell::RefCell::new(Some(existing)),
                 };
                 Ok((Value::UserData(lua.create_userdata(handle)?), Value::Nil))
@@ -176,6 +183,7 @@ fn setup_io(lua: &Lua) -> mlua::Result<()> {
                         let handle = FileHandle {
                             content: Some(content),
                             path,
+                            writable: false,
                             write_buf: std::cell::RefCell::new(None),
                         };
                         Ok((Value::UserData(lua.create_userdata(handle)?), Value::Nil))
@@ -415,5 +423,30 @@ mod tests {
         })
         .exec()
         .unwrap();
+    }
+
+    #[test]
+    fn test_io_write_to_readonly_file() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let filepath = temp_dir.path().join("readonly.txt");
+        let filepath_str = filepath.to_string_lossy().to_string();
+        std::fs::write(&filepath, "original content").unwrap();
+
+        let lua = Lua::new();
+        mod_compat(&lua).unwrap();
+        // Attempting to write to a read-only file handle should error
+        let result = lua
+            .load(mlua::chunk! {
+                local f = io.open($filepath_str, "r")
+                assert(f ~= nil, "expected file handle")
+                f:write("should fail")
+                f:close()
+            })
+            .exec();
+        assert!(result.is_err());
+
+        // Verify original content is preserved
+        let content = std::fs::read_to_string(&filepath).unwrap();
+        assert_eq!(content, "original content");
     }
 }
