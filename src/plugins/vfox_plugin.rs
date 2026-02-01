@@ -1,6 +1,7 @@
 use crate::file::{display_path, remove_all};
 use crate::git::{CloneOptions, Git};
 use crate::http::HTTP;
+use crate::plugins::warn_if_env_plugin_shadows_registry;
 use crate::plugins::{Plugin, PluginSource};
 use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -205,6 +206,7 @@ impl Plugin for VfoxPlugin {
             if !dry_run {
                 self.repo()
                     .clone(url.as_str(), CloneOptions::default().pr(pr.as_ref()))?;
+                warn_if_env_plugin_shadows_registry(&self.name, &self.plugin_path);
             }
         }
         Ok(())

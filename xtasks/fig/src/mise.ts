@@ -1300,6 +1300,12 @@ const completionSpec: Fig.Spec = {
               },
             },
             {
+              name: "--lock",
+              description:
+                "Resolve and embed lockfile data (exact version + platform URLs/checksums) into an existing stub file for reproducible installs without runtime API calls",
+              isRepeatable: false,
+            },
+            {
               name: "--platform-bin",
               description:
                 "Platform-specific binary paths in the format platform:path",
