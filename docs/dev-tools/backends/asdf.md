@@ -1,5 +1,8 @@
 # asdf Backend
 
+> [!WARNING]
+> asdf plugins are considered legacy. For new plugin development, use [vfox (tool plugins)](./vfox.md) instead. Vfox plugins are written in Lua, work on all platforms including Windows, and have access to [built-in modules](/plugin-lua-modules.html) for HTTP, JSON, HTML parsing, and more.
+
 `asdf` is the original backend for mise.
 
 It relies on asdf plugins for each tool. asdf plugins are more risky to use because they're typically written by a single developer unrelated to the tool vendor. They also generally do not function on Windows because they're written
@@ -13,6 +16,37 @@ Because of the extra complexity of asdf tools and security concerns we are activ
 the registry away from asdf where possible to backends like aqua and ubi which don't require plugins.
 That said, not all tools can function with ubi/aqua if they have a unique installation process or
 need to set env vars other than `PATH`.
+
+## Feature Comparison: asdf vs vfox
+
+| Feature                   | asdf                        | vfox                      |
+| ------------------------- | --------------------------- | ------------------------- |
+| Windows support           | ❌                          | ✅                        |
+| Built-in HTTP requests    | ❌ (shell out to curl)      | ✅ (`http` module)        |
+| Built-in JSON parsing     | ❌ (shell out to jq)        | ✅ (`json` module)        |
+| HTML parsing              | ❌                          | ✅ (`html` module)        |
+| Archive extraction        | ❌ (shell out to tar/unzip) | ✅ (`archiver` module)    |
+| Semantic version sorting  | ❌                          | ✅ (`semver` module)      |
+| Structured logging        | ❌ (echo to stderr)         | ✅ (`log` module)         |
+| Post-install hooks        | ❌                          | ✅                        |
+| Security attestations     | ❌                          | ✅ (GitHub, cosign, SLSA) |
+| Multiple tools per plugin | ❌                          | ✅ (backend plugins)      |
+| Cross-platform lock files | ❌                          | ✅                        |
+| Rolling version checksums | ❌                          | ✅                        |
+| Language                  | Bash                        | Lua 5.1                   |
+
+## Hook Migration: asdf to vfox
+
+If you're migrating an asdf plugin to vfox, use this mapping:
+
+| asdf Script                    | vfox Hook                         | Notes                                 |
+| ------------------------------ | --------------------------------- | ------------------------------------- |
+| `bin/list-all`                 | `Available`                       | Returns structured version tables     |
+| `bin/download` + `bin/install` | `PreInstall` + `PostInstall`      | Separates URL resolution from install |
+| `bin/exec-env`                 | `EnvKeys`                         | Returns structured key-value pairs    |
+| `bin/parse-legacy-file`        | `ParseLegacyFile`                 | Same concept                          |
+| `bin/list-legacy-filenames`    | `legacyFilenames` in metadata.lua | Declarative                           |
+| `bin/list-bin-paths`           | `EnvKeys` (PATH entries)          | Handled via PATH in EnvKeys           |
 
 ## Writing asdf (legacy) plugins for mise
 
