@@ -72,7 +72,7 @@ impl Backend for AquaBackend {
         {
             count += 1;
         }
-        if needs_extraction(&format, &pkg.r#type) {
+        if needs_extraction(format, &pkg.r#type) {
             count += 1;
         }
         count
@@ -455,7 +455,7 @@ impl Backend for AquaBackend {
         self.verify(ctx, &mut tv, &pkg, &v, &filename).await?;
 
         // Advance to extraction operation if applicable
-        if needs_extraction(&format, &pkg.r#type) {
+        if needs_extraction(format, &pkg.r#type) {
             ctx.pr.next_operation();
         }
         self.install(ctx, &tv, &pkg, &v, &filename)?;
