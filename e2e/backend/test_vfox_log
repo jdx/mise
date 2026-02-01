@@ -20,6 +20,3 @@ assert_contains "TEST_VFOX_LOG=1 mise ls-remote vfox-dummy 2>&1" "stderr msg"
 # Verify log.debug is NOT shown at default log level
 assert_not_contains "TEST_VFOX_LOG=1 mise ls-remote vfox-dummy 2>&1" "log.debug msg"
 assert_not_contains "TEST_VFOX_LOG=1 mise ls-remote vfox-dummy 2>&1" "log.trace msg"
-
-# Cleanup
-mise plugin uninstall vfox-dummy
