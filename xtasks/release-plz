@@ -180,7 +180,10 @@ if [[ $cur_version != "$latest_version" ]]; then
 	bump_and_publish_subcrate "aqua-registry" "crates/aqua-registry" "AQUA_REGISTRY_VERSION"
 	cargo add "aqua-registry@$AQUA_REGISTRY_VERSION"
 
+	# Copy schema into crate directory so cargo publish verification can find it
+	cp schema/mise.json crates/mise-interactive-config/mise.json
 	bump_and_publish_subcrate "mise-interactive-config" "crates/mise-interactive-config" "INTERACTIVE_CONFIG_VERSION"
+	rm -f crates/mise-interactive-config/mise.json
 	cargo add "mise-interactive-config@$INTERACTIVE_CONFIG_VERSION"
 
 	if exists_on_crates mise "$cur_version"; then

@@ -35,13 +35,21 @@ fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("schema_sections.rs");
 
-    // Read the schema file
-    let schema_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    // Read the schema file - check local copy first (used by cargo publish),
+    // then fall back to repo-root location (used during normal development)
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let local_schema = manifest_dir.join("mise.json");
+    let repo_schema = manifest_dir
         .parent()
         .unwrap()
         .parent()
         .unwrap()
         .join("schema/mise.json");
+    let schema_path = if local_schema.exists() {
+        local_schema
+    } else {
+        repo_schema
+    };
 
     println!("cargo:rerun-if-changed={}", schema_path.display());
 
