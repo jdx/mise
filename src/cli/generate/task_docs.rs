@@ -56,24 +56,19 @@ impl TaskDocs {
         };
         let tasks =
             config::load_tasks_in_dir(&config, dir, &config.config_files, &templates).await?;
-        let mut out = vec![];
-        for task in tasks.iter().filter(|t| !t.hide) {
-            out.push(task.render_markdown(&config).await?);
-        }
+        let visible_tasks: Vec<_> = tasks.iter().filter(|t| !t.hide).collect();
         if let Some(output) = &self.output {
             if self.multi {
                 if output.is_dir() {
-                    let visible_tasks: Vec<_> = tasks.iter().filter(|t| !t.hide).collect();
                     let mut index = if self.index {
                         Some(String::from("# Tasks\n\n"))
                     } else {
                         None
                     };
                     for task in &visible_tasks {
-                        let filename =
-                            format!("{}.md", task.name.replace(':', "-").replace('/', "-"));
+                        let filename = format!("{}.md", task.name.replace([':', '/'], "-"));
                         file::write(
-                            &output.join(&filename),
+                            output.join(&filename),
                             &task.render_markdown(&config).await?,
                         )?;
                         if let Some(index) = &mut index {
@@ -86,7 +81,13 @@ impl TaskDocs {
                         }
                     }
                     if let Some(index) = index {
-                        file::write(&output.join("index.md"), &index)?;
+                        if visible_tasks
+                            .iter()
+                            .any(|t| t.name.replace([':', '/'], "-") == "index")
+                        {
+                            warn!("task named \"index\" will be overwritten by index.md");
+                        }
+                        file::write(output.join("index.md"), &index)?;
                     }
                 } else {
                     return Err(eyre::eyre!(
@@ -94,6 +95,10 @@ impl TaskDocs {
                     ));
                 }
             } else {
+                let mut out = vec![];
+                for task in &visible_tasks {
+                    out.push(task.render_markdown(&config).await?);
+                }
                 let mut doc = String::new();
                 for task in out {
                     doc.push_str(&task);
@@ -117,6 +122,10 @@ impl TaskDocs {
                 }
             }
         } else {
+            let mut out = vec![];
+            for task in &visible_tasks {
+                out.push(task.render_markdown(&config).await?);
+            }
             miseprintln!("{}", out.join("\n\n").trim());
         }
         Ok(())
