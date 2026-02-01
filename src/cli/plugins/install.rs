@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::sync::Arc;
 
 use color_eyre::eyre::{Result, bail, eyre};
@@ -12,7 +11,7 @@ use crate::dirs;
 use crate::plugins::Plugin;
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::core::CORE_PLUGINS;
-use crate::registry::REGISTRY;
+use crate::plugins::warn_if_env_plugin_shadows_registry;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
@@ -188,18 +187,6 @@ fn get_name_from_url(url: &str) -> Result<String> {
     let name = name.strip_prefix("rtx-").unwrap_or(name);
     let name = name.strip_prefix("mise-").unwrap_or(name);
     Ok(unalias_backend(name).to_string())
-}
-
-/// Warn if a newly installed plugin is an env-only vfox plugin that shadows a registry entry.
-fn warn_if_env_plugin_shadows_registry(name: &str, plugin_path: &Path) {
-    let hooks = plugin_path.join("hooks");
-    let is_env_only = hooks.join("mise_env.lua").exists() && !hooks.join("available.lua").exists();
-    if is_env_only && REGISTRY.contains_key(name) {
-        warn!(
-            "plugin '{name}' is an env plugin and is shadowing the '{name}' registry tool - \
-            consider renaming the plugin or removing it with: mise plugins rm {name}"
-        );
-    }
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

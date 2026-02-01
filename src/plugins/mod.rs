@@ -2,6 +2,7 @@ use crate::errors::Error::PluginNotInstalled;
 use crate::git::Git;
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::vfox_plugin::VfoxPlugin;
+use crate::registry::REGISTRY;
 use crate::toolset::install_state;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -12,7 +13,7 @@ use eyre::{Result, eyre};
 use heck::ToKebabCase;
 use regex::Regex;
 pub use script_manager::{Script, ScriptManager};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::vec;
 use std::{
@@ -189,6 +190,19 @@ impl PluginType {
                 PluginEnum::VfoxBackend(Arc::new(VfoxPlugin::new(short, path)))
             }
         }
+    }
+}
+
+/// Warn if a plugin is an env-only vfox plugin that shadows a registry entry.
+/// Env-only plugins have `hooks/mise_env.lua` but not `hooks/available.lua`.
+pub fn warn_if_env_plugin_shadows_registry(name: &str, plugin_path: &Path) {
+    let hooks = plugin_path.join("hooks");
+    let is_env_only = hooks.join("mise_env.lua").exists() && !hooks.join("available.lua").exists();
+    if is_env_only && REGISTRY.contains_key(name) {
+        warn!(
+            "plugin '{name}' is an env plugin and is shadowing the '{name}' registry tool - \
+            consider renaming the plugin or removing it with: mise plugins rm {name}"
+        );
     }
 }
 
