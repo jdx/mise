@@ -48,6 +48,13 @@ fi
         check = "taplo fmt --check {{files}} && taplo check {{files}}"
         fix = "taplo fmt {{files}} && taplo check {{files}}"
     }
+
+    // uses lua-language-server to check vfox test plugin Lua files
+    // excludes embedded-plugins/ which are vendored from external repos
+    ["lua-check"] {
+        glob = List("crates/vfox/plugins/**/*.lua")
+        check = "lua-language-server --check crates/vfox/plugins/"
+    }
 }
 
 hooks {
