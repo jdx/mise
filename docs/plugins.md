@@ -93,7 +93,7 @@ Unlike tool plugins, environment plugins:
 - Are activated via `env._.<plugin-name>` syntax
 - Don't manage tool versions or installations
 
-See [Environment Plugin Development](env-plugin-development.md) for creating environment plugins. The [mise-env-sample](https://github.com/jdx/mise-env-sample) repository provides a working example.
+See [Environment Plugin Development](env-plugin-development.md) for creating environment plugins. The [mise-env-plugin-template](https://github.com/jdx/mise-env-plugin-template) repository provides a working template.
 
 ## General Plugin Usage
 

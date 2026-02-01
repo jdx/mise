@@ -12,11 +12,11 @@ Unlike [tool plugins](tool-plugin-development.md) and [backend plugins](backend-
 
 ## Quick Start
 
-The fastest way to create an environment plugin is to use the [mise-env-plugin-template](https://github.com/jdx/mise-env-sample):
+The fastest way to create an environment plugin is to use the [mise-env-plugin-template](https://github.com/jdx/mise-env-plugin-template):
 
 ```bash
 # Clone the template
-git clone https://github.com/jdx/mise-env-sample my-env-plugin
+git clone https://github.com/jdx/mise-env-plugin-template my-env-plugin
 cd my-env-plugin
 
 # Customize for your use case
@@ -416,7 +416,7 @@ See [Plugin Publishing](/plugin-publishing.html) for detailed instructions.
 
 ## Examples
 
-- [mise-env-sample](https://github.com/jdx/mise-env-sample) - Simple example showing basic usage
+- [mise-env-plugin-template](https://github.com/jdx/mise-env-plugin-template) - Template for creating environment plugins
 - The [mise-plugins](https://github.com/mise-plugins) organization currently hosts tool plugins only—add your environment plugin there (or share it with the community) so others can learn from more examples
 
 ## Migration from Tool Plugins
