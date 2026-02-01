@@ -63,6 +63,8 @@ fn install_require(lua: &Lua) -> mlua::Result<()> {
         if let Ok(preload) = lua.globals().get::<Table>("_PRELOAD")
             && let Ok(loader) = preload.get::<mlua::Function>(&*name)
         {
+            // Set sentinel before calling loader to prevent circular dependency recursion
+            loaded.set(name.as_str(), true)?;
             let module: mlua::Value = loader.call(())?;
             let store = if module == mlua::Value::Nil {
                 mlua::Value::Boolean(true)
@@ -79,6 +81,8 @@ fn install_require(lua: &Lua) -> mlua::Result<()> {
                 if std::path::Path::new(&file_path).exists() {
                     let code = std::fs::read_to_string(&file_path)
                         .map_err(mlua::ExternalError::into_lua_err)?;
+                    // Set sentinel before loading to prevent circular dependency recursion
+                    loaded.set(name.as_str(), true)?;
                     let module: mlua::Value =
                         lua.load(&code).set_name(format!("={}", file_path)).eval()?;
                     let store = if module == mlua::Value::Nil {

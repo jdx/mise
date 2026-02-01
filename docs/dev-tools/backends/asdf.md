@@ -39,14 +39,14 @@ need to set env vars other than `PATH`.
 
 If you're migrating an asdf plugin to vfox, use this mapping:
 
-| asdf Script                    | vfox Hook                         | Notes                                 |
-| ------------------------------ | --------------------------------- | ------------------------------------- |
-| `bin/list-all`                 | `Available`                       | Returns structured version tables     |
-| `bin/download` + `bin/install` | `PreInstall` + `PostInstall`      | Separates URL resolution from install |
-| `bin/exec-env`                 | `EnvKeys`                         | Returns structured key-value pairs    |
-| `bin/parse-legacy-file`        | `ParseLegacyFile`                 | Same concept                          |
-| `bin/list-legacy-filenames`    | `legacyFilenames` in metadata.lua | Declarative                           |
-| `bin/list-bin-paths`           | `EnvKeys` (PATH entries)          | Handled via PATH in EnvKeys           |
+| asdf Script                    | vfox Hook                         | Notes                                                                                |
+| ------------------------------ | --------------------------------- | ------------------------------------------------------------------------------------ |
+| `bin/list-all`                 | `Available`                       | Returns structured version tables                                                    |
+| `bin/download` + `bin/install` | `PreInstall` + `PostInstall`      | `PreInstall` returns a URL for mise to download; `PostInstall` runs after extraction |
+| `bin/exec-env`                 | `EnvKeys`                         | Returns structured env vars and PATH entries                                         |
+| `bin/parse-legacy-file`        | `ParseLegacyFile`                 | Same concept                                                                         |
+| `bin/list-legacy-filenames`    | `legacyFilenames` in metadata.lua | Declarative                                                                          |
+| `bin/list-bin-paths`           | `EnvKeys`                         | PATH entries are also provided via the EnvKeys hook                                  |
 
 ## Writing asdf (legacy) plugins for mise
 

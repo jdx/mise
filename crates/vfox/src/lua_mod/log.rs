@@ -9,7 +9,7 @@ fn values_to_string(lua: &Lua, args: Variadic<Value>) -> Result<String> {
         .map(|v| {
             tostring
                 .call::<String>(v)
-                .unwrap_or_else(|_| "?".to_string())
+                .unwrap_or_else(|_| "<error converting value>".to_string())
         })
         .collect();
     Ok(parts.join("\t"))

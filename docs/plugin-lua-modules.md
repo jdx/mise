@@ -789,9 +789,13 @@ mise [INFO] [my-plugin] Installing version 1.0.0
 
 `print()` is overridden to route through `info!()` level logging. This means:
 
-- `print()` output goes to stderr instead of stdout
+- `print()` output goes to stderr instead of stdout (unlike standard Lua)
 - Messages are prefixed with `[plugin_name]`
 - Output respects log level filtering
+
+::: warning
+This differs from standard Lua where `print()` writes to stdout. Plugins should not rely on `print()` for stdout output — use the `cmd` module or `io.popen` if you need to produce stdout output.
+:::
 
 ```lua
 -- These are equivalent:

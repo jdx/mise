@@ -66,26 +66,41 @@ fn setup_os(lua: &Lua) -> mlua::Result<()> {
 
 /// File handle userdata for io.open
 struct FileHandle {
-    content: String,
-    /// Position for reading
-    _path: String,
+    content: Option<String>,
+    path: String,
+    /// Accumulated write buffer (populated in write mode)
+    write_buf: std::cell::RefCell<Option<String>>,
 }
 
 impl UserData for FileHandle {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("read", |_lua, this, mode: String| {
-            if mode == "*a" || mode == "*all" {
-                Ok(Some(this.content.clone()))
-            } else if mode == "*l" || mode == "*line" {
-                // Read first line
-                Ok(this.content.lines().next().map(|s| s.to_string()))
+            if let Some(content) = &this.content {
+                if mode == "*a" || mode == "*all" {
+                    Ok(Some(content.clone()))
+                } else if mode == "*l" || mode == "*line" {
+                    Ok(content.lines().next().map(|s| s.to_string()))
+                } else {
+                    Ok(Some(content.clone()))
+                }
             } else {
-                Ok(Some(this.content.clone()))
+                Ok(None)
             }
         });
-        methods.add_method("close", |_lua, _this, ()| Ok(()));
-        methods.add_method("write", |_lua, _this, _data: String| {
-            // Writing not supported in this shim
+        methods.add_method("close", |_lua, this, ()| {
+            // Flush write buffer to disk on close
+            if let Some(buf) = this.write_buf.borrow().as_ref() {
+                std::fs::write(&this.path, buf).into_lua_err()?;
+            }
+            Ok(())
+        });
+        methods.add_method("write", |_lua, this, data: String| {
+            let mut wb = this.write_buf.borrow_mut();
+            if let Some(buf) = wb.as_mut() {
+                buf.push_str(&data);
+            } else {
+                *wb = Some(data);
+            }
             Ok(())
         });
     }
@@ -130,16 +145,38 @@ fn setup_io(lua: &Lua) -> mlua::Result<()> {
     // io.open(path, mode) -> handle, nil | nil, errmsg
     io_table.set(
         "open",
-        lua.create_function(|lua, (path, _mode): (String, Option<String>)| {
-            match std::fs::read_to_string(&path) {
-                Ok(content) => {
-                    let handle = FileHandle {
-                        content,
-                        _path: path,
-                    };
-                    Ok((Value::UserData(lua.create_userdata(handle)?), Value::Nil))
+        lua.create_function(|lua, (path, mode): (String, Option<String>)| {
+            let mode = mode.unwrap_or_else(|| "r".to_string());
+            if mode.contains('w') {
+                // Write mode: create/truncate file, buffer writes until close
+                let handle = FileHandle {
+                    content: None,
+                    path,
+                    write_buf: std::cell::RefCell::new(Some(String::new())),
+                };
+                Ok((Value::UserData(lua.create_userdata(handle)?), Value::Nil))
+            } else if mode.contains('a') {
+                // Append mode: read existing content, buffer writes until close
+                let existing = std::fs::read_to_string(&path).unwrap_or_default();
+                let handle = FileHandle {
+                    content: None,
+                    path,
+                    write_buf: std::cell::RefCell::new(Some(existing)),
+                };
+                Ok((Value::UserData(lua.create_userdata(handle)?), Value::Nil))
+            } else {
+                // Read mode
+                match std::fs::read_to_string(&path) {
+                    Ok(content) => {
+                        let handle = FileHandle {
+                            content: Some(content),
+                            path,
+                            write_buf: std::cell::RefCell::new(None),
+                        };
+                        Ok((Value::UserData(lua.create_userdata(handle)?), Value::Nil))
+                    }
+                    Err(e) => Ok((Value::Nil, Value::String(lua.create_string(e.to_string())?))),
                 }
-                Err(_) => Ok((Value::Nil, Value::Nil)),
             }
         })?,
     )?;
@@ -218,6 +255,41 @@ mod tests {
             local content = f:read("*a")
             f:close()
             assert(content == "hello world", "expected 'hello world', got: " .. tostring(content))
+        })
+        .exec()
+        .unwrap();
+    }
+
+    #[test]
+    fn test_io_open_write() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let filepath = temp_dir.path().join("write_test.txt");
+        let filepath_str = filepath.to_string_lossy().to_string();
+
+        let lua = Lua::new();
+        mod_compat(&lua).unwrap();
+        lua.load(mlua::chunk! {
+            local f = io.open($filepath_str, "w")
+            assert(f ~= nil, "expected file handle for write mode")
+            f:write("hello ")
+            f:write("world")
+            f:close()
+        })
+        .exec()
+        .unwrap();
+
+        let content = std::fs::read_to_string(&filepath).unwrap();
+        assert_eq!(content, "hello world");
+    }
+
+    #[test]
+    fn test_io_open_read_error() {
+        let lua = Lua::new();
+        mod_compat(&lua).unwrap();
+        lua.load(mlua::chunk! {
+            local f, err = io.open("/nonexistent/path/file.txt", "r")
+            assert(f == nil, "expected nil for nonexistent file")
+            assert(err ~= nil, "expected error message")
         })
         .exec()
         .unwrap();
