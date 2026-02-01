@@ -49,7 +49,11 @@ impl FromLua for AvailableVersion {
                     checksum,
                 })
             }
-            _ => panic!("Expected table"),
+            _ => Err(LuaError::FromLuaConversionError {
+                from: value.type_name(),
+                to: "AvailableVersion".to_string(),
+                message: Some("expected table with version field".to_string()),
+            }),
         }
     }
 }

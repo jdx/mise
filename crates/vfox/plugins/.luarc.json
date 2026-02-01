@@ -1,13 +1,14 @@
 {
   "$schema": "https://raw.githubusercontent.com/LuaLS/vscode-lua/master/setting/schema.json",
   "runtime": {
-    "version": "Lua 5.4"
+    "version": "Luau"
   },
   "diagnostics": {
-    "globals": ["PLUGIN", "RUNTIME"],
+    "globals": ["OS_TYPE", "ARCH_TYPE"],
     "disable": ["duplicate-set-field"]
   },
   "workspace": {
-    "checkThirdParty": false
+    "checkThirdParty": false,
+    "library": ["../types"]
   }
 }

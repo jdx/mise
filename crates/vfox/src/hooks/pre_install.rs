@@ -205,7 +205,11 @@ impl FromLua for PreInstall {
                     // addition,
                 })
             }
-            _ => panic!("Expected table"),
+            _ => Err(LuaError::FromLuaConversionError {
+                from: value.type_name(),
+                to: "PreInstall".to_string(),
+                message: Some("expected table with version field".to_string()),
+            }),
         }
     }
 }

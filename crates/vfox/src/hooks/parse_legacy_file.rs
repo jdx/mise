@@ -77,7 +77,11 @@ impl FromLua for ParseLegacyFileResponse {
             Value::Table(table) => Ok(ParseLegacyFileResponse {
                 version: table.get::<Option<String>>("version")?,
             }),
-            _ => panic!("Expected table"),
+            _ => Err(LuaError::FromLuaConversionError {
+                from: value.type_name(),
+                to: "ParseLegacyFileResponse".to_string(),
+                message: Some("expected table with version field".to_string()),
+            }),
         }
     }
 }
