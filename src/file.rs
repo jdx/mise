@@ -474,6 +474,14 @@ pub fn is_executable(path: &Path) -> bool {
 
 #[cfg(windows)]
 pub fn is_executable(path: &Path) -> bool {
+    if has_known_executable_extension(path) {
+        return true;
+    }
+    has_shebang(path)
+}
+
+#[cfg(windows)]
+pub fn has_known_executable_extension(path: &Path) -> bool {
     path.extension().map_or(
         Settings::get()
             .windows_executable_extensions
@@ -487,6 +495,20 @@ pub fn is_executable(path: &Path) -> bool {
             false
         },
     )
+}
+
+/// Check if a file starts with a shebang (#!).
+/// Only reads the first 2 bytes to minimize I/O during task discovery.
+#[cfg(windows)]
+pub fn has_shebang(path: &Path) -> bool {
+    std::fs::File::open(path)
+        .and_then(|mut f| {
+            use std::io::Read;
+            let mut buf = [0u8; 2];
+            f.read_exact(&mut buf)?;
+            Ok(buf == *b"#!")
+        })
+        .unwrap_or(false)
 }
 
 #[cfg(unix)]
