@@ -181,7 +181,7 @@ usage-lib = { version = "2", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }
-mise-interactive-config = { path = "crates/mise-interactive-config" }
+mise-interactive-config = { path = "crates/mise-interactive-config", version = "2026.1.12" }
 walkdir = "2"
 which = "7"
 xx = { version = "2", default-features = false, features = ["glob"] }
