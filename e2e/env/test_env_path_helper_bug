@@ -38,5 +38,3 @@ _mise_hook_precmd
 
 # User's path should still have priority over mise paths
 test "$(tool)" = "system-tool" || exit 1
-
-rm -rf homebrew system .mise.toml

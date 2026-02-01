@@ -39,6 +39,3 @@ assert_contains "mise ls --installed tiny" "3.1.0"
 # Verify dummy failed to install the bad version (should still show 1.0.0)
 assert_contains "mise ls --installed dummy" "1.0.0"
 assert_not_contains "mise ls --installed dummy" "other-dummy"
-
-# Clean up
-rm -f mise.toml

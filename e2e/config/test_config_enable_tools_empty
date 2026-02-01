@@ -25,6 +25,3 @@ assert_contains "mise ls" "tiny"
 # Test with comma-separated list with spaces
 export MISE_ENABLE_TOOLS="tiny, dummy"
 assert_contains "mise ls" "tiny"
-
-# Clean up
-rm mise.toml

@@ -109,6 +109,3 @@ if [[ ! $LINK_TARGET =~ /http-tarballs/ ]]; then
 fi
 
 echo "SUCCESS: All HTTP backend caching tests passed!"
-
-# Clean up
-mise uninstall --all

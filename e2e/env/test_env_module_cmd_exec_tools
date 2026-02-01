@@ -60,6 +60,3 @@ _.test-cmd-tools = { tools = true }
 EOF
 
 assert_contains "mise env -s bash" "TEST_CMD_TOOLS_RESULT='rtx-tiny:"
-
-# Cleanup
-rm -rf "$PLUGIN_DIR"

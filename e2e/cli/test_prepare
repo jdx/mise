@@ -307,6 +307,3 @@ assert_not_contains "mise prepare --list" "custom_sub"
 	assert_contains "mise prepare --list" "custom_sub"
 	assert_not_contains "mise prepare --list" "custom_root"
 )
-
-# Clean up
-rm -rf subproject root_input.txt root_output.txt mise.toml

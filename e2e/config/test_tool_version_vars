@@ -73,6 +73,3 @@ EOF
 
 # This should resolve to 20.11.0
 assert_contains "mise ls node" "20.11.0"
-
-# Cleanup
-rm -f mise.toml

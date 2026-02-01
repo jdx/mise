@@ -34,4 +34,3 @@ echo 'LOCAL_VAR = "local"' >>mise.local.toml
 assert "mise set NEW_VAR=new_value" ""
 assert_contains "cat mise.toml" "NEW_VAR"
 assert_not_contains "cat mise.local.toml" "NEW_VAR"
-rm -f mise.toml mise.local.toml

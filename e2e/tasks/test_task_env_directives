@@ -114,7 +114,3 @@ assert_contains "mise tasks info test-info-display --json" '"_.source = \"env_so
 assert_contains "mise tasks info test-info-display --json" '"TEST_VAR=test_value"'
 
 echo "All task environment directive tests passed!"
-
-# Clean up
-rm -f .env .env.multi .env1 .env2 env_source.sh multi_source.sh source1.sh source2.sh
-rm -rf custom_bin

@@ -44,8 +44,3 @@ assert_fail "mise ls tiny --installed | grep 3.0.0"
 export PATH="$MISE_DATA_DIR/shims:$PATH"
 rtx-tiny && mise current tiny | grep -q "3.0.0"
 assert_contains "mise ls tiny --installed" "3.0.0"
-
-# Clean up
-rm -f mise.toml
-mise use -g --rm tiny
-mise uninstall tiny --all

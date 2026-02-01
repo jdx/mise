@@ -182,6 +182,3 @@ assert_contains "cat mise.toml" 'PROMPT_SECRET = { age = "'
 echo "new-prompt-value" | MISE_EXPERIMENTAL=true mise set --age-encrypt PROMPT_SECRET --prompt
 RESULT=$(MISE_EXPERIMENTAL=true mise set PROMPT_SECRET)
 assert "echo $RESULT" "new-prompt-value"
-
-# Clean up
-rm -f mise.toml age.txt age2.txt ~/.config/mise/age.txt
