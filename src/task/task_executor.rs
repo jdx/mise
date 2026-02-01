@@ -490,18 +490,13 @@ impl TaskExecutor {
         args: &[String],
     ) -> Result<(String, Vec<String>)> {
         let display = file.display().to_string();
-        if is_executable(file) && !Settings::get().use_file_shell_for_executable_tasks {
-            if cfg!(windows) && file.extension().is_some_and(|e| e == "ps1") {
-                let args = vec!["-File".to_string(), display]
-                    .into_iter()
-                    .chain(args.iter().cloned())
-                    .collect_vec();
-                return Ok(("pwsh".to_string(), args));
-            }
+        if !Settings::get().use_file_shell_for_executable_tasks && can_execute_directly(file) {
             return Ok((display, args.to_vec()));
         }
         let shell = task
             .shell()
+            .or_else(|| shell_from_shebang(file))
+            .or_else(|| shell_from_extension(file))
             .unwrap_or(Settings::get().default_file_shell()?);
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
@@ -855,4 +850,56 @@ impl TaskExecutor {
 
         Ok(())
     }
+}
+
+/// Check if a file can be executed directly by the OS without a shell wrapper.
+/// On Unix, this checks the executable permission bit.
+/// On Windows, this checks for a known executable extension (.bat, .ps1, etc.)
+/// — shebang-only files need to be run through a shell.
+fn can_execute_directly(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        // .ps1 files need pwsh -File, they can't be executed directly
+        if path.extension().is_some_and(|e| e == "ps1") {
+            return false;
+        }
+        crate::file::has_known_executable_extension(path)
+    }
+    #[cfg(not(windows))]
+    {
+        is_executable(path)
+    }
+}
+
+/// Determine the shell from a file's extension.
+/// e.g. `.ps1` → `["pwsh", "-File"]`
+fn shell_from_extension(path: &Path) -> Option<Vec<String>> {
+    match path.extension()?.to_str()? {
+        "ps1" => Some(vec!["pwsh".to_string(), "-File".to_string()]),
+        _ => None,
+    }
+}
+
+/// Read the shebang from a file and parse it into a shell command.
+/// e.g. `#!/usr/bin/env bash` → `["bash"]`
+/// e.g. `#!/bin/bash` → `["/bin/bash"]`
+fn shell_from_shebang(path: &Path) -> Option<Vec<String>> {
+    use std::io::{BufRead, BufReader};
+    let f = std::fs::File::open(path).ok()?;
+    let mut reader = BufReader::new(f);
+    let mut first_line = String::new();
+    reader.read_line(&mut first_line).ok()?;
+    let shebang = first_line.strip_prefix("#!")?;
+    let shebang = shebang.strip_prefix("/usr/bin/env -S").unwrap_or(shebang);
+    let shebang = shebang.strip_prefix("/usr/bin/env").unwrap_or(shebang);
+    let mut parts = shebang.split_whitespace();
+    let shell = parts.next()?;
+    // On Windows, convert unix paths like /bin/bash to just the binary name
+    let shell = if cfg!(windows) {
+        shell.rsplit('/').next().unwrap_or(shell)
+    } else {
+        shell
+    };
+    let args: Vec<String> = parts.map(|s| s.to_string()).collect();
+    Some(once(shell.to_string()).chain(args).collect())
 }

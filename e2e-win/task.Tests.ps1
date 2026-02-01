@@ -53,6 +53,15 @@ Write-Output "windows"
         mise run filetask | Select -Last 1 | Should -Be 'mytask'
     }
 
+    It 'executes a shebang task with bash' {
+        # Create a file task with a bash shebang and no extension
+        @"
+#!/usr/bin/env bash
+echo "from-bash"
+"@ | Out-File -FilePath "tasks\shebangtask" -Encoding utf8NoBOM -NoNewline
+        mise run shebangtask | Select -Last 1 | Should -Be 'from-bash'
+    }
+
     It 'executes a task in pwsh' {
         $env:MISE_WINDOWS_EXECUTABLE_EXTENSIONS = "ps1"
         $env:MISE_WINDOWS_DEFAULT_FILE_SHELL_ARGS = "pwsh.exe"
