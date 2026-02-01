@@ -1,5 +1,48 @@
 # Changelog
 
+## [2026.2.0](https://github.com/jdx/mise/compare/v2026.1.12..v2026.2.0) - 2026-02-01
+
+### 🚀 Features
+
+- **(edit)** add interactive config editor (`mise edit`) by @jdx in [#7930](https://github.com/jdx/mise/pull/7930)
+- **(lockfile)** graduate lockfiles from experimental by @jdx in [#7929](https://github.com/jdx/mise/pull/7929)
+- **(task)** add support for usage values in task confirm dialog by @roele in [#7924](https://github.com/jdx/mise/pull/7924)
+- **(task)** improve source freshness checking with edge case handling by @jdx in [#7932](https://github.com/jdx/mise/pull/7932)
+
+### 🐛 Bug Fixes
+
+- **(activate)** preserve ordering of paths appended after mise activate by @jdx in [#7919](https://github.com/jdx/mise/pull/7919)
+- **(install)** sort failed installations for deterministic error output by @jdx in [#7936](https://github.com/jdx/mise/pull/7936)
+- **(lockfile)** preserve URL and prefer sha256 when merging platform info by @jdx in [#7923](https://github.com/jdx/mise/pull/7923)
+- **(lockfile)** add atomic writes and cache invalidation by @jdx in [#7927](https://github.com/jdx/mise/pull/7927)
+- **(templates)** use sha256 for hash filter instead of blake3 by @jdx in [#7925](https://github.com/jdx/mise/pull/7925)
+- **(upgrade)** respect tracked configs when pruning old versions by @jdx in [#7926](https://github.com/jdx/mise/pull/7926)
+
+### 🚜 Refactor
+
+- **(progress)** migrate from indicatif to clx by @jdx in [#7928](https://github.com/jdx/mise/pull/7928)
+
+### 📚 Documentation
+
+- improve clarity on uvx and pipx dependencies by @ygormutti in [#7878](https://github.com/jdx/mise/pull/7878)
+
+### ⚡ Performance
+
+- **(install)** use Kahn's algorithm for dependency scheduling by @jdx in [#7933](https://github.com/jdx/mise/pull/7933)
+- use Aho-Corasick for efficient redaction by @jdx in [#7931](https://github.com/jdx/mise/pull/7931)
+
+### 🧪 Testing
+
+- remove flaky test_http_version_list test by @jdx in [#7934](https://github.com/jdx/mise/pull/7934)
+
+### Chore
+
+- use github backend instead of ubi in mise.lock by @jdx in [#7922](https://github.com/jdx/mise/pull/7922)
+
+### New Contributors
+
+- @ygormutti made their first contribution in [#7878](https://github.com/jdx/mise/pull/7878)
+
 ## [2026.1.12](https://github.com/jdx/mise/compare/v2026.1.11..v2026.1.12) - 2026-01-31
 
 ### 🐛 Bug Fixes
