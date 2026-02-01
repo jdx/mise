@@ -147,6 +147,7 @@ backend = "aqua:LuaLS/lua-language-server"
 [[tools.luau]]
 version = "0.707"
 backend = "aqua:luau-lang/luau"
+"platforms.linux-x64" = { checksum = "sha256:328e3868150ed67d5c03194a37d8e36156d8cc85961004c98a975f4ecd096e5c", url = "https://github.com/luau-lang/luau/releases/download/0.707/luau-ubuntu.zip"}
 
 [[tools.node]]
 version = "24.13.0"
@@ -268,6 +269,7 @@ backend = "aqua:getsops/sops"
 [[tools.stylua]]
 version = "2.3.1"
 backend = "aqua:JohnnyMorganz/StyLua"
+"platforms.linux-x64" = { checksum = "sha256:1b3ca3f577e584e19a0ad2264a0ab87f4133818e35700a094416ca98251ffb4a", url = "https://github.com/JohnnyMorganz/StyLua/releases/download/v2.3.1/stylua-linux-x86_64-musl.zip"}
 
 [[tools.taplo]]
 version = "0.10.0"

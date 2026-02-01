@@ -214,14 +214,14 @@ fn collect_plugin_files(plugin_dir: &Path) -> PluginFiles {
         for entry in fs::read_dir(&hooks_dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
-            if let Some(ext) = path.extension() {
-                if ext == "lua" || ext == "luau" {
-                    let name = path.file_stem().unwrap().to_string_lossy().to_string();
-                    let filename = path.file_name().unwrap().to_string_lossy().to_string();
-                    // .luau takes precedence over .lua
-                    if ext == "luau" || !hook_names.contains_key(&name) {
-                        hook_names.insert(name, filename);
-                    }
+            if let Some(ext) = path.extension()
+                && (ext == "lua" || ext == "luau")
+            {
+                let name = path.file_stem().unwrap().to_string_lossy().to_string();
+                let filename = path.file_name().unwrap().to_string_lossy().to_string();
+                // .luau takes precedence over .lua
+                if ext == "luau" || !hook_names.contains_key(&name) {
+                    hook_names.insert(name, filename);
                 }
             }
         }
@@ -236,14 +236,14 @@ fn collect_plugin_files(plugin_dir: &Path) -> PluginFiles {
         for entry in fs::read_dir(&lib_dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
-            if let Some(ext) = path.extension() {
-                if ext == "lua" || ext == "luau" {
-                    let name = path.file_stem().unwrap().to_string_lossy().to_string();
-                    let filename = path.file_name().unwrap().to_string_lossy().to_string();
-                    // .luau takes precedence over .lua
-                    if ext == "luau" || !lib_names.contains_key(&name) {
-                        lib_names.insert(name, filename);
-                    }
+            if let Some(ext) = path.extension()
+                && (ext == "lua" || ext == "luau")
+            {
+                let name = path.file_stem().unwrap().to_string_lossy().to_string();
+                let filename = path.file_name().unwrap().to_string_lossy().to_string();
+                // .luau takes precedence over .lua
+                if ext == "luau" || !lib_names.contains_key(&name) {
+                    lib_names.insert(name, filename);
                 }
             }
         }
