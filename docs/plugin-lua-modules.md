@@ -767,11 +767,11 @@ log.error("error message")           -- visible by default
 
 ### Variadic Arguments
 
-All log functions accept multiple arguments of any type. Arguments are converted to strings via `tostring()` and joined with tabs, matching Lua's `print()` behavior:
+All log functions accept multiple arguments of any type. Arguments are converted to strings via `tostring()` and joined with tab characters (`\t`), matching Lua's `print()` behavior:
 
 ```lua
 log.info("version", version, "installed to", path)
--- Output: [plugin-name] version 1.0.0 installed to /path
+-- Output: [plugin-name] version<TAB>1.0.0<TAB>installed to<TAB>/path
 ```
 
 ### Plugin Name Prefix

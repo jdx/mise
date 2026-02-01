@@ -6,7 +6,7 @@ fn values_to_string(lua: &Lua, args: Variadic<Value>) -> Result<String> {
         .iter()
         .map(|v| {
             tostring
-                .call::<String>(v.clone())
+                .call::<String>(v)
                 .unwrap_or_else(|_| "?".to_string())
         })
         .collect();
@@ -24,61 +24,33 @@ fn format_msg(plugin_name: Option<&str>, msg: &str) -> String {
     }
 }
 
+macro_rules! create_log_fn {
+    ($lua:expr, $level:expr) => {
+        $lua.create_function(|lua, args: Variadic<Value>| {
+            if log::log_enabled!($level) {
+                let msg = values_to_string(lua, args)?;
+                let name = get_plugin_name(lua);
+                log::log!($level, "{}", format_msg(name.as_deref(), &msg));
+            }
+            Ok(())
+        })?
+    };
+}
+
 pub fn mod_log(lua: &Lua) -> Result<()> {
     let package: Table = lua.globals().get("package")?;
     let loaded: Table = package.get("loaded")?;
 
     let log_table = lua.create_table()?;
 
-    log_table.set(
-        "trace",
-        lua.create_function(|lua, args: Variadic<Value>| {
-            let msg = values_to_string(lua, args)?;
-            let name = get_plugin_name(lua);
-            log::trace!("{}", format_msg(name.as_deref(), &msg));
-            Ok(())
-        })?,
-    )?;
+    log_table.set("trace", create_log_fn!(lua, log::Level::Trace))?;
+    log_table.set("debug", create_log_fn!(lua, log::Level::Debug))?;
 
-    log_table.set(
-        "debug",
-        lua.create_function(|lua, args: Variadic<Value>| {
-            let msg = values_to_string(lua, args)?;
-            let name = get_plugin_name(lua);
-            log::debug!("{}", format_msg(name.as_deref(), &msg));
-            Ok(())
-        })?,
-    )?;
+    let info_fn = create_log_fn!(lua, log::Level::Info);
+    log_table.set("info", info_fn.clone())?;
 
-    log_table.set(
-        "info",
-        lua.create_function(|lua, args: Variadic<Value>| {
-            let msg = values_to_string(lua, args)?;
-            let name = get_plugin_name(lua);
-            log::info!("{}", format_msg(name.as_deref(), &msg));
-            Ok(())
-        })?,
-    )?;
-
-    log_table.set(
-        "warn",
-        lua.create_function(|lua, args: Variadic<Value>| {
-            let msg = values_to_string(lua, args)?;
-            let name = get_plugin_name(lua);
-            log::warn!("{}", format_msg(name.as_deref(), &msg));
-            Ok(())
-        })?,
-    )?;
-
-    log_table.set(
-        "error",
-        lua.create_function(|lua, args: Variadic<Value>| {
-            let msg = values_to_string(lua, args)?;
-            let name = get_plugin_name(lua);
-            log::error!("{}", format_msg(name.as_deref(), &msg));
-            Ok(())
-        })?,
-    )?;
+    log_table.set("warn", create_log_fn!(lua, log::Level::Warn))?;
+    log_table.set("error", create_log_fn!(lua, log::Level::Error))?;
 
     loaded.set("log", log_table.clone())?;
 
@@ -94,15 +66,7 @@ pub fn mod_log(lua: &Lua) -> Result<()> {
     vfox_table.set("log", log_table)?;
 
     // Override print() to route through info!()
-    lua.globals().set(
-        "print",
-        lua.create_function(|lua, args: Variadic<Value>| {
-            let msg = values_to_string(lua, args)?;
-            let name = get_plugin_name(lua);
-            log::info!("{}", format_msg(name.as_deref(), &msg));
-            Ok(())
-        })?,
-    )?;
+    lua.globals().set("print", info_fn)?;
 
     Ok(())
 }
