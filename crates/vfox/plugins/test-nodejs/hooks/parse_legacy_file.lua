@@ -1,8 +1,11 @@
+--!strict
+local Types = require("@lib/types")
+
+local plugin = PLUGIN :: Types.PluginType
+local file = require("file") :: Types.FileModule
+
 --- Parse the legacy file to extract the version
---- @param ctx table See /vfox/ctx.md#ctx-hooks for more information on ctx
---- @return table Version information
-function PLUGIN:ParseLegacyFile(ctx)
-	local file = require("file")
+function plugin:ParseLegacyFile(ctx: { filepath: string }): Types.ParseLegacyFileResult
 	local filepath = ctx.filepath
 
 	if not file.exists(filepath) then

@@ -1,5 +1,10 @@
-function PLUGIN:PostInstall(ctx)
-	local cmd = require("cmd")
+--!strict
+local Types = require("@lib/types")
+
+local plugin = PLUGIN :: Types.PluginType
+local cmd = require("cmd") :: Types.CmdModule
+
+function plugin:PostInstall(ctx: { rootPath: string, runtimeVersion: string, sdkInfo: { [string]: Types.SdkInfo } })
 	--- SDK installation root path
 	local rootPath = ctx.rootPath
 	local _runtimeVersion = ctx.runtimeVersion

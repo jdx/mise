@@ -1,7 +1,10 @@
+--!strict
+local Types = require("@lib/types")
+
+local plugin = PLUGIN :: Types.PluginType
+
 --- Return all available versions provided by this plugin
---- @param ctx table Empty table used as context, for future extension
---- @return table Descriptions of available versions and accompanying tool descriptions
-function PLUGIN:Available(ctx)
+function plugin:Available(_ctx: { args: { string }? }): { Types.AvailableResult }
 	-- Return hardcoded test versions to avoid network calls
 	return {
 		{

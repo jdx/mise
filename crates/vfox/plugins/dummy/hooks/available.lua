@@ -1,10 +1,13 @@
+--!strict
+local Types = require("@lib/types")
+
+local plugin = PLUGIN :: Types.PluginType
+local env = require("env") :: Types.EnvModule
+
 --- Get the available version list.
---- @param ctx table Empty table, no data provided. Always {}.
---- @return table Version list
-function PLUGIN:Available(_ctx)
-	local env = require("env")
-	if env["TEST_VFOX_LOG"] then
-		local log = require("log")
+function plugin:Available(_ctx: { args: { string }? }): { Types.AvailableResult }
+	if (env :: any)["TEST_VFOX_LOG"] then
+		local log = require("log") :: Types.LogModule
 		log.trace("log.trace msg")
 		log.debug("log.debug msg")
 		log.info("log.info msg")

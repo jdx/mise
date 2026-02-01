@@ -1,7 +1,12 @@
+--!strict
+local Types = require("@lib/types")
+
+local plugin = PLUGIN :: Types.PluginType
+
 --- Return environment variables for the tool
---- @param ctx table See /vfox/ctx.md#ctx-hooks for more information on ctx
---- @return table Environment variables
-function PLUGIN:EnvKeys(ctx)
+function plugin:EnvKeys(
+	ctx: { path: string, runtimeVersion: string, sdkInfo: { [string]: Types.SdkInfo }? }
+): { Types.EnvKeyResult }
 	local mainPath = ctx.path
 	return {
 		{
