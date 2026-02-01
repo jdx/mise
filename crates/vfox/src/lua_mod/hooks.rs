@@ -34,11 +34,18 @@ pub const HOOK_FUNCS: [HookFunc; 12] = [
 pub fn mod_hooks(lua: &Lua, root: &Path) -> Result<BTreeSet<&'static str>> {
     let mut hooks = BTreeSet::new();
     for hook in &HOOK_FUNCS {
-        let hook_path = root.join("hooks").join(format!("{}.lua", hook.filename));
-        if hook_path.exists() {
-            lua.load(hook_path).exec()?;
-            hooks.insert(hook.filename);
-        }
+        // Prefer .luau extension, fall back to .lua for compatibility
+        let luau_path = root.join("hooks").join(format!("{}.luau", hook.filename));
+        let lua_path = root.join("hooks").join(format!("{}.lua", hook.filename));
+        let hook_path = if luau_path.exists() {
+            luau_path
+        } else if lua_path.exists() {
+            lua_path
+        } else {
+            continue;
+        };
+        lua.load(hook_path).exec()?;
+        hooks.insert(hook.filename);
     }
     Ok(hooks)
 }

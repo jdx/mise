@@ -174,10 +174,14 @@ impl Plugin {
             lua_mod::setup_require(&self.lua)?;
 
             // For filesystem plugins, set search paths for require
+            // Prefer .luau extension, fall back to .lua for compatibility
             if let PluginSource::Filesystem(dir) = &self.source {
                 let paths = [
+                    dir.join("?.luau"),
                     dir.join("?.lua"),
+                    dir.join("hooks/?.luau"),
                     dir.join("hooks/?.lua"),
+                    dir.join("lib/?.luau"),
                     dir.join("lib/?.lua"),
                 ]
                 .iter()
