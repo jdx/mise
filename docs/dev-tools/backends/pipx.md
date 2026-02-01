@@ -23,9 +23,9 @@ The code for this is inside of the mise repository at [`./src/backend/pipx.rs`](
 
 ## Dependencies
 
-This relies on having `uvx` (recommended) or `pipx` installed.
+This relies on having `uv` (recommended) or `pipx` installed.
 
-If you have `uv` installed, `uvx` is installed along with it and you don't need to install `pipx` to run the commands containing "pipx:".
+If you have `uv` installed, mise will use `uv tool install` under the hood and you don't need to install `pipx` to run the commands containing "pipx:".
 
 In case you need `pipx` for other reasons, you can install it with or without mise.
 Here is how to install `pipx` with mise:
