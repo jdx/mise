@@ -25,5 +25,3 @@ preinstall = 'echo PREINSTALL'
 EOF
 
 assert_not_contains "mise i dummy 2>&1" "PREINSTALL"
-
-rm -f mise.toml

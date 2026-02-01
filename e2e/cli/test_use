@@ -115,4 +115,3 @@ assert_contains "mise use dummy@system" "mise ~/.config/mise/config.toml tools: 
 assert_contains "mise use --path mise.path.toml dummy@1" "dummy@1."
 assert "cat mise.path.toml" '[tools]
 dummy = "1"'
-rm mise.path.toml

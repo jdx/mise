@@ -108,7 +108,3 @@ mise install node@20.18.0
 # Verify the installation worked
 assert_contains "mise x -- node --version" "v20.18.0"
 assert_contains "mise x -- npm --version" "10.8.2"
-
-# Clean up
-unset MISE_NODE_REPO MISE_NODE_OVERRIDE_REPO
-rm -rf build-tools custom-node-plugin

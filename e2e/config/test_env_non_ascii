@@ -19,6 +19,3 @@ assert "mise env"
 # Test 3: Test with actual command that was reported in bug
 # This should not panic (may fail due to network but shouldn't panic)
 mise ls-remote bun >/dev/null 2>&1 || true
-
-# Cleanup
-unset SOME_VAR_WITH_UNICODE HOMEBREW_INSTALL_BADGE MISE_NODE_VERSION MISE_PYTHON_VERSION

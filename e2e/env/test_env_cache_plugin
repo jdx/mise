@@ -97,7 +97,3 @@ else
 	echo "FAILURE: Expected counter to be 2 after config change, got $FOURTH_COUNT"
 	exit 1
 fi
-
-# Cleanup
-rm -rf "$PLUGIN_DIR"
-rm -f "$COUNTER_FILE"

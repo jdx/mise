@@ -52,7 +52,3 @@ assert_contains "mise ls --installed tiny" "3.1.0"
 
 # Verify the invalid tool was not installed
 assert_not_contains "mise ls --installed jq" "999.999.999"
-
-# Clean up
-mise uninstall tiny --all 2>/dev/null || true
-mise uninstall jq --all 2>/dev/null || true

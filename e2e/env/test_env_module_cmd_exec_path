@@ -67,6 +67,3 @@ EOF
 
 # Run mise env and check that the plugin found and executed the tool
 assert_contains "mise env -s bash" "TEST_CMD_EXEC_RESULT=tool_output_value"
-
-# Cleanup
-rm -rf "$PLUGIN_DIR" "$TOOL_BIN_DIR"

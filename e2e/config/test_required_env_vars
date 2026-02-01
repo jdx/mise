@@ -66,7 +66,3 @@ if mise env 2>error2.log; then
 fi
 
 assert_contains "cat error2.log" "Required environment variable 'REQUIRED_VAR5' is not defined"
-
-# Cleanup
-rm -f mise.toml mise.local.toml error.log error2.log
-unset REQUIRED_VAR1 REQUIRED_VAR2 REQUIRED_VAR3 REQUIRED_VAR4 REQUIRED_VAR5

@@ -9,4 +9,3 @@ mise uninstall age
 
 MISE_DISABLE_BACKENDS=aqua mise install age
 ls "$MISE_DATA_DIR/plugins/age"
-mise uninstall age

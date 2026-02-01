@@ -57,7 +57,3 @@ export MISE_INSTALL_BEFORE="90d"
 mise install tiny@latest
 assert_contains "mise ls --installed tiny" "3.1.0"
 unset MISE_INSTALL_BEFORE
-
-# Clean up
-mise uninstall tiny --all 2>/dev/null || true
-rm -f mise.toml .tool-versions
