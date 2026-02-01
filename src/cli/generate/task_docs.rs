@@ -63,9 +63,30 @@ impl TaskDocs {
         if let Some(output) = &self.output {
             if self.multi {
                 if output.is_dir() {
-                    for (i, task) in tasks.iter().filter(|t| !t.hide).enumerate() {
-                        let path = output.join(format!("{i}.md"));
-                        file::write(&path, &task.render_markdown(&config).await?)?;
+                    let visible_tasks: Vec<_> = tasks.iter().filter(|t| !t.hide).collect();
+                    let mut index = if self.index {
+                        Some(String::from("# Tasks\n\n"))
+                    } else {
+                        None
+                    };
+                    for task in &visible_tasks {
+                        let filename =
+                            format!("{}.md", task.name.replace(':', "-").replace('/', "-"));
+                        file::write(
+                            &output.join(&filename),
+                            &task.render_markdown(&config).await?,
+                        )?;
+                        if let Some(index) = &mut index {
+                            let desc = if task.description.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" - {}", task.description)
+                            };
+                            index.push_str(&format!("- [{}](./{filename}){desc}\n", task.name));
+                        }
+                    }
+                    if let Some(index) = index {
+                        file::write(&output.join("index.md"), &index)?;
                     }
                 } else {
                     return Err(eyre::eyre!(
