@@ -33,7 +33,7 @@ need to set env vars other than `PATH`.
 | Multiple tools per plugin | ❌                          | ✅ (backend plugins)      |
 | Cross-platform lock files | ❌                          | ✅                        |
 | Rolling version checksums | ❌                          | ✅                        |
-| Language                  | Bash                        | Lua 5.1                   |
+| Language                  | Bash                        | Luau                      |
 
 ## Hook Migration: asdf to vfox
 

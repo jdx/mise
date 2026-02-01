@@ -4,6 +4,8 @@ use mlua::Lua;
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use super::get_or_create_loaded;
+
 pub struct HookFunc {
     _name: &'static str,
     pub filename: &'static str,
@@ -44,9 +46,8 @@ pub fn mod_hooks(lua: &Lua, root: &Path) -> Result<BTreeSet<&'static str>> {
 pub fn hooks_embedded(lua: &Lua, embedded: &EmbeddedPlugin) -> Result<BTreeSet<&'static str>> {
     let mut hooks = BTreeSet::new();
 
-    // Get package.loaded table to preload hooks
-    let package: mlua::Table = lua.globals().get("package")?;
-    let loaded: mlua::Table = package.get("loaded")?;
+    // Get _LOADED table to preload hooks
+    let loaded: mlua::Table = get_or_create_loaded(lua)?;
 
     for (hook_name, hook_code) in embedded.hooks {
         // Execute the hook code to define the function

@@ -501,7 +501,14 @@ env.setenv("MY_VAR", "my_value")
 
 ### Get Environment Variable
 
-> To read variables in Lua, use `os.getenv("MY_VAR")`.
+```lua
+local env = require("env")
+
+-- Read environment variable (returns nil if not set)
+local val = env.getenv("MY_VAR")
+```
+
+> `os.getenv("MY_VAR")` also works as a compatibility shim.
 
 ### Path Operations
 
@@ -509,14 +516,14 @@ env.setenv("MY_VAR", "my_value")
 local env = require("env")
 
 -- Get current PATH
-local current_path = os.getenv("PATH")
+local current_path = env.getenv("PATH")
 
 -- Add to PATH
 local new_path = "/usr/local/bin:" .. current_path
 env.setenv("PATH", new_path)
 
 -- Platform-specific PATH separator
-local separator = package.config:sub(1,1) == '\\' and ";" or ":"
+local separator = OS_TYPE == "windows" and ";" or ":"
 local paths = {"/usr/local/bin", "/opt/bin", current_path}
 env.setenv("PATH", table.concat(paths, separator))
 ```
@@ -598,13 +605,9 @@ Any explicit `env` options passed to `cmd.exec()` are merged on top of the inher
 ```lua
 local cmd = require("cmd")
 
--- Cross-platform command execution
-local function is_windows()
-    return package.config:sub(1,1) == '\\'
-end
-
+-- Cross-platform command execution using the OS_TYPE global
 local function get_os_info()
-    if is_windows() then
+    if OS_TYPE == "windows" then
         return cmd.exec("systeminfo")
     else
         return cmd.exec("uname -a")
@@ -872,27 +875,23 @@ end
 
 ### Platform Detection
 
-Handle cross-platform differences:
+Handle cross-platform differences using the `OS_TYPE` and `ARCH_TYPE` globals:
 
 ```lua
 local function get_platform_info()
-    local is_windows = package.config:sub(1,1) == '\\'
     local cmd = require("cmd")
 
-    if is_windows then
+    if OS_TYPE == "windows" then
         return {
             os = "windows",
-            arch = os.getenv("PROCESSOR_ARCHITECTURE") or "x64",
+            arch = ARCH_TYPE,
             path_sep = "\\",
             env_sep = ";"
         }
     else
-        local uname = cmd.exec("uname -s"):lower()
-        local arch = cmd.exec("uname -m")
-
         return {
-            os = uname,
-            arch = arch,
+            os = OS_TYPE,
+            arch = ARCH_TYPE,
             path_sep = "/",
             env_sep = ":"
         }

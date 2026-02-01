@@ -316,12 +316,10 @@ end
 Use cross-platform path handling:
 
 ```lua
-local function join_path(...)
-    local sep = package.config:sub(1,1) -- Get OS path separator
-    return table.concat({...}, sep)
-end
+local file = require("file")
 
-local bin_path = join_path(install_path, "bin")
+-- Use the built-in file.join_path for cross-platform path joining
+local bin_path = file.join_path(install_path, "bin")
 ```
 
 ### Cross-Platform Commands

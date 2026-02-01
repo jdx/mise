@@ -1,8 +1,9 @@
 use mlua::{ExternalResult, Lua, LuaSerdeExt, Result, Table, Value};
 
+use super::get_or_create_loaded;
+
 pub fn mod_json(lua: &Lua) -> Result<()> {
-    let package: Table = lua.globals().get("package")?;
-    let loaded: Table = package.get("loaded")?;
+    let loaded: Table = get_or_create_loaded(lua)?;
     loaded.set(
         "json",
         lua.create_table_from(vec![
