@@ -27,7 +27,7 @@ fn setup_os(lua: &Lua) -> mlua::Result<()> {
         "remove",
         lua.create_function(|_lua, path: String| {
             std::fs::remove_file(&path).into_lua_err()?;
-            Ok(())
+            Ok(true)
         })?,
     )?;
 
@@ -35,7 +35,7 @@ fn setup_os(lua: &Lua) -> mlua::Result<()> {
         "rename",
         lua.create_function(|_lua, (old, new): (String, String)| {
             std::fs::rename(&old, &new).into_lua_err()?;
-            Ok(())
+            Ok(true)
         })?,
     )?;
 

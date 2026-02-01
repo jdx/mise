@@ -65,14 +65,23 @@ fn install_require(lua: &Lua) -> mlua::Result<()> {
         {
             // Set sentinel before calling loader to prevent circular dependency recursion
             loaded.set(name.as_str(), true)?;
-            let module: mlua::Value = loader.call(())?;
-            let store = if module == mlua::Value::Nil {
-                mlua::Value::Boolean(true)
-            } else {
-                module.clone()
-            };
-            loaded.set(name.as_str(), store.clone())?;
-            return Ok(store);
+            let result: mlua::Result<mlua::Value> = loader.call(());
+            match result {
+                Ok(module) => {
+                    let store = if module == mlua::Value::Nil {
+                        mlua::Value::Boolean(true)
+                    } else {
+                        module.clone()
+                    };
+                    loaded.set(name.as_str(), store.clone())?;
+                    return Ok(store);
+                }
+                Err(e) => {
+                    // Clean up sentinel on failure so subsequent requires can retry
+                    loaded.set(name.as_str(), mlua::Value::Nil)?;
+                    return Err(e);
+                }
+            }
         }
         // 3. Search filesystem paths
         if let Ok(paths) = lua.named_registry_value::<String>("_REQUIRE_PATHS") {
@@ -83,15 +92,24 @@ fn install_require(lua: &Lua) -> mlua::Result<()> {
                         .map_err(mlua::ExternalError::into_lua_err)?;
                     // Set sentinel before loading to prevent circular dependency recursion
                     loaded.set(name.as_str(), true)?;
-                    let module: mlua::Value =
-                        lua.load(&code).set_name(format!("={}", file_path)).eval()?;
-                    let store = if module == mlua::Value::Nil {
-                        mlua::Value::Boolean(true)
-                    } else {
-                        module.clone()
-                    };
-                    loaded.set(name.as_str(), store.clone())?;
-                    return Ok(store);
+                    let result: mlua::Result<mlua::Value> =
+                        lua.load(&code).set_name(format!("={}", file_path)).eval();
+                    match result {
+                        Ok(module) => {
+                            let store = if module == mlua::Value::Nil {
+                                mlua::Value::Boolean(true)
+                            } else {
+                                module.clone()
+                            };
+                            loaded.set(name.as_str(), store.clone())?;
+                            return Ok(store);
+                        }
+                        Err(e) => {
+                            // Clean up sentinel on failure so subsequent requires can retry
+                            loaded.set(name.as_str(), mlua::Value::Nil)?;
+                            return Err(e);
+                        }
+                    }
                 }
             }
         }
