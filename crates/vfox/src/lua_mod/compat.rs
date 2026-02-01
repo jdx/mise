@@ -11,6 +11,7 @@ use std::process::Command;
 pub fn mod_compat(lua: &Lua) -> mlua::Result<()> {
     setup_os(lua)?;
     setup_io(lua)?;
+    setup_package(lua)?;
     Ok(())
 }
 
@@ -23,19 +24,23 @@ fn setup_os(lua: &Lua) -> mlua::Result<()> {
         lua.create_function(|_lua, key: String| Ok(std::env::var(&key).ok()))?,
     )?;
 
+    // os.remove returns true on success, or (nil, errmsg) on failure (Lua 5.1 semantics)
     os_table.set(
         "remove",
-        lua.create_function(|_lua, path: String| {
-            std::fs::remove_file(&path).into_lua_err()?;
-            Ok(true)
+        lua.create_function(|lua, path: String| match std::fs::remove_file(&path) {
+            Ok(()) => Ok((Value::Boolean(true), Value::Nil)),
+            Err(e) => Ok((Value::Nil, Value::String(lua.create_string(e.to_string())?))),
         })?,
     )?;
 
+    // os.rename returns true on success, or (nil, errmsg) on failure (Lua 5.1 semantics)
     os_table.set(
         "rename",
-        lua.create_function(|_lua, (old, new): (String, String)| {
-            std::fs::rename(&old, &new).into_lua_err()?;
-            Ok(true)
+        lua.create_function(|lua, (old, new): (String, String)| {
+            match std::fs::rename(&old, &new) {
+                Ok(()) => Ok((Value::Boolean(true), Value::Nil)),
+                Err(e) => Ok((Value::Nil, Value::String(lua.create_string(e.to_string())?))),
+            }
         })?,
     )?;
 
@@ -209,6 +214,25 @@ fn setup_io(lua: &Lua) -> mlua::Result<()> {
     Ok(())
 }
 
+/// Create the `package` global table with `config` for platform detection.
+/// Luau doesn't have a `package` library, but some existing plugins use
+/// `package.config:sub(1,1) == '\\'` to detect Windows.
+fn setup_package(lua: &Lua) -> mlua::Result<()> {
+    let package_table = lua.create_table()?;
+
+    // package.config format: dir_sep\npath_sep\ntemplate_char\nexec_dir\nignore_char
+    // First char is the directory separator (/ on Unix, \ on Windows)
+    let config = if cfg!(target_os = "windows") {
+        "\\\n;\n?\n!\n-"
+    } else {
+        "/\n:\n?\n!\n-"
+    };
+    package_table.set("config", config)?;
+
+    lua.globals().set("package", package_table)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -304,6 +328,90 @@ mod tests {
             local result = handle:read("*a")
             handle:close()
             assert(result:find("hello") ~= nil, "expected hello in output, got: " .. tostring(result))
+        })
+        .exec()
+        .unwrap();
+    }
+
+    #[test]
+    fn test_package_config() {
+        let lua = Lua::new();
+        mod_compat(&lua).unwrap();
+        lua.load(mlua::chunk! {
+            assert(package ~= nil, "expected package table")
+            assert(package.config ~= nil, "expected package.config")
+            local sep = package.config:sub(1, 1)
+            -- On Unix it should be /, on Windows it should be backslash
+            assert(sep == "/" or sep == "\\", "expected / or backslash, got: " .. sep)
+        })
+        .exec()
+        .unwrap();
+    }
+
+    #[test]
+    fn test_os_remove_success() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let filepath = temp_dir.path().join("to_delete.txt");
+        let filepath_str = filepath.to_string_lossy().to_string();
+        std::fs::write(&filepath, "test").unwrap();
+
+        let lua = Lua::new();
+        mod_compat(&lua).unwrap();
+        lua.load(mlua::chunk! {
+            local ok, err = os.remove($filepath_str)
+            assert(ok == true, "expected true on success, got: " .. tostring(ok))
+            assert(err == nil, "expected nil error on success")
+        })
+        .exec()
+        .unwrap();
+
+        assert!(!filepath.exists());
+    }
+
+    #[test]
+    fn test_os_remove_error() {
+        let lua = Lua::new();
+        mod_compat(&lua).unwrap();
+        lua.load(mlua::chunk! {
+            local ok, err = os.remove("/nonexistent/path/file.txt")
+            assert(ok == nil, "expected nil on error")
+            assert(err ~= nil, "expected error message")
+        })
+        .exec()
+        .unwrap();
+    }
+
+    #[test]
+    fn test_os_rename_success() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let old_path = temp_dir.path().join("old.txt");
+        let new_path = temp_dir.path().join("new.txt");
+        let old_str = old_path.to_string_lossy().to_string();
+        let new_str = new_path.to_string_lossy().to_string();
+        std::fs::write(&old_path, "test").unwrap();
+
+        let lua = Lua::new();
+        mod_compat(&lua).unwrap();
+        lua.load(mlua::chunk! {
+            local ok, err = os.rename($old_str, $new_str)
+            assert(ok == true, "expected true on success, got: " .. tostring(ok))
+            assert(err == nil, "expected nil error on success")
+        })
+        .exec()
+        .unwrap();
+
+        assert!(!old_path.exists());
+        assert!(new_path.exists());
+    }
+
+    #[test]
+    fn test_os_rename_error() {
+        let lua = Lua::new();
+        mod_compat(&lua).unwrap();
+        lua.load(mlua::chunk! {
+            local ok, err = os.rename("/nonexistent/path/file.txt", "/nonexistent/path/new.txt")
+            assert(ok == nil, "expected nil on error")
+            assert(err ~= nil, "expected error message")
         })
         .exec()
         .unwrap();

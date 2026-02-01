@@ -6,7 +6,7 @@ local env = require("env") :: Types.EnvModule
 
 --- Get the available version list.
 function plugin:Available(_ctx: { args: { string }? }): { Types.AvailableResult }
-	if (env :: any)["TEST_VFOX_LOG"] then
+	if env.getenv("TEST_VFOX_LOG") then
 		local log = require("log") :: Types.LogModule
 		log.trace("log.trace msg")
 		log.debug("log.debug msg")

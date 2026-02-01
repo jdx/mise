@@ -52,16 +52,29 @@ pub(crate) fn get_or_create_loaded(lua: &Lua) -> mlua::Result<Table> {
 /// Install the custom `require` function into the Lua globals.
 fn install_require(lua: &Lua) -> mlua::Result<()> {
     let require_fn = lua.create_function(|lua, name: String| {
+        // Resolve @lib alias (used in .luaurc for Luau type checking)
+        // @lib/foo -> foo (for preload) or lib/foo (for filesystem)
+        let preload_name = if let Some(suffix) = name.strip_prefix("@lib/") {
+            suffix.to_string()
+        } else {
+            name.clone()
+        };
+        let fs_name = if let Some(suffix) = name.strip_prefix("@lib/") {
+            format!("lib/{}", suffix)
+        } else {
+            name.clone()
+        };
+
         let loaded: Table = lua.globals().get("_LOADED")?;
-        // 1. Check cache
+        // 1. Check cache (use original name for cache key)
         if let Ok(module) = loaded.get::<mlua::Value>(&*name)
             && module != mlua::Value::Nil
         {
             return Ok(module);
         }
-        // 2. Check preload
+        // 2. Check preload (use preload_name for lookup, original name for cache)
         if let Ok(preload) = lua.globals().get::<Table>("_PRELOAD")
-            && let Ok(loader) = preload.get::<mlua::Function>(&*name)
+            && let Ok(loader) = preload.get::<mlua::Function>(&*preload_name)
         {
             // Set sentinel before calling loader to prevent circular dependency recursion
             loaded.set(name.as_str(), true)?;
@@ -83,10 +96,10 @@ fn install_require(lua: &Lua) -> mlua::Result<()> {
                 }
             }
         }
-        // 3. Search filesystem paths
+        // 3. Search filesystem paths (use fs_name for path, original name for cache)
         if let Ok(paths) = lua.named_registry_value::<String>("_REQUIRE_PATHS") {
             for template in paths.split(';') {
-                let file_path = template.replace('?', &name);
+                let file_path = template.replace('?', &fs_name);
                 if std::path::Path::new(&file_path).exists() {
                     let code = std::fs::read_to_string(&file_path)
                         .map_err(mlua::ExternalError::into_lua_err)?;
