@@ -110,7 +110,7 @@ hex = "0.4"
 humansize = "2"
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
-indicatif = { version = "0.18", features = ["improved_unicode"] }
+clx = "1"
 indoc = "2"
 itertools = "0.14"
 jiff = "0.2"

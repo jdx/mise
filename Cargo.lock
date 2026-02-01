@@ -1280,6 +1280,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cbd0f76e066e64fdc5631e3bb46381254deab9ef1158292f27c8c57e3bf3fe59"
 
 [[package]]
+name = "clx"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fd84e27faf914a0353eab8ac31ca3c8d719a493f46ff884f4b4eb5a5d7f34d0"
+dependencies = [
+ "console 0.16.2",
+ "nix 0.31.1",
+ "serde",
+ "serde_json",
+ "strum",
+ "tera",
+ "thiserror 2.0.18",
+ "unicode-width 0.2.2",
+]
+
+[[package]]
 name = "cmake"
 version = "0.1.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3778,7 +3794,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68df315d2857b2d8d2898be54a85e1d001bbbe0dbb5f8ef847b48dd3a23c4527"
 dependencies = [
  "cfg-if",
- "nix",
+ "nix 0.30.1",
  "widestring",
  "windows 0.61.3",
 ]
@@ -4282,20 +4298,6 @@ dependencies = [
  "number_prefix",
  "portable-atomic",
  "unicode-width 0.2.2",
- "web-time",
-]
-
-[[package]]
-name = "indicatif"
-version = "0.18.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9375e112e4b463ec1b1c6c011953545c65a30164fbab5b581df32b3abf0dcb88"
-dependencies = [
- "console 0.16.2",
- "portable-atomic",
- "unicode-segmentation",
- "unicode-width 0.2.2",
- "unit-prefix",
  "web-time",
 ]
 
@@ -5048,6 +5050,7 @@ dependencies = [
  "ci_info",
  "clap",
  "clap-sort",
+ "clx",
  "color-eyre",
  "color-print",
  "comfy-table",
@@ -5077,7 +5080,6 @@ dependencies = [
  "ignore",
  "indenter",
  "indexmap 2.13.0",
- "indicatif 0.18.3",
  "indoc",
  "insta",
  "itertools 0.14.0",
@@ -5090,7 +5092,7 @@ dependencies = [
  "mise-interactive-config",
  "mockito",
  "netrc-rs",
- "nix",
+ "nix 0.30.1",
  "num_cpus",
  "number_prefix",
  "once_cell",
@@ -5278,6 +5280,18 @@ name = "nix"
 version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "74523f3a35e05aba87a1d978330aef40f67b0304ac79c1c00b294c9830543db6"
+dependencies = [
+ "bitflags",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+]
+
+[[package]]
+name = "nix"
+version = "0.31.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "225e7cfe711e0ba79a68baeddb2982723e4235247aefce1482f2f16c27865b66"
 dependencies = [
  "bitflags",
  "cfg-if",
@@ -6046,15 +6060,15 @@ dependencies = [
 
 [[package]]
 name = "portable-atomic"
-version = "1.13.0"
+version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f89776e4d69bb58bc6993e99ffa1d11f228b839984854c7daeb5d37f87cbe950"
+checksum = "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49"
 
 [[package]]
 name = "portable-atomic-util"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8a2f0d8d040d7848a709caf78912debcc3f33ee4b3cac47d73d1e1069e83507"
+checksum = "7a9db96d7fa8782dd8c15ce32ffe8680bbd1e978a43bf51a34d39483540495f5"
 dependencies = [
  "portable-atomic",
 ]
@@ -7171,7 +7185,7 @@ dependencies = [
  "either",
  "flate2",
  "hyper 1.8.1",
- "indicatif 0.17.11",
+ "indicatif",
  "log",
  "quick-xml",
  "regex",
@@ -7682,9 +7696,9 @@ checksum = "b2aa850e253778c88a04c3d7323b043aeda9d3e30d5971937c1855769763678e"
 
 [[package]]
 name = "slab"
-version = "0.4.11"
+version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a2ae44ef20feb57a68b23d846850f861394c2e02dc425a50098ae8c90267589"
+checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "slug"
@@ -8642,12 +8656,6 @@ name = "unicode-xid"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
-
-[[package]]
-name = "unit-prefix"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81e544489bf3d8ef66c953931f56617f423cd4b5494be343d9b9d3dda037b9a3"
 
 [[package]]
 name = "universal-hash"
