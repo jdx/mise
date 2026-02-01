@@ -56,6 +56,10 @@ HTTP backend type to use
 
 **Default:** `http`
 
+### `--lock`
+
+Resolve and embed lockfile data (exact version + platform URLs/checksums) into an existing stub file for reproducible installs without runtime API calls
+
 ### `--platform-bin… <PLATFORM_BIN>`
 
 Platform-specific binary paths in the format platform:path
@@ -130,4 +134,11 @@ $ mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --b
 
 Generate a bootstrap stub with a pinned mise version:
 $ mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --bootstrap --bootstrap-version 2025.1.0
+
+Lock an existing tool stub with pinned version and platform URLs/checksums:
+$ mise generate tool-stub ./bin/node --lock
+
+Bump the version in a locked stub:
+$ mise generate tool-stub ./bin/node --lock --version 22
+# Resolves the latest node 22.x, pins it, and updates platform URLs/checksums
 ```
