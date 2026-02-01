@@ -510,18 +510,17 @@ async fn execute_with_tool_request(
     toolset.resolve(config).await?;
 
     // Inject lock data from stub into tool versions
+    // The toolset contains only the single tool from this stub, so apply to all versions
     if let Some(lock) = &stub.lock {
         for (_ba, tvl) in toolset.versions.iter_mut() {
             for tv in &mut tvl.versions {
-                if tv.ba().short == stub.tool_name {
-                    for (platform_key, lock_platform) in &lock.platforms {
-                        let pi = PlatformInfo {
-                            url: lock_platform.url.clone(),
-                            checksum: lock_platform.checksum.clone(),
-                            ..Default::default()
-                        };
-                        tv.lock_platforms.insert(platform_key.clone(), pi);
-                    }
+                for (platform_key, lock_platform) in &lock.platforms {
+                    let pi = PlatformInfo {
+                        url: lock_platform.url.clone(),
+                        checksum: lock_platform.checksum.clone(),
+                        ..Default::default()
+                    };
+                    tv.lock_platforms.insert(platform_key.clone(), pi);
                 }
             }
         }

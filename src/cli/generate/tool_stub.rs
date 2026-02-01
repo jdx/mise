@@ -727,13 +727,9 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
 
         // Reconstruct with shebang
         let toml_content = doc.to_string();
-        if is_bootstrap_stub(&content) {
-            self.wrap_with_bootstrap(&toml_content).await
-        } else {
-            Ok(format!(
-                "#!/usr/bin/env -S mise tool-stub\n\n{toml_content}"
-            ))
-        }
+        Ok(format!(
+            "#!/usr/bin/env -S mise tool-stub\n\n{toml_content}"
+        ))
     }
 
     async fn fetch_checksums(&self) -> Result<String> {
