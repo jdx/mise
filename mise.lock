@@ -274,3 +274,4 @@ backend = "aqua:tamasfe/taplo"
 version = "1.1.1"
 backend = "github:jdx/wait-for-gh-rate-limit"
 "platforms.linux-x64-wait-for-gh-rate-limit" = { checksum = "blake3:35c2fa30b45ee4a1437624f21c36b3a0b03f57c286429f45f7a4f31d83a15ee9"}
+"platforms.macos-arm64" = { checksum = "sha256:266bb0edf065994b5a4b75c91adbae3e94c042ded1de03c00a1673c68409b77e", url = "https://github.com/jdx/wait-for-gh-rate-limit/releases/download/v1.1.1/wait-for-gh-rate-limit-aarch64-apple-darwin.tar.gz", url_api = "https://api.github.com/repos/jdx/wait-for-gh-rate-limit/releases/assets/337588442"}

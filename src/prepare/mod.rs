@@ -136,3 +136,90 @@ pub fn clear_output_stale(path: &PathBuf) {
         set.remove(path);
     }
 }
+
+/// Detect which built-in prepare providers are applicable for a given directory
+///
+/// This checks if the lockfiles/config files for each provider exist.
+pub fn detect_applicable_providers(project_root: &Path) -> Vec<String> {
+    use providers::*;
+    use rule::PrepareProviderConfig;
+
+    let default_config = PrepareProviderConfig::default();
+    let mut applicable = Vec::new();
+
+    // Check each built-in provider
+    let checks: &[(&str, Box<dyn PrepareProvider>)] = &[
+        (
+            "npm",
+            Box::new(NpmPrepareProvider::new(
+                project_root,
+                default_config.clone(),
+            )),
+        ),
+        (
+            "yarn",
+            Box::new(YarnPrepareProvider::new(
+                project_root,
+                default_config.clone(),
+            )),
+        ),
+        (
+            "pnpm",
+            Box::new(PnpmPrepareProvider::new(
+                project_root,
+                default_config.clone(),
+            )),
+        ),
+        (
+            "bun",
+            Box::new(BunPrepareProvider::new(
+                project_root,
+                default_config.clone(),
+            )),
+        ),
+        (
+            "go",
+            Box::new(GoPrepareProvider::new(project_root, default_config.clone())),
+        ),
+        (
+            "pip",
+            Box::new(PipPrepareProvider::new(
+                project_root,
+                default_config.clone(),
+            )),
+        ),
+        (
+            "poetry",
+            Box::new(PoetryPrepareProvider::new(
+                project_root,
+                default_config.clone(),
+            )),
+        ),
+        (
+            "uv",
+            Box::new(UvPrepareProvider::new(project_root, default_config.clone())),
+        ),
+        (
+            "bundler",
+            Box::new(BundlerPrepareProvider::new(
+                project_root,
+                default_config.clone(),
+            )),
+        ),
+        (
+            "composer",
+            Box::new(ComposerPrepareProvider::new(
+                project_root,
+                default_config.clone(),
+            )),
+        ),
+    ];
+
+    for (name, provider) in checks {
+        if provider.is_applicable() {
+            applicable.push(name.to_string());
+        }
+    }
+
+    applicable
+}

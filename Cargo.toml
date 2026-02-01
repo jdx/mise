@@ -1,5 +1,9 @@
 [workspace]
-members = ["crates/vfox", "crates/aqua-registry"]
+members = [
+  "crates/vfox",
+  "crates/aqua-registry",
+  "crates/mise-interactive-config",
+]
 
 [package]
 name = "mise"
@@ -177,6 +181,7 @@ usage-lib = { version = "2", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }
+mise-interactive-config = { path = "crates/mise-interactive-config" }
 walkdir = "2"
 which = "7"
 xx = { version = "2", default-features = false, features = ["glob"] }
