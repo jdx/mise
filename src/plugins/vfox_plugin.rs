@@ -2,6 +2,7 @@ use crate::file::{display_path, remove_all};
 use crate::git::{CloneOptions, Git};
 use crate::http::HTTP;
 use crate::plugins::{Plugin, PluginSource};
+use crate::registry::REGISTRY;
 use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -70,6 +71,20 @@ impl VfoxPlugin {
             .map(|f| f.1)
             .unwrap_or(&self.name);
         vfox_to_url(url)
+    }
+
+    /// Warn if this is an env-only plugin whose name matches a registry entry.
+    fn warn_if_env_plugin_shadows_registry(&self) {
+        let hooks = self.plugin_path.join("hooks");
+        let is_env_only =
+            hooks.join("mise_env.lua").exists() && !hooks.join("available.lua").exists();
+        if is_env_only && REGISTRY.contains_key(self.name.as_str()) {
+            warn!(
+                "plugin '{}' is an env plugin and is shadowing the '{}' registry tool - \
+                consider renaming the plugin or removing it with: mise plugins rm {}",
+                self.name, self.name, self.name
+            );
+        }
     }
 
     pub async fn mise_env(
@@ -206,6 +221,7 @@ impl Plugin for VfoxPlugin {
                 self.repo()
                     .clone(url.as_str(), CloneOptions::default().pr(pr.as_ref()))?;
             }
+            self.warn_if_env_plugin_shadows_registry();
         }
         Ok(())
     }
