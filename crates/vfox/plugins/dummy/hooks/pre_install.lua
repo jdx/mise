@@ -3,9 +3,9 @@
 --- @param ctx {version: string} Context information (version = User-input version)
 --- @return table Version information
 function PLUGIN:PreInstall(ctx)
-    local version = ctx.version
+	local version = ctx.version
 
-    return {
-        version = version,
-    }
+	return {
+		version = version,
+	}
 end

@@ -3,22 +3,21 @@
 --- Note: Be sure to distinguish between environment variable settings for different platforms!
 --- @param ctx {path: string} Context information (path = SDK installation directory)
 function PLUGIN:EnvKeys(ctx)
-    --- this variable is same as ctx.sdkInfo['plugin-name'].path
-    local version_path = ctx.path
-    if RUNTIME.osType == "windows" then
-        return {
-            {
-                key = "PATH",
-                value = version_path
-            },
-        }
-    else
-        return {
-            {
-                key = "PATH",
-                value = version_path .. "/bin"
-            },
-        }
-    end
-
+	--- this variable is same as ctx.sdkInfo['plugin-name'].path
+	local version_path = ctx.path
+	if RUNTIME.osType == "windows" then
+		return {
+			{
+				key = "PATH",
+				value = version_path,
+			},
+		}
+	else
+		return {
+			{
+				key = "PATH",
+				value = version_path .. "/bin",
+			},
+		}
+	end
 end
