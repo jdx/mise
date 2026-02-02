@@ -108,6 +108,7 @@ ARCH_TYPE = ""
 ---@field tool string Tool name
 ---@field version string Version to install
 ---@field install_path string Path where the tool should be installed
+---@field download_path string Path where the tool artifact should be downloaded
 
 ---@class BackendInstallResult
 
