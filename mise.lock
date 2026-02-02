@@ -270,6 +270,10 @@ backend = "aqua:getsops/sops"
 "platforms.windows-x64" = { checksum = "sha256:f3d74d83006954f0d8cf770ad7e5380504270ded5a62f33eb2548ce5461af3b3", url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.amd64.exe"}
 "platforms.windows-x64-baseline" = { checksum = "sha256:f3d74d83006954f0d8cf770ad7e5380504270ded5a62f33eb2548ce5461af3b3", url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.amd64.exe"}
 
+[[tools.stylua]]
+version = "2.3.1"
+backend = "aqua:JohnnyMorganz/StyLua"
+
 [[tools.taplo]]
 version = "0.10.0"
 backend = "aqua:tamasfe/taplo"

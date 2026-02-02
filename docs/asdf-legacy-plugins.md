@@ -1,5 +1,9 @@
 # asdf (Legacy) Plugins
 
+::: warning
+asdf plugins are considered legacy. For new tools, prefer [vfox plugins](/dev-tools/backends/vfox.html) which are written in Lua, work cross-platform (including Windows), and have access to built-in modules. See the [feature comparison](/dev-tools/backends/asdf.html#feature-comparison-asdf-vs-vfox) and [hook migration table](/dev-tools/backends/asdf.html#hook-migration-asdf-to-vfox) for details.
+:::
+
 mise maintains compatibility with the asdf plugin ecosystem through its asdf backend. These plugins are considered legacy because they have limitations compared to mise's modern plugin system.
 
 ## What are asdf (Legacy) Plugins?
@@ -12,7 +16,7 @@ asdf plugins have several limitations compared to mise's modern plugin system:
 
 - **Platform Support**: Only work on Linux and macOS (no Windows support)
 - **Performance**: Shell script execution is slower than mise's native backends
-- **Features**: Limited compared to modern backends like aqua, ubi, or tool/backend plugins
+- **Features**: Limited compared to modern backends like aqua, github, or tool/backend plugins
 - **Maintenance**: Harder to maintain and debug
 - **Security**: Less secure than sandboxed modern backends
 
@@ -20,14 +24,14 @@ asdf plugins have several limitations compared to mise's modern plugin system:
 
 Only use asdf plugins when:
 
-- The tool is not available through modern backends (aqua, ubi, etc.)
+- The tool is not available through modern backends (aqua, github, etc.)
 - You need compatibility with existing asdf workflows
 - The tool requires complex shell-based installation logic that can't be handled by modern backends
 
 **For new tools, consider these alternatives first:**
 
 1. [aqua backend](dev-tools/backends/aqua.md) - Preferred for GitHub releases
-2. [ubi backend](dev-tools/backends/ubi.md) - Simple GitHub/GitLab releases
+2. [github backend](dev-tools/backends/github.md) - Simple GitHub releases
 3. [Language package managers](dev-tools/backends/) - npm, pipx, cargo, gem, etc.
 4. [backend plugins](backend-plugin-development.md) - Enhanced plugins with backend methods
 5. [tool plugins](tool-plugin-development.md) - Hook-based cross-platform plugins
@@ -323,7 +327,7 @@ chmod +x "$ASDF_INSTALL_PATH/bin/tool"
 Consider migrating from asdf plugins to modern alternatives:
 
 1. **Check if tool is available in [aqua registry](https://aquaproj.github.io/aqua-registry/)**
-2. **Use [ubi backend](dev-tools/backends/ubi.md) for simple GitHub releases**
+2. **Use [github backend](dev-tools/backends/github.md) for simple GitHub releases**
 3. **Create a [mise plugin](tool-plugin-development.md) for complex tools** - use the [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) for a quick start
 4. **Use language-specific package managers** (npm, pipx, cargo, gem)
 

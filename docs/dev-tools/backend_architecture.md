@@ -119,13 +119,17 @@ terraform = "aqua:hashicorp/terraform"  # Use aqua backend
 
 ## Backend Capabilities Comparison
 
-| Feature             | Core | npm/pipx/cargo | aqua | ubi | Backend Plugins | Tool Plugins (vfox) | asdf Plugins (legacy) |
-| ------------------- | ---- | -------------- | ---- | --- | --------------- | ------------------- | --------------------- |
-| **Speed**           | ✅   | ⚠️             | ✅   | ✅  | ⚠️              | ⚠️                  | ⚠️                    |
-| **Security**        | ✅   | ⚠️             | ✅   | ⚠️  | ⚠️              | ⚠️                  | ⚠️                    |
-| **Windows Support** | ✅   | ✅             | ✅   | ✅  | ✅              | ✅                  | ❌                    |
-| **Env Var Support** | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ✅                    |
-| **Custom Scripts**  | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ✅                    |
+| Feature                   | Core | npm/pipx/cargo | aqua | ubi | Backend Plugins | Tool Plugins (vfox) | asdf Plugins (legacy) |
+| ------------------------- | ---- | -------------- | ---- | --- | --------------- | ------------------- | --------------------- |
+| **Speed**                 | ✅   | ⚠️             | ✅   | ✅  | ⚠️              | ⚠️                  | ⚠️                    |
+| **Security**              | ✅   | ⚠️             | ✅   | ⚠️  | ⚠️              | ⚠️                  | ⚠️                    |
+| **Windows Support**       | ✅   | ✅             | ✅   | ✅  | ✅              | ✅                  | ❌                    |
+| **Env Var Support**       | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ✅                    |
+| **Custom Scripts**        | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ✅                    |
+| **Built-in Modules**      | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ❌                    |
+| **Security Attestations** | ❌   | ❌             | ✅   | ❌  | ✅              | ✅                  | ❌                    |
+| **Multi-tool Plugins**    | ❌   | ❌             | ❌   | ❌  | ✅              | ❌                  | ❌                    |
+| **Progress/Logging**      | ✅   | ✅             | ✅   | ✅  | ✅              | ✅                  | ❌                    |
 
 ## When to Use Each Backend
 
@@ -151,13 +155,17 @@ Core tools should generally always be used when available, as they provide the b
 - The tool is already available in the [aqua registry](https://github.com/aquaproj/aqua-registry)
 - You're willing to contribute tools to the aqua registry for tools not yet available
 
-### Use **ubi** when
+### Use **github** when
 
-- Installing pre-compiled binaries from GitHub/GitLab releases
+- Installing pre-compiled binaries from GitHub releases
 - The repository follows standard conventions for release tarballs
 - You want zero configuration - no registry setup required
 - You need simple, fast binary installation
 - The tool doesn't require complex build processes or environment setup
+
+::: info
+The `ubi` backend still works but is deprecated in favor of `github`. Replace `ubi:owner/repo` with `github:owner/repo`.
+:::
 
 ### Use **Backend Plugins** when
 

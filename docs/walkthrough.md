@@ -66,7 +66,7 @@ If you leave out the version, then mise will default to `node@latest`.
 
 ## Dev Tool Backends
 
-Tools are installed with a variety of backends like `asdf`, `ubi`, or `vfox`. See [registry](/registry.html) for
+Tools are installed with a variety of backends like `asdf`, `github`, or `vfox`. See [registry](/registry.html) for
 the full list of shorthands like `node` you can use.
 
 You can also use other backends like `npm` or `cargo`
