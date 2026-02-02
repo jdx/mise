@@ -307,8 +307,7 @@ impl<'a> CmdLineRunner<'a> {
             return self.execute_raw();
         }
         let mut cp = self
-            .cmd
-            .spawn()
+            .spawn_with_etxtbsy_retry()
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id();
         RUNNING_PIDS.lock().unwrap().insert(id);
@@ -411,11 +410,40 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     fn execute_raw(mut self) -> Result<()> {
-        let status = self.cmd.spawn()?.wait()?;
+        let status = self.spawn_with_etxtbsy_retry()?.wait()?;
         match status.success() {
             true => Ok(()),
             false => self.on_error(String::new(), status),
         }
+    }
+
+    /// Retry spawning a process if it fails with ETXTBSY (Text file busy).
+    /// This can happen on Linux when executing a binary that was just written/extracted,
+    /// as the file descriptor may not be fully closed yet.
+    fn spawn_with_etxtbsy_retry(&mut self) -> std::io::Result<std::process::Child> {
+        let mut attempt = 0;
+        loop {
+            match self.cmd.spawn() {
+                Ok(child) => return Ok(child),
+                Err(err) if Self::is_etxtbsy(&err) && attempt < 3 => {
+                    attempt += 1;
+                    trace!("retrying spawn after ETXTBSY (attempt {}/3)", attempt);
+                    // Exponential backoff: 50ms, 100ms, 200ms
+                    std::thread::sleep(std::time::Duration::from_millis(50 * (1 << (attempt - 1))));
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    fn is_etxtbsy(err: &std::io::Error) -> bool {
+        err.raw_os_error() == Some(nix::errno::Errno::ETXTBSY as i32)
+    }
+
+    #[cfg(not(unix))]
+    fn is_etxtbsy(_err: &std::io::Error) -> bool {
+        false
     }
 
     fn on_stdout(&self, line: String) {
