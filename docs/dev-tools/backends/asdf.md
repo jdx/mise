@@ -20,32 +20,32 @@ need to set env vars other than `PATH`.
 
 ## Feature Comparison: asdf vs vfox
 
-| Feature | asdf Plugins | vfox Plugins |
-| --- | --- | --- |
-| **Language** | Bash scripts | Lua |
-| **Windows Support** | ❌ | ✅ |
-| **Built-in HTTP module** | ❌ (requires curl) | ✅ |
-| **Built-in JSON module** | ❌ (requires jq) | ✅ |
-| **Built-in HTML parsing** | ❌ | ✅ |
-| **Built-in archive extraction** | ❌ | ✅ |
-| **Built-in semver module** | ❌ | ✅ |
-| **Built-in logging** | ❌ | ✅ |
-| **Post-install hooks** | ❌ | ✅ |
-| **Security attestations** | ❌ | ✅ (cosign, SLSA) |
-| **Multi-tool plugins** | ❌ | ✅ (backend plugins) |
-| **Lock file support** | ❌ | ✅ |
-| **Rolling version checksums** | ❌ | ✅ |
+| Feature                         | asdf Plugins       | vfox Plugins         |
+| ------------------------------- | ------------------ | -------------------- |
+| **Language**                    | Bash scripts       | Lua                  |
+| **Windows Support**             | ❌                 | ✅                   |
+| **Built-in HTTP module**        | ❌ (requires curl) | ✅                   |
+| **Built-in JSON module**        | ❌ (requires jq)   | ✅                   |
+| **Built-in HTML parsing**       | ❌                 | ✅                   |
+| **Built-in archive extraction** | ❌                 | ✅                   |
+| **Built-in semver module**      | ❌                 | ✅                   |
+| **Built-in logging**            | ❌                 | ✅                   |
+| **Post-install hooks**          | ❌                 | ✅                   |
+| **Security attestations**       | ❌                 | ✅ (cosign, SLSA)    |
+| **Multi-tool plugins**          | ❌                 | ✅ (backend plugins) |
+| **Lock file support**           | ❌                 | ✅                   |
+| **Rolling version checksums**   | ❌                 | ✅                   |
 
 ## Hook Migration: asdf to vfox
 
-| asdf Script | vfox Hook | Notes |
-| --- | --- | --- |
-| `bin/list-all` | `Available` | Return structured version objects instead of plain text |
-| `bin/download` | `PreInstall` | Return URL and checksum; mise handles the download |
-| `bin/install` | `PostInstall` | Runs after mise downloads and extracts the tool |
-| `bin/exec-env` | `EnvKeys` | Return structured key/value pairs instead of `export` statements |
-| `bin/list-legacy-filenames` | `PLUGIN.legacyFilenames` | Set in `metadata.lua` instead of a script |
-| `bin/parse-legacy-file` | `ParseLegacyFile` | Return structured result instead of plain text |
+| asdf Script                 | vfox Hook                | Notes                                                            |
+| --------------------------- | ------------------------ | ---------------------------------------------------------------- |
+| `bin/list-all`              | `Available`              | Return structured version objects instead of plain text          |
+| `bin/download`              | `PreInstall`             | Return URL and checksum; mise handles the download               |
+| `bin/install`               | `PostInstall`            | Runs after mise downloads and extracts the tool                  |
+| `bin/exec-env`              | `EnvKeys`                | Return structured key/value pairs instead of `export` statements |
+| `bin/list-legacy-filenames` | `PLUGIN.legacyFilenames` | Set in `metadata.lua` instead of a script                        |
+| `bin/parse-legacy-file`     | `ParseLegacyFile`        | Return structured result instead of plain text                   |
 
 ## Writing asdf (legacy) plugins for mise
 

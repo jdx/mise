@@ -119,17 +119,17 @@ terraform = "aqua:hashicorp/terraform"  # Use aqua backend
 
 ## Backend Capabilities Comparison
 
-| Feature                  | Core | npm/pipx/cargo | aqua | ubi | Backend Plugins | Tool Plugins (vfox) | asdf Plugins (legacy) |
-| ------------------------ | ---- | -------------- | ---- | --- | --------------- | ------------------- | --------------------- |
-| **Speed**                | ✅   | ⚠️             | ✅   | ✅  | ⚠️              | ⚠️                  | ⚠️                    |
-| **Security**             | ✅   | ⚠️             | ✅   | ⚠️  | ⚠️              | ⚠️                  | ⚠️                    |
-| **Windows Support**      | ✅   | ✅             | ✅   | ✅  | ✅              | ✅                  | ❌                    |
-| **Env Var Support**      | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ✅                    |
-| **Custom Scripts**       | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ✅                    |
-| **Built-in Modules**     | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ❌                    |
-| **Security Attestations**| ❌   | ❌             | ✅   | ❌  | ✅              | ✅                  | ❌                    |
-| **Multi-tool Plugins**   | ❌   | ❌             | ❌   | ❌  | ✅              | ❌                  | ❌                    |
-| **Progress/Logging**     | ✅   | ✅             | ✅   | ✅  | ✅              | ✅                  | ❌                    |
+| Feature                   | Core | npm/pipx/cargo | aqua | ubi | Backend Plugins | Tool Plugins (vfox) | asdf Plugins (legacy) |
+| ------------------------- | ---- | -------------- | ---- | --- | --------------- | ------------------- | --------------------- |
+| **Speed**                 | ✅   | ⚠️             | ✅   | ✅  | ⚠️              | ⚠️                  | ⚠️                    |
+| **Security**              | ✅   | ⚠️             | ✅   | ⚠️  | ⚠️              | ⚠️                  | ⚠️                    |
+| **Windows Support**       | ✅   | ✅             | ✅   | ✅  | ✅              | ✅                  | ❌                    |
+| **Env Var Support**       | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ✅                    |
+| **Custom Scripts**        | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ✅                    |
+| **Built-in Modules**      | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ❌                    |
+| **Security Attestations** | ❌   | ❌             | ✅   | ❌  | ✅              | ✅                  | ❌                    |
+| **Multi-tool Plugins**    | ❌   | ❌             | ❌   | ❌  | ✅              | ❌                  | ❌                    |
+| **Progress/Logging**      | ✅   | ✅             | ✅   | ✅  | ✅              | ✅                  | ❌                    |
 
 ## When to Use Each Backend
 
