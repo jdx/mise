@@ -47,6 +47,7 @@ pub struct SettingsLs {
 fn settings_type_to_string(st: &SettingsType) -> String {
     match st {
         SettingsType::Bool => "boolean".to_string(),
+        SettingsType::BoolOrString => "boolean | string".to_string(),
         SettingsType::String => "string".to_string(),
         SettingsType::Integer => "number".to_string(),
         SettingsType::Duration => "number".to_string(),

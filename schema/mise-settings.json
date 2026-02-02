@@ -63,15 +63,32 @@
           "items": {
             "oneOf": [
               {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "minItems": 1,
-                "maxItems": 2
+                "type": "string"
               },
               {
-                "type": "string"
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "oneOf": [
+                      { "type": "string" },
+                      { "type": "boolean" },
+                      { "type": "integer" }
+                    ],
+                    "description": "The enum value"
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "Description of this enum value"
+                  }
+                },
+                "required": ["value"],
+                "additionalProperties": false
               }
             ]
           }
@@ -119,7 +136,8 @@
             "ListString",
             "ListPath",
             "SetString",
-            "IndexMap<String, String>"
+            "IndexMap<String, String>",
+            "BoolOrString"
           ],
           "description": "Type of this setting"
         }

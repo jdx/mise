@@ -10,7 +10,7 @@ use eyre::{Result, bail};
 use indexmap::{IndexMap, indexmap};
 use itertools::Itertools;
 use serde::ser::Error;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serializer};
 use serde_derive::Serialize;
 use std::env::consts::{ARCH, OS};
 use std::fmt::{Debug, Display, Formatter};
@@ -40,6 +40,7 @@ pub enum SettingsType {
     ListPath,
     SetString,
     IndexMap,
+    BoolOrString,
 }
 
 pub struct SettingsMeta {
@@ -70,6 +71,105 @@ pub enum SettingsStatusMissingTools {
     IfOtherVersionsInstalled,
     /// always show the warning if tools are missing
     Always,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PythonUvVenvAuto {
+    #[default]
+    Off,
+    Source,
+    CreateSource,
+    LegacyTrue,
+}
+
+impl PythonUvVenvAuto {
+    pub fn should_source(self) -> bool {
+        matches!(self, Self::Source | Self::CreateSource | Self::LegacyTrue)
+    }
+
+    pub fn should_create(self) -> bool {
+        matches!(self, Self::CreateSource | Self::LegacyTrue)
+    }
+
+    pub fn is_legacy_true(self) -> bool {
+        matches!(self, Self::LegacyTrue)
+    }
+}
+
+impl<'de> Deserialize<'de> for PythonUvVenvAuto {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde::de::{self, Visitor};
+        use std::fmt;
+
+        struct PythonUvVenvAutoVisitor;
+
+        impl<'de> Visitor<'de> for PythonUvVenvAutoVisitor {
+            type Value = PythonUvVenvAuto;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a boolean, \"source\", or \"create|source\"")
+            }
+
+            fn visit_bool<E>(self, value: bool) -> Result<PythonUvVenvAuto, E>
+            where
+                E: de::Error,
+            {
+                if value {
+                    deprecated_at!(
+                        "2026.7.0",
+                        "2027.7.0",
+                        "python.uv_venv_auto.true",
+                        "python.uv_venv_auto=true is deprecated. Use python.uv_venv_auto=\"create|source\" or \"source\" instead."
+                    );
+                }
+                Ok(if value {
+                    PythonUvVenvAuto::LegacyTrue
+                } else {
+                    PythonUvVenvAuto::Off
+                })
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<PythonUvVenvAuto, E>
+            where
+                E: de::Error,
+            {
+                let normalized = value.trim().to_ascii_lowercase();
+                match normalized.as_str() {
+                    "source" => Ok(PythonUvVenvAuto::Source),
+                    "create|source" => Ok(PythonUvVenvAuto::CreateSource),
+                    "true" | "yes" | "1" => self.visit_bool(true),
+                    "false" | "no" | "0" => self.visit_bool(false),
+                    _ => Err(E::invalid_value(de::Unexpected::Str(value), &self)),
+                }
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<PythonUvVenvAuto, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(&value)
+            }
+        }
+
+        deserializer.deserialize_any(PythonUvVenvAutoVisitor)
+    }
+}
+
+impl serde::Serialize for PythonUvVenvAuto {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            PythonUvVenvAuto::Off => serializer.serialize_bool(false),
+            PythonUvVenvAuto::LegacyTrue => serializer.serialize_bool(true),
+            PythonUvVenvAuto::Source => serializer.serialize_str("source"),
+            PythonUvVenvAuto::CreateSource => serializer.serialize_str("create|source"),
+        }
+    }
 }
 
 pub type SettingsPartial = <Settings as Config>::Partial;

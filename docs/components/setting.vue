@@ -36,7 +36,12 @@ defineProps(["setting", "level"]);
       Choices:
       <ul>
         <li v-for="choice in setting.enum">
-          <code>{{ choice[0] }}</code> – {{ choice[1] }}
+          <template v-if="typeof choice === 'object' && choice !== null && 'value' in choice">
+            <code>{{ choice.value }}</code><template v-if="choice.description"> – {{ choice.description }}</template>
+          </template>
+          <template v-else>
+            <code>{{ choice }}</code>
+          </template>
         </li>
       </ul>
     </li>
