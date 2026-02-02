@@ -5,6 +5,7 @@ use mlua::{FromLua, Lua, Table, Value};
 
 use crate::Plugin;
 use crate::error::Result;
+use crate::runtime::Runtime;
 
 impl Plugin {
     pub async fn pre_install(&self, version: &str) -> Result<PreInstall> {
@@ -33,18 +34,22 @@ impl Plugin {
         let ctx = self.context(Some(version.to_string()))?;
         let target_os = os.to_string();
         let target_arch = arch.to_string();
+        let target_runtime = Runtime::with_platform(self.dir.clone(), os, arch);
         let pre_install = self
             .eval_async(chunk! {
                 require "hooks/pre_install"
                 -- Override globals with target platform for cross-platform URL generation
                 local saved_os = OS_TYPE
                 local saved_arch = ARCH_TYPE
+                local saved_runtime = RUNTIME
                 OS_TYPE = $target_os
                 ARCH_TYPE = $target_arch
+                RUNTIME = $target_runtime
                 local result = PLUGIN:PreInstall($ctx)
                 -- Restore original values
                 OS_TYPE = saved_os
                 ARCH_TYPE = saved_arch
+                RUNTIME = saved_runtime
                 return result
             })
             .await?;

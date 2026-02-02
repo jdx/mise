@@ -8,7 +8,7 @@ function PLUGIN:PostInstall(ctx)
 	-- Create bin directory
 	os.execute(string.format('mkdir -p "%s"', binDir))
 
-	if OS_TYPE == "darwin" then
+	if RUNTIME.osType == "darwin" then
 		-- macOS: single binary file was downloaded
 		-- Find the downloaded binary (clickhouse-macos or clickhouse-macos-aarch64)
 		local find_cmd = string.format('ls "%s"/clickhouse-macos* 2>/dev/null | head -1', rootPath)

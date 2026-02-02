@@ -5,7 +5,7 @@ function PLUGIN:PostInstall(ctx)
 	local rootPath = ctx.rootPath
 
 	-- Check if we're on macOS (carthage is macOS only)
-	if OS_TYPE ~= "darwin" then
+	if RUNTIME.osType ~= "darwin" then
 		error("Carthage is only available for macOS")
 	end
 
