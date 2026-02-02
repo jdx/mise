@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Test that tasks are NOT inherited from parent directories
+
+# Create parent directory with tasks
+mkdir -p parent/child
+
+cat <<EOF >parent/mise.toml
+[tasks.parent-task]
+run = "echo parent"
+EOF
+
+cat <<EOF >parent/child/mise.toml
+[tasks.child-task]
+run = "echo child"
+EOF
+
+# In parent directory, parent-task should be visible
+cd parent
+assert_contains "mise tasks" "parent-task"
+
+# In child directory, only child-task should be visible (NOT parent-task)
+cd child
+assert_contains "mise tasks" "child-task"
+
+# parent-task should NOT be visible in child directory
+if mise tasks 2>&1 | grep -q "parent-task"; then
+	fail "parent-task should not be visible in child directory (tasks should not inherit from parents)"
+else
+	ok "parent-task correctly not inherited by child directory"
+fi
