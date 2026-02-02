@@ -17,14 +17,6 @@ mise plugins have access to a comprehensive set of built-in Lua modules that pro
 - **`archiver`** - Archive extraction
 - **`log`** - Structured logging
 
-## Global Variables
-
-The following globals are automatically available in all plugin hooks:
-
-- **`OS_TYPE`**: Operating system type (`"windows"`, `"linux"`, `"darwin"`)
-- **`ARCH_TYPE`**: Architecture (`"amd64"`, `"arm64"`, `"386"`, etc.)
-- **`PLUGIN`**: The plugin object for defining hook methods
-
 ## HTTP Module
 
 The HTTP module provides functionality for making web requests and downloading files.
@@ -567,7 +559,7 @@ if current_path then
 end
 
 -- Platform-specific PATH separator
-local separator = if OS_TYPE == "windows" then ";" else ":"
+local separator = if RUNTIME.osType == "windows" then ";" else ":"
 local paths = { "/usr/local/bin", "/opt/bin", current_path or "" }
 env.setenv("PATH", table.concat(paths, separator))
 ```
@@ -657,7 +649,7 @@ local cmd = require("cmd")
 
 -- Cross-platform command execution
 local function get_os_info(): string
-    if OS_TYPE == "windows" then
+    if RUNTIME.osType == "windows" then
         return cmd.exec("systeminfo")
     else
         return cmd.exec("uname -a")
@@ -961,17 +953,17 @@ type PlatformInfo = {
 }
 
 local function get_platform_info(): PlatformInfo
-    if OS_TYPE == "windows" then
+    if RUNTIME.osType == "windows" then
         return {
             os = "windows",
-            arch = ARCH_TYPE,
+            arch = RUNTIME.archType,
             path_sep = "\\",
             env_sep = ";",
         }
     else
         return {
-            os = OS_TYPE,
-            arch = ARCH_TYPE,
+            os = RUNTIME.osType,
+            arch = RUNTIME.archType,
             path_sep = "/",
             env_sep = ":",
         }

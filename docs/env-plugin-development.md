@@ -100,7 +100,7 @@ Create a `.luaurc` file in your plugin root:
 ```json
 {
   "languageMode": "strict",
-  "globals": ["PLUGIN", "OS_TYPE", "ARCH_TYPE"],
+  "globals": ["PLUGIN", "RUNTIME"],
   "aliases": {
     "@lib": "lib"
   }

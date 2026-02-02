@@ -86,7 +86,7 @@ Create a `.luaurc` file in your plugin root:
 ```json
 {
   "languageMode": "strict",
-  "globals": ["PLUGIN", "OS_TYPE", "ARCH_TYPE"],
+  "globals": ["PLUGIN", "RUNTIME"],
   "aliases": {
     "@lib": "lib"
   }
@@ -455,7 +455,7 @@ local Types = require("@lib/types")
 local cmd = require("cmd") :: Types.CmdModule
 
 local function create_dir(path: string)
-    local mkdir_cmd = if OS_TYPE == "windows" then "mkdir" else "mkdir -p"
+    local mkdir_cmd = if RUNTIME.osType == "windows" then "mkdir" else "mkdir -p"
     cmd.exec(`{mkdir_cmd} {path}`)
 end
 ```
@@ -509,23 +509,17 @@ local plugin = PLUGIN :: Types.PluginType
 
 function plugin:BackendInstall(ctx: Types.BackendInstallContext): Types.BackendInstallResult
     -- Platform-specific installation
-    if OS_TYPE == "darwin" then
+    if RUNTIME.osType == "darwin" then
         -- macOS installation logic
-    elseif OS_TYPE == "linux" then
+    elseif RUNTIME.osType == "linux" then
         -- Linux installation logic
-    elseif OS_TYPE == "windows" then
+    elseif RUNTIME.osType == "windows" then
         -- Windows installation logic
     end
 
     return {}
 end
 ```
-
-Available globals:
-
-- `OS_TYPE`: Operating system type (`"windows"`, `"linux"`, `"darwin"`)
-- `ARCH_TYPE`: Architecture (`"amd64"`, `"arm64"`, `"386"`, etc.)
-- `PLUGIN`: The plugin object for defining hook methods
 
 ### Multiple Environment Variables
 

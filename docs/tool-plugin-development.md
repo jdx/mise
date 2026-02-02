@@ -146,7 +146,7 @@ Create a `.luaurc` file in your plugin root to configure type checking:
 ```json
 {
   "languageMode": "strict",
-  "globals": ["PLUGIN", "OS_TYPE", "ARCH_TYPE"],
+  "globals": ["PLUGIN", "RUNTIME"],
   "aliases": {
     "@lib": "lib"
   }
@@ -325,7 +325,7 @@ function plugin:PostInstall(ctx: { rootPath: string, runtimeVersion: string, sdk
     local path = sdkInfo.path
 
     -- Set executable permissions on Unix systems
-    if OS_TYPE ~= "windows" then
+    if RUNTIME.osType ~= "windows" then
         cmd.exec(`chmod +x {path}/bin/*`)
     end
 
@@ -469,21 +469,21 @@ Create shared functions in the `lib/` directory:
 local M = {}
 
 function M.get_arch(): string
-    if ARCH_TYPE == "amd64" then
+    if RUNTIME.archType == "amd64" then
         return "x64"
-    elseif ARCH_TYPE == "386" then
+    elseif RUNTIME.archType == "386" then
         return "x86"
-    elseif ARCH_TYPE == "arm64" then
+    elseif RUNTIME.archType == "arm64" then
         return "arm64"
     else
-        return ARCH_TYPE
+        return RUNTIME.archType
     end
 end
 
 function M.get_os(): string
-    if OS_TYPE == "windows" then
+    if RUNTIME.osType == "windows" then
         return "win"
-    elseif OS_TYPE == "darwin" then
+    elseif RUNTIME.osType == "darwin" then
         return "darwin"
     else
         return "linux"
@@ -564,27 +564,27 @@ function plugin:PreInstall(ctx: { version: string, runtimeVersion: string }): Ty
 
     -- Determine platform
     local arch_token: string
-    if ARCH_TYPE == "amd64" then
+    if RUNTIME.archType == "amd64" then
         arch_token = "x64"
-    elseif ARCH_TYPE == "386" then
+    elseif RUNTIME.archType == "386" then
         arch_token = "x86"
-    elseif ARCH_TYPE == "arm64" then
+    elseif RUNTIME.archType == "arm64" then
         arch_token = "arm64"
     else
-        arch_token = ARCH_TYPE
+        arch_token = RUNTIME.archType
     end
 
     local os_token: string
-    if OS_TYPE == "windows" then
+    if RUNTIME.osType == "windows" then
         os_token = "win"
-    elseif OS_TYPE == "darwin" then
+    elseif RUNTIME.osType == "darwin" then
         os_token = "darwin"
     else
         os_token = "linux"
     end
 
     local platform = `{os_token}-{arch_token}`
-    local extension = if OS_TYPE == "windows" then "zip" else "tar.gz"
+    local extension = if RUNTIME.osType == "windows" then "zip" else "tar.gz"
 
     -- Build download URL
     local filename = `node-v{version}-{platform}.{extension}`
@@ -639,7 +639,7 @@ function plugin:EnvKeys(ctx: { path: string, runtimeVersion: string, sdkInfo: { 
 
     -- Add npm global modules to PATH
     local npm_global_path = `{mainPath}/lib/node_modules/.bin`
-    if OS_TYPE == "windows" then
+    if RUNTIME.osType == "windows" then
         npm_global_path = `{mainPath}/node_modules/.bin`
     end
 
@@ -667,7 +667,7 @@ function plugin:PostInstall(ctx: { rootPath: string, runtimeVersion: string, sdk
     local path = sdkInfo.path
 
     -- Set executable permissions on Unix systems
-    if OS_TYPE ~= "windows" then
+    if RUNTIME.osType ~= "windows" then
         cmd.exec(`chmod +x {path}/bin/*`)
     end
 
@@ -677,7 +677,7 @@ function plugin:PostInstall(ctx: { rootPath: string, runtimeVersion: string, sdk
 
     -- Configure npm to use local cache
     local npm_cmd = `{path}/bin/npm`
-    if OS_TYPE == "windows" then
+    if RUNTIME.osType == "windows" then
         npm_cmd = `{path}/npm.cmd`
     end
 
@@ -844,7 +844,7 @@ Handle different operating systems properly using the global variables:
 local M = {}
 
 function M.is_windows(): boolean
-    return OS_TYPE == "windows"
+    return RUNTIME.osType == "windows"
 end
 
 function M.get_exe_extension(): string
@@ -857,12 +857,6 @@ end
 
 return M
 ```
-
-**Note:** The following globals are automatically available in all plugin hooks:
-
-- `OS_TYPE`: Operating system type (`"windows"`, `"linux"`, `"darwin"`)
-- `ARCH_TYPE`: Architecture (`"amd64"`, `"arm64"`, `"386"`, etc.)
-- `PLUGIN`: The plugin object for defining hook methods
 
 ### Version Normalization
 
@@ -948,9 +942,9 @@ function plugin:PreInstall(ctx: { version: string, runtimeVersion: string }): Ty
     local version = ctx.version
 
     -- Different logic for different platforms
-    if OS_TYPE == "windows" then
+    if RUNTIME.osType == "windows" then
         return install_windows(version)
-    elseif OS_TYPE == "darwin" then
+    elseif RUNTIME.osType == "darwin" then
         return install_macos(version)
     else
         return install_linux(version)
@@ -1036,7 +1030,7 @@ function plugin:EnvKeys(ctx: { path: string, runtimeVersion: string, sdkInfo: { 
     }
 
     -- Platform-specific additions
-    if OS_TYPE == "darwin" then
+    if RUNTIME.osType == "darwin" then
         table.insert(env_vars, {
             key = "DYLD_LIBRARY_PATH",
             value = `{mainPath}/lib`,
