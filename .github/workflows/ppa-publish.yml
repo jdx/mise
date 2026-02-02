@@ -8,7 +8,7 @@ on:
       distributions:
         description: "Ubuntu distributions to target (space-separated)"
         required: false
-        default: "jammy noble"
+        default: "resolute"
         type: string
       use_serious_profile:
         description: 'Use the "serious" profile for optimized builds (LTO enabled)'
@@ -19,6 +19,11 @@ on:
         description: "Build revision number (increment for packaging fixes of same version)"
         required: false
         default: "1"
+        type: string
+      version_suffix:
+        description: "Version suffix for orig tarball (e.g., +ppa1) - use when tarball contents change"
+        required: false
+        default: ""
         type: string
 
 env:
@@ -41,12 +46,17 @@ jobs:
           VERSION=$(./scripts/get-version.sh | sed 's/^v//')
 
           if [ "${{ github.event_name }}" = "release" ]; then
-            DISTRIBUTIONS="jammy noble"
+            DISTRIBUTIONS="resolute"
             BUILD_REVISION="1"
+            VERSION_SUFFIX=""
           else
             DISTRIBUTIONS="${{ inputs.distributions }}"
             BUILD_REVISION="${{ inputs.build_revision || '1' }}"
+            VERSION_SUFFIX="${{ inputs.version_suffix }}"
           fi
+
+          # Apply version suffix (e.g., 2026.2.0 -> 2026.2.0+ppa1)
+          VERSION="${VERSION}${VERSION_SUFFIX}"
 
           {
             echo "VERSION=${VERSION}"
@@ -96,6 +106,25 @@ jobs:
       - name: Install cargo-vendor
         run: mise use -g cargo-binstall cargo:cargo-vendor
 
+      - name: Vendor Rust dependencies
+        run: |
+          mkdir -p .cargo
+          cat > .cargo/config.toml << 'EOF'
+          [source.crates-io]
+          replace-with = "vendored-sources"
+
+          [source.vendored-sources]
+          directory = "vendor"
+          EOF
+          cargo vendor vendor/
+
+          # Clear all vendor checksums — dpkg-source strips .o, .a, .git*, *.orig and
+          # other files, which breaks cargo's checksum verification. With --frozen cargo
+          # still enforces the lockfile, so integrity is maintained.
+          for checksum in vendor/*/.cargo-checksum.json; do
+            jq '.files = {}' "$checksum" > "$checksum.tmp" && mv "$checksum.tmp" "$checksum"
+          done
+
       - name: Configure Git
         run: |
           git config --global user.name "${{ env.MAINTAINER_NAME }}"
@@ -143,36 +172,10 @@ jobs:
 
       - name: Create source package for each distribution
         run: |
-          # Create tarball
-          git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/" HEAD > "../${PACKAGE_NAME}_${VERSION}.orig.tar"
-
-          # Compress the tarball
-          gzip "../${PACKAGE_NAME}_${VERSION}.orig.tar"
-
-          # Create working directory
-          WORK_DIR="/tmp/ppa-build"
-          mkdir -p "$WORK_DIR"
-
-          # Copy the tarball to the working directory (where debuild expects it to be in parent of source dir)
-          cp "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "$WORK_DIR/${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
-
-          cd "$WORK_DIR"
-
-          # Extract source
-          tar -xzf "${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
-          cd "${PACKAGE_NAME}-${VERSION}"
-
-          # Create debian directory structure
+          # Create debian directory structure (native format - no orig tarball needed)
           mkdir -p debian/source
 
-          echo "3.0 (quilt)" > debian/source/format
-
-          # Create debian/watch file for upstream monitoring
-          cat > debian/watch << EOF
-          version=4
-          opts="filenamemangle=s/.+\/v?(\d\S+)\.tar\.gz/${PACKAGE_NAME}-\$1\.tar\.gz/" \\
-          https://github.com/jdx/mise/tags .*/v?(\d\S+)\.tar\.gz
-          EOF
+          echo "3.0 (native)" > debian/source/format
 
           # Create basic debian files
           cat > debian/control << EOF
@@ -180,7 +183,7 @@ jobs:
           Section: utils
           Priority: optional
           Maintainer: ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>
-          Build-Depends: debhelper-compat (= 13), curl, libssl-dev, pkgconf
+          Build-Depends: debhelper-compat (= 13), rustc (>= 1.88), cargo, libssl-dev, pkgconf
           Standards-Version: 4.6.2
           Homepage: https://mise.jdx.dev
           Vcs-Git: https://github.com/jdx/mise.git
@@ -195,20 +198,25 @@ jobs:
            pyenv, etc. and works with any language.
           EOF
 
-          cat > debian/rules << 'EOF'
+          # Determine target directory (release profile uses target/release/, others use target/<profile>/)
+          if [ "${BUILD_PROFILE}" = "release" ]; then
+            TARGET_DIR="target/release"
+          else
+            TARGET_DIR="target/${BUILD_PROFILE}"
+          fi
+
+          cat > debian/rules << EOF
           #!/usr/bin/make -f
 
           %:
-          	dh $@
+          	dh \$@
 
           override_dh_auto_build:
-          	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          	. ~/.cargo/env
-          	cargo build --profile ${BUILD_PROFILE} --locked --bin mise
+          	cargo build --profile ${BUILD_PROFILE} --frozen --bin mise
 
           override_dh_auto_install:
           	mkdir -p debian/mise/usr/bin
-          	cp target/${BUILD_PROFILE}/mise debian/mise/usr/bin/
+          	cp ${TARGET_DIR}/mise debian/mise/usr/bin/
           	mkdir -p debian/mise/usr/share/man/man1
           	if [ -f man/man1/mise.1 ]; then cp man/man1/mise.1 debian/mise/usr/share/man/man1/; fi
           	mkdir -p debian/mise/usr/share/bash-completion/completions
@@ -218,7 +226,7 @@ jobs:
           	mkdir -p debian/mise/usr/share/fish/vendor_completions.d
           	if [ -f completions/mise.fish ]; then cp completions/mise.fish debian/mise/usr/share/fish/vendor_completions.d/; fi
           	mkdir -p debian/mise/usr/lib/mise
-          	echo 'message = "To update, run:\n\n  sudo apt update && sudo apt install --only-upgrade mise\n"' > debian/mise/usr/lib/mise/mise-self-update-instructions.toml
+          	echo 'message = "To update, run:\\n\\n  sudo apt update && sudo apt install --only-upgrade mise\\n"' > debian/mise/usr/lib/mise/mise-self-update-instructions.toml
 
           override_dh_auto_clean:
           	cargo clean || true
@@ -255,18 +263,12 @@ jobs:
            SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
           EOF
 
-          # Ensure original tarball is available for all builds
-          cp "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz.backup"
-
           # Build source packages for each distribution
           for DIST in ${DISTRIBUTIONS}; do
             echo "Building source package for $DIST"
-            
-            # Restore original tarball for this build (in case previous build affected it)
-            cp "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz.backup" "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
-            
-            # Create distribution-specific version
-            DIST_VERSION="${VERSION}-${BUILD_REVISION}${DIST}1"
+
+            # Create distribution-specific version (native format uses ~ instead of -)
+            DIST_VERSION="${VERSION}~${DIST}${BUILD_REVISION}"
             
             # Create changelog
             cat > debian/changelog << EOF
@@ -277,8 +279,9 @@ jobs:
            -- ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>  $(date -R)
           EOF
             
-            # Build source package (devscripts configuration provides all options)
-            debuild
+            # Build source package (-d skips build-dep checks since we're only creating source package)
+            # TODO: remove -d once GitHub runners use Ubuntu 26.04 with Rust 1.88+
+            debuild -d
             
             # Move built packages
             mkdir -p "/tmp/packages"
@@ -290,9 +293,6 @@ jobs:
             # Clean for next distribution
             rm -f ../mise_"${DIST_VERSION}"*
           done
-
-          # Move original source tarball to packages directory (after all distributions are built)
-          mv "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "/tmp/packages/" 2>/dev/null || true
 
       - name: Upload source packages to PPA
         run: |

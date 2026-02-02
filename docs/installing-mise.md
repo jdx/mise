@@ -117,7 +117,15 @@ the [community repository](https://gitlab.alpinelinux.org/alpine/aports/-/blob/m
 
 ### apt
 
-For installation on Ubuntu/Debian:
+On Ubuntu 26.04+, mise is available via a PPA:
+
+```sh
+sudo add-apt-repository -y ppa:jdxcode/mise
+sudo apt update -y
+sudo apt install -y mise
+```
+
+For older Ubuntu/Debian versions:
 
 ```sh
 sudo apt update -y && sudo apt install -y curl
