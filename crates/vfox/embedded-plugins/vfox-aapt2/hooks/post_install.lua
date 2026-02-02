@@ -11,7 +11,7 @@ function PLUGIN:PostInstall(ctx)
 	-- Find the JAR file in the install directory
 	local find_cmd
 	local jar_path
-	if OS_TYPE == "windows" then
+	if RUNTIME.osType == "windows" then
 		find_cmd = string.format('dir /b "%s\\aapt2-*.jar" 2>nul', rootPath)
 	else
 		find_cmd = string.format('ls "%s"/aapt2-*.jar 2>/dev/null | head -1', rootPath)
@@ -29,13 +29,13 @@ function PLUGIN:PostInstall(ctx)
 	end
 
 	-- On Windows, need to prepend the rootPath
-	if OS_TYPE == "windows" and not string.match(jar_path, "^[A-Za-z]:") then
+	if RUNTIME.osType == "windows" and not string.match(jar_path, "^[A-Za-z]:") then
 		jar_path = rootPath .. "\\" .. jar_path
 	end
 
 	-- Extract the JAR file (it's a ZIP)
 	local extract_cmd
-	if OS_TYPE == "windows" then
+	if RUNTIME.osType == "windows" then
 		extract_cmd = string.format(
 			"powershell -Command \"Expand-Archive -Path '%s' -DestinationPath '%s' -Force\"",
 			jar_path,
@@ -54,7 +54,7 @@ function PLUGIN:PostInstall(ctx)
 	os.remove(jar_path)
 
 	-- Make the binary executable on Unix systems
-	if OS_TYPE ~= "windows" then
+	if RUNTIME.osType ~= "windows" then
 		local aapt2_path = rootPath .. "/aapt2"
 		os.execute(string.format('chmod +x "%s"', aapt2_path))
 	end

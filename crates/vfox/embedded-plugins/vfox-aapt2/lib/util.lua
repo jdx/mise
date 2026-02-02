@@ -6,7 +6,7 @@ util.MAVEN_REPO = "https://dl.google.com/android/maven2/com/android/tools/build"
 util.GROUP_INDEX_URL = util.MAVEN_REPO .. "/group-index.xml"
 
 function util.getOsName()
-    local os_type = OS_TYPE
+    local os_type = RUNTIME.osType
     if os_type == "darwin" then
         return "osx"
     elseif os_type == "linux" then

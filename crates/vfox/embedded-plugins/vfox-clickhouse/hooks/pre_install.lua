@@ -8,7 +8,7 @@ function PLUGIN:PreInstall(ctx)
 	local trimmed_version = util.trim_version_suffix(version)
 	local url
 
-	if OS_TYPE == "darwin" then
+	if RUNTIME.osType == "darwin" then
 		-- macOS: single binary file
 		-- clickhouse-macos (x86_64) or clickhouse-macos-aarch64 (arm64)
 		if arch == "arm64" then
