@@ -118,12 +118,11 @@ jobs:
           EOF
           cargo vendor vendor/
 
-          # Remove files that dpkg-source strips from native tarballs and update checksums
-          # dpkg-source excludes VCS dirs/files (.git*, .hg*, .svn*, etc.) and *.orig
-          find vendor -name '*.orig' -delete
-          find vendor -name '.git*' -delete
+          # Clear all vendor checksums — dpkg-source strips .o, .a, .git*, *.orig and
+          # other files, which breaks cargo's checksum verification. With --frozen cargo
+          # still enforces the lockfile, so integrity is maintained.
           for checksum in vendor/*/.cargo-checksum.json; do
-            jq '.files |= with_entries(select(.key | test("(\\.orig$|/?\\.git)") | not))' "$checksum" > "$checksum.tmp" && mv "$checksum.tmp" "$checksum"
+            jq '.files = {}' "$checksum" > "$checksum.tmp" && mv "$checksum.tmp" "$checksum"
           done
 
       - name: Configure Git
