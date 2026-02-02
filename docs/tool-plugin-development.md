@@ -27,11 +27,12 @@ graph TD
     C --> G[EnvKeys Hook<br/>Configure]
 
     subgraph "Plugin Files"
-        H[metadata.lua]
-        I[hooks/available.lua]
-        J[hooks/pre_install.lua]
-        K[hooks/env_keys.lua]
-        L[hooks/post_install.lua]
+        H[metadata.luau]
+        I[hooks/available.luau]
+        J[hooks/pre_install.luau]
+        K[hooks/env_keys.luau]
+        L[hooks/post_install.luau]
+        M[lib/types.luau]
     end
 
     style C fill:#e1f5fe
@@ -40,6 +41,116 @@ graph TD
     style F fill:#e8f5e8
     style G fill:#e8f5e8
 ```
+
+## Type Definitions
+
+Luau supports gradual typing with the `--!strict` directive. The recommended pattern is to create a shared type definitions file:
+
+### lib/types.luau
+
+```lua
+--!strict
+export type AvailableResult = {
+    version: string,
+    note: string?,
+    addition: { { name: string, version: string } }?,
+    rolling: boolean?,
+    checksum: string?,
+}
+
+export type PreInstallResult = {
+    version: string,
+    url: string?,
+    sha256: string?,
+    sha512: string?,
+    md5: string?,
+    sha1: string?,
+    note: string?,
+    addition: { { name: string, url: string } }?,
+    attestation: {
+        github_owner: string?,
+        github_repo: string?,
+        github_signer_workflow: string?,
+        cosign_sig_or_bundle_path: string?,
+        cosign_public_key_path: string?,
+        slsa_provenance_path: string?,
+        slsa_min_level: number?,
+    }?,
+}
+
+export type EnvKeysResult = {
+    key: string,
+    value: string,
+}
+
+export type SdkInfo = {
+    path: string,
+    version: string,
+    name: string,
+}
+
+export type PluginType = {
+    Available: (self: PluginType, ctx: { args: { string }? }) -> { AvailableResult },
+    PreInstall: (self: PluginType, ctx: { version: string, runtimeVersion: string }) -> PreInstallResult,
+    PostInstall: (self: PluginType, ctx: { rootPath: string, runtimeVersion: string, sdkInfo: { [string]: SdkInfo } }) -> (),
+    EnvKeys: (self: PluginType, ctx: { path: string, runtimeVersion: string, sdkInfo: { [string]: SdkInfo } }) -> { EnvKeysResult },
+    PreUse: (self: PluginType, ctx: { version: string, previousVersion: string?, cwd: string, scope: string, installedSdks: { SdkInfo } }) -> { version: string }?,
+    ParseLegacyFile: (self: PluginType, ctx: { filename: string, filepath: string, getInstalledVersions: (self: any) -> { string } }) -> { version: string? },
+}
+
+export type HttpModule = {
+    get: (opts: { url: string, headers: { [string]: string }? }) -> ({ status_code: number, headers: { [string]: string }, body: string }, string?),
+    head: (opts: { url: string, headers: { [string]: string }? }) -> ({ status_code: number, headers: { [string]: string } }, string?),
+    download_file: (opts: { url: string, headers: { [string]: string }? }, path: string) -> string?,
+}
+
+export type JsonModule = {
+    encode: (value: any) -> string,
+    decode: (str: string) -> any,
+}
+
+export type FileModule = {
+    read: (path: string) -> string?,
+    exists: (path: string) -> boolean,
+    join_path: (...string) -> string,
+    symlink: (source: string, target: string) -> (),
+}
+
+export type CmdModule = {
+    exec: (command: string, opts: { cwd: string?, env: { [string]: string }? }?) -> string,
+}
+
+export type EnvModule = {
+    getenv: (key: string) -> string?,
+    setenv: (key: string, value: string) -> (),
+}
+
+export type LogModule = {
+    trace: (...any) -> (),
+    debug: (...any) -> (),
+    info: (...any) -> (),
+    warn: (...any) -> (),
+    error: (...any) -> (),
+}
+
+return nil
+```
+
+### .luaurc Configuration
+
+Create a `.luaurc` file in your plugin root to configure type checking:
+
+```json
+{
+  "languageMode": "strict",
+  "globals": ["PLUGIN", "OS_TYPE", "ARCH_TYPE"],
+  "aliases": {
+    "@lib": "lib"
+  }
+}
+```
+
+This allows you to use `require("@lib/types")` to import your type definitions.
 
 ## Hook Functions
 
@@ -52,15 +163,18 @@ These hooks must be implemented for a functional plugin:
 Lists all available versions of the tool:
 
 ```lua
--- hooks/available.lua
-function PLUGIN:Available(ctx)
-    local args = ctx.args  -- User arguments
+--!strict
+-- hooks/available.luau
+local Types = require("@lib/types")
 
+local plugin = PLUGIN :: Types.PluginType
+
+function plugin:Available(_ctx: { args: { string }? }): { Types.AvailableResult }
     -- Return array of available versions
     return {
         {
             version = "20.0.0",
-            note = "Latest"
+            note = "Latest",
         },
         {
             version = "18.18.0",
@@ -68,10 +182,10 @@ function PLUGIN:Available(ctx)
             addition = {
                 {
                     name = "npm",
-                    version = "9.8.1"
-                }
-            }
-        }
+                    version = "9.8.1",
+                },
+            },
+        },
     }
 end
 ```
@@ -81,25 +195,30 @@ end
 For tools that have rolling releases like "nightly" or "stable" where the version string stays the same but the content changes, you can mark versions as rolling and provide a checksum for update detection:
 
 ```lua
-function PLUGIN:Available(ctx)
+--!strict
+local Types = require("@lib/types")
+
+local plugin = PLUGIN :: Types.PluginType
+
+function plugin:Available(_ctx: { args: { string }? }): { Types.AvailableResult }
     return {
         {
             version = "nightly",
             note = "Latest development build",
-            rolling = true,  -- Mark as rolling release
-            checksum = "abc123..."  -- SHA256 of the release asset
+            rolling = true, -- Mark as rolling release
+            checksum = "abc123...", -- SHA256 of the release asset
         },
         {
             version = "stable",
             note = "Latest stable release",
             rolling = true,
-            checksum = "def456..."
+            checksum = "def456...",
         },
         {
             version = "1.0.0",
-            note = "Fixed release"
+            note = "Fixed release",
             -- No rolling or checksum needed for fixed versions
-        }
+        },
     }
 end
 ```
@@ -116,36 +235,33 @@ The checksum should be the SHA256 hash of the release asset for the user's platf
 Handles pre-installation logic and returns download information:
 
 ```lua
--- hooks/pre_install.lua
-function PLUGIN:PreInstall(ctx)
+--!strict
+-- hooks/pre_install.luau
+local Types = require("@lib/types")
+
+local plugin = PLUGIN :: Types.PluginType
+
+function plugin:PreInstall(ctx: { version: string, runtimeVersion: string }): Types.PreInstallResult
     local version = ctx.version
-    local runtimeVersion = ctx.runtimeVersion
 
     -- Determine download URL and checksums
-    local url = "https://nodejs.org/dist/v" .. version .. "/node-v" .. version .. "-linux-x64.tar.gz"
+    local url = `https://nodejs.org/dist/v{version}/node-v{version}-linux-x64.tar.gz`
 
     return {
         version = version,
         url = url,
-        sha256 = "abc123...",  -- Optional checksum
-        note = "Installing Node.js " .. version,
+        sha256 = "abc123...", -- Optional checksum
+        note = `Installing Node.js {version}`,
         -- Optional attestation metadata, choose a verification type
         attestation = {
             -- GitHub
-            github_owner = "ownername"
-            github_repo = "reponame"
+            github_owner = "ownername",
+            github_repo = "reponame",
             -- Cosign
-            cosign_sig_or_bundle_path = "/path/to/sig/or/bundle/file"
+            cosign_sig_or_bundle_path = "/path/to/sig/or/bundle/file",
             -- SLSA
-            slsa_provenance_path = "/path/to/provenance/file"
+            slsa_provenance_path = "/path/to/provenance/file",
         },
-        -- Additional files can be specified
-        addition = {
-            {
-                name = "npm",
-                url = "https://registry.npmjs.org/npm/-/npm-" .. npm_version .. ".tgz"
-            }
-        }
     }
 end
 ```
@@ -155,29 +271,32 @@ end
 Configures environment variables for the installed tool:
 
 ```lua
--- hooks/env_keys.lua
-function PLUGIN:EnvKeys(ctx)
+--!strict
+-- hooks/env_keys.luau
+local Types = require("@lib/types")
+
+local plugin = PLUGIN :: Types.PluginType
+
+function plugin:EnvKeys(ctx: { path: string, runtimeVersion: string, sdkInfo: { [string]: Types.SdkInfo } }): { Types.EnvKeysResult }
     local mainPath = ctx.path
-    local runtimeVersion = ctx.runtimeVersion
-    local sdkInfo = ctx.sdkInfo['nodejs']
+    local sdkInfo = ctx.sdkInfo["nodejs"]
     local path = sdkInfo.path
     local version = sdkInfo.version
-    local name = sdkInfo.name
 
     return {
         {
             key = "NODE_HOME",
-            value = mainPath
+            value = mainPath,
         },
         {
             key = "PATH",
-            value = mainPath .. "/bin"
+            value = `{mainPath}/bin`,
         },
         -- Multiple PATH entries are automatically merged
         {
             key = "PATH",
-            value = mainPath .. "/lib/node_modules/.bin"
-        }
+            value = `{mainPath}/lib/node_modules/.bin`,
+        },
     }
 end
 ```
@@ -191,21 +310,25 @@ These hooks provide additional functionality:
 Performs additional setup after installation:
 
 ```lua
--- hooks/post_install.lua
-function PLUGIN:PostInstall(ctx)
-    local rootPath = ctx.rootPath
-    local runtimeVersion = ctx.runtimeVersion
-    local sdkInfo = ctx.sdkInfo['nodejs']
-    local path = sdkInfo.path
-    local version = sdkInfo.version
+--!strict
+-- hooks/post_install.luau
+local Types = require("@lib/types")
+local cmd = require("cmd") :: Types.CmdModule
 
-    -- Compile native modules, set permissions, etc.
-    local result = os.execute("chmod +x " .. path .. "/bin/*")
-    if result ~= 0 then
-        error("Failed to set permissions")
+local plugin = PLUGIN :: Types.PluginType
+
+function plugin:PostInstall(ctx: { rootPath: string, runtimeVersion: string, sdkInfo: { [string]: Types.SdkInfo } })
+    local sdkInfo = ctx.sdkInfo["nodejs"]
+    local path = sdkInfo.path
+
+    -- Set executable permissions on Unix systems
+    if OS_TYPE ~= "windows" then
+        cmd.exec(`chmod +x {path}/bin/*`)
     end
 
-    -- No return value needed
+    -- Create npm cache directory
+    local npm_cache_dir = `{path}/.npm`
+    cmd.exec(`mkdir -p {npm_cache_dir}`)
 end
 ```
 
@@ -214,21 +337,22 @@ end
 Modifies version before use:
 
 ```lua
--- hooks/pre_use.lua
-function PLUGIN:PreUse(ctx)
+--!strict
+-- hooks/pre_use.luau
+local Types = require("@lib/types")
+
+local plugin = PLUGIN :: Types.PluginType
+
+function plugin:PreUse(ctx: { version: string, previousVersion: string?, cwd: string, scope: string, installedSdks: { Types.SdkInfo } }): { version: string }?
     local version = ctx.version
-    local previousVersion = ctx.previousVersion
-    local installedSdks = ctx.installedSdks
-    local cwd = ctx.cwd
-    local scope = ctx.scope  -- global/project/session
 
     -- Optionally modify the version
     if version == "latest" then
-        version = "20.0.0"  -- Resolve to specific version
+        version = "20.0.0" -- Resolve to specific version
     end
 
     return {
-        version = version
+        version = version,
     }
 end
 ```
@@ -238,19 +362,27 @@ end
 Parses version files from other tools:
 
 ```lua
--- hooks/parse_legacy_file.lua
-function PLUGIN:ParseLegacyFile(ctx)
+--!strict
+-- hooks/parse_legacy_file.luau
+local Types = require("@lib/types")
+local file = require("file") :: Types.FileModule
+
+local plugin = PLUGIN :: Types.PluginType
+
+function plugin:ParseLegacyFile(ctx: { filename: string, filepath: string, getInstalledVersions: (self: any) -> { string } }): { version: string? }
     local filename = ctx.filename
     local filepath = ctx.filepath
-    local versions = ctx:getInstalledVersions()
 
     -- Read and parse the file
-    local file = require("file")
     local content = file.read(filepath)
+    if not content then
+        error(`Failed to read {filepath}`)
+    end
+
     local version = content:match("v?([%d%.]+)")
 
     return {
-        version = version
+        version = version,
     }
 end
 ```
@@ -271,14 +403,14 @@ rm -rf .git
 git init
 
 # Customize the plugin for your tool
-# Edit metadata.lua, hooks/*.lua files, etc.
+# Edit metadata.luau, hooks/*.luau files, etc.
 ```
 
 The template includes:
 
 - Pre-configured plugin structure with all required hooks
-- Example implementations with comments
-- Linting configuration (`.luacheckrc`, `stylua.toml`)
+- Type definitions in `lib/types.luau`
+- Linting configuration (`.luaurc`, `stylua.toml`)
 - Testing setup with mise tasks
 - GitHub Actions workflow for CI
 
@@ -288,26 +420,28 @@ Create a directory with this structure (or use the template above):
 
 ```
 my-tool-plugin/
-├── metadata.lua          # Plugin metadata and configuration
-├── hooks/               # Hook functions directory
-│   ├── available.lua    # List available versions [required]
-│   ├── pre_install.lua  # Pre-installation hook [required]
-│   ├── env_keys.lua     # Environment configuration [required]
-│   ├── post_install.lua # Post-installation hook [optional]
-│   ├── pre_use.lua      # Pre-use hook [optional]
-│   └── parse_legacy_file.lua # Legacy file parser [optional]
-├── lib/                 # Shared library code [optional]
-│   └── helper.lua       # Helper functions
-└── test/               # Test scripts [optional]
+├── metadata.luau         # Plugin metadata and configuration
+├── .luaurc               # Luau type checking configuration
+├── hooks/                # Hook functions directory
+│   ├── available.luau    # List available versions [required]
+│   ├── pre_install.luau  # Pre-installation hook [required]
+│   ├── env_keys.luau     # Environment configuration [required]
+│   ├── post_install.luau # Post-installation hook [optional]
+│   ├── pre_use.luau      # Pre-use hook [optional]
+│   └── parse_legacy_file.luau # Legacy file parser [optional]
+├── lib/                  # Shared library code
+│   ├── types.luau        # Type definitions [recommended]
+│   └── util.luau         # Helper functions [optional]
+└── test/                 # Test scripts [optional]
     └── test.sh
 ```
 
-### 2. metadata.lua
+### 2. metadata.luau
 
 Configure plugin metadata and legacy file support:
 
 ```lua
--- metadata.lua
+-- metadata.luau
 PLUGIN = {
     name = "nodejs",
     version = "1.0.0",
@@ -316,9 +450,9 @@ PLUGIN = {
 
     -- Legacy version files this plugin can parse
     legacyFilenames = {
-        '.nvmrc',
-        '.node-version'
-    }
+        ".nvmrc",
+        ".node-version",
+    },
 }
 ```
 
@@ -327,37 +461,34 @@ PLUGIN = {
 Create shared functions in the `lib/` directory:
 
 ```lua
--- lib/helper.lua
+--!strict
+-- lib/util.luau
 local M = {}
 
-function M.get_arch()
-    -- Use the RUNTIME object provided by vfox/mise
-    local arch = RUNTIME.archType
-    if arch == "amd64" then
+function M.get_arch(): string
+    if ARCH_TYPE == "amd64" then
         return "x64"
-    elseif arch == "386" then
+    elseif ARCH_TYPE == "386" then
         return "x86"
-    elseif arch == "arm64" then
+    elseif ARCH_TYPE == "arm64" then
         return "arm64"
     else
-        return arch  -- return as-is for other architectures
+        return ARCH_TYPE
     end
 end
 
-function M.get_os()
-    -- Use the RUNTIME object provided by vfox/mise
-    local os = RUNTIME.osType
-    if os == "Windows" then
+function M.get_os(): string
+    if OS_TYPE == "windows" then
         return "win"
-    elseif os == "Darwin" then
+    elseif OS_TYPE == "darwin" then
         return "darwin"
     else
         return "linux"
     end
 end
 
-function M.get_platform()
-    return M.get_os() .. "-" .. M.get_arch()
+function M.get_platform(): string
+    return `{M.get_os()}-{M.get_arch()}`
 end
 
 return M
@@ -370,26 +501,30 @@ Here's a complete example based on the vfox-nodejs plugin that demonstrates all 
 ### Available Hook Example
 
 ```lua
--- hooks/available.lua
-function PLUGIN:Available(ctx)
-    local http = require("http")
-    local json = require("json")
+--!strict
+-- hooks/available.luau
+local Types = require("@lib/types")
+local http = require("http") :: Types.HttpModule
+local json = require("json") :: Types.JsonModule
 
+local plugin = PLUGIN :: Types.PluginType
+
+function plugin:Available(_ctx: { args: { string }? }): { Types.AvailableResult }
     -- Fetch versions from Node.js API
     local resp, err = http.get({
-        url = "https://nodejs.org/dist/index.json"
+        url = "https://nodejs.org/dist/index.json",
     })
 
     if err ~= nil then
-        error("Failed to fetch versions: " .. err)
+        error(`Failed to fetch versions: {err}`)
     end
 
     local versions = json.decode(resp.body)
-    local result = {}
+    local result: { Types.AvailableResult } = {}
 
-    for i, v in ipairs(versions) do
-        local version = v.version:gsub("^v", "")  -- Remove 'v' prefix
-        local note = nil
+    for _, v in ipairs(versions) do
+        local version = v.version:gsub("^v", "") -- Remove 'v' prefix
+        local note: string? = nil
 
         if v.lts then
             note = "LTS"
@@ -401,9 +536,9 @@ function PLUGIN:Available(ctx)
             addition = {
                 {
                     name = "npm",
-                    version = v.npm
-                }
-            }
+                    version = v.npm,
+                },
+            },
         })
     end
 
@@ -414,42 +549,49 @@ end
 ### PreInstall Hook Example
 
 ```lua
--- hooks/pre_install.lua
-function PLUGIN:PreInstall(ctx)
+--!strict
+-- hooks/pre_install.luau
+local Types = require("@lib/types")
+local http = require("http") :: Types.HttpModule
+
+local plugin = PLUGIN :: Types.PluginType
+
+function plugin:PreInstall(ctx: { version: string, runtimeVersion: string }): Types.PreInstallResult
     local version = ctx.version
 
-    -- Determine platform using RUNTIME object
-    local arch_token
-    if RUNTIME.archType == "amd64" then
+    -- Determine platform
+    local arch_token: string
+    if ARCH_TYPE == "amd64" then
         arch_token = "x64"
-    elseif RUNTIME.archType == "386" then
+    elseif ARCH_TYPE == "386" then
         arch_token = "x86"
-    elseif RUNTIME.archType == "arm64" then
+    elseif ARCH_TYPE == "arm64" then
         arch_token = "arm64"
     else
-        arch_token = RUNTIME.archType
+        arch_token = ARCH_TYPE
     end
-    local os_token
-    if RUNTIME.osType == "Windows" then
+
+    local os_token: string
+    if OS_TYPE == "windows" then
         os_token = "win"
-    elseif RUNTIME.osType == "Darwin" then
+    elseif OS_TYPE == "darwin" then
         os_token = "darwin"
     else
         os_token = "linux"
     end
-    local platform = os_token .. "-" .. arch_token
-    local extension = (RUNTIME.osType == "Windows") and "zip" or "tar.gz"
+
+    local platform = `{os_token}-{arch_token}`
+    local extension = if OS_TYPE == "windows" then "zip" else "tar.gz"
 
     -- Build download URL
-    local filename = "node-v" .. version .. "-" .. platform .. "." .. extension
-    local url = "https://nodejs.org/dist/v" .. version .. "/" .. filename
+    local filename = `node-v{version}-{platform}.{extension}`
+    local url = `https://nodejs.org/dist/v{version}/{filename}`
 
     -- Fetch checksum
-    local http = require("http")
-    local shasums_url = "https://nodejs.org/dist/v" .. version .. "/SHASUMS256.txt"
+    local shasums_url = `https://nodejs.org/dist/v{version}/SHASUMS256.txt`
     local resp, err = http.get({ url = shasums_url })
 
-    local sha256 = nil
+    local sha256: string? = nil
     if err == nil then
         -- Extract SHA256 for our file
         for line in resp.body:gmatch("[^\n]+") do
@@ -464,7 +606,7 @@ function PLUGIN:PreInstall(ctx)
         version = version,
         url = url,
         sha256 = sha256,
-        note = "Installing Node.js " .. version .. " (" .. platform .. ")"
+        note = `Installing Node.js {version} ({platform})`,
     }
 end
 ```
@@ -472,31 +614,35 @@ end
 ### EnvKeys Hook Example
 
 ```lua
--- hooks/env_keys.lua
-function PLUGIN:EnvKeys(ctx)
-    local mainPath = ctx.path
-    local os_type = RUNTIME.osType
+--!strict
+-- hooks/env_keys.luau
+local Types = require("@lib/types")
 
-    local env_vars = {
+local plugin = PLUGIN :: Types.PluginType
+
+function plugin:EnvKeys(ctx: { path: string, runtimeVersion: string, sdkInfo: { [string]: Types.SdkInfo } }): { Types.EnvKeysResult }
+    local mainPath = ctx.path
+
+    local env_vars: { Types.EnvKeysResult } = {
         {
             key = "NODE_HOME",
-            value = mainPath
+            value = mainPath,
         },
         {
             key = "PATH",
-            value = mainPath .. "/bin"
-        }
+            value = `{mainPath}/bin`,
+        },
     }
 
     -- Add npm global modules to PATH
-    local npm_global_path = mainPath .. "/lib/node_modules/.bin"
-    if os_type == "Windows" then
-        npm_global_path = mainPath .. "/node_modules/.bin"
+    local npm_global_path = `{mainPath}/lib/node_modules/.bin`
+    if OS_TYPE == "windows" then
+        npm_global_path = `{mainPath}/node_modules/.bin`
     end
 
     table.insert(env_vars, {
         key = "PATH",
-        value = npm_global_path
+        value = npm_global_path,
     })
 
     return env_vars
@@ -506,47 +652,59 @@ end
 ### PostInstall Hook Example
 
 ```lua
--- hooks/post_install.lua
-function PLUGIN:PostInstall(ctx)
-    local sdkInfo = ctx.sdkInfo['nodejs']
+--!strict
+-- hooks/post_install.luau
+local Types = require("@lib/types")
+local cmd = require("cmd") :: Types.CmdModule
+
+local plugin = PLUGIN :: Types.PluginType
+
+function plugin:PostInstall(ctx: { rootPath: string, runtimeVersion: string, sdkInfo: { [string]: Types.SdkInfo } })
+    local sdkInfo = ctx.sdkInfo["nodejs"]
     local path = sdkInfo.path
+
     -- Set executable permissions on Unix systems
-    if RUNTIME.osType ~= "Windows" then
-        os.execute("chmod +x " .. path .. "/bin/*")
+    if OS_TYPE ~= "windows" then
+        cmd.exec(`chmod +x {path}/bin/*`)
     end
 
     -- Create npm cache directory
-    local npm_cache_dir = path .. "/.npm"
-    os.execute("mkdir -p " .. npm_cache_dir)
+    local npm_cache_dir = `{path}/.npm`
+    cmd.exec(`mkdir -p {npm_cache_dir}`)
 
     -- Configure npm to use local cache
-    local npm_cmd = path .. "/bin/npm"
-    if RUNTIME.osType == "Windows" then
-        npm_cmd = path .. "/npm.cmd"
+    local npm_cmd = `{path}/bin/npm`
+    if OS_TYPE == "windows" then
+        npm_cmd = `{path}/npm.cmd`
     end
 
-    os.execute(npm_cmd .. " config set cache " .. npm_cache_dir)
-    os.execute(npm_cmd .. " config set prefix " .. path)
+    cmd.exec(`{npm_cmd} config set cache {npm_cache_dir}`)
+    cmd.exec(`{npm_cmd} config set prefix {path}`)
 end
 ```
 
 ### Legacy File Support
 
 ```lua
--- hooks/parse_legacy_file.lua
-function PLUGIN:ParseLegacyFile(ctx)
+--!strict
+-- hooks/parse_legacy_file.luau
+local Types = require("@lib/types")
+local file = require("file") :: Types.FileModule
+
+local plugin = PLUGIN :: Types.PluginType
+
+function plugin:ParseLegacyFile(ctx: { filename: string, filepath: string, getInstalledVersions: (self: any) -> { string } }): { version: string? }
     local filename = ctx.filename
     local filepath = ctx.filepath
-    local file = require("file")
 
     -- Read file content
     local content = file.read(filepath)
     if not content then
-        error("Failed to read " .. filepath)
+        error(`Failed to read {filepath}`)
     end
 
     -- Parse version from different file formats
-    local version = nil
+    local version: string? = nil
 
     if filename == ".nvmrc" then
         -- .nvmrc can contain version with or without 'v' prefix
@@ -562,7 +720,7 @@ function PLUGIN:ParseLegacyFile(ctx)
     end
 
     return {
-        version = version
+        version = version,
     }
 end
 ```
@@ -593,7 +751,7 @@ mise use my-tool
 If you're using the template repository, you can run the included tests:
 
 ```bash
-# Run linting
+# Run linting (uses luau-analyze and stylua)
 mise run lint
 
 # Run tests
@@ -649,58 +807,67 @@ echo "All tests passed!"
 Always provide meaningful error messages:
 
 ```lua
-function PLUGIN:Available(ctx)
-    local http = require("http")
+--!strict
+local Types = require("@lib/types")
+local http = require("http") :: Types.HttpModule
+
+local plugin = PLUGIN :: Types.PluginType
+
+function plugin:Available(_ctx: { args: { string }? }): { Types.AvailableResult }
     local resp, err = http.get({
-        url = "https://api.example.com/versions"
+        url = "https://api.example.com/versions",
     })
 
     if err ~= nil then
-        error("Failed to fetch versions from API: " .. err)
+        error(`Failed to fetch versions from API: {err}`)
     end
 
     if resp.status_code ~= 200 then
-        error("API returned status " .. resp.status_code .. ": " .. resp.body)
+        error(`API returned status {resp.status_code}: {resp.body}`)
     end
 
     -- Process response...
+    return {}
 end
 ```
 
 ### Platform Detection
 
-Handle different operating systems properly using the RUNTIME object:
+Handle different operating systems properly using the global variables:
 
 ```lua
--- lib/platform.lua
+--!strict
+-- lib/platform.luau
 local M = {}
 
-function M.is_windows()
-    return RUNTIME.osType == "Windows"
+function M.is_windows(): boolean
+    return OS_TYPE == "windows"
 end
 
-function M.get_exe_extension()
-    return M.is_windows() and ".exe" or ""
+function M.get_exe_extension(): string
+    return if M.is_windows() then ".exe" else ""
 end
 
-function M.get_path_separator()
-    return M.is_windows() and "\\" or "/"
+function M.get_path_separator(): string
+    return if M.is_windows() then "\\" else "/"
 end
 
 return M
 ```
 
-**Note:** The `RUNTIME` object is automatically available in all plugin hooks and provides:
+**Note:** The following globals are automatically available in all plugin hooks:
 
-- `RUNTIME.osType`: Operating system type ("Windows", "Linux", "Darwin")
-- `RUNTIME.archType`: Architecture ("amd64", "arm64", "386", etc.)
+- `OS_TYPE`: Operating system type (`"windows"`, `"linux"`, `"darwin"`)
+- `ARCH_TYPE`: Architecture (`"amd64"`, `"arm64"`, `"386"`, etc.)
+- `PLUGIN`: The plugin object for defining hook methods
 
 ### Version Normalization
 
 Normalize versions consistently:
 
 ```lua
-local function normalize_version(version)
+--!strict
+local function normalize_version(version: string): string
     -- Remove 'v' prefix if present
     version = version:gsub("^v", "")
 
@@ -716,11 +883,17 @@ end
 Cache expensive operations:
 
 ```lua
--- Cache versions for 12 hours
-local cache = {}
-local cache_ttl = 12 * 60 * 60  -- 12 hours in seconds
+--!strict
+local Types = require("@lib/types")
+local http = require("http") :: Types.HttpModule
 
-function PLUGIN:Available(ctx)
+-- Cache versions
+local cache: { versions: { Types.AvailableResult }?, timestamp: number? } = {}
+local cache_ttl = 12 * 60 * 60 -- 12 hours in seconds
+
+local plugin = PLUGIN :: Types.PluginType
+
+function plugin:Available(_ctx: { args: { string }? }): { Types.AvailableResult }
     local now = os.time()
 
     -- Check cache first
@@ -729,7 +902,12 @@ function PLUGIN:Available(ctx)
     end
 
     -- Fetch fresh data
-    local versions = fetch_versions_from_api()
+    local resp, err = http.get({ url = "https://api.example.com/versions" })
+    if err then
+        error(`Failed to fetch versions: {err}`)
+    end
+
+    local versions: { Types.AvailableResult } = {} -- parse response...
 
     -- Update cache
     cache.versions = versions
@@ -746,18 +924,32 @@ end
 Different installation logic based on platform or version:
 
 ```lua
-function PLUGIN:PreInstall(ctx)
+--!strict
+local Types = require("@lib/types")
+
+local plugin = PLUGIN :: Types.PluginType
+
+local function install_windows(version: string): Types.PreInstallResult
+    return { version = version, url = `https://example.com/win/{version}.zip` }
+end
+
+local function install_macos(version: string): Types.PreInstallResult
+    return { version = version, url = `https://example.com/mac/{version}.tar.gz` }
+end
+
+local function install_linux(version: string): Types.PreInstallResult
+    return { version = version, url = `https://example.com/linux/{version}.tar.gz` }
+end
+
+function plugin:PreInstall(ctx: { version: string, runtimeVersion: string }): Types.PreInstallResult
     local version = ctx.version
 
-    -- Different logic for different platforms using RUNTIME object
-    if RUNTIME.osType == "Windows" then
-        -- Windows-specific installation
+    -- Different logic for different platforms
+    if OS_TYPE == "windows" then
         return install_windows(version)
-    elseif RUNTIME.osType == "Darwin" then
-        -- macOS-specific installation
+    elseif OS_TYPE == "darwin" then
         return install_macos(version)
     else
-        -- Linux installation
         return install_linux(version)
     end
 end
@@ -768,32 +960,28 @@ end
 For plugins that need to compile from source:
 
 ```lua
--- hooks/post_install.lua
-function PLUGIN:PostInstall(ctx)
-    local sdkInfo = ctx.sdkInfo['tool-name']
+--!strict
+-- hooks/post_install.luau
+local Types = require("@lib/types")
+local cmd = require("cmd") :: Types.CmdModule
+
+local plugin = PLUGIN :: Types.PluginType
+
+function plugin:PostInstall(ctx: { rootPath: string, runtimeVersion: string, sdkInfo: { [string]: Types.SdkInfo } })
+    local sdkInfo = ctx.sdkInfo["tool-name"]
     local path = sdkInfo.path
-    local version = sdkInfo.version
 
     -- Change to source directory
-    local build_dir = path .. "/src"
+    local build_dir = `{path}/src`
 
     -- Configure build
-    local configure_result = os.execute("cd " .. build_dir .. " && ./configure --prefix=" .. path)
-    if configure_result ~= 0 then
-        error("Configure failed")
-    end
+    cmd.exec(`./configure --prefix={path}`, { cwd = build_dir })
 
     -- Compile
-    local make_result = os.execute("cd " .. build_dir .. " && make -j$(nproc)")
-    if make_result ~= 0 then
-        error("Compilation failed")
-    end
+    cmd.exec("make -j$(nproc)", { cwd = build_dir })
 
     -- Install
-    local install_result = os.execute("cd " .. build_dir .. " && make install")
-    if install_result ~= 0 then
-        error("Installation failed")
-    end
+    cmd.exec("make install", { cwd = build_dir })
 end
 ```
 
@@ -802,47 +990,53 @@ end
 Complex environment variable setup:
 
 ```lua
-function PLUGIN:EnvKeys(ctx)
-    local mainPath = ctx.path
-    local version = ctx.sdkInfo['tool-name'].version
+--!strict
+-- hooks/env_keys.luau
+local Types = require("@lib/types")
 
-    local env_vars = {
+local plugin = PLUGIN :: Types.PluginType
+
+function plugin:EnvKeys(ctx: { path: string, runtimeVersion: string, sdkInfo: { [string]: Types.SdkInfo } }): { Types.EnvKeysResult }
+    local mainPath = ctx.path
+    local version = ctx.sdkInfo["tool-name"].version
+
+    local env_vars: { Types.EnvKeysResult } = {
         -- Standard environment variables
         {
             key = "TOOL_HOME",
-            value = mainPath
+            value = mainPath,
         },
         {
             key = "TOOL_VERSION",
-            value = version
+            value = version,
         },
 
         -- PATH entries
         {
             key = "PATH",
-            value = mainPath .. "/bin"
+            value = `{mainPath}/bin`,
         },
         {
             key = "PATH",
-            value = mainPath .. "/scripts"
+            value = `{mainPath}/scripts`,
         },
 
         -- Library paths
         {
             key = "LD_LIBRARY_PATH",
-            value = mainPath .. "/lib"
+            value = `{mainPath}/lib`,
         },
         {
             key = "PKG_CONFIG_PATH",
-            value = mainPath .. "/lib/pkgconfig"
-        }
+            value = `{mainPath}/lib/pkgconfig`,
+        },
     }
 
     -- Platform-specific additions
-    if RUNTIME.osType == "Darwin" then
+    if OS_TYPE == "darwin" then
         table.insert(env_vars, {
             key = "DYLD_LIBRARY_PATH",
-            value = mainPath .. "/lib"
+            value = `{mainPath}/lib`,
         })
     end
 
