@@ -127,7 +127,7 @@ impl Install {
             .filter(|ta| {
                 trs.sources
                     .get(ta.ba.as_ref())
-                    .map_or(true, |s| s.is_argument())
+                    .is_none_or(|s| s.is_argument())
             })
             .map(|ta| ta.ba.short.clone())
             .collect();
