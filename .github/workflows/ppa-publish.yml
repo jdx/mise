@@ -118,10 +118,12 @@ jobs:
           EOF
           cargo vendor vendor/
 
-          # Remove .orig files and update checksums to avoid dpkg-source issues
+          # Remove files that dpkg-source strips from native tarballs and update checksums
           find vendor -name '*.orig' -delete
+          find vendor -name '.gitignore' -delete
+          find vendor -name '.gitattributes' -delete
           for checksum in vendor/*/.cargo-checksum.json; do
-            jq '.files |= with_entries(select(.key | test("\\.orig$") | not))' "$checksum" > "$checksum.tmp" && mv "$checksum.tmp" "$checksum"
+            jq '.files |= with_entries(select(.key | test("(\\.orig$|\\.gitignore$|\\.gitattributes$)") | not))' "$checksum" > "$checksum.tmp" && mv "$checksum.tmp" "$checksum"
           done
 
       - name: Configure Git
