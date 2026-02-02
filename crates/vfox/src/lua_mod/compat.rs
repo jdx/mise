@@ -192,16 +192,27 @@ fn setup_io(lua: &Lua) -> mlua::Result<()> {
                     Err(e) => Ok((Value::Nil, Value::String(lua.create_string(e.to_string())?))),
                 }
             } else if mode.contains('a') {
-                // Append mode: read existing content, buffer writes until close
-                let existing = std::fs::read_to_string(&path).unwrap_or_default();
-                let handle = FileHandle {
-                    content: None,
-                    path,
-                    writable: true,
-                    write_buf: std::cell::RefCell::new(Some(existing)),
-                    read_pos: std::cell::RefCell::new(0),
-                };
-                Ok((Value::UserData(lua.create_userdata(handle)?), Value::Nil))
+                // Append mode: validate path by attempting to open/create file
+                // Lua 5.1 creates the file if it doesn't exist, but fails if directory is invalid
+                match std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&path)
+                {
+                    Ok(_) => {
+                        // Read existing content to buffer for appending
+                        let existing = std::fs::read_to_string(&path).unwrap_or_default();
+                        let handle = FileHandle {
+                            content: None,
+                            path,
+                            writable: true,
+                            write_buf: std::cell::RefCell::new(Some(existing)),
+                            read_pos: std::cell::RefCell::new(0),
+                        };
+                        Ok((Value::UserData(lua.create_userdata(handle)?), Value::Nil))
+                    }
+                    Err(e) => Ok((Value::Nil, Value::String(lua.create_string(e.to_string())?))),
+                }
             } else {
                 // Read mode
                 match std::fs::read_to_string(&path) {
@@ -516,6 +527,19 @@ mod tests {
             local f, err = io.open("/nonexistent/path/file.txt", "w")
             assert(f == nil, "expected nil for invalid write path")
             assert(err ~= nil, "expected error message for invalid write path")
+        })
+        .exec()
+        .unwrap();
+    }
+
+    #[test]
+    fn test_io_open_append_error() {
+        let lua = Lua::new();
+        mod_compat(&lua).unwrap();
+        lua.load(mlua::chunk! {
+            local f, err = io.open("/nonexistent/path/file.txt", "a")
+            assert(f == nil, "expected nil for invalid append path")
+            assert(err ~= nil, "expected error message for invalid append path")
         })
         .exec()
         .unwrap();
