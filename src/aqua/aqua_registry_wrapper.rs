@@ -119,28 +119,31 @@ fn fetch_latest_repo(repo: &Git) -> Result<()> {
 /// Search aqua packages by tool name, returning "owner/name" IDs
 /// where the name part is similar to the query.
 pub fn aqua_suggest(query: &str) -> Vec<String> {
+    use std::collections::HashMap;
+
     let ids = aqua_registry::package_ids();
-    // Build (name_part, full_id) pairs, keeping them aligned
-    let pairs: Vec<(&str, &str)> = ids
-        .iter()
-        .filter_map(|id| id.rsplit_once('/').map(|(_, name)| (name, *id)))
-        .collect();
-    let names: Vec<&str> = pairs.iter().map(|(name, _)| *name).collect();
+    // Build a map from tool name to full IDs for O(1) lookup
+    let mut name_to_ids: HashMap<&str, Vec<&str>> = HashMap::new();
+    for id in &ids {
+        if let Some((_, name)) = id.rsplit_once('/') {
+            name_to_ids.entry(name).or_default().push(id);
+        }
+    }
+    let names: Vec<&str> = name_to_ids.keys().copied().collect();
 
     // Use a higher threshold (0.8) to avoid noisy suggestions
     let similar_names = xx::suggest::similar_n_with_threshold(query, &names, 5, 0.8);
 
     // Map back to full IDs
     let mut results = Vec::new();
-    for matched_name in similar_names {
-        for (name, full_id) in &pairs {
-            if *name == matched_name && !results.contains(&full_id.to_string()) {
+    for matched_name in &similar_names {
+        if let Some(full_ids) = name_to_ids.get(matched_name.as_str()) {
+            for full_id in full_ids {
                 results.push(full_id.to_string());
-                break;
+                if results.len() >= 5 {
+                    return results;
+                }
             }
-        }
-        if results.len() >= 5 {
-            break;
         }
     }
     results

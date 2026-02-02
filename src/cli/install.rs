@@ -158,7 +158,7 @@ impl Install {
         }
 
         // Warn about tools that were installed but not in any config file
-        if !inactive_tools.is_empty() {
+        if !self.dry_run && !inactive_tools.is_empty() {
             let tool_list = inactive_tools.join(", ");
             let use_cmds: Vec<String> = inactive_tools
                 .iter()

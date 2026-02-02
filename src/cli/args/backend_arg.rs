@@ -182,8 +182,15 @@ impl BackendArg {
                     .map(|s| s.to_string())
                     .collect();
 
+            let mise_names: HashSet<String> = suggestions.iter().cloned().collect();
             for aqua_id in crate::aqua::aqua_registry_wrapper::aqua_suggest(&self.short) {
-                suggestions.push(format!("aqua:{aqua_id}"));
+                // Skip aqua suggestions whose tool name matches an existing mise suggestion
+                let name = aqua_id
+                    .rsplit_once('/')
+                    .map_or(aqua_id.as_str(), |(_, n)| n);
+                if !mise_names.contains(name) {
+                    suggestions.push(format!("aqua:{aqua_id}"));
+                }
             }
 
             let mut msg = format!("{self} not found in mise tool registry");
