@@ -1287,6 +1287,7 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
     if has_legacy_placeholder {
         deprecated_at!(
             "2026.3.0",
+            "2027.3.0",
             "legacy-version-template",
             "Use Tera syntax (e.g., {{{{ version }}}}) instead of legacy {{version}} in templates"
         );
