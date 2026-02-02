@@ -1,7 +1,6 @@
 use clap::Subcommand;
 use eyre::Result;
 
-pub(crate) mod generate;
 mod get;
 mod ls;
 mod set;
@@ -19,7 +18,6 @@ pub struct Config {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    Generate(generate::ConfigGenerate),
     Get(get::ConfigGet),
     #[clap(visible_alias = "list")]
     Ls(ls::ConfigLs),
@@ -29,7 +27,6 @@ enum Commands {
 impl Commands {
     pub async fn run(self) -> Result<()> {
         match self {
-            Self::Generate(cmd) => cmd.run().await,
             Self::Get(cmd) => cmd.run(),
             Self::Ls(cmd) => cmd.run().await,
             Self::Set(cmd) => cmd.run(),

@@ -1,3 +1,4 @@
 backends = ["vfox:mise-plugins/vfox-poetry", "pipx:poetry"]
 description = "Python packaging and dependency management made easy"
+detect = ["poetry.lock"]
 test = ["poetry --version", "Poetry (version {{version}})"]

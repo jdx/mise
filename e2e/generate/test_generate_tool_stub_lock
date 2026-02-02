@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2103
+
+# Test mise generate tool-stub --lock functionality
+
+# Disable GPG verification to avoid test failures
+export MISE_GPG_VERIFY=false
+
+# Create test project directory
+mkdir -p generate_tool_stub_lock_test/bin
+cd generate_tool_stub_lock_test
+
+# Test 1: Lock a non-HTTP tool stub (github:jdx/tiny)
+cat >bin/tiny <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+
+tool = "github:jdx/tiny"
+version = "1"
+bin = "bin/tiny"
+EOF
+chmod +x bin/tiny
+
+assert_succeed "mise generate tool-stub bin/tiny --lock"
+
+# Verify version was pinned to an exact version (not just "1")
+assert_not_contains "cat bin/tiny" 'version = "1"'
+assert_contains "cat bin/tiny" 'version = "1.'
+
+# Verify [lock.platforms.*] sections were added
+assert_contains "cat bin/tiny" "[lock.platforms."
+assert_contains "cat bin/tiny" "url ="
+assert_contains "cat bin/tiny" "checksum ="
+
+# Verify the shebang is preserved
+assert_contains "cat bin/tiny" "#!/usr/bin/env -S mise tool-stub"
+
+# Verify the tool field is preserved
+assert_contains "cat bin/tiny" 'tool = "github:jdx/tiny"'
+
+# Test 2: Bump version with --lock --version
+assert_succeed "mise generate tool-stub bin/tiny --lock --version 2"
+
+# Verify version was bumped
+assert_contains "cat bin/tiny" 'version = "2.'
+assert_not_contains "cat bin/tiny" 'version = "1.'
+
+# Verify lock sections still present after bump
+assert_contains "cat bin/tiny" "[lock.platforms."
+assert_contains "cat bin/tiny" "url ="
+
+# Test 3: Re-lock preserves version (idempotent)
+locked_version=$(grep 'version = ' bin/tiny | head -1 | sed 's/.*"\(.*\)".*/\1/')
+assert_succeed "mise generate tool-stub bin/tiny --lock"
+
+# Version should be the same after re-locking
+assert_contains "cat bin/tiny" "version = \"$locked_version\""
+
+# Test 4: Lock fails on non-existent file
+assert_fail "mise generate tool-stub bin/nonexistent --lock"
+
+# Test 5: Execute the locked stub to verify it works
+assert_contains "mise tool-stub bin/tiny" "tiny v2."
+
+echo "All tool-stub lock tests passed!"

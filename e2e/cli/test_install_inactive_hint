@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Test that `mise install` warns when installing tools not in any config file
+
+set -euo pipefail
+export RUST_BACKTRACE=0
+export MISE_FRIENDLY_ERROR=1
+
+# Test: Installing a tool not in config should show a "mise use" hint
+assert_contains "mise install tiny@3.1.0 2>&1" "not activated"
+assert_contains "mise install tiny@3.1.0 2>&1" "mise use tiny"
+
+# Test: Installing a tool that IS in config should NOT show the hint
+mise use dummy@1.0.0
+assert_not_contains "mise install dummy 2>&1" "not activated"
+
+# Clean up
+mise use --rm dummy

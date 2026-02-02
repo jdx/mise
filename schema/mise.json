@@ -979,8 +979,10 @@
               "type": "string"
             },
             "uv_venv_auto": {
-              "description": "Integrate with uv to automatically create/source venvs if uv.lock is present.",
-              "type": "boolean"
+              "default": false,
+              "description": "Integrate with uv to manage project venvs when uv.lock is present.",
+              "type": ["boolean", "string"],
+              "enum": [false, "source", "create|source", true]
             },
             "uv_venv_create_args": {
               "description": "Arguments to pass to uv when creating a venv.",
@@ -2095,6 +2097,7 @@
       }
     },
     "env": {
+      "description": "environment variables to set",
       "oneOf": [
         {
           "$ref": "#/$defs/env"
@@ -2108,9 +2111,11 @@
       ]
     },
     "experimental_monorepo_root": {
+      "description": "marks this config as a monorepo root for task path syntax",
       "$ref": "#/$defs/experimental_monorepo_root"
     },
     "monorepo": {
+      "description": "configuration for monorepo task discovery",
       "$ref": "#/$defs/monorepo"
     },
     "min_version": {
@@ -2205,6 +2210,7 @@
       "type": "object"
     },
     "task_config": {
+      "description": "configuration for task execution and management",
       "$ref": "#/$defs/task_config"
     },
     "tasks": {
@@ -2232,12 +2238,15 @@
       "type": "object"
     },
     "hooks": {
+      "description": "hooks to run on events like cd, enter, leave",
       "$ref": "#/$defs/hooks"
     },
     "vars": {
+      "description": "variables to set for use in config templates",
       "$ref": "#/$defs/vars"
     },
     "watch_files": {
+      "description": "files to watch for changes and run scripts when modified",
       "$ref": "#/$defs/watch_files"
     },
     "_": {

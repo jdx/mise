@@ -1,16 +1,16 @@
 use crate::Result;
-use crate::cli::config::generate;
+use crate::cli::edit;
 
-/// [experimental] Generate a mise.toml file
+/// Generate a mise.toml file
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = generate::AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, after_long_help = edit::AFTER_LONG_HELP)]
 pub struct Config {
     #[clap(flatten)]
-    generate: generate::ConfigGenerate,
+    edit: edit::Edit,
 }
 
 impl Config {
     pub async fn run(self) -> Result<()> {
-        self.generate.run().await
+        self.edit.run().await
     }
 }

@@ -180,12 +180,6 @@ Manage config files
 \fIAliases: \fRcfg
 .RE
 .TP
-\fBconfig generate\fR
-Generate a mise.toml file
-.RS
-\fIAliases: \fRg
-.RE
-.TP
 \fBconfig get\fR
 Display the value of a setting in a mise.toml file
 .TP
@@ -238,10 +232,7 @@ Generate files for various tools/services
 Generate a script to download+execute mise
 .TP
 \fBgenerate config\fR
-[experimental] Generate a mise.toml file
-.RS
-\fIAliases: \fRg
-.RE
+Generate a mise.toml file
 .TP
 \fBgenerate devcontainer\fR
 Generate a devcontainer to execute mise
@@ -266,6 +257,9 @@ Generate a tool stub for HTTP\-based tools
 .TP
 \fBimplode\fR
 Removes mise CLI and all related data
+.TP
+\fBedit\fR
+Edit mise.toml interactively
 .TP
 \fBinstall\fR
 Install a tool version
@@ -752,19 +746,6 @@ Do not print table header
 .TP
 \fB\-\-tracked\-configs\fR
 List all tracked config files
-.SH "MISE CONFIG GENERATE"
-Generate a mise.toml file
-.PP
-\fBUsage:\fR mise config generate [OPTIONS]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-o, \-\-output\fR \fI<OUTPUT>\fR
-Output to file instead of stdout
-.TP
-\fB\-t, \-\-tool\-versions\fR \fI<TOOL_VERSIONS>\fR
-Path to a .tool\-versions file to import tools from
 .SH "MISE CONFIG GET"
 Display the value of a setting in a mise.toml file
 .PP
@@ -983,18 +964,23 @@ Directory to put localized data into
 \fIDefault: \fR.mise
 .RE
 .SH "MISE GENERATE CONFIG"
-[experimental] Generate a mise.toml file
+Generate a mise.toml file
 .PP
-\fBUsage:\fR mise generate config [OPTIONS]
+\fBUsage:\fR mise generate config [OPTIONS] [<PATH>]
 .PP
 \fBOptions:\fR
 .PP
 .TP
-\fB\-o, \-\-output\fR \fI<OUTPUT>\fR
-Output to file instead of stdout
+\fB\-n, \-\-dry\-run\fR
+Show what would be generated without writing to file
 .TP
 \fB\-t, \-\-tool\-versions\fR \fI<TOOL_VERSIONS>\fR
 Path to a .tool\-versions file to import tools from
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Path to the config file to create
 .SH "MISE GENERATE DEVCONTAINER"
 Generate a devcontainer to execute mise
 .PP
@@ -1169,6 +1155,9 @@ HTTP backend type to use
 \fIDefault: \fRhttp
 .RE
 .TP
+\fB\-\-lock\fR
+Resolve and embed lockfile data (exact version + platform URLs/checksums) into an existing stub file for reproducible installs without runtime API calls
+.TP
 \fB\-\-platform\-bin\fR \fI<PLATFORM_BIN>\fR
 Platform\-specific binary paths in the format platform:path
 
@@ -1216,6 +1205,24 @@ List directories that would be removed without actually removing them
 .TP
 \fB\-\-config\fR
 Also remove config directory
+.SH "MISE EDIT"
+Edit mise.toml interactively
+.PP
+\fBUsage:\fR mise edit [OPTIONS] [<PATH>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show what would be generated without writing to file
+.TP
+\fB\-t, \-\-tool\-versions\fR \fI<TOOL_VERSIONS>\fR
+Path to a .tool\-versions file to import tools from
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Path to the config file to create
 .SH "MISE INSTALL"
 Install a tool version
 

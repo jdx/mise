@@ -87,4 +87,3 @@ if [[ $output == *"__MISE_SESSION"* ]]; then
 else
 	fail "parent .config/mise should bypass fast-path but got: '$output'"
 fi
-rm -rf ../.config

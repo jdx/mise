@@ -1,4 +1,5 @@
 use crate::config::{Config, Settings};
+use clx::progress;
 use eyre::Result;
 use std::fs::{File, OpenOptions, create_dir_all};
 use std::path::Path;
@@ -49,9 +50,10 @@ impl log::Log for Logger {
         if will_log_term {
             let out = self.render(record, term_level, &args);
             if !out.is_empty() {
-                ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
-                    eprintln!("{out}");
-                });
+                // Use clx pause/resume for clean logging during progress display
+                progress::pause();
+                eprintln!("{out}");
+                progress::resume();
             }
         }
     }

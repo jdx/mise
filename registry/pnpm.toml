@@ -1,3 +1,4 @@
 backends = ["aqua:pnpm/pnpm", "npm:pnpm"]
 description = "Fast, disk space efficient package manager"
+detect = ["pnpm-lock.yaml", "pnpm-workspace.yaml"]
 test = ["pnpm --version", "{{version}}"]

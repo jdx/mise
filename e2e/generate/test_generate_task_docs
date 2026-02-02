@@ -113,12 +113,21 @@ assert_contains "cat test_docs.md" "Task for file output test"
 mkdir -p docs_output
 mise generate task-docs --multi --output docs_output
 
-# Check that individual markdown files are created
-assert "ls docs_output/0.md" ""
+# Check that individual markdown files are created with task names
+assert "ls docs_output/file-output.md" ""
 # The multi-file output creates separate files for each task
 # Just verify that the file contains task documentation
-assert_contains "cat docs_output/0.md" '##'
-assert_contains "cat docs_output/0.md" '**Usage**'
+assert_contains "cat docs_output/file-output.md" '##'
+assert_contains "cat docs_output/file-output.md" '**Usage**'
+
+# Test 7b: Multi-file output with --index
+rm -rf docs_output && mkdir -p docs_output
+mise generate task-docs --multi --index --output docs_output
+
+# Check that index.md is created with links to task files
+assert "ls docs_output/index.md" ""
+assert_contains "cat docs_output/index.md" "# Tasks"
+assert_contains "cat docs_output/index.md" "[file-output](./file-output.md)"
 
 # Test 8: Performance test - should be fast even with complex environment
 cat <<EOF >mise.toml

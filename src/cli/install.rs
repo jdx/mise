@@ -121,6 +121,16 @@ impl Install {
             .iter()
             .map(|ta| ta.ba.short.clone())
             .collect();
+        // Collect inactive tool names before trs borrow is consumed
+        let inactive_tools: Vec<String> = expanded_runtimes
+            .iter()
+            .filter(|ta| {
+                trs.sources
+                    .get(ta.ba.as_ref())
+                    .is_none_or(|s| s.is_argument())
+            })
+            .map(|ta| ta.ba.short.clone())
+            .collect();
         let mut ts: Toolset = trs.filter_by_tool(tools).into();
         let tool_versions = self.get_requested_tool_versions(&ts, &expanded_runtimes)?;
         let mut versions = if tool_versions.is_empty() {
@@ -146,6 +156,25 @@ impl Install {
         if !self.dry_run {
             config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
         }
+
+        // Warn about tools that were installed but not in any config file
+        if !self.dry_run && !inactive_tools.is_empty() {
+            let tool_list = inactive_tools.join(", ");
+            let use_cmds: Vec<String> = inactive_tools
+                .iter()
+                .map(|t| format!("  mise use {t}"))
+                .collect();
+            warn!(
+                "{tool_list} installed but not activated — {} not in a mise.toml config file.\nTo install and activate, run:\n{}",
+                if inactive_tools.len() == 1 {
+                    "it is"
+                } else {
+                    "they are"
+                },
+                use_cmds.join("\n"),
+            );
+        }
+
         Ok(())
     }
 

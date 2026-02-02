@@ -24,6 +24,3 @@ assert_contains "mise ls --installed dummy" "2.0.0"
 
 # Verify the binary actually exists and is executable
 assert_contains "mise x -- dummy --version" "2.0.0"
-
-# Clean up
-mise uninstall dummy --all 2>/dev/null || true

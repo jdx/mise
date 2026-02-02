@@ -29,7 +29,3 @@ if mise env 2>env_error.log; then
 fi
 
 assert_contains "cat env_error.log" "Required environment variable 'REQUIRED_VAR_HOOK' is not defined"
-
-# Cleanup
-rm -f mise.toml hook_output.log hook_error.log env_error.log
-unset REQUIRED_VAR_HOOK NORMAL_VAR

@@ -92,6 +92,3 @@ EOF
 # With file redaction, all vars from file are redacted
 assert_contains "mise env --redacted" "FILE_SECRET=file_secret_value"
 assert_contains "mise env --redacted" "FILE_PUBLIC=public_value"
-
-# Cleanup
-rm -f .env.json

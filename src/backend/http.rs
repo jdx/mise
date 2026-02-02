@@ -320,12 +320,9 @@ impl HttpBackend {
         let filename = self.dest_filename(file_path, file_info, opts);
         let dest_file = dest.join(&filename);
 
-        // Report extraction progress
+        // Report extraction progress (no bytes - we don't know total for extraction)
         if let Some(pr) = pr {
             pr.set_message(format!("extract {}", file_info.file_name()));
-            if let Ok(metadata) = file_path.metadata() {
-                pr.set_length(metadata.len());
-            }
         }
 
         match file_info.extension.as_str() {
@@ -334,13 +331,6 @@ impl HttpBackend {
             "bz2" => file::un_bz2(file_path, &dest_file)?,
             "zst" => file::un_zst(file_path, &dest_file)?,
             _ => unreachable!(),
-        }
-
-        // Mark extraction complete
-        if let Some(pr) = pr
-            && let Ok(metadata) = file_path.metadata()
-        {
-            pr.set_position(metadata.len());
         }
 
         file::make_executable(&dest_file)?;
@@ -359,22 +349,12 @@ impl HttpBackend {
         let filename = self.dest_filename(file_path, file_info, opts);
         let dest_file = dest.join(&filename);
 
-        // Report extraction progress
+        // Report extraction progress (no bytes - we don't know total for extraction)
         if let Some(pr) = pr {
             pr.set_message(format!("extract {}", file_info.file_name()));
-            if let Ok(metadata) = file_path.metadata() {
-                pr.set_length(metadata.len());
-            }
         }
 
         file::copy(file_path, &dest_file)?;
-
-        // Mark extraction complete
-        if let Some(pr) = pr
-            && let Ok(metadata) = file_path.metadata()
-        {
-            pr.set_position(metadata.len());
-        }
 
         file::make_executable(&dest_file)?;
         Ok(ExtractionType::RawFile { filename })
@@ -615,6 +595,15 @@ impl Backend for HttpBackend {
         &self.ba
     }
 
+    async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
+        let opts = tv.request.options();
+        super::http_install_operation_count(
+            get_opt(&opts, "checksum").is_some(),
+            &self.get_platform_key(),
+            tv,
+        )
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let versions = self.fetch_versions(config).await?;
         Ok(versions
@@ -661,14 +650,7 @@ impl Backend for HttpBackend {
             .or_default()
             .url = Some(url.clone());
 
-        // Determine operation count for progress reporting
-        let mut op_count = 1; // download
-        if get_opt(&opts, "checksum").is_some() {
-            op_count += 1;
-        }
-        op_count += 1; // extraction
-
-        // Account for lockfile checksum verification/generation
+        // For lockfile checksum verification
         let settings = Settings::get();
         let lockfile_enabled = settings.lockfile;
         let has_lockfile_checksum = tv
@@ -676,17 +658,15 @@ impl Backend for HttpBackend {
             .get(&platform_key)
             .and_then(|p| p.checksum.as_ref())
             .is_some();
-        if lockfile_enabled || has_lockfile_checksum {
-            op_count += 1;
-        }
-
-        ctx.pr.start_operations(op_count);
 
         ctx.pr.set_message(format!("download {filename}"));
         HTTP.download_file(&url, &file_path, Some(ctx.pr.as_ref()))
             .await?;
 
-        // Verify artifact
+        // Verify artifact (checksum if provided)
+        if get_opt(&opts, "checksum").is_some() {
+            ctx.pr.next_operation();
+        }
         verify_artifact(&tv, &file_path, &opts, Some(ctx.pr.as_ref()))?;
 
         // Generate cache key
@@ -700,6 +680,7 @@ impl Backend for HttpBackend {
         // Determine extraction type based on whether we're using cache or extracting fresh
         // On cache hit, we need to detect the actual filename from the cache (which may differ
         // from current options if a previous extraction used different `bin` name)
+        ctx.pr.next_operation();
         let extraction_type = if self.is_cached(&cache_key) {
             ctx.pr.set_message("using cached tarball".into());
             // Report extraction operation as complete (instant since we're using cache)
@@ -723,6 +704,9 @@ impl Backend for HttpBackend {
         self.create_version_alias_symlink(&tv, &cache_key)?;
 
         // Verify checksum for lockfile
+        if lockfile_enabled || has_lockfile_checksum {
+            ctx.pr.next_operation();
+        }
         self.verify_checksum(ctx, &mut tv, &file_path)?;
 
         Ok(tv)

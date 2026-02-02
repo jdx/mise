@@ -1,9 +1,13 @@
 [workspace]
-members = ["crates/vfox", "crates/aqua-registry"]
+members = [
+  "crates/vfox",
+  "crates/aqua-registry",
+  "crates/mise-interactive-config",
+]
 
 [package]
 name = "mise"
-version = "2026.1.12"
+version = "2026.2.1"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -106,7 +110,7 @@ hex = "0.4"
 humansize = "2"
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
-indicatif = { version = "0.18", features = ["improved_unicode"] }
+clx = "1"
 indoc = "2"
 itertools = "0.14"
 jiff = "0.2"
@@ -177,6 +181,7 @@ usage-lib = { version = "2", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }
+mise-interactive-config = { path = "crates/mise-interactive-config", version = "2026.1.12" }
 walkdir = "2"
 which = "7"
 xx = { version = "2", default-features = false, features = ["glob"] }

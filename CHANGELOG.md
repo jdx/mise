@@ -1,5 +1,83 @@
 # Changelog
 
+## [2026.2.1](https://github.com/jdx/mise/compare/v2026.2.0..v2026.2.1) - 2026-02-02
+
+### 🚀 Features
+
+- **(generate)** implement --index flag and use task names for task-docs --multi by @jdx in [#7944](https://github.com/jdx/mise/pull/7944)
+- **(plugins)** warn when env plugin shadows a registry tool by @jdx in [#7953](https://github.com/jdx/mise/pull/7953)
+- **(tool-stub)** add --lock flag to generate tool-stub by @jdx in [#7948](https://github.com/jdx/mise/pull/7948)
+- **(vfox)** add log module for Lua plugins by @jdx in [#7949](https://github.com/jdx/mise/pull/7949)
+- **(vfox)** switch Lua runtime from Lua 5.1 to Luau by @jdx in [#7954](https://github.com/jdx/mise/pull/7954)
+
+### 🐛 Bug Fixes
+
+- **(build)** upgrade cross images to :main for C++17 support by @jdx in [#7958](https://github.com/jdx/mise/pull/7958)
+- **(build)** update glibc check to match new cross image baseline by @jdx in [fc1247e](https://github.com/jdx/mise/commit/fc1247e84b91957e4d6e6841be3af7a95f242625)
+- **(registry)** handle file:// URLs in normalize_remote by @jdx in [#7947](https://github.com/jdx/mise/pull/7947)
+- **(vfox)** fix LuaLS warnings in test fixtures and add linting by @jdx in [#7946](https://github.com/jdx/mise/pull/7946)
+
+### 🚜 Refactor
+
+- unify deprecated_at! macro with warn and remove versions by @jdx in [#7957](https://github.com/jdx/mise/pull/7957)
+
+### 🧪 Testing
+
+- remove unnecessary end-of-test cleanup from e2e tests by @jdx in [#7950](https://github.com/jdx/mise/pull/7950)
+
+### ◀️ Revert
+
+- Revert "fix(build): update glibc check to match new cross image baseline" by @jdx in [0774bf9](https://github.com/jdx/mise/commit/0774bf99d4a2ab2a30553a7db09f79223cdc5aa6)
+- Revert "fix(build): upgrade cross images to :main for C++17 support " by @jdx in [8dcca08](https://github.com/jdx/mise/commit/8dcca086e87c1b29343e2842c6c68ec949dd60f4)
+- Revert "feat(vfox): switch Lua runtime from Lua 5.1 to Luau " by @jdx in [8b4322d](https://github.com/jdx/mise/commit/8b4322d693702890e268d9c1e9309536ffdbd8fc)
+
+## [2026.2.0](https://github.com/jdx/mise/compare/v2026.1.12..v2026.2.0) - 2026-02-01
+
+### 🚀 Features
+
+- **(edit)** add interactive config editor (`mise edit`) by @jdx in [#7930](https://github.com/jdx/mise/pull/7930)
+- **(lockfile)** graduate lockfiles from experimental by @jdx in [#7929](https://github.com/jdx/mise/pull/7929)
+- **(task)** add support for usage values in task confirm dialog by @roele in [#7924](https://github.com/jdx/mise/pull/7924)
+- **(task)** improve source freshness checking with edge case handling by @jdx in [#7932](https://github.com/jdx/mise/pull/7932)
+
+### 🐛 Bug Fixes
+
+- **(activate)** preserve ordering of paths appended after mise activate by @jdx in [#7919](https://github.com/jdx/mise/pull/7919)
+- **(install)** sort failed installations for deterministic error output by @jdx in [#7936](https://github.com/jdx/mise/pull/7936)
+- **(lockfile)** preserve URL and prefer sha256 when merging platform info by @jdx in [#7923](https://github.com/jdx/mise/pull/7923)
+- **(lockfile)** add atomic writes and cache invalidation by @jdx in [#7927](https://github.com/jdx/mise/pull/7927)
+- **(release)** add mise-interactive-config to release-plz publish workflow by @jdx in [#7940](https://github.com/jdx/mise/pull/7940)
+- **(release)** handle mise-interactive-config schema during cargo publish by @jdx in [#7942](https://github.com/jdx/mise/pull/7942)
+- **(release)** include mise.json in mise-interactive-config package by @jdx in [3689a4a](https://github.com/jdx/mise/commit/3689a4a83c7e886ba15082f99674ebc6398056e3)
+- **(task)** discover and run shebang file tasks on Windows by @jdx in [#7941](https://github.com/jdx/mise/pull/7941)
+- **(templates)** use sha256 for hash filter instead of blake3 by @jdx in [#7925](https://github.com/jdx/mise/pull/7925)
+- **(upgrade)** respect tracked configs when pruning old versions by @jdx in [#7926](https://github.com/jdx/mise/pull/7926)
+
+### 🚜 Refactor
+
+- **(progress)** migrate from indicatif to clx by @jdx in [#7928](https://github.com/jdx/mise/pull/7928)
+
+### 📚 Documentation
+
+- improve clarity on uvx and pipx dependencies by @ygormutti in [#7878](https://github.com/jdx/mise/pull/7878)
+
+### ⚡ Performance
+
+- **(install)** use Kahn's algorithm for dependency scheduling by @jdx in [#7933](https://github.com/jdx/mise/pull/7933)
+- use Aho-Corasick for efficient redaction by @jdx in [#7931](https://github.com/jdx/mise/pull/7931)
+
+### 🧪 Testing
+
+- remove flaky test_http_version_list test by @jdx in [#7934](https://github.com/jdx/mise/pull/7934)
+
+### Chore
+
+- use github backend instead of ubi in mise.lock by @jdx in [#7922](https://github.com/jdx/mise/pull/7922)
+
+### New Contributors
+
+- @ygormutti made their first contribution in [#7878](https://github.com/jdx/mise/pull/7878)
+
 ## [2026.1.12](https://github.com/jdx/mise/compare/v2026.1.11..v2026.1.12) - 2026-01-31
 
 ### 🐛 Bug Fixes

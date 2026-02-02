@@ -11,6 +11,7 @@ use crate::dirs;
 use crate::plugins::Plugin;
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::core::CORE_PLUGINS;
+use crate::plugins::warn_if_env_plugin_shadows_registry;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
@@ -134,7 +135,8 @@ impl PluginsInstall {
         git_url: Option<String>,
     ) -> Result<()> {
         let path = dirs::PLUGINS.join(name.to_kebab_case());
-        let plugin = AsdfPlugin::new(name.clone(), path);
+        // TODO: detect vfox plugins and use VfoxPlugin instead of always using AsdfPlugin
+        let plugin = AsdfPlugin::new(name.clone(), path.clone());
         if let Some(url) = git_url {
             plugin.set_remote_url(url);
         }
@@ -146,6 +148,7 @@ impl PluginsInstall {
             plugin
                 .ensure_installed(config, &mpr, self.force, false)
                 .await?;
+            warn_if_env_plugin_shadows_registry(&name, &path);
         }
         Ok(())
     }

@@ -83,6 +83,3 @@ echo "Number of versions installed from lockfile: $installed_count"
 
 # The test should fail if not all versions are installed
 assert "echo $installed_count" "3"
-
-# Clean up
-rm -f mise.toml mise.lock

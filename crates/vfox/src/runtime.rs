@@ -28,6 +28,13 @@ impl Runtime {
         runtime
     }
 
+    pub(crate) fn with_platform(plugin_dir_path: PathBuf, os: &str, arch: &str) -> Runtime {
+        let mut runtime = Self::get(plugin_dir_path);
+        runtime.os = os.to_string();
+        runtime.arch = arch.to_string();
+        runtime
+    }
+
     #[cfg(test)]
     pub(crate) fn set_os(os: String) {
         let mut runtime = RUNTIME.lock().unwrap();

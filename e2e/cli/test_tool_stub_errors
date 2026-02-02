@@ -94,6 +94,3 @@ else
 	echo "Output: $output"
 	exit 1
 fi
-
-# Clean up
-rm test_tool_notfound

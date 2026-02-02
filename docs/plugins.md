@@ -5,16 +5,16 @@ Plugins in mise are a way to extend `mise` with new functionality like extra too
 Historically it was the only way to add new tools (as the only backend was [asdf](/dev-tools/backends/asdf.html)).
 
 The way that backend works is every tool has its own plugin which needs to be manually installed. However, now with [core tools](/core-tools.html)
-and backends like [aqua](/dev-tools/backends/aqua.html)/[ubi](/dev-tools/backends/ubi.html), plugins are no longer necessary to run most tools in mise.
+and backends like [aqua](/dev-tools/backends/aqua.html)/[github](/dev-tools/backends/github.html), plugins are no longer necessary to run most tools in mise.
 
 Tool plugins should be avoided for security reasons. New tools will not be accepted into mise built with asdf/plugins unless they are very popular and
-aqua/ubi is not an option for some reason.
+aqua/github is not an option for some reason.
 
 The only exception is if the tool needs to set env vars or has a complex installation process, as plugins can provide functionality like [setting env vars globally](/environments/#plugin-provided-env-directives) without relying on a tool being installed. They can also provide [aliases for versions](/dev-tools/aliases.html#aliased-versions).
 
 If you want to integrate a new tool into mise, you should either try to get it into the [aqua registry](https://mise.jdx.dev/dev-tools/backends/aqua.html)
-or see if it can be installed with [ubi](https://mise.jdx.dev/dev-tools/backends/ubi.html). Then add it to the [registry](https://github.com/jdx/mise/blob/main/registry/).
-Aqua is definitely preferred to ubi as it has better UX and more features like slsa verification and the ability to use different logic for older versions.
+or see if it can be installed with [github](https://mise.jdx.dev/dev-tools/backends/github.html). Then add it to the [registry](https://github.com/jdx/mise/blob/main/registry/).
+Aqua is definitely preferred to github as it has better UX and more features like slsa verification and the ability to use different logic for older versions.
 
 You can manage all installed plugins in `mise` with [`mise plugins`](/cli/plugins.html).
 
@@ -93,7 +93,7 @@ Unlike tool plugins, environment plugins:
 - Are activated via `env._.<plugin-name>` syntax
 - Don't manage tool versions or installations
 
-See [Environment Plugin Development](env-plugin-development.md) for creating environment plugins. The [mise-env-sample](https://github.com/jdx/mise-env-sample) repository provides a working example.
+See [Environment Plugin Development](env-plugin-development.md) for creating environment plugins. The [mise-env-plugin-template](https://github.com/jdx/mise-env-plugin-template) repository provides a ready-to-use starting point.
 
 ## General Plugin Usage
 

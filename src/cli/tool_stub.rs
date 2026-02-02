@@ -6,6 +6,7 @@ use crate::config::Config;
 use crate::dirs;
 use crate::file;
 use crate::hash;
+use crate::lockfile::PlatformInfo;
 use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersionOptions};
 use clap::Parser;
 use color_eyre::eyre::{Result, bail, eyre};
@@ -23,10 +24,22 @@ pub struct ToolStubFile {
     pub install_env: indexmap::IndexMap<String, String>,
     #[serde(default)]
     pub os: Option<Vec<String>>,
+    pub lock: Option<ToolStubLock>,
     #[serde(flatten, deserialize_with = "deserialize_tool_stub_options")]
     pub opts: indexmap::IndexMap<String, String>,
     #[serde(skip)]
     pub tool_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ToolStubLock {
+    pub platforms: BTreeMap<String, ToolStubLockPlatform>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ToolStubLockPlatform {
+    pub url: Option<String>,
+    pub checksum: Option<String>,
 }
 
 // Custom deserializer that converts TOML values to strings for storage in opts
@@ -46,7 +59,7 @@ where
             // Skip known special fields that are handled separately
             if matches!(
                 key.as_str(),
-                "version" | "bin" | "tool" | "install_env" | "os"
+                "version" | "bin" | "tool" | "install_env" | "os" | "lock"
             ) {
                 continue;
             }
@@ -495,6 +508,23 @@ async fn execute_with_tool_request(
 
     // Resolve the toolset to populate current versions
     toolset.resolve(config).await?;
+
+    // Inject lock data from stub into tool versions
+    // The toolset contains only the single tool from this stub, so apply to all versions
+    if let Some(lock) = &stub.lock {
+        for (_ba, tvl) in toolset.versions.iter_mut() {
+            for tv in &mut tvl.versions {
+                for (platform_key, lock_platform) in &lock.platforms {
+                    let pi = PlatformInfo {
+                        url: lock_platform.url.clone(),
+                        checksum: lock_platform.checksum.clone(),
+                        ..Default::default()
+                    };
+                    tv.lock_platforms.insert(platform_key.clone(), pi);
+                }
+            }
+        }
+    }
 
     // Ensure we have current versions after resolving
     ensure!(

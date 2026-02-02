@@ -1,19 +1,14 @@
 use crate::cli::args::BackendArg;
-use crate::cmd::CmdLineRunner;
+use crate::config::env_directive::venv::{Venv, create_python_venv, load_venv};
 use crate::config::{Config, Settings};
-use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{Result, toolset::Toolset};
+use crate::env_diff::EnvMap;
+use crate::file::display_path;
+use crate::toolset::Toolset;
 use crate::{dirs, file};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::OnceCell;
-
-#[derive(Clone, Debug)]
-pub struct Venv {
-    pub venv_path: PathBuf,
-    pub env: HashMap<String, String>,
-}
 
 // use a mutex to prevent deadlocks that occurs due to reentrantly initialization
 // when resolving the venv path or env vars
@@ -23,72 +18,69 @@ pub async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> &'static Option<Venv
     UV_VENV
         .get_or_init(async || {
             let settings = Settings::get();
-            if !settings.python.uv_venv_auto {
+            let uv_auto = settings.python.uv_venv_auto;
+            if !uv_auto.should_source() {
                 return None;
             }
-            let (Some(venv_path), Some(uv_path)) = (venv_path(), uv_path(config, ts).await) else {
-                return None;
-            };
-            match get_or_create_venv(ts, venv_path, uv_path).await {
-                Ok(venv) => Some(venv),
-                Err(e) => {
-                    warn!("uv venv failed: {e}");
-                    None
+            let uv_root = uv_root()?;
+            let venv_path = uv_root.join(".venv");
+            if !venv_path.exists() {
+                if uv_auto.should_create() {
+                    if let Err(err) = create_python_venv(
+                        config,
+                        ts,
+                        &venv_path,
+                        EnvMap::new(),
+                        None,
+                        None,
+                        None,
+                        true,
+                    )
+                    .await
+                    {
+                        warn_once!(
+                            "uv venv creation failed at: {p}\n\n{err}",
+                            p = display_path(&venv_path)
+                        );
+                        return None;
+                    }
+                    // venv created successfully, fall through to load it
+                } else {
+                    if !prepare_uv_enabled(config, &uv_root) {
+                        warn_once!(
+                            "uv venv not found at: {p}\n\n\
+                            To create it, run a `uv` command like `uv sync` or `uv venv`. \
+                            Alternatively, enable `[prepare.uv]` and run `mise prepare`.",
+                            p = display_path(&venv_path)
+                        );
+                    }
+                    return None;
                 }
             }
+
+            let mut extra_env = HashMap::new();
+            // Set UV_PYTHON for legacy behavior
+            if uv_auto.is_legacy_true()
+                && let Some(python_tv) = ts.versions.get(&BackendArg::from("python"))
+                && let Some(tv) = python_tv.versions.first()
+            {
+                extra_env.insert("UV_PYTHON".to_string(), tv.version.to_string());
+            }
+            Some(load_venv(&venv_path, extra_env))
         })
         .await
-}
-
-async fn get_or_create_venv(ts: &Toolset, venv_path: PathBuf, uv_path: PathBuf) -> Result<Venv> {
-    #[cfg(windows)]
-    let venv_bin_dir = "Scripts";
-    #[cfg(not(windows))]
-    let venv_bin_dir = "bin";
-    let mut venv = Venv {
-        env: Default::default(),
-        venv_path: venv_path.join(venv_bin_dir),
-    };
-    if let Some(python_tv) = ts
-        .versions
-        .get(&BackendArg::from("python"))
-        .and_then(|tvl| tvl.versions.first())
-    {
-        venv.env
-            .insert("UV_PYTHON".to_string(), python_tv.version.to_string());
-    }
-    if !venv_path.exists() {
-        let mpr = MultiProgressReport::get();
-        let pr = mpr.add("Creating uv venv");
-        let mut cmd = CmdLineRunner::new(uv_path)
-            .current_dir(uv_root().unwrap())
-            .with_pr(pr.as_ref())
-            .envs(&venv.env)
-            .arg("venv");
-        if !log::log_enabled!(log::Level::Debug) {
-            cmd = cmd.arg("--quiet");
-        }
-        if let Some(extra) = Settings::get().python.uv_venv_create_args.clone() {
-            cmd = cmd.args(extra);
-        }
-        cmd.execute()?;
-    }
-    venv.env.insert(
-        "VIRTUAL_ENV".to_string(),
-        venv_path.to_string_lossy().to_string(),
-    );
-    Ok(venv)
 }
 
 fn uv_root() -> Option<PathBuf> {
     file::find_up(dirs::CWD.as_ref()?, &["uv.lock"]).map(|p| p.parent().unwrap().to_path_buf())
 }
-fn venv_path() -> Option<PathBuf> {
-    Some(uv_root()?.join(".venv"))
-}
-async fn uv_path(config: &Arc<Config>, ts: &Toolset) -> Option<PathBuf> {
-    if let Some(uv_path) = ts.which_bin(config, "uv").await {
-        return Some(uv_path);
-    }
-    which::which("uv").ok()
+
+fn prepare_uv_enabled(config: &Config, uv_root: &Path) -> bool {
+    config.config_files.values().any(|cf| {
+        if cf.config_root() != uv_root {
+            return false;
+        }
+        cf.prepare_config()
+            .is_some_and(|prepare| prepare.providers.contains_key("uv"))
+    })
 }

@@ -16,6 +16,6 @@ PLUGIN.description = "Python Development Workflow for Humans - https://pipenv.py
 --- !!! OPTIONAL !!!
 PLUGIN.minRuntimeVersion = "0.3.0"
 PLUGIN.notes = {
-    "Requires Python 3.7+ to be installed and available in PATH",
-    "If the Python interpreter used during installation is removed, pipenv will stop working and needs to be reinstalled",
+	"Requires Python 3.7+ to be installed and available in PATH",
+	"If the Python interpreter used during installation is removed, pipenv will stop working and needs to be reinstalled",
 }

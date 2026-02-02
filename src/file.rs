@@ -474,6 +474,14 @@ pub fn is_executable(path: &Path) -> bool {
 
 #[cfg(windows)]
 pub fn is_executable(path: &Path) -> bool {
+    if has_known_executable_extension(path) {
+        return true;
+    }
+    has_shebang(path)
+}
+
+#[cfg(windows)]
+pub fn has_known_executable_extension(path: &Path) -> bool {
     path.extension().map_or(
         Settings::get()
             .windows_executable_extensions
@@ -487,6 +495,20 @@ pub fn is_executable(path: &Path) -> bool {
             false
         },
     )
+}
+
+/// Check if a file starts with a shebang (#!).
+/// Only reads the first 2 bytes to minimize I/O during task discovery.
+#[cfg(windows)]
+pub fn has_shebang(path: &Path) -> bool {
+    std::fs::File::open(path)
+        .and_then(|mut f| {
+            use std::io::Read;
+            let mut buf = [0u8; 2];
+            f.read_exact(&mut buf)?;
+            Ok(buf == *b"#!")
+        })
+        .unwrap_or(false)
 }
 
 #[cfg(unix)]
@@ -798,13 +820,6 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
     // }
     create_dir_all(dest).wrap_err_with(err)?;
 
-    // Set progress length once at the beginning with archive size
-    if let Some(pr) = &opts.pr
-        && let Ok(metadata) = archive.metadata()
-    {
-        pr.set_length(metadata.len());
-    }
-
     // Try to extract using the tar crate, detecting sparse files during extraction
     let mut needs_system_tar = false;
     for entry in Archive::new(tar).entries().wrap_err_with(err)? {
@@ -825,10 +840,6 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
 
         trace!("extracting {}", entry.path().wrap_err_with(err)?.display());
         entry.unpack_in(dest).wrap_err_with(err)?;
-        // Update position as we extract files
-        if let Some(pr) = &opts.pr {
-            pr.set_position(entry.raw_file_position());
-        }
     }
 
     // Check for the GNUSparseFile.0 directory which indicates the tar crate
