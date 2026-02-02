@@ -1,16 +1,16 @@
-function PLUGIN:PostInstall(ctx)
-    --- SDK installation root path
-    local rootPath = ctx.rootPath
-    local runtimeVersion = ctx.runtimeVersion
+--!strict
+local Types = require("@lib/types")
 
-    -- Create the installation directory structure for dummy plugin
-    os.execute("mkdir -p " .. rootPath .. "/bin")
+local plugin = PLUGIN :: Types.PluginType
+local cmd = require("cmd") :: Types.CmdModule
 
-    -- Create a dummy executable
-    local dummy_file = io.open(rootPath .. "/bin/dummy", "w")
-    if dummy_file then
-        dummy_file:write("#!/bin/sh\necho 'dummy version 1.0.0'\n")
-        dummy_file:close()
-        os.execute("chmod +x " .. rootPath .. "/bin/dummy")
-    end
+function plugin:PostInstall(ctx: { rootPath: string, runtimeVersion: string, sdkInfo: { [string]: Types.SdkInfo } })
+	--- SDK installation root path
+	local rootPath = ctx.rootPath
+	local _runtimeVersion = ctx.runtimeVersion
+
+	-- Create the installation directory structure and dummy executable
+	cmd.exec("mkdir -p " .. rootPath .. "/bin")
+	cmd.exec("printf '%s\\n' '#!/bin/sh' \"echo 'dummy version 1.0.0'\" > " .. rootPath .. "/bin/dummy")
+	cmd.exec("chmod +x " .. rootPath .. "/bin/dummy")
 end

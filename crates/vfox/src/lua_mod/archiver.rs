@@ -2,9 +2,10 @@ use crate::error::Result;
 use mlua::{ExternalResult, Lua, MultiValue, Table};
 use std::path::PathBuf;
 
+use super::get_or_create_loaded;
+
 pub fn mod_archiver(lua: &Lua) -> Result<()> {
-    let package: Table = lua.globals().get("package")?;
-    let loaded: Table = package.get("loaded")?;
+    let loaded: Table = get_or_create_loaded(lua)?;
     Ok(loaded.set(
         "archiver",
         lua.create_table_from(vec![(

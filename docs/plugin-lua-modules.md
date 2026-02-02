@@ -24,23 +24,24 @@ The HTTP module provides functionality for making web requests and downloading f
 ### Basic HTTP Requests
 
 ```lua
+--!strict
 local http = require("http")
 
 -- GET request
 local resp, err = http.get({
     url = "https://api.github.com/repos/owner/repo/releases",
     headers = {
-        ['User-Agent'] = "mise-plugin",
-        ['Accept'] = "application/json"
-    }
+        ["User-Agent"] = "mise-plugin",
+        ["Accept"] = "application/json",
+    },
 })
 
 if err ~= nil then
-    error("Request failed: " .. err)
+    error(`Request failed: {err}`)
 end
 
 if resp.status_code ~= 200 then
-    error("HTTP error: " .. resp.status_code)
+    error(`HTTP error: {resp.status_code}`)
 end
 
 local body = resp.body
@@ -49,36 +50,38 @@ local body = resp.body
 ### HEAD Requests
 
 ```lua
+--!strict
 local http = require("http")
 
 -- HEAD request to check file info
 local resp, err = http.head({
-    url = "https://example.com/file.tar.gz"
+    url = "https://example.com/file.tar.gz",
 })
 
 if err ~= nil then
-    error("HEAD request failed: " .. err)
+    error(`HEAD request failed: {err}`)
 end
 
-local content_length = resp.headers['content-length']
-local content_type = resp.headers['content-type']
+local content_length = resp.headers["content-length"]
+local content_type = resp.headers["content-type"]
 ```
 
 ### File Downloads
 
 ```lua
+--!strict
 local http = require("http")
 
 -- Download file
 local err = http.download_file({
     url = "https://github.com/owner/repo/archive/v1.0.0.tar.gz",
     headers = {
-        ['User-Agent'] = "mise-plugin"
-    }
+        ["User-Agent"] = "mise-plugin",
+    },
 }, "/path/to/download.tar.gz")
 
 if err ~= nil then
-    error("Download failed: " .. err)
+    error(`Download failed: {err}`)
 end
 ```
 
@@ -90,10 +93,10 @@ HTTP responses contain the following fields:
 {
     status_code = 200,
     headers = {
-        ['content-type'] = "application/json",
-        ['content-length'] = "1234"
+        ["content-type"] = "application/json",
+        ["content-length"] = "1234",
     },
-    body = "response content"
+    body = "response content",
 }
 ```
 
@@ -104,32 +107,34 @@ The JSON module provides encoding and decoding functionality.
 ### Basic Usage
 
 ```lua
+--!strict
 local json = require("json")
 
 -- Encode table to JSON string
 local obj = {
     name = "mise-plugin",
     version = "1.0.0",
-    tools = {"prettier", "eslint"}
+    tools = { "prettier", "eslint" },
 }
 local jsonStr = json.encode(obj)
 -- Result: '{"name":"mise-plugin","version":"1.0.0","tools":["prettier","eslint"]}'
 
 -- Decode JSON string to table
 local decoded = json.decode(jsonStr)
-print(decoded.name)  -- "mise-plugin"
-print(decoded.tools[1])  -- "prettier"
+print(decoded.name) -- "mise-plugin"
+print(decoded.tools[1]) -- "prettier"
 ```
 
-### Error Handling (Lua)
+### Safe JSON Parsing
 
 ```lua
+--!strict
 local json = require("json")
 
 -- Safe JSON parsing
 local success, result = pcall(json.decode, response_body)
 if not success then
-    error("Failed to parse JSON: " .. result)
+    error(`Failed to parse JSON: {result}`)
 end
 
 -- Use the parsed data
@@ -145,46 +150,49 @@ The strings module provides various string manipulation utilities.
 ### String Operations
 
 ```lua
+--!strict
 local strings = require("strings")
 
 -- Split string into parts
 local parts = strings.split("hello,world,test", ",")
-print(parts[1])  -- "hello"
-print(parts[2])  -- "world"
-print(parts[3])  -- "test"
+print(parts[1]) -- "hello"
+print(parts[2]) -- "world"
+print(parts[3]) -- "test"
 
 -- Join strings
-local joined = strings.join({"hello", "world", "test"}, " - ")
-print(joined)  -- "hello - world - test"
+local joined = strings.join({ "hello", "world", "test" }, " - ")
+print(joined) -- "hello - world - test"
 
 -- Trim whitespace
 local trimmed = strings.trim_space("  hello world  ")
-print(trimmed)  -- "hello world"
+print(trimmed) -- "hello world"
 ```
 
 ### String Checks
 
 ```lua
+--!strict
 local strings = require("strings")
 
 -- Check prefixes and suffixes
 local text = "hello world"
-print(strings.has_prefix(text, "hello"))  -- true
-print(strings.has_suffix(text, "world"))  -- true
-print(strings.contains(text, "lo wo"))    -- true
+print(strings.has_prefix(text, "hello")) -- true
+print(strings.has_suffix(text, "world")) -- true
+print(strings.contains(text, "lo wo")) -- true
 
 -- Trim specific characters
 local trimmed = strings.trim("hello world", "world")
-print(trimmed)  -- "hello "
+print(trimmed) -- "hello "
 ```
 
 ### Version String Utilities
 
 ```lua
+--!strict
 local strings = require("strings")
 
 -- Common version string operations
-local function normalize_version(version)
+local function normalize_version(version: string): string
     -- Remove 'v' prefix if present
     version = strings.trim_prefix(version, "v")
 
@@ -193,7 +201,7 @@ local function normalize_version(version)
     return parts[1]
 end
 
-local version = normalize_version("v1.2.3-beta.1")  -- "1.2.3"
+local version = normalize_version("v1.2.3-beta.1") -- "1.2.3"
 ```
 
 ## Semver Module
@@ -203,41 +211,44 @@ The semver module provides semantic version comparison and sorting functionality
 ### Version Comparison
 
 ```lua
+--!strict
 local semver = require("semver")
 
 -- Compare two versions
 -- Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2
-local result = semver.compare("1.2.3", "1.2.4")  -- -1
-local result = semver.compare("2.0.0", "1.9.9")  -- 1
-local result = semver.compare("1.0.0", "1.0.0")  -- 0
+local result = semver.compare("1.2.3", "1.2.4") -- -1
+local result = semver.compare("2.0.0", "1.9.9") -- 1
+local result = semver.compare("1.0.0", "1.0.0") -- 0
 
 -- Handles numeric comparison correctly
-local result = semver.compare("9.6.9", "9.6.24")   -- -1 (not lexicographic!)
+local result = semver.compare("9.6.9", "9.6.24") -- -1 (not lexicographic!)
 local result = semver.compare("10.0.0", "9.6.24") -- 1
 ```
 
 ### Parse Version
 
 ```lua
+--!strict
 local semver = require("semver")
 
 -- Parse version string into numeric parts
 local parts = semver.parse("1.2.3")
-print(parts[1])  -- 1
-print(parts[2])  -- 2
-print(parts[3])  -- 3
+print(parts[1]) -- 1
+print(parts[2]) -- 2
+print(parts[3]) -- 3
 
 -- Works with prefixes and suffixes
-local parts = semver.parse("v1.2.3-beta")  -- {1, 2, 3}
+local parts = semver.parse("v1.2.3-beta") -- {1, 2, 3}
 ```
 
 ### Sort Version Strings
 
 ```lua
+--!strict
 local semver = require("semver")
 
 -- Sort array of version strings (ascending order)
-local versions = {"1.10.0", "1.2.0", "1.9.0", "2.0.0"}
+local versions = { "1.10.0", "1.2.0", "1.9.0", "2.0.0" }
 local sorted = semver.sort(versions)
 -- Result: {"1.2.0", "1.9.0", "1.10.0", "2.0.0"}
 ```
@@ -245,13 +256,14 @@ local sorted = semver.sort(versions)
 ### Sort Tables by Version Field
 
 ```lua
+--!strict
 local semver = require("semver")
 
 -- Sort array of tables by a version field (ascending order)
 local releases = {
-    {version = "1.10.0", url = "..."},
-    {version = "1.2.0", url = "..."},
-    {version = "1.9.0", url = "..."},
+    { version = "1.10.0", url = "..." },
+    { version = "1.2.0", url = "..." },
+    { version = "1.9.0", url = "..." },
 }
 local sorted = semver.sort_by(releases, "version")
 -- Result: sorted by version ascending
@@ -260,22 +272,25 @@ local sorted = semver.sort_by(releases, "version")
 ### Real-World Example: Available Hook
 
 ```lua
+--!strict
 local http = require("http")
 local semver = require("semver")
 
-function PLUGIN:Available(ctx)
+type AvailableResult = { version: string }
+
+function PLUGIN:Available(_ctx: any): { AvailableResult }
     local resp, err = http.get({
-        url = "https://example.com/releases/"
+        url = "https://example.com/releases/",
     })
 
     if err ~= nil then
-        error("Failed to fetch versions: " .. err)
+        error(`Failed to fetch versions: {err}`)
     end
 
-    local result = {}
+    local result: { AvailableResult } = {}
     -- Parse versions from response...
-    for version in string.gmatch(resp.body, 'v([0-9]+%.[0-9]+%.[0-9]+)') do
-        table.insert(result, {version = version})
+    for version in string.gmatch(resp.body, "v([0-9]+%.[0-9]+%.[0-9]+)") do
+        table.insert(result, { version = version })
     end
 
     -- Sort versions semantically (ascending order - oldest first)
@@ -286,15 +301,20 @@ end
 ### Using Compare in Custom Sort
 
 ```lua
+--!strict
 local semver = require("semver")
 
+type VersionEntry = { version: string }
+
+local versions: { VersionEntry } = {}
+
 -- Sort with custom comparator (descending order - newest first)
-table.sort(versions, function(a, b)
+table.sort(versions, function(a: VersionEntry, b: VersionEntry): boolean
     return semver.compare(a.version, b.version) > 0
 end)
 
 -- Sort ascending (oldest first) - default for Available()
-table.sort(versions, function(a, b)
+table.sort(versions, function(a: VersionEntry, b: VersionEntry): boolean
     return semver.compare(a.version, b.version) < 0
 end)
 ```
@@ -306,6 +326,7 @@ The HTML module provides HTML parsing capabilities.
 ### Basic HTML Parsing
 
 ```lua
+--!strict
 local html = require("html")
 
 -- Parse HTML document
@@ -322,20 +343,21 @@ local doc = html.parse([[
 ]])
 
 -- Extract text content
-local version = doc:find("#version"):text()  -- "1.2.3"
+local version = doc:find("#version"):text() -- "1.2.3"
 
 -- Extract attributes
 local links = doc:find("a")
 for _, link in ipairs(links) do
     local href = link:attr("href")
     local text = link:text()
-    print(text .. ": " .. href)
+    print(`{text}: {href}`)
 end
 ```
 
 ### CSS Selectors
 
 ```lua
+--!strict
 local html = require("html")
 
 local doc = html.parse(html_content)
@@ -356,20 +378,23 @@ local specific_links = doc:find("ul.downloads a[href$='.tar.gz']")
 ### Real-World Example: Scraping Releases
 
 ```lua
+--!strict
 local html = require("html")
 local http = require("http")
 
-function get_github_releases(owner, repo)
+type Release = { version: string, url: string }
+
+local function get_github_releases(owner: string, repo: string): { Release }
     local resp, err = http.get({
-        url = "https://github.com/" .. owner .. "/" .. repo .. "/releases"
+        url = `https://github.com/{owner}/{repo}/releases`,
     })
 
     if err ~= nil then
-        error("Failed to fetch releases: " .. err)
+        error(`Failed to fetch releases: {err}`)
     end
 
     local doc = html.parse(resp.body)
-    local releases = {}
+    local releases: { Release } = {}
 
     -- Find all release tags
     local release_elements = doc:find("a[href*='/releases/tag/']")
@@ -379,7 +404,7 @@ function get_github_releases(owner, repo)
         if version then
             table.insert(releases, {
                 version = version,
-                url = "https://github.com" .. href
+                url = `https://github.com{href}`,
             })
         end
     end
@@ -402,46 +427,50 @@ The archiver module provides functionality for extracting compressed archives.
 ### Basic Extraction
 
 ```lua
+--!strict
 local archiver = require("archiver")
 
 -- Extract archive to directory
 local err = archiver.decompress("archive.tar.gz", "extracted/")
 if err ~= nil then
-    error("Extraction failed: " .. err)
+    error(`Extraction failed: {err}`)
 end
 
 -- Extract ZIP file
 local err = archiver.decompress("package.zip", "destination/")
 if err ~= nil then
-    error("ZIP extraction failed: " .. err)
+    error(`ZIP extraction failed: {err}`)
 end
 ```
 
 ### Real-World Example: Plugin Installation
 
 ```lua
+--!strict
 local archiver = require("archiver")
 local http = require("http")
+local file = require("file")
 
-function install_from_archive(download_url, install_path)
+local function install_from_archive(download_url: string, install_path: string)
     -- Download the archive
-    local archive_path = install_path .. "/download.tar.gz"
+    local archive_path = `{install_path}/download.tar.gz`
     local err = http.download_file({
-        url = download_url
+        url = download_url,
     }, archive_path)
 
     if err ~= nil then
-        error("Download failed: " .. err)
+        error(`Download failed: {err}`)
     end
 
     -- Extract to installation directory
-    local err = archiver.decompress(archive_path, install_path)
+    err = archiver.decompress(archive_path, install_path)
     if err ~= nil then
-        error("Extraction failed: " .. err)
+        error(`Extraction failed: {err}`)
     end
 
-    -- Clean up archive
-    os.remove(archive_path)
+    -- Clean up archive using cmd module
+    local cmd = require("cmd")
+    cmd.exec(`rm {archive_path}`)
 end
 ```
 
@@ -452,11 +481,12 @@ The file module provides file system operations.
 ### Path Joining
 
 ```lua
+--!strict
 local file = require("file")
 
 -- Join path segments using the OS-specific separator
 local full_path = file.join_path("/foo", "bar", "baz.txt")
-print(full_path)  -- On Unix: /foo/bar/baz.txt, on Windows: \foo\bar\baz.txt
+print(full_path) -- On Unix: /foo/bar/baz.txt, on Windows: \foo\bar\baz.txt
 ```
 
 The `file.join_path(...)` function joins any number of path segments using the correct separator for the current operating system. This is the recommended way to construct file paths in cross-platform plugins.
@@ -464,6 +494,7 @@ The `file.join_path(...)` function joins any number of path segments using the c
 ### Read File Contents
 
 ```lua
+--!strict
 local file = require("file")
 print(file.read("/path/to/file"))
 ```
@@ -471,6 +502,7 @@ print(file.read("/path/to/file"))
 ### Create Symbolic Links
 
 ```lua
+--!strict
 local file = require("file")
 file.symlink("/path/to/source", "/path/to/new-symlink")
 ```
@@ -478,6 +510,7 @@ file.symlink("/path/to/source", "/path/to/new-symlink")
 ### Check if file exists
 
 ```lua
+--!strict
 local file = require("file")
 if file.exists("important_file.txt") then
     print("File exists")
@@ -493,6 +526,7 @@ The env module provides environment variable operations.
 ### Set Environment Variable
 
 ```lua
+--!strict
 local env = require("env")
 
 -- Set environment variable
@@ -501,23 +535,32 @@ env.setenv("MY_VAR", "my_value")
 
 ### Get Environment Variable
 
-> To read variables in Lua, use `os.getenv("MY_VAR")`.
+```lua
+--!strict
+local env = require("env")
+
+-- Read environment variable (returns nil if not set)
+local val = env.getenv("MY_VAR")
+```
 
 ### Path Operations
 
 ```lua
+--!strict
 local env = require("env")
 
 -- Get current PATH
-local current_path = os.getenv("PATH")
+local current_path = env.getenv("PATH")
 
 -- Add to PATH
-local new_path = "/usr/local/bin:" .. current_path
-env.setenv("PATH", new_path)
+if current_path then
+    local new_path = `/usr/local/bin:{current_path}`
+    env.setenv("PATH", new_path)
+end
 
 -- Platform-specific PATH separator
-local separator = package.config:sub(1,1) == '\\' and ";" or ":"
-local paths = {"/usr/local/bin", "/opt/bin", current_path}
+local separator = if RUNTIME.osType == "windows" then ";" else ":"
+local paths = { "/usr/local/bin", "/opt/bin", current_path or "" }
 env.setenv("PATH", table.concat(paths, separator))
 ```
 
@@ -528,6 +571,7 @@ The cmd module provides shell command execution.
 ### Basic Command Execution
 
 ```lua
+--!strict
 local cmd = require("cmd")
 
 -- Execute command and get output
@@ -537,27 +581,28 @@ print("Directory listing:", output)
 -- Execute command with error handling
 local success, output = pcall(cmd.exec, "some-command")
 if not success then
-    error("Command failed: " .. output)
+    error(`Command failed: {output}`)
 end
 ```
 
 ### Command Execution with Options
 
 ```lua
+--!strict
 local cmd = require("cmd")
 
 -- Execute command in a specific directory
-local output = cmd.exec("pwd", {cwd = "/tmp"})
+local output = cmd.exec("pwd", { cwd = "/tmp" })
 print("Current directory:", output)
 
 -- Execute command with custom environment variables
 local result = cmd.exec("echo $TEST_VAR", {
     cwd = "/path/to/project",
-    env = {TEST_VAR = "hello", NODE_ENV = "production"}
+    env = { TEST_VAR = "hello", NODE_ENV = "production" },
 })
 
 -- Install package in specific directory
-local result = cmd.exec("npm install package-name", {cwd = "/path/to/project"})
+local result = cmd.exec("npm install package-name", { cwd = "/path/to/project" })
 ```
 
 ### Available Options
@@ -580,11 +625,14 @@ _.my-plugin = { tools = true }
 ```
 
 ```lua
-function PLUGIN:MiseEnv(ctx)
+--!strict
+local cmd = require("cmd")
+
+function PLUGIN:MiseEnv(ctx: any)
     -- With tools=true, mise-managed tools are on PATH
     local version = cmd.exec("node --version")
     return {
-        {key = "NODE_VERSION", value = version:gsub("%s+", "")}
+        { key = "NODE_VERSION", value = version:gsub("%s+", "") },
     }
 end
 ```
@@ -596,15 +644,12 @@ Any explicit `env` options passed to `cmd.exec()` are merged on top of the inher
 ### Platform-Specific Commands
 
 ```lua
+--!strict
 local cmd = require("cmd")
 
 -- Cross-platform command execution
-local function is_windows()
-    return package.config:sub(1,1) == '\\'
-end
-
-local function get_os_info()
-    if is_windows() then
+local function get_os_info(): string
+    if RUNTIME.osType == "windows" then
         return cmd.exec("systeminfo")
     else
         return cmd.exec("uname -a")
@@ -620,23 +665,24 @@ print("OS Info:", os_info)
 ### Version Fetching from API
 
 ```lua
+--!strict
 local http = require("http")
 local json = require("json")
 
-function fetch_npm_versions(package_name)
+local function fetch_npm_versions(package_name: string): { string }
     local resp, err = http.get({
-        url = "https://registry.npmjs.org/" .. package_name,
+        url = `https://registry.npmjs.org/{package_name}`,
         headers = {
-            ['User-Agent'] = "mise-plugin"
-        }
+            ["User-Agent"] = "mise-plugin",
+        },
     })
 
     if err ~= nil then
-        error("Failed to fetch package info: " .. err)
+        error(`Failed to fetch package info: {err}`)
     end
 
     local package_info = json.decode(resp.body)
-    local versions = {}
+    local versions: { string } = {}
 
     for version, _ in pairs(package_info.versions) do
         table.insert(versions, version)
@@ -652,20 +698,21 @@ end
 ### File Download with Progress
 
 ```lua
+--!strict
 local http = require("http")
 local file = require("file")
 
-function download_with_verification(url, dest_path, expected_sha256)
+local function download_with_verification(url: string, dest_path: string, expected_sha256: string?)
     -- Download file
     local err = http.download_file({
         url = url,
         headers = {
-            ['User-Agent'] = "mise-plugin"
-        }
+            ["User-Agent"] = "mise-plugin",
+        },
     }, dest_path)
 
     if err ~= nil then
-        error("Download failed: " .. err)
+        error(`Download failed: {err}`)
     end
 
     -- Verify file exists
@@ -675,25 +722,26 @@ function download_with_verification(url, dest_path, expected_sha256)
 
     -- Note: SHA256 verification would need additional implementation
     -- This is a simplified example
-    print("Downloaded successfully to: " .. dest_path)
+    print(`Downloaded successfully to: {dest_path}`)
 end
 ```
 
 ### Configuration File Parsing
 
 ```lua
+--!strict
 local file = require("file")
 local json = require("json")
 local strings = require("strings")
 
-function parse_config_file(config_path)
+local function parse_config_file(config_path: string): { [string]: any }
     if not file.exists(config_path) then
-        return {}  -- Return empty config
+        return {} -- Return empty config
     end
 
     local content = file.read(config_path)
     if not content then
-        error("Failed to read config file: " .. config_path)
+        error(`Failed to read config file: {config_path}`)
     end
 
     -- Trim whitespace
@@ -702,7 +750,7 @@ function parse_config_file(config_path)
     -- Parse JSON
     local success, config = pcall(json.decode, content)
     if not success then
-        error("Invalid JSON in config file: " .. config_path)
+        error(`Invalid JSON in config file: {config_path}`)
     end
 
     return config
@@ -712,21 +760,24 @@ end
 ### Web Scraping for Versions
 
 ```lua
+--!strict
 local http = require("http")
 local html = require("html")
 local strings = require("strings")
 
-function scrape_versions_from_releases(base_url)
+type VersionInfo = { version: string, url: string }
+
+local function scrape_versions_from_releases(base_url: string): { VersionInfo }
     local resp, err = http.get({
-        url = base_url .. "/releases"
+        url = `{base_url}/releases`,
     })
 
     if err ~= nil then
-        error("Failed to fetch releases page: " .. err)
+        error(`Failed to fetch releases page: {err}`)
     end
 
     local doc = html.parse(resp.body)
-    local versions = {}
+    local versions: { VersionInfo } = {}
 
     -- Find version tags
     local version_elements = doc:find("h2 a[href*='/releases/tag/']")
@@ -740,7 +791,7 @@ function scrape_versions_from_releases(base_url)
         if version and version ~= "" then
             table.insert(versions, {
                 version = version,
-                url = base_url .. element:attr("href")
+                url = `{base_url}{element:attr("href")}`,
             })
         end
     end
@@ -756,13 +807,14 @@ The log module provides structured logging that routes through Rust's `log` crat
 ### Log Levels
 
 ```lua
+--!strict
 local log = require("log")
 
-log.trace("detailed tracing info")   -- only visible with MISE_TRACE=1
-log.debug("debugging info")          -- visible with MISE_DEBUG=1
-log.info("status message")           -- visible by default
-log.warn("warning message")          -- visible by default
-log.error("error message")           -- visible by default
+log.trace("detailed tracing info") -- only visible with MISE_TRACE=1
+log.debug("debugging info") -- visible with MISE_DEBUG=1
+log.info("status message") -- visible by default
+log.warn("warning message") -- visible by default
+log.error("error message") -- visible by default
 ```
 
 ### Variadic Arguments
@@ -770,6 +822,9 @@ log.error("error message")           -- visible by default
 All log functions accept multiple arguments of any type. Arguments are converted to strings via `tostring()` and joined with tab characters (`\t`), matching Lua's `print()` behavior:
 
 ```lua
+--!strict
+local log = require("log")
+
 log.info("version", version, "installed to", path)
 -- Output: [plugin-name] version<TAB>1.0.0<TAB>installed to<TAB>/path
 ```
@@ -786,11 +841,18 @@ mise [INFO] [my-plugin] Installing version 1.0.0
 
 `print()` is overridden to route through `info!()` level logging. This means:
 
-- `print()` output goes to stderr instead of stdout
+- `print()` output goes to stderr instead of stdout (unlike standard Lua)
 - Messages are prefixed with `[plugin_name]`
 - Output respects log level filtering
 
+::: warning
+This differs from standard Lua where `print()` writes to stdout. Plugins should not rely on `print()` for stdout output — use the `cmd` module if you need to produce stdout output.
+:::
+
 ```lua
+--!strict
+local log = require("log")
+
 -- These are equivalent:
 print("hello", "world")
 log.info("hello", "world")
@@ -801,6 +863,7 @@ log.info("hello", "world")
 The log module is also available as `vfox.log`:
 
 ```lua
+--!strict
 local log = require("vfox").log
 log.info("message")
 ```
@@ -812,23 +875,24 @@ log.info("message")
 Always handle errors gracefully:
 
 ```lua
+--!strict
 local http = require("http")
 local json = require("json")
 
-function safe_api_call(url)
-    local resp, err = http.get({url = url})
+local function safe_api_call(url: string): any
+    local resp, err = http.get({ url = url })
 
     if err ~= nil then
-        error("HTTP request failed: " .. err)
+        error(`HTTP request failed: {err}`)
     end
 
     if resp.status_code ~= 200 then
-        error("API returned error: " .. resp.status_code .. " " .. resp.body)
+        error(`API returned error: {resp.status_code} {resp.body}`)
     end
 
     local success, data = pcall(json.decode, resp.body)
     if not success then
-        error("Failed to parse JSON response: " .. data)
+        error(`Failed to parse JSON response: {data}`)
     end
 
     return data
@@ -840,30 +904,35 @@ end
 Implement caching for expensive operations:
 
 ```lua
-local cache = {}
-local cache_ttl = 3600  -- 1 hour
+--!strict
+local http = require("http")
 
-function cached_http_get(url)
+type CacheEntry = { data: any, timestamp: number }
+
+local cache: { [string]: CacheEntry } = {}
+local cache_ttl = 3600 -- 1 hour
+
+local function cached_http_get(url: string): any
     local now = os.time()
     local cache_key = url
 
     -- Check cache
-    if cache[cache_key] and (now - cache[cache_key].timestamp) < cache_ttl then
-        return cache[cache_key].data
+    local entry = cache[cache_key]
+    if entry and (now - entry.timestamp) < cache_ttl then
+        return entry.data
     end
 
     -- Fetch fresh data
-    local http = require("http")
-    local resp, err = http.get({url = url})
+    local resp, err = http.get({ url = url })
 
     if err ~= nil then
-        error("HTTP request failed: " .. err)
+        error(`HTTP request failed: {err}`)
     end
 
     -- Cache the result
     cache[cache_key] = {
         data = resp,
-        timestamp = now
+        timestamp = now,
     }
 
     return resp
@@ -872,29 +941,31 @@ end
 
 ### Platform Detection
 
-Handle cross-platform differences:
+Handle cross-platform differences using the global variables:
 
 ```lua
-local function get_platform_info()
-    local is_windows = package.config:sub(1,1) == '\\'
-    local cmd = require("cmd")
+--!strict
+type PlatformInfo = {
+    os: string,
+    arch: string,
+    path_sep: string,
+    env_sep: string,
+}
 
-    if is_windows then
+local function get_platform_info(): PlatformInfo
+    if RUNTIME.osType == "windows" then
         return {
             os = "windows",
-            arch = os.getenv("PROCESSOR_ARCHITECTURE") or "x64",
+            arch = RUNTIME.archType,
             path_sep = "\\",
-            env_sep = ";"
+            env_sep = ";",
         }
     else
-        local uname = cmd.exec("uname -s"):lower()
-        local arch = cmd.exec("uname -m")
-
         return {
-            os = uname,
-            arch = arch,
+            os = RUNTIME.osType,
+            arch = RUNTIME.archType,
             path_sep = "/",
-            env_sep = ":"
+            env_sep = ":",
         }
     end
 end

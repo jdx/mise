@@ -2,6 +2,9 @@
 
 mise maintains compatibility with the asdf plugin ecosystem through its asdf backend. These plugins are considered legacy because they have limitations compared to mise's modern plugin system.
 
+> [!WARNING]
+> asdf plugins are legacy. For new plugins, use [vfox (tool plugins)](/dev-tools/backends/vfox.html) instead — they're cross-platform, written in Lua, and have [built-in modules](/plugin-lua-modules.html) for HTTP, JSON, HTML parsing, archive extraction, and more. See the [feature comparison](/dev-tools/backends/asdf.html#feature-comparison-asdf-vs-vfox) and [hook migration table](/dev-tools/backends/asdf.html#hook-migration-asdf-to-vfox) for migration guidance.
+
 ## What are asdf (Legacy) Plugins?
 
 asdf plugins are shell script-based plugins that follow the asdf plugin specification. They were the original way to extend tool management in the asdf ecosystem and are now supported by mise for backward compatibility.

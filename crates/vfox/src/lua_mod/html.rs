@@ -1,8 +1,9 @@
 use mlua::{Lua, Table};
 
+use super::get_or_create_loaded;
+
 pub fn mod_html(lua: &Lua) -> mlua::Result<()> {
-    let package: Table = lua.globals().get("package")?;
-    let loaded: Table = package.get("loaded")?;
+    let loaded: Table = get_or_create_loaded(lua)?;
     loaded.set(
         "htmlparser.voidelements",
         lua.load(include_str!("../../lua/htmlparser/voidelements.lua"))

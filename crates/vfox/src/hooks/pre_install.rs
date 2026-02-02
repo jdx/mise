@@ -41,10 +41,14 @@ impl Plugin {
                 local saved_arch = ARCH_TYPE
                 OS_TYPE = $target_os
                 ARCH_TYPE = $target_arch
-                local result = PLUGIN:PreInstall($ctx)
-                -- Restore original values
+                -- Use pcall to ensure globals are restored even if PreInstall throws
+                local ok, result = pcall(function() return PLUGIN:PreInstall($ctx) end)
+                -- Restore original values before handling result
                 OS_TYPE = saved_os
                 ARCH_TYPE = saved_arch
+                if not ok then
+                    error(result)
+                end
                 return result
             })
             .await?;
@@ -205,7 +209,11 @@ impl FromLua for PreInstall {
                     // addition,
                 })
             }
-            _ => panic!("Expected table"),
+            _ => Err(LuaError::FromLuaConversionError {
+                from: value.type_name(),
+                to: "PreInstall".to_string(),
+                message: Some("expected table with version field".to_string()),
+            }),
         }
     }
 }

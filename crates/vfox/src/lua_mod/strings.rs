@@ -1,9 +1,10 @@
 use mlua::prelude::*;
 use mlua::{Table, Value};
 
+use super::get_or_create_loaded;
+
 pub fn mod_strings(lua: &Lua) -> LuaResult<()> {
-    let package: Table = lua.globals().get("package")?;
-    let loaded: Table = package.get("loaded")?;
+    let loaded: Table = get_or_create_loaded(lua)?;
     let strings = lua.create_table_from(vec![
         ("split", lua.create_function(split)?),
         ("has_prefix", lua.create_function(has_prefix)?),

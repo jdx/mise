@@ -159,7 +159,7 @@ async fn init_plugins() -> MutexResult<InstallStatePlugins> {
                 info!("removing banned plugin {d}");
                 let _ = file::remove_all(&path);
                 None
-            } else if path.join("metadata.lua").exists() {
+            } else if path.join("metadata.luau").exists() || path.join("metadata.lua").exists() {
                 if has_backend_methods(&path) {
                     Some((d, PluginType::VfoxBackend))
                 } else {

@@ -1,11 +1,11 @@
 use mlua::{BorrowedStr, ExternalResult, Lua, MultiValue, Result, Table};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
+use super::get_or_create_loaded;
 use crate::http::CLIENT;
 
 pub fn mod_http(lua: &Lua) -> Result<()> {
-    let package: Table = lua.globals().get("package")?;
-    let loaded: Table = package.get("loaded")?;
+    let loaded: Table = get_or_create_loaded(lua)?;
     loaded.set(
         "http",
         lua.create_table_from(vec![

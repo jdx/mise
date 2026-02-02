@@ -62,12 +62,16 @@ pub fn list_embedded_plugins() -> &'static [&'static str] {
         // Tell Cargo to re-run if this plugin directory or any Lua files change
         println!("cargo:rerun-if-changed={}", path.display());
 
-        // Also track subdirectories and individual Lua files
+        // Also track subdirectories and individual Lua/Luau files
         let hooks_dir = path.join("hooks");
         if hooks_dir.exists() {
             println!("cargo:rerun-if-changed={}", hooks_dir.display());
             for entry in fs::read_dir(&hooks_dir).unwrap().flatten() {
-                if entry.path().extension().is_some_and(|ext| ext == "lua") {
+                if entry
+                    .path()
+                    .extension()
+                    .is_some_and(|ext| ext == "lua" || ext == "luau")
+                {
                     println!("cargo:rerun-if-changed={}", entry.path().display());
                 }
             }
@@ -76,12 +80,23 @@ pub fn list_embedded_plugins() -> &'static [&'static str] {
         if lib_dir.exists() {
             println!("cargo:rerun-if-changed={}", lib_dir.display());
             for entry in fs::read_dir(&lib_dir).unwrap().flatten() {
-                if entry.path().extension().is_some_and(|ext| ext == "lua") {
+                if entry
+                    .path()
+                    .extension()
+                    .is_some_and(|ext| ext == "lua" || ext == "luau")
+                {
                     println!("cargo:rerun-if-changed={}", entry.path().display());
                 }
             }
         }
-        let metadata_file = path.join("metadata.lua");
+        // Prefer .luau extension, fall back to .lua for compatibility
+        let metadata_luau = path.join("metadata.luau");
+        let metadata_lua = path.join("metadata.lua");
+        let metadata_file = if metadata_luau.exists() {
+            metadata_luau
+        } else {
+            metadata_lua
+        };
         if metadata_file.exists() {
             println!("cargo:rerun-if-changed={}", metadata_file.display());
         }
@@ -113,8 +128,14 @@ pub struct EmbeddedPlugin {
             "static {var_name}: EmbeddedPlugin = EmbeddedPlugin {{\n"
         ));
 
-        // Metadata - use absolute path with forward slashes for cross-platform include_str!
-        let metadata_path = embedded_dir.join(name).join("metadata.lua");
+        // Metadata - prefer .luau, fall back to .lua for compatibility
+        let metadata_luau = embedded_dir.join(name).join("metadata.luau");
+        let metadata_lua = embedded_dir.join(name).join("metadata.lua");
+        let metadata_path = if metadata_luau.exists() {
+            metadata_luau
+        } else {
+            metadata_lua
+        };
         code.push_str(&format!(
             "    metadata: include_str!(\"{}\"),\n",
             path_to_forward_slashes(&metadata_path)
@@ -122,14 +143,11 @@ pub struct EmbeddedPlugin {
 
         // Hooks
         code.push_str("    hooks: &[\n");
-        for hook in &files.hooks {
-            let hook_path = embedded_dir
-                .join(name)
-                .join("hooks")
-                .join(format!("{}.lua", hook));
+        for (hook_name, hook_filename) in &files.hooks {
+            let hook_path = embedded_dir.join(name).join("hooks").join(hook_filename);
             code.push_str(&format!(
                 "        (\"{}\", include_str!(\"{}\")),\n",
-                hook,
+                hook_name,
                 path_to_forward_slashes(&hook_path)
             ));
         }
@@ -137,14 +155,11 @@ pub struct EmbeddedPlugin {
 
         // Lib files
         code.push_str("    lib: &[\n");
-        for lib in &files.lib {
-            let lib_path = embedded_dir
-                .join(name)
-                .join("lib")
-                .join(format!("{}.lua", lib));
+        for (lib_name, lib_filename) in &files.lib {
+            let lib_path = embedded_dir.join(name).join("lib").join(lib_filename);
             code.push_str(&format!(
                 "        (\"{}\", include_str!(\"{}\")),\n",
-                lib,
+                lib_name,
                 path_to_forward_slashes(&lib_path)
             ));
         }
@@ -181,41 +196,59 @@ pub struct EmbeddedPlugin {
 }
 
 struct PluginFiles {
-    hooks: Vec<String>,
-    lib: Vec<String>,
+    /// List of (hook_name, filename_with_ext) tuples
+    hooks: Vec<(String, String)>,
+    /// List of (lib_name, filename_with_ext) tuples
+    lib: Vec<(String, String)>,
 }
 
 fn collect_plugin_files(plugin_dir: &Path) -> PluginFiles {
     let mut hooks = Vec::new();
     let mut lib = Vec::new();
 
-    // Collect hooks
+    // Collect hooks - prefer .luau over .lua if both exist
     let hooks_dir = plugin_dir.join("hooks");
     if hooks_dir.exists() {
+        let mut hook_names: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
         for entry in fs::read_dir(&hooks_dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "lua") {
+            if let Some(ext) = path.extension()
+                && (ext == "lua" || ext == "luau")
+            {
                 let name = path.file_stem().unwrap().to_string_lossy().to_string();
-                hooks.push(name);
+                let filename = path.file_name().unwrap().to_string_lossy().to_string();
+                // .luau takes precedence over .lua
+                if ext == "luau" || !hook_names.contains_key(&name) {
+                    hook_names.insert(name, filename);
+                }
             }
         }
+        hooks = hook_names.into_iter().collect();
     }
-    hooks.sort();
 
-    // Collect lib files
+    // Collect lib files - prefer .luau over .lua if both exist
     let lib_dir = plugin_dir.join("lib");
     if lib_dir.exists() {
+        let mut lib_names: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
         for entry in fs::read_dir(&lib_dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "lua") {
+            if let Some(ext) = path.extension()
+                && (ext == "lua" || ext == "luau")
+            {
                 let name = path.file_stem().unwrap().to_string_lossy().to_string();
-                lib.push(name);
+                let filename = path.file_name().unwrap().to_string_lossy().to_string();
+                // .luau takes precedence over .lua
+                if ext == "luau" || !lib_names.contains_key(&name) {
+                    lib_names.insert(name, filename);
+                }
             }
         }
+        lib = lib_names.into_iter().collect();
     }
-    lib.sort();
 
     PluginFiles { hooks, lib }
 }

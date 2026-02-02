@@ -1,11 +1,13 @@
---- Returns some pre-installed information, such as version number, download address, local files, etc.
---- If checksum is provided, vfox will automatically check it for you.
---- @param ctx {version: string} Context information (version = User-input version)
---- @return table Version information
-function PLUGIN:PreInstall(ctx)
-    local version = ctx.version
+--!strict
+local Types = require("@lib/types")
 
-    return {
-        version = version,
-    }
+local plugin = PLUGIN :: Types.PluginType
+
+--- Returns some pre-installed information, such as version number, download address, local files, etc.
+function plugin:PreInstall(ctx: { version: string, runtimeVersion: string }): Types.PreInstallResult
+	local version = ctx.version
+
+	return {
+		version = version,
+	}
 end
