@@ -16,5 +16,5 @@ PLUGIN.description = "Apache Ant build tool"
 --- !!! OPTIONAL !!!
 PLUGIN.minRuntimeVersion = "0.3.0"
 PLUGIN.notes = {
-    "Apache Ant is a Java library and command-line tool for building Java applications.",
+	"Apache Ant is a Java library and command-line tool for building Java applications.",
 }

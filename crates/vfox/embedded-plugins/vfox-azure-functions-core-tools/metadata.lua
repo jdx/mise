@@ -16,5 +16,5 @@ PLUGIN.description = "Azure Functions Core Tools - Command line tools for Azure 
 --- !!! OPTIONAL !!!
 PLUGIN.minRuntimeVersion = "0.3.0"
 PLUGIN.notes = {
-    "Provides the 'func' command for local Azure Functions development",
+	"Provides the 'func' command for local Azure Functions development",
 }

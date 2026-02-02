@@ -16,5 +16,5 @@ PLUGIN.description = "1Password CLI (op) - Password manager developed by AgileBi
 --- !!! OPTIONAL !!!
 PLUGIN.minRuntimeVersion = "0.3.0"
 PLUGIN.notes = {
-    "Provides the 1Password CLI tool (op command)",
+	"Provides the 1Password CLI tool (op command)",
 }

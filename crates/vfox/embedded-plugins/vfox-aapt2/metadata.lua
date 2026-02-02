@@ -16,5 +16,5 @@ PLUGIN.description = "Android Asset Packaging Tool 2 (aapt2)"
 --- !!! OPTIONAL !!!
 PLUGIN.minRuntimeVersion = "0.3.0"
 PLUGIN.notes = {
-    "aapt2 is used to compile and package Android app resources.",
+	"aapt2 is used to compile and package Android app resources.",
 }
