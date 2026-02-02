@@ -184,7 +184,7 @@ aqua-registry = { path = "crates/aqua-registry" }
 mise-interactive-config = { path = "crates/mise-interactive-config", version = "2026.1.12" }
 walkdir = "2"
 which = "7"
-xx = { version = "2", default-features = false, features = ["glob"] }
+xx = { version = "2.5", default-features = false, features = ["glob"] }
 xz2 = "0.1"
 zip = { version = "3", default-features = false, features = ["deflate"] }
 zstd = "0.13"

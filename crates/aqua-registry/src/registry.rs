@@ -41,6 +41,11 @@ pub struct FileCacheStore {
 pub static AQUA_STANDARD_REGISTRY_FILES: LazyLock<HashMap<&'static str, &'static str>> =
     LazyLock::new(|| include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry.rs")));
 
+/// Returns all package IDs from the baked-in aqua registry.
+pub fn package_ids() -> Vec<&'static str> {
+    AQUA_STANDARD_REGISTRY_FILES.keys().copied().collect()
+}
+
 impl AquaRegistry {
     /// Create a new AquaRegistry with the given configuration
     pub fn new(config: AquaRegistryConfig) -> Self {

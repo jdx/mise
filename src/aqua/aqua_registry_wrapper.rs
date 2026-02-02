@@ -116,6 +116,36 @@ fn fetch_latest_repo(repo: &Git) -> Result<()> {
     Ok(())
 }
 
+/// Search aqua packages by tool name, returning "owner/name" IDs
+/// where the name part is similar to the query.
+pub fn aqua_suggest(query: &str) -> Vec<String> {
+    let ids = aqua_registry::package_ids();
+    // Build (name_part, full_id) pairs, keeping them aligned
+    let pairs: Vec<(&str, &str)> = ids
+        .iter()
+        .filter_map(|id| id.rsplit_once('/').map(|(_, name)| (name, *id)))
+        .collect();
+    let names: Vec<&str> = pairs.iter().map(|(name, _)| *name).collect();
+
+    // Use a higher threshold (0.8) to avoid noisy suggestions
+    let similar_names = xx::suggest::similar_n_with_threshold(query, &names, 5, 0.8);
+
+    // Map back to full IDs
+    let mut results = Vec::new();
+    for matched_name in similar_names {
+        for (name, full_id) in &pairs {
+            if *name == matched_name && !results.contains(&full_id.to_string()) {
+                results.push(full_id.to_string());
+                break;
+            }
+        }
+        if results.len() >= 5 {
+            break;
+        }
+    }
+    results
+}
+
 // Re-export types and static for compatibility
 pub use aqua_registry::{
     AquaChecksum, AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType,
