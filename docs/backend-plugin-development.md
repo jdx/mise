@@ -228,7 +228,7 @@ Backend plugins receive context through the `ctx` parameter passed to each hook 
 | ------------------- | ---------------------- | ------------------------------------------------------------------ |
 | `ctx.tool`          | The tool name          | `"prettier"`                                                       |
 | `ctx.version`       | The requested version  | `"3.0.0"`                                                          |
-| `ctx.install_path`  | Installation directory | `"/home/user/.local/share/mise/installs/vfox-npm/prettier/3.0.0"`  |
+| `ctx.install_path`  | Installation directory | `"/home/user/.local/share/mise/installs/vfox-npm-prettier/3.0.0"`  |
 | `ctx.download_path` | Download directory     | `"/home/user/.local/share/mise/downloads/vfox-npm-prettier/3.0.0"` |
 
 ### BackendExecEnv Context
@@ -237,7 +237,7 @@ Backend plugins receive context through the `ctx` parameter passed to each hook 
 | ------------------ | ---------------------- | ----------------------------------------------------------------- |
 | `ctx.tool`         | The tool name          | `"prettier"`                                                      |
 | `ctx.version`      | The requested version  | `"3.0.0"`                                                         |
-| `ctx.install_path` | Installation directory | `"/home/user/.local/share/mise/installs/vfox-npm/prettier/3.0.0"` |
+| `ctx.install_path` | Installation directory | `"/home/user/.local/share/mise/installs/vfox-npm-prettier/3.0.0"` |
 
 ## Testing Your Plugin
 
