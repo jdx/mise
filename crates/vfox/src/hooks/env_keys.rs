@@ -59,11 +59,7 @@ impl FromLua for EnvKey {
                 key: table.get::<String>("key")?,
                 value: table.get::<String>("value")?,
             }),
-            _ => Err(LuaError::FromLuaConversionError {
-                from: value.type_name(),
-                to: "EnvKey".to_string(),
-                message: Some("expected table with key and value fields".to_string()),
-            }),
+            _ => panic!("Expected table"),
         }
     }
 }

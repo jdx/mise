@@ -144,11 +144,6 @@ backend = "aqua:LuaLS/lua-language-server"
 "platforms.linux-x64" = { checksum = "sha256:248b0858a0afc8233f2535e89b648398b2202cb96cf51ce187e3263923dd0223", url = "https://github.com/LuaLS/lua-language-server/releases/download/3.17.1/lua-language-server-3.17.1-linux-x64.tar.gz"}
 "platforms.macos-arm64" = { checksum = "sha256:a69ffcef61d3eb4ca7b7bc92d69cb85892c8af15120bf2815768ed0afe5ed3bc", url = "https://github.com/LuaLS/lua-language-server/releases/download/3.17.1/lua-language-server-3.17.1-darwin-arm64.tar.gz"}
 
-[[tools.luau]]
-version = "0.707"
-backend = "aqua:luau-lang/luau"
-"platforms.linux-x64" = { checksum = "sha256:328e3868150ed67d5c03194a37d8e36156d8cc85961004c98a975f4ecd096e5c", url = "https://github.com/luau-lang/luau/releases/download/0.707/luau-ubuntu.zip"}
-
 [[tools.node]]
 version = "24.13.0"
 backend = "core:node"
@@ -265,11 +260,6 @@ backend = "aqua:getsops/sops"
 "platforms.macos-x64-baseline" = { checksum = "sha256:c36583e178f7e83b947044b292e106e79615f7725f75cb147045fb0c81953e2b", url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.darwin.amd64"}
 "platforms.windows-x64" = { checksum = "sha256:f3d74d83006954f0d8cf770ad7e5380504270ded5a62f33eb2548ce5461af3b3", url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.amd64.exe"}
 "platforms.windows-x64-baseline" = { checksum = "sha256:f3d74d83006954f0d8cf770ad7e5380504270ded5a62f33eb2548ce5461af3b3", url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.amd64.exe"}
-
-[[tools.stylua]]
-version = "2.3.1"
-backend = "aqua:JohnnyMorganz/StyLua"
-"platforms.linux-x64" = { checksum = "sha256:1b3ca3f577e584e19a0ad2264a0ab87f4133818e35700a094416ca98251ffb4a", url = "https://github.com/JohnnyMorganz/StyLua/releases/download/v2.3.1/stylua-linux-x86_64-musl.zip"}
 
 [[tools.taplo]]
 version = "0.10.0"

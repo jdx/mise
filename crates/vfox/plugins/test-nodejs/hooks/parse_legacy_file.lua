@@ -1,28 +1,24 @@
---!strict
-local Types = require("@lib/types")
-
-local plugin = PLUGIN :: Types.PluginType
-local file = require("file") :: Types.FileModule
-
 --- Parse the legacy file to extract the version
-function plugin:ParseLegacyFile(ctx: { filepath: string }): Types.ParseLegacyFileResult
-	local filepath = ctx.filepath
+--- @param ctx table See /vfox/ctx.md#ctx-hooks for more information on ctx
+--- @return table Version information
+function PLUGIN:ParseLegacyFile(ctx)
+    local filepath = ctx.filepath
+    local file = io.open(filepath, "r")
+    if file == nil then
+        return {}
+    end
+    local content = file:read("*a")
+    file:close()
 
-	if not file.exists(filepath) then
-		return {}
-	end
+    -- Remove any leading/trailing whitespace and 'v' prefix
+    content = content:gsub("%s+", "")
+    content = content:gsub("^v", "")
 
-	local content = file.read(filepath)
+    if content == "" then
+        return {}
+    end
 
-	-- Remove any leading/trailing whitespace and 'v' prefix
-	content = content:gsub("%s+", "")
-	content = content:gsub("^v", "")
-
-	if content == "" then
-		return {}
-	end
-
-	return {
-		version = content,
-	}
+    return {
+        version = content
+    }
 end

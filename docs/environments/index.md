@@ -488,7 +488,7 @@ The plugin could detect the current git branch and set `ENVIRONMENT=production` 
 
 See [Environment Plugins](/plugins#environment-plugins) in the Plugins documentation for a complete guide to creating your own environment plugins.
 
-For a working template, see the [mise-env-plugin-template](https://github.com/jdx/mise-env-plugin-template) repository.
+For a working example, see the [mise-env-sample](https://github.com/jdx/mise-env-sample) repository.
 
 ## Multiple `env._` Directives
 

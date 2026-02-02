@@ -2,9 +2,6 @@
 
 Backend plugins in mise use enhanced backend methods to manage multiple tools using the `plugin:tool` format. These plugins are perfect for package managers, tool families, and custom installations that need to manage multiple related tools.
 
-> [!TIP]
-> The fastest way to get started is with the [mise-backend-plugin-template](https://github.com/jdx/mise-backend-plugin-template) repository.
-
 ## What are Backend Plugins?
 
 Backend plugins extend the standard vfox plugin system with enhanced backend methods. They support:
@@ -17,81 +14,11 @@ Backend plugins extend the standard vfox plugin system with enhanced backend met
 
 Backend plugins are generally a git repository but can also be a directory (via `mise link`).
 
-Backend plugins are implemented in [Luau](https://luau.org/), a fast, small, safe, gradually typed embeddable scripting language derived from Lua. They use three main backend methods implemented as individual files:
+Backend plugins are implemented in Lua (version 5.1 at the moment). They use three main backend methods implemented as individual files:
 
-- `hooks/backend_list_versions.luau` - Lists available versions for a tool
-- `hooks/backend_install.luau` - Installs a specific version of a tool
-- `hooks/backend_exec_env.luau` - Sets up environment variables for a tool
-
-## Type Definitions
-
-Create a `lib/types.luau` file for shared type definitions:
-
-```lua
---!strict
-export type BackendListVersionsResult = {
-    versions: { string },
-}
-
-export type BackendInstallResult = {}
-
-export type BackendExecEnvResult = {
-    env_vars: { { key: string, value: string } },
-}
-
-export type BackendListVersionsContext = {
-    tool: string,
-}
-
-export type BackendInstallContext = {
-    tool: string,
-    version: string,
-    install_path: string,
-}
-
-export type BackendExecEnvContext = {
-    tool: string,
-    version: string,
-    install_path: string,
-}
-
-export type PluginType = {
-    BackendListVersions: (self: PluginType, ctx: BackendListVersionsContext) -> BackendListVersionsResult,
-    BackendInstall: (self: PluginType, ctx: BackendInstallContext) -> BackendInstallResult,
-    BackendExecEnv: (self: PluginType, ctx: BackendExecEnvContext) -> BackendExecEnvResult,
-}
-
-export type CmdModule = {
-    exec: (command: string, opts: { cwd: string?, env: { [string]: string }? }?) -> string,
-}
-
-export type JsonModule = {
-    encode: (value: any) -> string,
-    decode: (str: string) -> any,
-}
-
-export type FileModule = {
-    read: (path: string) -> string?,
-    exists: (path: string) -> boolean,
-    join_path: (...string) -> string,
-}
-
-return nil
-```
-
-### .luaurc Configuration
-
-Create a `.luaurc` file in your plugin root:
-
-```json
-{
-  "languageMode": "strict",
-  "globals": ["PLUGIN", "RUNTIME"],
-  "aliases": {
-    "@lib": "lib"
-  }
-}
-```
+- `hooks/backend_list_versions.lua` - Lists available versions for a tool
+- `hooks/backend_install.lua` - Installs a specific version of a tool
+- `hooks/backend_exec_env.lua` - Sets up environment variables for a tool
 
 ## Backend Methods
 
@@ -100,20 +27,14 @@ Create a `.luaurc` file in your plugin root:
 Lists available versions for a tool:
 
 ```lua
---!strict
--- hooks/backend_list_versions.luau
-local Types = require("@lib/types")
-
-local plugin = PLUGIN :: Types.PluginType
-
-function plugin:BackendListVersions(ctx: Types.BackendListVersionsContext): Types.BackendListVersionsResult
+function PLUGIN:BackendListVersions(ctx)
     local tool = ctx.tool
-    local versions: { string } = {}
+    local versions = {}
 
     -- Your logic to fetch versions for the tool
     -- Example: query an API, parse a registry, etc.
 
-    return { versions = versions }
+    return {versions = versions}
 end
 ```
 
@@ -125,13 +46,7 @@ end
 Installs a specific version of a tool:
 
 ```lua
---!strict
--- hooks/backend_install.luau
-local Types = require("@lib/types")
-
-local plugin = PLUGIN :: Types.PluginType
-
-function plugin:BackendInstall(ctx: Types.BackendInstallContext): Types.BackendInstallResult
+function PLUGIN:BackendInstall(ctx)
     local tool = ctx.tool
     local version = ctx.version
     local install_path = ctx.install_path
@@ -148,14 +63,7 @@ end
 Sets up environment variables for a tool:
 
 ```lua
---!strict
--- hooks/backend_exec_env.luau
-local Types = require("@lib/types")
-local file = require("file") :: Types.FileModule
-
-local plugin = PLUGIN :: Types.PluginType
-
-function plugin:BackendExecEnv(ctx: Types.BackendExecEnvContext): Types.BackendExecEnvResult
+function PLUGIN:BackendExecEnv(ctx)
     local install_path = ctx.install_path
 
     -- Your logic to set up environment variables
@@ -163,8 +71,8 @@ function plugin:BackendExecEnv(ctx: Types.BackendExecEnvContext): Types.BackendE
 
     return {
         env_vars = {
-            { key = "PATH", value = file.join_path(install_path, "bin") },
-        },
+            {key = "PATH", value = install_path .. "/bin"}
+        }
     }
 end
 ```
@@ -190,8 +98,7 @@ git init
 The template includes:
 
 - Complete backend plugin structure with all required hooks
-- Type definitions in `lib/types.luau`
-- Modern development tooling (`.luaurc`, stylua, luau-analyze, actionlint)
+- Modern development tooling (hk, stylua, luacheck, actionlint)
 - Comprehensive documentation and examples
 - CI/CD setup with GitHub Actions
 - Multiple implementation patterns for different backend types
@@ -202,25 +109,22 @@ Create a directory with this structure:
 
 ```
 my-backend-plugin/
-├── metadata.luau                   # Plugin metadata
-├── .luaurc                         # Luau type checking configuration
+├── metadata.lua                    # Plugin metadata
 ├── hooks/
-│   ├── backend_list_versions.luau  # BackendListVersions hook
-│   ├── backend_install.luau        # BackendInstall hook
-│   └── backend_exec_env.luau       # BackendExecEnv hook
-└── lib/
-    └── types.luau                  # Type definitions
+│   ├── backend_list_versions.lua   # BackendListVersions hook
+│   ├── backend_install.lua         # BackendInstall hook
+│   └── backend_exec_env.lua        # BackendExecEnv hook
+└── Injection.lua                   # Runtime injection (auto-generated)
 ```
 
-### 2. Basic metadata.luau
+### 2. Basic metadata.lua
 
 ```lua
--- metadata.luau
 PLUGIN = {
     name = "vfox-npm",
     version = "1.0.0",
     description = "Backend plugin for npm packages",
-    author = "Your Name",
+    author = "Your Name"
 }
 ```
 
@@ -228,76 +132,58 @@ PLUGIN = {
 
 Here's the complete implementation of the vfox-npm plugin that manages npm packages:
 
-### metadata.luau
+### metadata.lua
 
 ```lua
--- metadata.luau
 PLUGIN = {
     name = "vfox-npm",
     version = "1.0.0",
     description = "Backend plugin for npm packages",
-    author = "jdx",
+    author = "jdx"
 }
 ```
 
-### hooks/backend_list_versions.luau
+### hooks/backend_list_versions.lua
 
 ```lua
---!strict
--- hooks/backend_list_versions.luau
-local Types = require("@lib/types")
-local cmd = require("cmd") :: Types.CmdModule
-local json = require("json") :: Types.JsonModule
+function PLUGIN:BackendListVersions(ctx)
+    local cmd = require("cmd")
+    local json = require("json")
 
-local plugin = PLUGIN :: Types.PluginType
-
-function plugin:BackendListVersions(ctx: Types.BackendListVersionsContext): Types.BackendListVersionsResult
-    local result = cmd.exec(`npm view {ctx.tool} versions --json`)
+    local result = cmd.exec("npm view " .. ctx.tool .. " versions --json")
     local versions = json.decode(result)
 
-    return { versions = versions }
+    return {versions = versions}
 end
 ```
 
-### hooks/backend_install.luau
+### hooks/backend_install.lua
 
 ```lua
---!strict
--- hooks/backend_install.luau
-local Types = require("@lib/types")
-local cmd = require("cmd") :: Types.CmdModule
-
-local plugin = PLUGIN :: Types.PluginType
-
-function plugin:BackendInstall(ctx: Types.BackendInstallContext): Types.BackendInstallResult
+function PLUGIN:BackendInstall(ctx)
     local tool = ctx.tool
     local version = ctx.version
     local install_path = ctx.install_path
 
     -- Install the package directly using npm install
-    local npm_cmd = `npm install {tool}@{version} --no-package-lock --no-save --silent`
-    cmd.exec(npm_cmd, { cwd = install_path })
+    local cmd = require("cmd")
+    local npm_cmd = "npm install " .. tool .. "@" .. version .. " --no-package-lock --no-save --silent"
+    local result = cmd.exec(npm_cmd, {cwd = install_path})
 
     -- If we get here, the command succeeded
     return {}
 end
 ```
 
-### hooks/backend_exec_env.luau
+### hooks/backend_exec_env.lua
 
 ```lua
---!strict
--- hooks/backend_exec_env.luau
-local Types = require("@lib/types")
-local file = require("file") :: Types.FileModule
-
-local plugin = PLUGIN :: Types.PluginType
-
-function plugin:BackendExecEnv(ctx: Types.BackendExecEnvContext): Types.BackendExecEnvResult
+function PLUGIN:BackendExecEnv(ctx)
+    local file = require("file")
     return {
         env_vars = {
-            { key = "PATH", value = file.join_path(ctx.install_path, "node_modules", ".bin") },
-        },
+            {key = "PATH", value = file.join_path(ctx.install_path, "node_modules", ".bin")}
+        }
     }
 end
 ```
@@ -373,18 +259,10 @@ mise --debug install my-plugin:some-tool@1.0.0
 
 ### Error Handling
 
-Provide meaningful error messages:
+Provide more meaningful error messages:
 
 ```lua
---!strict
--- hooks/backend_list_versions.luau
-local Types = require("@lib/types")
-local cmd = require("cmd") :: Types.CmdModule
-local json = require("json") :: Types.JsonModule
-
-local plugin = PLUGIN :: Types.PluginType
-
-function plugin:BackendListVersions(ctx: Types.BackendListVersionsContext): Types.BackendListVersionsResult
+function PLUGIN:BackendListVersions(ctx)
     local tool = ctx.tool
 
     -- Validate tool name
@@ -393,19 +271,21 @@ function plugin:BackendListVersions(ctx: Types.BackendListVersionsContext): Type
     end
 
     -- Execute command with error checking
-    local ok, result = pcall(cmd.exec, `npm view {tool} versions --json 2>/dev/null`)
-    if not ok or not result or result:match("npm ERR!") then
-        error(`Failed to fetch versions for {tool}: {result or "no output"}`)
+    local cmd = require("cmd")
+    local result = cmd.exec("npm view " .. tool .. " versions --json 2>/dev/null")
+    if not result or result:match("npm ERR!") then
+        error("Failed to fetch versions for " .. tool .. ": " .. (result or "no output"))
     end
 
     -- Parse JSON response
+    local json = require("json")
     local success, npm_versions = pcall(json.decode, result)
     if not success or not npm_versions then
-        error(`Failed to parse versions for {tool}`)
+        error("Failed to parse versions for " .. tool)
     end
 
     -- Return versions or error if none found
-    local versions: { string } = {}
+    local versions = {}
     if type(npm_versions) == "table" then
         for i = #npm_versions, 1, -1 do
             table.insert(versions, npm_versions[i])
@@ -413,10 +293,10 @@ function plugin:BackendListVersions(ctx: Types.BackendListVersionsContext): Type
     end
 
     if #versions == 0 then
-        error(`No versions found for {tool}`)
+        error("No versions found for " .. tool)
     end
 
-    return { versions = versions }
+    return {versions = versions}
 end
 ```
 
@@ -425,8 +305,7 @@ end
 Parse versions with regex:
 
 ```lua
---!strict
-local function parse_version(version_string: string): string
+local function parse_version(version_string)
     -- Remove prefixes like 'v' or 'release-'
     return version_string:gsub("^v", ""):gsub("^release%-", "")
 end
@@ -437,12 +316,12 @@ end
 Use cross-platform path handling:
 
 ```lua
---!strict
-local Types = require("@lib/types")
-local file = require("file") :: Types.FileModule
+local function join_path(...)
+    local sep = package.config:sub(1,1) -- Get OS path separator
+    return table.concat({...}, sep)
+end
 
--- Use the built-in file.join_path for cross-platform path joining
-local bin_path = file.join_path(install_path, "bin")
+local bin_path = join_path(install_path, "bin")
 ```
 
 ### Cross-Platform Commands
@@ -450,13 +329,9 @@ local bin_path = file.join_path(install_path, "bin")
 Handle different operating systems:
 
 ```lua
---!strict
-local Types = require("@lib/types")
-local cmd = require("cmd") :: Types.CmdModule
-
-local function create_dir(path: string)
-    local mkdir_cmd = if RUNTIME.osType == "windows" then "mkdir" else "mkdir -p"
-    cmd.exec(`{mkdir_cmd} {path}`)
+local function create_dir(path)
+    local cmd = RUNTIME.osType == "Windows" and "mkdir" or "mkdir -p"
+    os.execute(cmd .. " " .. path)
 end
 ```
 
@@ -467,29 +342,30 @@ end
 Different installation logic based on tool or version:
 
 ```lua
---!strict
--- hooks/backend_install.luau
-local Types = require("@lib/types")
-local cmd = require("cmd") :: Types.CmdModule
-
-local plugin = PLUGIN :: Types.PluginType
-
-function plugin:BackendInstall(ctx: Types.BackendInstallContext): Types.BackendInstallResult
+function PLUGIN:BackendInstall(ctx)
     local tool = ctx.tool
     local version = ctx.version
     local install_path = ctx.install_path
 
     -- Create install directory
-    cmd.exec(`mkdir -p {install_path}`)
+    os.execute("mkdir -p " .. install_path)
 
     if tool == "special-tool" then
         -- Special installation logic
-        local npm_cmd = `npm install {tool}@{version} --no-package-lock --no-save --silent`
-        cmd.exec(npm_cmd, { cwd = install_path })
+        local cmd = require("cmd")
+        local npm_cmd = "cd " .. install_path .. " && npm install " .. tool .. "@" .. version .. " --no-package-lock --no-save --silent 2>/dev/null"
+        local result = cmd.exec(npm_cmd)
+        if result:match("npm ERR!") then
+            error("Failed to install " .. tool .. "@" .. version)
+        end
     else
         -- Default installation logic
-        local npm_cmd = `npm install {tool}@{version} --no-package-lock --no-save --silent`
-        cmd.exec(npm_cmd, { cwd = install_path })
+        local cmd = require("cmd")
+        local npm_cmd = "cd " .. install_path .. " && npm install " .. tool .. "@" .. version .. " --no-package-lock --no-save --silent 2>/dev/null"
+        local result = cmd.exec(npm_cmd)
+        if result:match("npm ERR!") then
+            error("Failed to install " .. tool .. "@" .. version)
+        end
     end
 
     return {}
@@ -498,17 +374,11 @@ end
 
 ### Environment Detection
 
-The following globals are automatically available in all plugin hooks:
+vfox automatically injects runtime information into your plugin:
 
 ```lua
---!strict
--- hooks/backend_install.luau
-local Types = require("@lib/types")
-
-local plugin = PLUGIN :: Types.PluginType
-
-function plugin:BackendInstall(ctx: Types.BackendInstallContext): Types.BackendInstallResult
-    -- Platform-specific installation
+function PLUGIN:BackendInstall(ctx)
+    -- Platform-specific installation using injected RUNTIME object
     if RUNTIME.osType == "darwin" then
         -- macOS installation logic
     elseif RUNTIME.osType == "linux" then
@@ -521,27 +391,27 @@ function plugin:BackendInstall(ctx: Types.BackendInstallContext): Types.BackendI
 end
 ```
 
+The `RUNTIME` object provides:
+
+- `RUNTIME.osType`: Operating system type (Windows, Linux, Darwin)
+- `RUNTIME.archType`: Architecture (amd64, arm64, etc.)
+- `RUNTIME.version`: vfox runtime version
+- `RUNTIME.pluginDirPath`: Plugin directory path
+
 ### Multiple Environment Variables
 
 Set multiple environment variables:
 
 ```lua
---!strict
--- hooks/backend_exec_env.luau
-local Types = require("@lib/types")
-local file = require("file") :: Types.FileModule
-
-local plugin = PLUGIN :: Types.PluginType
-
-function plugin:BackendExecEnv(ctx: Types.BackendExecEnvContext): Types.BackendExecEnvResult
+function PLUGIN:BackendExecEnv(ctx)
     -- Add node_modules/.bin to PATH for npm-installed binaries
-    local bin_path = file.join_path(ctx.install_path, "node_modules", ".bin")
+    local bin_path = ctx.install_path .. "/node_modules/.bin"
     return {
         env_vars = {
-            { key = "PATH", value = bin_path },
-            { key = `{string.upper(ctx.tool)}_HOME`, value = ctx.install_path },
-            { key = `{string.upper(ctx.tool)}_VERSION`, value = ctx.version },
-        },
+            {key = "PATH", value = bin_path},
+            {key = ctx.tool:upper() .. "_HOME", value = ctx.install_path},
+            {key = ctx.tool:upper() .. "_VERSION", value = ctx.version}
+        }
     }
 end
 ```

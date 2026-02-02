@@ -34,7 +34,7 @@ itertools = "0.14"
 log = "0.4"
 mlua = { version = "0.11", features = [
   "async",
-  "luau",
+  "lua51",
   "macros",
   "serialize",
   "send",

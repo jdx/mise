@@ -3,31 +3,20 @@
 # Install the dummy vfox plugin from GitHub
 mise plugin install vfox-dummy https://github.com/jdx/vfox-dummy
 
-# Test with MISE_DEBUG=1 to capture debug+ level output (single invocation)
-export debug_output
-debug_output=$(TEST_VFOX_LOG=1 MISE_DEBUG=1 mise ls-remote vfox-dummy 2>&1)
-# shellcheck disable=SC2016
-assert_contains 'echo "$debug_output"' "[vfox-dummy] log.debug msg"
-# shellcheck disable=SC2016
-assert_contains 'echo "$debug_output"' "[vfox-dummy] log.info msg"
-# shellcheck disable=SC2016
-assert_contains 'echo "$debug_output"' "[vfox-dummy] log.warn msg"
-# shellcheck disable=SC2016
-assert_contains 'echo "$debug_output"' "[vfox-dummy] log.error msg"
-# shellcheck disable=SC2016
-assert_contains 'echo "$debug_output"' "[vfox-dummy] print msg"
-# shellcheck disable=SC2016
-assert_contains 'echo "$debug_output"' "[vfox-dummy] multi	arg	123"
+# Test with MISE_DEBUG=1 to capture debug+ level output
+assert_contains "TEST_VFOX_LOG=1 MISE_DEBUG=1 mise ls-remote vfox-dummy 2>&1" "[vfox-dummy] log.debug msg"
+assert_contains "TEST_VFOX_LOG=1 MISE_DEBUG=1 mise ls-remote vfox-dummy 2>&1" "[vfox-dummy] log.info msg"
+assert_contains "TEST_VFOX_LOG=1 MISE_DEBUG=1 mise ls-remote vfox-dummy 2>&1" "[vfox-dummy] log.warn msg"
+assert_contains "TEST_VFOX_LOG=1 MISE_DEBUG=1 mise ls-remote vfox-dummy 2>&1" "[vfox-dummy] log.error msg"
+assert_contains "TEST_VFOX_LOG=1 MISE_DEBUG=1 mise ls-remote vfox-dummy 2>&1" "[vfox-dummy] print msg"
+assert_contains "TEST_VFOX_LOG=1 MISE_DEBUG=1 mise ls-remote vfox-dummy 2>&1" "[vfox-dummy] multi	arg	123"
 
 # Test with MISE_TRACE=1 to capture trace level
 assert_contains "TEST_VFOX_LOG=1 MISE_TRACE=1 mise ls-remote vfox-dummy 2>&1" "[vfox-dummy] log.trace msg"
 
-# Verify direct stderr write passes through and debug is NOT shown at default log level (single invocation)
-export default_output
-default_output=$(TEST_VFOX_LOG=1 mise ls-remote vfox-dummy 2>&1)
-# shellcheck disable=SC2016
-assert_contains 'echo "$default_output"' "stderr msg"
-# shellcheck disable=SC2016
-assert_not_contains 'echo "$default_output"' "log.debug msg"
-# shellcheck disable=SC2016
-assert_not_contains 'echo "$default_output"' "log.trace msg"
+# Verify direct stderr write passes through
+assert_contains "TEST_VFOX_LOG=1 mise ls-remote vfox-dummy 2>&1" "stderr msg"
+
+# Verify log.debug is NOT shown at default log level
+assert_not_contains "TEST_VFOX_LOG=1 mise ls-remote vfox-dummy 2>&1" "log.debug msg"
+assert_not_contains "TEST_VFOX_LOG=1 mise ls-remote vfox-dummy 2>&1" "log.trace msg"

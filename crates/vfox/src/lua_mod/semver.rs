@@ -1,10 +1,9 @@
 use mlua::Table;
 use mlua::prelude::*;
 
-use super::get_or_create_loaded;
-
 pub fn mod_semver(lua: &Lua) -> LuaResult<()> {
-    let loaded: Table = get_or_create_loaded(lua)?;
+    let package: Table = lua.globals().get("package")?;
+    let loaded: Table = package.get("loaded")?;
     let semver = lua.create_table_from(vec![
         ("compare", lua.create_function(compare)?),
         ("parse", lua.create_function(parse)?),

@@ -1,7 +1,5 @@
 use crate::error::Result;
 use mlua::{ExternalResult, Lua, MultiValue, Table};
-
-use super::get_or_create_loaded;
 #[cfg(unix)]
 use std::os::unix::fs::symlink as _symlink;
 #[cfg(windows)]
@@ -23,7 +21,8 @@ fn join_path(_lua: &Lua, args: MultiValue) -> mlua::Result<String> {
 }
 
 pub fn mod_file(lua: &Lua) -> Result<()> {
-    let loaded: Table = get_or_create_loaded(lua)?;
+    let package: Table = lua.globals().get("package")?;
+    let loaded: Table = package.get("loaded")?;
     Ok(loaded.set(
         "file",
         lua.create_table_from(vec![

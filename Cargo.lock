@@ -4848,15 +4848,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "luau0-src"
-version = "0.18.1+luau706"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1faa5fea4290893267786058fd724e54f93a3efebd9ee17681d83c9a4f325841"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "lzma-rs"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5206,7 +5197,6 @@ dependencies = [
  "libc",
  "lua-src",
  "luajit-src",
- "luau0-src",
  "pkg-config",
 ]
 

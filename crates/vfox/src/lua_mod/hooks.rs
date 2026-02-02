@@ -4,8 +4,6 @@ use mlua::Lua;
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use super::get_or_create_loaded;
-
 pub struct HookFunc {
     _name: &'static str,
     pub filename: &'static str,
@@ -34,18 +32,11 @@ pub const HOOK_FUNCS: [HookFunc; 12] = [
 pub fn mod_hooks(lua: &Lua, root: &Path) -> Result<BTreeSet<&'static str>> {
     let mut hooks = BTreeSet::new();
     for hook in &HOOK_FUNCS {
-        // Prefer .luau extension, fall back to .lua for compatibility
-        let luau_path = root.join("hooks").join(format!("{}.luau", hook.filename));
-        let lua_path = root.join("hooks").join(format!("{}.lua", hook.filename));
-        let hook_path = if luau_path.exists() {
-            luau_path
-        } else if lua_path.exists() {
-            lua_path
-        } else {
-            continue;
-        };
-        lua.load(hook_path).exec()?;
-        hooks.insert(hook.filename);
+        let hook_path = root.join("hooks").join(format!("{}.lua", hook.filename));
+        if hook_path.exists() {
+            lua.load(hook_path).exec()?;
+            hooks.insert(hook.filename);
+        }
     }
     Ok(hooks)
 }
@@ -53,8 +44,9 @@ pub fn mod_hooks(lua: &Lua, root: &Path) -> Result<BTreeSet<&'static str>> {
 pub fn hooks_embedded(lua: &Lua, embedded: &EmbeddedPlugin) -> Result<BTreeSet<&'static str>> {
     let mut hooks = BTreeSet::new();
 
-    // Get _LOADED table to preload hooks
-    let loaded: mlua::Table = get_or_create_loaded(lua)?;
+    // Get package.loaded table to preload hooks
+    let package: mlua::Table = lua.globals().get("package")?;
+    let loaded: mlua::Table = package.get("loaded")?;
 
     for (hook_name, hook_code) in embedded.hooks {
         // Execute the hook code to define the function

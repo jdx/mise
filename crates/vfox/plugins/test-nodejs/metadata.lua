@@ -1,20 +1,27 @@
---!nonstrict
 --- !!! DO NOT EDIT OR RENAME !!!
-PLUGIN = {
-	--- !!! MUST BE SET !!!
-	name = "test-nodejs",
-	version = "1.0.0",
-	homepage = "https://nodejs.org",
-	license = "MIT",
-	description = "Test Node.js plugin for vfox tests",
+PLUGIN = {}
 
-	--- !!! OPTIONAL !!!
-	minRuntimeVersion = "0.3.0",
-	notes = {},
+--- !!! MUST BE SET !!!
+--- Plugin name
+PLUGIN.name = "test-nodejs"
+--- Plugin version
+PLUGIN.version = "1.0.0"
+--- Plugin repository
+PLUGIN.homepage = "https://nodejs.org"
+--- Plugin license
+PLUGIN.license = "MIT"
+--- Plugin description
+PLUGIN.description = "Test Node.js plugin for vfox tests"
 
-	--- List legacy configuration filenames for determining the specified version of the tool.
-	legacyFilenames = {
-		".node-version",
-		".nvmrc",
-	},
+--- !!! OPTIONAL !!!
+--- minimum compatible vfox version
+PLUGIN.minRuntimeVersion = "0.3.0"
+--- Some things that need user to be attention!
+PLUGIN.notes = {}
+
+--- List legacy configuration filenames for determining the specified version of the tool.
+--- such as ".node-version", ".nvmrc", etc.
+PLUGIN.legacyFilenames = {
+    ".node-version",
+    ".nvmrc"
 }

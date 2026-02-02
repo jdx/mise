@@ -170,29 +170,17 @@ impl Plugin {
         self.metadata.get_or_try_init(|| {
             debug!("[vfox] Getting metadata for {self}");
 
-            // Set up custom require system (replaces Lua 5.1's package-based require)
-            lua_mod::setup_require(&self.lua)?;
-
-            // For filesystem plugins, set search paths for require
-            // Prefer .luau extension, fall back to .lua for compatibility
+            // For filesystem plugins, set Lua package paths
             if let PluginSource::Filesystem(dir) = &self.source {
-                let paths = [
-                    dir.join("?.luau"),
-                    dir.join("?.lua"),
-                    dir.join("hooks/?.luau"),
-                    dir.join("hooks/?.lua"),
-                    dir.join("lib/?.luau"),
-                    dir.join("lib/?.lua"),
-                ]
-                .iter()
-                .map(|p| p.to_string_lossy().to_string())
-                .collect::<Vec<String>>()
-                .join(";");
-                self.lua.set_named_registry_value("_REQUIRE_PATHS", paths)?;
+                set_paths(
+                    &self.lua,
+                    &[
+                        dir.join("?.lua"),
+                        dir.join("hooks/?.lua"),
+                        dir.join("lib/?.lua"),
+                    ],
+                )?;
             }
-
-            // Load compatibility shims for os/io (Luau lacks these)
-            lua_mod::compat(&self.lua)?;
 
             // Load standard Lua modules (http, json, etc.) FIRST
             // These must be available before loading embedded lib files
@@ -231,9 +219,10 @@ impl Plugin {
     }
 
     fn load_embedded_libs(&self, embedded: &EmbeddedPlugin) -> Result<()> {
-        let preload: Table = self.lua.globals().get("_PRELOAD")?;
+        let package: Table = self.lua.globals().get("package")?;
+        let preload: Table = package.get("preload")?;
 
-        // Register lib modules in _PRELOAD so require() works regardless of load order
+        // Register lib modules in package.preload so require() works regardless of load order
         // This allows lib files to require each other without alphabetical ordering issues
         for (name, code) in embedded.lib {
             let lua = self.lua.clone();
@@ -278,6 +267,23 @@ impl Plugin {
             }
         }
     }
+}
+
+fn get_package(lua: &Lua) -> Result<Table> {
+    let package = lua.globals().get::<Table>("package")?;
+    Ok(package)
+}
+
+fn set_paths(lua: &Lua, paths: &[PathBuf]) -> Result<()> {
+    let paths = paths
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect::<Vec<String>>()
+        .join(";");
+
+    get_package(lua)?.set("path", paths)?;
+
+    Ok(())
 }
 
 impl Display for Plugin {

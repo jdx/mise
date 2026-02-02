@@ -49,16 +49,11 @@ fi
         fix = "taplo fmt {{files}} && taplo check {{files}}"
     }
 
-    // uses luau-analyze and stylua to check vfox test plugin Lua/Luau files
+    // uses lua-language-server to check vfox test plugin Lua files
     // excludes embedded-plugins/ which are vendored from external repos
-    ["luau-analyze"] {
-        glob = List("crates/vfox/plugins/**/*.lua", "crates/vfox/plugins/**/*.luau")
-        check = "luau-analyze crates/vfox/plugins/"
-    }
-    ["stylua"] {
-        glob = List("crates/vfox/plugins/**/*.lua", "crates/vfox/plugins/**/*.luau")
-        check = "stylua --check crates/vfox/plugins/"
-        fix = "stylua crates/vfox/plugins/"
+    ["lua-check"] {
+        glob = List("crates/vfox/plugins/**/*.lua")
+        check = "lua-language-server --check crates/vfox/plugins/"
     }
 }
 

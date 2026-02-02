@@ -2,10 +2,9 @@ use mlua::Table;
 use mlua::prelude::*;
 use std::path::Path;
 
-use super::get_or_create_loaded;
-
 pub fn mod_cmd(lua: &Lua) -> LuaResult<()> {
-    let loaded: Table = get_or_create_loaded(lua)?;
+    let package: Table = lua.globals().get("package")?;
+    let loaded: Table = package.get("loaded")?;
     let cmd = lua.create_table_from(vec![("exec", lua.create_function(exec)?)])?;
     loaded.set("cmd", cmd.clone())?;
     loaded.set("vfox.cmd", cmd)?;

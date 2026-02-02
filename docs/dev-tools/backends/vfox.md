@@ -4,16 +4,6 @@
 
 The code for this is inside the mise repository at [`./src/backend/vfox.rs`](https://github.com/jdx/mise/blob/main/src/backend/vfox.rs).
 
-> [!TIP]
-> **Plugin authors:** vfox is the recommended plugin system for mise. Compared to asdf plugins, vfox plugins are written in Luau, work on all platforms including Windows, and ship with [built-in modules](/plugin-lua-modules.html) for HTTP requests, JSON/HTML parsing, archive extraction, semantic versioning, and structured logging. See the [feature comparison](./asdf.md#feature-comparison-asdf-vs-vfox) for a full breakdown.
-
-## Why vfox?
-
-- **Cross-platform** — plugins work on Linux, macOS, and Windows without modification
-- **Built-in modules** — no need to shell out to curl, jq, tar, or other system tools ([full list](/plugin-lua-modules.html))
-- **Security** — support for GitHub attestations, cosign, and SLSA verification
-- **Modern architecture** — structured hooks, backend plugins for multi-tool management, and rolling version checksums
-
 ## Dependencies
 
 No dependencies are required for vfox. Vfox lua code is read via a lua interpreter built into mise.

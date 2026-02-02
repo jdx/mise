@@ -1,7 +1,5 @@
 use mlua::{Lua, Result, Table, Value, Variadic};
 
-use super::get_or_create_loaded;
-
 fn values_to_string(lua: &Lua, args: Variadic<Value>) -> Result<String> {
     let tostring: mlua::Function = lua.globals().get("tostring")?;
     let parts: Vec<String> = args
@@ -9,7 +7,7 @@ fn values_to_string(lua: &Lua, args: Variadic<Value>) -> Result<String> {
         .map(|v| {
             tostring
                 .call::<String>(v)
-                .unwrap_or_else(|_| "<error converting value>".to_string())
+                .unwrap_or_else(|_| "?".to_string())
         })
         .collect();
     Ok(parts.join("\t"))
@@ -40,7 +38,8 @@ macro_rules! create_log_fn {
 }
 
 pub fn mod_log(lua: &Lua) -> Result<()> {
-    let loaded: Table = get_or_create_loaded(lua)?;
+    let package: Table = lua.globals().get("package")?;
+    let loaded: Table = package.get("loaded")?;
 
     let log_table = lua.create_table()?;
 
