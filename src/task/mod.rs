@@ -400,6 +400,7 @@ impl Task {
         task.env = p.parse_env("env")?.unwrap_or_default();
         task.dir = p.parse_str("dir");
         task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
+        task.inherit = p.parse_bool("inherit").unwrap_or(true);
         task.raw = p.parse_bool("raw").unwrap_or_default();
         task.sources = p.parse_array("sources").unwrap_or_default();
         task.outputs = p.get_raw("outputs").map(|to| to.into()).unwrap_or_default();
