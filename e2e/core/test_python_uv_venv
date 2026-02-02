@@ -85,6 +85,26 @@ assert "mise x -- which python" "$PWD/.venv/bin/python"
 # legacy true mode SHOULD set UV_PYTHON
 assert_contains "mise env -s bash" "UV_PYTHON"
 
+# Test boolean parsing from env vars - "true","1", "yes",  should all work
+rm -rf .venv
+
+cat >.mise.toml <<EOF
+[tools]
+python = "3.12.3"
+uv = "0.5.4"
+EOF
+
+MISE_PYTHON_UV_VENV_AUTO=true assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/.venv"
+rm -rf .venv
+MISE_PYTHON_UV_VENV_AUTO=yes assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/.venv"
+rm -rf .venv
+MISE_PYTHON_UV_VENV_AUTO=1 assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/.venv"
+
+# Test "0", "no", "false" should disable
+MISE_PYTHON_UV_VENV_AUTO=false assert_not_contains "mise env -s bash" "VIRTUAL_ENV"
+MISE_PYTHON_UV_VENV_AUTO=no assert_not_contains "mise env -s bash" "VIRTUAL_ENV"
+MISE_PYTHON_UV_VENV_AUTO=0 assert_not_contains "mise env -s bash" "VIRTUAL_ENV"
+
 ## Allows opt-out uv's venv
 #mkdir -p subdir
 #cat >subdir/.mise.toml <<EOF

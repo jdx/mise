@@ -140,6 +140,8 @@ impl<'de> Deserialize<'de> for PythonUvVenvAuto {
                 match normalized.as_str() {
                     "source" => Ok(PythonUvVenvAuto::Source),
                     "create|source" => Ok(PythonUvVenvAuto::CreateSource),
+                    "true" | "yes" | "1" => self.visit_bool(true),
+                    "false" | "no" | "0" => self.visit_bool(false),
                     _ => Err(E::invalid_value(de::Unexpected::Str(value), &self)),
                 }
             }

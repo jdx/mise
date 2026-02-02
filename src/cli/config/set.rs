@@ -78,7 +78,8 @@ impl ConfigSet {
         }
 
         let infer_bool_or_string = |value: &str| match value {
-            "true" | "false" => TomlValueTypes::Bool,
+            "true" | "yes" | "1" => TomlValueTypes::Bool,
+            "false" | "no" | "0" => TomlValueTypes::Bool,
             _ => TomlValueTypes::String,
         };
         let type_to_use = match self.type_ {
