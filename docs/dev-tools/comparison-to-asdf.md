@@ -149,7 +149,7 @@ work on Windows.
 
 asdf plugins are insecure. They typically are written by individuals with no ties to the vendors
 that provide the underlying tool.
-Where possible, mise does not use asdf plugins and instead uses backends like aqua and ubi which do
+Where possible, mise does not use asdf plugins and instead uses backends like aqua and github which do
 not require separate plugins.
 
 Aqua tools include native Cosign/SLSA/Minisign/GitHub attestation verification built into mise.

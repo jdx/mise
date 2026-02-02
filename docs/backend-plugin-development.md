@@ -1,5 +1,9 @@
 # Backend Plugin Development
 
+::: tip
+The [mise-backend-plugin-template](https://github.com/jdx/mise-backend-plugin-template) provides a ready-to-use starting point with LuaCATS type definitions, stylua formatting, and hk linting pre-configured.
+:::
+
 Backend plugins in mise use enhanced backend methods to manage multiple tools using the `plugin:tool` format. These plugins are perfect for package managers, tool families, and custom installations that need to manage multiple related tools.
 
 ## What are Backend Plugins?
