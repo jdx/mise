@@ -50,6 +50,7 @@ function PLUGIN:BackendInstall(ctx)
     local tool = ctx.tool
     local version = ctx.version
     local install_path = ctx.install_path
+    local download_path = ctx.download_path
 
     -- Your logic to install the tool
     -- Example: download files, extract archives, etc.
@@ -221,7 +222,16 @@ Backend plugins receive context through the `ctx` parameter passed to each hook 
 | ---------- | ------------- | ------------ |
 | `ctx.tool` | The tool name | `"prettier"` |
 
-### BackendInstall and BackendExecEnv Context
+### BackendInstall Context
+
+| Variable            | Description            | Example                                                            |
+| ------------------- | ---------------------- | ------------------------------------------------------------------ |
+| `ctx.tool`          | The tool name          | `"prettier"`                                                       |
+| `ctx.version`       | The requested version  | `"3.0.0"`                                                          |
+| `ctx.install_path`  | Installation directory | `"/home/user/.local/share/mise/installs/vfox-npm/prettier/3.0.0"`  |
+| `ctx.download_path` | Download directory     | `"/home/user/.local/share/mise/downloads/vfox-npm-prettier/3.0.0"` |
+
+### BackendExecEnv Context
 
 | Variable           | Description            | Example                                                           |
 | ------------------ | ---------------------- | ----------------------------------------------------------------- |
