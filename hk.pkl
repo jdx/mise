@@ -55,6 +55,11 @@ fi
         glob = List("crates/vfox/plugins/**/*.lua")
         check = "lua-language-server --check crates/vfox/plugins/"
     }
+    ["stylua"] {
+        glob = List("crates/vfox/plugins/**/*.lua")
+        check = "stylua --check crates/vfox/plugins/"
+        fix = "stylua crates/vfox/plugins/"
+    }
 }
 
 hooks {
