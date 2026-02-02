@@ -2,6 +2,9 @@
 
 Environment plugins are a special type of mise plugin that provide environment variables and PATH modifications without managing tool versions. They're ideal for integrating external services, managing secrets, and standardizing environment configuration across teams.
 
+> [!TIP]
+> The fastest way to get started is with the [mise-env-plugin-template](https://github.com/jdx/mise-env-plugin-template) repository.
+
 Unlike [tool plugins](tool-plugin-development.md) and [backend plugins](backend-plugin-development.md), environment plugins:
 
 - Don't implement version management (`Available`, `PreInstall`, `PostInstall` hooks)

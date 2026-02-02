@@ -2,6 +2,9 @@
 
 Tool plugins use a hook-based architecture to manage individual tools. They are compatible with the standard vfox ecosystem and are perfect for tools that need complex installation logic, environment configuration, or legacy file parsing.
 
+> [!TIP]
+> The fastest way to get started is with the [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) repository.
+
 ## What are Tool Plugins?
 
 Tool plugins use traditional hook functions to manage a single tool. They provide:

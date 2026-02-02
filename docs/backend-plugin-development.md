@@ -2,6 +2,9 @@
 
 Backend plugins in mise use enhanced backend methods to manage multiple tools using the `plugin:tool` format. These plugins are perfect for package managers, tool families, and custom installations that need to manage multiple related tools.
 
+> [!TIP]
+> The fastest way to get started is with the [mise-backend-plugin-template](https://github.com/jdx/mise-backend-plugin-template) repository.
+
 ## What are Backend Plugins?
 
 Backend plugins extend the standard vfox plugin system with enhanced backend methods. They support:
