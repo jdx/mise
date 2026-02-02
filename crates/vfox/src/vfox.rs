@@ -261,12 +261,14 @@ impl Vfox {
         tool: &str,
         version: &str,
         install_path: PathBuf,
+        download_path: PathBuf,
     ) -> Result<()> {
         let plugin = self.get_sdk(sdk)?;
         let ctx = BackendInstallContext {
             tool: tool.to_string(),
             version: version.to_string(),
             install_path,
+            download_path,
         };
         plugin.backend_install(ctx).await?;
         Ok(())
