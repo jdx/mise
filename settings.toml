@@ -1583,6 +1583,33 @@ parse_env = "list_by_colon"
 rust_type = "BTreeSet<PathBuf>"
 type = "ListPath"
 
+[task_inherit_parent]
+default = true
+description = "Whether to inherit tasks from parent directories."
+docs = """
+By default, mise loads tasks from all parent directories up to the root.
+This allows child directories to use tasks defined in parent directories.
+
+Set to `false` to disable this behavior, so only tasks defined in the current
+directory (or its task directories) are available.
+
+**Example:**
+```toml
+[settings]
+task_inherit_parent = false  # Only load tasks from current directory
+```
+
+Or via environment variable:
+```bash
+MISE_TASK_INHERIT_PARENT=false mise run build
+```
+
+Note: Individual tasks in parent directories can also opt-out of inheritance
+by setting `inherit = false` on the task definition.
+"""
+env = "MISE_TASK_INHERIT_PARENT"
+type = "Bool"
+
 [task_output]
 description = "Change output style when executing tasks."
 docs = """

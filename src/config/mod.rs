@@ -1562,6 +1562,7 @@ async fn load_local_tasks_with_context(
     let monorepo_root = monorepo_config.and_then(|cf| cf.project_root().map(|p| p.to_path_buf()));
 
     // Load tasks from parent directories (current working directory up to root)
+    // Unless task_inherit_parent is false, in which case only load from current directory
 
     let local_config_files = config
         .config_files
@@ -1569,11 +1570,29 @@ async fn load_local_tasks_with_context(
         .filter(|(_, cf)| !is_global_config(cf.get_path()))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect::<IndexMap<_, _>>();
-    for d in all_dirs()? {
+
+    let all_directories = all_dirs()?;
+    let inherit_parent = Settings::get().task_inherit_parent;
+    let current_dir = dirs::CWD.clone();
+
+    for d in all_directories {
         if cfg!(test) && !d.starts_with(*dirs::HOME) {
             continue;
         }
+
+        let is_current_dir = current_dir.as_ref().is_some_and(|cwd| cwd == &d);
+
+        // If task_inherit_parent is false, skip parent directories
+        if !inherit_parent && !is_current_dir {
+            continue;
+        }
+
         let mut dir_tasks = load_tasks_in_dir(config, &d, &local_config_files, templates).await?;
+
+        // Filter out tasks with inherit=false when loading from parent directories
+        if !is_current_dir {
+            dir_tasks.retain(|t| t.inherit);
+        }
 
         if let Some(ref monorepo_root) = monorepo_root {
             prefix_monorepo_task_names(&mut dir_tasks, &d, monorepo_root);

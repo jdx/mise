@@ -33,6 +33,11 @@ use xx::regex;
 static FUZZY_MATCHER: Lazy<SkimMatcherV2> =
     Lazy::new(|| SkimMatcherV2::default().use_cache(true).smart_case());
 
+/// Default value for `inherit` field - tasks are inherited by default
+fn default_true() -> bool {
+    true
+}
+
 /// Type alias for tracking failed tasks with their exit codes
 pub type FailedTasks = Arc<std::sync::Mutex<Vec<(Task, Option<i32>)>>>;
 
@@ -236,6 +241,11 @@ pub struct Task {
     pub hide: bool,
     #[serde(default)]
     pub global: bool,
+    /// Whether this task should be inherited by child directories.
+    /// Default is true. Set to false to prevent this task from being
+    /// visible in child directories.
+    #[serde(default = "default_true")]
+    pub inherit: bool,
     #[serde(default)]
     pub raw: bool,
     #[serde(default)]
@@ -1165,6 +1175,7 @@ impl Default for Task {
             dir: None,
             hide: false,
             global: false,
+            inherit: true,
             raw: false,
             sources: vec![],
             outputs: Default::default(),

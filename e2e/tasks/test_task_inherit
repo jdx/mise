@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Test per-task inherit=false setting
+
+# Create parent directory with tasks
+mkdir -p parent/child
+
+cat <<EOF >parent/mise.toml
+[tasks.shared-task]
+run = "echo shared"
+
+[tasks.private-task]
+run = "echo private"
+inherit = false
+EOF
+
+cat <<EOF >parent/child/mise.toml
+[tasks.child-task]
+run = "echo child"
+EOF
+
+# In parent directory, both tasks should be visible
+cd parent
+assert_contains "mise tasks" "shared-task"
+assert_contains "mise tasks" "private-task"
+
+# In child directory, shared-task should be visible but private-task should NOT
+cd child
+assert_contains "mise tasks" "shared-task"
+assert_contains "mise tasks" "child-task"
+
+# private-task with inherit=false should NOT be visible in child
+if mise tasks 2>&1 | grep -q "private-task"; then
+    fail "private-task should not be visible in child directory (inherit=false)"
+else
+    ok "private-task correctly hidden from child directory"
+fi
