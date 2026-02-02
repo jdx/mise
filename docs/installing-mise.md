@@ -128,6 +128,15 @@ sudo apt update -y
 sudo apt install -y mise
 ```
 
+Alternatively, on Ubuntu 26.04+ (Resolute), mise is available via a PPA which builds
+natively with the system Rust toolchain:
+
+```sh
+sudo add-apt-repository -y ppa:jdxcode/mise
+sudo apt update -y
+sudo apt install -y mise
+```
+
 ### pacman
 
 For Arch Linux:
