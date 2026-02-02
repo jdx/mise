@@ -5028,7 +5028,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2026.2.0"
+version = "2026.2.1"
 dependencies = [
  "age",
  "aho-corasick",
@@ -8797,7 +8797,7 @@ dependencies = [
 
 [[package]]
 name = "vfox"
-version = "2026.1.5"
+version = "2026.2.0"
 dependencies = [
  "clap",
  "env_logger",

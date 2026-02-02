@@ -18,8 +18,8 @@ PLUGIN.description = "Google Cloud SDK (gcloud CLI)"
 PLUGIN.minRuntimeVersion = "0.3.0"
 --- Some things that need user attention
 PLUGIN.notes = {
-    "After installation, you may need to run 'gcloud init' to configure your account.",
-    "Additional components can be installed with 'gcloud components install <component>'.",
+	"After installation, you may need to run 'gcloud init' to configure your account.",
+	"Additional components can be installed with 'gcloud components install <component>'.",
 }
 
 --- Legacy configuration filenames for determining tool version

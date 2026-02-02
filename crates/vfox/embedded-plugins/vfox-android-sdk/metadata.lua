@@ -18,6 +18,6 @@ PLUGIN.description = "Android SDK Command-line Tools"
 PLUGIN.minRuntimeVersion = "0.3.0"
 --- Some things that need user to be attention!
 PLUGIN.notes = {
-    "Requires Java 11+ to be installed",
-    "Set ANDROID_SDK_MIRROR_URL to use a mirror"
+	"Requires Java 11+ to be installed",
+	"Set ANDROID_SDK_MIRROR_URL to use a mirror",
 }
