@@ -1263,6 +1263,11 @@
             "type": "string"
           }
         },
+        "task_inherit_parent": {
+          "default": true,
+          "description": "Whether to inherit tasks from parent directories.",
+          "type": "boolean"
+        },
         "task_output": {
           "description": "Change output style when executing tasks.",
           "type": "string",

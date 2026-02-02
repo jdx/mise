@@ -22,9 +22,9 @@ assert_contains "mise tasks" "child-task"
 # With task_inherit_parent=false, only child-task should be visible
 export MISE_TASK_INHERIT_PARENT=false
 if mise tasks 2>&1 | grep -q "parent-task"; then
-    fail "parent-task should not be visible when task_inherit_parent=false"
+	fail "parent-task should not be visible when task_inherit_parent=false"
 else
-    ok "parent-task correctly hidden when task_inherit_parent=false"
+	ok "parent-task correctly hidden when task_inherit_parent=false"
 fi
 assert_contains "mise tasks" "child-task"
 unset MISE_TASK_INHERIT_PARENT
@@ -39,8 +39,8 @@ run = "echo child"
 EOF
 
 if mise tasks 2>&1 | grep -q "parent-task"; then
-    fail "parent-task should not be visible with task_inherit_parent=false in config"
+	fail "parent-task should not be visible with task_inherit_parent=false in config"
 else
-    ok "parent-task correctly hidden with task_inherit_parent=false in config"
+	ok "parent-task correctly hidden with task_inherit_parent=false in config"
 fi
 assert_contains "mise tasks" "child-task"

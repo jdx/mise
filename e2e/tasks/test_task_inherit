@@ -30,7 +30,7 @@ assert_contains "mise tasks" "child-task"
 
 # private-task with inherit=false should NOT be visible in child
 if mise tasks 2>&1 | grep -q "private-task"; then
-    fail "private-task should not be visible in child directory (inherit=false)"
+	fail "private-task should not be visible in child directory (inherit=false)"
 else
-    ok "private-task correctly hidden from child directory"
+	ok "private-task correctly hidden from child directory"
 fi
