@@ -2,7 +2,7 @@
 # Test per-task inherit=false setting
 
 # Create parent directory with tasks
-mkdir -p parent/child
+mkdir -p parent/child parent/mise-tasks
 
 cat <<EOF >parent/mise.toml
 [tasks.shared-task]
@@ -18,15 +18,34 @@ cat <<EOF >parent/child/mise.toml
 run = "echo child"
 EOF
 
-# In parent directory, both tasks should be visible
+# Create file-based tasks in parent
+cat <<'EOF' >parent/mise-tasks/shared-file-task
+#!/bin/bash
+#MISE description="Shared file task"
+echo "shared file task"
+EOF
+chmod +x parent/mise-tasks/shared-file-task
+
+cat <<'EOF' >parent/mise-tasks/private-file-task
+#!/bin/bash
+#MISE description="Private file task"
+#MISE inherit=false
+echo "private file task"
+EOF
+chmod +x parent/mise-tasks/private-file-task
+
+# In parent directory, all tasks should be visible
 cd parent
 assert_contains "mise tasks" "shared-task"
 assert_contains "mise tasks" "private-task"
+assert_contains "mise tasks" "shared-file-task"
+assert_contains "mise tasks" "private-file-task"
 
-# In child directory, shared-task should be visible but private-task should NOT
+# In child directory, shared tasks should be visible but private tasks should NOT
 cd child
 assert_contains "mise tasks" "shared-task"
 assert_contains "mise tasks" "child-task"
+assert_contains "mise tasks" "shared-file-task"
 
 # private-task with inherit=false should NOT be visible in child
 if mise tasks 2>&1 | grep -q "private-task"; then
@@ -35,34 +54,9 @@ else
 	ok "private-task correctly hidden from child directory"
 fi
 
-# Test file-based task with inherit=false
-cd ..
-mkdir -p mise-tasks
-cat <<'EOF' >mise-tasks/shared-file-task
-#!/bin/bash
-#MISE description="Shared file task"
-echo "shared file task"
-EOF
-chmod +x mise-tasks/shared-file-task
-
-cat <<'EOF' >mise-tasks/private-file-task
-#!/bin/bash
-#MISE description="Private file task"
-#MISE inherit=false
-echo "private file task"
-EOF
-chmod +x mise-tasks/private-file-task
-
-# In parent, both file tasks should be visible
-assert_contains "mise tasks" "shared-file-task"
-assert_contains "mise tasks" "private-file-task"
-
-# In child, shared-file-task should be visible but private-file-task should NOT
-cd child
-assert_contains "mise tasks" "shared-file-task"
-
+# private-file-task with inherit=false should NOT be visible in child
 if mise tasks 2>&1 | grep -q "private-file-task"; then
-    fail "private-file-task should not be visible in child directory (inherit=false)"
+	fail "private-file-task should not be visible in child directory (inherit=false)"
 else
-    ok "private-file-task correctly hidden from child directory"
+	ok "private-file-task correctly hidden from child directory"
 fi
