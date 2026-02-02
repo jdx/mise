@@ -2195,6 +2195,7 @@ echo "hello world"
 #MISE env={TEST_VAR="value"}
 #MISE dir="/some/dir"
 #MISE hide=true
+#MISE inherit=false
 #MISE raw=true
 #MISE sources=["src1.txt", "src2.txt"]
 #MISE outputs=["out1.txt"]
@@ -2220,6 +2221,7 @@ echo "test"
         assert_eq!(task.wait_for.len(), 1);
         assert_eq!(task.dir, Some("/some/dir".to_string()));
         assert_eq!(task.hide, true);
+        assert_eq!(task.inherit, false);
         assert_eq!(task.raw, true);
         assert_eq!(task.sources, vec!["src1.txt", "src2.txt"]);
         assert_eq!(task.shell, Some("bash -c".to_string()));
