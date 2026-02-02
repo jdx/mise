@@ -77,6 +77,8 @@ struct FileHandle {
     writable: bool,
     /// Accumulated write buffer (populated in write mode)
     write_buf: std::cell::RefCell<Option<String>>,
+    /// Current read position for line-by-line reading
+    read_pos: std::cell::RefCell<usize>,
 }
 
 impl UserData for FileHandle {
@@ -86,7 +88,23 @@ impl UserData for FileHandle {
                 if mode == "*a" || mode == "*all" {
                     Ok(Some(content.clone()))
                 } else if mode == "*l" || mode == "*line" {
-                    Ok(content.lines().next().map(|s| s.to_string()))
+                    // Line-by-line reading with position tracking
+                    let mut pos = this.read_pos.borrow_mut();
+                    if *pos >= content.len() {
+                        return Ok(None); // EOF
+                    }
+                    let remaining = &content[*pos..];
+                    if let Some(newline_idx) = remaining.find('\n') {
+                        let line = &remaining[..newline_idx];
+                        *pos += newline_idx + 1; // Skip past the newline
+                        Ok(Some(line.to_string()))
+                    } else if !remaining.is_empty() {
+                        // Last line without trailing newline
+                        *pos = content.len();
+                        Ok(Some(remaining.to_string()))
+                    } else {
+                        Ok(None)
+                    }
                 } else {
                     Ok(Some(content.clone()))
                 }
@@ -158,14 +176,21 @@ fn setup_io(lua: &Lua) -> mlua::Result<()> {
         lua.create_function(|lua, (path, mode): (String, Option<String>)| {
             let mode = mode.unwrap_or_else(|| "r".to_string());
             if mode.contains('w') {
-                // Write mode: create/truncate file, buffer writes until close
-                let handle = FileHandle {
-                    content: None,
-                    path,
-                    writable: true,
-                    write_buf: std::cell::RefCell::new(Some(String::new())),
-                };
-                Ok((Value::UserData(lua.create_userdata(handle)?), Value::Nil))
+                // Write mode: create/truncate file immediately (Lua 5.1 semantics)
+                // This validates the path upfront rather than deferring errors to close()
+                match std::fs::File::create(&path) {
+                    Ok(_) => {
+                        let handle = FileHandle {
+                            content: None,
+                            path,
+                            writable: true,
+                            write_buf: std::cell::RefCell::new(Some(String::new())),
+                            read_pos: std::cell::RefCell::new(0),
+                        };
+                        Ok((Value::UserData(lua.create_userdata(handle)?), Value::Nil))
+                    }
+                    Err(e) => Ok((Value::Nil, Value::String(lua.create_string(e.to_string())?))),
+                }
             } else if mode.contains('a') {
                 // Append mode: read existing content, buffer writes until close
                 let existing = std::fs::read_to_string(&path).unwrap_or_default();
@@ -174,6 +199,7 @@ fn setup_io(lua: &Lua) -> mlua::Result<()> {
                     path,
                     writable: true,
                     write_buf: std::cell::RefCell::new(Some(existing)),
+                    read_pos: std::cell::RefCell::new(0),
                 };
                 Ok((Value::UserData(lua.create_userdata(handle)?), Value::Nil))
             } else {
@@ -185,6 +211,7 @@ fn setup_io(lua: &Lua) -> mlua::Result<()> {
                             path,
                             writable: false,
                             write_buf: std::cell::RefCell::new(None),
+                            read_pos: std::cell::RefCell::new(0),
                         };
                         Ok((Value::UserData(lua.create_userdata(handle)?), Value::Nil))
                     }
@@ -448,5 +475,49 @@ mod tests {
         // Verify original content is preserved
         let content = std::fs::read_to_string(&filepath).unwrap();
         assert_eq!(content, "original content");
+    }
+
+    #[test]
+    fn test_io_read_lines() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let filepath = temp_dir.path().join("multiline.txt");
+        let filepath_str = filepath.to_string_lossy().to_string();
+        std::fs::write(&filepath, "line1\nline2\nline3").unwrap();
+
+        let lua = Lua::new();
+        mod_compat(&lua).unwrap();
+        lua.load(mlua::chunk! {
+            local f = io.open($filepath_str, "r")
+            assert(f ~= nil, "expected file handle")
+
+            local l1 = f:read("*l")
+            assert(l1 == "line1", "expected 'line1', got: " .. tostring(l1))
+
+            local l2 = f:read("*l")
+            assert(l2 == "line2", "expected 'line2', got: " .. tostring(l2))
+
+            local l3 = f:read("*l")
+            assert(l3 == "line3", "expected 'line3', got: " .. tostring(l3))
+
+            local l4 = f:read("*l")
+            assert(l4 == nil, "expected nil at EOF, got: " .. tostring(l4))
+
+            f:close()
+        })
+        .exec()
+        .unwrap();
+    }
+
+    #[test]
+    fn test_io_open_write_error() {
+        let lua = Lua::new();
+        mod_compat(&lua).unwrap();
+        lua.load(mlua::chunk! {
+            local f, err = io.open("/nonexistent/path/file.txt", "w")
+            assert(f == nil, "expected nil for invalid write path")
+            assert(err ~= nil, "expected error message for invalid write path")
+        })
+        .exec()
+        .unwrap();
     }
 }
