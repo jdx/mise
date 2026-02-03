@@ -208,7 +208,7 @@ pub fn warn_if_env_plugin_shadows_registry(name: &str, plugin_path: &Path) {
 
 pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
     Regex::new(
-        r"(?i)(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|([abc])[0-9]+|snapshot|SNAPSHOT|master)"
+        r"(?i)(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|\d+\.\d+(?:\.\d+)*[abc][0-9]+([^0-9A-Za-z]|$)|snapshot|SNAPSHOT|master)"
     )
         .unwrap()
 });
@@ -351,6 +351,23 @@ impl PluginSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_version_regex_does_not_match_date_sha_versions() {
+        // Stable-looking tags for GitHub-backend tools that include a short git SHA.
+        // They must not be filtered as alpha/beta prereleases.
+        assert!(!VERSION_REGEX.is_match("2026-02-02-077a2ac"));
+        assert!(!VERSION_REGEX.is_match("2026-02-02-33dea70"));
+        assert!(!VERSION_REGEX.is_match("2026-01-31-40fe243"));
+    }
+
+    #[test]
+    fn test_version_regex_still_matches_pep440_prereleases() {
+        assert!(VERSION_REGEX.is_match("3.12.0b1"));
+        assert!(VERSION_REGEX.is_match("1.2a3"));
+        assert!(VERSION_REGEX.is_match("1.2.3c4"));
+        assert!(VERSION_REGEX.is_match("1.2.3b4.dev0"));
+    }
 
     #[test]
     fn test_plugin_source_parse_git() {

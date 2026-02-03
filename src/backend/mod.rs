@@ -645,7 +645,17 @@ pub trait Backend: Debug + Send + Sync {
                 if matches.is_empty() && query == "latest" {
                     matches = self.list_remote_versions(config).await?;
                 }
-                Ok(find_match_in_list(&matches, &query))
+                let selected = find_match_in_list(&matches, &query);
+                trace!(
+                    "latest_version {} query={} candidates={} first={:?} last={:?} selected={:?}",
+                    self.id(),
+                    query,
+                    matches.len(),
+                    matches.first(),
+                    matches.last(),
+                    selected
+                );
+                Ok(selected)
             }
             None => self.latest_stable_version(config).await,
         }
@@ -1219,20 +1229,37 @@ pub trait Backend: Debug + Send + Sync {
             .into_iter()
             .filter(|v| {
                 if query == v {
+                    trace!("fuzzy_match_filter {} query={query} candidate={v} reason=exact", self.id());
                     return true;
                 }
                 if VERSION_REGEX.is_match(v) {
+                    trace!(
+                        "fuzzy_match_filter {} query={query} candidate={v} reason=version_regex",
+                        self.id()
+                    );
                     return false;
                 }
                 if query_regex.is_match(v) {
+                    trace!(
+                        "fuzzy_match_filter {} query={query} candidate={v} reason=query_regex",
+                        self.id()
+                    );
                     return true;
                 }
                 // Try matching without the 'v' prefix
                 if let Some(ref re) = query_without_v_regex
                     && re.is_match(v)
                 {
+                    trace!(
+                        "fuzzy_match_filter {} query={query} candidate={v} reason=query_without_v",
+                        self.id()
+                    );
                     return true;
                 }
+                trace!(
+                    "fuzzy_match_filter {} query={query} candidate={v} reason=no_match",
+                    self.id()
+                );
                 false
             })
             .collect()

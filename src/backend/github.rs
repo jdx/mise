@@ -1446,4 +1446,24 @@ mod tests {
             backend.find_asset_case_insensitive(&assets, "nonexistent-asset.tar.gz", |a| &a.name);
         assert!(result.is_none());
     }
+
+    #[test]
+    fn test_fuzzy_match_latest_keeps_date_sha_versions() {
+        let backend = create_test_backend();
+        let versions = vec![
+            "2026-01-31-40fe243".to_string(),
+            "2026-02-02-33dea70".to_string(),
+            "2026-02-02-077a2ac".to_string(),
+        ];
+        let filtered = backend.fuzzy_match_filter(versions, "latest");
+        assert_eq!(
+            filtered,
+            vec![
+                "2026-01-31-40fe243".to_string(),
+                "2026-02-02-33dea70".to_string(),
+                "2026-02-02-077a2ac".to_string(),
+            ]
+        );
+        assert_eq!(filtered.last().map(|s| s.as_str()), Some("2026-02-02-077a2ac"));
+    }
 }
