@@ -6,8 +6,8 @@ test = ["julia --version", "julia version"]
 full = "http:julia"
 
 [backends.options]
-version_list_url = "https://julialang-s3.julialang.org/bin/versions.json"
 version_expr = "sortVersions(filter(keys(fromJSON(body)), {# matches \"^\\\\d+\\\\.\\\\d+\\\\.\\\\d+(-[0-9A-Za-z\\\\.-]+)?$\"}))"
+version_list_url = "https://julialang-s3.julialang.org/bin/versions.json"
 
 [backends.options.platforms.macos-x64]
 url = "{% if version == \"nightly\" %}https://julialangnightlies-s3.julialang.org/bin/mac/x64/julia-latest-mac64.tar.gz{% else %}https://julialang-s3.julialang.org/bin/mac/x64/{{ version | split(pat='.') | slice(start=0, end=2) | join(sep='.') }}/julia-{{ version }}-mac64.tar.gz{% endif %}"
@@ -22,8 +22,8 @@ url = "{% if version == \"nightly\" %}https://julialangnightlies-s3.julialang.or
 url = "{% if version == \"nightly\" %}https://julialangnightlies-s3.julialang.org/bin/linux/aarch64/julia-latest-linuxaarch64.tar.gz{% else %}https://julialang-s3.julialang.org/bin/linux/aarch64/{{ version | split(pat='.') | slice(start=0, end=2) | join(sep='.') }}/julia-{{ version }}-linux-aarch64.tar.gz{% endif %}"
 
 [backends.options.platforms.windows-x64]
-url = "{% if version == \"nightly\" %}https://julialangnightlies-s3.julialang.org/bin/winnt/x64/julia-latest-win64.zip{% else %}https://julialang-s3.julialang.org/bin/winnt/x64/{{ version | split(pat='.') | slice(start=0, end=2) | join(sep='.') }}/julia-{{ version }}-win64.zip{% endif %}"
 format = "zip"
+url = "{% if version == \"nightly\" %}https://julialangnightlies-s3.julialang.org/bin/winnt/x64/julia-latest-win64.zip{% else %}https://julialang-s3.julialang.org/bin/winnt/x64/{{ version | split(pat='.') | slice(start=0, end=2) | join(sep='.') }}/julia-{{ version }}-win64.zip{% endif %}"
 
 [[backends]]
 full = "asdf:mise-plugins/mise-julia"
