@@ -44,6 +44,12 @@ impl Backend for NPMBackend {
         }
     }
 
+    /// NPM installs packages from npm registry using version specs (e.g., eslint@8.0.0).
+    /// It doesn't support installing from direct URLs, so lockfile URLs are not applicable.
+    fn supports_lockfile_url(&self) -> bool {
+        false
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         // Use npm CLI to respect custom registry configurations
         self.ensure_npm_for_version_check(config).await;
