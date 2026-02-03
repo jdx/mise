@@ -8,6 +8,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::backend::ABackend;
 use crate::cli::args::BackendArg;
 use crate::config::Config;
+use crate::env;
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
@@ -246,6 +247,9 @@ impl ToolVersion {
             if let Some(v) = matches.last() {
                 return build(v.clone());
             }
+        }
+        if env::PREFER_OFFLINE.load(std::sync::atomic::Ordering::Relaxed) {
+            return build(v);
         }
         // First try with date filter (common case)
         let matches = backend
