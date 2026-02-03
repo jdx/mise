@@ -22,8 +22,9 @@ It's also compatible
 with asdf `.tool-versions` files as well as [idiomatic version files](/configuration#idiomatic-version-files) like `.node-version` and
 `.ruby-version`. See [configuration](/configuration) for more details.
 
-When specifying tool versions, you can also refer to environment variables defined in the same file, but note
-that environment variables from referenced files are not resolved here.
+When specifying tool versions, you can also refer to environment variables defined in your config hierarchy,
+including values produced by env directives like `_.source`, `_.file`, or env modules. These are resolved
+before tool version templates are rendered.
 
 ::: info
 mise is inspired by [asdf](https://asdf-vm.com) and can leverage asdf's
