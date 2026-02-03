@@ -165,7 +165,7 @@ impl Install {
                 .map(|t| format!("  mise use {t}"))
                 .collect();
             warn!(
-                "{tool_list} installed but not activated — {} not in a mise.toml config file.\nTo install and activate, run:\n{}",
+                "{tool_list} installed but not activated — {} not in any config file.\nTo install and activate, run:\n{}",
                 if inactive_tools.len() == 1 {
                     "it is"
                 } else {
