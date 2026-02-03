@@ -1,5 +1,54 @@
 # Changelog
 
+## [2026.2.2](https://github.com/jdx/mise/compare/v2026.2.1..v2026.2.2) - 2026-02-03
+
+### 🚀 Features
+
+- **(asset-matcher)** enable `mingw-w64` detection for windows packages by @lchagnoleau in [#7981](https://github.com/jdx/mise/pull/7981)
+- **(crates/vfox)** add download_path to BackendInstall context by @malept in [#7959](https://github.com/jdx/mise/pull/7959)
+- **(python)** rework `python.uv_venv_auto` setting by @halms in [#7905](https://github.com/jdx/mise/pull/7905)
+- add "Did you mean?" suggestions and inactive tool warnings by @jdx in [#7965](https://github.com/jdx/mise/pull/7965)
+
+### 🐛 Bug Fixes
+
+- **(hook-env)** skip remote version fetching for uninstalled tools in prefer-offline mode by @jdx in [#7976](https://github.com/jdx/mise/pull/7976)
+- **(install.sh)** Corret `setup` to `set up` by @gogolok in [#7980](https://github.com/jdx/mise/pull/7980)
+- retry spawn on ETXTBSY (Text file busy) by @jdx in [#7964](https://github.com/jdx/mise/pull/7964)
+- improve ToolOptions parsing to support comma separated values by @roele in [#7971](https://github.com/jdx/mise/pull/7971)
+
+### 📚 Documentation
+
+- improve plugin documentation with comparisons and template links by @jdx in [#7962](https://github.com/jdx/mise/pull/7962)
+
+### 📦️ Dependency Updates
+
+- bump hyper-util, system-configuration, lru, aws-sdk, and others by @jdx in [#7977](https://github.com/jdx/mise/pull/7977)
+
+### Chore
+
+- **(vfox)** add LuaCATS type definitions for plugin IDE support by @jdx in [#7961](https://github.com/jdx/mise/pull/7961)
+- **(vfox)** add `download_path` to `BackendInstallCtx` type defintion by @malept in [#7973](https://github.com/jdx/mise/pull/7973)
+- add stylua linting for vfox plugin Lua files by @jdx in [#7960](https://github.com/jdx/mise/pull/7960)
+- use system Rust for PPA builds on Ubuntu 26.04+ by @jdx in [#7956](https://github.com/jdx/mise/pull/7956)
+
+### New Contributors
+
+- @gogolok made their first contribution in [#7980](https://github.com/jdx/mise/pull/7980)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (4)
+
+- [`autobrr/mkbrr`](https://github.com/autobrr/mkbrr)
+- [`dodobrands/Peekie`](https://github.com/dodobrands/Peekie)
+- [`grpc/grpc-java/protoc-gen-grpc-java`](https://github.com/grpc/grpc-java/protoc-gen-grpc-java)
+- [`str4d/age-plugin-yubikey`](https://github.com/str4d/age-plugin-yubikey)
+
+#### Updated Packages (3)
+
+- [`biomejs/biome`](https://github.com/biomejs/biome)
+- [`rust-cross/cargo-zigbuild`](https://github.com/rust-cross/cargo-zigbuild)
+- [`siderolabs/talos`](https://github.com/siderolabs/talos)
 ## [2026.2.1](https://github.com/jdx/mise/compare/v2026.2.0..v2026.2.1) - 2026-02-02
 
 ### 🚀 Features

@@ -18,7 +18,7 @@ function PLUGIN:Available(ctx)
 
     local resp, err = http.get({
         url = "https://api.github.com/repos/bpkg/bpkg/tags",
-        headers = headers
+        headers = headers,
     })
 
     if err ~= nil then

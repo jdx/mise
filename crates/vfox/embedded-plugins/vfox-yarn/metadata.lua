@@ -12,7 +12,7 @@ PLUGIN = {
 This plugin installs Yarn package manager.
 Supports both Yarn Classic (v1.x) and Yarn Berry (v2.x+).
     ]],
-    minRuntimeVersion = "0.5.0"
+    minRuntimeVersion = "0.5.0",
 }
 
 return PLUGIN

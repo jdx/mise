@@ -13,7 +13,15 @@ function PLUGIN:PostInstall(ctx)
     if RUNTIME.osType == "windows" then
         -- Windows: Use PowerShell script
         local scriptPath = path .. sep .. "dotnet-install.ps1"
-        cmd.exec("powershell -ExecutionPolicy Bypass -File " .. scriptPath .. " -InstallDir " .. path .. " -Version " .. version .. " -NoPath")
+        cmd.exec(
+            "powershell -ExecutionPolicy Bypass -File "
+                .. scriptPath
+                .. " -InstallDir "
+                .. path
+                .. " -Version "
+                .. version
+                .. " -NoPath"
+        )
         -- Clean up installer script
         os.remove(scriptPath)
     else

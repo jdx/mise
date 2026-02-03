@@ -6,6 +6,10 @@ function PLUGIN:PreInstall(ctx)
 
     return {
         version = version,
-        url = "https://github.com/technomancy/leiningen/releases/download/" .. version .. "/leiningen-" .. version .. "-standalone.jar"
+        url = "https://github.com/technomancy/leiningen/releases/download/"
+            .. version
+            .. "/leiningen-"
+            .. version
+            .. "-standalone.jar",
     }
 end

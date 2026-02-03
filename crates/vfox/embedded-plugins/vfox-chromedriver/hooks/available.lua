@@ -11,7 +11,7 @@ function PLUGIN:Available(ctx)
         url = "https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json",
         headers = {
             ["Accept"] = "application/json",
-        }
+        },
     })
 
     if err ~= nil then

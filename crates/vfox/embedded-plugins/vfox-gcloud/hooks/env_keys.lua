@@ -5,19 +5,19 @@
 local file = require("file")
 
 function PLUGIN:EnvKeys(ctx)
-	local version_path = ctx.path
+    local version_path = ctx.path
 
-	-- The SDK extracts directly to the version path
-	local bin_path = file.join_path(version_path, "bin")
+    -- The SDK extracts directly to the version path
+    local bin_path = file.join_path(version_path, "bin")
 
-	return {
-		{
-			key = "PATH",
-			value = bin_path,
-		},
-		{
-			key = "CLOUDSDK_ROOT_DIR",
-			value = version_path,
-		},
-	}
+    return {
+        {
+            key = "PATH",
+            value = bin_path,
+        },
+        {
+            key = "CLOUDSDK_ROOT_DIR",
+            value = version_path,
+        },
+    }
 end

@@ -4,11 +4,7 @@ function PLUGIN:PostInstall(ctx)
     local rootPath = ctx.rootPath
 
     -- Redis doesn't need configure, just make with PREFIX
-    local build_cmd = string.format(
-        'cd "%s" && make PREFIX="%s" install',
-        rootPath,
-        rootPath
-    )
+    local build_cmd = string.format('cd "%s" && make PREFIX="%s" install', rootPath, rootPath)
 
     print("Compiling Redis from source...")
     local result = os.execute(build_cmd)

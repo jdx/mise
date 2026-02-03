@@ -5,7 +5,7 @@ function PLUGIN:Available(ctx)
     local http = require("http")
 
     local resp, err = http.get({
-        url = "https://download.redis.io/releases/"
+        url = "https://download.redis.io/releases/",
     })
 
     if err ~= nil then
@@ -21,7 +21,7 @@ function PLUGIN:Available(ctx)
             seen[version] = true
             table.insert(results, {
                 version = version,
-                note = ""
+                note = "",
             })
         end
     end

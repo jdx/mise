@@ -24,20 +24,25 @@ function PLUGIN:PostInstall(ctx)
     local destJar = selfInstallDir .. "/" .. jarName
 
     -- The JAR might be at rootPath directly or we need to find it
-    local moveCmd = string.format('mv "%s" "%s" 2>/dev/null || find "%s" -name "*.jar" -exec mv {} "%s" \\;',
-        sourceJar, destJar, rootPath, destJar)
+    local moveCmd = string.format(
+        'mv "%s" "%s" 2>/dev/null || find "%s" -name "*.jar" -exec mv {} "%s" \\;',
+        sourceJar,
+        destJar,
+        rootPath,
+        destJar
+    )
     os.execute(moveCmd)
 
     -- Download the lein script
     print("Downloading lein script...")
     local resp, err = http.get({
-        url = "https://raw.githubusercontent.com/technomancy/leiningen/" .. version .. "/bin/lein"
+        url = "https://raw.githubusercontent.com/technomancy/leiningen/" .. version .. "/bin/lein",
     })
 
     if err ~= nil then
         -- Try stable branch as fallback
         resp, err = http.get({
-            url = "https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein"
+            url = "https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein",
         })
         if err ~= nil then
             error("Failed to download lein script: " .. err)

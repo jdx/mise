@@ -48,7 +48,7 @@ function PLUGIN:PreInstall(ctx)
         url = "https://api.github.com/repos/neovim/neovim/releases/tags/" .. tag,
         headers = {
             ["Accept"] = "application/vnd.github.v3+json",
-        }
+        },
     })
 
     if err ~= nil then

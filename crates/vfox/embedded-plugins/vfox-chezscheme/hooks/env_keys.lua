@@ -2,10 +2,10 @@
 --- @param ctx {path: string}  (Installation path)
 --- @return table Environment variables
 function PLUGIN:EnvKeys(ctx)
-	return {
-		{
-			key = "PATH",
-			value = ctx.path .. "/bin",
-		},
-	}
+    return {
+        {
+            key = "PATH",
+            value = ctx.path .. "/bin",
+        },
+    }
 end

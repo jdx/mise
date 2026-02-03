@@ -61,7 +61,7 @@ packages:
           - linux/arm64
           - darwin
           - windows
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.21.4")
         asset: cargo-zigbuild-{{.Version}}.{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         replacements:
@@ -83,3 +83,24 @@ packages:
             asset: cargo-zigbuild-{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
             replacements:
               amd64: x64
+      - version_constraint: "true"
+        asset: cargo-zigbuild-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        files:
+          - name: cargo-zigbuild
+            src: "{{.AssetWithoutExt}}/{{.FileName}}"
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: cargo-zigbuild

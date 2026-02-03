@@ -7,11 +7,11 @@ function PLUGIN:EnvKeys(ctx)
     return {
         {
             key = "PATH",
-            value = mainPath .. "/bin"
+            value = mainPath .. "/bin",
         },
         {
             key = "LEIN_HOME",
-            value = mainPath
-        }
+            value = mainPath,
+        },
     }
 end
