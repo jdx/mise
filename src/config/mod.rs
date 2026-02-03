@@ -28,10 +28,10 @@ use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::{Task, TaskTemplate};
+use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
     ToolRequestSet, ToolRequestSetBuilder, ToolVersion, ToolVersionOptions, Toolset, install_state,
 };
-use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
 
@@ -667,7 +667,8 @@ impl Config {
                 .map(|(k, v)| (k.clone(), v.0.clone()))
                 .collect(),
         );
-        if cache_enabled && !env_results.has_uncacheable
+        if cache_enabled
+            && !env_results.has_uncacheable
             && let Some(cache_key) = cache_key
         {
             let mut watch_files = env_results.watch_files.clone();
