@@ -16,6 +16,6 @@ PLUGIN.description = "AsciidoctorJ - the official library for running Asciidocto
 --- !!! OPTIONAL !!!
 PLUGIN.minRuntimeVersion = "0.3.0"
 PLUGIN.notes = {
-	"Provides the asciidoctorj command for converting AsciiDoc documents",
-	"Requires Java to be installed",
+    "Provides the asciidoctorj command for converting AsciiDoc documents",
+    "Requires Java to be installed",
 }

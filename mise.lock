@@ -61,7 +61,7 @@ version = "0.13.8"
 backend = "cargo:cargo-edit"
 
 [[tools."cargo:cargo-insta"]]
-version = "1.46.2"
+version = "1.46.3"
 backend = "cargo:cargo-insta"
 
 [[tools."cargo:cargo-release"]]

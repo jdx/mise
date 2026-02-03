@@ -17,26 +17,20 @@ packages:
         format: raw
         replacements:
           amd64: x64
-        supported_envs:
-          - linux
-          - darwin
+          windows: win32
       - version_constraint: semver("<= 2.3.8")
         version_prefix: "@biomejs/biome@"
         asset: biome-{{.OS}}-{{.Arch}}
         format: raw
         replacements:
           amd64: x64
-        supported_envs:
-          - linux
-          - darwin
+          windows: win32
       - version_constraint: "true"
         version_prefix: "@biomejs/biome@"
         asset: biome-{{.OS}}-{{.Arch}}
         format: raw
         replacements:
           amd64: x64
-        supported_envs:
-          - linux
-          - darwin
+          windows: win32
         github_artifact_attestations:
           signer_workflow: biomejs/biome/.github/workflows/release.yml

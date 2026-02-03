@@ -6,7 +6,7 @@ function PLUGIN:Available(ctx)
     local json = require("json")
 
     local resp, err = http.get({
-        url = "https://api.github.com/repos/technomancy/leiningen/releases"
+        url = "https://api.github.com/repos/technomancy/leiningen/releases",
     })
 
     if err ~= nil then
@@ -25,7 +25,7 @@ function PLUGIN:Available(ctx)
         if version then
             table.insert(results, {
                 version = version,
-                note = release.prerelease and "prerelease" or ""
+                note = release.prerelease and "prerelease" or "",
             })
         end
     end

@@ -9,7 +9,7 @@ util.CHECKSUM_URL = "https://archive.apache.org/dist/ant/binaries/apache-ant-%s-
 
 function util.parseVersions()
     local resp, err = http.get({
-        url = util.ARCHIVE_URL
+        url = util.ARCHIVE_URL,
     })
     if err ~= nil or resp.status_code ~= 200 then
         error("Failed to fetch version list: " .. (err or "HTTP " .. resp.status_code))

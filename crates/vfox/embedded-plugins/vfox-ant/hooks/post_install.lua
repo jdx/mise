@@ -3,6 +3,6 @@
 --- @param ctx table
 --- @field ctx.rootPath string SDK installation directory
 function PLUGIN:PostInstall(ctx)
-	-- The tarball extracts to apache-ant-{version}/ directory
-	-- mise should handle this automatically
+    -- The tarball extracts to apache-ant-{version}/ directory
+    -- mise should handle this automatically
 end

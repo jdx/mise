@@ -9,7 +9,7 @@ function PLUGIN:ParseLegacyFile(ctx)
         if version then
             version = version:gsub("^v", ""):gsub("%s+", "")
             return {
-                version = version
+                version = version,
             }
         end
     end

@@ -24,7 +24,7 @@ function PLUGIN:PreInstall(ctx)
         end
         arch = "x86_64"
         os_name = "linux"
-        variant = "gnu"  -- Use GNU libc version by default
+        variant = "gnu" -- Use GNU libc version by default
     elseif os_type == "freebsd" then
         if arch_type ~= "amd64" then
             error("CHICKEN only has amd64 binaries for FreeBSD.")

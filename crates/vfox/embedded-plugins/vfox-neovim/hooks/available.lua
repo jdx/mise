@@ -64,7 +64,7 @@ function PLUGIN:Available(ctx)
         url = "https://api.github.com/repos/neovim/neovim/releases",
         headers = {
             ["Accept"] = "application/vnd.github.v3+json",
-        }
+        },
     })
 
     if err ~= nil then
