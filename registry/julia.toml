@@ -1,2 +1,29 @@
-backends = ["asdf:mise-plugins/mise-julia"]
 description = "The Julia Programming Language"
+detect = ["Project.toml", "Manifest.toml"]
+test = ["julia --version", "julia version"]
+
+[[backends]]
+full = "http:julia"
+
+[backends.options]
+version_list_url = "https://julialang-s3.julialang.org/bin/versions.json"
+version_expr = "sortVersions(filter(keys(fromJSON(body)), {# matches \"^\\\\d+\\\\.\\\\d+\\\\.\\\\d+(-[0-9A-Za-z\\\\.-]+)?$\"}))"
+
+[backends.options.platforms.macos-x64]
+url = "{% if version == \"nightly\" %}https://julialangnightlies-s3.julialang.org/bin/mac/x64/julia-latest-mac64.tar.gz{% else %}https://julialang-s3.julialang.org/bin/mac/x64/{{ version | split(pat='.') | slice(start=0, end=2) | join(sep='.') }}/julia-{{ version }}-mac64.tar.gz{% endif %}"
+
+[backends.options.platforms.macos-arm64]
+url = "{% if version == \"nightly\" %}https://julialangnightlies-s3.julialang.org/bin/mac/aarch64/julia-latest-macaarch64.tar.gz{% else %}https://julialang-s3.julialang.org/bin/mac/aarch64/{{ version | split(pat='.') | slice(start=0, end=2) | join(sep='.') }}/julia-{{ version }}-macaarch64.tar.gz{% endif %}"
+
+[backends.options.platforms.linux-x64]
+url = "{% if version == \"nightly\" %}https://julialangnightlies-s3.julialang.org/bin/linux/x64/julia-latest-linux64.tar.gz{% else %}https://julialang-s3.julialang.org/bin/linux/x64/{{ version | split(pat='.') | slice(start=0, end=2) | join(sep='.') }}/julia-{{ version }}-linux-x86_64.tar.gz{% endif %}"
+
+[backends.options.platforms.linux-arm64]
+url = "{% if version == \"nightly\" %}https://julialangnightlies-s3.julialang.org/bin/linux/aarch64/julia-latest-linuxaarch64.tar.gz{% else %}https://julialang-s3.julialang.org/bin/linux/aarch64/{{ version | split(pat='.') | slice(start=0, end=2) | join(sep='.') }}/julia-{{ version }}-linux-aarch64.tar.gz{% endif %}"
+
+[backends.options.platforms.windows-x64]
+url = "{% if version == \"nightly\" %}https://julialangnightlies-s3.julialang.org/bin/winnt/x64/julia-latest-win64.zip{% else %}https://julialang-s3.julialang.org/bin/winnt/x64/{{ version | split(pat='.') | slice(start=0, end=2) | join(sep='.') }}/julia-{{ version }}-win64.zip{% endif %}"
+format = "zip"
+
+[[backends]]
+full = "asdf:mise-plugins/mise-julia"
