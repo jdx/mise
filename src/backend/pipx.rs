@@ -50,6 +50,12 @@ impl Backend for PIPXBackend {
         Ok(vec!["uv"])
     }
 
+    /// Pipx installs packages from PyPI or Git using version specs (e.g., black==24.3.0).
+    /// It doesn't support installing from direct URLs, so lockfile URLs are not applicable.
+    fn supports_lockfile_url(&self) -> bool {
+        false
+    }
+
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         match self.tool_name().parse()? {
             PipxRequest::Pypi(package) => {
