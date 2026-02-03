@@ -59,7 +59,7 @@ local_assert_fail "mise install github:nonexistent-org/nonexistent-repo@latest" 
 # Test 4: Plugin not found
 echo "Test 4: Plugin not found"
 local_assert_fail "mise install nonexistent-tool@1.0.0" \
-	"mise ERROR nonexistent-tool not found in mise tool registry"
+	"mise ERROR Failed to install nonexistent-tool@1.0.0: nonexistent-tool not found in mise tool registry"
 
 # Test 5: Multiple tool failures (could be single or multiple depending on timing)
 echo "Test 5: Multiple tool failures"
@@ -108,7 +108,7 @@ python = ["also", "not", "valid"]
 EOF
 
 local_assert_fail "MISE_CONFIG_FILE=test_invalid_config.toml mise install" \
-	"0: Failed to install tools: core:python@also, core:python@not, core:python@valid, core:node@this is not valid"
+	"0: Failed to install tools: core:node@this is not valid, core:python@also, core:python@not, core:python@valid"
 rm -f test_invalid_config.toml
 
 echo ""

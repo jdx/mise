@@ -8,7 +8,7 @@ use crate::backend::{Backend, BackendMap};
 use crate::cli::args::{BackendArg, BackendResolution};
 use crate::config::Settings;
 use crate::env;
-use crate::env::PATH_KEY;
+use crate::path_env::PathEnv;
 use crate::timeout::{TimeoutError, run_with_timeout};
 use crate::toolset::ToolVersion;
 
@@ -48,9 +48,9 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
 });
 
 pub fn path_env_with_tv_path(tv: &ToolVersion) -> Result<OsString> {
-    let mut path = env::split_paths(&env::var_os(&*PATH_KEY).unwrap()).collect::<Vec<_>>();
-    path.insert(0, tv.install_path().join("bin"));
-    Ok(env::join_paths(path)?)
+    let mut path_env = PathEnv::from_iter(env::PATH.clone());
+    path_env.add(tv.install_path().join("bin"));
+    Ok(path_env.join())
 }
 
 pub fn run_fetch_task_with_timeout<F, T>(f: F) -> Result<T>

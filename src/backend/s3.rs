@@ -313,7 +313,7 @@ impl S3Backend {
     ) -> Result<()> {
         let settings = Settings::get();
         let filename = file_path.file_name().unwrap().to_string_lossy();
-        let lockfile_enabled = settings.lockfile && settings.experimental;
+        let lockfile_enabled = settings.lockfile;
 
         let platform_key = self.get_platform_key();
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
@@ -418,6 +418,15 @@ impl Backend for S3Backend {
         &self.ba
     }
 
+    async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
+        let opts = tv.request.options();
+        super::http_install_operation_count(
+            Self::get_opt(&opts, "checksum").is_some(),
+            &self.get_platform_key(),
+            tv,
+        )
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let versions = self.fetch_versions(config).await?;
         Ok(versions
@@ -455,26 +464,14 @@ impl Backend for S3Backend {
             .or_default()
             .url = Some(url.clone());
 
-        // Determine operation count for progress reporting
-        let mut op_count = 1; // download
-        if Self::get_opt(&opts, "checksum").is_some() {
-            op_count += 1;
-        }
-        op_count += 1; // extraction
-
-        // Account for lockfile checksum verification/generation
+        // For lockfile checksum verification
         let settings = Settings::get();
-        let lockfile_enabled = settings.lockfile && settings.experimental;
+        let lockfile_enabled = settings.lockfile;
         let has_lockfile_checksum = tv
             .lock_platforms
             .get(&platform_key)
             .and_then(|p| p.checksum.as_ref())
             .is_some();
-        if lockfile_enabled || has_lockfile_checksum {
-            op_count += 1;
-        }
-
-        ctx.pr.start_operations(op_count);
 
         // Download from S3
         ctx.pr.set_message(format!("download {filename}"));
@@ -483,12 +480,19 @@ impl Backend for S3Backend {
             .await?;
 
         // Verify artifact (checksum/size from options)
+        if Self::get_opt(&opts, "checksum").is_some() {
+            ctx.pr.next_operation();
+        }
         verify_artifact(&tv, &file_path, &opts, Some(ctx.pr.as_ref()))?;
 
         // Verify/generate lockfile checksum (before extraction for security)
+        if lockfile_enabled || has_lockfile_checksum {
+            ctx.pr.next_operation();
+        }
         self.verify_checksum(ctx, &mut tv, &file_path)?;
 
         // Extract and install
+        ctx.pr.next_operation();
         ctx.pr.set_message("extract".into());
         install_artifact(&tv, &file_path, &opts, Some(ctx.pr.as_ref()))?;
 

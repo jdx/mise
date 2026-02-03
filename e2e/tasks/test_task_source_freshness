@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+
+# Test warning for missing outputs after task execution
+cat <<EOF >mise.toml
+[tasks.nooutput]
+run = 'echo ran but no output created'
+sources = ['input.txt']
+outputs = ['missing_output.txt']
+EOF
+
+echo "source" >input.txt
+# Should warn about missing output
+assert_contains "mise run nooutput 2>&1" "did not generate expected output"
+
+# Test size-based detection (file size changes should trigger rebuild)
+cat <<EOF >mise.toml
+[tasks.sizetest]
+run = 'echo rebuilt'
+sources = ['sized.txt']
+outputs = ['sizeout.txt']
+EOF
+
+echo "small" >sized.txt
+echo "out" >sizeout.txt
+sleep 0.1
+touch sizeout.txt
+
+# First run should skip (output is newer)
+assert_empty "mise run -q sizetest"
+
+# Change file content/size - this changes the metadata hash
+echo "much larger content now" >sized.txt
+# Make output NEWER than source (so mtime comparison alone would say fresh)
+sleep 0.1
+touch sizeout.txt
+# Should rebuild because size changed in the metadata hash
+assert "mise run -q sizetest" "rebuilt"
+
+# Test that normal source/output freshness still works
+cat <<EOF >mise.toml
+[tasks.fresh]
+run = 'echo built'
+sources = ['src.txt']
+outputs = ['out.txt']
+EOF
+
+echo "source" >src.txt
+sleep 0.1
+echo "output" >out.txt
+
+# Output is newer, should skip
+assert_empty "mise run -q fresh"
+
+# Touch source to make it newer
+sleep 0.1
+touch src.txt
+
+# Source is newer, should rebuild
+assert "mise run -q fresh" "built"
+
+# Test rename detection (path is part of the hash)
+cat <<EOF >mise.toml
+[tasks.rename]
+run = 'echo rebuilt'
+sources = ['*.src']
+outputs = ['rename.out']
+EOF
+
+echo "content" >original.src
+echo "out" >rename.out
+sleep 0.1
+touch rename.out
+
+# First run should skip (output is newer)
+assert_empty "mise run -q rename"
+
+# Rename the source file (same content, same size, but different path)
+mv original.src renamed.src
+# Make output NEWER than source so only the path change triggers rebuild
+sleep 0.1
+touch rename.out
+# Should rebuild because path changed in the metadata hash
+assert "mise run -q rename" "rebuilt"
+
+# Test glob output patterns - should not warn when glob matches files
+cat <<EOF >mise.toml
+[tasks.globout]
+run = 'touch output1.gen output2.gen'
+sources = ['input.txt']
+outputs = ['*.gen']
+EOF
+
+echo "source" >input.txt
+# Should run and NOT warn (glob matches created files)
+assert_not_contains "mise run globout 2>&1" "did not generate expected output"
+
+# Test glob output patterns - should warn when glob matches no files
+cat <<EOF >mise.toml
+[tasks.noglobout]
+run = 'echo no files created'
+sources = ['input.txt']
+outputs = ['*.nomatch']
+EOF
+
+echo "source" >input.txt
+# Should warn about missing glob output
+assert_contains "mise run noglobout 2>&1" "did not generate expected output"

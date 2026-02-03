@@ -11,7 +11,7 @@ pub fn mod_cmd(lua: &Lua) -> LuaResult<()> {
     Ok(())
 }
 
-fn exec(_lua: &Lua, args: mlua::MultiValue) -> LuaResult<String> {
+fn exec(lua: &Lua, args: mlua::MultiValue) -> LuaResult<String> {
     use std::process::Command;
 
     let (command, options) = match args.len() {
@@ -44,7 +44,17 @@ fn exec(_lua: &Lua, args: mlua::MultiValue) -> LuaResult<String> {
         cmd.args(["-c", &command]);
     }
 
-    // Apply options if provided
+    // Apply mise-constructed environment if available in Lua registry.
+    // This ensures mise-managed tools are on PATH when called from env module hooks.
+    if let Ok(mise_env) = lua.named_registry_value::<Table>("mise_env") {
+        cmd.env_clear();
+        for pair in mise_env.pairs::<String, String>() {
+            let (key, value) = pair?;
+            cmd.env(key, value);
+        }
+    }
+
+    // Apply options if provided (explicit env vars override mise env)
     if let Some(options) = options {
         // Set working directory if specified
         if let Ok(cwd) = options.get::<String>("cwd") {

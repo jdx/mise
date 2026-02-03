@@ -230,7 +230,7 @@ impl HookEnv {
         let full = join_paths(&*env::PATH)?.to_string_lossy().to_string();
         let current_paths: Vec<PathBuf> = split_paths(&full).collect();
 
-        let (pre, post) = match &*env::__MISE_ORIG_PATH {
+        let (pre, post, post_user) = match &*env::__MISE_ORIG_PATH {
             Some(orig_path) if !Settings::get().activate_aggressive => {
                 let orig_paths: Vec<PathBuf> = split_paths(orig_path).collect();
                 let orig_set: HashSet<_> = orig_paths.iter().collect();
@@ -239,12 +239,17 @@ impl HookEnv {
                 // to_remove contains ALL paths that mise added (tool installs, config paths, etc.)
                 let mise_paths_set: HashSet<_> = to_remove.iter().collect();
 
-                // Find paths in current that are not in original and not mise-managed
-                // These are genuine user additions after mise activation.
+                // Find paths in current that are not in original and not mise-managed.
+                // Split them into "pre" (before the original PATH entries) and "post_user"
+                // (after the original PATH entries) to preserve their intended position.
+                // This prevents paths appended after `mise activate` in shell rc from
+                // being moved to the front of PATH.
                 let mut pre = Vec::new();
+                let mut post_user = Vec::new();
+                let mut seen_orig = false;
                 for path in &current_paths {
-                    // Skip if in original PATH
                     if orig_set.contains(path) {
+                        seen_orig = true;
                         continue;
                     }
 
@@ -253,14 +258,18 @@ impl HookEnv {
                         continue;
                     }
 
-                    // This is a genuine user addition
-                    pre.push(path.clone());
+                    // Place in pre or post_user based on position relative to original PATH
+                    if seen_orig {
+                        post_user.push(path.clone());
+                    } else {
+                        pre.push(path.clone());
+                    }
                 }
 
                 // Use the original PATH directly as "post" to ensure it's preserved exactly
-                (pre, orig_paths)
+                (pre, orig_paths, post_user)
             }
-            _ => (vec![], current_paths),
+            _ => (vec![], current_paths, vec![]),
         };
 
         // Filter out tool paths that are already in the original PATH (post) or
@@ -280,9 +289,12 @@ impl HookEnv {
         // and other path variants that refer to the same filesystem location.
         let post_canonical: HashSet<PathBuf> =
             post.iter().filter_map(|p| p.canonicalize().ok()).collect();
-        let pre_set: HashSet<_> = pre.iter().collect();
-        let pre_canonical: HashSet<PathBuf> =
-            pre.iter().filter_map(|p| p.canonicalize().ok()).collect();
+        let user_additions_set: HashSet<_> = pre.iter().chain(post_user.iter()).collect();
+        let user_additions_canonical: HashSet<PathBuf> = pre
+            .iter()
+            .chain(post_user.iter())
+            .filter_map(|p| p.canonicalize().ok())
+            .collect();
 
         let tool_paths_filtered: Vec<PathBuf> = tool_paths
             .iter()
@@ -301,12 +313,12 @@ impl HookEnv {
                     return false;
                 }
 
-                // Also filter against pre (user additions) to avoid duplicates
-                if pre_set.contains(p) {
+                // Also filter against user additions (pre + post_user) to avoid duplicates
+                if user_additions_set.contains(p) {
                     return false;
                 }
                 if let Ok(canonical) = p.canonicalize()
-                    && pre_canonical.contains(&canonical)
+                    && user_additions_canonical.contains(&canonical)
                 {
                     return false;
                 }
@@ -316,23 +328,19 @@ impl HookEnv {
             .cloned()
             .collect();
 
-        // Filter user_paths against pre (user manual additions) to avoid duplicates
+        // Filter user_paths against user additions (pre + post_user) to avoid duplicates
         // when users manually add paths after mise activation.
         // IMPORTANT: Do NOT filter against post (__MISE_ORIG_PATH) - this would break
         // the intended behavior where user-configured paths should take precedence
         // even if they already exist in the original PATH.
-        let pre_set: HashSet<_> = pre.iter().collect();
-        let pre_canonical: HashSet<PathBuf> =
-            pre.iter().filter_map(|p| p.canonicalize().ok()).collect();
         let user_paths_filtered: Vec<PathBuf> = user_paths
             .iter()
             .filter(|p| {
-                // Filter against pre only (user manual additions after mise activation)
-                if pre_set.contains(p) {
+                if user_additions_set.contains(p) {
                     return false;
                 }
                 if let Ok(canonical) = p.canonicalize()
-                    && pre_canonical.contains(&canonical)
+                    && user_additions_canonical.contains(&canonical)
                 {
                     return false;
                 }
@@ -342,12 +350,13 @@ impl HookEnv {
             .collect();
 
         // Combine paths in the correct order:
-        // pre (user shell additions) -> user_paths (from config, filtered against pre) -> tool_paths (filtered) -> post (original PATH)
+        // pre (user shell prepends) -> user_paths (from config) -> tool_paths -> post (original PATH) -> post_user (user shell appends)
         let new_path = join_paths(
             pre.iter()
                 .chain(user_paths_filtered.iter())
                 .chain(tool_paths_filtered.iter())
-                .chain(post.iter()),
+                .chain(post.iter())
+                .chain(post_user.iter()),
         )?
         .to_string_lossy()
         .into_owned();

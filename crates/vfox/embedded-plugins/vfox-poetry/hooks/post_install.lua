@@ -8,7 +8,8 @@ function PLUGIN:PostInstall(ctx)
     local version = ctx.sdkInfo["poetry"].version
 
     -- Run the Poetry installer via bash script
-    local script = string.format([[
+    local script = string.format(
+        [[
 #!/bin/bash
 set -e
 
@@ -28,7 +29,14 @@ if version_ge "%s" "2.0.0"; then
 elif version_ge "%s" "1.2.0"; then
     "%s/bin/poetry" config virtualenvs.prefer-active-python true
 fi
-]], install_path, version, version, install_path, version, install_path)
+]],
+        install_path,
+        version,
+        version,
+        install_path,
+        version,
+        install_path
+    )
 
     -- Write and execute the script
     local script_path = install_path .. "/install_poetry.sh"

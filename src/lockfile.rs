@@ -7,6 +7,7 @@ use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset};
 use eyre::{Report, Result, bail};
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::Mutex;
@@ -16,6 +17,22 @@ use std::{
 };
 use toml_edit::DocumentMut;
 use xx::regex;
+
+/// Global caches for lockfile data - declared here so invalidation can access them
+static ALL_LOCKFILES_CACHE: Lazy<Mutex<HashMap<Vec<PathBuf>, Arc<Lockfile>>>> =
+    Lazy::new(Default::default);
+static SINGLE_LOCKFILE_CACHE: Lazy<Mutex<HashMap<PathBuf, Arc<Lockfile>>>> =
+    Lazy::new(Default::default);
+
+/// Invalidate all lockfile caches. Call this after modifying a lockfile.
+pub fn invalidate_caches() {
+    if let Ok(mut cache) = ALL_LOCKFILES_CACHE.lock() {
+        cache.clear();
+    }
+    if let Ok(mut cache) = SINGLE_LOCKFILE_CACHE.lock() {
+        cache.clear();
+    }
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -44,7 +61,7 @@ pub struct LockfileTool {
 pub struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
-    // TODO: Add size back if we find a good way to generate it with `mise lock`
+    /// Size in bytes (read-only field, preserved from existing lockfiles but not written)
     #[serde(skip_serializing, default)]
     pub size: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -66,6 +83,36 @@ impl PlatformInfo {
             && self.url.is_none()
             && self.url_api.is_none()
             && self.conda_deps.is_none()
+    }
+
+    /// Merge this PlatformInfo with another, preserving important data.
+    /// - Prefers sha256 checksums over blake3 (more portable/verifiable)
+    /// - Preserves URL if missing in self
+    /// - Preserves url_api if missing in self
+    pub fn merge_with(&self, other: &PlatformInfo) -> PlatformInfo {
+        // For checksums, prefer sha256 over blake3 since sha256 comes from
+        // official releases and is more portable/verifiable
+        let checksum = match (&self.checksum, &other.checksum) {
+            (Some(self_cs), Some(other_cs)) => {
+                let self_is_sha256 = self_cs.starts_with("sha256:");
+                let other_is_sha256 = other_cs.starts_with("sha256:");
+                match (self_is_sha256, other_is_sha256) {
+                    (true, _) => Some(self_cs.clone()),
+                    (false, true) => Some(other_cs.clone()),
+                    (false, false) => Some(self_cs.clone()), // both blake3, use self
+                }
+            }
+            (Some(cs), None) | (None, Some(cs)) => Some(cs.clone()),
+            (None, None) => None,
+        };
+
+        PlatformInfo {
+            checksum,
+            size: self.size.or(other.size),
+            url: self.url.clone().or_else(|| other.url.clone()),
+            url_api: self.url_api.clone().or_else(|| other.url_api.clone()),
+            conda_deps: self.conda_deps.clone().or_else(|| other.conda_deps.clone()),
+        }
     }
 }
 
@@ -213,8 +260,19 @@ impl Lockfile {
     }
 
     fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let path = path.as_ref();
         if self.is_empty() {
-            let _ = file::remove_file(path);
+            if let Err(e) = file::remove_file(path) {
+                // Only warn if the file actually exists - ENOENT is fine
+                if path.exists() {
+                    warn!(
+                        "failed to remove empty lockfile {}: {}",
+                        display_path(path),
+                        e
+                    );
+                }
+            }
+            invalidate_caches();
         } else {
             let mut lockfile = toml::Table::new();
 
@@ -252,7 +310,14 @@ impl Lockfile {
 
             let content = toml::to_string_pretty(&toml::Value::Table(lockfile))?;
             let content = format(content.parse()?);
-            file::write(path, content)?;
+
+            // Use atomic write: write to temp file, then rename
+            // This prevents partial writes from corrupting the lockfile
+            let temp_path = path.with_extension("lock.tmp");
+            file::write(&temp_path, &content)?;
+            fs::rename(&temp_path, path)?;
+
+            invalidate_caches();
         }
         Ok(())
     }
@@ -273,6 +338,41 @@ impl Lockfile {
     /// Get a conda package from the shared section by basename
     pub fn get_conda_package(&self, platform: &str, basename: &str) -> Option<&CondaPackageInfo> {
         self.conda_packages.get(platform)?.get(basename)
+    }
+
+    /// Remove unreferenced conda packages from the shared section.
+    /// A package is unreferenced if no tool's conda_deps references it.
+    fn cleanup_unreferenced_conda_packages(&mut self) {
+        // Collect all referenced conda packages (platform -> set of basenames)
+        let mut referenced: HashMap<String, HashSet<String>> = HashMap::new();
+        for tools in self.tools.values() {
+            for tool in tools {
+                for (platform, info) in &tool.platforms {
+                    if let Some(deps) = &info.conda_deps {
+                        for dep in deps {
+                            referenced
+                                .entry(platform.clone())
+                                .or_default()
+                                .insert(dep.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Remove unreferenced packages
+        for (platform, packages) in &mut self.conda_packages {
+            let referenced_for_platform = referenced.get(platform);
+            packages.retain(|basename, _| {
+                referenced_for_platform
+                    .map(|refs| refs.contains(basename))
+                    .unwrap_or(false)
+            });
+        }
+
+        // Remove empty platform entries
+        self.conda_packages
+            .retain(|_, packages| !packages.is_empty());
     }
 
     /// Get all platform keys present in the lockfile
@@ -410,7 +510,7 @@ fn extract_env_from_config_path(path: &Path) -> Option<String> {
 }
 
 pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersion]) -> Result<()> {
-    if !Settings::get().lockfile || !Settings::get().experimental {
+    if !Settings::get().lockfile {
         return Ok(());
     }
 
@@ -476,7 +576,7 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         );
 
         let mut existing_lockfile = Lockfile::read(&lockfile_path)
-            .unwrap_or_else(|err| handle_missing_lockfile(err, &lockfile_path));
+            .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
 
         // Collect all tools from all contributing configs with their env context
         // Key: tool short name, Value: list of (LockfileTool, env)
@@ -535,6 +635,9 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
             }
         }
 
+        // Clean up any conda packages that are no longer referenced by any tool
+        existing_lockfile.cleanup_unreferenced_conda_packages();
+
         existing_lockfile.save(&lockfile_path)?;
     }
 
@@ -563,9 +666,14 @@ fn merge_tool_entries_with_env(
             .entry(key)
             .or_insert_with(|| (tool.clone(), BTreeSet::new(), false));
 
-        // Merge platforms
+        // Merge platforms - properly combine platform info to preserve URLs and prefer sha256
         for (platform, info) in tool.platforms {
-            entry.0.platforms.entry(platform).or_insert(info);
+            entry
+                .0
+                .platforms
+                .entry(platform)
+                .and_modify(|existing| *existing = info.merge_with(existing))
+                .or_insert(info);
         }
 
         // Track env - if any entry has no env, mark as base
@@ -581,12 +689,13 @@ fn merge_tool_entries_with_env(
         for existing_tool in existing {
             let key = (existing_tool.version.clone(), existing_tool.options.clone());
             if let Some(entry) = by_key.get_mut(&key) {
-                // Merge platform info from existing
+                // Merge platform info from existing - preserve URLs and prefer sha256
                 for (platform, info) in &existing_tool.platforms {
                     entry
                         .0
                         .platforms
                         .entry(platform.clone())
+                        .and_modify(|existing| *existing = existing.merge_with(info))
                         .or_insert(info.clone());
                 }
                 // Preserve existing env if we have no new env info
@@ -646,13 +755,13 @@ fn merge_tool_entries_with_env(
 }
 
 fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
-    // Cache by sorted config paths to avoid recomputing on every call
-    static CACHE: Lazy<Mutex<HashMap<Vec<PathBuf>, Arc<Lockfile>>>> = Lazy::new(Default::default);
-
     // Create a cache key from the config file paths
     let cache_key: Vec<PathBuf> = config.config_files.keys().cloned().collect();
 
-    let mut cache = CACHE.lock().unwrap();
+    // Use unwrap_or_else to recover from poisoned mutex (thread panicked while holding lock)
+    let mut cache = ALL_LOCKFILES_CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     if let Some(cached) = cache.get(&cache_key) {
         return Arc::clone(cached);
     }
@@ -704,10 +813,10 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
 }
 
 fn read_lockfile_for(path: &Path) -> Arc<Lockfile> {
-    // Cache by config path to avoid recomputing lockfile_path_for_config on every call
-    static CACHE: Lazy<Mutex<HashMap<PathBuf, Arc<Lockfile>>>> = Lazy::new(Default::default);
-
-    let mut cache = CACHE.lock().unwrap();
+    // Use unwrap_or_else to recover from poisoned mutex (thread panicked while holding lock)
+    let mut cache = SINGLE_LOCKFILE_CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     if let Some(cached) = cache.get(path) {
         return Arc::clone(cached);
     }
@@ -715,7 +824,7 @@ fn read_lockfile_for(path: &Path) -> Arc<Lockfile> {
     // Only compute lockfile path when not cached
     let (lockfile_path, _is_local) = lockfile_path_for_config(path);
     let lockfile = Lockfile::read(&lockfile_path)
-        .unwrap_or_else(|err| handle_missing_lockfile(err, &lockfile_path));
+        .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
 
     let lockfile = Arc::new(lockfile);
     cache.insert(path.to_path_buf(), Arc::clone(&lockfile));
@@ -729,7 +838,7 @@ pub fn get_locked_version(
     prefix: &str,
     request_options: &BTreeMap<String, String>,
 ) -> Result<Option<LockfileTool>> {
-    if !Settings::get().lockfile || !Settings::get().experimental {
+    if !Settings::get().lockfile {
         return Ok(None);
     }
 
@@ -808,7 +917,7 @@ pub fn get_locked_version(
 /// Get the backend for a tool from the lockfile, ignoring options.
 /// This is used for backend discovery where we just need any entry's backend.
 pub fn get_locked_backend(config: &Config, short: &str) -> Option<String> {
-    if !Settings::get().lockfile || !Settings::get().experimental {
+    if !Settings::get().lockfile {
         return None;
     }
 
@@ -821,9 +930,22 @@ pub fn get_locked_backend(config: &Config, short: &str) -> Option<String> {
         .and_then(|tool| tool.backend.clone())
 }
 
-fn handle_missing_lockfile(err: Report, lockfile_path: &Path) -> Lockfile {
+fn handle_lockfile_read_error(err: Report, lockfile_path: &Path) -> Lockfile {
+    // Differentiate between "file not found" (fine) and "parse error" (problem)
+    // File not found is expected when lockfile doesn't exist yet
+    if let Some(io_err) = err.downcast_ref::<std::io::Error>()
+        && io_err.kind() == std::io::ErrorKind::NotFound
+    {
+        trace!(
+            "lockfile {} not found, using empty lockfile",
+            display_path(lockfile_path)
+        );
+        return Lockfile::default();
+    }
+    // For other errors (parse errors, permission issues), warn the user
+    // as this could indicate data loss or corruption
     warn!(
-        "failed to read lockfile {}: {err:?}",
+        "failed to read lockfile {} (possible corruption): {err:?}",
         display_path(lockfile_path)
     );
     Lockfile::default()
@@ -1382,5 +1504,115 @@ backend = "conda:jq"
         assert!(packages.contains_key("ncurses-6.4-h7ea286d_0"));
 
         let _ = std::fs::remove_file(&test_lockfile);
+    }
+
+    #[test]
+    fn test_cleanup_unreferenced_conda_packages() {
+        let mut lockfile = Lockfile::default();
+
+        // Add some conda packages
+        lockfile.set_conda_package(
+            "macos-arm64",
+            "referenced-pkg",
+            CondaPackageInfo {
+                url: "https://example.com/referenced.conda".to_string(),
+                checksum: Some("sha256:abc123".to_string()),
+            },
+        );
+        lockfile.set_conda_package(
+            "macos-arm64",
+            "unreferenced-pkg",
+            CondaPackageInfo {
+                url: "https://example.com/unreferenced.conda".to_string(),
+                checksum: Some("sha256:def456".to_string()),
+            },
+        );
+        lockfile.set_conda_package(
+            "linux-x64",
+            "orphan-platform-pkg",
+            CondaPackageInfo {
+                url: "https://example.com/orphan.conda".to_string(),
+                checksum: None,
+            },
+        );
+
+        // Add a tool that only references one package
+        let mut platforms = BTreeMap::new();
+        platforms.insert(
+            "macos-arm64".to_string(),
+            PlatformInfo {
+                url: Some("https://example.com/tool.conda".to_string()),
+                checksum: None,
+                size: None,
+                url_api: None,
+                conda_deps: Some(vec!["referenced-pkg".to_string()]),
+            },
+        );
+        lockfile.tools.insert(
+            "mytool".to_string(),
+            vec![LockfileTool {
+                version: "1.0.0".to_string(),
+                backend: Some("conda:mytool".to_string()),
+                options: BTreeMap::new(),
+                env: None,
+                platforms,
+            }],
+        );
+
+        // Verify we have all packages before cleanup
+        assert_eq!(lockfile.conda_packages.len(), 2);
+        assert_eq!(lockfile.conda_packages["macos-arm64"].len(), 2);
+        assert_eq!(lockfile.conda_packages["linux-x64"].len(), 1);
+
+        // Run cleanup
+        lockfile.cleanup_unreferenced_conda_packages();
+
+        // Verify only referenced package remains
+        assert_eq!(lockfile.conda_packages.len(), 1);
+        assert!(lockfile.conda_packages.contains_key("macos-arm64"));
+        assert!(!lockfile.conda_packages.contains_key("linux-x64"));
+        assert_eq!(lockfile.conda_packages["macos-arm64"].len(), 1);
+        assert!(lockfile.conda_packages["macos-arm64"].contains_key("referenced-pkg"));
+        assert!(!lockfile.conda_packages["macos-arm64"].contains_key("unreferenced-pkg"));
+    }
+
+    #[test]
+    fn test_platform_info_merge_prefers_sha256() {
+        // Test that merge_with prefers sha256 over blake3
+        let sha256_info = PlatformInfo {
+            checksum: Some("sha256:abc123".to_string()),
+            url: Some("https://example.com/a".to_string()),
+            ..Default::default()
+        };
+        let blake3_info = PlatformInfo {
+            checksum: Some("blake3:def456".to_string()),
+            url: Some("https://example.com/b".to_string()),
+            ..Default::default()
+        };
+
+        // sha256 + blake3 -> sha256
+        let merged = sha256_info.merge_with(&blake3_info);
+        assert_eq!(merged.checksum, Some("sha256:abc123".to_string()));
+
+        // blake3 + sha256 -> sha256
+        let merged = blake3_info.merge_with(&sha256_info);
+        assert_eq!(merged.checksum, Some("sha256:abc123".to_string()));
+
+        // blake3 + blake3 -> self (first)
+        let another_blake3 = PlatformInfo {
+            checksum: Some("blake3:ghi789".to_string()),
+            ..Default::default()
+        };
+        let merged = blake3_info.merge_with(&another_blake3);
+        assert_eq!(merged.checksum, Some("blake3:def456".to_string()));
+
+        // Preserves URL from other if self is missing
+        let no_url = PlatformInfo {
+            checksum: Some("sha256:abc123".to_string()),
+            url: None,
+            ..Default::default()
+        };
+        let merged = no_url.merge_with(&blake3_info);
+        assert_eq!(merged.url, Some("https://example.com/b".to_string()));
     }
 }

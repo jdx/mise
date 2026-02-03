@@ -11,7 +11,9 @@ function PLUGIN:PostInstall(ctx)
     local check_cmd = string.format('test -f "%s/configure"', rootPath)
     local exists = os.execute(check_cmd)
     if not exists then
-        error("Could not find configure script in " .. rootPath .. ". The source may not have been extracted correctly.")
+        error(
+            "Could not find configure script in " .. rootPath .. ". The source may not have been extracted correctly."
+        )
     end
 
     -- Build bfs using configure && make

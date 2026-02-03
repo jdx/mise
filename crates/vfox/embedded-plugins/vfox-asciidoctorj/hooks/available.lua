@@ -7,7 +7,7 @@ function PLUGIN:Available(ctx)
     local result = {}
 
     local resp = http.get({
-        url = "https://repo1.maven.org/maven2/org/asciidoctor/asciidoctorj/"
+        url = "https://repo1.maven.org/maven2/org/asciidoctor/asciidoctorj/",
     })
 
     if resp.status_code ~= 200 then
@@ -23,7 +23,7 @@ function PLUGIN:Available(ctx)
         if major and minor then
             if major > 1 or (major == 1 and minor >= 5) then
                 table.insert(result, {
-                    version = version
+                    version = version,
                 })
             end
         end

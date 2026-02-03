@@ -23,6 +23,3 @@ else
 	echo "Actual: mise set command doesn't support -E flag"
 	exit 1
 fi
-
-# Cleanup
-rm -f mise.toml mise.pp.toml

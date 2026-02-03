@@ -34,16 +34,10 @@ function PLUGIN:PostInstall(ctx)
 
     if major and major >= 5 then
         -- Lua 5.x: use make local target which creates install/ subdirectory
-        buildCmd = string.format(
-            "cd '%s' && make %s && make local",
-            sdkPath, make_target
-        )
+        buildCmd = string.format("cd '%s' && make %s && make local", sdkPath, make_target)
     else
         -- Older versions
-        buildCmd = string.format(
-            "cd '%s' && make && make install INSTALL_ROOT=install",
-            sdkPath
-        )
+        buildCmd = string.format("cd '%s' && make && make install INSTALL_ROOT=install", sdkPath)
     end
 
     local status = os.execute(buildCmd)
@@ -53,25 +47,22 @@ function PLUGIN:PostInstall(ctx)
 
     -- After make local, files are in install/ subdirectory
     -- Move them to the root of sdkPath (overwriting source files is fine)
-    local moveCmd = string.format(
-        "cd '%s' && mv install/* . 2>/dev/null || cp -r install/* . 2>/dev/null",
-        sdkPath
-    )
+    local moveCmd = string.format("cd '%s' && mv install/* . 2>/dev/null || cp -r install/* . 2>/dev/null", sdkPath)
     os.execute(moveCmd)
 
     -- Install LuaRocks for Lua 5.x
     if major and major >= 5 then
-        -- Get latest LuaRocks version from GitHub
+        -- Get latest LuaRocks version from GitHub releases
         local luarocksVersion = "3.11.1" -- Default fallback
 
         local resp, err = http.get({
-            url = "https://api.github.com/repos/luarocks/luarocks/tags?per_page=1",
+            url = "https://api.github.com/repos/luarocks/luarocks/releases/latest",
         })
 
         if err == nil and resp.status_code == 200 then
             local data = json.decode(resp.body)
-            if data ~= nil and type(data) == "table" and #data > 0 then
-                local tag = data[1]["name"]
+            if data ~= nil and type(data) == "table" then
+                local tag = data["tag_name"]
                 if tag then
                     -- Remove 'v' prefix if present
                     luarocksVersion = string.gsub(tag, "^v", "")
@@ -80,7 +71,7 @@ function PLUGIN:PostInstall(ctx)
         end
 
         -- Download and install LuaRocks
-        local luarocksUrl = "https://luarocks.org/releases/luarocks-" .. luarocksVersion .. ".tar.gz"
+        local luarocksUrl = "https://github.com/luarocks/luarocks/archive/refs/tags/v" .. luarocksVersion .. ".tar.gz"
         local luarocksArchive = sdkPath .. "/luarocks.tar.gz"
 
         local downloadCmd = string.format("curl -sL '%s' -o '%s'", luarocksUrl, luarocksArchive)
@@ -99,7 +90,11 @@ function PLUGIN:PostInstall(ctx)
         local luarocksDir = sdkPath .. "/luarocks-" .. luarocksVersion
         local configureCmd = string.format(
             "cd '%s' && ./configure --with-lua='%s' --with-lua-include='%s/include' --with-lua-lib='%s/lib' --prefix='%s/luarocks' 2>/dev/null",
-            luarocksDir, sdkPath, sdkPath, sdkPath, sdkPath
+            luarocksDir,
+            sdkPath,
+            sdkPath,
+            sdkPath,
+            sdkPath
         )
         status = os.execute(configureCmd)
         if status ~= 0 and status ~= true then
@@ -116,9 +111,6 @@ function PLUGIN:PostInstall(ctx)
     end
 
     -- Clean up Lua source files (keep only bin, lib, include, man, share, luarocks)
-    local cleanCmd = string.format(
-        "cd '%s' && rm -rf src doc Makefile README install 2>/dev/null",
-        sdkPath
-    )
+    local cleanCmd = string.format("cd '%s' && rm -rf src doc Makefile README install 2>/dev/null", sdkPath)
     os.execute(cleanCmd)
 end

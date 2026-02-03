@@ -360,6 +360,7 @@ pub fn template_string(template: &str, tv: &ToolVersion) -> String {
     if template.contains("{version}") && !template.contains("{{version}}") {
         deprecated_at!(
             "2026.3.0",
+            "2027.3.0",
             "legacy-version-template",
             "Use {{{{ version }}}} instead of {{version}} in URL templates"
         );

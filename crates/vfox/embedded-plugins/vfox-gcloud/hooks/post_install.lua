@@ -53,8 +53,10 @@ function PLUGIN:PostInstall(ctx)
 
     -- Build install command arguments
     local args = {
-        "--usage-reporting", "false",
-        "--path-update", "false",
+        "--usage-reporting",
+        "false",
+        "--path-update",
+        "false",
         "--quiet",
     }
 

@@ -1,7 +1,6 @@
 --- Called before installation to return the download URL.
 --- Chez Scheme only provides source tarballs, which need to be compiled.
---- @param ctx table
---- @field ctx.version string Version to install
+--- @param ctx {version: string}  (Version to install)
 --- @return table File info with URL
 function PLUGIN:PreInstall(ctx)
     local version = ctx.version
@@ -11,6 +10,6 @@ function PLUGIN:PreInstall(ctx)
 
     return {
         url = url,
-        version = version
+        version = version,
     }
 end

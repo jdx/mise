@@ -214,6 +214,17 @@ fn codegen_registry() {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
+        let detect = info
+            .get("detect")
+            .map(|detect| {
+                detect
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|f| f.as_str().unwrap().to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         let overrides = info
             .get("overrides")
             .map(|overrides| {
@@ -226,7 +237,7 @@ fn codegen_registry() {
             })
             .unwrap_or_default();
         let rt = format!(
-            r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}], idiomatic_files: &[{idiomatic_files}], overrides: &[{overrides}]}}"#,
+            r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
             description = description
                 .map(|d| format!("Some({})", raw_string_literal(&d)))
                 .unwrap_or("None".to_string()),
@@ -254,6 +265,11 @@ fn codegen_registry() {
                 .collect::<Vec<_>>()
                 .join(", "),
             idiomatic_files = idiomatic_files
+                .iter()
+                .map(|f| format!("\"{f}\""))
+                .collect::<Vec<_>>()
+                .join(", "),
+            detect = detect
                 .iter()
                 .map(|f| format!("\"{f}\""))
                 .collect::<Vec<_>>()
@@ -297,19 +313,24 @@ pub struct Settings {"#
         let type_ = props
             .get("rust_type")
             .map(|rt| rt.as_str().unwrap())
-            .or(props.get("type").map(|t| match t.as_str().unwrap() {
-                "Bool" => "bool",
-                "String" => "String",
-                "Integer" => "i64",
-                "Url" => "String",
-                "Path" => "PathBuf",
-                "Duration" => "String",
-                "ListString" => "Vec<String>",
-                "ListPath" => "Vec<PathBuf>",
-                "SetString" => "BTreeSet<String>",
-                "IndexMap<String, String>" => "IndexMap<String, String>",
-                t => panic!("Unknown type: {t}"),
-            }));
+            .or_else(|| {
+                props.get("type").map(|t| match t.as_str().unwrap() {
+                    "Bool" => "bool",
+                    "String" => "String",
+                    "Integer" => "i64",
+                    "Url" => "String",
+                    "Path" => "PathBuf",
+                    "Duration" => "String",
+                    "ListString" => "Vec<String>",
+                    "ListPath" => "Vec<PathBuf>",
+                    "SetString" => "BTreeSet<String>",
+                    "IndexMap<String, String>" => "IndexMap<String, String>",
+                    "BoolOrString" => {
+                        panic!(r#"type \"BoolOrString\" requires a `rust_type` to be specified"#)
+                    }
+                    t => panic!("Unknown type: {t}"),
+                })
+            });
         if let Some(type_) = type_ {
             let type_ = if props.get("optional").is_some_and(|v| v.as_bool().unwrap()) {
                 format!("Option<{type_}>")
@@ -465,19 +486,24 @@ pub struct MisercSettings {"#
             let type_ = props
                 .get("rust_type")
                 .map(|rt| rt.as_str().unwrap())
-                .or(props.get("type").map(|t| match t.as_str().unwrap() {
-                    "Bool" => "bool",
-                    "String" => "String",
-                    "Integer" => "i64",
-                    "Url" => "String",
-                    "Path" => "PathBuf",
-                    "Duration" => "String",
-                    "ListString" => "Vec<String>",
-                    "ListPath" => "Vec<PathBuf>",
-                    "SetString" => "BTreeSet<String>",
-                    "IndexMap<String, String>" => "IndexMap<String, String>",
-                    t => panic!("Unknown type: {t}"),
-                }));
+                .or_else(|| {
+                    props.get("type").map(|t| match t.as_str().unwrap() {
+                        "Bool" => "bool",
+                        "String" => "String",
+                        "Integer" => "i64",
+                        "Url" => "String",
+                        "Path" => "PathBuf",
+                        "Duration" => "String",
+                        "ListString" => "Vec<String>",
+                        "ListPath" => "Vec<PathBuf>",
+                        "SetString" => "BTreeSet<String>",
+                        "IndexMap<String, String>" => "IndexMap<String, String>",
+                        "BoolOrString" => panic!(
+                            r#"type \"BoolOrString\" requires a `rust_type` to be specified"#
+                        ),
+                        t => panic!("Unknown type: {t}"),
+                    })
+                });
             if let Some(type_) = type_ {
                 // All miserc settings are optional
                 let type_ = format!("Option<{type_}>");

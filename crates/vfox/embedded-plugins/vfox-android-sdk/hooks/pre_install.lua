@@ -1,6 +1,5 @@
 --- Returns some pre-installed information, such as version number, download address, etc.
---- @param ctx table
---- @field ctx.version string User-input version
+--- @param ctx {version: string}  (User-input version)
 --- @return table Version information
 function PLUGIN:PreInstall(ctx)
     local http = require("http")
@@ -41,7 +40,9 @@ function PLUGIN:PreInstall(ctx)
     end
 
     -- Parse the XML to find the matching package
-    local package_pattern = 'remotePackage%s+path="cmdline%-tools;' .. version:gsub("%-", "%%-") .. '".-</remotePackage>'
+    local package_pattern = 'remotePackage%s+path="cmdline%-tools;'
+        .. version:gsub("%-", "%%-")
+        .. '".-</remotePackage>'
     local package_block = resp.body:match(package_pattern)
 
     if not package_block then

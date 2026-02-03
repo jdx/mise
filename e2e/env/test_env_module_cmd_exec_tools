@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+# Test that tools=true on a module directive makes mise-managed tool
+# binaries available on PATH inside cmd.exec().
+
+# Create a vfox env module plugin that calls rtx-tiny (installed by the tiny tool)
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/test-cmd-tools"
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'EOFMETA'
+PLUGIN = {}
+PLUGIN.name = "test-cmd-tools"
+PLUGIN.version = "1.0.0"
+PLUGIN.homepage = "https://example.com"
+PLUGIN.license = "MIT"
+PLUGIN.description = "Test that cmd.exec sees tool binaries with tools=true"
+PLUGIN.minRuntimeVersion = "0.3.0"
+EOFMETA
+
+cat >"$PLUGIN_DIR/hooks/mise_env.lua" <<'EOFHOOK'
+local cmd = require("cmd")
+
+function PLUGIN:MiseEnv(ctx)
+    local ok, output = pcall(function()
+        return cmd.exec("rtx-tiny")
+    end)
+
+    local result = "TOOL_NOT_FOUND"
+    if ok then
+        result = output:gsub("%s+$", "")
+    end
+
+    return {
+        env = {{key = "TEST_CMD_TOOLS_RESULT", value = result}},
+        cacheable = false,
+        watch_files = {}
+    }
+end
+EOFHOOK
+
+# First: without tools=true, the tool binary should NOT be found
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+tiny = "3"
+
+[env]
+_.test-cmd-tools = {}
+EOF
+
+mise i
+assert_contains "mise env -s bash" "TEST_CMD_TOOLS_RESULT=TOOL_NOT_FOUND"
+
+# Second: with tools=true, the tool binary SHOULD be found
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+tiny = "3"
+
+[env]
+_.test-cmd-tools = { tools = true }
+EOF
+
+assert_contains "mise env -s bash" "TEST_CMD_TOOLS_RESULT='rtx-tiny:"

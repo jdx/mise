@@ -25,7 +25,7 @@ function PLUGIN:Available(ctx)
             seen[version] = true
             table.insert(versions, {
                 version = version,
-                note = ""
+                note = "",
             })
         end
     end

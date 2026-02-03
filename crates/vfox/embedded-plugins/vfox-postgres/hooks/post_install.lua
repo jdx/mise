@@ -123,7 +123,8 @@ function PLUGIN:PostInstall(ctx)
 
     -- Build PostgreSQL
     print("Building PostgreSQL (this may take several minutes)...")
-    local makeCmd = string.format("cd '%s' && make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)", sdkPath)
+    local makeCmd =
+        string.format("cd '%s' && make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)", sdkPath)
     status = os.execute(makeCmd)
     if status ~= 0 and status ~= true then
         error("Failed to build PostgreSQL")
@@ -139,7 +140,10 @@ function PLUGIN:PostInstall(ctx)
 
     -- Build and install contrib modules
     print("Building contrib modules...")
-    local contribCmd = string.format("cd '%s/contrib' && make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2) && make install", sdkPath)
+    local contribCmd = string.format(
+        "cd '%s/contrib' && make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2) && make install",
+        sdkPath
+    )
     status = os.execute(contribCmd)
     if status ~= 0 and status ~= true then
         -- Contrib failure is not fatal

@@ -9,7 +9,7 @@ function PLUGIN:Available(ctx)
 
     -- Fetch releases from GitHub API (tags show up as releases)
     local resp, err = http.get({
-        url = "https://api.github.com/repos/cisco/ChezScheme/tags?per_page=100"
+        url = "https://api.github.com/repos/cisco/ChezScheme/tags?per_page=100",
     })
 
     if err ~= nil then
@@ -32,7 +32,7 @@ function PLUGIN:Available(ctx)
         if version:match("^%d+%.%d+") then
             table.insert(results, {
                 version = version,
-                note = ""
+                note = "",
             })
         end
     end

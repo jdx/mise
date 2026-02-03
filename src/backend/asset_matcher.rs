@@ -121,7 +121,7 @@ static OS_PATTERNS: LazyLock<Vec<(AssetOs, Regex)>> = LazyLock::new(|| {
         ),
         (
             AssetOs::Windows,
-            Regex::new(r"(?i)(?:\b|_)win(?:32|64|dows)?(?:\b|_)").unwrap(),
+            Regex::new(r"(?i)(?:\b|_)(?:mingw-w64|win(?:32|64|dows)?)(?:\b|_)").unwrap(),
         ),
     ]
 });
@@ -961,7 +961,7 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
             "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
             "tool-1.0.0-darwin-x86_64.xz".to_string(),
             "tool-1.0.0-darwin-aarch64.xz".to_string(),
-            "tool-1.0.0-windows-x86_64.zip".to_string(),
+            "tool-1.0.0-mingw-w64-x86_64.zip".to_string(),
         ];
 
         let picked = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
@@ -973,6 +973,11 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
             .pick_best_asset(&assets)
             .unwrap();
         assert_eq!(picked, "tool-1.0.0-darwin-aarch64.xz");
+
+        let picked = AssetPicker::with_libc("windows".to_string(), "x86_64".to_string(), None)
+            .pick_best_asset(&assets)
+            .unwrap();
+        assert_eq!(picked, "tool-1.0.0-mingw-w64-x86_64.zip");
     }
 
     #[test]

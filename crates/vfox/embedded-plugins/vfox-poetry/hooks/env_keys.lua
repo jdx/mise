@@ -86,7 +86,9 @@ function PLUGIN:EnvKeys(ctx)
 
     -- Get the virtualenv path from poetry
     local poetry_bin = ctx.path .. "/bin/poetry"
-    local handle = io.popen("cd '" .. pyproject_dir .. "' && " .. path_prefix .. "'" .. poetry_bin .. "' env info --path 2>/dev/null")
+    local handle = io.popen(
+        "cd '" .. pyproject_dir .. "' && " .. path_prefix .. "'" .. poetry_bin .. "' env info --path 2>/dev/null"
+    )
     if not handle then
         return env_keys
     end
@@ -99,7 +101,9 @@ function PLUGIN:EnvKeys(ctx)
         os.execute("cd '" .. pyproject_dir .. "' && " .. path_prefix .. "'" .. poetry_bin .. "' run true 2>/dev/null")
 
         -- Try again to get the path
-        handle = io.popen("cd '" .. pyproject_dir .. "' && " .. path_prefix .. "'" .. poetry_bin .. "' env info --path 2>/dev/null")
+        handle = io.popen(
+            "cd '" .. pyproject_dir .. "' && " .. path_prefix .. "'" .. poetry_bin .. "' env info --path 2>/dev/null"
+        )
         if handle then
             venv_path = handle:read("*l")
             handle:close()

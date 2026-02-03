@@ -29,6 +29,7 @@ pub struct RegistryTool {
     pub os: &'static [&'static str],
     pub depends: &'static [&'static str],
     pub idiomatic_files: &'static [&'static str],
+    pub detect: &'static [&'static str],
 }
 
 #[derive(Debug, Clone)]
@@ -169,7 +170,9 @@ pub fn is_trusted_plugin(name: &str, remote: &str) -> bool {
 
 pub fn normalize_remote(remote: &str) -> eyre::Result<String> {
     let url = Url::parse(remote)?;
-    let host = url.host_str().unwrap();
+    let host = url
+        .host_str()
+        .ok_or_else(|| eyre::eyre!("URL has no host: {remote}"))?;
     let path = url.path().trim_end_matches(".git");
     Ok(format!("{host}{path}"))
 }
@@ -265,5 +268,23 @@ mod tests {
             }
             ENV_BACKENDS.lock().unwrap().clear();
         }
+    }
+
+    #[test]
+    fn test_normalize_remote() {
+        use super::*;
+
+        // Standard HTTPS URLs should work
+        let result = normalize_remote("https://github.com/mise-plugins/vfox-node.git");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "github.com/mise-plugins/vfox-node");
+
+        // file:// URLs should return an error (no host)
+        let result = normalize_remote("file:///path/to/repo");
+        assert!(result.is_err());
+
+        // Invalid URLs should return an error
+        let result = normalize_remote("not-a-url");
+        assert!(result.is_err());
     }
 }

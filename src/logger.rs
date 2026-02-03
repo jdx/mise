@@ -1,4 +1,5 @@
 use crate::config::{Config, Settings};
+use clx::progress;
 use eyre::Result;
 use std::fs::{File, OpenOptions, create_dir_all};
 use std::path::Path;
@@ -23,22 +24,36 @@ impl log::Log for Logger {
     }
 
     fn log(&self, record: &Record) {
-        if record.level() <= self.file_level
-            && let Some(log_file) = &self.log_file
-        {
+        let term_level = *self.term_level.lock().unwrap();
+        let will_log_file = record.level() <= self.file_level && self.log_file.is_some();
+        let will_log_term = record.level() <= term_level;
+
+        if !will_log_file && !will_log_term {
+            return;
+        }
+
+        // Redact once for all outputs (Aho-Corasick makes this efficient)
+        let args = record.args().to_string();
+        let args = if config::is_loaded() {
+            Config::get_().redact(&args)
+        } else {
+            args
+        };
+
+        if will_log_file && let Some(log_file) = &self.log_file {
             let mut log_file = log_file.lock().unwrap();
-            let out = self.render(record, self.file_level);
+            let out = self.render(record, self.file_level, &args);
             if !out.is_empty() {
                 let _ = writeln!(log_file, "{}", console::strip_ansi_codes(&out));
             }
         }
-        let term_level = *self.term_level.lock().unwrap();
-        if record.level() <= term_level {
-            let out = self.render(record, term_level);
+        if will_log_term {
+            let out = self.render(record, term_level, &args);
             if !out.is_empty() {
-                ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
-                    eprintln!("{out}");
-                });
+                // Use clx pause/resume for clean logging during progress display
+                progress::pause();
+                eprintln!("{out}");
+                progress::resume();
             }
         }
     }
@@ -66,12 +81,7 @@ impl Logger {
         logger
     }
 
-    fn render(&self, record: &Record, level: LevelFilter) -> String {
-        let mut args = record.args().to_string();
-        if config::is_loaded() {
-            let config = Config::get_();
-            args = config.redact(args);
-        }
+    fn render(&self, record: &Record, level: LevelFilter, args: &str) -> String {
         match level {
             LevelFilter::Off => "".to_string(),
             LevelFilter::Trace => {

@@ -7,25 +7,28 @@ import * as fs from "node:fs";
 import * as child_process from "node:child_process";
 import * as toml from "toml";
 
+type EnumValue = string | boolean | number;
+type EnumItem = EnumValue | { value: EnumValue; description?: string };
+
 type Props = {
   type: string;
   description: string;
   default?: unknown;
   deprecated?: string;
-  enum?: [string, ...string[]][];
+  enum?: EnumItem[];
   rc?: boolean;
 };
 
 type SettingsToml = Record<string, Props | Record<string, Props>>;
 
 type Element = {
-  type: string;
+  type: string | string[];
   default: unknown;
   description: string;
   deprecated?: true;
-  enum?: string[];
+  enum?: EnumValue[];
   items?: {
-    type: string;
+    type: string | string[];
   };
   additionalProperties?: {
     type: string;
@@ -40,7 +43,7 @@ type NestedElement = {
 };
 
 function buildElement(key: string, props: Props): Element {
-  const typeMap: Record<string, string> = {
+  const typeMap: Record<string, string | string[]> = {
     String: "string",
     Path: "string",
     Url: "string",
@@ -51,6 +54,7 @@ function buildElement(key: string, props: Props): Element {
     ListPath: "string[]",
     SetString: "string[]",
     "IndexMap<String, String>": "object",
+    BoolOrString: ["boolean", "string"],
   };
   const type = props.type ? typeMap[props.type] : undefined;
   if (!type) {
@@ -71,7 +75,9 @@ function buildElement(key: string, props: Props): Element {
     element.deprecated = true;
   }
   if (props.enum) {
-    element.enum = props.enum.map((e) => e[0]);
+    element.enum = props.enum.map((e) =>
+      typeof e === "object" && e !== null && "value" in e ? e.value : e,
+    );
   }
 
   if (type === "string[]") {

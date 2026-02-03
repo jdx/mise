@@ -4,7 +4,7 @@
 function PLUGIN:Available(ctx)
     local http = require("http")
     local resp, err = http.get({
-        url = "https://foldling.org/dust/"
+        url = "https://foldling.org/dust/",
     })
     if err ~= nil then
         error("Failed to fetch version list: " .. err)
@@ -18,7 +18,7 @@ function PLUGIN:Available(ctx)
 
     -- Parse HTML for chicken tarballs: chicken-VERSION-ARCH-OS-VARIANT.tar.gz
     -- Only match versioned releases, not "master"
-    for version in resp.body:gmatch('chicken%-([0-9]+%.[0-9]+%.[0-9]+)%-') do
+    for version in resp.body:gmatch("chicken%-([0-9]+%.[0-9]+%.[0-9]+)%-") do
         if not seen[version] then
             seen[version] = true
             table.insert(versions, {

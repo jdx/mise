@@ -22,7 +22,7 @@ function PLUGIN:Available(ctx)
 
     -- Parse HTML to extract lua-X.Y.Z.tar.gz filenames
     -- Pattern matches: lua-5.4.8.tar.gz, lua-5.1.tar.gz, etc.
-    for version in string.gmatch(resp.body, 'lua%-(%d+%.%d+[%.%d]*).tar.gz') do
+    for version in string.gmatch(resp.body, "lua%-(%d+%.%d+[%.%d]*).tar.gz") do
         if not seen[version] then
             seen[version] = true
             table.insert(result, {

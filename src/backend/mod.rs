@@ -847,13 +847,23 @@ pub trait Backend: Debug + Send + Sync {
             plugin.is_installed_err()?;
         }
 
-        if self.is_version_installed(&ctx.config, &tv, true) {
-            if ctx.force {
-                self.uninstall_version(&ctx.config, &tv, ctx.pr.as_ref(), false)
-                    .await?;
-            } else {
-                return Ok(tv);
-            }
+        let will_uninstall = ctx.force && self.is_version_installed(&ctx.config, &tv, true);
+
+        // Query backend for operation count and set up progress tracking
+        let install_ops = self.install_operation_count(&tv, &ctx).await;
+        let total_ops = if will_uninstall {
+            install_ops + 1
+        } else {
+            install_ops
+        };
+        ctx.pr.start_operations(total_ops);
+
+        if will_uninstall {
+            self.uninstall_version(&ctx.config, &tv, ctx.pr.as_ref(), false)
+                .await?;
+            ctx.pr.next_operation();
+        } else if self.is_version_installed(&ctx.config, &tv, true) {
+            return Ok(tv);
         }
         // Check for --locked mode: if enabled and no lockfile URL exists, fail early
         // Exempt tool stubs from lockfile requirements since they are ephemeral
@@ -962,6 +972,14 @@ pub trait Backend: Debug + Send + Sync {
             .execute()?;
         Ok(())
     }
+
+    /// Returns the number of operations for installation progress tracking.
+    /// Override this if your backend has a different number of operations.
+    /// Default is 3: download, checksum, extract
+    async fn install_operation_count(&self, _tv: &ToolVersion, _ctx: &InstallContext) -> usize {
+        3
+    }
+
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion>;
     async fn uninstall_version(
         &self,
@@ -1254,7 +1272,7 @@ pub trait Backend: Debug + Send + Sync {
     ) -> Result<()> {
         let settings = Settings::get();
         let filename = file.file_name().unwrap().to_string_lossy().to_string();
-        let lockfile_enabled = settings.lockfile && settings.experimental;
+        let lockfile_enabled = settings.lockfile;
 
         // Get the platform key for this tool and platform
         let platform_key = self.get_platform_key();
@@ -1422,6 +1440,30 @@ pub trait Backend: Debug + Send + Sync {
             conda_deps: None,
         })
     }
+}
+
+/// Helper function for calculating install operation count in HTTP/S3-style backends.
+/// Used by HttpBackend and S3Backend to avoid code duplication.
+pub fn http_install_operation_count(
+    has_checksum_opt: bool,
+    platform_key: &str,
+    tv: &ToolVersion,
+) -> usize {
+    let settings = Settings::get();
+    let mut count = 2; // download + extraction
+    if has_checksum_opt {
+        count += 1;
+    }
+    let lockfile_enabled = settings.lockfile;
+    let has_lockfile_checksum = tv
+        .lock_platforms
+        .get(platform_key)
+        .and_then(|p| p.checksum.as_ref())
+        .is_some();
+    if lockfile_enabled || has_lockfile_checksum {
+        count += 1;
+    }
+    count
 }
 
 fn find_match_in_list(list: &[String], query: &str) -> Option<String> {

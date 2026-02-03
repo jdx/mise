@@ -36,8 +36,10 @@ impl Plugin {
         }
         let lua = Lua::new();
         lua.set_named_registry_value("plugin_dir", dir.to_path_buf())?;
+        let name = dir.file_name().unwrap().to_string_lossy().to_string();
+        lua.set_named_registry_value("plugin_name", name.clone())?;
         Ok(Self {
-            name: dir.file_name().unwrap().to_string_lossy().to_string(),
+            name,
             dir: dir.to_path_buf(),
             source: PluginSource::Filesystem(dir.to_path_buf()),
             lua,
@@ -51,6 +53,7 @@ impl Plugin {
         let dummy_dir = PathBuf::from(format!("embedded:{}", name));
         lua.set_named_registry_value("plugin_dir", dummy_dir.clone())?;
         lua.set_named_registry_value("embedded_plugin", true)?;
+        lua.set_named_registry_value("plugin_name", name.to_string())?;
         Ok(Self {
             name: name.to_string(),
             dir: dummy_dir,
@@ -87,6 +90,17 @@ impl Plugin {
 
     pub fn is_embedded(&self) -> bool {
         matches!(self.source, PluginSource::Embedded(_))
+    }
+
+    /// Store an environment map in the Lua registry for use by cmd.exec().
+    /// This allows env module hooks to run commands that find mise-managed tools on PATH.
+    pub fn set_cmd_env(&self, env: &indexmap::IndexMap<String, String>) -> Result<()> {
+        let table = self.lua.create_table()?;
+        for (k, v) in env {
+            table.set(k.as_str(), v.as_str())?;
+        }
+        self.lua.set_named_registry_value("mise_env", table)?;
+        Ok(())
     }
 
     pub fn list() -> Result<Vec<String>> {
@@ -179,6 +193,7 @@ impl Plugin {
             lua_mod::semver(&self.lua)?;
             lua_mod::strings(&self.lua)?;
             lua_mod::env(&self.lua)?;
+            lua_mod::log(&self.lua)?;
 
             // For embedded plugins, load lib modules AFTER standard modules
             // (lib files may require http, json, etc.)

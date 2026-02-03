@@ -4,11 +4,11 @@ local util = require("util")
 --- @param ctx table Empty table used as context, for future extension
 --- @return table Descriptions of available versions and accompanying tool descriptions
 function PLUGIN:Available(ctx)
-    local versions = util.parseVersions()
+	local versions = util.parseVersions()
 
-    table.sort(versions, function(a, b)
-        return util.compareVersions(a.version, b.version)
-    end)
+	table.sort(versions, function(a, b)
+		return util.compareVersions(a.version, b.version)
+	end)
 
-    return versions
+	return versions
 end

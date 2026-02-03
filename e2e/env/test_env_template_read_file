@@ -113,7 +113,3 @@ assert_contains "mise env -s bash -C $PROJECT_DIR/subdir | grep SUB_VERSION" "ex
 
 # Go back to original test directory
 cd "$TEST_ROOT"
-
-# Cleanup
-rm -f test_version.txt multiline.txt config.txt template_test.txt
-rm -rf subdir project

@@ -3,15 +3,14 @@ local json = require("json")
 
 --- Returns pre-installed information, such as version number.
 --- For pipenv, we install via pip so we just validate the version exists.
---- @param ctx table
---- @field ctx.version string User-input version
+--- @param ctx {version: string}  (User-input version)
 --- @return table Version information
 function PLUGIN:PreInstall(ctx)
     local version = ctx.version
 
     -- Validate version exists on PyPI
     local resp, err = http.get({
-        url = "https://pypi.org/pypi/pipenv/" .. version .. "/json"
+        url = "https://pypi.org/pypi/pipenv/" .. version .. "/json",
     })
 
     if err ~= nil then

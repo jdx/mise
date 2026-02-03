@@ -1,8 +1,7 @@
 local util = require("util")
 --- Returns some pre-installed information, such as version number, download address, local files, etc.
 --- If checksum is provided, vfox will automatically check it for you.
---- @param ctx table
---- @field ctx.version string User-input version
+--- @param ctx {version: string}  (User-input version)
 --- @return table Version information
 function PLUGIN:PreInstall(ctx)
     if #util.RELEASES == 0 then

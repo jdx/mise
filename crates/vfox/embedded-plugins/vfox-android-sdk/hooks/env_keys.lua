@@ -1,6 +1,5 @@
 --- Return environment variables for the tool
---- @param ctx table
---- @field ctx.path string The installation path of the tool version
+--- @param ctx {path: string}  (The installation path of the tool version)
 --- @field ctx.version string The version
 --- @return table Environment variables
 function PLUGIN:EnvKeys(ctx)
@@ -15,15 +14,15 @@ function PLUGIN:EnvKeys(ctx)
     return {
         {
             key = "PATH",
-            value = bin_path
+            value = bin_path,
         },
         {
             key = "ANDROID_HOME",
-            value = install_path
+            value = install_path,
         },
         {
             key = "ANDROID_SDK_ROOT",
-            value = install_path
-        }
+            value = install_path,
+        },
     }
 end

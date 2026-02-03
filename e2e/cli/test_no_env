@@ -29,6 +29,3 @@ TEST_FOO_VAR = "FOO"
 EOF
 
 assert_not_contains "mise env" "TEST_FOO_VAR"
-
-# Cleanup
-rm -f mise.toml

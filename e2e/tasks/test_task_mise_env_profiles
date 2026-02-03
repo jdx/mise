@@ -89,6 +89,3 @@ EOF
 assert "mise run task-with-env" "TEST_VAR=task_override_value"
 # Task env should also override MISE_ENV config
 MISE_ENV=custom assert "mise run task-with-env" "TEST_VAR=task_override_value"
-
-# Clean up
-rm -f .mise.override.toml .mise.production.toml .mise.staging.toml .mise.custom.toml

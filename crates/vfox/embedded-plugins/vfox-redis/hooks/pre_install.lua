@@ -7,6 +7,6 @@ function PLUGIN:PreInstall(ctx)
     return {
         version = version,
         url = "https://download.redis.io/releases/redis-" .. version .. ".tar.gz",
-        note = "Downloading Redis " .. version .. " source..."
+        note = "Downloading Redis " .. version .. " source...",
     }
 end

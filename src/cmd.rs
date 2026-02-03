@@ -8,10 +8,10 @@ use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 
+use crate::redactions::Redactor;
 use color_eyre::Result;
 use duct::{Expression, IntoExecutablePath};
 use eyre::Context;
-use indexmap::IndexSet;
 #[cfg(not(any(test, target_os = "windows")))]
 use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
 #[cfg(not(any(test, target_os = "windows")))]
@@ -23,6 +23,7 @@ use crate::env;
 use crate::env::PATH_KEY;
 use crate::errors::Error::ScriptFailed;
 use crate::file::display_path;
+use crate::path_env::PathEnv;
 use crate::ui::progress_report::SingleReport;
 
 /// Create a command with any number of of positional arguments
@@ -101,7 +102,7 @@ pub struct CmdLineRunner<'a> {
     pr: Option<&'a dyn SingleReport>,
     pr_arc: Option<Arc<Box<dyn SingleReport>>>,
     stdin: Option<String>,
-    redactions: IndexSet<String>,
+    redactor: Redactor,
     raw: bool,
     pass_signals: bool,
     on_stdout: Option<Box<dyn Fn(String) + Send + 'a>>,
@@ -124,7 +125,7 @@ impl<'a> CmdLineRunner<'a> {
             pr: None,
             pr_arc: None,
             stdin: None,
-            redactions: Default::default(),
+            redactor: Default::default(),
             raw: false,
             pass_signals: false,
             on_stdout: None,
@@ -176,11 +177,7 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     pub fn redact(mut self, redactions: impl IntoIterator<Item = String>) -> Self {
-        for r in redactions {
-            if !r.is_empty() {
-                self.redactions.insert(r);
-            }
-        }
+        self.redactor = self.redactor.with_additional(redactions);
         self
     }
 
@@ -227,11 +224,11 @@ impl<'a> CmdLineRunner<'a> {
             .get_env(&PATH_KEY)
             .map(|c| c.to_owned())
             .unwrap_or_else(|| env::var_os(&*PATH_KEY).unwrap());
-        let paths = paths
-            .into_iter()
-            .chain(env::split_paths(&existing))
-            .collect::<Vec<_>>();
-        self.cmd.env(&*PATH_KEY, env::join_paths(paths)?);
+        let mut path_env = PathEnv::from_iter(env::split_paths(&existing));
+        for p in paths {
+            path_env.add(p);
+        }
+        self.cmd.env(&*PATH_KEY, path_env.join());
         Ok(self)
     }
 
@@ -310,8 +307,7 @@ impl<'a> CmdLineRunner<'a> {
             return self.execute_raw();
         }
         let mut cp = self
-            .cmd
-            .spawn()
+            .spawn_with_etxtbsy_retry()
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id();
         RUNNING_PIDS.lock().unwrap().insert(id);
@@ -379,18 +375,12 @@ impl<'a> CmdLineRunner<'a> {
         for line in rx {
             match line {
                 ChildProcessOutput::Stdout(line) => {
-                    let line = self
-                        .redactions
-                        .iter()
-                        .fold(line, |acc, r| acc.replace(r, "[redacted]"));
+                    let line = self.redactor.redact(&line);
                     self.on_stdout(line.clone());
                     combined_output.push(line);
                 }
                 ChildProcessOutput::Stderr(line) => {
-                    let line = self
-                        .redactions
-                        .iter()
-                        .fold(line, |acc, r| acc.replace(r, "[redacted]"));
+                    let line = self.redactor.redact(&line);
                     self.on_stderr(line.clone());
                     combined_output.push(line);
                 }
@@ -420,11 +410,40 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     fn execute_raw(mut self) -> Result<()> {
-        let status = self.cmd.spawn()?.wait()?;
+        let status = self.spawn_with_etxtbsy_retry()?.wait()?;
         match status.success() {
             true => Ok(()),
             false => self.on_error(String::new(), status),
         }
+    }
+
+    /// Retry spawning a process if it fails with ETXTBSY (Text file busy).
+    /// This can happen on Linux when executing a binary that was just written/extracted,
+    /// as the file descriptor may not be fully closed yet.
+    fn spawn_with_etxtbsy_retry(&mut self) -> std::io::Result<std::process::Child> {
+        let mut attempt = 0;
+        loop {
+            match self.cmd.spawn() {
+                Ok(child) => return Ok(child),
+                Err(err) if Self::is_etxtbsy(&err) && attempt < 3 => {
+                    attempt += 1;
+                    trace!("retrying spawn after ETXTBSY (attempt {}/3)", attempt);
+                    // Exponential backoff: 50ms, 100ms, 200ms
+                    std::thread::sleep(std::time::Duration::from_millis(50 * (1 << (attempt - 1))));
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    fn is_etxtbsy(err: &std::io::Error) -> bool {
+        err.raw_os_error() == Some(nix::errno::Errno::ETXTBSY as i32)
+    }
+
+    #[cfg(not(unix))]
+    fn is_etxtbsy(_err: &std::io::Error) -> bool {
+        false
     }
 
     fn on_stdout(&self, line: String) {

@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+
+# Test that vfox env module hooks can find tools on PATH via cmd.exec.
+# When mise threads the constructed environment to cmd.exec, tools added
+# to PATH by earlier env directives (or from the toolset) should be
+# findable by plugins without workarounds like `mise which`.
+
+# Create a fake tool binary in a custom bin directory
+TOOL_BIN_DIR="$HOME/custom-tools"
+mkdir -p "$TOOL_BIN_DIR"
+cat >"$TOOL_BIN_DIR/my-test-tool" <<'EOFTOOL'
+#!/usr/bin/env bash
+echo "tool_output_value"
+EOFTOOL
+chmod +x "$TOOL_BIN_DIR/my-test-tool"
+
+# Create a vfox env module plugin that calls my-test-tool via cmd.exec
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/test-cmd-env"
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'EOFMETA'
+PLUGIN = {}
+PLUGIN.name = "test-cmd-env"
+PLUGIN.version = "1.0.0"
+PLUGIN.homepage = "https://example.com"
+PLUGIN.license = "MIT"
+PLUGIN.description = "Test that cmd.exec inherits mise-constructed PATH"
+PLUGIN.minRuntimeVersion = "0.3.0"
+EOFMETA
+
+cat >"$PLUGIN_DIR/hooks/mise_env.lua" <<'EOFHOOK'
+local cmd = require("cmd")
+
+function PLUGIN:MiseEnv(ctx)
+    -- This should work because mise threads the constructed env
+    -- (including PATH with custom-tools) to cmd.exec
+    local ok, output = pcall(function()
+        return cmd.exec("my-test-tool")
+    end)
+
+    if not ok then
+        return {
+            env = {{key = "TEST_CMD_EXEC_RESULT", value = "TOOL_NOT_FOUND"}},
+            cacheable = false,
+            watch_files = {}
+        }
+    end
+
+    -- Trim trailing whitespace
+    output = output:gsub("%s+$", "")
+
+    return {
+        env = {{key = "TEST_CMD_EXEC_RESULT", value = output}},
+        cacheable = false,
+        watch_files = {}
+    }
+end
+EOFHOOK
+
+# Config: add custom-tools to PATH, then use the plugin module.
+# The _.path directive is processed first, so cmd.exec should see it.
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+_.path = "$TOOL_BIN_DIR"
+_.test-cmd-env = {}
+EOF
+
+# Run mise env and check that the plugin found and executed the tool
+assert_contains "mise env -s bash" "TEST_CMD_EXEC_RESULT=tool_output_value"

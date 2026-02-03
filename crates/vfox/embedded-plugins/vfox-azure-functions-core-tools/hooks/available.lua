@@ -10,12 +10,15 @@ function PLUGIN:Available(ctx)
     local per_page = 100
 
     while true do
-        local url = "https://api.github.com/repos/Azure/azure-functions-core-tools/releases?per_page=" .. per_page .. "&page=" .. page
+        local url = "https://api.github.com/repos/Azure/azure-functions-core-tools/releases?per_page="
+            .. per_page
+            .. "&page="
+            .. page
         local resp = http.get({
             url = url,
             headers = {
-                ["Accept"] = "application/vnd.github.v3+json"
-            }
+                ["Accept"] = "application/vnd.github.v3+json",
+            },
         })
 
         if resp.status_code ~= 200 then
@@ -35,7 +38,7 @@ function PLUGIN:Available(ctx)
                 local version = release.tag_name
                 table.insert(result, {
                     version = version,
-                    note = release.name or ""
+                    note = release.name or "",
                 })
             end
         end

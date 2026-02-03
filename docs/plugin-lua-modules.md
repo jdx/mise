@@ -15,6 +15,7 @@ mise plugins have access to a comprehensive set of built-in Lua modules that pro
 - **`semver`** - Semantic version comparison and sorting
 - **`html`** - HTML parsing and manipulation
 - **`archiver`** - Archive extraction
+- **`log`** - Structured logging
 
 ## HTTP Module
 
@@ -564,8 +565,33 @@ local result = cmd.exec("npm install package-name", {cwd = "/path/to/project"})
 The options table supports the following keys:
 
 - **`cwd`** (string): Set the working directory for the command
-- **`env`** (table): Set environment variables for the command execution
+- **`env`** (table): Set environment variables for the command execution. These are merged on top of the inherited environment (see below).
 - **`timeout`** (number): Set a timeout for command execution (future feature)
+
+### Environment Inheritance in Env Module Hooks
+
+When `cmd.exec()` is called from environment module hooks (`MiseEnv`, `MisePath`), the command automatically inherits the mise-constructed environment instead of the process environment. This includes environment variables set by preceding directives and `_.path` entries accumulated so far.
+
+When the module directive has `tools = true`, the inherited environment also includes tool installation bin paths. This means mise-managed tools are directly callable:
+
+```toml
+[env]
+_.my-plugin = { tools = true }
+```
+
+```lua
+function PLUGIN:MiseEnv(ctx)
+    -- With tools=true, mise-managed tools are on PATH
+    local version = cmd.exec("node --version")
+    return {
+        {key = "NODE_VERSION", value = version:gsub("%s+", "")}
+    }
+end
+```
+
+Without `tools = true`, only `_.path` directive entries and the original system PATH are available to `cmd.exec()`.
+
+Any explicit `env` options passed to `cmd.exec()` are merged on top of the inherited environment, allowing selective overrides.
 
 ### Platform-Specific Commands
 
@@ -721,6 +747,62 @@ function scrape_versions_from_releases(base_url)
 
     return versions
 end
+```
+
+## Log Module
+
+The log module provides structured logging that routes through Rust's `log` crate, respecting `MISE_DEBUG` and `MISE_TRACE` environment variables.
+
+### Log Levels
+
+```lua
+local log = require("log")
+
+log.trace("detailed tracing info")   -- only visible with MISE_TRACE=1
+log.debug("debugging info")          -- visible with MISE_DEBUG=1
+log.info("status message")           -- visible by default
+log.warn("warning message")          -- visible by default
+log.error("error message")           -- visible by default
+```
+
+### Variadic Arguments
+
+All log functions accept multiple arguments of any type. Arguments are converted to strings via `tostring()` and joined with tab characters (`\t`), matching Lua's `print()` behavior:
+
+```lua
+log.info("version", version, "installed to", path)
+-- Output: [plugin-name] version<TAB>1.0.0<TAB>installed to<TAB>/path
+```
+
+### Plugin Name Prefix
+
+All log messages are automatically prefixed with `[plugin_name]`:
+
+```
+mise [INFO] [my-plugin] Installing version 1.0.0
+```
+
+### Print Override
+
+`print()` is overridden to route through `info!()` level logging. This means:
+
+- `print()` output goes to stderr instead of stdout
+- Messages are prefixed with `[plugin_name]`
+- Output respects log level filtering
+
+```lua
+-- These are equivalent:
+print("hello", "world")
+log.info("hello", "world")
+```
+
+### Accessing via vfox Namespace
+
+The log module is also available as `vfox.log`:
+
+```lua
+local log = require("vfox").log
+log.info("message")
 ```
 
 ## Best Practices

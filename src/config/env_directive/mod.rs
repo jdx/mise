@@ -3,6 +3,7 @@ use crate::dirs;
 use crate::env;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
+use crate::path_env::PathEnv;
 use crate::tera::{get_tera, tera_exec};
 use eyre::{Context, eyre};
 use indexmap::IndexMap;
@@ -19,7 +20,7 @@ mod file;
 mod module;
 mod path;
 mod source;
-mod venv;
+pub(crate) mod venv;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum RequiredValue {
@@ -531,7 +532,34 @@ impl EnvResults {
                     .await?;
                 }
                 EnvDirective::Module(name, value, _opts) => {
-                    Self::module(&mut r, source, name, &value, redact.unwrap_or(false)).await?;
+                    let mut env_map: IndexMap<String, String> = env
+                        .iter()
+                        .map(|(k, (v, _))| (k.clone(), v.clone()))
+                        .collect();
+                    // Incorporate _.path entries accumulated so far into PATH
+                    // so that cmd.exec in the plugin can find tools on PATH.
+                    if !paths.is_empty() {
+                        let existing_path =
+                            env_map.get(&*env::PATH_KEY).cloned().unwrap_or_default();
+                        let mut path_env = PathEnv::from_path_str(&existing_path);
+                        for (p, path_source) in &paths {
+                            let config_root =
+                                crate::config::config_file::config_root::config_root(path_source);
+                            for s in env::split_paths(p) {
+                                path_env.add(normalize_path(&config_root, s));
+                            }
+                        }
+                        env_map.insert(env::PATH_KEY.to_string(), path_env.to_string());
+                    }
+                    Self::module(
+                        &mut r,
+                        source,
+                        name,
+                        &value,
+                        redact.unwrap_or(false),
+                        env_map,
+                    )
+                    .await?;
                 }
             };
         }

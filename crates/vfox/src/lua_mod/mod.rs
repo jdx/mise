@@ -6,6 +6,7 @@ mod hooks;
 mod html;
 mod http;
 mod json;
+mod log;
 mod semver;
 mod strings;
 
@@ -18,5 +19,6 @@ pub use hooks::mod_hooks as hooks;
 pub use html::mod_html as html;
 pub use http::mod_http as http;
 pub use json::mod_json as json;
+pub use log::mod_log as log;
 pub use semver::mod_semver as semver;
 pub use strings::mod_strings as strings;

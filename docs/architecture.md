@@ -54,7 +54,7 @@ pub trait Backend: Debug + Send + Sync {
 
 - **Core Backends**: Native Rust implementations for maximum performance
 - **Language Package Managers**: npm, pipx, cargo, gem, go modules
-- **Universal Installers**: ubi (GitHub releases), aqua (comprehensive package management)
+- **Universal Installers**: github (GitHub releases), aqua (comprehensive package management)
 - **Plugin Systems**: [backend plugins](backend-plugin-development.md) (enhanced methods), [tool plugins](tool-plugin-development.md) (hook-based), [asdf plugins](asdf-legacy-plugins.md) (legacy)
 
 For guidance on implementing new backends, see the [Contributing Guide](contributing.md#adding-backends). For detailed backend system design, see [Backend Architecture](dev-tools/backend_architecture.md).

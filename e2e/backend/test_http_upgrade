@@ -14,12 +14,23 @@ mkdir -p "$VERSION_LIST_DIR"
 # Create version list file with two versions
 echo -e "1.0.0\n2.0.0" >"$VERSION_LIST_DIR/versions.txt"
 
-# Start Python HTTP server in background
-(cd "$VERSION_LIST_DIR" && python3 -m http.server 18123 &>/dev/null) &
+# Start Python HTTP server on a random available port
+HTTP_PORT_FILE="$TMPDIR/http_server_port"
+python3 -c "
+import http.server, socketserver, threading, os
+s = socketserver.TCPServer(('', 0), lambda *a: http.server.SimpleHTTPRequestHandler(*a, directory='$VERSION_LIST_DIR'))
+with open('$HTTP_PORT_FILE', 'w') as f:
+    f.write(str(s.server_address[1]))
+s.serve_forever()
+" &
 HTTP_SERVER_PID=$!
 
-# Wait for server to start
-sleep 1
+# Wait for server to start and write port file
+for _i in {1..20}; do
+	if [[ -f $HTTP_PORT_FILE ]]; then break; fi
+	sleep 0.1
+done
+HTTP_PORT=$(cat "$HTTP_PORT_FILE")
 
 # Cleanup function
 cleanup() {
@@ -28,7 +39,7 @@ cleanup() {
 trap cleanup EXIT
 
 # Verify server is running
-if ! curl -s http://localhost:18123/versions.txt | grep -q "1.0.0"; then
+if ! curl -s "http://localhost:$HTTP_PORT/versions.txt" | grep -q "1.0.0"; then
 	fail "HTTP server failed to start"
 fi
 
@@ -38,7 +49,7 @@ cat <<EOF >mise.toml
 [tools."http:hello-upgrade"]
 version = "1.0.0"
 url = "https://mise.jdx.dev/test-fixtures/hello-world-{{version}}.tar.gz"
-version_list_url = "http://localhost:18123/versions.txt"
+version_list_url = "http://localhost:$HTTP_PORT/versions.txt"
 bin_path = "hello-world-1.0.0/bin"
 postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"
 EOF

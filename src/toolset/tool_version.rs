@@ -8,6 +8,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::backend::ABackend;
 use crate::cli::args::BackendArg;
 use crate::config::Config;
+use crate::env;
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
@@ -246,6 +247,14 @@ impl ToolVersion {
             if let Some(v) = matches.last() {
                 return build(v.clone());
             }
+        }
+        // In prefer-offline mode (hook-env, activate, exec), skip remote version
+        // fetching for fully-qualified versions (e.g. "2.3.2") that aren't installed.
+        // Prefix versions like "2" still need remote resolution to find e.g. "2.1.0".
+        if env::PREFER_OFFLINE.load(std::sync::atomic::Ordering::Relaxed)
+            && v.matches('.').count() >= 2
+        {
+            return build(v);
         }
         // First try with date filter (common case)
         let matches = backend

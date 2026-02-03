@@ -54,6 +54,30 @@ impl Backend for AquaBackend {
             .and_then(|p| p.description.clone())
     }
 
+    async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
+        let pkg = match AQUA_REGISTRY
+            .package_with_version(&self.id, &[&tv.version])
+            .await
+        {
+            Ok(pkg) => pkg,
+            Err(_) => return 3, // fallback to default
+        };
+        let format = pkg.format(&tv.version, os(), arch()).unwrap_or_default();
+
+        let mut count = 1; // download
+        // Count checksum operation if explicitly configured OR if this is a GitHub release
+        // (GitHub API may provide a digest even without explicit checksum config)
+        if pkg.checksum.as_ref().is_some_and(|c| c.enabled())
+            || pkg.r#type == AquaPackageType::GithubRelease
+        {
+            count += 1;
+        }
+        if needs_extraction(format, &pkg.r#type) {
+            count += 1;
+        }
+        count
+    }
+
     async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
         use crate::backend::SecurityFeature;
 
@@ -410,10 +434,7 @@ impl Backend for AquaBackend {
             (url, v.to_string(), filename, digest)
         };
 
-        // Determine operation count for progress reporting
         let format = pkg.format(&v, os(), arch()).unwrap_or_default();
-        let op_count = Self::calculate_op_count(&pkg, &api_digest, format);
-        ctx.pr.start_operations(op_count);
 
         self.download(ctx, &tv, &url, &filename).await?;
 
@@ -421,13 +442,22 @@ impl Backend for AquaBackend {
             // Store the asset URL and digest (if available) in the tool version
             let platform_info = tv.lock_platforms.entry(platform_key).or_default();
             platform_info.url = Some(url.clone());
-            if let Some(digest) = api_digest {
+            if let Some(digest) = api_digest.clone() {
                 debug!("using GitHub API digest for checksum verification");
                 platform_info.checksum = Some(digest);
             }
         }
 
+        // Advance to checksum operation if applicable
+        if pkg.checksum.as_ref().is_some_and(|c| c.enabled()) || api_digest.is_some() {
+            ctx.pr.next_operation();
+        }
         self.verify(ctx, &mut tv, &pkg, &v, &filename).await?;
+
+        // Advance to extraction operation if applicable
+        if needs_extraction(format, &pkg.r#type) {
+            ctx.pr.next_operation();
+        }
         self.install(ctx, &tv, &pkg, &v, &filename)?;
 
         Ok(tv)
@@ -693,29 +723,6 @@ impl AquaBackend {
             AquaPackageType::Http => pkg.url(v, os(), arch()).map(|url| (url, false, None)),
             ref t => bail!("unsupported aqua package type: {t}"),
         }
-    }
-
-    /// Calculate the number of operations for progress reporting.
-    /// Operations: download (always), checksum (if enabled or api_digest), extraction (if needed)
-    fn calculate_op_count(pkg: &AquaPackage, api_digest: &Option<String>, format: &str) -> usize {
-        let mut op_count = 1; // download
-
-        // Checksum verification (from pkg config or GitHub API digest)
-        if pkg.checksum.as_ref().is_some_and(|c| c.enabled()) || api_digest.is_some() {
-            op_count += 1;
-        }
-
-        // Extraction (for archives, or GithubArchive/GithubContent which always extract)
-        if (!format.is_empty() && format != "raw")
-            || matches!(
-                pkg.r#type,
-                AquaPackageType::GithubArchive | AquaPackageType::GithubContent
-            )
-        {
-            op_count += 1;
-        }
-
-        op_count
     }
 
     async fn github_release_url(
@@ -1618,6 +1625,15 @@ fn resolve_repo_info(
         .cloned()
         .unwrap_or_else(|| pkg.repo_name.clone());
     (owner, name)
+}
+
+/// Check if extraction is needed based on format and package type.
+fn needs_extraction(format: &str, pkg_type: &AquaPackageType) -> bool {
+    (!format.is_empty() && format != "raw")
+        || matches!(
+            pkg_type,
+            AquaPackageType::GithubArchive | AquaPackageType::GithubContent
+        )
 }
 
 /// Check if a platform is supported by the package's supported_envs.

@@ -33,6 +33,7 @@ mod hook_not_found;
 mod tool_alias;
 
 pub use hook_env::HookReason;
+pub(crate) mod edit;
 mod implode;
 mod install;
 mod install_into;
@@ -222,6 +223,7 @@ pub enum Commands {
     HookEnv(hook_env::HookEnv),
     HookNotFound(hook_not_found::HookNotFound),
     Implode(implode::Implode),
+    Edit(edit::Edit),
     Install(install::Install),
     InstallInto(install_into::InstallInto),
     Latest(latest::Latest),
@@ -289,6 +291,7 @@ impl Commands {
             Self::HookEnv(cmd) => cmd.run().await,
             Self::HookNotFound(cmd) => cmd.run().await,
             Self::Implode(cmd) => cmd.run(),
+            Self::Edit(cmd) => cmd.run().await,
             Self::Install(cmd) => cmd.run().await,
             Self::InstallInto(cmd) => cmd.run().await,
             Self::Latest(cmd) => cmd.run().await,

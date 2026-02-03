@@ -12,11 +12,17 @@ Unlike [tool plugins](tool-plugin-development.md) and [backend plugins](backend-
 
 ## Quick Start
 
-The fastest way to create an environment plugin is to use the [mise-env-plugin-template](https://github.com/jdx/mise-env-sample):
+The fastest way to create an environment plugin is to use the [mise-env-plugin-template](https://github.com/jdx/mise-env-plugin-template).
+
+::: tip
+The [mise-env-plugin-template](https://github.com/jdx/mise-env-plugin-template) provides a ready-to-use starting point with LuaCATS type definitions, stylua formatting, and hk linting pre-configured.
+:::
+
+To get started:
 
 ```bash
 # Clone the template
-git clone https://github.com/jdx/mise-env-sample my-env-plugin
+git clone https://github.com/jdx/mise-env-plugin-template my-env-plugin
 cd my-env-plugin
 
 # Customize for your use case
@@ -88,6 +94,10 @@ function PLUGIN:MiseEnv(ctx)
     }
 end
 ```
+
+::: tip
+When `cmd.exec()` is called from `MiseEnv` or `MisePath` hooks, it inherits the mise-constructed environment — including `_.path` entries and environment variables from preceding directives. If the module directive is configured with `tools = true` (e.g., `_.my-plugin = { tools = true }`), tool installation bin paths are also included, so mise-managed tools are directly callable (e.g., `cmd.exec("node --version")`).
+:::
 
 **Return value**: Either a simple array of env keys, or a table with caching metadata.
 
@@ -412,7 +422,7 @@ See [Plugin Publishing](/plugin-publishing.html) for detailed instructions.
 
 ## Examples
 
-- [mise-env-sample](https://github.com/jdx/mise-env-sample) - Simple example showing basic usage
+- [mise-env-sample](https://github.com/jdx/mise-env-plugin-template) - Simple example showing basic usage
 - The [mise-plugins](https://github.com/mise-plugins) organization currently hosts tool plugins only—add your environment plugin there (or share it with the community) so others can learn from more examples
 
 ## Migration from Tool Plugins

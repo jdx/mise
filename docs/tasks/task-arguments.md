@@ -117,6 +117,24 @@ arg "<files>" var=#true var_max=5              // Maximum 5 files allowed
 arg "<files>" var=#true var_min=1 var_max=3    // Between 1 and 3 files
 ```
 
+::: tip Handling Variadic Args with Spaces in Bash
+Variadic arguments are passed as a shell-escaped string. To properly handle arguments containing spaces as a bash array, wrap the variable in parentheses:
+
+```bash
+# Convert to bash array:
+eval "files=($usage_files)"
+
+# Use as array:
+for f in "${files[@]}"; do
+  echo "Processing: $f"
+done
+
+# Or pass to commands:
+touch "${files[@]}"
+```
+
+:::
+
 #### Environment Variable Backing
 
 ```kdl
@@ -679,6 +697,22 @@ run = 'eslint ${usage_files?}'
 </div>
 
 </div>
+
+::: tip Handling Arguments with Spaces
+If your variadic arguments may contain spaces, convert the variable to a bash array:
+
+```mise-toml
+[tasks.process]
+usage = 'arg "<files>" var=#true'
+run = '''
+eval "files=($usage_files)"
+for f in "${files[@]}"; do
+  process "$f"
+done
+'''
+```
+
+:::
 
 ## See Also
 

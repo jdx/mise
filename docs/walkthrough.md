@@ -36,6 +36,11 @@ node = "24"
 
 ## `mise.toml` Configuration
 
+You can create a `mise.toml` file manually or with the CLI.
+
+> [!TIP]
+> Use `mise edit` to open an interactive editor for your configuration. It provides a TUI where you can navigate sections, add tools from the registry with fuzzy search, and configure settings with schema-aware autocompletion.
+
 Use [`mise.toml`](/configuration#mise-toml) to share your tool configurations with others. This file should be committed to version control and contains the common toolset needed for your project.
 
 For tools or settings you want to keep private, use [`mise.local.toml`](/configuration#mise-toml). This file should be added to `.gitignore` and is perfect for personal preferences or configurations.
@@ -61,7 +66,7 @@ If you leave out the version, then mise will default to `node@latest`.
 
 ## Dev Tool Backends
 
-Tools are installed with a variety of backends like `asdf`, `ubi`, or `vfox`. See [registry](/registry.html) for
+Tools are installed with a variety of backends like `asdf`, `github`, or `vfox`. See [registry](/registry.html) for
 the full list of shorthands like `node` you can use.
 
 You can also use other backends like `npm` or `cargo`

@@ -1,6 +1,5 @@
 --- Return the pre-installation information including download URL
---- @param ctx table Context information
---- @field ctx.version string Version to install
+--- @param ctx {version: string}  Context information (Version to install)
 --- @return table Version information with download URL
 
 local http = require("http")

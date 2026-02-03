@@ -7,7 +7,7 @@ function PLUGIN:Available(ctx)
 
     -- Fetch releases from GitHub API
     local resp, err = http.get({
-        url = "https://api.github.com/repos/python-poetry/poetry/tags?per_page=100"
+        url = "https://api.github.com/repos/python-poetry/poetry/tags?per_page=100",
     })
     if err ~= nil then
         error("Failed to fetch version list: " .. err)

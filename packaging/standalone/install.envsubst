@@ -288,19 +288,19 @@ after_finish_help() {
     info "mise: run the following to activate mise in your shell:"
     info "echo \"eval \\\"\\\$($install_path activate zsh)\\\"\" >> \"${ZDOTDIR-$HOME}/.zshrc\""
     info ""
-    info "mise: run \`mise doctor\` to verify this is setup correctly"
+    info "mise: run \`mise doctor\` to verify this is set up correctly"
     ;;
   */bash)
     info "mise: run the following to activate mise in your shell:"
     info "echo \"eval \\\"\\\$($install_path activate bash)\\\"\" >> ~/.bashrc"
     info ""
-    info "mise: run \`mise doctor\` to verify this is setup correctly"
+    info "mise: run \`mise doctor\` to verify this is set up correctly"
     ;;
   */fish)
     info "mise: run the following to activate mise in your shell:"
     info "echo \"$install_path activate fish | source\" >> ~/.config/fish/config.fish"
     info ""
-    info "mise: run \`mise doctor\` to verify this is setup correctly"
+    info "mise: run \`mise doctor\` to verify this is set up correctly"
     ;;
   *)
     info "mise: run \`$install_path --help\` to get started"

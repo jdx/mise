@@ -229,6 +229,3 @@ SCRIPT
 chmod +x mise-tasks/multiple-alias
 
 assert_contains "mise tasks validate multiple-alias 2>&1 || true" "Cannot define both 'alias' and 'aliases'"
-
-# Clean up
-rm -rf mise-tasks

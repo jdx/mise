@@ -31,15 +31,21 @@ function PLUGIN:EnvKeys(ctx)
     if shortVersion then
         local packagePath = string.format(
             "package.path = package.path .. ';%s/share/lua/%s/?.lua;%s/share/lua/%s/?/init.lua;%s/luarocks/share/lua/%s/?.lua;%s/luarocks/share/lua/%s/?/init.lua'",
-            installDir, shortVersion,
-            installDir, shortVersion,
-            installDir, shortVersion,
-            installDir, shortVersion
+            installDir,
+            shortVersion,
+            installDir,
+            shortVersion,
+            installDir,
+            shortVersion,
+            installDir,
+            shortVersion
         )
         local packageCpath = string.format(
             "package.cpath = package.cpath .. ';%s/lib/lua/%s/?.so;%s/luarocks/lib/lua/%s/?.so'",
-            installDir, shortVersion,
-            installDir, shortVersion
+            installDir,
+            shortVersion,
+            installDir,
+            shortVersion
         )
 
         table.insert(envs, {

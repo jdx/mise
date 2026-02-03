@@ -1,7 +1,6 @@
 --- Each SDK may have different environment variable configurations.
 --- This allows plugins to define custom environment variables (including PATH settings)
---- @param ctx table Context information
---- @field ctx.path string SDK installation directory
+--- @param ctx {path: string}  Context information (SDK installation directory)
 function PLUGIN:EnvKeys(ctx)
     local version_path = ctx.path
     local result = {}
@@ -10,12 +9,12 @@ function PLUGIN:EnvKeys(ctx)
     if RUNTIME.osType == "windows" then
         table.insert(result, {
             key = "PATH",
-            value = version_path .. "\\wrapper_bin"
+            value = version_path .. "\\wrapper_bin",
         })
     else
         table.insert(result, {
             key = "PATH",
-            value = version_path .. "/wrapper_bin"
+            value = version_path .. "/wrapper_bin",
         })
     end
 
@@ -44,7 +43,8 @@ function PLUGIN:EnvKeys(ctx)
                 pipenv_cmd = pipenv_cmd .. "/wrapper_bin/pipenv"
             end
 
-            local venv_handle = io.popen("PIPENV_PIPFILE=\"" .. pipfile_path .. "\" \"" .. pipenv_cmd .. "\" --venv 2>/dev/null")
+            local venv_handle =
+                io.popen('PIPENV_PIPFILE="' .. pipfile_path .. '" "' .. pipenv_cmd .. '" --venv 2>/dev/null')
             if venv_handle then
                 local venv_path = venv_handle:read("*a"):gsub("%s+$", "")
                 venv_handle:close()
@@ -59,15 +59,15 @@ function PLUGIN:EnvKeys(ctx)
                         -- Add virtualenv activation
                         table.insert(result, {
                             key = "VIRTUAL_ENV",
-                            value = venv_path
+                            value = venv_path,
                         })
                         table.insert(result, {
                             key = "PIPENV_ACTIVE",
-                            value = "1"
+                            value = "1",
                         })
                         table.insert(result, {
                             key = "PATH",
-                            value = venv_bin
+                            value = venv_bin,
                         })
                     end
                 end

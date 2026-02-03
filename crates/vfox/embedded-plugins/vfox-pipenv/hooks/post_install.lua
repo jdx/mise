@@ -20,7 +20,8 @@ function PLUGIN:PostInstall(ctx)
         local check = os.execute(candidate .. " --version >/dev/null 2>&1")
         if check == 0 or check == true then
             -- Verify it's Python 3.7+
-            local handle = io.popen(candidate .. " -c \"import sys; print(sys.version_info.major, sys.version_info.minor)\"")
+            local handle =
+                io.popen(candidate .. ' -c "import sys; print(sys.version_info.major, sys.version_info.minor)"')
             if handle then
                 local output = handle:read("*a")
                 handle:close()
@@ -42,7 +43,7 @@ function PLUGIN:PostInstall(ctx)
     end
 
     -- Create virtual environment
-    local venv_cmd = python_cmd .. " -m venv --copies \"" .. rootPath .. "\""
+    local venv_cmd = python_cmd .. ' -m venv --copies "' .. rootPath .. '"'
     local result = os.execute(venv_cmd)
     if result ~= 0 and result ~= true then
         error("Failed to create virtual environment")
@@ -65,7 +66,7 @@ function PLUGIN:PostInstall(ctx)
     local pip_cmd = venv_bin .. path_sep .. "pip"
 
     -- Install pipenv inside virtual environment
-    local install_cmd = "\"" .. pip_cmd .. "\" install --quiet pipenv==" .. version
+    local install_cmd = '"' .. pip_cmd .. '" install --quiet pipenv==' .. version
     result = os.execute(install_cmd)
     if result ~= 0 and result ~= true then
         error("Failed to install pipenv==" .. version)
@@ -73,7 +74,7 @@ function PLUGIN:PostInstall(ctx)
 
     -- Create wrapper scripts directory
     local wrapper_dir = rootPath .. path_sep .. "wrapper_bin"
-    os.execute("mkdir -p \"" .. wrapper_dir .. "\"")
+    os.execute('mkdir -p "' .. wrapper_dir .. '"')
 
     -- Create wrapper scripts for pipenv executables
     local executables = { "pipenv", "pipenv-resolver" }
@@ -85,9 +86,9 @@ function PLUGIN:PostInstall(ctx)
             local wrapper_file = io.open(wrapper_path, "w")
             if wrapper_file then
                 wrapper_file:write("@echo off\r\n")
-                wrapper_file:write("call \"" .. venv_bin .. path_sep .. activate_script .. "\"\r\n")
+                wrapper_file:write('call "' .. venv_bin .. path_sep .. activate_script .. '"\r\n')
                 wrapper_file:write("set PIPENV_IGNORE_VIRTUALENVS=1\r\n")
-                wrapper_file:write("\"" .. venv_bin .. path_sep .. exe .. "\" %*\r\n")
+                wrapper_file:write('"' .. venv_bin .. path_sep .. exe .. '" %*\r\n')
                 wrapper_file:close()
             end
         end
@@ -98,10 +99,10 @@ function PLUGIN:PostInstall(ctx)
             local wrapper_file = io.open(wrapper_path, "w")
             if wrapper_file then
                 wrapper_file:write("#!/usr/bin/env bash\n")
-                wrapper_file:write("source \"" .. venv_bin .. "/" .. activate_script .. "\"\n")
-                wrapper_file:write("PIPENV_IGNORE_VIRTUALENVS=1 \"" .. venv_bin .. "/" .. exe .. "\" \"$@\"\n")
+                wrapper_file:write('source "' .. venv_bin .. "/" .. activate_script .. '"\n')
+                wrapper_file:write('PIPENV_IGNORE_VIRTUALENVS=1 "' .. venv_bin .. "/" .. exe .. '" "$@"\n')
                 wrapper_file:close()
-                os.execute("chmod +x \"" .. wrapper_path .. "\"")
+                os.execute('chmod +x "' .. wrapper_path .. '"')
             end
         end
     end

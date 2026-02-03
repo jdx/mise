@@ -1,9 +1,15 @@
 use crate::Result;
 use crate::backend::asset_matcher::detect_platform_from_url;
+use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
+use crate::cli::tool_stub::ToolStubFile;
+use crate::config::Config;
 use crate::file::{self, TarFormat, TarOptions};
 use crate::http::HTTP;
+use crate::lockfile::PlatformInfo;
 use crate::minisign;
+use crate::platform::Platform;
+use crate::toolset::{ResolveOptions, ToolVersion};
 use crate::ui::info;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -11,6 +17,7 @@ use clap::ValueHint;
 use color_eyre::eyre::bail;
 use humansize::{BINARY, format_size};
 use indexmap::IndexMap;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use toml_edit::DocumentMut;
 use xx::file::display_path;
@@ -57,12 +64,17 @@ pub struct ToolStub {
     ///
     /// This reads an existing stub file and fills in any missing checksum/size fields
     /// by downloading the files. URLs must already be present in the stub.
-    #[clap(long, conflicts_with_all = &["url", "platform_url", "version", "bin", "platform_bin", "skip_download"])]
+    #[clap(long, conflicts_with_all = &["url", "platform_url", "version", "bin", "platform_bin", "skip_download", "lock"])]
     pub fetch: bool,
 
     /// HTTP backend type to use
     #[clap(long, default_value = "http")]
     pub http: String,
+
+    /// Resolve and embed lockfile data (exact version + platform URLs/checksums)
+    /// into an existing stub file for reproducible installs without runtime API calls
+    #[clap(long, conflicts_with_all = &["url", "platform_url", "bin", "platform_bin", "fetch", "skip_download"])]
+    pub lock: bool,
 
     /// Platform-specific binary paths in the format platform:path
     ///
@@ -103,6 +115,8 @@ impl ToolStub {
     pub async fn run(self) -> Result<()> {
         let stub_content = if self.fetch {
             self.fetch_checksums().await?
+        } else if self.lock {
+            self.lock_stub().await?
         } else {
             self.generate_stub().await?
         };
@@ -114,7 +128,7 @@ impl ToolStub {
         file::write(&self.output, &stub_content)?;
         file::make_executable(&self.output)?;
 
-        if self.fetch {
+        if self.fetch || self.lock {
             miseprintln!("Updated tool stub: {}", display_path(&self.output));
         } else {
             miseprintln!("Generated tool stub: {}", display_path(&self.output));
@@ -647,6 +661,77 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         );
     }
 
+    async fn lock_stub(&self) -> Result<String> {
+        if !self.output.exists() {
+            bail!(
+                "Tool stub file does not exist: {}",
+                display_path(&self.output)
+            );
+        }
+
+        let mut stub = ToolStubFile::from_file(&self.output)?;
+        let config = Config::get().await?;
+
+        // Allow --version to override the version in the stub for bumping
+        if self.version != "latest" {
+            stub.version = self.version.clone();
+        }
+
+        // Create tool request and resolve version
+        let request = stub.to_tool_request(&self.output)?;
+        let backend = request.ba().backend()?;
+        let resolve_opts = ResolveOptions {
+            use_locked_version: false,
+            ..Default::default()
+        };
+        let tv = ToolVersion::resolve(&config, request, &resolve_opts).await?;
+
+        // Resolve lock info for each common platform (including variants)
+        let mut lock_platforms: BTreeMap<String, PlatformInfo> = BTreeMap::new();
+        for p in Platform::common_platforms() {
+            for platform in backend.platform_variants(&p) {
+                let target = PlatformTarget::new(platform);
+                match backend.resolve_lock_info(&tv, &target).await {
+                    Ok(info) if info.url.is_some() => {
+                        lock_platforms.insert(target.to_key(), info);
+                    }
+                    _ => {} // Skip platforms without lock info
+                }
+            }
+        }
+
+        // Read existing stub and update TOML
+        let content = file::read_to_string(&self.output)?;
+        let toml_content = extract_toml_from_stub(&content);
+        let mut doc = toml_content.parse::<DocumentMut>()?;
+
+        // Pin exact version
+        doc["version"] = toml_edit::value(&tv.version);
+
+        // Write [lock.platforms.*] sections
+        doc.remove("lock");
+        let mut lock_table = toml_edit::Table::new();
+        let mut platforms_table = toml_edit::Table::new();
+        for (platform_key, info) in &lock_platforms {
+            let mut pt = toml_edit::Table::new();
+            if let Some(url) = &info.url {
+                pt["url"] = toml_edit::value(url);
+            }
+            if let Some(checksum) = &info.checksum {
+                pt["checksum"] = toml_edit::value(checksum);
+            }
+            platforms_table[platform_key] = toml_edit::Item::Table(pt);
+        }
+        lock_table["platforms"] = toml_edit::Item::Table(platforms_table);
+        doc["lock"] = toml_edit::Item::Table(lock_table);
+
+        // Reconstruct with shebang
+        let toml_content = doc.to_string();
+        Ok(format!(
+            "#!/usr/bin/env -S mise tool-stub\n\n{toml_content}"
+        ))
+    }
+
     async fn fetch_checksums(&self) -> Result<String> {
         // Read the existing stub file
         if !self.output.exists() {
@@ -811,5 +896,12 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     Generate a bootstrap stub with a pinned mise version:
     $ <bold>mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --bootstrap --bootstrap-version 2025.1.0</bold>
+
+    Lock an existing tool stub with pinned version and platform URLs/checksums:
+    $ <bold>mise generate tool-stub ./bin/node --lock</bold>
+
+    Bump the version in a locked stub:
+    $ <bold>mise generate tool-stub ./bin/node --lock --version 22</bold>
+    # Resolves the latest node 22.x, pins it, and updates platform URLs/checksums
 "#
 );

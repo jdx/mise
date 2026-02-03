@@ -43,7 +43,11 @@ function PLUGIN:PostInstall(ctx)
     end
 
     -- Clean up build artifacts to save space (optional)
-    os.execute("cd " .. root_path .. " && rm -rf boot c examples mats s unicode workarea Makefile configure LOG NOTICE 2>/dev/null")
+    os.execute(
+        "cd "
+            .. root_path
+            .. " && rm -rf boot c examples mats s unicode workarea Makefile configure LOG NOTICE 2>/dev/null"
+    )
 
     print("Chez Scheme compilation complete!")
 end

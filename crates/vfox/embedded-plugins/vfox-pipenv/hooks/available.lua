@@ -39,7 +39,7 @@ end
 --- @return table Version list
 function PLUGIN:Available(ctx)
     local resp, err = http.get({
-        url = "https://pypi.org/pypi/pipenv/json"
+        url = "https://pypi.org/pypi/pipenv/json",
     })
 
     if err ~= nil or resp.status_code ~= 200 then

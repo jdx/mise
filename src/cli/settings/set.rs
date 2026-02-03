@@ -46,6 +46,7 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
         SettingsType::ListPath => parse_list_by_colon(value)?,
         SettingsType::SetString => parse_set_by_comma(value)?,
         SettingsType::IndexMap => parse_indexmap_by_json(value)?,
+        SettingsType::BoolOrString => parse_bool(value).unwrap_or_else(|_| value.into()),
     };
 
     let path = if local {

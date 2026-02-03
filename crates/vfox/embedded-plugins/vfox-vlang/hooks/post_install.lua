@@ -2,5 +2,5 @@
 --- such as file operations for the SDK installation directory or compile source code
 --- Currently can be left unimplemented!
 function PLUGIN:PostInstall(ctx)
-   -- do nothing
+    -- do nothing
 end

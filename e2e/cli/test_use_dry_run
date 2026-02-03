@@ -36,7 +36,3 @@ assert_contains "echo '$output'" "would update"
 assert_contains "echo '$output'" "jq@"
 assert_contains "echo '$output'" "shfmt@"
 assert_fail "test -f mise.toml" # File should not be created
-
-# Clean up
-cd /
-rm -rf "$TEST_DIR"

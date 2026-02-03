@@ -172,12 +172,19 @@ if [[ $cur_version != "$latest_version" ]]; then
 	# Handle subcrates with independent versioning
 	VFOX_VERSION=""
 	AQUA_REGISTRY_VERSION=""
+	INTERACTIVE_CONFIG_VERSION=""
 
 	bump_and_publish_subcrate "vfox" "crates/vfox" "VFOX_VERSION"
 	cargo add "vfox@$VFOX_VERSION"
 
 	bump_and_publish_subcrate "aqua-registry" "crates/aqua-registry" "AQUA_REGISTRY_VERSION"
 	cargo add "aqua-registry@$AQUA_REGISTRY_VERSION"
+
+	# Copy schema into crate directory so cargo publish verification can find it
+	cp schema/mise.json crates/mise-interactive-config/mise.json
+	bump_and_publish_subcrate "mise-interactive-config" "crates/mise-interactive-config" "INTERACTIVE_CONFIG_VERSION"
+	rm -f crates/mise-interactive-config/mise.json
+	cargo add "mise-interactive-config@$INTERACTIVE_CONFIG_VERSION"
 
 	if exists_on_crates mise "$cur_version"; then
 		echo "mise@$cur_version already on crates.io, skipping publish"
@@ -324,6 +331,7 @@ done
 # Bump subcrate versions if they have changes (from aqua-registry/vfox updates)
 bump_subcrate_if_changed "aqua-registry" "crates/aqua-registry"
 bump_subcrate_if_changed "vfox" "crates/vfox"
+bump_subcrate_if_changed "mise-interactive-config" "crates/mise-interactive-config"
 
 git status
 # cargo update
@@ -336,6 +344,7 @@ git add \
 	crates/aqua-registry/Cargo.toml \
 	crates/vfox/embedded-plugins \
 	crates/vfox/Cargo.toml \
+	crates/mise-interactive-config/Cargo.toml \
 	default.nix \
 	snapcraft.yaml \
 	docs/.vitepress/stars.data.ts \

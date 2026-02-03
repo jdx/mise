@@ -5,7 +5,7 @@ function PLUGIN:PostInstall(ctx)
     local rootPath = ctx.rootPath
 
     -- Check if we're on macOS (carthage is macOS only)
-    if OS_TYPE ~= "darwin" then
+    if RUNTIME.osType ~= "darwin" then
         error("Carthage is only available for macOS")
     end
 
@@ -36,10 +36,7 @@ function PLUGIN:PostInstall(ctx)
     -- Find the payload and extract it
     -- The payload is typically in CarthageApp.pkg/Payload
     local payload_dir = expand_dir .. "/CarthageApp.pkg"
-    local extract_cmd = string.format(
-        'cd "%s" && cat Payload | gunzip | cpio -id 2>/dev/null',
-        payload_dir
-    )
+    local extract_cmd = string.format('cd "%s" && cat Payload | gunzip | cpio -id 2>/dev/null', payload_dir)
     result = os.execute(extract_cmd)
     if not result then
         error("Failed to extract payload from .pkg")
@@ -49,10 +46,7 @@ function PLUGIN:PostInstall(ctx)
     local binDir = rootPath .. "/bin"
     os.execute(string.format('mkdir -p "%s"', binDir))
 
-    local move_cmd = string.format(
-        'mv "%s/usr/local/bin/carthage" "%s/carthage"',
-        payload_dir, binDir
-    )
+    local move_cmd = string.format('mv "%s/usr/local/bin/carthage" "%s/carthage"', payload_dir, binDir)
     result = os.execute(move_cmd)
     if not result then
         error("Failed to move carthage binary to bin directory")

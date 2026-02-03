@@ -1,6 +1,5 @@
 --- Return environment variables for the tool
---- @param ctx table Context information
---- @field ctx.path string SDK installation directory
+--- @param ctx {path: string}  Context information (SDK installation directory)
 --- @return table Environment variables
 
 local file = require("file")

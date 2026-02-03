@@ -45,9 +45,6 @@ export const commands: { [key: string]: Command } = {
   config: {
     hide: false,
     subcommands: {
-      generate: {
-        hide: false,
-      },
       get: {
         hide: false,
       },
@@ -86,6 +83,9 @@ export const commands: { [key: string]: Command } = {
         hide: false,
       },
     },
+  },
+  edit: {
+    hide: false,
   },
   en: {
     hide: false,

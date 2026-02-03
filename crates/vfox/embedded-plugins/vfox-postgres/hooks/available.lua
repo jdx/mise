@@ -22,7 +22,7 @@ function PLUGIN:Available(ctx)
 
     -- Parse HTML to extract version directories
     -- Format: >v17.2/<, >v16.6/<, >v9.6.24/<
-    for version in string.gmatch(resp.body, '>v([0-9]+%.[0-9]+[%.0-9]*)/<') do
+    for version in string.gmatch(resp.body, ">v([0-9]+%.[0-9]+[%.0-9]*)/<") do
         if not seen[version] then
             seen[version] = true
             table.insert(result, {
@@ -31,9 +31,9 @@ function PLUGIN:Available(ctx)
         end
     end
 
-    -- Sort versions semantically (ascending order - oldest first)
+    -- Sort versions semantically (descending order - newest first)
     table.sort(result, function(a, b)
-        return compare_versions(a.version, b.version)
+        return compare_versions(b.version, a.version)
     end)
 
     return result

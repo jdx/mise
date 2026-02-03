@@ -60,7 +60,12 @@ function PLUGIN:Available(ctx)
                                 seen[version] = true
                                 local note = channelNote
                                 -- Mark previews and RCs
-                                if string.match(version, "preview") or string.match(version, "rc") or string.match(version, "alpha") or string.match(version, "beta") then
+                                if
+                                    string.match(version, "preview")
+                                    or string.match(version, "rc")
+                                    or string.match(version, "alpha")
+                                    or string.match(version, "beta")
+                                then
                                     note = "Preview"
                                 end
                                 table.insert(result, {
@@ -78,7 +83,12 @@ function PLUGIN:Available(ctx)
                                     if not seen[version] then
                                         seen[version] = true
                                         local note = channelNote
-                                        if string.match(version, "preview") or string.match(version, "rc") or string.match(version, "alpha") or string.match(version, "beta") then
+                                        if
+                                            string.match(version, "preview")
+                                            or string.match(version, "rc")
+                                            or string.match(version, "alpha")
+                                            or string.match(version, "beta")
+                                        then
                                             note = "Preview"
                                         end
                                         table.insert(result, {

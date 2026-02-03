@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: dodobrands
+    repo_name: Peekie
+    description: Swift package for parsing Xcode .xcresult files with support for XCTest and Swift Testing frameworks
+    files:
+      - name: peekie
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 4.0.2")
+        no_asset: true
+      - version_constraint: "true"
+        asset: peekie_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - darwin/arm64

@@ -234,6 +234,18 @@ description = 'Cut a new release'
 file = 'scripts/release.sh'
 ```
 
+The confirm message supports Tera templates and can reference usage arguments:
+
+```mise-toml
+[tasks.deploy]
+usage = '''
+arg "<environment>" help="Environment to deploy to"
+flag "--force" help="Force deployment"
+'''
+confirm = "Deploy to {{ usage.environment }}?{% if usage.force %} (forced){% endif %}"
+run = "deploy.sh ${usage_environment}"
+```
+
 ### `raw`
 
 - **Type**: `bool`

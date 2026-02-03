@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# Test installing vfox plugins using file:// URLs
+# This verifies that file:// URLs don't panic (they have no host)
+
+# Clone the plugin to a temp directory
+PLUGIN_DIR="$MISE_DATA_DIR/test-vfox-aapt2"
+git clone --depth 1 https://github.com/mise-plugins/vfox-aapt2.git "$PLUGIN_DIR"
+
+# List remote versions using file:// URL
+assert_contains "mise ls-remote vfox:file://$PLUGIN_DIR" "9.0.0"
+
+# Install a specific version
+mise install "vfox:file://$PLUGIN_DIR@9.0.0-14304508"
+
+# Verify installation
+assert_contains "mise ls vfox:file://$PLUGIN_DIR" "9.0.0-14304508"
+
+# Verify the tool runs via mise x
+assert_succeed "mise x vfox:file://$PLUGIN_DIR@9.0.0-14304508 -- aapt2 version"
+
+# Clean up
+mise uninstall "vfox:file://$PLUGIN_DIR@9.0.0-14304508"

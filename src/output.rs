@@ -158,21 +158,28 @@ macro_rules! deprecated {
     }};
 }
 
-/// Emits a deprecation warning only if the current mise version is >= the specified version.
-/// Use this for gradual deprecations that should start warning at a future version.
+/// Emits a deprecation warning when mise version >= warn_at, and fires a debug_assert
+/// when version >= remove_at to remind developers to remove the deprecated code.
+/// The removal version is automatically appended to the warning message.
 ///
 /// # Example
 /// ```ignore
-/// deprecated_at!("2026.3.0", "legacy-syntax", "Use {{version}} instead of {version}");
+/// deprecated_at!("2026.3.0", "2027.3.0", "legacy-syntax", "Use {{version}} instead of {version}");
 /// ```
 #[macro_export]
 macro_rules! deprecated_at {
-    ($version:tt, $id:tt, $($arg:tt)*) => {{
+    ($warn_at:tt, $remove_at:tt, $id:tt, $($arg:tt)*) => {{
         use versions::Versioning;
-        let target = Versioning::new($version).expect("invalid version in deprecated_at!");
-        if *$crate::cli::version::V >= target {
+        let warn_version = Versioning::new($warn_at).expect("invalid warn_at version in deprecated_at!");
+        let remove_version = Versioning::new($remove_at).expect("invalid remove_at version in deprecated_at!");
+        debug_assert!(
+            *$crate::cli::version::V < remove_version,
+            "Deprecated code [{}] should have been removed in version {}. Please remove this deprecated functionality.",
+            $id, $remove_at
+        );
+        if *$crate::cli::version::V >= warn_version {
             if $crate::output::DEPRECATED.lock().unwrap().insert($id) {
-                warn!("deprecated [{}]: {}", $id, format!($($arg)*));
+                warn!("deprecated [{}]: {} This will be removed in mise {}.", $id, format!($($arg)*), $remove_at);
             }
         }
     }};

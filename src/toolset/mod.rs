@@ -35,6 +35,7 @@ mod helpers;
 mod install_options;
 pub(crate) mod install_state;
 pub(crate) mod outdated_info;
+mod tool_deps;
 pub(crate) mod tool_request;
 mod tool_request_set;
 mod tool_source;
@@ -427,4 +428,22 @@ impl From<ToolRequestSet> for Toolset {
         }
         ts
     }
+}
+
+/// Get all tool versions that are needed by tracked config files.
+/// Returns a set of (short_name, tv_pathname) pairs.
+/// This is used by both `mise prune` and `mise upgrade` to avoid
+/// uninstalling versions that other projects still need.
+pub async fn get_versions_needed_by_tracked_configs(
+    config: &Arc<Config>,
+) -> Result<std::collections::HashSet<(String, String)>> {
+    let mut needed = std::collections::HashSet::new();
+    for cf in config.get_tracked_config_files().await?.values() {
+        let mut ts = Toolset::from(cf.to_tool_request_set()?);
+        ts.resolve(config).await?;
+        for (_, tv) in ts.list_current_versions() {
+            needed.insert((tv.ba().short.to_string(), tv.tv_pathname()));
+        }
+    }
+    Ok(needed)
 }

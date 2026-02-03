@@ -175,7 +175,32 @@ impl BackendArg {
                 bail!("{plugin_name} is not a valid plugin name");
             }
         } else {
-            bail!("{self} not found in mise tool registry");
+            let registry_shorts: Vec<&str> = REGISTRY.keys().copied().collect();
+            let mut suggestions: Vec<String> =
+                xx::suggest::similar_n_with_threshold(&self.short, &registry_shorts, 3, 0.8)
+                    .into_iter()
+                    .map(|s| s.to_string())
+                    .collect();
+
+            let mise_names: HashSet<String> = suggestions.iter().cloned().collect();
+            for aqua_id in crate::aqua::aqua_registry_wrapper::aqua_suggest(&self.short) {
+                // Skip aqua suggestions whose tool name matches an existing mise suggestion
+                let name = aqua_id
+                    .rsplit_once('/')
+                    .map_or(aqua_id.as_str(), |(_, n)| n);
+                if !mise_names.contains(name) {
+                    suggestions.push(format!("aqua:{aqua_id}"));
+                }
+            }
+
+            let mut msg = format!("{self} not found in mise tool registry");
+            if !suggestions.is_empty() {
+                msg.push_str("\n\nDid you mean?");
+                for s in suggestions.iter().take(5) {
+                    msg.push_str(&format!("\n  {s}"));
+                }
+            }
+            bail!("{msg}");
         }
     }
 

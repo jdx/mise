@@ -3,8 +3,7 @@ local util = require("util")
 
 --- Returns pre-installed information, such as version number, download address, etc.
 --- If checksum is provided, vfox will automatically check it for you.
---- @param ctx table
---- @field ctx.version string User-input version
+--- @param ctx {version: string}  (User-input version)
 --- @return table Version information
 function PLUGIN:PreInstall(ctx)
     local version = ctx.version
@@ -17,7 +16,7 @@ function PLUGIN:PreInstall(ctx)
 
     for _, checksum in ipairs(checksums) do
         local resp, err = http.get({
-            url = checksum.url
+            url = checksum.url,
         })
         if err == nil and resp.status_code == 200 then
             local hash = string.match(resp.body, "^(%S+)")

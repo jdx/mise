@@ -13,7 +13,8 @@ function PLUGIN:PostInstall(ctx)
         local libchicken = file.join_path(lib_path, "libchicken.dylib")
 
         -- Create a shell script to fix library paths
-        local script = string.format([[
+        local script = string.format(
+            [[
 #!/bin/bash
 set -e
 LIB="%s"
@@ -32,7 +33,10 @@ for bin in chicken csc csi chicken-install chicken-uninstall chicken-status chic
         fi
     fi
 done
-]], lib_path, bin_path)
+]],
+            lib_path,
+            bin_path
+        )
 
         -- Write and execute the script
         local script_path = root_path .. "/fix_libs.sh"
