@@ -1229,7 +1229,10 @@ pub trait Backend: Debug + Send + Sync {
             .into_iter()
             .filter(|v| {
                 if query == v {
-                    trace!("fuzzy_match_filter {} query={query} candidate={v} reason=exact", self.id());
+                    trace!(
+                        "fuzzy_match_filter {} query={query} candidate={v} reason=exact",
+                        self.id()
+                    );
                     return true;
                 }
                 if VERSION_REGEX.is_match(v) {

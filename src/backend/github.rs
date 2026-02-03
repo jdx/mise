@@ -1464,6 +1464,9 @@ mod tests {
                 "2026-02-02-077a2ac".to_string(),
             ]
         );
-        assert_eq!(filtered.last().map(|s| s.as_str()), Some("2026-02-02-077a2ac"));
+        assert_eq!(
+            filtered.last().map(|s| s.as_str()),
+            Some("2026-02-02-077a2ac")
+        );
     }
 }
