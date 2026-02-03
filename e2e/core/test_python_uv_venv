@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 
-export MISE_PYTHON_DEFAULT_PACKAGES_FILE="$HOME/.default-python-packages"
+set -euo pipefail
+
 export MISE_EXPERIMENTAL=1
 
+# Test uv is used for manually defined venv
 cat >.mise.toml <<EOF
 [env._.python]
 venv = {path = "my_venv", create=true}
+
 [tools]
 python = "3.12.3"
 uv = "0.5.4"
@@ -17,6 +20,90 @@ assert_contains "mise x -- uv --version" "uv 0.5.4"
 assert "mise env -s bash | grep VIRTUAL_ENV" "export VIRTUAL_ENV=$PWD/my_venv"
 assert "mise x -- which python" "$PWD/my_venv/bin/python"
 assert_not_contains "ls $PWD/my_venv/" "include" # stdlib virtual venv has an "include" folder while uv doesn't
+
+# Test "source" mode - only sources existing venv, doesn't create
+rm -rf .venv
+rm -f uv.lock
+
+cat >.mise.toml <<EOF
+[tools]
+python = "3.12.3"
+uv = "0.5.4"
+
+[settings]
+python.uv_venv_auto = "source"
+EOF
+
+touch uv.lock
+
+# Without a .venv, should use system python path (not .venv)
+assert_not_contains "mise env -s bash" "VIRTUAL_ENV"
+
+# Create venv manually
+mise x -- uv venv
+
+# Now it should source the existing venv
+assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/.venv"
+assert "mise x -- which python" "$PWD/.venv/bin/python"
+# source mode should NOT set UV_PYTHON
+assert_not_contains "mise env -s bash" "UV_PYTHON"
+
+# Test "create|source" mode - creates venv if missing, sources it
+rm -rf .venv
+
+cat >.mise.toml <<EOF
+[tools]
+python = "3.12.3"
+uv = "0.5.4"
+
+[settings]
+python.uv_venv_auto = "create|source"
+EOF
+
+# Should create venv automatically and source it
+assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/.venv"
+assert "mise x -- which python" "$PWD/.venv/bin/python"
+# create|source mode should NOT set UV_PYTHON (unlike legacy true)
+assert_not_contains "mise env -s bash" "UV_PYTHON"
+
+# Test legacy "true" mode - should set UV_PYTHON
+# this will be deprecated in future releases
+rm -rf .venv
+
+cat >.mise.toml <<EOF
+[tools]
+python = "3.12.3"
+uv = "0.5.4"
+
+[settings]
+python.uv_venv_auto = true
+EOF
+
+# Should create venv and source it
+assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/.venv"
+assert "mise x -- which python" "$PWD/.venv/bin/python"
+# legacy true mode SHOULD set UV_PYTHON
+assert_contains "mise env -s bash" "UV_PYTHON"
+
+# Test boolean parsing from env vars - "true","1", "yes",  should all work
+rm -rf .venv
+
+cat >.mise.toml <<EOF
+[tools]
+python = "3.12.3"
+uv = "0.5.4"
+EOF
+
+MISE_PYTHON_UV_VENV_AUTO=true assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/.venv"
+rm -rf .venv
+MISE_PYTHON_UV_VENV_AUTO=yes assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/.venv"
+rm -rf .venv
+MISE_PYTHON_UV_VENV_AUTO=1 assert_contains "mise env -s bash" "VIRTUAL_ENV=$PWD/.venv"
+
+# Test "0", "no", "false" should disable
+MISE_PYTHON_UV_VENV_AUTO=false assert_not_contains "mise env -s bash" "VIRTUAL_ENV"
+MISE_PYTHON_UV_VENV_AUTO=no assert_not_contains "mise env -s bash" "VIRTUAL_ENV"
+MISE_PYTHON_UV_VENV_AUTO=0 assert_not_contains "mise env -s bash" "VIRTUAL_ENV"
 
 ## Allows opt-out uv's venv
 #mkdir -p subdir
@@ -43,7 +130,7 @@ assert_not_contains "ls $PWD/my_venv/" "include" # stdlib virtual venv has an "i
 #python = "3.12.3"
 #uv = "0.5.4"
 #[settings]
-#python.uv_venv_auto = true
+#python.uv_venv_auto = "source"
 #EOF
 #touch uv.lock
 #

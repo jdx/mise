@@ -979,8 +979,10 @@
               "type": "string"
             },
             "uv_venv_auto": {
-              "description": "Integrate with uv to automatically create/source venvs if uv.lock is present.",
-              "type": "boolean"
+              "default": false,
+              "description": "Integrate with uv to manage project venvs when uv.lock is present.",
+              "type": ["boolean", "string"],
+              "enum": [false, "source", "create|source", true]
             },
             "uv_venv_create_args": {
               "description": "Arguments to pass to uv when creating a venv.",

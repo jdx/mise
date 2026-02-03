@@ -283,7 +283,7 @@ Available themes:
 If you're using a light terminal and the default theme is hard to read,
 try setting this to `base16`.
 """
-enum = [["default"], ["charm"], ["base16"], ["catppuccin"], ["dracula"]]
+enum = ["default", "charm", "base16", "catppuccin", "dracula"]
 env = "MISE_COLOR_THEME"
 type = "String"
 
@@ -867,7 +867,7 @@ type = "Bool"
 [log_level]
 default = "info"
 description = "Show more/less output."
-enum = [["trace"], ["debug"], ["info"], ["warn"], ["error"]]
+enum = ["trace", "debug", "info", "warn", "error"]
 env = "MISE_LOG_LEVEL"
 hide = true
 type = "String"
@@ -1165,9 +1165,23 @@ env = "MISE_PYENV_REPO"
 type = "String"
 
 [python.uv_venv_auto]
-description = "Integrate with uv to automatically create/source venvs if uv.lock is present."
+default = false
+description = "Integrate with uv to manage project venvs when uv.lock is present."
+docs = """
+Controls how mise handles uv project venvs when a uv.lock file is present.
+
+The legacy `true` value (will be deprecated in a future release) is treated like "create|source", with one difference:
+When using this, mise also exports `UV_PYTHON` to force uv to use the python version managed by mise.
+"""
+enum = [
+  { value = false, description = "disable uv venv integration" },
+  { value = "source", description = "only source an existing `.venv`" },
+  { value = "create|source", description = "create the venv if missing and source it" },
+  { value = true, description = "(create|source) with UV_PYTHON export (legacy)" },
+]
 env = "MISE_PYTHON_UV_VENV_AUTO"
-type = "Bool"
+rust_type = "PythonUvVenvAuto"
+type = "BoolOrString"
 
 [python.uv_venv_create_args]
 description = "Arguments to pass to uv when creating a venv."
@@ -1575,34 +1589,13 @@ docs = """
 Change output style when executing tasks. This controls the output of `mise run`.
 """
 enum = [
-  [
-    "prefix",
-    "(default if jobs > 1) print by line with the prefix of the task name",
-  ],
-  [
-    "interleave",
-    "(default if jobs == 1 or all tasks run sequentially) print output as it comes in",
-  ],
-  [
-    "keep-order",
-    "print output from tasks in the order they are defined",
-  ],
-  [
-    "replacing",
-    "replace stdout each time a line is printed-this uses similar logic as `mise install`",
-  ],
-  [
-    "timed",
-    "only show stdout lines that take longer than 1s to complete",
-  ],
-  [
-    "quiet",
-    "print only stdout/stderr from tasks and nothing from mise",
-  ],
-  [
-    "silent",
-    "print nothing from tasks or mise",
-  ],
+  { value = "prefix", description = "(default if jobs > 1) print by line with the prefix of the task name" },
+  { value = "interleave", description = "(default if jobs == 1 or all tasks run sequentially) print output as it comes in" },
+  { value = "keep-order", description = "print output from tasks in the order they are defined" },
+  { value = "replacing", description = "replace stdout each time a line is printed-this uses similar logic as `mise install`" },
+  { value = "timed", description = "only show stdout lines that take longer than 1s to complete" },
+  { value = "quiet", description = "print only stdout/stderr from tasks and nothing from mise" },
+  { value = "silent", description = "print nothing from tasks or mise" },
 ]
 env = "MISE_TASK_OUTPUT"
 optional = true

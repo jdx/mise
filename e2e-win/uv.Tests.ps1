@@ -18,7 +18,7 @@ Describe 'uv' {
     'python = "3.12.3"',
     'uv = "0.8.21"',
     '[settings]',
-    'python.uv_venv_auto = true'
+    'python.uv_venv_auto = "source"'
     ) | Set-Content .mise.toml
     mise trust --yes .mise.toml
 
