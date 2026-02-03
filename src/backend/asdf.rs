@@ -247,6 +247,12 @@ impl Backend for AsdfBackend {
         Some(PluginType::Asdf)
     }
 
+    /// ASDF plugins handle their own downloads through plugin scripts.
+    /// Lockfile URLs are not applicable since installation is delegated to plugin scripts.
+    fn supports_lockfile_url(&self) -> bool {
+        false
+    }
+
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let versions = self.plugin.fetch_remote_versions()?;
         Ok(versions
