@@ -44,6 +44,12 @@ impl Backend for CargoBackend {
         Ok(vec!["cargo-binstall", "sccache"])
     }
 
+    /// Cargo installs packages from crates.io using version specs (e.g., ripgrep@14.0.0).
+    /// It doesn't support installing from direct URLs, so lockfile URLs are not applicable.
+    fn supports_lockfile_url(&self) -> bool {
+        false
+    }
+
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         if self.git_url().is_some() {
             // TODO: maybe fetch tags/branches from git?
