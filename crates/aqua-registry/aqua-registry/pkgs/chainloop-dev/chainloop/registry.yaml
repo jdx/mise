@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: chainloop-dev
+    repo_name: chainloop
+    description: SDLC evidence store and policy engine for your Software Supply Chain attestations, SBOMs, VEX, SARIF, QA reports, and more
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.0-rc.3")
+        asset: chainloop-cli-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --key
+              - https://github.com/chainloop-dev/chainloop/releases/download/{{.Version}}/cosign.pub
+              - --signature
+              - https://github.com/chainloop-dev/chainloop/releases/download/{{.Version}}/checksums.txt.sig
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: chainloop-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --key
+              - https://github.com/chainloop-dev/chainloop/releases/download/{{.Version}}/cosign.pub
+              - --signature
+              - https://github.com/chainloop-dev/chainloop/releases/download/{{.Version}}/checksums.txt.sig
+        supported_envs:
+          - linux
+          - darwin

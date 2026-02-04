@@ -1,5 +1,32 @@
 # Changelog
 
+## [2026.2.3](https://github.com/jdx/mise/compare/v2026.2.2..v2026.2.3) - 2026-02-04
+
+### 🐛 Bug Fixes
+
+- **(install)** allow pipx/npm/cargo/asdf backends to work in locked mode by @jdx in [#7985](https://github.com/jdx/mise/pull/7985)
+
+### 📦️ Dependency Updates
+
+- update bytes to 1.11.1 to fix RUSTSEC-2026-0007 by @jdx in [#7986](https://github.com/jdx/mise/pull/7986)
+
+### 📦 Registry
+
+- add mermaid-ascii by @TyceHerrman in [#7984](https://github.com/jdx/mise/pull/7984)
+- add godot ([aqua:godotengine/godot](https://github.com/godotengine/godot)) by @dmarcoux in [#7989](https://github.com/jdx/mise/pull/7989)
+- add julia (http:julia) by @quinnj in [#7990](https://github.com/jdx/mise/pull/7990)
+
+### New Contributors
+
+- @quinnj made their first contribution in [#7990](https://github.com/jdx/mise/pull/7990)
+- @dmarcoux made their first contribution in [#7989](https://github.com/jdx/mise/pull/7989)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`chainloop-dev/chainloop`](https://github.com/chainloop-dev/chainloop)
+- [`redhat.com/openshift-install`](https://github.com/redhat.com/openshift-install)
 ## [2026.2.2](https://github.com/jdx/mise/compare/v2026.2.1..v2026.2.2) - 2026-02-03
 
 ### 🚀 Features
@@ -35,20 +62,6 @@
 
 - @gogolok made their first contribution in [#7980](https://github.com/jdx/mise/pull/7980)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (4)
-
-- [`autobrr/mkbrr`](https://github.com/autobrr/mkbrr)
-- [`dodobrands/Peekie`](https://github.com/dodobrands/Peekie)
-- [`grpc/grpc-java/protoc-gen-grpc-java`](https://github.com/grpc/grpc-java/protoc-gen-grpc-java)
-- [`str4d/age-plugin-yubikey`](https://github.com/str4d/age-plugin-yubikey)
-
-#### Updated Packages (3)
-
-- [`biomejs/biome`](https://github.com/biomejs/biome)
-- [`rust-cross/cargo-zigbuild`](https://github.com/rust-cross/cargo-zigbuild)
-- [`siderolabs/talos`](https://github.com/siderolabs/talos)
 ## [2026.2.1](https://github.com/jdx/mise/compare/v2026.2.0..v2026.2.1) - 2026-02-02
 
 ### 🚀 Features
