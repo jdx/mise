@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+
+# Test that `mise upgrade` correctly uninstalls old versions when lockfile is enabled
+# This is a regression test for https://github.com/jdx/mise/discussions/7991
+# The bug: When upgrading with lockfile enabled, old versions were incorrectly kept
+# because the tracked config check was using the old locked version instead of
+# resolving to the newest installed version.
+
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+# Clean up any existing installations
+mise uninstall dummy --all 2>/dev/null || true
+rm -f mise.toml mise.lock
+
+# Create config with a prefix version that matches multiple versions
+cat <<'EOF' >mise.toml
+[tools]
+dummy = "1"
+EOF
+
+# Create a lockfile with the old version locked
+touch mise.lock
+
+# Install only the older version first
+mise install dummy@1.0.0
+
+# Verify old version is installed
+assert_contains "mise ls --installed dummy" "1.0.0"
+assert_not_contains "mise ls --installed dummy" "1.1.0"
+
+# The lockfile should now have 1.0.0 locked
+assert_contains "cat mise.lock" "1.0.0"
+
+# Now upgrade - this should:
+# 1. Install 1.1.0 (the latest matching version)
+# 2. Uninstall 1.0.0 (no longer needed)
+mise upgrade dummy
+
+# Verify NEW version is installed
+assert_contains "mise ls --installed dummy" "1.1.0"
+
+# Verify OLD version was uninstalled (this is the bug - it was being kept)
+assert_not_contains "mise ls --installed dummy" "1.0.0"
+
+# The lockfile should now have 1.1.0
+assert_contains "cat mise.lock" "1.1.0"
+
+# Clean up
+rm -f mise.toml mise.lock
