@@ -35,13 +35,39 @@ impl Backend for NPMBackend {
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
-        // Don't include "npm" as dependency when we ARE npm itself (npm:npm)
-        // to avoid circular dependency that causes timeout
-        if self.tool_name() == "npm" {
-            Ok(vec!["node", "bun", "pnpm"])
-        } else {
-            Ok(vec!["node", "npm", "bun", "pnpm"])
+        // npm CLI is always needed for version queries (npm view), plus the configured
+        // package manager for installation. We avoid listing all package managers to
+        // prevent incorrect dependency edges.
+        let settings = Settings::get();
+        let package_manager = settings.npm.package_manager.as_str();
+        let tool_name = self.tool_name();
+
+        // Avoid circular dependency when installing npm itself
+        // But we still need the configured package manager for installation
+        if tool_name == "npm" {
+            return match package_manager {
+                "bun" => Ok(vec!["node", "bun"]),
+                "pnpm" => Ok(vec!["node", "pnpm"]),
+                _ => Ok(vec!["node"]),
+            };
         }
+
+        // Avoid circular dependency when installing the configured package manager
+        // e.g., npm:bun with bun configured, or npm:pnpm with pnpm configured
+        if tool_name == package_manager {
+            // Still need npm for version queries
+            return Ok(vec!["node", "npm"]);
+        }
+
+        // For regular packages: need npm (for version queries) + configured package manager
+        let mut deps = vec!["node", "npm"];
+        match package_manager {
+            "bun" => deps.push("bun"),
+            "pnpm" => deps.push("pnpm"),
+            // npm is already in deps
+            _ => {}
+        }
+        Ok(deps)
     }
 
     /// NPM installs packages from npm registry using version specs (e.g., eslint@8.0.0).
@@ -293,20 +319,21 @@ mod tests {
 
     #[test]
     fn test_get_dependencies_for_npm_itself() {
-        // When the tool is npm itself (npm:npm), it should NOT include "npm" in dependencies
-        // to avoid circular dependency that causes timeout
+        // When the tool is npm itself (npm:npm) with default settings (npm as package manager),
+        // it should only depend on node. With bun/pnpm configured, it would include those too.
         let backend = create_npm_backend("npm");
         let deps = backend.get_dependencies().unwrap();
-        assert!(!deps.contains(&"npm"), "npm:npm should not depend on npm");
-        assert!(deps.contains(&"node"));
+        assert_eq!(deps, vec!["node"]);
     }
 
     #[test]
-    fn test_get_dependencies_for_other_packages() {
-        // When the tool is any other npm package, it SHOULD include "npm" in dependencies
+    fn test_get_dependencies_default_package_manager() {
+        // With default settings (npm), packages should depend on node + npm
         let backend = create_npm_backend("prettier");
         let deps = backend.get_dependencies().unwrap();
-        assert!(deps.contains(&"npm"), "npm:prettier should depend on npm");
         assert!(deps.contains(&"node"));
+        assert!(deps.contains(&"npm"));
+        assert!(!deps.contains(&"bun"));
+        assert!(!deps.contains(&"pnpm"));
     }
 }
