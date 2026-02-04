@@ -13,6 +13,7 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 use tera::Context as TeraContext;
+use tera::Value as TeraValue;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value};
 use versions::Versioning;
 
@@ -647,6 +648,29 @@ impl ConfigFile for MiseToml {
         let mut trs = ToolRequestSet::new();
         let tools = self.tools.lock().unwrap();
         let mut context = self.context.clone();
+        if let Some(config) = Config::maybe_get()
+            && let Some(env_results) = config.env_results_cached()
+        {
+            let mut env_vars: EnvMap =
+                if let Some(TeraValue::Object(existing_env)) = context.get("env") {
+                    existing_env
+                        .iter()
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                        .collect()
+                } else {
+                    env::PRISTINE_ENV.clone()
+                };
+            for key in &env_results.env_remove {
+                env_vars.remove(key);
+            }
+            env_vars.extend(
+                env_results
+                    .env
+                    .iter()
+                    .map(|(k, (v, _))| (k.clone(), v.clone())),
+            );
+            context.insert("env", &env_vars);
+        }
         if context.get("vars").is_none()
             && let Some(config) = Config::maybe_get()
         {
@@ -1865,6 +1889,7 @@ mod tests {
     use test_log::test;
 
     use crate::dirs;
+    use crate::file;
     use crate::test::replace_path;
     use crate::toolset::ToolRequest;
     use crate::{config::Config, dirs::CWD};
@@ -1937,6 +1962,40 @@ mod tests {
             "{:#?}",
             cf.to_tool_request_set().unwrap().tools
         )));
+    }
+
+    #[tokio::test]
+    async fn test_env_source_var_in_tool() {
+        let cwd = CWD.as_ref().unwrap();
+        let script = cwd.join("set-go-version.sh");
+        let config_file = cwd.join(".test.mise.toml");
+
+        file::write(&script, "export MY_GO_VERSION=\"1.2.3\"\n").unwrap();
+        file::write(
+            &config_file,
+            r#"
+        [env]
+        _.source = "./set-go-version.sh"
+
+        [tools]
+        go = "{{env.MY_GO_VERSION}}"
+        "#,
+        )
+        .unwrap();
+
+        let config = Config::reset().await.unwrap();
+        let trs = config.get_tool_request_set().await.unwrap();
+        let go_req = trs
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "go")
+            .and_then(|(_, reqs)| reqs.first())
+            .unwrap();
+
+        assert_eq!(go_req.version(), "1.2.3");
+
+        file::remove_file(&config_file).unwrap();
+        file::remove_file(&script).unwrap();
     }
 
     #[tokio::test]

@@ -4,12 +4,13 @@ use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 pub use settings::Settings;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::env::join_paths;
 use std::fmt::{Debug, Formatter};
 use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tokio::{sync::OnceCell, task::JoinSet};
 use walkdir::WalkDir;
 
@@ -27,6 +28,7 @@ use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::{Task, TaskTemplate};
+use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
     ToolRequestSet, ToolRequestSetBuilder, ToolVersion, ToolVersionOptions, Toolset, install_state,
 };
@@ -251,6 +253,7 @@ impl Config {
         });
 
         let config = Arc::new(config);
+        config.env_results().await?;
         *_CONFIG.write().unwrap() = Some(config.clone());
         Ok(config)
     }
@@ -308,13 +311,16 @@ impl Config {
             .await
     }
 
+    pub fn env_results_cached(&self) -> Option<&EnvResults> {
+        self.env.get()
+    }
     pub fn vars_results_cached(&self) -> Option<&EnvResults> {
         self.vars_results.get()
     }
     pub async fn path_dirs(self: &Arc<Self>) -> eyre::Result<&Vec<PathBuf>> {
         Ok(&self.env_results().await?.env_paths)
     }
-    pub async fn get_tool_request_set(&self) -> eyre::Result<&ToolRequestSet> {
+    pub async fn get_tool_request_set(self: &Arc<Self>) -> eyre::Result<&ToolRequestSet> {
         self.tool_request_set
             .get_or_try_init(async || ToolRequestSetBuilder::new().build(self).await)
             .await
@@ -568,6 +574,61 @@ impl Config {
             return Ok(EnvResults::default());
         }
         time!("load_env start");
+        let cache_enabled = CachedNonToolEnv::is_enabled();
+        let cache_key = if cache_enabled {
+            let config_files: Vec<(PathBuf, u64)> = self
+                .config_files
+                .keys()
+                .map(|p| (p.clone(), get_file_mtime(p).unwrap_or(0)))
+                .collect();
+            let settings_hash = compute_settings_hash();
+            let base_path = join_paths(env::PATH.iter())
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default();
+            Some(CachedNonToolEnv::compute_cache_key(
+                &config_files,
+                &settings_hash,
+                &base_path,
+            ))
+        } else {
+            None
+        };
+        if let Some(cache_key) = cache_key.as_ref()
+            && let Some(cached) = CachedNonToolEnv::load(cache_key)?
+        {
+            let env_results = EnvResults {
+                env: cached.env.clone(),
+                vars: Default::default(),
+                env_remove: cached.env_remove.clone(),
+                env_files: cached.env_files.clone(),
+                env_paths: cached.env_paths.clone(),
+                env_scripts: cached.env_scripts.clone(),
+                redactions: cached.redactions.clone(),
+                tool_add_paths: Vec::new(),
+                watch_files: cached.watch_files.clone(),
+                has_uncacheable: false,
+            };
+            let redact_keys = self
+                .redaction_keys()
+                .into_iter()
+                .chain(env_results.redactions.clone())
+                .collect_vec();
+            self.add_redactions(
+                redact_keys,
+                &env_results
+                    .env
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.0.clone()))
+                    .collect(),
+            );
+            if log::log_enabled!(log::Level::Trace) {
+                trace!("{env_results:#?}");
+            } else if !env_results.is_empty() {
+                debug!("{env_results:?}");
+            }
+            trace!("env_cache: using cached non-tool env results");
+            return Ok(env_results);
+        }
         let entries = self
             .config_files
             .iter()
@@ -606,6 +667,38 @@ impl Config {
                 .map(|(k, v)| (k.clone(), v.0.clone()))
                 .collect(),
         );
+        if cache_enabled
+            && !env_results.has_uncacheable
+            && let Some(cache_key) = cache_key
+        {
+            let mut watch_files = env_results.watch_files.clone();
+            watch_files.extend(env_results.env_files.clone());
+            watch_files.extend(env_results.env_scripts.clone());
+            let watch_file_mtimes: Vec<u64> = watch_files
+                .iter()
+                .map(|p| get_file_mtime(p).unwrap_or(0))
+                .collect();
+            let now = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let cached = CachedNonToolEnv {
+                env: env_results.env.clone(),
+                env_remove: env_results.env_remove.clone(),
+                env_files: env_results.env_files.clone(),
+                env_paths: env_results.env_paths.clone(),
+                env_scripts: env_results.env_scripts.clone(),
+                redactions: env_results.redactions.clone(),
+                watch_files,
+                watch_file_mtimes,
+                created_at: now,
+                mise_version: env!("CARGO_PKG_VERSION").to_string(),
+                cache_key_debug: cache_key.clone(),
+            };
+            if let Err(e) = cached.save(&cache_key) {
+                debug!("env_cache: failed to save non-tool env cache: {}", e);
+            }
+        }
         if log::log_enabled!(log::Level::Trace) {
             trace!("{env_results:#?}");
         } else if !env_results.is_empty() {

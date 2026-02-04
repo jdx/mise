@@ -161,7 +161,7 @@ impl ToolRequestSetBuilder {
     // }
     //
 
-    pub async fn build(&self, config: &Config) -> eyre::Result<ToolRequestSet> {
+    pub async fn build(&self, config: &Arc<Config>) -> eyre::Result<ToolRequestSet> {
         let mut trs = ToolRequestSet::default();
         trs = self.load_config_files(config, trs).await?;
         trs = self.load_runtime_env(trs)?;
@@ -192,7 +192,7 @@ impl ToolRequestSetBuilder {
 
     async fn load_config_files(
         &self,
-        config: &Config,
+        config: &Arc<Config>,
         mut trs: ToolRequestSet,
     ) -> eyre::Result<ToolRequestSet> {
         for cf in config.config_files.values().rev() {
