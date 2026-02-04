@@ -208,8 +208,8 @@ impl ToolRequestSetBuilder {
                     .trim_start_matches("MISE_")
                     .trim_end_matches("_VERSION")
                     .to_lowercase();
-                if plugin_name == "install" {
-                    // ignore MISE_INSTALL_VERSION
+                if plugin_name == "install" || plugin_name == "tool" {
+                    // ignore MISE_INSTALL_VERSION and MISE_TOOL_VERSION (set during hooks)
                     continue;
                 }
                 let ba: Arc<BackendArg> = Arc::new(plugin_name.as_str().into());
