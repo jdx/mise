@@ -43,8 +43,13 @@ impl Backend for NPMBackend {
         let tool_name = self.tool_name();
 
         // Avoid circular dependency when installing npm itself
+        // But we still need the configured package manager for installation
         if tool_name == "npm" {
-            return Ok(vec!["node"]);
+            return match package_manager {
+                "bun" => Ok(vec!["node", "bun"]),
+                "pnpm" => Ok(vec!["node", "pnpm"]),
+                _ => Ok(vec!["node"]),
+            };
         }
 
         // Avoid circular dependency when installing the configured package manager
@@ -314,7 +319,8 @@ mod tests {
 
     #[test]
     fn test_get_dependencies_for_npm_itself() {
-        // When the tool is npm itself (npm:npm), it should only depend on node
+        // When the tool is npm itself (npm:npm) with default settings (npm as package manager),
+        // it should only depend on node. With bun/pnpm configured, it would include those too.
         let backend = create_npm_backend("npm");
         let deps = backend.get_dependencies().unwrap();
         assert_eq!(deps, vec!["node"]);
