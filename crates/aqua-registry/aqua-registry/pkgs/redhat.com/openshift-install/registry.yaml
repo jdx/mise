@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: redhat.com/openshift-install
+    type: http
+    url: https://mirror.openshift.com/pub/openshift-v4/{{.Arch}}/clients/ocp/{{trimV .Version}}/openshift-install-{{.OS}}.tar.gz
+    description: Install an OpenShift 4.x cluster
+    replacements:
+      darwin: mac
+    supported_envs:
+      - darwin
+      - linux
+    checksum:
+      type: http
+      url: https://mirror.openshift.com/pub/openshift-v4/{{.Arch}}/clients/ocp/{{trimV .Version}}/sha256sum.txt
+      algorithm: sha256
+      file_format: regexp
+      pattern:
+        checksum: ^(\b[A-Fa-f0-9]{64}\b)
+        file: "^\\b[A-Fa-f0-9]{64}\\b\\s+(\\S+)$"
