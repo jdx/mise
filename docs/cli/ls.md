@@ -53,6 +53,10 @@ Don't display headers
 
 Display whether a version is outdated
 
+### `--all-sources`
+
+Display all tracked config sources for tools
+
 ### `--prefix <PREFIX>`
 
 Display versions matching this prefix
@@ -87,4 +91,8 @@ $ mise ls --json
   ],
   "python": [...]
 }
+
+$ mise ls --all-sources
+node    20.0.0  ~/src/myapp/mise.toml  20
+                ~/.config/mise/config.toml  latest
 ```

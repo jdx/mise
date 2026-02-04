@@ -531,7 +531,7 @@ cmd lock help="Update lockfile checksums and URLs for all specified platforms" {
 cmd ls help="List installed and active tool versions" {
     alias list
     long_help "List installed and active tool versions\n\nThis command lists tools that mise \"knows about\".\nThese may be tools that are currently installed, or those\nthat are in a config file (active) but may or may not be installed.\n\nIt's a useful command to get the current state of your tools."
-    after_long_help "Examples:\n\n    $ mise ls\n    node    20.0.0 ~/src/myapp/.tool-versions latest\n    python  3.11.0 ~/.tool-versions           3.10\n    python  3.10.0\n\n    $ mise ls --current\n    node    20.0.0 ~/src/myapp/.tool-versions 20\n    python  3.11.0 ~/.tool-versions           3.11.0\n\n    $ mise ls --json\n    {\n      \"node\": [\n        {\n          \"version\": \"20.0.0\",\n          \"install_path\": \"/Users/jdx/.mise/installs/node/20.0.0\",\n          \"source\": {\n            \"type\": \"mise.toml\",\n            \"path\": \"/Users/jdx/mise.toml\"\n          }\n        }\n      ],\n      \"python\": [...]\n    }\n"
+    after_long_help "Examples:\n\n    $ mise ls\n    node    20.0.0 ~/src/myapp/.tool-versions latest\n    python  3.11.0 ~/.tool-versions           3.10\n    python  3.10.0\n\n    $ mise ls --current\n    node    20.0.0 ~/src/myapp/.tool-versions 20\n    python  3.11.0 ~/.tool-versions           3.11.0\n\n    $ mise ls --json\n    {\n      \"node\": [\n        {\n          \"version\": \"20.0.0\",\n          \"install_path\": \"/Users/jdx/.mise/installs/node/20.0.0\",\n          \"source\": {\n            \"type\": \"mise.toml\",\n            \"path\": \"/Users/jdx/mise.toml\"\n          }\n        }\n      ],\n      \"python\": [...]\n    }\n\n    $ mise ls --all-sources\n    node    20.0.0  ~/src/myapp/mise.toml  20\n                    ~/.config/mise/config.toml  latest\n"
     flag "-c --current" help="Only show tool versions currently specified in a mise.toml"
     flag "-g --global" help="Only show tool versions currently specified in the global mise.toml"
     flag "-i --installed" help="Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)"
@@ -544,6 +544,7 @@ cmd ls help="List installed and active tool versions" {
     }
     flag --no-header help="Don't display headers"
     flag --outdated help="Display whether a version is outdated"
+    flag --all-sources help="Display all tracked config sources for tools"
     flag --prefix help="Display versions matching this prefix" {
         arg <PREFIX>
     }

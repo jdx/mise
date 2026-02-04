@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+mkdir -p project-a project-b
+
+echo "tools.dummy = '1'" >project-a/mise.toml
+echo "tools.dummy = '1'" >project-b/mise.toml
+
+assert_succeed "cd project-a && mise ls dummy"
+assert_succeed "cd project-b && mise ls dummy"
+
+assert_contains "mise ls dummy --all-sources" "dummy  1.1.0 (missing)  ~/workdir/project-a/mise.toml  1"
+assert_contains "mise ls dummy --all-sources" "~/workdir/project-b/mise.toml  1"
+
+assert "mise ls dummy --all-sources --json | jq -r '.[0].sources | length'" "2"
+assert_contains "mise ls dummy --all-sources --json" "project-a/mise.toml"
+assert_contains "mise ls dummy --all-sources --json" "project-b/mise.toml"
