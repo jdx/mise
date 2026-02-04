@@ -438,9 +438,16 @@ pub async fn get_versions_needed_by_tracked_configs(
     config: &Arc<Config>,
 ) -> Result<std::collections::HashSet<(String, String)>> {
     let mut needed = std::collections::HashSet::new();
+    // Use use_locked_version: false to resolve based on what config files actually
+    // request, not what was previously locked. This is important during upgrade
+    // because the lockfile hasn't been updated yet when this is called.
+    let opts = ResolveOptions {
+        use_locked_version: false,
+        ..Default::default()
+    };
     for cf in config.get_tracked_config_files().await?.values() {
         let mut ts = Toolset::from(cf.to_tool_request_set()?);
-        ts.resolve(config).await?;
+        ts.resolve_with_opts(config, &opts).await?;
         for (_, tv) in ts.list_current_versions() {
             needed.insert((tv.ba().short.to_string(), tv.tv_pathname()));
         }
