@@ -35,13 +35,23 @@ impl Backend for NPMBackend {
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
-        // Don't include "npm" as dependency when we ARE npm itself (npm:npm)
-        // to avoid circular dependency that causes timeout
+        // Only declare the package manager that's actually configured as a dependency.
+        // Previously all package managers were listed, which created incorrect dependency
+        // edges and prevented proper installation ordering.
         if self.tool_name() == "npm" {
-            Ok(vec!["node", "bun", "pnpm"])
-        } else {
-            Ok(vec!["node", "npm", "bun", "pnpm"])
+            // npm:npm should not depend on itself to avoid circular dependency
+            return Ok(vec!["node"]);
         }
+        let mut deps = vec!["node"];
+        match Settings::get().npm.package_manager.as_str() {
+            "bun" => deps.push("bun"),
+            "pnpm" => {
+                deps.push("npm");
+                deps.push("pnpm");
+            }
+            _ => deps.push("npm"),
+        }
+        Ok(deps)
     }
 
     /// NPM installs packages from npm registry using version specs (e.g., eslint@8.0.0).
@@ -293,20 +303,20 @@ mod tests {
 
     #[test]
     fn test_get_dependencies_for_npm_itself() {
-        // When the tool is npm itself (npm:npm), it should NOT include "npm" in dependencies
-        // to avoid circular dependency that causes timeout
+        // When the tool is npm itself (npm:npm), it should only depend on node
         let backend = create_npm_backend("npm");
         let deps = backend.get_dependencies().unwrap();
-        assert!(!deps.contains(&"npm"), "npm:npm should not depend on npm");
-        assert!(deps.contains(&"node"));
+        assert_eq!(deps, vec!["node"]);
     }
 
     #[test]
-    fn test_get_dependencies_for_other_packages() {
-        // When the tool is any other npm package, it SHOULD include "npm" in dependencies
+    fn test_get_dependencies_default_package_manager() {
+        // With default settings (npm), packages should depend on node + npm
         let backend = create_npm_backend("prettier");
         let deps = backend.get_dependencies().unwrap();
-        assert!(deps.contains(&"npm"), "npm:prettier should depend on npm");
         assert!(deps.contains(&"node"));
+        assert!(deps.contains(&"npm"));
+        assert!(!deps.contains(&"bun"));
+        assert!(!deps.contains(&"pnpm"));
     }
 }
