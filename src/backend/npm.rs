@@ -35,23 +35,32 @@ impl Backend for NPMBackend {
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
-        // Only declare the package manager that's actually configured as a dependency.
-        // Previously all package managers were listed, which created incorrect dependency
-        // edges and prevented proper installation ordering.
+        // npm CLI is always needed for version queries (npm view), plus the configured
+        // package manager for installation. We avoid listing all package managers to
+        // prevent incorrect dependency edges.
         let settings = Settings::get();
         let package_manager = settings.npm.package_manager.as_str();
+        let tool_name = self.tool_name();
 
-        // Avoid circular dependency when installing the package manager itself
-        // e.g., npm:npm, npm:pnpm, or npm:bun shouldn't depend on themselves
-        if self.tool_name() == package_manager {
+        // Avoid circular dependency when installing npm itself
+        if tool_name == "npm" {
             return Ok(vec!["node"]);
         }
 
-        let mut deps = vec!["node"];
+        // Avoid circular dependency when installing the configured package manager
+        // e.g., npm:bun with bun configured, or npm:pnpm with pnpm configured
+        if tool_name == package_manager {
+            // Still need npm for version queries
+            return Ok(vec!["node", "npm"]);
+        }
+
+        // For regular packages: need npm (for version queries) + configured package manager
+        let mut deps = vec!["node", "npm"];
         match package_manager {
             "bun" => deps.push("bun"),
             "pnpm" => deps.push("pnpm"),
-            _ => deps.push("npm"),
+            // npm is already in deps
+            _ => {}
         }
         Ok(deps)
     }
