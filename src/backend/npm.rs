@@ -38,17 +38,19 @@ impl Backend for NPMBackend {
         // Only declare the package manager that's actually configured as a dependency.
         // Previously all package managers were listed, which created incorrect dependency
         // edges and prevented proper installation ordering.
-        if self.tool_name() == "npm" {
-            // npm:npm should not depend on itself to avoid circular dependency
+        let settings = Settings::get();
+        let package_manager = settings.npm.package_manager.as_str();
+
+        // Avoid circular dependency when installing the package manager itself
+        // e.g., npm:npm, npm:pnpm, or npm:bun shouldn't depend on themselves
+        if self.tool_name() == package_manager {
             return Ok(vec!["node"]);
         }
+
         let mut deps = vec!["node"];
-        match Settings::get().npm.package_manager.as_str() {
+        match package_manager {
             "bun" => deps.push("bun"),
-            "pnpm" => {
-                deps.push("npm");
-                deps.push("pnpm");
-            }
+            "pnpm" => deps.push("pnpm"),
             _ => deps.push("npm"),
         }
         Ok(deps)
