@@ -1599,6 +1599,11 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--all-sources",
+          description: "Display all tracked config sources for tools",
+          isRepeatable: false,
+        },
+        {
           name: "--prefix",
           description: "Display versions matching this prefix",
           isRepeatable: false,
