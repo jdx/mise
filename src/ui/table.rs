@@ -89,6 +89,7 @@ impl MiseTable {
         for line in table.lines() {
             let line = line.strip_prefix(' ').unwrap_or(line);
             let line = re.replacen(line, 1, "$1");
+            let line = line.trim_end();
             println!("{line}");
         }
         Ok(())
