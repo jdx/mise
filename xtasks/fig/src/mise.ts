@@ -1589,6 +1589,11 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--all-sources",
+          description: "Display all tracked config sources for tools",
+          isRepeatable: false,
+        },
+        {
           name: "--no-header",
           description: "Don't display headers",
           isRepeatable: false,
@@ -1596,11 +1601,6 @@ const completionSpec: Fig.Spec = {
         {
           name: "--outdated",
           description: "Display whether a version is outdated",
-          isRepeatable: false,
-        },
-        {
-          name: "--all-sources",
-          description: "Display all tracked config sources for tools",
           isRepeatable: false,
         },
         {

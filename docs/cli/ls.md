@@ -45,6 +45,10 @@ Only show tool versions currently specified in the local mise.toml
 
 Display missing tool versions
 
+### `--all-sources`
+
+Display all tracked config sources for tools
+
 ### `--no-header`
 
 Don't display headers
@@ -52,10 +56,6 @@ Don't display headers
 ### `--outdated`
 
 Display whether a version is outdated
-
-### `--all-sources`
-
-Display all tracked config sources for tools
 
 ### `--prefix <PREFIX>`
 

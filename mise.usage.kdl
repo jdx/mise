@@ -542,9 +542,9 @@ cmd ls help="List installed and active tool versions" {
     flag "-p --plugin" hide=#true {
         arg <TOOL_FLAG>
     }
+    flag --all-sources help="Display all tracked config sources for tools"
     flag --no-header help="Don't display headers"
     flag --outdated help="Display whether a version is outdated"
-    flag --all-sources help="Display all tracked config sources for tools"
     flag --prefix help="Display versions matching this prefix" {
         arg <PREFIX>
     }
