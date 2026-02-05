@@ -1,0 +1,3 @@
+backends = ["aqua:kyverno/chainsaw", "github:kyverno/chainsaw"]
+description = "Declarative K8s e2e testing"
+test = ["chainsaw version | head -n1", "Version: {{version}}"]
