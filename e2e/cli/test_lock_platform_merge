@@ -3,7 +3,6 @@
 # Test that lockfile platform info merging preserves URLs and prefers sha256 over blake3
 
 export MISE_LOCKFILE=1
-export MISE_EXPERIMENTAL=1
 
 echo "=== Testing lockfile platform merge preserves URL and sha256 checksum ==="
 rm -f mise.toml mise.lock

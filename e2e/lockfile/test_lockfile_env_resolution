@@ -3,7 +3,6 @@
 # Test that MISE_ENV selects the correct locked version
 
 export MISE_LOCKFILE=1
-export MISE_EXPERIMENTAL=1
 
 # Create config requesting "tiny"
 cat >mise.toml <<'EOF'

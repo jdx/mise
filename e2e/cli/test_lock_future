@@ -5,7 +5,6 @@
 # even when running on a different platform (e.g., generating linux URLs from macOS)
 
 export MISE_LOCKFILE=1
-export MISE_EXPERIMENTAL=1
 
 echo "=== Testing cross-platform URL generation ==="
 

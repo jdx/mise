@@ -3,7 +3,6 @@
 # Test that local configs use mise.local.lock
 
 export MISE_LOCKFILE=1
-export MISE_EXPERIMENTAL=1
 
 # Create base config
 cat >mise.toml <<'EOF'

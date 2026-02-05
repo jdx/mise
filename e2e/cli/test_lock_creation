@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 export MISE_LOCKFILE=1
-export MISE_EXPERIMENTAL=1
 
 echo "=== Testing lockfile creation with aqua tool ==="
 # Create a mise.toml with an aqua tool (which supports cross-platform resolution)

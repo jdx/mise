@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 export MISE_LOCKFILE=1
-export MISE_EXPERIMENTAL=1
 
 touch mise.lock
 assert "mise install tiny@1.0.0"
