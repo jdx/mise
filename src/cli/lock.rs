@@ -69,24 +69,29 @@ impl Lock {
         let config = Config::get().await?;
         settings.ensure_experimental("lock")?;
 
-        // Get toolset and group tools by their target lockfile
         let ts = config.get_toolset().await?;
-        let tools_by_lockfile = self.get_tools_by_lockfile(&config, ts);
 
-        if tools_by_lockfile.is_empty() {
-            miseprintln!("{} No tools configured to lock", style("!").yellow());
-            return Ok(());
-        }
+        // Two-pass approach: first non-local (mise.lock), then local (mise.local.lock).
+        // With --local, only the local pass runs.
+        let passes: &[bool] = if self.local { &[true] } else { &[false, true] };
+        let mut any_tools = false;
 
-        for (lockfile_path, tools) in &tools_by_lockfile {
-            // Determine target platforms per lockfile
-            let target_platforms = self.determine_target_platforms(lockfile_path)?;
+        for &is_local in passes {
+            let lockfile_path = self.get_lockfile_path(&config, is_local);
+            let tools = self.get_tools_to_lock(&config, ts, is_local);
+
+            if tools.is_empty() {
+                continue;
+            }
+            any_tools = true;
+
+            let target_platforms = self.determine_target_platforms(&lockfile_path)?;
 
             miseprintln!(
                 "{} Targeting {} platform(s) for {}: {}",
                 style("→").cyan(),
                 target_platforms.len(),
-                style(display_path(lockfile_path)).cyan(),
+                style(display_path(&lockfile_path)).cyan(),
                 target_platforms
                     .iter()
                     .map(|p| p.to_key())
@@ -106,18 +111,18 @@ impl Lock {
             );
 
             if self.dry_run {
-                self.show_dry_run(tools, &target_platforms)?;
+                self.show_dry_run(&tools, &target_platforms)?;
                 continue;
             }
 
             // Process tools and update lockfile
-            let mut lockfile = Lockfile::read(lockfile_path)?;
+            let mut lockfile = Lockfile::read(&lockfile_path)?;
             let results = self
-                .process_tools(&settings, tools, &target_platforms, &mut lockfile)
+                .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
                 .await?;
 
             // Save lockfile
-            lockfile.write(lockfile_path)?;
+            lockfile.write(&lockfile_path)?;
 
             // Print summary
             let successful = results.iter().filter(|(_, _, ok)| *ok).count();
@@ -131,11 +136,32 @@ impl Lock {
             miseprintln!(
                 "{} Lockfile written to {}",
                 style("✓").green(),
-                style(display_path(lockfile_path)).cyan()
+                style(display_path(&lockfile_path)).cyan()
             );
         }
 
+        if !any_tools {
+            miseprintln!("{} No tools configured to lock", style("!").yellow());
+        }
+
         Ok(())
+    }
+
+    /// Get the lockfile path for either the local or non-local pass.
+    fn get_lockfile_path(&self, config: &Config, is_local: bool) -> PathBuf {
+        let lockfile_name = if is_local {
+            "mise.local.lock"
+        } else {
+            "mise.lock"
+        };
+        if let Some(config_path) = config.config_files.keys().next() {
+            let (lockfile_path, _) = lockfile::lockfile_path_for_config(config_path);
+            lockfile_path.with_file_name(lockfile_name)
+        } else {
+            std::env::current_dir()
+                .unwrap_or_default()
+                .join(lockfile_name)
+        }
     }
 
     fn determine_target_platforms(&self, lockfile_path: &PathBuf) -> Result<Vec<Platform>> {
@@ -163,14 +189,16 @@ impl Lock {
         Ok(platforms.into_iter().collect())
     }
 
-    /// Group tools by their target lockfile path.
-    /// Tools from `mise.toml` go to `mise.lock`, tools from `mise.local.toml` go to `mise.local.lock`.
-    fn get_tools_by_lockfile(
+    /// Collect tools that belong to a given lockfile pass (local or non-local).
+    /// Only includes tools whose source config matches the requested locality.
+    fn get_tools_to_lock(
         &self,
         config: &Config,
         ts: &Toolset,
-    ) -> BTreeMap<PathBuf, Vec<(crate::cli::args::BackendArg, crate::toolset::ToolVersion)>> {
-        // Calculate target lockfile directory from the first config file
+        is_local: bool,
+    ) -> Vec<(crate::cli::args::BackendArg, crate::toolset::ToolVersion)> {
+        // Determine the reference lockfile directory from the first config file.
+        // Used to filter out tools from unrelated directories (e.g. global config).
         let target_lockfile_dir = config
             .config_files
             .keys()
@@ -184,7 +212,6 @@ impl Lock {
             })
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
-        // Helper to get lockfile directory for a config path
         let get_lockfile_dir = |path: &std::path::Path| -> PathBuf {
             let (lockfile_path, _) = lockfile::lockfile_path_for_config(path);
             lockfile_path
@@ -193,106 +220,70 @@ impl Lock {
                 .unwrap_or_default()
         };
 
-        let default_lockfile = if self.local {
-            target_lockfile_dir.join("mise.local.lock")
-        } else {
-            target_lockfile_dir.join("mise.lock")
-        };
+        let mut all_tools: Vec<_> = Vec::new();
+        let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
 
-        let mut result: BTreeMap<PathBuf, Vec<_>> = BTreeMap::new();
-        // Include lockfile path in seen key so the same tool can appear in different lockfiles
-        let mut seen: BTreeSet<(PathBuf, String, String)> = BTreeSet::new();
-
-        // First, get all tools from the resolved toolset grouped by their source config's lockfile
+        // First pass: tools from the resolved toolset whose source matches this locality
         for (backend, tv) in ts.list_current_versions() {
-            let lockfile_path = if let Some(source_path) = tv.request.source().path() {
-                // Skip tools from config files in different directories
+            if let Some(source_path) = tv.request.source().path() {
                 if get_lockfile_dir(source_path) != target_lockfile_dir {
                     continue;
                 }
-                let (path, is_local) = lockfile::lockfile_path_for_config(source_path);
-                // With --local, only include tools from local configs
-                if self.local && !is_local {
+                let (_, source_is_local) = lockfile::lockfile_path_for_config(source_path);
+                if source_is_local != is_local {
                     continue;
                 }
-                path
             } else {
-                // Tools without a source path (e.g. from env vars or CLI args) aren't
-                // from any config file, so skip them when --local is set.
-                if self.local {
+                // Tools without a source path (env vars, CLI args) go to non-local only
+                if is_local {
                     continue;
                 }
-                default_lockfile.clone()
-            };
-
-            let key = (
-                lockfile_path.clone(),
-                backend.ba().short.clone(),
-                tv.version.clone(),
-            );
+            }
+            let key = (backend.ba().short.clone(), tv.version.clone());
             if seen.insert(key) {
-                result
-                    .entry(lockfile_path)
-                    .or_default()
-                    .push((backend.ba().as_ref().clone(), tv));
+                all_tools.push((backend.ba().as_ref().clone(), tv));
             }
         }
 
-        // Then, iterate config files to find tools that may have been overridden
-        // This ensures each lockfile gets the tools defined in its corresponding config
+        // Second pass: iterate config files matching this locality to catch
+        // tools that were overridden by a higher-priority config
         for (path, cf) in config.config_files.iter() {
-            // Skip config files that don't share the same lockfile directory
             if get_lockfile_dir(path) != target_lockfile_dir {
                 continue;
             }
-            let (lockfile_path, is_local) = lockfile::lockfile_path_for_config(path);
-            if self.local && !is_local {
+            let (_, config_is_local) = lockfile::lockfile_path_for_config(path);
+            if config_is_local != is_local {
                 continue;
             }
-
             if let Ok(trs) = cf.to_tool_request_set() {
                 for (ba, requests, _source) in trs.iter() {
                     for request in requests {
-                        // Try to get a resolved version for this request
                         if let Ok(backend) = ba.backend() {
-                            // Check if we already have this tool+version in toolset
+                            // Check if the resolved toolset has a matching version
                             if let Some(resolved_tv) = ts.versions.get(ba.as_ref()) {
                                 for tv in &resolved_tv.versions {
                                     if tv.request.version() == request.version() {
-                                        let key = (
-                                            lockfile_path.clone(),
-                                            ba.short.clone(),
-                                            tv.version.clone(),
-                                        );
+                                        let key = (ba.short.clone(), tv.version.clone());
                                         if seen.insert(key) {
-                                            result
-                                                .entry(lockfile_path.clone())
-                                                .or_default()
-                                                .push((ba.as_ref().clone(), tv.clone()));
+                                            all_tools.push((ba.as_ref().clone(), tv.clone()));
                                         }
                                     }
                                 }
                             }
-                            // For "latest" requests, find the highest installed version
+                            // For "latest" or prefix requests not yet matched, find the
+                            // best installed version (handles overridden tools)
                             if request.version() == "latest" {
                                 let installed = backend.list_installed_versions();
                                 if let Some(latest_version) = installed.iter().max_by(|a, b| {
                                     versions::Versioning::new(a).cmp(&versions::Versioning::new(b))
                                 }) {
-                                    let key = (
-                                        lockfile_path.clone(),
-                                        ba.short.clone(),
-                                        latest_version.clone(),
-                                    );
+                                    let key = (ba.short.clone(), latest_version.clone());
                                     if seen.insert(key) {
                                         let tv = crate::toolset::ToolVersion::new(
                                             request.clone(),
                                             latest_version.clone(),
                                         );
-                                        result
-                                            .entry(lockfile_path.clone())
-                                            .or_default()
-                                            .push((ba.as_ref().clone(), tv));
+                                        all_tools.push((ba.as_ref().clone(), tv));
                                     }
                                 }
                             }
@@ -302,17 +293,16 @@ impl Lock {
             }
         }
 
-        // Filter to specified tools if --tool was provided
-        if !self.tool.is_empty() {
+        if self.tool.is_empty() {
+            all_tools
+        } else {
             let specified: BTreeSet<String> =
                 self.tool.iter().map(|t| t.ba.short.clone()).collect();
-            for tools in result.values_mut() {
-                tools.retain(|(ba, _)| specified.contains(&ba.short));
-            }
-            result.retain(|_, tools| !tools.is_empty());
+            all_tools
+                .into_iter()
+                .filter(|(ba, _)| specified.contains(&ba.short))
+                .collect()
         }
-
-        result
     }
 
     fn show_dry_run(
