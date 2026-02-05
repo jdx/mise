@@ -63,6 +63,10 @@ pub struct Ls {
     #[clap(long = "plugin", short = 'p', hide = true)]
     tool_flag: Option<BackendArg>,
 
+    /// Display all tracked config sources for tools
+    #[clap(long, conflicts_with_all = &["current", "global", "local", "prunable"])]
+    all_sources: bool,
+
     /// Don't display headers
     #[clap(long, alias = "no-headers", verbatim_doc_comment, conflicts_with_all = &["json"])]
     no_header: bool,
@@ -70,10 +74,6 @@ pub struct Ls {
     /// Display whether a version is outdated
     #[clap(long)]
     outdated: bool,
-
-    /// Display all tracked config sources for tools
-    #[clap(long, conflicts_with_all = &["current", "global", "local", "prunable"])]
-    all_sources: bool,
 
     /// Display versions matching this prefix
     #[clap(long, requires = "installed_tool")]
