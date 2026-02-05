@@ -343,8 +343,7 @@ impl Ls {
         let sources_map = collect_sources(&ts);
 
         let rvs: Vec<RuntimeRow<'_>> = ts
-            .list_all_versions(config)
-            .await?
+            .list_current_versions()
             .into_iter()
             .map(|(b, tv)| ((b, tv.version.clone()), tv))
             .filter(|((b, _), _)| match &self.installed_tool {
