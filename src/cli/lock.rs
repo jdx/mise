@@ -69,96 +69,73 @@ impl Lock {
         let config = Config::get().await?;
         settings.ensure_experimental("lock")?;
 
-        // Determine lockfile path based on config root
-        let lockfile_path = self.get_lockfile_path(&config);
-
-        // Determine target platforms
-        let target_platforms = self.determine_target_platforms(&lockfile_path)?;
-
-        miseprintln!(
-            "{} Targeting {} platform(s): {}",
-            style("→").cyan(),
-            target_platforms.len(),
-            target_platforms
-                .iter()
-                .map(|p| p.to_key())
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-
-        // Get toolset and resolve versions
+        // Get toolset and group tools by their target lockfile
         let ts = config.get_toolset().await?;
-        let tools = self.get_tools_to_lock(&config, ts);
+        let tools_by_lockfile = self.get_tools_by_lockfile(&config, ts);
 
-        if tools.is_empty() {
+        if tools_by_lockfile.is_empty() {
             miseprintln!("{} No tools configured to lock", style("!").yellow());
             return Ok(());
         }
 
-        miseprintln!(
-            "{} Processing {} tool(s): {}",
-            style("→").cyan(),
-            tools.len(),
-            tools
-                .iter()
-                .map(|(ba, tv)| format!("{}@{}", ba.short, tv.version))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
+        for (lockfile_path, tools) in &tools_by_lockfile {
+            // Determine target platforms per lockfile
+            let target_platforms = self.determine_target_platforms(lockfile_path)?;
 
-        if self.dry_run {
-            self.show_dry_run(&tools, &target_platforms)?;
-            return Ok(());
+            miseprintln!(
+                "{} Targeting {} platform(s) for {}: {}",
+                style("→").cyan(),
+                target_platforms.len(),
+                style(display_path(lockfile_path)).cyan(),
+                target_platforms
+                    .iter()
+                    .map(|p| p.to_key())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+
+            miseprintln!(
+                "{} Processing {} tool(s): {}",
+                style("→").cyan(),
+                tools.len(),
+                tools
+                    .iter()
+                    .map(|(ba, tv)| format!("{}@{}", ba.short, tv.version))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+
+            if self.dry_run {
+                self.show_dry_run(tools, &target_platforms)?;
+                continue;
+            }
+
+            // Process tools and update lockfile
+            let mut lockfile = Lockfile::read(lockfile_path)?;
+            let results = self
+                .process_tools(&settings, tools, &target_platforms, &mut lockfile)
+                .await?;
+
+            // Save lockfile
+            lockfile.write(lockfile_path)?;
+
+            // Print summary
+            let successful = results.iter().filter(|(_, _, ok)| *ok).count();
+            let skipped = results.len() - successful;
+            miseprintln!(
+                "{} Updated {} platform entries ({} skipped)",
+                style("✓").green(),
+                successful,
+                skipped
+            );
+            miseprintln!(
+                "{} Lockfile written to {}",
+                style("✓").green(),
+                style(display_path(lockfile_path)).cyan()
+            );
         }
-
-        // Process tools and update lockfile
-        let mut lockfile = Lockfile::read(&lockfile_path)?;
-        let results = self
-            .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
-            .await?;
-
-        // Save lockfile
-        lockfile.write(&lockfile_path)?;
-
-        // Print summary
-        let successful = results.iter().filter(|(_, _, ok)| *ok).count();
-        let skipped = results.len() - successful;
-        miseprintln!(
-            "{} Updated {} platform entries ({} skipped)",
-            style("✓").green(),
-            successful,
-            skipped
-        );
-        miseprintln!(
-            "{} Lockfile written to {}",
-            style("✓").green(),
-            style(display_path(&lockfile_path)).cyan()
-        );
 
         Ok(())
-    }
-
-    fn get_lockfile_path(&self, config: &Config) -> PathBuf {
-        // Get lockfile path from the first config file
-        if let Some(config_path) = config.config_files.keys().next() {
-            let (lockfile_path, _) = lockfile::lockfile_path_for_config(config_path);
-            if self.local {
-                // Replace mise.lock with mise.local.lock
-                lockfile_path.with_file_name("mise.local.lock")
-            } else {
-                lockfile_path
-            }
-        } else {
-            // Fallback to current dir
-            let lockfile_name = if self.local {
-                "mise.local.lock"
-            } else {
-                "mise.lock"
-            };
-            std::env::current_dir()
-                .unwrap_or_default()
-                .join(lockfile_name)
-        }
     }
 
     fn determine_target_platforms(&self, lockfile_path: &PathBuf) -> Result<Vec<Platform>> {
@@ -186,12 +163,14 @@ impl Lock {
         Ok(platforms.into_iter().collect())
     }
 
-    fn get_tools_to_lock(
+    /// Group tools by their target lockfile path.
+    /// Tools from `mise.toml` go to `mise.lock`, tools from `mise.local.toml` go to `mise.local.lock`.
+    fn get_tools_by_lockfile(
         &self,
         config: &Config,
         ts: &Toolset,
-    ) -> Vec<(crate::cli::args::BackendArg, crate::toolset::ToolVersion)> {
-        // Calculate target lockfile directory (same logic as get_lockfile_path)
+    ) -> BTreeMap<PathBuf, Vec<(crate::cli::args::BackendArg, crate::toolset::ToolVersion)>> {
+        // Calculate target lockfile directory from the first config file
         let target_lockfile_dir = config
             .config_files
             .keys()
@@ -205,10 +184,6 @@ impl Lock {
             })
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
-        // Collect tools from config files that share the same lockfile directory
-        let mut all_tools: Vec<_> = Vec::new();
-        let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
-
         // Helper to get lockfile directory for a config path
         let get_lockfile_dir = |path: &std::path::Path| -> PathBuf {
             let (lockfile_path, _) = lockfile::lockfile_path_for_config(path);
@@ -218,27 +193,58 @@ impl Lock {
                 .unwrap_or_default()
         };
 
-        // First, get all tools from the resolved toolset (these are the "current" versions)
-        // but only if they come from a config file with the same lockfile directory
+        let default_lockfile = if self.local {
+            target_lockfile_dir.join("mise.local.lock")
+        } else {
+            target_lockfile_dir.join("mise.lock")
+        };
+
+        let mut result: BTreeMap<PathBuf, Vec<_>> = BTreeMap::new();
+        // Include lockfile path in seen key so the same tool can appear in different lockfiles
+        let mut seen: BTreeSet<(PathBuf, String, String)> = BTreeSet::new();
+
+        // First, get all tools from the resolved toolset grouped by their source config's lockfile
         for (backend, tv) in ts.list_current_versions() {
-            // Check if this tool's source shares the same lockfile directory
-            if let Some(source_path) = tv.request.source().path()
-                && get_lockfile_dir(source_path) != target_lockfile_dir
-            {
-                continue;
-            }
-            let key = (backend.ba().short.clone(), tv.version.clone());
+            let lockfile_path = if let Some(source_path) = tv.request.source().path() {
+                // Skip tools from config files in different directories
+                if get_lockfile_dir(source_path) != target_lockfile_dir {
+                    continue;
+                }
+                let (path, is_local) = lockfile::lockfile_path_for_config(source_path);
+                // With --local, only include tools from local configs
+                if self.local && !is_local {
+                    continue;
+                }
+                path
+            } else {
+                default_lockfile.clone()
+            };
+
+            let key = (
+                lockfile_path.clone(),
+                backend.ba().short.clone(),
+                tv.version.clone(),
+            );
             if seen.insert(key) {
-                all_tools.push((backend.ba().as_ref().clone(), tv));
+                result
+                    .entry(lockfile_path)
+                    .or_default()
+                    .push((backend.ba().as_ref().clone(), tv));
             }
         }
 
-        // Then, iterate config files with the same lockfile directory to find tools that may have been overridden
+        // Then, iterate config files to find tools that may have been overridden
+        // This ensures each lockfile gets the tools defined in its corresponding config
         for (path, cf) in config.config_files.iter() {
             // Skip config files that don't share the same lockfile directory
             if get_lockfile_dir(path) != target_lockfile_dir {
                 continue;
             }
+            let (lockfile_path, is_local) = lockfile::lockfile_path_for_config(path);
+            if self.local && !is_local {
+                continue;
+            }
+
             if let Ok(trs) = cf.to_tool_request_set() {
                 for (ba, requests, _source) in trs.iter() {
                     for request in requests {
@@ -248,9 +254,16 @@ impl Lock {
                             if let Some(resolved_tv) = ts.versions.get(ba.as_ref()) {
                                 for tv in &resolved_tv.versions {
                                     if tv.request.version() == request.version() {
-                                        let key = (ba.short.clone(), tv.version.clone());
+                                        let key = (
+                                            lockfile_path.clone(),
+                                            ba.short.clone(),
+                                            tv.version.clone(),
+                                        );
                                         if seen.insert(key) {
-                                            all_tools.push((ba.as_ref().clone(), tv.clone()));
+                                            result
+                                                .entry(lockfile_path.clone())
+                                                .or_default()
+                                                .push((ba.as_ref().clone(), tv.clone()));
                                         }
                                     }
                                 }
@@ -261,13 +274,20 @@ impl Lock {
                                 if let Some(latest_version) = installed.iter().max_by(|a, b| {
                                     versions::Versioning::new(a).cmp(&versions::Versioning::new(b))
                                 }) {
-                                    let key = (ba.short.clone(), latest_version.clone());
-                                    if seen.insert(key.clone()) {
+                                    let key = (
+                                        lockfile_path.clone(),
+                                        ba.short.clone(),
+                                        latest_version.clone(),
+                                    );
+                                    if seen.insert(key) {
                                         let tv = crate::toolset::ToolVersion::new(
                                             request.clone(),
                                             latest_version.clone(),
                                         );
-                                        all_tools.push((ba.as_ref().clone(), tv));
+                                        result
+                                            .entry(lockfile_path.clone())
+                                            .or_default()
+                                            .push((ba.as_ref().clone(), tv));
                                     }
                                 }
                             }
@@ -277,18 +297,17 @@ impl Lock {
             }
         }
 
-        if self.tool.is_empty() {
-            // Lock all tools
-            all_tools
-        } else {
-            // Filter to specified tools
+        // Filter to specified tools if --tool was provided
+        if !self.tool.is_empty() {
             let specified: BTreeSet<String> =
                 self.tool.iter().map(|t| t.ba.short.clone()).collect();
-            all_tools
-                .into_iter()
-                .filter(|(ba, _)| specified.contains(&ba.short))
-                .collect()
+            for tools in result.values_mut() {
+                tools.retain(|(ba, _)| specified.contains(&ba.short));
+            }
+            result.retain(|_, tools| !tools.is_empty());
         }
+
+        result
     }
 
     fn show_dry_run(
