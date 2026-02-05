@@ -1,5 +1,18 @@
 # Changelog
 
+## [2026.2.4](https://github.com/jdx/mise/compare/v2026.2.3..v2026.2.4) - 2026-02-05
+
+### 🐛 Bug Fixes
+
+- **(env)** resolve sourced env for tool templates by @corymhall in [#7895](https://github.com/jdx/mise/pull/7895)
+- **(npm)** only declare the configured package manager as a dependency by @jdx in [#7995](https://github.com/jdx/mise/pull/7995)
+- **(upgrade)** respect use_locked_version when checking tracked configs by @jdx in [#7997](https://github.com/jdx/mise/pull/7997)
+- ignore MISE_TOOL_VERSION in env var parsing by @jdx in [#8004](https://github.com/jdx/mise/pull/8004)
+
+### New Contributors
+
+- @corymhall made their first contribution in [#7895](https://github.com/jdx/mise/pull/7895)
+
 ## [2026.2.3](https://github.com/jdx/mise/compare/v2026.2.2..v2026.2.3) - 2026-02-04
 
 ### 🐛 Bug Fixes
@@ -21,12 +34,6 @@
 - @quinnj made their first contribution in [#7990](https://github.com/jdx/mise/pull/7990)
 - @dmarcoux made their first contribution in [#7989](https://github.com/jdx/mise/pull/7989)
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (2)
-
-- [`chainloop-dev/chainloop`](https://github.com/chainloop-dev/chainloop)
-- [`redhat.com/openshift-install`](https://github.com/redhat.com/openshift-install)
 ## [2026.2.2](https://github.com/jdx/mise/compare/v2026.2.1..v2026.2.2) - 2026-02-03
 
 ### 🚀 Features
