@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 export MISE_LOCKFILE=1
-export MISE_EXPERIMENTAL=1
 
 assert "mise tool gh --backend" "aqua:cli/cli"
 cat <<EOF >mise.toml

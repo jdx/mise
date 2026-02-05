@@ -4,7 +4,6 @@
 # When MISE_ENV=test, tools from mise.test.toml get env=["test"] in the lockfile
 
 export MISE_LOCKFILE=1
-export MISE_EXPERIMENTAL=1
 
 # Create env-specific config only (to avoid override complexity)
 cat >mise.test.toml <<'EOF'

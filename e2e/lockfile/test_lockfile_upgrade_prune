@@ -7,7 +7,6 @@
 # resolving to the newest installed version.
 
 export MISE_LOCKFILE=1
-export MISE_EXPERIMENTAL=1
 
 # Clean up any existing installations
 mise uninstall dummy --all 2>/dev/null || true

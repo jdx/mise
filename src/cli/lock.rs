@@ -67,7 +67,6 @@ impl Lock {
     pub async fn run(self) -> Result<()> {
         let settings = Settings::get();
         let config = Config::get().await?;
-        settings.ensure_experimental("lock")?;
 
         // Determine lockfile path based on config root
         let lockfile_path = self.get_lockfile_path(&config);

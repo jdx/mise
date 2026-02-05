@@ -5,7 +5,6 @@
 # raw binary to tar.gz format, but lockfile had the old URL cached
 
 export MISE_LOCKFILE=1
-export MISE_EXPERIMENTAL=1
 
 detect_platform
 

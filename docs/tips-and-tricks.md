@@ -214,7 +214,7 @@ This is helpful figuring out which order the config files are loaded in to figur
 
 ## `mise.lock`
 
-If you enable experimental mode, mise will update `mise.lock` with full versions and tarball checksums (if supported by the backend).
+When lockfiles are enabled, mise will update `mise.lock` with full versions and tarball checksums (if supported by the backend).
 These can be updated with [`mise up`](/cli/upgrade.html). You need to manually create the lockfile, then mise will add the tools to it:
 
 ```sh
