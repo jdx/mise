@@ -1,0 +1,4 @@
+backends = ["github:GDQuest/GDScript-formatter"]
+description = "A faster code formatter for GDScript and Godot 4"
+test = ["gdscript-formatter --version", "gdscript-formatter {{version}}"]
+detect = ["project.godot", "*.gd"]
