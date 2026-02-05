@@ -217,6 +217,11 @@ impl Lock {
                 }
                 path
             } else {
+                // Tools without a source path (e.g. from env vars or CLI args) aren't
+                // from any config file, so skip them when --local is set.
+                if self.local {
+                    continue;
+                }
                 default_lockfile.clone()
             };
 
