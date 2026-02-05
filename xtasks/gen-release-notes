@@ -46,9 +46,16 @@ TITLE GUIDELINES:
 - Be creative and memorable (e.g., "The Great Backend Migration", "Conda Gets Cozy", "Monorepo Magic")
 - Reference the main theme or biggest feature of the release
 - Keep it fun but professional
+- For smaller or less impactful releases, keep the title understated and modest
+
+TONE CALIBRATION:
+- Match the tone and length to the actual significance of the changes
+- If the release is mostly small bug fixes or minor tweaks, be upfront about that—a sentence or two of summary is fine, don't write multiple paragraphs inflating the importance
+- Reserve enthusiastic, detailed write-ups for releases with genuinely significant features or changes
+- It's okay to say "This is a smaller release focused on bug fixes" when that's the case
 
 RELEASE NOTES:
-1. Start with 1-2 paragraphs summarizing key changes
+1. Start with a summary proportional to the significance of the changes
 2. Organize into ### sections (Highlights, Bug Fixes, etc.)
 3. Explain WHY changes matter to users
 4. Include PR links and documentation links (https://mise.jdx.dev/)
