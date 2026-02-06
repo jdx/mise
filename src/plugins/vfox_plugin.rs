@@ -14,6 +14,7 @@ use eyre::{Context, eyre};
 use indexmap::{IndexMap, indexmap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
+use tokio::sync::Mutex as AsyncMutex;
 use url::Url;
 use vfox::Vfox;
 use vfox::embedded_plugins;
@@ -37,6 +38,7 @@ pub struct VfoxPlugin {
     pub plugin_path: PathBuf,
     pub repo: Mutex<Git>,
     repo_url: Mutex<Option<String>>,
+    env_module_ensured: AsyncMutex<bool>,
 }
 
 impl VfoxPlugin {
@@ -49,6 +51,7 @@ impl VfoxPlugin {
             repo_url: Mutex::new(None),
             repo: Mutex::new(repo),
             plugin_path,
+            env_module_ensured: AsyncMutex::new(false),
         }
     }
 
@@ -73,11 +76,24 @@ impl VfoxPlugin {
         vfox_to_url(url)
     }
 
+    async fn ensure_installed_for_env_module(&self, config: &Arc<Config>) -> Result<()> {
+        let mut ensured = self.env_module_ensured.lock().await;
+        if *ensured {
+            return Ok(());
+        }
+        self.ensure_installed(config, &MultiProgressReport::get(), false, false)
+            .await?;
+        *ensured = true;
+        Ok(())
+    }
+
     pub async fn mise_env(
         &self,
+        config: &Arc<Config>,
         opts: &toml::Value,
         env: &IndexMap<String, String>,
     ) -> Result<Option<MiseEnvResponse>> {
+        self.ensure_installed_for_env_module(config).await?;
         let (vfox, _) = self.vfox();
         let result = vfox.mise_env(&self.name, opts, env).await?;
         let mut result_env = indexmap!();
@@ -93,9 +109,11 @@ impl VfoxPlugin {
 
     pub async fn mise_path(
         &self,
+        config: &Arc<Config>,
         opts: &toml::Value,
         env: &IndexMap<String, String>,
     ) -> Result<Option<Vec<String>>> {
+        self.ensure_installed_for_env_module(config).await?;
         let (vfox, _) = self.vfox();
         let mut out = vec![];
         let results = vfox.mise_path(&self.name, opts, env).await?;

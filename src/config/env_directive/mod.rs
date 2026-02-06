@@ -554,6 +554,7 @@ impl EnvResults {
                     }
                     Self::module(
                         &mut r,
+                        config,
                         source,
                         name,
                         &value,
