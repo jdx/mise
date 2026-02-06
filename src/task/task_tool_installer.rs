@@ -66,8 +66,8 @@ impl<'a> TaskToolInstaller<'a> {
         task_cf: Arc<dyn crate::config::config_file::ConfigFile>,
         task_name: &str,
     ) -> Result<Vec<crate::toolset::ToolRequest>> {
-        let task_dir = task_cf.get_path().parent().unwrap_or(task_cf.get_path());
-        self.collect_tools_from_dir(task_dir, task_name).await
+        let task_dir = task_cf.config_root();
+        self.collect_tools_from_dir(&task_dir, task_name).await
     }
 
     /// Collect tools from config files found in a directory hierarchy
