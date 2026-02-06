@@ -176,24 +176,36 @@ fn env_script_all_bin_files(install_path: &Path) -> eyre::Result<bool> {
 
     file::create_dir_all(&install_bin_path)?;
 
-    get_gem_executables(install_path)?
-        .into_iter()
-        .for_each(|path| {
-            let exec_path = install_bin_path.join(path.file_name().unwrap());
-            file::write(
-                &exec_path,
-                formatdoc!(
-                    r#"
-                    #!/usr/bin/env bash
-                    GEM_HOME="{gem_home}" exec {gem_exec_path} "$@"
-                    "#,
-                    gem_home = install_libexec_path.to_str().unwrap(),
-                    gem_exec_path = path.to_str().unwrap(),
-                ),
+    for path in get_gem_executables(install_path)? {
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| eyre::eyre!("invalid gem executable path: {}", path.display()))?;
+        let exec_path = install_bin_path.join(file_name);
+        let gem_exec_path = path.to_str().ok_or_else(|| {
+            eyre::eyre!(
+                "gem executable path contains invalid UTF-8: {}",
+                path.display()
             )
-            .unwrap();
-            file::make_executable(&exec_path).unwrap();
-        });
+        })?;
+        let gem_home = install_libexec_path.to_str().ok_or_else(|| {
+            eyre::eyre!(
+                "libexec path contains invalid UTF-8: {}",
+                install_libexec_path.display()
+            )
+        })?;
+        file::write(
+            &exec_path,
+            formatdoc!(
+                r#"
+                #!/usr/bin/env bash
+                GEM_HOME="{gem_home}" exec {gem_exec_path} "$@"
+                "#,
+                gem_home = gem_home,
+                gem_exec_path = gem_exec_path,
+            ),
+        )?;
+        file::make_executable(&exec_path)?;
+    }
 
     Ok(true)
 }
@@ -205,28 +217,37 @@ fn env_script_all_bin_files(install_path: &Path) -> eyre::Result<bool> {
 
     file::create_dir_all(&install_bin_path)?;
 
-    get_gem_executables(install_path)?
-        .into_iter()
-        .for_each(|path| {
-            // On Windows, create .cmd wrapper scripts
-            let file_stem = path.file_stem().unwrap().to_string_lossy();
-            let exec_path = install_bin_path.join(format!("{}.cmd", file_stem));
-            let gem_exec_path = path.to_str().unwrap();
-            // Use forward slashes for gem_home in the script since Ruby handles them correctly
-            let gem_home = install_libexec_path.to_str().unwrap();
-            file::write(
-                &exec_path,
-                formatdoc!(
-                    r#"@echo off
-                    set "GEM_HOME={gem_home}"
-                    "{gem_exec_path}" %*
-                    "#,
-                    gem_home = gem_home,
-                    gem_exec_path = gem_exec_path,
-                ),
+    for path in get_gem_executables(install_path)? {
+        // On Windows, create .cmd wrapper scripts
+        let file_stem = path
+            .file_stem()
+            .ok_or_else(|| eyre::eyre!("invalid gem executable path: {}", path.display()))?
+            .to_string_lossy();
+        let exec_path = install_bin_path.join(format!("{}.cmd", file_stem));
+        let gem_exec_path = path.to_str().ok_or_else(|| {
+            eyre::eyre!(
+                "gem executable path contains invalid UTF-8: {}",
+                path.display()
             )
-            .unwrap();
-        });
+        })?;
+        let gem_home = install_libexec_path.to_str().ok_or_else(|| {
+            eyre::eyre!(
+                "libexec path contains invalid UTF-8: {}",
+                install_libexec_path.display()
+            )
+        })?;
+        file::write(
+            &exec_path,
+            formatdoc!(
+                r#"@echo off
+                set "GEM_HOME={gem_home}"
+                "{gem_exec_path}" %*
+                "#,
+                gem_home = gem_home,
+                gem_exec_path = gem_exec_path,
+            ),
+        )?;
+    }
 
     Ok(true)
 }
