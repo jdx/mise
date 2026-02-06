@@ -5,6 +5,7 @@ use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_helpers::canonicalize_path;
 use crate::toolset::{InstallOptions, ToolSource, Toolset};
 use eyre::Result;
+use std::path::Path;
 use std::sync::Arc;
 
 /// Handles collection and installation of tools required by tasks
@@ -42,6 +43,11 @@ impl<'a> TaskToolInstaller<'a> {
                     .collect_tools_from_config_file(task_cf.clone(), &t.name)
                     .await?;
                 all_tool_requests.extend(tool_requests);
+            } else if let Some(config_root) = &t.config_root {
+                // For file tasks without a config file (e.g. scripts in .mise-tasks/),
+                // fall back to loading tools from the project's config hierarchy
+                let tool_requests = self.collect_tools_from_dir(config_root, &t.name).await?;
+                all_tool_requests.extend(tool_requests);
             }
         }
 
@@ -61,8 +67,16 @@ impl<'a> TaskToolInstaller<'a> {
         task_name: &str,
     ) -> Result<Vec<crate::toolset::ToolRequest>> {
         let task_dir = task_cf.get_path().parent().unwrap_or(task_cf.get_path());
+        self.collect_tools_from_dir(task_dir, task_name).await
+    }
 
-        let config_paths = crate::config::load_config_hierarchy_from_dir(task_dir)?;
+    /// Collect tools from config files found in a directory hierarchy
+    async fn collect_tools_from_dir(
+        &self,
+        dir: &Path,
+        task_name: &str,
+    ) -> Result<Vec<crate::toolset::ToolRequest>> {
+        let config_paths = crate::config::load_config_hierarchy_from_dir(dir)?;
         let task_config_files = crate::config::load_config_files_from_paths(&config_paths).await?;
 
         let mut tool_requests: Vec<crate::toolset::ToolRequest> = vec![];
