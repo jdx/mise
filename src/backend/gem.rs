@@ -239,8 +239,7 @@ fn env_script_all_bin_files(install_path: &Path) -> eyre::Result<bool> {
         file::write(
             &exec_path,
             formatdoc!(
-                r#"\n
-                @echo off
+                r#"@echo off
                 set "GEM_HOME={gem_home}"
                 "{gem_exec_path}" %*
                 "#,
