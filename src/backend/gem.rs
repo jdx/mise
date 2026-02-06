@@ -15,6 +15,8 @@ use serde::Deserialize;
 use std::path::Path;
 use std::{fmt::Debug, sync::Arc};
 
+const GEM_PROGRAM: &str = if cfg!(windows) { "gem.cmd" } else { "gem" };
+
 /// Cached gem source URL, memoized globally after first successful detection
 static GEM_SOURCE: OnceCell<String> = OnceCell::new();
 
@@ -69,7 +71,7 @@ impl Backend for GemBackend {
         )
         .await;
 
-        CmdLineRunner::new("gem")
+        CmdLineRunner::new(GEM_PROGRAM)
             .arg("install")
             .arg(self.tool_name())
             .arg("--version")
@@ -118,7 +120,7 @@ impl GemBackend {
 
         // Try to initialize the source - only memoize on success
         match GEM_SOURCE.get_or_try_init(|| {
-            let output = cmd!("gem", "sources")
+            let output = cmd!(GEM_PROGRAM, "sources")
                 .full_env(&env)
                 .read()
                 .map_err(|e| eyre::eyre!("failed to run `gem sources`: {e}"))?;
