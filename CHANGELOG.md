@@ -1,5 +1,20 @@
 # Changelog
 
+## [2026.2.5](https://github.com/jdx/mise/compare/v2026.2.4..v2026.2.5) - 2026-02-05
+
+### 🐛 Bug Fixes
+
+- **(lock)** remove experimental flag requirement for lockfiles by @jdx in [#8011](https://github.com/jdx/mise/pull/8011)
+
+### Chore
+
+- add tone calibration to release notes prompt by @jdx in [#8010](https://github.com/jdx/mise/pull/8010)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (1)
+
+- [`uutils/coreutils`](https://github.com/uutils/coreutils)
 ## [2026.2.4](https://github.com/jdx/mise/compare/v2026.2.3..v2026.2.4) - 2026-02-05
 
 ### 🐛 Bug Fixes
