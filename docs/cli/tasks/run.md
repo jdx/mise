@@ -146,11 +146,11 @@ Examples:
 $ mise run lint
 
 # Forces the "build" tasks to run even if its sources are up-to-date.
-$ mise run build --force
+$ mise run --force build
 
 # Run "test" with stdin/stdout/stderr all connected to the current terminal.
 # This forces `--jobs=1` to prevent interleaving of output.
-$ mise run test --raw
+$ mise run --raw test
 
 # Runs the "lint", "test", and "check" tasks in parallel.
 $ mise run lint ::: test ::: check
