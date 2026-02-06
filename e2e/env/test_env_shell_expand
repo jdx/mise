@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+# Test basic $VAR expansion
+cat <<'EOF' >mise.toml
+[env]
+FOO = "hello"
+BAR = "$FOO-world"
+EOF
+MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash | grep BAR" "export BAR=hello-world"
+
+# Test ${VAR} brace syntax
+cat <<'EOF' >mise.toml
+[env]
+FOO = "hello"
+BAR = "${FOO}_world"
+EOF
+MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash | grep BAR" "export BAR=hello_world"
+
+# Test ${VAR:-default} syntax
+cat <<'EOF' >mise.toml
+[env]
+BAR = "${NONEXISTENT:-fallback}"
+EOF
+MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash | grep BAR" "export BAR=fallback"
+
+# Test expansion from initial environment
+cat <<'EOF' >mise.toml
+[env]
+FOO = "$INITIAL_VAR"
+EOF
+INITIAL_VAR=from_env MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash | grep FOO" "export FOO=from_env"
+
+# Test disabled explicitly ($ stays literal, no warning)
+cat <<'EOF' >mise.toml
+[env]
+FOO = "hello"
+BAR = "$FOO"
+EOF
+MISE_ENV_SHELL_EXPAND=false assert_contains "mise env -s bash | grep BAR" 'export BAR='\''$FOO'\'
+
+# Test mixed Tera + shell expand
+cat <<'EOF' >mise.toml
+[env]
+FOO = "hello"
+BAR = "{{ env.FOO }}-$FOO"
+EOF
+MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash | grep BAR" "export BAR=hello-hello"
+
+# Test tools=true vars can reference each other via $
+cat <<'EOF' >mise.toml
+[env]
+TOOL_HOME = { value = "/opt/tools", tools = true }
+TOOL_BIN = { value = "$TOOL_HOME/bin", tools = true }
+EOF
+MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash | grep TOOL_BIN" "export TOOL_BIN=/opt/tools/bin"
+
+# Test tools=true var can reference a non-tools var via $
+# (non-tools vars are resolved first, so tools=true vars can see them)
+cat <<'EOF' >mise.toml
+[env]
+BASE_DIR = "/opt/tools"
+TOOL_BIN = { value = "$BASE_DIR/bin", tools = true }
+EOF
+MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash | grep TOOL_BIN" "export TOOL_BIN=/opt/tools/bin"
+
+# Test chained $ expansion across multiple vars
+cat <<'EOF' >mise.toml
+[env]
+A = "base"
+B = "$A/mid"
+C = "$B/end"
+EOF
+MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash | grep '^export C='" "export C=base/mid/end"
+
+# Test warning for undefined var (bare $VAR)
+cat <<'EOF' >mise.toml
+[env]
+BAR = "$UNDEFINED_VAR"
+EOF
+MISE_ENV_SHELL_EXPAND=true assert_contains "mise env -s bash 2>&1" "env var 'UNDEFINED_VAR' is not defined"
+
+# Test ${VAR:-} suppresses warning for undefined var
+cat <<'EOF' >mise.toml
+[env]
+BAR = "${UNDEFINED_VAR:-}"
+EOF
+MISE_ENV_SHELL_EXPAND=true assert_not_contains "mise env -s bash 2>&1" "is not defined"

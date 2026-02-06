@@ -87,7 +87,9 @@ impl MiseTable {
         // trim first character, skipping color characters
         let re = regex!(r"^(\x{1b}[^ ]*\d+m) ");
         for line in table.lines() {
-            let line = re.replacen(line.trim(), 1, "$1");
+            let line = line.strip_prefix(' ').unwrap_or(line);
+            let line = re.replacen(line, 1, "$1");
+            let line = line.trim_end();
             println!("{line}");
         }
         Ok(())

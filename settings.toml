@@ -453,6 +453,31 @@ tool versions, settings, or watched files change.
 env = "MISE_ENV_CACHE_TTL"
 type = "Duration"
 
+[env_shell_expand]
+description = "Enable shell-style variable expansion in env values (e.g., $FOO, ${BAR:-default})"
+docs = """
+Controls shell-style variable expansion in `mise.toml` `[env]` values:
+
+```toml
+[env]
+FOO = "hello"
+BAR = "$FOO-world"        # "hello-world"
+BAZ = "${FOO}_suffix"     # "hello_suffix"
+QUX = "${UNDEF:-fallback}" # "fallback"
+```
+
+- `true` — enable shell expansion
+- `false` — disable shell expansion (no warning)
+- unset — disable shell expansion but warn if `$` is detected in env values
+  (shell expansion will become the default in a future release)
+
+Expansion happens after Tera template rendering, so both syntaxes can be mixed.
+Undefined variables are left unexpanded (e.g., `$MISSING` stays as `$MISSING`).
+"""
+env = "MISE_ENV_SHELL_EXPAND"
+optional = true
+type = "Bool"
+
 [env_file]
 description = "Path to a file containing environment variables to automatically load."
 env = "MISE_ENV_FILE"

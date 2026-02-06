@@ -159,6 +159,7 @@ blake3 = "1"
 chacha20poly1305 = "0.10"
 shell-escape = "0.1"
 shell-words = "1"
+shellexpand = "3"
 signal-hook = "0.3"
 siphasher = "1"
 strum = { version = "0.27", features = ["derive"] }
