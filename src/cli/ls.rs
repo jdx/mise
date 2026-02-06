@@ -375,7 +375,7 @@ impl Ls {
 type JSONOutput = IndexMap<String, Vec<JSONToolVersion>>;
 type SourcesMap = BTreeMap<(String, String), Vec<SourceEntry>>;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct SourceEntry {
     source: ToolSource,
     requested: String,
@@ -475,6 +475,9 @@ fn collect_sources(ts: &Toolset) -> SourcesMap {
                 entries.push(entry);
             }
         }
+    }
+    for entries in sources_map.values_mut() {
+        entries.sort();
     }
     sources_map
 }
