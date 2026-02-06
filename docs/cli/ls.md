@@ -45,6 +45,10 @@ Only show tool versions currently specified in the local mise.toml
 
 Display missing tool versions
 
+### `--all-sources`
+
+Display all tracked config sources for tools
+
 ### `--no-header`
 
 Don't display headers
@@ -87,4 +91,8 @@ $ mise ls --json
   ],
   "python": [...]
 }
+
+$ mise ls --all-sources
+node    20.0.0  ~/src/myapp/mise.toml  20
+                ~/.config/mise/config.toml  latest
 ```
