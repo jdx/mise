@@ -173,6 +173,21 @@ packages:
         files:
           - name: coreutils
             src: coreutils-{{.Version}}-{{.Arch}}-{{.OS}}/coreutils
+      - version_constraint: Version == "0.6.0"
+        asset: coreutils-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        files:
+          - name: coreutils
+            src: coreutils-{{.Arch}}-{{.OS}}/coreutils
       - version_constraint: "true"
         asset: coreutils-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
