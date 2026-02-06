@@ -9,7 +9,8 @@ use eyre::{Context, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde_json::Value;
-use std::collections::{BTreeSet, HashMap};
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::{cmp::PartialEq, sync::Arc};
@@ -669,13 +670,64 @@ impl EnvResults {
         path: &Path,
         input: &str,
     ) -> eyre::Result<String> {
-        if !input.contains("{{") && !input.contains("{%") && !input.contains("{#") {
-            return Ok(input.to_string());
+        let mut output = input.to_string();
+
+        // Step 1: Tera template expansion
+        if input.contains("{{") || input.contains("{%") || input.contains("{#") {
+            trust_check(path)?;
+            output = tera
+                .render_str(input, ctx)
+                .wrap_err_with(|| eyre!("failed to parse template: '{input}'"))?;
         }
-        trust_check(path)?;
-        let output = tera
-            .render_str(input, ctx)
-            .wrap_err_with(|| eyre!("failed to parse template: '{input}'"))?;
+
+        // Step 2: Shell-style $VAR expansion
+        if output.contains('$') {
+            debug_assert!(
+                !env!("CARGO_PKG_VERSION").starts_with("2026.7"),
+                "change env_shell_expand default to true and remove this warning"
+            );
+            match Settings::get().env_shell_expand {
+                Some(true) => {
+                    let env_vars: BTreeMap<String, String> = ctx
+                        .get("env")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                        .unwrap_or_default();
+                    let before_expand = output.clone();
+                    let mut missing_vars = Vec::new();
+                    output = shellexpand::env_with_context_no_errors(&output, |var| match env_vars
+                        .get(var)
+                    {
+                        Some(v) => Some(Cow::Borrowed(v.as_str())),
+                        None => {
+                            missing_vars.push(var.to_string());
+                            None
+                        }
+                    })
+                    .into_owned();
+                    for var in missing_vars {
+                        // Don't warn if the user provided a default via ${VAR:-...} or ${VAR-...}
+                        if !before_expand.contains(&format!("${{{var}:-"))
+                            && !before_expand.contains(&format!("${{{var}-"))
+                        {
+                            warn_once!(
+                                "env var '{var}' is not defined and will be left unexpanded. \
+                                 Use ${{{var}:-}} to default to an empty string and suppress \
+                                 this warning."
+                            );
+                        }
+                    }
+                }
+                Some(false) => {}
+                None => {
+                    warn_once!(
+                        "env value contains '$' which will be expanded in a future release. \
+                         Set `env_shell_expand = true` to opt in or `env_shell_expand = false` to \
+                         keep current behavior and suppress this warning."
+                    );
+                }
+            }
+        }
+
         Ok(output)
     }
 
