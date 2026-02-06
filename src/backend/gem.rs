@@ -15,6 +15,8 @@ use serde::Deserialize;
 use std::path::Path;
 use std::{fmt::Debug, sync::Arc};
 
+const GEM_PROGRAM: &str = if cfg!(windows) { "gem.cmd" } else { "gem" };
+
 /// Cached gem source URL, memoized globally after first successful detection
 static GEM_SOURCE: OnceCell<String> = OnceCell::new();
 
@@ -69,7 +71,7 @@ impl Backend for GemBackend {
         )
         .await;
 
-        CmdLineRunner::new("gem")
+        CmdLineRunner::new(GEM_PROGRAM)
             .arg("install")
             .arg(self.tool_name())
             .arg("--version")
@@ -84,15 +86,18 @@ impl Backend for GemBackend {
         // in {install_path}/bin that sets GEM_HOME and executes the gem installed
         env_script_all_bin_files(&tv.install_path())?;
 
-        // Rewrite shebangs for better compatibility:
-        // - System Ruby: uses `#!/usr/bin/env ruby` for PATH-based resolution
-        // - Mise Ruby: uses minor version symlink (e.g., .../ruby/3.1/bin/ruby) so patch
-        //   upgrades don't break gems, while still being pinned to a minor version
-        rewrite_gem_shebangs(&tv.install_path())?;
+        #[cfg(unix)]
+        {
+            // Rewrite shebangs for better compatibility:
+            // - System Ruby: uses `#!/usr/bin/env ruby` for PATH-based resolution
+            // - Mise Ruby: uses minor version symlink (e.g., .../ruby/3.1/bin/ruby) so patch
+            //   upgrades don't break gems, while still being pinned to a minor version
+            rewrite_gem_shebangs(&tv.install_path())?;
 
-        // Create a ruby symlink in libexec/bin for polyglot script fallback
-        // RubyGems polyglot scripts have: exec "$bindir/ruby" "-x" "$0" "$@"
-        create_ruby_symlink(&tv.install_path())?;
+            // Create a ruby symlink in libexec/bin for polyglot script fallback
+            // RubyGems polyglot scripts have: exec "$bindir/ruby" "-x" "$0" "$@"
+            create_ruby_symlink(&tv.install_path())?;
+        }
 
         Ok(tv)
     }
@@ -118,7 +123,7 @@ impl GemBackend {
 
         // Try to initialize the source - only memoize on success
         match GEM_SOURCE.get_or_try_init(|| {
-            let output = cmd!("gem", "sources")
+            let output = cmd!(GEM_PROGRAM, "sources")
                 .full_env(&env)
                 .read()
                 .map_err(|e| eyre::eyre!("failed to run `gem sources`: {e}"))?;
@@ -164,30 +169,86 @@ fn parse_gem_source_output(output: &str) -> String {
     "https://rubygems.org/".to_string()
 }
 
+#[cfg(unix)]
 fn env_script_all_bin_files(install_path: &Path) -> eyre::Result<bool> {
     let install_bin_path = install_path.join("bin");
     let install_libexec_path = install_path.join("libexec");
 
     file::create_dir_all(&install_bin_path)?;
 
-    get_gem_executables(install_path)?
-        .into_iter()
-        .for_each(|path| {
-            let exec_path = install_bin_path.join(path.file_name().unwrap());
-            file::write(
-                &exec_path,
-                formatdoc!(
-                    r#"
-                    #!/usr/bin/env bash
-                    GEM_HOME="{gem_home}" exec {gem_exec_path} "$@"
-                    "#,
-                    gem_home = install_libexec_path.to_str().unwrap(),
-                    gem_exec_path = path.to_str().unwrap(),
-                ),
+    for path in get_gem_executables(install_path)? {
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| eyre::eyre!("invalid gem executable path: {}", path.display()))?;
+        let exec_path = install_bin_path.join(file_name);
+        let gem_exec_path = path.to_str().ok_or_else(|| {
+            eyre::eyre!(
+                "gem executable path contains invalid UTF-8: {}",
+                path.display()
             )
-            .unwrap();
-            file::make_executable(&exec_path).unwrap();
-        });
+        })?;
+        let gem_home = install_libexec_path.to_str().ok_or_else(|| {
+            eyre::eyre!(
+                "libexec path contains invalid UTF-8: {}",
+                install_libexec_path.display()
+            )
+        })?;
+        file::write(
+            &exec_path,
+            formatdoc!(
+                r#"
+                #!/usr/bin/env bash
+                GEM_HOME="{gem_home}" exec {gem_exec_path} "$@"
+                "#,
+                gem_home = gem_home,
+                gem_exec_path = gem_exec_path,
+            ),
+        )?;
+        file::make_executable(&exec_path)?;
+    }
+
+    Ok(true)
+}
+
+#[cfg(windows)]
+fn env_script_all_bin_files(install_path: &Path) -> eyre::Result<bool> {
+    let install_bin_path = install_path.join("bin");
+    let install_libexec_path = install_path.join("libexec");
+
+    file::create_dir_all(&install_bin_path)?;
+
+    for path in get_gem_executables(install_path)? {
+        // On Windows, create .cmd wrapper scripts
+        let file_stem = path
+            .file_stem()
+            .ok_or_else(|| eyre::eyre!("invalid gem executable path: {}", path.display()))?
+            .to_string_lossy();
+        let exec_path = install_bin_path.join(format!("{}.cmd", file_stem));
+        let gem_exec_path = path.to_str().ok_or_else(|| {
+            eyre::eyre!(
+                "gem executable path contains invalid UTF-8: {}",
+                path.display()
+            )
+        })?;
+        let gem_home = install_libexec_path.to_str().ok_or_else(|| {
+            eyre::eyre!(
+                "libexec path contains invalid UTF-8: {}",
+                install_libexec_path.display()
+            )
+        })?;
+        file::write(
+            &exec_path,
+            formatdoc!(
+                r#"\n
+                @echo off
+                set "GEM_HOME={gem_home}"
+                "{gem_exec_path}" %*
+                "#,
+                gem_home = gem_home,
+                gem_exec_path = gem_exec_path,
+            ),
+        )?;
+    }
 
     Ok(true)
 }
@@ -203,6 +264,7 @@ fn get_gem_executables(install_path: &Path) -> eyre::Result<Vec<std::path::PathB
     Ok(files)
 }
 
+#[cfg(unix)]
 /// Creates a `ruby` symlink in libexec/bin/ for RubyGems polyglot script fallback.
 ///
 /// RubyGems polyglot scripts include: `exec "$bindir/ruby" "-x" "$0" "$@"`
@@ -252,6 +314,7 @@ fn create_ruby_symlink(install_path: &Path) -> eyre::Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 /// Rewrites shebangs in gem executables to improve compatibility.
 ///
 /// For system Ruby: Uses `#!/usr/bin/env ruby` for PATH-based resolution.
@@ -314,6 +377,7 @@ fn rewrite_gem_shebangs(install_path: &Path) -> eyre::Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 /// Finds the Ruby shebang line in a script.
 /// Returns (line_index, line_content) or None if not found.
 ///
@@ -345,12 +409,14 @@ fn find_ruby_shebang<'a>(lines: &'a [&'a str]) -> Option<(usize, &'a str)> {
     None
 }
 
+#[cfg(unix)]
 /// Checks if a Ruby path is within mise's installs directory.
 fn is_mise_ruby_path(ruby_path: &str) -> bool {
     let ruby_installs = env::MISE_INSTALLS_DIR.join("ruby");
     Path::new(ruby_path).starts_with(&ruby_installs)
 }
 
+#[cfg(unix)]
 /// Converts a full version Ruby shebang to use the minor version symlink.
 /// e.g., `/home/user/.mise/installs/ruby/3.1.0/bin/ruby` → `/home/user/.mise/installs/ruby/3.1/bin/ruby`
 fn to_minor_version_shebang(ruby_path: &str) -> Option<String> {
@@ -379,6 +445,7 @@ fn to_minor_version_shebang(ruby_path: &str) -> Option<String> {
     ))
 }
 
+#[cfg(any(unix, test))]
 /// Extracts major.minor from a version string.
 /// e.g., "3.1.0" → "3.1", "3.2.1-preview1" → "3.2"
 fn extract_minor_version(version: &str) -> Option<String> {
