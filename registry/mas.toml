@@ -1,0 +1,3 @@
+backends = ["aqua:mas-cli/mas"]
+description = "Mac App Store command-line interface"
+test = ["mas --version", "{{version}}"]
