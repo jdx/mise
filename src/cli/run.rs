@@ -690,11 +690,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise run lint</bold>
 
     # Forces the "build" tasks to run even if its sources are up-to-date.
-    $ <bold>mise run build --force</bold>
+    $ <bold>mise run --force build</bold>
 
     # Run "test" with stdin/stdout/stderr all connected to the current terminal.
     # This forces `--jobs=1` to prevent interleaving of output.
-    $ <bold>mise run test --raw</bold>
+    $ <bold>mise run --raw test</bold>
 
     # Runs the "lint", "test", and "check" tasks in parallel.
     $ <bold>mise run lint ::: test ::: check</bold>

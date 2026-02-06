@@ -69,8 +69,8 @@ run = "npm run test:integration"
 mise executes tasks in parallel up to the configured job limit:
 
 ```bash
-mise run test --jobs 8        # Use 8 parallel jobs
-mise run test -j 1            # Force sequential execution
+mise run --jobs 8 test        # Use 8 parallel jobs
+mise run -j 1 test            # Force sequential execution
 ```
 
 The default is 4 parallel jobs, but you can configure this globally:
@@ -215,8 +215,7 @@ mise will only run the task if:
 Use `mise run --force` to ignore source/output checking:
 
 ```bash
-mise run build --force     # Always run, ignore source changes
-mise run --changed         # Only run tasks with source changes
+mise run --force build     # Always run, ignore source changes
 ```
 
 ### Parallel File Watching
@@ -242,8 +241,8 @@ mise tasks deps --dot > deps.dot # Generate graphviz diagram
 ### Execution Tracing
 
 ```bash
-mise run build --verbose       # Show task execution details
-mise run build --dry-run       # Show what would run without executing
+mise run --verbose build       # Show task execution details
+mise run --dry-run build       # Show what would run without executing
 ```
 
 ### Common Issues
