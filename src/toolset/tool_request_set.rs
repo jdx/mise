@@ -253,16 +253,14 @@ impl ToolRequestSetBuilder {
                 let mut tvr = tvr.clone();
                 // When CLI specifies a version for a tool that's in config,
                 // merge config options (e.g. postinstall) into the CLI request
-                if tvr.options().is_empty() {
-                    if let Some(config_versions) = trs.tools.get(&arg.ba) {
-                        if let Some(config_tvr) = config_versions.first() {
+                if tvr.options().is_empty()
+                    && let Some(config_versions) = trs.tools.get(&arg.ba)
+                        && let Some(config_tvr) = config_versions.first() {
                             let config_opts = config_tvr.options();
                             if !config_opts.is_empty() {
                                 tvr.set_options(config_opts);
                             }
                         }
-                    }
-                }
                 arg_trs.add_version(tvr, &ToolSource::Argument);
             } else if !trs.tools.contains_key(&arg.ba) {
                 // no active version, so use "latest"
