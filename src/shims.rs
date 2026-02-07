@@ -159,7 +159,7 @@ fn find_mise_shim_bin(mise_bin: &Path) -> Result<PathBuf> {
         }
     }
     // Fall back to searching PATH
-    if let Some(found) = file::which("mise-shim") {
+    if let Some(found) = file::which("mise-shim.exe") {
         return Ok(found);
     }
     bail!(
