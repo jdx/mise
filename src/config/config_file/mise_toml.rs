@@ -724,14 +724,15 @@ impl ConfigFile for MiseToml {
                         let mut registry_opts = rt.backend_options(&full);
                         // Also parse inline options from [key=val,...] in the full string
                         if let Some(start) = full.rfind('[')
-                            && full.ends_with(']') {
-                                let inline = crate::toolset::parse_tool_options(
-                                    &full[start + 1..full.len() - 1],
-                                );
-                                for (k, v) in inline.opts {
-                                    registry_opts.opts.entry(k).or_insert(v);
-                                }
+                            && full.ends_with(']')
+                        {
+                            let inline = crate::toolset::parse_tool_options(
+                                &full[start + 1..full.len() - 1],
+                            );
+                            for (k, v) in inline.opts {
+                                registry_opts.opts.entry(k).or_insert(v);
                             }
+                        }
                         for (k, v) in registry_opts.opts {
                             ba_opts.opts.entry(k).or_insert(v);
                         }
