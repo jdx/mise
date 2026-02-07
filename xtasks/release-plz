@@ -275,7 +275,9 @@ AQUA_CHANGELOG_PR="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA
 
 # Generate changelog using git-cliff with explicit calver version (not --bump which uses semver)
 # LLM editorialization happens in release.yml after merge
-git cliff --tag "v$version" -o CHANGELOG.md
+# Use --unreleased --prepend to only add the new release entry, preserving existing content
+# (including previously injected aqua-registry sections from older releases)
+git cliff --tag "v$version" --unreleased --prepend CHANGELOG.md
 
 # Get the unreleased notes for PR body (strip version header since PR title has version)
 PR_NOTES="$(git cliff --tag "v$version" --unreleased --strip all | tail -n +3)"
@@ -290,6 +292,7 @@ if [[ -n $AQUA_CHANGELOG_MD ]]; then
 			if (release_count == 1 && !inserted) {
 				# We are at the second release, inject aqua section before it
 				print ENVIRON["AQUA_CHANGELOG_MD"]
+				print ""
 				inserted = 1
 			}
 			release_count++
@@ -298,6 +301,7 @@ if [[ -n $AQUA_CHANGELOG_MD ]]; then
 		END {
 			# If we never hit a second release (only one release in file), append at end
 			if (release_count == 1 && !inserted) {
+				print ""
 				print ENVIRON["AQUA_CHANGELOG_MD"]
 			}
 		}
