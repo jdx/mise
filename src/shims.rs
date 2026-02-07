@@ -109,12 +109,23 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
     let shim_mode = effective_shim_mode(&mise_bin);
     #[cfg(not(windows))]
     let shim_mode = String::new();
+    let shim_mode_changed = cfg!(windows) && {
+        let mode_file = dirs::SHIMS.join(".mode");
+        mode_file
+            .exists()
+            .then(|| fs::read_to_string(&mode_file).unwrap_or_default())
+            .is_some_and(|prev| prev.trim() != shim_mode)
+    };
     let is_windows_hardlink_or_exe =
         cfg!(windows) && (shim_mode == "hardlink" || shim_mode == "exe");
-    if force || is_windows_hardlink_or_exe {
+    if force || is_windows_hardlink_or_exe || shim_mode_changed {
         file::remove_all(*dirs::SHIMS)?;
     }
     file::create_dir_all(*dirs::SHIMS)?;
+    if cfg!(windows) {
+        let mode_file = dirs::SHIMS.join(".mode");
+        file::write(&mode_file, &shim_mode)?;
+    }
 
     let (shims_to_add, shims_to_remove) = get_shim_diffs(config, &mise_bin, ts).await?;
 
