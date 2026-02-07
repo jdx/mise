@@ -1,5 +1,5 @@
-backends = ["aqua:oxc-project/oxc/oxlint", "npm:oxlint"]
+# aqua cannot support oxlint 1.17.0 or later.
+# See https://github.com/oxc-project/oxc/discussions/14452#discussioncomment-14631344
+backends = ["npm:oxlint", "aqua:oxc-project/oxc/oxlint"]
 description = "This is the linter for oxc."
-# TODO: Re-enable test once the aqua registry is fixed
-# The latest release has incorrect binary naming (oxlint.linux-x64-gnu.node instead of oxlint)
-# test = ["oxlint --version", "Version: {{version}}"]
+test = ["oxlint --version", "Version: {{version}}"]
