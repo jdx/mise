@@ -169,7 +169,9 @@ fn find_mise_shim_bin(mise_bin: &Path) -> Option<PathBuf> {
         }
     }
     // Fall back to searching PATH
-    file::which("mise-shim.exe")
+    // Note: file::which on Windows checks extension only, not file existence,
+    // so we must verify the file actually exists.
+    file::which("mise-shim.exe").filter(|p| p.is_file())
 }
 
 /// Resolve the effective Windows shim mode, falling back to "file" if "exe" is
