@@ -351,6 +351,11 @@ fn list_shims() -> Result<HashSet<String>> {
         .read_dir()?
         .map(|bin| {
             let bin = bin?;
+            let name = bin.file_name();
+            // skip dotfiles (e.g. .mode) — these are metadata, not shims
+            if name.to_string_lossy().starts_with('.') {
+                return Ok(None);
+            }
             // files and symlinks which are executable or extensionless files (Git Bash/Cygwin)
             if (file::is_executable(&bin.path()) || bin.path().extension().is_none())
                 && (bin.file_type()?.is_file() || bin.file_type()?.is_symlink())
