@@ -1788,11 +1788,12 @@ rust_type = "Vec<String>"
 type = "ListString"
 
 [windows_shim_mode]
-default = "file"
-description = "Shim file mode for Windows. Options: `file`, `hardlink`, `symlink`."
+default = "exe"
+description = "Shim file mode for Windows. Options: `exe`, `file`, `hardlink`, `symlink`."
 docs = """
 * values:
-  * `file`: Creates a file with the content `mise exec`.
+  * `exe`: Copies a native executable shim (`mise-shim.exe`) as `<tool>.exe`. Recommended. Works with all shells, package managers, and `where.exe`. Requires `mise-shim.exe` alongside `mise.exe`.
+  * `file`: Creates a `.cmd` batch file shim and an extensionless bash script for Git Bash/Cygwin.
   * `hardlink`: Uses Windows NTFS Hardlink, required on same filesystems. Need run `mise reshim --force` after upgrade mise.
   * `symlink`: Uses Windows NTFS SymbolicLink. Requires Windows Vista or later with admin privileges or enabling "Developer Mode" in Windows 10/11.
 """

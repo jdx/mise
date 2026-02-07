@@ -1385,8 +1385,8 @@
           }
         },
         "windows_shim_mode": {
-          "default": "file",
-          "description": "Shim file mode for Windows. Options: `file`, `hardlink`, `symlink`.",
+          "default": "exe",
+          "description": "Shim file mode for Windows. Options: `exe`, `file`, `hardlink`, `symlink`.",
           "type": "string"
         },
         "yes": {

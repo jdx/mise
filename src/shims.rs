@@ -105,11 +105,27 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
     let mise_bin = file::which("mise").unwrap_or(env::MISE_BIN.clone());
     let mise_bin = mise_bin.absolutize()?; // relative paths don't work as shims
 
-    let is_windows_hardlink = cfg!(windows) && Settings::get().windows_shim_mode.eq("hardlink");
-    if force || is_windows_hardlink {
+    #[cfg(windows)]
+    let shim_mode = effective_shim_mode(&mise_bin);
+    #[cfg(not(windows))]
+    let shim_mode = String::new();
+    let shim_mode_changed = cfg!(windows) && {
+        let mode_file = dirs::SHIMS.join(".mode");
+        mode_file
+            .exists()
+            .then(|| fs::read_to_string(&mode_file).unwrap_or_default())
+            .is_some_and(|prev| prev.trim() != shim_mode)
+    };
+    let is_windows_hardlink_or_exe =
+        cfg!(windows) && (shim_mode == "hardlink" || shim_mode == "exe");
+    if force || is_windows_hardlink_or_exe || shim_mode_changed {
         file::remove_all(*dirs::SHIMS)?;
     }
     file::create_dir_all(*dirs::SHIMS)?;
+    if cfg!(windows) {
+        let mode_file = dirs::SHIMS.join(".mode");
+        file::write(&mode_file, &shim_mode)?;
+    }
 
     let (shims_to_add, shims_to_remove) = get_shim_diffs(config, &mise_bin, ts).await?;
 
@@ -144,8 +160,73 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
 }
 
 #[cfg(windows)]
+fn find_mise_shim_bin(mise_bin: &Path) -> Option<PathBuf> {
+    // Look next to the mise binary first
+    if let Some(parent) = mise_bin.parent() {
+        let candidate = parent.join("mise-shim.exe");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    // Fall back to searching PATH
+    // Note: file::which on Windows checks extension only, not file existence,
+    // so we must verify the file actually exists.
+    file::which("mise-shim.exe").filter(|p| p.is_file())
+}
+
+/// Resolve the effective Windows shim mode, falling back to "file" if "exe" is
+/// requested but mise-shim.exe is not available.
+#[cfg(windows)]
+fn effective_shim_mode(mise_bin: &Path) -> String {
+    let mode = Settings::get().windows_shim_mode.clone();
+    if mode == "exe" && find_mise_shim_bin(mise_bin).is_none() {
+        warn!(
+            "mise-shim.exe not found next to {} or on PATH, falling back to \"file\" shim mode",
+            display_path(mise_bin)
+        );
+        return "file".to_string();
+    }
+    mode
+}
+
+#[cfg(windows)]
 fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
-    match Settings::get().windows_shim_mode.as_ref() {
+    match effective_shim_mode(mise_bin).as_ref() {
+        "exe" => {
+            if symlink_path.extension().and_then(|s| s.to_str()) == Some("exe") {
+                let mise_shim_bin =
+                    find_mise_shim_bin(mise_bin).ok_or_else(|| eyre!("mise-shim.exe not found"))?;
+                // Copy mise-shim.exe as <tool>.exe
+                fs::copy(&mise_shim_bin, symlink_path).wrap_err_with(|| {
+                    eyre!(
+                        "Failed to copy {} to {}",
+                        display_path(&mise_shim_bin),
+                        display_path(symlink_path)
+                    )
+                })?;
+                Ok(())
+            } else {
+                let shim_name = symlink_path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy();
+                // Create extensionless bash script for Git Bash/Cygwin
+                file::write(
+                    symlink_path,
+                    formatdoc! {r#"
+        #!/bin/bash
+
+        exec mise x -- {shim_name} "$@"
+        "#},
+                )
+                .wrap_err_with(|| {
+                    eyre!(
+                        "Failed to create shim script for {}",
+                        display_path(symlink_path)
+                    )
+                })
+            }
+        }
         "file" => {
             let shim = shim.trim_end_matches(".cmd");
             // write a shim file without extension for use in Git Bash/Cygwin
@@ -223,7 +304,7 @@ pub async fn get_shim_diffs(
     let mise_bin = mise_bin.as_ref();
     let (actual_shims, desired_shims) = tokio::join!(
         get_actual_shims(mise_bin),
-        get_desired_shims(config, toolset)
+        get_desired_shims(config, mise_bin, toolset)
     );
     let (actual_shims, desired_shims) = (actual_shims?, desired_shims?);
     let out: (BTreeSet<String>, BTreeSet<String>) = (
@@ -272,6 +353,11 @@ fn list_shims() -> Result<HashSet<String>> {
         .read_dir()?
         .map(|bin| {
             let bin = bin?;
+            let name = bin.file_name();
+            // skip dotfiles (e.g. .mode) — these are metadata, not shims
+            if name.to_string_lossy().starts_with('.') {
+                return Ok(None);
+            }
             // files and symlinks which are executable or extensionless files (Git Bash/Cygwin)
             if (file::is_executable(&bin.path()) || bin.path().extension().is_none())
                 && (bin.file_type()?.is_file() || bin.file_type()?.is_symlink())
@@ -287,7 +373,12 @@ fn list_shims() -> Result<HashSet<String>> {
         .collect())
 }
 
-async fn get_desired_shims(config: &Arc<Config>, toolset: &Toolset) -> Result<HashSet<String>> {
+async fn get_desired_shims(
+    config: &Arc<Config>,
+    mise_bin: &Path,
+    toolset: &Toolset,
+) -> Result<HashSet<String>> {
+    let _mise_bin = mise_bin; // used on Windows only
     let mut shims = HashSet::new();
     for (t, tv) in toolset.list_installed_versions(config).await? {
         let bins = list_tool_bins(config, t.clone(), &tv)
@@ -297,11 +388,21 @@ async fn get_desired_shims(config: &Arc<Config>, toolset: &Toolset) -> Result<Ha
                 Vec::new()
             });
         if cfg!(windows) {
+            #[cfg(windows)]
+            let shim_mode = effective_shim_mode(_mise_bin);
+            #[cfg(not(windows))]
+            let shim_mode = String::new();
             shims.extend(bins.into_iter().flat_map(|b| {
                 let p = PathBuf::from(&b);
-                match Settings::get().windows_shim_mode.as_ref() {
+                match shim_mode.as_ref() {
                     "hardlink" | "symlink" => {
                         vec![p.with_extension("exe").to_string_lossy().to_string()]
+                    }
+                    "exe" => {
+                        vec![
+                            p.with_extension("exe").to_string_lossy().to_string(),
+                            p.with_extension("").to_string_lossy().to_string(),
+                        ]
                     }
                     "file" => {
                         vec![

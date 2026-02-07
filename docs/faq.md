@@ -202,7 +202,7 @@ It handles daemon management with features like automatic restarts on failure, s
 
 In VSCode, many extensions will throw an "error spawn EINVAL" due to a [Node.js security fix](https://nodejs.org/en/blog/vulnerability/april-2024-security-releases-2#command-injection-via-args-parameter-of-child_processspawn-without-shell-option-enabled-on-windows-cve-2024-27980---high).
 
-You can change [windows_shim_mode](https://mise.jdx.dev/configuration/settings.html#windows_shim_mode) to `hardlink` or `symlink`
+The default `exe` shim mode should resolve this. If you're using an older mode, you can change [windows_shim_mode](https://mise.jdx.dev/configuration/settings.html#windows_shim_mode) to `exe`, `hardlink`, or `symlink`.
 
 ## How does mise versioning work?
 

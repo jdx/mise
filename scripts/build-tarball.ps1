@@ -7,8 +7,10 @@ $BaseName = "mise-v$Version-$Env:OS-$Env:ARCH"
 
 # TODO: use "serious" feature
 cargo build --release --features rustls-native-roots,openssl/vendored --target "$Target"
+cargo build --release -p mise-shim --target "$Target"
 mkdir -p dist/mise/bin
 cp "target/$Target/release/mise.exe" dist/mise/bin/mise.exe
+cp "target/$Target/release/mise-shim.exe" dist/mise/bin/mise-shim.exe
 cp README.md dist/mise/README.md
 cp LICENSE dist/mise/LICENSE
 Set-Location dist
