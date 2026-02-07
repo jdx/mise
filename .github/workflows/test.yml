@@ -59,12 +59,15 @@ jobs:
       - shell: pwsh
         run: |
           cargo build
+          cargo build -p mise-shim
           Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - run: mise -v
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: mise-windows-latest
-          path: target/debug/mise.exe
+          path: |
+            target/debug/mise.exe
+            target/debug/mise-shim.exe
       - uses: ./.github/actions/mise-tools
 
   unit:
