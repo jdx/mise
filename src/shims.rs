@@ -154,12 +154,12 @@ fn find_mise_shim_bin(mise_bin: &Path) -> Result<PathBuf> {
     // Look next to the mise binary first
     if let Some(parent) = mise_bin.parent() {
         let candidate = parent.join("mise-shim.exe");
-        if candidate.exists() {
+        if candidate.is_file() {
             return Ok(candidate);
         }
     }
     // Fall back to searching PATH
-    if let Some(found) = file::which("mise-shim").or_else(|| file::which("mise-shim.exe")) {
+    if let Some(found) = file::which("mise-shim") {
         return Ok(found);
     }
     bail!(
@@ -173,31 +173,38 @@ fn find_mise_shim_bin(mise_bin: &Path) -> Result<PathBuf> {
 fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
     match Settings::get().windows_shim_mode.as_ref() {
         "exe" => {
-            let mise_shim_bin = find_mise_shim_bin(mise_bin)?;
-            let shim_name = shim.trim_end_matches(".exe");
-            // Copy mise-shim.exe as <tool>.exe
-            fs::copy(&mise_shim_bin, symlink_path.with_extension("exe")).wrap_err_with(|| {
-                eyre!(
-                    "Failed to copy {} to {}",
-                    display_path(&mise_shim_bin),
-                    display_path(symlink_path)
-                )
-            })?;
-            // Also create extensionless bash script for Git Bash/Cygwin
-            file::write(
-                symlink_path.with_extension(""),
-                formatdoc! {r#"
+            if symlink_path.extension().and_then(|s| s.to_str()) == Some("exe") {
+                let mise_shim_bin = find_mise_shim_bin(mise_bin)?;
+                // Copy mise-shim.exe as <tool>.exe
+                fs::copy(&mise_shim_bin, symlink_path).wrap_err_with(|| {
+                    eyre!(
+                        "Failed to copy {} to {}",
+                        display_path(&mise_shim_bin),
+                        display_path(symlink_path)
+                    )
+                })?;
+                Ok(())
+            } else {
+                let shim_name = symlink_path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy();
+                // Create extensionless bash script for Git Bash/Cygwin
+                file::write(
+                    symlink_path,
+                    formatdoc! {r#"
         #!/bin/bash
 
         exec mise x -- {shim_name} "$@"
         "#},
-            )
-            .wrap_err_with(|| {
-                eyre!(
-                    "Failed to create shim script for {}",
-                    display_path(symlink_path)
                 )
-            })
+                .wrap_err_with(|| {
+                    eyre!(
+                        "Failed to create shim script for {}",
+                        display_path(symlink_path)
+                    )
+                })
+            }
         }
         "file" => {
             let shim = shim.trim_end_matches(".cmd");

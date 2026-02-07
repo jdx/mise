@@ -14,15 +14,15 @@ fn main() {
             eprintln!("mise-shim: failed to determine tool name from executable path");
             exit(1);
         })
-        .to_string_lossy();
+        .to_os_string();
 
-    let args: Vec<String> = env::args().skip(1).collect();
+    let args = env::args_os().skip(1);
 
     let status = Command::new("mise")
         .arg("x")
         .arg("--")
-        .arg(tool.as_ref())
-        .args(&args)
+        .arg(&tool)
+        .args(args)
         .status();
 
     match status {

@@ -38,7 +38,9 @@ Describe 'shim_mode' {
     It 'run on exe' {
         changeShimMode "exe"
 
-        mise x go@1.23.3 -- where go
+        $wherePath = mise x go@1.23.3 -- where go
+        $LASTEXITCODE | Should -Be 0
+        $wherePath | Should -BeLike "*go.exe"
         mise x go@1.23.3 -- go version | Should -BeLike "go version go1.23.3 windows/*"
 
         $goShim = Get-Item -Path (Join-Path -Path $shimPath -ChildPath go.exe)
