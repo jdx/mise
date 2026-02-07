@@ -30,7 +30,11 @@ packages:
         supported_envs:
           - linux/amd64
           - darwin/arm64
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.2.8")
         supported_envs:
           - linux
           - darwin
+      - version_constraint: "true"
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64

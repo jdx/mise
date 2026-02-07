@@ -92,6 +92,27 @@ packages:
           - darwin
           - windows
           - amd64
+      - version_constraint: semver("<= 0.3.0")
+        asset: prek-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: prek
+            src: "{{.AssetWithoutExt}}/prek"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: prek
       - version_constraint: "true"
         asset: prek-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -113,3 +134,5 @@ packages:
             format: zip
             files:
               - name: prek
+        github_artifact_attestations:
+          signer_workflow: j178/prek/.github/workflows/release.yml
