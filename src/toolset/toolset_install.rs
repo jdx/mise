@@ -81,14 +81,12 @@ impl Toolset {
                 // Use config request options if available, falling back to backend arg opts.
                 // This ensures tool options like postinstall from mise.toml are preserved
                 // when installing with an explicit CLI version (e.g. `mise install tool@latest`).
-                let config_opts = tvl.requests.first().map(|r| r.options());
-                let options = if let Some(ref opts) = config_opts
-                    && !opts.is_empty()
-                {
-                    opts.clone()
-                } else {
-                    tvl.backend.opts()
-                };
+                let options = tvl
+                    .requests
+                    .first()
+                    .map(|r| r.options())
+                    .filter(|opts| !opts.is_empty())
+                    .unwrap_or_else(|| tvl.backend.opts());
                 if tr.options().is_empty() || tr.options() != options {
                     tr.set_options(options);
                 }

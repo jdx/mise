@@ -10,7 +10,7 @@ dummy = { version = "latest", postinstall = "echo POSTINSTALL_RAN=yes" }
 EOF
 
 # Remove any existing dummy installation to force reinstall
-rm -rf ~/.local/share/mise/installs/dummy
+rm -rf "$MISE_DATA_DIR/installs/dummy"
 
 # Test 1: Install with explicit CLI version — postinstall should still fire
 output=$(mise install dummy@latest 2>&1)
@@ -24,7 +24,7 @@ else
 fi
 
 # Clean up and test again without explicit version to confirm it still works
-rm -rf ~/.local/share/mise/installs/dummy
+rm -rf "$MISE_DATA_DIR/installs/dummy"
 
 output=$(mise install dummy 2>&1)
 
