@@ -35,6 +35,17 @@ Describe 'shim_mode' {
         (Get-Item -Path  (Join-Path -Path $shimPath -ChildPath go.cmd)).LinkType | Should -Be $null
     }
 
+    It 'run on exe' {
+        changeShimMode "exe"
+
+        mise x go@1.23.3 -- where go
+        mise x go@1.23.3 -- go version | Should -BeLike "go version go1.23.3 windows/*"
+
+        $goShim = Get-Item -Path (Join-Path -Path $shimPath -ChildPath go.exe)
+        $goShim.LinkType | Should -Be $null
+        $goShim.Length | Should -BeGreaterThan 0
+    }
+
     It 'run on hardlink' {
         mise settings windows_shim_mode "hardlink"
 

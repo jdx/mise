@@ -5179,6 +5179,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "mise-shim"
+version = "2026.2.5"
+
+[[package]]
 name = "mlua"
 version = "0.11.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"

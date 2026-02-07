@@ -3,6 +3,7 @@ members = [
   "crates/vfox",
   "crates/aqua-registry",
   "crates/mise-interactive-config",
+  "crates/mise-shim",
 ]
 
 [package]

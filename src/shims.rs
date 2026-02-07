@@ -105,8 +105,14 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
     let mise_bin = file::which("mise").unwrap_or(env::MISE_BIN.clone());
     let mise_bin = mise_bin.absolutize()?; // relative paths don't work as shims
 
-    let is_windows_hardlink = cfg!(windows) && Settings::get().windows_shim_mode.eq("hardlink");
-    if force || is_windows_hardlink {
+    let shim_mode = if cfg!(windows) {
+        Settings::get().windows_shim_mode.clone()
+    } else {
+        String::new()
+    };
+    let is_windows_hardlink_or_exe =
+        cfg!(windows) && (shim_mode == "hardlink" || shim_mode == "exe");
+    if force || is_windows_hardlink_or_exe {
         file::remove_all(*dirs::SHIMS)?;
     }
     file::create_dir_all(*dirs::SHIMS)?;
@@ -144,8 +150,55 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
 }
 
 #[cfg(windows)]
+fn find_mise_shim_bin(mise_bin: &Path) -> Result<PathBuf> {
+    // Look next to the mise binary first
+    if let Some(parent) = mise_bin.parent() {
+        let candidate = parent.join("mise-shim.exe");
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    // Fall back to searching PATH
+    if let Some(found) = file::which("mise-shim").or_else(|| file::which("mise-shim.exe")) {
+        return Ok(found);
+    }
+    bail!(
+        "mise-shim.exe not found. It should be located next to mise.exe at {}.\n\
+         You may need to reinstall mise or switch to a different windows_shim_mode.",
+        display_path(mise_bin)
+    );
+}
+
+#[cfg(windows)]
 fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
     match Settings::get().windows_shim_mode.as_ref() {
+        "exe" => {
+            let mise_shim_bin = find_mise_shim_bin(mise_bin)?;
+            let shim_name = shim.trim_end_matches(".exe");
+            // Copy mise-shim.exe as <tool>.exe
+            fs::copy(&mise_shim_bin, symlink_path.with_extension("exe")).wrap_err_with(|| {
+                eyre!(
+                    "Failed to copy {} to {}",
+                    display_path(&mise_shim_bin),
+                    display_path(symlink_path)
+                )
+            })?;
+            // Also create extensionless bash script for Git Bash/Cygwin
+            file::write(
+                symlink_path.with_extension(""),
+                formatdoc! {r#"
+        #!/bin/bash
+
+        exec mise x -- {shim_name} "$@"
+        "#},
+            )
+            .wrap_err_with(|| {
+                eyre!(
+                    "Failed to create shim script for {}",
+                    display_path(symlink_path)
+                )
+            })
+        }
         "file" => {
             let shim = shim.trim_end_matches(".cmd");
             // write a shim file without extension for use in Git Bash/Cygwin
@@ -302,6 +355,12 @@ async fn get_desired_shims(config: &Arc<Config>, toolset: &Toolset) -> Result<Ha
                 match Settings::get().windows_shim_mode.as_ref() {
                     "hardlink" | "symlink" => {
                         vec![p.with_extension("exe").to_string_lossy().to_string()]
+                    }
+                    "exe" => {
+                        vec![
+                            p.with_extension("exe").to_string_lossy().to_string(),
+                            p.with_extension("").to_string_lossy().to_string(),
+                        ]
                     }
                     "file" => {
                         vec![
