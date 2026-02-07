@@ -357,6 +357,7 @@ impl Ls {
                     version.clone(),
                 )
             })
+            .unique_by(|(_, tv)| tv.tv_pathname())
             .map(|(k, tv)| (self, k.0, tv.clone(), tv.request.source().clone()))
             // if it isn't installed and it's not specified, don't show it
             .filter(|(_ls, p, tv, source)| {
