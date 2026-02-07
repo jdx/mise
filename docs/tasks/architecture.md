@@ -119,7 +119,7 @@ mise discovers tasks from multiple sources in this order:
 
 1. **File tasks**: Executable files in task directories
 2. **TOML tasks**: Defined in `mise.toml` files
-3. **Inherited tasks**: From parent directories
+3. **Parent directory tasks**: Available from parent directories
 
 ### Task Resolution Process
 
@@ -131,9 +131,9 @@ When you run `mise run build`, mise:
 4. **Validates graph** (checks for circular dependencies)
 5. **Executes in dependency order** with parallelism
 
-### Task Inheritance
+### Task Resolution Across Directories
 
-Tasks are inherited from parent directories but can be overridden:
+Tasks from parent directories are available in subdirectories and can be overridden:
 
 ```
 project/
@@ -142,7 +142,7 @@ project/
     └── mise.toml          # overrides: test, adds: bundle
 ```
 
-In `frontend/`, you have access to: `lint` (inherited), `test` (overridden), `build` (inherited), `bundle` (local).
+In `frontend/`, you have access to: `lint` (from parent), `test` (overridden), `build` (from parent), `bundle` (local).
 
 ## Advanced Dependency Features
 

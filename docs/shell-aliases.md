@@ -47,7 +47,7 @@ $ cd ~
 
 ## Hierarchy
 
-Like other mise config, shell aliases are inherited from parent directories. A child directory can override a parent's alias:
+Like other mise config, shell aliases from parent directories are available in child directories. A child directory can override a parent's alias:
 
 ```toml
 # ~/projects/mise.toml

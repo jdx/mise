@@ -178,7 +178,7 @@ Helpers for working with environment variables:
 - `EnvDiff` - Tracks and applies environment changes
 - `EnvDirective` - Configuration-based environment variable management
 - `PathEnv` - Intelligent PATH manipulation with precedence rules
-- Context-aware resolution with inheritance
+- Context-aware resolution with config layering
 
 For environment setup and configuration, see [Environment Documentation](environments/).
 

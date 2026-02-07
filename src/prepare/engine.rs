@@ -84,8 +84,8 @@ impl PrepareEngine {
     /// Discover all applicable prepare providers for the current project
     ///
     /// Each config file's prepare providers are scoped to that config file's directory.
-    /// Prepare configs are NOT inherited from parent directories - a `[prepare.pnpm]`
-    /// defined in a root mise.toml only runs from the root, not from subdirectories.
+    /// For example, a `[prepare.pnpm]` defined in the root `mise.toml` only applies when
+    /// running from the root directory, not from subdirectories.
     fn discover_providers(config: &Config) -> Result<Vec<Box<dyn PrepareProvider>>> {
         let project_root = config
             .project_root
@@ -99,7 +99,7 @@ impl PrepareEngine {
         // Process each config file's prepare config independently, using that
         // config file's directory as the project root for its providers.
         // Only include config files that belong to the current project root
-        // (not inherited from parent directories).
+        // (skip config files outside the current project root, e.g. from parent directories).
         for cf in config.config_files.values() {
             let Some(prepare_config) = cf.prepare_config() else {
                 continue;

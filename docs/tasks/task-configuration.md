@@ -580,7 +580,7 @@ mise supports monorepo-style task organization with target path syntax. Enable i
 For complete documentation on monorepo tasks including:
 
 - Task path syntax and wildcards
-- Tool inheritance from parent configs
+- Tool layering from parent configs
 - Performance tuning
 - Best practices and troubleshooting
 
