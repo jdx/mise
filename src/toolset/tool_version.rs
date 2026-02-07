@@ -50,6 +50,7 @@ impl ToolVersion {
     ) -> Result<Self> {
         trace!("resolving {} {}", &request, opts);
         if opts.use_locked_version
+            && !has_linked_version(request.ba())
             && let Some(lt) = request.lockfile_resolve(config)?
         {
             let mut tv = Self::new(request.clone(), lt.version);
@@ -410,6 +411,27 @@ impl Default for ResolveOptions {
             before_date: None,
         }
     }
+}
+
+/// Check if a tool has any user-linked versions (created by `mise link`).
+/// A linked version is an installed version whose path is a symlink to an absolute path,
+/// as opposed to runtime symlinks which point to relative paths (starting with "./").
+fn has_linked_version(ba: &BackendArg) -> bool {
+    let installs_dir = &ba.installs_path;
+    let Ok(entries) = std::fs::read_dir(installs_dir) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if let Ok(Some(target)) = crate::file::resolve_symlink(&path) {
+            // Runtime symlinks start with "./" (e.g., latest -> ./1.35.0)
+            // User-linked symlinks point to absolute paths (e.g., brew -> /opt/homebrew/opt/hk)
+            if target.is_absolute() {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 impl Display for ResolveOptions {
