@@ -250,7 +250,20 @@ impl ToolRequestSetBuilder {
         let mut arg_trs = ToolRequestSet::new();
         for arg in tool_args.iter() {
             if let Some(tvr) = &arg.tvr {
-                arg_trs.add_version(tvr.clone(), &ToolSource::Argument);
+                let mut tvr = tvr.clone();
+                // When CLI specifies a version for a tool that's in config,
+                // merge config options (e.g. postinstall) into the CLI request
+                if tvr.options().is_empty() {
+                    if let Some(config_versions) = trs.tools.get(&arg.ba) {
+                        if let Some(config_tvr) = config_versions.first() {
+                            let config_opts = config_tvr.options();
+                            if !config_opts.is_empty() {
+                                tvr.set_options(config_opts);
+                            }
+                        }
+                    }
+                }
+                arg_trs.add_version(tvr, &ToolSource::Argument);
             } else if !trs.tools.contains_key(&arg.ba) {
                 // no active version, so use "latest"
                 let tr = ToolRequest::new(arg.ba.clone(), "latest", ToolSource::Argument)?;
