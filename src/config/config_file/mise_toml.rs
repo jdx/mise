@@ -715,6 +715,28 @@ impl ConfigFile for MiseToml {
                         });
                     }
                     ba_opts.merge(&options.opts);
+                    // Re-apply registry defaults for install-time keys not overridden by user.
+                    // The filtering above strips both stale install-state cache AND registry
+                    // defaults. We want to keep registry defaults while discarding stale cache.
+                    if let Some(rt) = crate::registry::REGISTRY.get(ba.short.as_str()) {
+                        let full = ba.full();
+                        // Get structured options from registry (table-format backends)
+                        let mut registry_opts = rt.backend_options(&full);
+                        // Also parse inline options from [key=val,...] in the full string
+                        if let Some(start) = full.rfind('[')
+                            && full.ends_with(']')
+                        {
+                            let inline = crate::toolset::parse_tool_options(
+                                &full[start + 1..full.len() - 1],
+                            );
+                            for (k, v) in inline.opts {
+                                registry_opts.opts.entry(k).or_insert(v);
+                            }
+                        }
+                        for (k, v) in registry_opts.opts {
+                            ba_opts.opts.entry(k).or_insert(v);
+                        }
+                    }
                     // Copy os and install_env from config (not cached)
                     ba_opts.os = options.os.clone();
                     ba_opts.install_env = options.install_env.clone();
@@ -2293,5 +2315,59 @@ mod tests {
 
     fn parse_env(toml: String) -> String {
         parse(toml).env_entries().unwrap().into_iter().join("\n")
+    }
+
+    #[tokio::test]
+    async fn test_table_syntax_preserves_registry_defaults() {
+        // Test for #8039: table syntax like `ansible = { version = "latest" }`
+        // should preserve registry defaults (e.g. uvx=false, pipx_args=--include-deps)
+        let _config = Config::get().await.unwrap();
+        let cf = parse(formatdoc! {r#"
+            [tools]
+            ansible = {{ version = "latest" }}
+        "#});
+        let trs = cf.to_tool_request_set().unwrap();
+        let tools = trs.tools;
+        // Find the ansible tool request
+        let ansible_requests = tools
+            .iter()
+            .find(|(ba, _)| ba.short == "ansible")
+            .map(|(_, reqs)| reqs)
+            .expect("ansible should be in tool request set");
+        let opts = ansible_requests[0].options();
+        assert_eq!(
+            opts.get("uvx").map(|s| s.as_str()),
+            Some("false"),
+            "registry default uvx=false should be preserved with table syntax"
+        );
+        assert_eq!(
+            opts.get("pipx_args").map(|s| s.as_str()),
+            Some("--include-deps"),
+            "registry default pipx_args=--include-deps should be preserved with table syntax"
+        );
+
+        // Also verify that user-provided options override registry defaults
+        let cf2 = parse(formatdoc! {r#"
+            [tools]
+            ansible = {{ version = "latest", uvx = "true" }}
+        "#});
+        let trs2 = cf2.to_tool_request_set().unwrap();
+        let ansible2 = trs2
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "ansible")
+            .map(|(_, reqs)| reqs)
+            .expect("ansible should be in tool request set");
+        let opts2 = ansible2[0].options();
+        assert_eq!(
+            opts2.get("uvx").map(|s| s.as_str()),
+            Some("true"),
+            "user-provided uvx=true should override registry default uvx=false"
+        );
+        assert_eq!(
+            opts2.get("pipx_args").map(|s| s.as_str()),
+            Some("--include-deps"),
+            "non-overridden registry default pipx_args should still be preserved"
+        );
     }
 }

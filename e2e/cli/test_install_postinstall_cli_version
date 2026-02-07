@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# Test that tool-level postinstall hooks fire when installing with an explicit
+# version on the CLI (e.g. `mise install dummy@latest`).
+# Regression test for https://github.com/jdx/mise/discussions/7979
+
+cat <<EOF >mise.toml
+[tools]
+dummy = { version = "latest", postinstall = "echo POSTINSTALL_RAN=yes" }
+EOF
+
+# Remove any existing dummy installation to force reinstall
+rm -rf "$MISE_DATA_DIR/installs/dummy"
+
+# Test 1: Install with explicit CLI version — postinstall should still fire
+output=$(mise install dummy@latest 2>&1)
+
+if [[ $output == *"POSTINSTALL_RAN=yes"* ]]; then
+	echo "✓ postinstall ran with explicit CLI version"
+else
+	echo "✗ postinstall did NOT run with explicit CLI version"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Clean up and test again without explicit version to confirm it still works
+rm -rf "$MISE_DATA_DIR/installs/dummy"
+
+output=$(mise install dummy 2>&1)
+
+if [[ $output == *"POSTINSTALL_RAN=yes"* ]]; then
+	echo "✓ postinstall ran without explicit CLI version"
+else
+	echo "✗ postinstall did NOT run without explicit CLI version"
+	echo "Output: $output"
+	exit 1
+fi

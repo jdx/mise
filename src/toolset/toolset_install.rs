@@ -78,10 +78,15 @@ impl Toolset {
                     // TODO: handle this case with multiple versions
                     continue;
                 }
-                let options = tvl.backend.opts();
-                // TODO: tr.options() probably should be Option<ToolVersionOptions>
-                // to differentiate between no options and empty options
-                // without that it might not be possible to unset the options if they are set
+                // Use config request options if available, falling back to backend arg opts.
+                // This ensures tool options like postinstall from mise.toml are preserved
+                // when installing with an explicit CLI version (e.g. `mise install tool@latest`).
+                let options = tvl
+                    .requests
+                    .first()
+                    .map(|r| r.options())
+                    .filter(|opts| !opts.is_empty())
+                    .unwrap_or_else(|| tvl.backend.opts());
                 if tr.options().is_empty() || tr.options() != options {
                     tr.set_options(options);
                 }
