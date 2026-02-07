@@ -1,6 +1,58 @@
 # Changelog
 
-## [2026.2.5](https://github.com/jdx/mise/compare/v2026.2.4..v2026.2.5) - 2026-02-05
+## [2026.2.6](https://github.com/jdx/mise/compare/v2026.2.5..v2026.2.6) - 2026-02-07
+
+### 🚀 Features
+
+- **(env)** add shell-style variable expansion in env values by @jdx in [#8029](https://github.com/jdx/mise/pull/8029)
+- **(list)** add --all-sources flag to list command by @TylerHillery in [#8019](https://github.com/jdx/mise/pull/8019)
+
+### 🐛 Bug Fixes
+
+- **(gem)** Windows support for gem backend by @my1e5 in [#8031](https://github.com/jdx/mise/pull/8031)
+- **(gem)** revert gem.rs script newline change by @my1e5 in [#8034](https://github.com/jdx/mise/pull/8034)
+- **(lock)** write tools to lockfile matching their source config by @jdx in [#8012](https://github.com/jdx/mise/pull/8012)
+- **(ls)** sort sources deterministically in --all-sources output by @jdx in [#8037](https://github.com/jdx/mise/pull/8037)
+- **(task)** auto-install tools from mise.toml for file tasks by @jdx in [#8030](https://github.com/jdx/mise/pull/8030)
+
+### 📚 Documentation
+
+- fix wrong positions of `mise run` flags by @muzimuzhi in [#8036](https://github.com/jdx/mise/pull/8036)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:copr docker digest to 3e00d7d by @renovate[bot] in [#8023](https://github.com/jdx/mise/pull/8023)
+- update ghcr.io/jdx/mise:alpine docker digest to 0ced1b3 by @renovate[bot] in [#8022](https://github.com/jdx/mise/pull/8022)
+
+### 📦 Registry
+
+- add tirith ([github:sheeki03/tirith](https://github.com/sheeki03/tirith)) by @sheeki03 in [#8024](https://github.com/jdx/mise/pull/8024)
+- add mas by @TyceHerrman in [#8032](https://github.com/jdx/mise/pull/8032)
+
+### Security
+
+- **(deps)** update time crate to 0.3.47 to fix RUSTSEC-2026-0009 by @jdx in [#8026](https://github.com/jdx/mise/pull/8026)
+
+### New Contributors
+
+- @sheeki03 made their first contribution in [#8024](https://github.com/jdx/mise/pull/8024)
+- @TylerHillery made their first contribution in [#8019](https://github.com/jdx/mise/pull/8019)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`kubernetes-sigs/kubectl-validate`](https://github.com/kubernetes-sigs/kubectl-validate)
+
+#### Updated Packages (6)
+
+- [`flux-iac/tofu-controller/tfctl`](https://github.com/flux-iac/tofu-controller/tfctl)
+- [`gogs/gogs`](https://github.com/gogs/gogs)
+- [`j178/prek`](https://github.com/j178/prek)
+- [`syncthing/syncthing`](https://github.com/syncthing/syncthing)
+- [`tuist/tuist`](https://github.com/tuist/tuist)
+- [`yaml/yamlscript`](https://github.com/yaml/yamlscript)
+## [2026.2.5](https://github.com/jdx/mise/compare/v2026.2.4..v2026.2.5) - 2026-02-06
 
 ### 🐛 Bug Fixes
 
@@ -10,11 +62,6 @@
 
 - add tone calibration to release notes prompt by @jdx in [#8010](https://github.com/jdx/mise/pull/8010)
 
-### 📦 Aqua Registry Updates
-
-#### Updated Packages (1)
-
-- [`uutils/coreutils`](https://github.com/uutils/coreutils)
 ## [2026.2.4](https://github.com/jdx/mise/compare/v2026.2.3..v2026.2.4) - 2026-02-05
 
 ### 🐛 Bug Fixes

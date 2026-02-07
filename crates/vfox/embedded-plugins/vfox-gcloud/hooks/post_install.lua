@@ -31,8 +31,9 @@ local function version_gte(v1, v2)
 end
 
 function PLUGIN:PostInstall(ctx)
-    local root_path = ctx.rootPath
-    local version = ctx.version or ""
+    local sdkInfo = ctx.sdkInfo[PLUGIN.name]
+    local root_path = sdkInfo.path
+    local version = sdkInfo.version or ""
 
     -- The SDK extracts directly to the root path
     local sdk_path = root_path

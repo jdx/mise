@@ -57,7 +57,7 @@ packages:
         supported_envs:
           - linux
           - darwin
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.16.0-rc.7")
         asset: tfctl_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         replacements:
@@ -77,6 +77,28 @@ packages:
               - https://token.actions.githubusercontent.com
               - --signature
               - https://github.com/flux-iac/tofu-controller/releases/download/{{.Version}}/tofu-controller_{{trimV .Version}}_checksums.txt.sig
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: tfctl_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: tofu-controller_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: tofu-controller_{{trimV .Version}}_checksums.txt.sigstore.json
+            opts:
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --certificate-identity
+              - https://github.com/flux-iac/tofu-controller/.github/workflows/release.yaml@refs/tags/{{.Version}}
         supported_envs:
           - linux
           - darwin
