@@ -15,7 +15,7 @@ The directory containing a `mise.toml` file is called the **config_root**. In mo
 - **Consistent execution**: Run tasks from any location in the monorepo using the mise config that would be set if called from the task's directory
 - **Clear task namespacing**: Tasks are prefixed with their location from the monorepo root
 - **Pattern-based execution**: Use wildcards to run tasks across multiple projects
-- **Tool and environment inheritance**: Subdirectory tasks inherit tools and environment variables from parent configs, but can also define their own in their config_root
+- **Tool and environment layering**: Subdirectory tasks use tools and environment variables from parent configs, but can also define their own in their config_root
 - **Automatic trust propagation**: When the monorepo root is trusted, all descendant configs are automatically trusted
 
 ## Configuration
@@ -29,7 +29,7 @@ Add `experimental_monorepo_root = true` to your root `mise.toml`:
 experimental_monorepo_root = true
 
 [tools]
-# Tools defined here are inherited by all subdirectories
+# Tools defined here apply to all subdirectories
 node = "20"
 ```
 
@@ -175,26 +175,26 @@ mise '//...:test*'
 mise //.../frontend:build
 ```
 
-## Tool and Environment Inheritance
+## Tool and Environment Layering
 
-Subdirectory tasks automatically inherit tools and environment variables from parent config files in the hierarchy. However, each subdirectory can also define its own tools and environment variables in its config_root. This allows you to:
+Subdirectory tasks automatically use tools and environment variables from parent config files in the hierarchy. However, each subdirectory can also define its own tools and environment variables in its config_root. This allows you to:
 
 1. Define common tools and environment at the monorepo root
 2. Override tools or environment in specific subdirectories
 3. Add additional tools or environment in subdirectories
 
-### Inheritance Example
+### Layering Example
 
 ```toml
 # /myproject/mise.toml
 experimental_monorepo_root = true
 
 [tools]
-node = "20"      # Inherited by all subdirectories
-python = "3.12"  # Inherited by all subdirectories
+node = "20"      # Available to all subdirectories
+python = "3.12"  # Available to all subdirectories
 
 [env]
-LOG_LEVEL = "info"  # Inherited by all subdirectories
+LOG_LEVEL = "info"  # Available to all subdirectories
 ```
 
 ```toml
@@ -212,13 +212,13 @@ run = "npm run build"  # Uses node 18 and LOG_LEVEL=debug
 
 ```toml
 # /myproject/projects/backend/mise.toml
-# No tools or env section - inherits node 20, python 3.12, and LOG_LEVEL=info from root
+# No tools or env section - uses node 20, python 3.12, and LOG_LEVEL=info from root
 
 [tasks.build]
 run = "npm run build"  # Uses node 20 and LOG_LEVEL=info from root
 ```
 
-### Inheritance Rules
+### Layering Rules
 
 1. **Base toolset and environment**: Tasks start with tools and environment from all global config files (including parent configs in the hierarchy)
 2. **Subdirectory override**: Tools and environment defined in the subdirectory's config file are merged on top, allowing overrides
@@ -320,7 +320,7 @@ Only override tools in subdirectories when they genuinely need different version
 # /myproject/legacy-app/mise.toml
 [tools]
 node = "14"  # Override only for legacy app
-# python and go inherited from root
+# python and go from root
 ```
 
 ### 3. Use Descriptive Task Names
@@ -368,7 +368,7 @@ The monorepo ecosystem offers many excellent tools, each with different strength
 
 ### Simple Task Runners
 
-**Taskfile** and **Just** are fantastic for single-project task automation. They're lightweight and easy to set up, but they weren't designed with monorepos in mind. While you can have multiple Taskfiles/Justfiles in a repo, they don't provide unified task discovery, cross-project wildcards, or automatic tool/environment inheritance across projects.
+**Taskfile** and **Just** are fantastic for single-project task automation. They're lightweight and easy to set up, but they weren't designed with monorepos in mind. While you can have multiple Taskfiles/Justfiles in a repo, they don't provide unified task discovery, cross-project wildcards, or automatic tool/environment layering across projects.
 
 **mise's advantage:** Automatic task discovery across the entire monorepo with a unified namespace and powerful wildcard patterns.
 
@@ -416,7 +416,7 @@ mise's Monorepo Tasks aims to hit the sweet spot between simplicity and power:
 | Unified task discovery  | ❌             | ✅         | ✅            | ✅   |
 | Wildcard patterns       | ❌             | ⚠️         | ✅            | ✅   |
 | Tool version management | ❌             | ❌         | ⚠️            | ✅   |
-| Environment inheritance | ❌             | ⚠️         | ❌            | ✅   |
+| Environment layering    | ❌             | ⚠️         | ❌            | ✅   |
 | Minimal setup           | ✅             | ⚠️         | ❌            | ✅   |
 | Task caching            | ❌             | ✅         | ✅            | ❌   |
 
