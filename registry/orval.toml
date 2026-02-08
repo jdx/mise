@@ -1,0 +1,3 @@
+backends = ["npm:orval"]
+description = "Generate type-safe TypeScript clients from OpenAPI specifications provided by https://orval.dev"
+test = ["orval --version", "{{version}}"]
