@@ -1,5 +1,31 @@
 # Changelog
 
+## [2026.2.7](https://github.com/jdx/mise/compare/v2026.2.6..v2026.2.7) - 2026-02-08
+
+### 🚀 Features
+
+- **(shim)** add native .exe shim mode for Windows by @jdx in [#8045](https://github.com/jdx/mise/pull/8045)
+
+### 🐛 Bug Fixes
+
+- **(install)** preserve config options and registry defaults by @jdx in [#8044](https://github.com/jdx/mise/pull/8044)
+- **(link)** linked versions override lockfile during resolution by @jdx in [#8050](https://github.com/jdx/mise/pull/8050)
+- **(release)** preserve aqua-registry sections in changelog across releases by @jdx in [#8047](https://github.com/jdx/mise/pull/8047)
+- ls --all-sources shows duplicate entries by @roele in [#8042](https://github.com/jdx/mise/pull/8042)
+
+### 📚 Documentation
+
+- replace "inherit" terminology with config layering by @jdx in [#8046](https://github.com/jdx/mise/pull/8046)
+
+### 📦 Registry
+
+- switch oxlint to npm backend by default by @risu729 in [#8038](https://github.com/jdx/mise/pull/8038)
+- add orval (npm:orval) by @zdunecki in [#8051](https://github.com/jdx/mise/pull/8051)
+
+### New Contributors
+
+- @zdunecki made their first contribution in [#8051](https://github.com/jdx/mise/pull/8051)
+
 ## [2026.2.6](https://github.com/jdx/mise/compare/v2026.2.5..v2026.2.6) - 2026-02-07
 
 ### 🚀 Features
