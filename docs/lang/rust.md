@@ -72,7 +72,10 @@ be specified by separating them with a comma.
 
 ```toml
 [tools]
-"rust" = { version = "1.83.0", targets = "wasm32-unknown-unknown,thumbv2-none-eabi" }
+"rust" = {
+  version = "1.83.0",
+  targets = "wasm32-unknown-unknown,thumbv2-none-eabi",
+}
 ```
 
 ## Settings

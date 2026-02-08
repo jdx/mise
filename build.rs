@@ -94,8 +94,7 @@ fn load_registry_tools() -> toml::map::Map<String, toml::Value> {
             .to_string();
         let content = fs::read_to_string(&file)
             .unwrap_or_else(|e| panic!("Failed to read {}: {}", file.display(), e));
-        let tool_info: toml::Value = content
-            .parse()
+        let tool_info: toml::Value = toml::de::from_str(&content)
             .unwrap_or_else(|e| panic!("Failed to parse {}: {}", file.display(), e));
         tools.insert(tool_name, tool_info);
     }
@@ -309,10 +308,9 @@ pub struct Settings {"#
             .to_string(),
     ];
 
-    let settings: toml::Table = fs::read_to_string("settings.toml")
-        .unwrap()
-        .parse()
-        .unwrap();
+    let settings_toml = fs::read_to_string("settings.toml").expect("Failed to read settings.toml");
+    let settings: toml::Table =
+        toml::de::from_str(&settings_toml).expect("Failed to parse settings.toml");
     let props_to_code = |key: &str, props: &toml::Value| {
         let mut lines = vec![];
         let props = props.as_table().unwrap();

@@ -102,7 +102,11 @@ Set the URL for the provider's API. This is useful when using a self-hosted inst
 
 ```toml
 [tools]
-"ubi:acme/my-tool" = { version = "latest", provider= "gitlab", api_url = "https://gitlab.acme.com/api/v4" }
+"ubi:acme/my-tool" = {
+  version = "latest",
+  provider = "gitlab",
+  api_url = "https://gitlab.acme.com/api/v4",
+}
 ```
 
 ### `extract_all`
@@ -121,7 +125,11 @@ This only makes sense when `extract_all` is set to `true`.
 
 ```toml
 [tools]
-"ubi:BurntSushi/ripgrep" = { version = "latest", extract_all = "true", bin_path = "target/release" }
+"ubi:BurntSushi/ripgrep" = {
+  version = "latest",
+  extract_all = "true",
+  bin_path = "target/release",
+}
 ```
 
 **Binary path lookup order:**

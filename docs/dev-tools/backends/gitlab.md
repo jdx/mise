@@ -114,8 +114,14 @@ _Instead of specifying the checksum here, you can use [mise.lock](/dev-tools/mis
 version = "latest"
 
 [tools."gitlab:gitlab-org/gitlab-runner".platforms]
-linux-x64 = { asset_pattern = "gitlab-runner-linux-x64", checksum = "sha256:a1b2c3d4e5f6789..." }
-macos-arm64 = { asset_pattern = "gitlab-runner-macos-arm64", checksum = "sha256:b2c3d4e5f6789..." }
+linux-x64 = {
+  asset_pattern = "gitlab-runner-linux-x64",
+  checksum = "sha256:a1b2c3d4e5f6789...",
+}
+macos-arm64 = {
+  asset_pattern = "gitlab-runner-macos-arm64",
+  checksum = "sha256:b2c3d4e5f6789...",
+}
 ```
 
 ### `size`

@@ -24,7 +24,8 @@ impl ConfigGet {
             file = top_toml_config();
         }
         if let Some(file) = file {
-            let config: toml::Value = std::fs::read_to_string(&file)?.parse()?;
+            let content = std::fs::read_to_string(&file)?;
+            let config: toml::Value = toml::de::from_str(&content)?;
             let mut value = &config;
             if let Some(key) = &self.key {
                 for k in key.split('.') {

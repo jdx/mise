@@ -350,7 +350,11 @@ env_file = '.env' # load env vars from a dotenv file, see `MISE_ENV_FILE`
 experimental = true # enable experimental features
 
 # configure messages displayed when entering directories with config files
-status = { missing_tools = "if_other_versions_installed", show_env = false, show_tools = false }
+status = {
+  missing_tools = "if_other_versions_installed",
+  show_env = false,
+  show_tools = false,
+}
 
 # "_" is a special key for information you'd like to put into mise.toml that mise will never parse
 [_]

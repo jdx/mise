@@ -120,7 +120,8 @@ The structured format also supports combining env vars with arguments:
 ```mise-toml
 [tasks.deploy]
 depends = [
-  { task = "build", args = ["--release"], env = { RUSTFLAGS = "-C opt-level=3" } }
+  { task = "build", args = ["--release"],
+    env = { RUSTFLAGS = "-C opt-level=3" } }
 ]
 run = "./deploy.sh"
 ```

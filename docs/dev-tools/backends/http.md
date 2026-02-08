@@ -58,7 +58,10 @@ The `os()` and `arch()` functions support remapping for tools that use different
 ```toml
 [tools]
 # HashiCorp tools use "darwin" instead of "macos" and "amd64" instead of "x64"
-"http:sentinel" = { version = "latest", url = 'https://releases.hashicorp.com/sentinel/{{version}}/sentinel_{{version}}_{{os(macos="darwin")}}_{{arch(x64="amd64")}}.zip' }
+"http:sentinel" = {
+  version = "latest",
+  url = 'https://releases.hashicorp.com/sentinel/{{version}}/sentinel_{{version}}_{{os(macos="darwin")}}_{{arch(x64="amd64")}}.zip',
+}
 ```
 
 This produces URLs like:
@@ -110,9 +113,18 @@ _Instead of specifying the checksum here, you can use [mise.lock](/dev-tools/mis
 version = "1.0.0"
 
 [tools."http:my-tool".platforms]
-macos-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-macos-x64.tar.gz", checksum = "sha256:a1b2c3d4e5f6789..." }
-macos-arm64 = { url = "https://example.com/releases/my-tool-v1.0.0-macos-arm64.tar.gz", checksum = "sha256:b2c3d4e5f6789..." }
-linux-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-linux-x64.tar.gz", checksum = "sha256:c3d4e5f6789..." }
+macos-x64 = {
+  url = "https://example.com/releases/my-tool-v1.0.0-macos-x64.tar.gz",
+  checksum = "sha256:a1b2c3d4e5f6789...",
+}
+macos-arm64 = {
+  url = "https://example.com/releases/my-tool-v1.0.0-macos-arm64.tar.gz",
+  checksum = "sha256:b2c3d4e5f6789...",
+}
+linux-x64 = {
+  url = "https://example.com/releases/my-tool-v1.0.0-linux-x64.tar.gz",
+  checksum = "sha256:c3d4e5f6789...",
+}
 ```
 
 ### `size`
@@ -135,9 +147,18 @@ You can specify different sizes for different platforms:
 version = "1.0.0"
 
 [tools."http:my-tool".platforms]
-macos-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-macos-x64.tar.gz", size = "12345678" }
-macos-arm64 = { url = "https://example.com/releases/my-tool-v1.0.0-macos-arm64.tar.gz", size = "9876543" }
-linux-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-linux-x64.tar.gz", size = "11111111" }
+macos-x64 = {
+  url = "https://example.com/releases/my-tool-v1.0.0-macos-x64.tar.gz",
+  size = "12345678",
+}
+macos-arm64 = {
+  url = "https://example.com/releases/my-tool-v1.0.0-macos-arm64.tar.gz",
+  size = "9876543",
+}
+linux-x64 = {
+  url = "https://example.com/releases/my-tool-v1.0.0-linux-x64.tar.gz",
+  size = "11111111",
+}
 ```
 
 ### `strip_components`
@@ -211,9 +232,18 @@ You can specify different formats for different platforms:
 version = "1.0.0"
 
 [tools."http:my-tool".platforms]
-macos-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-macos-x64", format = "tar.xz" }
-linux-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-linux-x64", format = "tar.gz" }
-windows-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-windows-x64", format = "zip" }
+macos-x64 = {
+  url = "https://example.com/releases/my-tool-v1.0.0-macos-x64",
+  format = "tar.xz",
+}
+linux-x64 = {
+  url = "https://example.com/releases/my-tool-v1.0.0-linux-x64",
+  format = "tar.gz",
+}
+windows-x64 = {
+  url = "https://example.com/releases/my-tool-v1.0.0-windows-x64",
+  format = "zip",
+}
 ```
 
 ### `version_list_url`

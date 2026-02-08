@@ -21,7 +21,7 @@ tokio = { version = "1", features = [
   "rt",
   "sync",
 ] } # Async runtime for spawn_blocking
-toml_edit = { version = "0.22", features = ["parse"] }
+toml_edit = { version = "0.24", features = ["parse"] }
 unicode-width = "0.2" # Text width calculation for cursor positioning
 xx = { version = "2", default-features = false } # For display_path
 
