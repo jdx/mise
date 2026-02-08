@@ -122,7 +122,9 @@ impl Toolset {
         // Skip hooks in dry-run mode
         if !opts.dry_run {
             // Run pre-install hook
-            hooks::run_one_hook(config, self, Hooks::Preinstall, None).await;
+            if let Err(e) = hooks::run_one_hook(config, self, Hooks::Preinstall, None).await {
+                warn!("error running preinstall hook: {e}");
+            }
         }
 
         self.init_request_options(&mut versions);
@@ -192,17 +194,20 @@ impl Toolset {
 
         // Skip hooks in dry-run mode
         if !opts.dry_run {
-            // Run post-install hook with installed tools info (ignoring errors)
+            // Run post-install hook with installed tools info
             let installed_tools: Vec<InstalledToolInfo> =
                 installed.iter().map(InstalledToolInfo::from).collect();
-            let _ = hooks::run_one_hook_with_context(
+            if let Err(e) = hooks::run_one_hook_with_context(
                 config,
                 self,
                 Hooks::Postinstall,
                 None,
                 Some(&installed_tools),
             )
-            .await;
+            .await
+            {
+                warn!("error running postinstall hook: {e}");
+            }
         }
 
         // Finish the global footer

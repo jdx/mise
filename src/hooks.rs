@@ -3,7 +3,7 @@ use crate::config::{Config, Settings, config_file};
 use crate::shell::Shell;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::{dirs, hook_env};
-use eyre::{Result, eyre};
+use eyre::{Result, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use std::path::{Path, PathBuf};
@@ -73,7 +73,9 @@ pub async fn run_all_hooks(config: &Arc<Config>, ts: &Toolset, shell: &dyn Shell
         mu.drain(..).collect::<Vec<_>>()
     };
     for hook in hooks {
-        run_one_hook(config, ts, hook, Some(shell)).await;
+        if let Err(e) = run_one_hook(config, ts, hook, Some(shell)).await {
+            warn!("error running {hook} hook: {e}");
+        }
     }
 }
 
@@ -103,8 +105,8 @@ pub async fn run_one_hook(
     ts: &Toolset,
     hook: Hooks,
     shell: Option<&dyn Shell>,
-) {
-    run_one_hook_with_context(config, ts, hook, shell, None).await;
+) -> Result<()> {
+    run_one_hook_with_context(config, ts, hook, shell, None).await
 }
 
 /// Run a hook with optional installed tools context (for postinstall hooks)
@@ -115,9 +117,9 @@ pub async fn run_one_hook_with_context(
     hook: Hooks,
     shell: Option<&dyn Shell>,
     installed_tools: Option<&[InstalledToolInfo]>,
-) {
+) -> Result<()> {
     if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
-        return;
+        return Ok(());
     }
     for (root, h) in all_hooks(config).await {
         if hook != h.hook || (h.shell.is_some() && h.shell != shell.map(|s| s.to_string())) {
@@ -150,10 +152,11 @@ pub async fn run_one_hook_with_context(
         }
         if h.shell.is_some() {
             println!("{}", h.script);
-        } else if let Err(e) = execute(config, ts, root, h, installed_tools).await {
-            warn!("error executing hook: {e}");
+        } else {
+            execute(config, ts, root, h, installed_tools).await?;
         }
     }
+    Ok(())
 }
 
 impl Hook {
@@ -170,7 +173,7 @@ impl Hook {
                     .ok_or_else(|| eyre!("missing `script` key"))?;
                 let script = script
                     .as_str()
-                    .ok_or_else(|| eyre!("`run` must be a string"))?;
+                    .ok_or_else(|| eyre!("`script` must be a string"))?;
                 let shell = tbl
                     .get("shell")
                     .and_then(|s| s.as_str())
@@ -188,7 +191,7 @@ impl Hook {
                 }
                 Ok(hooks)
             }
-            v => panic!("invalid hook value: {v}"),
+            v => bail!("invalid hook value, expected string, table, or array: {v}"),
         }
     }
 }
@@ -232,8 +235,10 @@ async fn execute(
     {
         env.insert("MISE_INSTALLED_TOOLS".to_string(), json);
     }
-    // TODO: this should be different but I don't have easy access to it
-    // env.insert("MISE_CONFIG_ROOT".to_string(), root.to_string_lossy().to_string());
+    env.insert(
+        "MISE_CONFIG_ROOT".to_string(),
+        root.to_string_lossy().to_string(),
+    );
     cmd(&shell[0], args)
         .stdout_to_stderr()
         // .dir(root)
