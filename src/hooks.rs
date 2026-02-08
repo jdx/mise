@@ -3,7 +3,7 @@ use crate::config::{Config, Settings, config_file};
 use crate::shell::Shell;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::{dirs, hook_env};
-use eyre::{Result, bail, eyre};
+use eyre::Result;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use std::path::{Path, PathBuf};
@@ -50,11 +50,53 @@ pub enum Hooks {
     Postinstall,
 }
 
+/// Represents a hook definition in TOML config.
+/// Supports string, table, or array formats via serde untagged deserialization.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(untagged)]
+pub enum HookDef {
+    /// Simple script string: `enter = "echo hello"`
+    Script(String),
+    /// Table with script and optional shell: `enter = { script = "echo hello", shell = "bash" }`
+    Table {
+        script: String,
+        shell: Option<String>,
+    },
+    /// Array of hook definitions: `enter = ["echo hello", { script = "echo world" }]`
+    Array(Vec<HookDef>),
+}
+
+impl HookDef {
+    /// Convert to a list of Hook structs with the given hook type
+    pub fn into_hooks(self, hook_type: Hooks) -> Vec<Hook> {
+        match self {
+            HookDef::Script(script) => vec![Hook {
+                hook: hook_type,
+                script,
+                shell: None,
+                global: false,
+            }],
+            HookDef::Table { script, shell } => vec![Hook {
+                hook: hook_type,
+                script,
+                shell,
+                global: false,
+            }],
+            HookDef::Array(arr) => arr
+                .into_iter()
+                .flat_map(|d| d.into_hooks(hook_type))
+                .collect(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Hook {
     pub hook: Hooks,
     pub script: String,
     pub shell: Option<String>,
+    /// Whether this hook comes from a global config (skip directory matching)
+    pub global: bool,
 }
 
 pub static SCHEDULED_HOOKS: Lazy<Mutex<IndexSet<Hooks>>> = Lazy::new(Default::default);
@@ -126,74 +168,68 @@ pub async fn run_one_hook_with_context(
             continue;
         }
         trace!("running hook {hook} in {root:?}");
-        match (hook, hook_env::dir_change()) {
-            (Hooks::Enter, Some((old, new))) => {
-                if !new.starts_with(root) {
-                    continue;
+        // Global hooks skip directory matching — they fire for all projects
+        if !h.global {
+            match (hook, hook_env::dir_change()) {
+                (Hooks::Enter, Some((old, new))) => {
+                    if !new.starts_with(root) {
+                        continue;
+                    }
+                    if old.as_ref().is_some_and(|old| old.starts_with(root)) {
+                        continue;
+                    }
                 }
-                if old.as_ref().is_some_and(|old| old.starts_with(root)) {
-                    continue;
+                (Hooks::Leave, Some((old, new))) => {
+                    if new.starts_with(root) {
+                        continue;
+                    }
+                    if old.as_ref().is_some_and(|old| !old.starts_with(root)) {
+                        continue;
+                    }
                 }
+                (Hooks::Cd, Some((_old, new))) => {
+                    if !new.starts_with(root) {
+                        continue;
+                    }
+                }
+                _ => {}
             }
-            (Hooks::Leave, Some((old, new))) => {
-                if new.starts_with(root) {
-                    continue;
-                }
-                if old.as_ref().is_some_and(|old| !old.starts_with(root)) {
-                    continue;
-                }
-            }
-            (Hooks::Cd, Some((_old, new))) => {
-                if !new.starts_with(root) {
-                    continue;
-                }
-            }
-            _ => {}
         }
         if h.shell.is_some() {
+            if let Some(shell) = shell {
+                // Set hook environment variables so shell hooks can access them
+                println!(
+                    "{}",
+                    shell.set_env("MISE_PROJECT_ROOT", &root.to_string_lossy())
+                );
+                println!(
+                    "{}",
+                    shell.set_env("MISE_CONFIG_ROOT", &root.to_string_lossy())
+                );
+                if let Some(cwd) = dirs::CWD.as_ref() {
+                    println!(
+                        "{}",
+                        shell.set_env("MISE_ORIGINAL_CWD", &cwd.to_string_lossy())
+                    );
+                }
+                if let Some((Some(old), _new)) = hook_env::dir_change() {
+                    println!(
+                        "{}",
+                        shell.set_env("MISE_PREVIOUS_DIR", &old.to_string_lossy())
+                    );
+                }
+                if let Some(tools) = installed_tools
+                    && let Ok(json) = serde_json::to_string(tools)
+                {
+                    println!("{}", shell.set_env("MISE_INSTALLED_TOOLS", &json));
+                }
+            }
             println!("{}", h.script);
         } else {
             execute(config, ts, root, h, installed_tools).await?;
         }
     }
     Ok(())
-}
-
-impl Hook {
-    pub fn from_toml(hook: Hooks, value: toml::Value) -> Result<Vec<Self>> {
-        match value {
-            toml::Value::String(run) => Ok(vec![Hook {
-                hook,
-                script: run,
-                shell: None,
-            }]),
-            toml::Value::Table(tbl) => {
-                let script = tbl
-                    .get("script")
-                    .ok_or_else(|| eyre!("missing `script` key"))?;
-                let script = script
-                    .as_str()
-                    .ok_or_else(|| eyre!("`script` must be a string"))?;
-                let shell = tbl
-                    .get("shell")
-                    .and_then(|s| s.as_str())
-                    .map(|s| s.to_string());
-                Ok(vec![Hook {
-                    hook,
-                    script: script.to_string(),
-                    shell,
-                }])
-            }
-            toml::Value::Array(arr) => {
-                let mut hooks = vec![];
-                for v in arr {
-                    hooks.extend(Self::from_toml(hook, v)?);
-                }
-                Ok(hooks)
-            }
-            v => bail!("invalid hook value, expected string, table, or array: {v}"),
-        }
-    }
 }
 
 async fn execute(

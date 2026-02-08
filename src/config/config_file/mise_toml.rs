@@ -25,7 +25,7 @@ use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap, Config};
 use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
-use crate::hooks::{Hook, Hooks};
+use crate::hooks::{Hook, HookDef, Hooks};
 use crate::prepare::PrepareConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
@@ -63,7 +63,7 @@ pub struct MiseToml {
     #[serde(skip)]
     doc: Mutex<OnceCell<DocumentMut>>,
     #[serde(default)]
-    hooks: IndexMap<Hooks, toml::Value>,
+    hooks: IndexMap<Hooks, HookDef>,
     #[serde(default)]
     tools: Mutex<IndexMap<BackendArg, MiseTomlToolList>>,
     #[serde(default)]
@@ -836,8 +836,8 @@ impl ConfigFile for MiseToml {
         Ok(self
             .hooks
             .iter()
-            .map(|(hook, val)| {
-                let mut hooks = Hook::from_toml(*hook, val.clone())?;
+            .map(|(hook_type, def)| {
+                let mut hooks = def.clone().into_hooks(*hook_type);
                 for hook in hooks.iter_mut() {
                     hook.script = self.parse_template(&hook.script)?;
                     if let Some(shell) = &hook.shell {
