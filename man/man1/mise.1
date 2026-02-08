@@ -782,7 +782,7 @@ List all tracked config files
 .SH "MISE CONFIG SET"
 Set the value of a setting in a mise.toml file
 .PP
-\fBUsage:\fR mise config set [OPTIONS] <KEY> <VALUE>
+\fBUsage:\fR mise config set [OPTIONS] <KEY> [<VALUE>]
 .PP
 \fBOptions:\fR
 .PP
@@ -803,7 +803,7 @@ If not provided, the nearest mise.toml file will be used
 The path of the config to display
 .TP
 \fB<VALUE>\fR
-The value to set the key to
+The value to set the key to (optional if provided as KEY=VALUE)
 .SH "MISE DOCTOR"
 Check mise installation for possible problems
 .PP
@@ -2029,7 +2029,7 @@ Adds a setting to the configuration file
 Used with an array setting, this will append the value to the array.
 This modifies the contents of ~/.config/mise/config.toml
 .PP
-\fBUsage:\fR mise settings add [OPTIONS] <SETTING> <VALUE>
+\fBUsage:\fR mise settings add [OPTIONS] <SETTING> [<VALUE>]
 .PP
 \fBOptions:\fR
 .PP
@@ -2043,7 +2043,7 @@ Use the local config file instead of the global one
 The setting to set
 .TP
 \fB<VALUE>\fR
-The value to set
+The value to set (optional if provided as KEY=VALUE)
 .SH "MISE SETTINGS GET"
 Show a current setting
 
@@ -2106,7 +2106,7 @@ This modifies the contents of ~/.config/mise/config.toml by default.
 With `\-\-local`, modifies the local config file instead.
 See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations
 .PP
-\fBUsage:\fR mise settings set [OPTIONS] <SETTING> <VALUE>
+\fBUsage:\fR mise settings set [OPTIONS] <SETTING> [<VALUE>]
 .PP
 \fBOptions:\fR
 .PP
@@ -2120,7 +2120,7 @@ Use the local config file instead of the global one
 The setting to set
 .TP
 \fB<VALUE>\fR
-The value to set
+The value to set (optional if provided as KEY=VALUE)
 .SH "MISE SETTINGS UNSET"
 Clears a setting
 
@@ -2203,7 +2203,7 @@ Add/update a shell alias
 
 This modifies the contents of ~/.config/mise/config.toml
 .PP
-\fBUsage:\fR mise shell\-alias set <shell_alias> <COMMAND>
+\fBUsage:\fR mise shell\-alias set <shell_alias> [<COMMAND>]
 .PP
 \fBArguments:\fR
 .PP
@@ -2212,7 +2212,7 @@ This modifies the contents of ~/.config/mise/config.toml
 The alias name
 .TP
 \fB<COMMAND>\fR
-The command to run
+The command to run (optional if provided as ALIAS=COMMAND)
 .SH "MISE SHELL-ALIAS UNSET"
 Removes a shell alias
 

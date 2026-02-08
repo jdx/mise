@@ -821,7 +821,9 @@ const completionSpec: Fig.Spec = {
             },
             {
               name: "value",
-              description: "The value to set the key to",
+              description:
+                "The value to set the key to (optional if provided as KEY=VALUE)",
+              isOptional: true,
             },
           ],
         },
@@ -2261,7 +2263,9 @@ const completionSpec: Fig.Spec = {
             },
             {
               name: "value",
-              description: "The value to set",
+              description:
+                "The value to set (optional if provided as KEY=VALUE)",
+              isOptional: true,
             },
           ],
         },
@@ -2342,7 +2346,9 @@ const completionSpec: Fig.Spec = {
             },
             {
               name: "value",
-              description: "The value to set",
+              description:
+                "The value to set (optional if provided as KEY=VALUE)",
+              isOptional: true,
             },
           ],
         },
@@ -2474,7 +2480,9 @@ const completionSpec: Fig.Spec = {
             },
             {
               name: "command",
-              description: "The command to run",
+              description:
+                "The command to run (optional if provided as ALIAS=COMMAND)",
+              isOptional: true,
             },
           ],
         },

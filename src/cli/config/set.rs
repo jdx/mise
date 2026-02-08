@@ -13,8 +13,8 @@ pub struct ConfigSet {
     /// The path of the config to display
     pub key: String,
 
-    /// The value to set the key to
-    pub value: String,
+    /// The value to set the key to (optional if provided as KEY=VALUE)
+    pub value: Option<String>,
 
     /// The path to the mise.toml file to edit
     ///
@@ -46,6 +46,17 @@ pub enum TomlValueTypes {
 
 impl ConfigSet {
     pub fn run(self) -> eyre::Result<()> {
+        let (full_key, value) = match self.value {
+            Some(v) => (self.key, v),
+            None => {
+                let (k, v) = self.key.split_once('=').ok_or_else(|| {
+                    eyre::eyre!(
+                        "Usage: mise config set <KEY>=<VALUE> or mise config set <KEY> <VALUE>"
+                    )
+                })?;
+                (k.to_string(), v.to_string())
+            }
+        };
         let mut file = self.file;
         if file.is_none() {
             file = top_toml_config();
@@ -55,13 +66,13 @@ impl ConfigSet {
         };
         let mut config: toml_edit::DocumentMut = std::fs::read_to_string(&file)?.parse()?;
         let mut container = config.as_item_mut();
-        let parts = self.key.split('.').collect::<Vec<&str>>();
+        let parts = full_key.split('.').collect::<Vec<&str>>();
         let last_key = parts.last().unwrap();
-        for (idx, key) in parts.iter().take(parts.len() - 1).enumerate() {
+        for (idx, part) in parts.iter().take(parts.len() - 1).enumerate() {
             container = container
                 .as_table_like_mut()
                 .unwrap()
-                .entry(key)
+                .entry(part)
                 .or_insert({
                     let mut t = toml_edit::Table::new();
                     t.set_implicit(true);
@@ -69,7 +80,7 @@ impl ConfigSet {
                 });
             // if the key is a tool with a simple value, we want to convert it to a inline table preserving the version
             let is_simple_tool_version =
-                self.key.starts_with("tools.") && idx == 1 && !container.is_table_like();
+                full_key.starts_with("tools.") && idx == 1 && !container.is_table_like();
             if is_simple_tool_version {
                 let mut inline_table = toml_edit::InlineTable::new();
                 inline_table.insert("version", container.as_value().unwrap().clone());
@@ -84,7 +95,7 @@ impl ConfigSet {
         };
         let type_to_use = match self.type_ {
             TomlValueTypes::Infer => {
-                let expected_type = if !self.key.starts_with("settings.") {
+                let expected_type = if !full_key.starts_with("settings.") {
                     None
                 } else {
                     SETTINGS_META.get(*last_key)
@@ -92,7 +103,7 @@ impl ConfigSet {
                 match expected_type {
                     Some(meta) => match meta.type_ {
                         SettingsType::Bool => TomlValueTypes::Bool,
-                        SettingsType::BoolOrString => infer_bool_or_string(&self.value),
+                        SettingsType::BoolOrString => infer_bool_or_string(&value),
                         SettingsType::String => TomlValueTypes::String,
                         SettingsType::Integer => TomlValueTypes::Integer,
                         SettingsType::Duration => TomlValueTypes::String,
@@ -103,20 +114,20 @@ impl ConfigSet {
                         SettingsType::SetString => TomlValueTypes::Set,
                         SettingsType::IndexMap => TomlValueTypes::String,
                     },
-                    None => infer_bool_or_string(&self.value),
+                    None => infer_bool_or_string(&value),
                 }
             }
             _ => self.type_,
         };
 
         let value = match type_to_use {
-            TomlValueTypes::String => toml_edit::value(self.value),
-            TomlValueTypes::Integer => toml_edit::value(self.value.parse::<i64>()?),
-            TomlValueTypes::Float => toml_edit::value(self.value.parse::<f64>()?),
-            TomlValueTypes::Bool => toml_edit::value(self.value.parse::<bool>()?),
+            TomlValueTypes::String => toml_edit::value(value),
+            TomlValueTypes::Integer => toml_edit::value(value.parse::<i64>()?),
+            TomlValueTypes::Float => toml_edit::value(value.parse::<f64>()?),
+            TomlValueTypes::Bool => toml_edit::value(value.parse::<bool>()?),
             TomlValueTypes::List => {
                 let mut list = toml_edit::Array::new();
-                for item in self.value.split(',').map(|s| s.trim()) {
+                for item in value.split(',').map(|s| s.trim()) {
                     list.push(item);
                 }
                 toml_edit::Item::Value(toml_edit::Value::Array(list))
