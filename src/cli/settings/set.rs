@@ -16,7 +16,7 @@ pub struct SettingsSet {
     /// The setting to set
     #[clap()]
     pub setting: String,
-    /// The value to set
+    /// The value to set (optional if provided as KEY=VALUE)
     pub value: Option<String>,
     /// Use the local config file instead of the global one
     #[clap(long, short)]
@@ -25,18 +25,17 @@ pub struct SettingsSet {
 
 impl SettingsSet {
     pub fn run(self) -> Result<()> {
-        let (key, value) = match self.value {
-            Some(v) => (self.setting, v),
+        match self.value {
+            Some(value) => set(&self.setting, &value, false, self.local),
             None => {
-                let (k, v) = self.setting.split_once('=').ok_or_else(|| {
+                let (key, value) = self.setting.split_once('=').ok_or_else(|| {
                     eyre!(
                         "Usage: mise settings set <KEY>=<VALUE> or mise settings set <KEY> <VALUE>"
                     )
                 })?;
-                (k.to_string(), v.to_string())
+                set(key, value, false, self.local)
             }
-        };
-        set(&key, &value, false, self.local)
+        }
     }
 }
 

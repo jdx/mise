@@ -12,7 +12,7 @@ pub struct ShellAliasSet {
     /// The alias name
     #[clap(name = "shell_alias")]
     pub alias: String,
-    /// The command to run
+    /// The command to run (optional if provided as ALIAS=COMMAND)
     pub command: Option<String>,
 }
 

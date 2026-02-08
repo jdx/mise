@@ -13,7 +13,7 @@ pub struct ConfigSet {
     /// The path of the config to display
     pub key: String,
 
-    /// The value to set the key to
+    /// The value to set the key to (optional if provided as KEY=VALUE)
     pub value: Option<String>,
 
     /// The path to the mise.toml file to edit
@@ -46,7 +46,7 @@ pub enum TomlValueTypes {
 
 impl ConfigSet {
     pub fn run(self) -> eyre::Result<()> {
-        let (key, value) = match self.value {
+        let (full_key, value) = match self.value {
             Some(v) => (self.key, v),
             None => {
                 let (k, v) = self.key.split_once('=').ok_or_else(|| {
@@ -66,13 +66,13 @@ impl ConfigSet {
         };
         let mut config: toml_edit::DocumentMut = std::fs::read_to_string(&file)?.parse()?;
         let mut container = config.as_item_mut();
-        let parts = key.split('.').collect::<Vec<&str>>();
+        let parts = full_key.split('.').collect::<Vec<&str>>();
         let last_key = parts.last().unwrap();
-        for (idx, key) in parts.iter().take(parts.len() - 1).enumerate() {
+        for (idx, part) in parts.iter().take(parts.len() - 1).enumerate() {
             container = container
                 .as_table_like_mut()
                 .unwrap()
-                .entry(key)
+                .entry(part)
                 .or_insert({
                     let mut t = toml_edit::Table::new();
                     t.set_implicit(true);
@@ -80,7 +80,7 @@ impl ConfigSet {
                 });
             // if the key is a tool with a simple value, we want to convert it to a inline table preserving the version
             let is_simple_tool_version =
-                key.starts_with("tools.") && idx == 1 && !container.is_table_like();
+                full_key.starts_with("tools.") && idx == 1 && !container.is_table_like();
             if is_simple_tool_version {
                 let mut inline_table = toml_edit::InlineTable::new();
                 inline_table.insert("version", container.as_value().unwrap().clone());
@@ -95,7 +95,7 @@ impl ConfigSet {
         };
         let type_to_use = match self.type_ {
             TomlValueTypes::Infer => {
-                let expected_type = if !key.starts_with("settings.") {
+                let expected_type = if !full_key.starts_with("settings.") {
                     None
                 } else {
                     SETTINGS_META.get(*last_key)
