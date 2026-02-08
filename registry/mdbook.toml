@@ -4,4 +4,4 @@ backends = [
   "cargo:mdbook",
 ]
 description = "Create book from markdown files. Like Gitbook but implemented in Rust"
-test = ["mdbook --version", "mdbook v{{version}}"]
+test = { cmd = "mdbook --version", expected = "mdbook v{{version}}" }

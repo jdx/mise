@@ -3,4 +3,4 @@ backends = [
   "asdf:xanmanning/asdf-k3kcli",
 ]
 description = "K3k, Kubernetes in Kubernetes, is a tool that empowers you to create and manage isolated K3s clusters within your existing Kubernetes environment"
-test = ["k3k --version", "k3kcli version v{{version}}"]
+test = { cmd = "k3k --version", expected = "k3kcli version v{{version}}" }

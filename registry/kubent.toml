@@ -3,4 +3,4 @@ backends = [
   "asdf:virtualstaticvoid/asdf-kubent",
 ]
 description = "Easily check your clusters for use of deprecated APIs"
-test = ["kubent --version 2>&1", "version {{version}}"]
+test = { cmd = "kubent --version 2>&1", expected = "version {{version}}" }

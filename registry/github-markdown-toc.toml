@@ -3,4 +3,4 @@ backends = [
   "asdf:skyzyx/asdf-github-markdown-toc",
 ]
 description = "Easy TOC creation for GitHub README.md"
-test = ["gh-md-toc --version", "{{version}}"]
+test = { cmd = "gh-md-toc --version", expected = "{{version}}" }

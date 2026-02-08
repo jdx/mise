@@ -3,4 +3,4 @@ backends = [
   "asdf:https://gitlab.com/td7x/asdf/adr-tools",
 ]
 description = "Command-line tools for working with Architecture Decision Records"
-test = ["adr help", "adr help"]
+test = { cmd = "adr help", expected = "adr help" }

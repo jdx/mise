@@ -11,4 +11,4 @@ backends = [
 ]
 description = "A specification for CLIs"
 os = ["linux", "macos", "freebsd"]
-test = ["usage --version", "usage-cli {{version}}"]
+test = { cmd = "usage --version", expected = "usage-cli {{version}}" }

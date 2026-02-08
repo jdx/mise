@@ -1,4 +1,4 @@
 backends = ["gem:cocoapods"]
 description = "CocoaPods is a dependency manager for Swift and Objective-C Cocoa projects"
 os = ["macos"]
-test = ["pod --version", "{{version}}"]
+test = { cmd = "pod --version", expected = "{{version}}" }

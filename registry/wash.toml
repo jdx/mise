@@ -1,3 +1,3 @@
 backends = ["aqua:wasmCloud/wasmCloud/wash"]
 description = "wasmCloud Shell (wash)"
-test = ["wash --version | head -n1 | awk '{print $2}'", "v{{version}}"]
+test = { cmd = "wash --version | head -n1 | awk '{print $2}'", expected = "v{{version}}" }

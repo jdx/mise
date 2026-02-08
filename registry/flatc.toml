@@ -3,4 +3,4 @@ backends = [
   "asdf:TheOpenDictionary/asdf-flatc",
 ]
 description = "The main compiler for FlatBuffers is called flatc and is used to convert schema definitions into generated code files for a variety of languages"
-test = ["flatc --version", "flatc version {{version}}"]
+test = { cmd = "flatc --version", expected = "flatc version {{version}}" }

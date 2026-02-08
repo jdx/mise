@@ -1,4 +1,4 @@
 aliases = ["wren-cli"]
 backends = ["aqua:wren-lang/wren-cli", "asdf:jtakakura/asdf-wren-cli"]
 description = "A command line tool for the Wren programming language"
-test = ["wren_cli --version", "wren {{version}}"]
+test = { cmd = "wren_cli --version", expected = "wren {{version}}" }

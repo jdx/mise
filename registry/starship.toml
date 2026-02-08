@@ -4,4 +4,4 @@ backends = [
   "cargo:starship",
 ]
 description = "The minimal, blazing-fast, and infinitely customizable prompt for any shell"
-test = ["starship --version", "starship {{version}}"]
+test = { cmd = "starship --version", expected = "starship {{version}}" }

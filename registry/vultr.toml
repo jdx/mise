@@ -1,4 +1,4 @@
 aliases = ["vultr-cli"]
 backends = ["github:vultr/vultr-cli", "asdf:ikuradon/asdf-vultr-cli"]
 description = "Official command line tool for Vultr services"
-test = ["vultr-cli version", "Vultr-CLI v{{version}}"]
+test = { cmd = "vultr-cli version", expected = "Vultr-CLI v{{version}}" }

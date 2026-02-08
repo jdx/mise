@@ -4,4 +4,4 @@ backends = [
 ]
 description = "A command-line tool to perform health-checks for gRPC applications in Kubernetes and elsewhere"
 os = ["linux", "macos"]
-test = ["grpc_health_probe --version", "{{version}}"]
+test = { cmd = "grpc_health_probe --version", expected = "{{version}}" }

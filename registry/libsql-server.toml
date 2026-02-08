@@ -4,4 +4,4 @@ backends = [
 ]
 description = "server mode of libSQL, which is a fork of SQLite that is both Open Source, and Open Contributions"
 os = ["linux", "macos"]
-test = ["sqld --version", "sqld sqld {{version}}"]
+test = { cmd = "sqld --version", expected = "sqld sqld {{version}}" }

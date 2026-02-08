@@ -3,4 +3,4 @@ backends = [
   "asdf:mise-plugins/mise-helm-diff",
 ]
 description = "A helm plugin that shows a diff explaining what a helm upgrade would change"
-test = ["helm-diff version", "{{version}}"]
+test = { cmd = "helm-diff version", expected = "{{version}}" }

@@ -4,4 +4,4 @@ backends = [
   "asdf:Ameausoone/asdf-ls-lint",
 ]
 description = "An extremely fast directory and filename linter - Bring some structure to your project filesystem"
-test = ["ls-lint --version", "ls-lint v{{version}}"]
+test = { cmd = "ls-lint --version", expected = "ls-lint v{{version}}" }

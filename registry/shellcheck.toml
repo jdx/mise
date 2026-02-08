@@ -1,4 +1,4 @@
 backends = ["aqua:koalaman/shellcheck", "asdf:luizm/asdf-shellcheck"]
 description = "ShellCheck, a static analysis tool for shell scripts"
 os = ["linux", "macos"]
-test = ["shellcheck --version", "version: {{version}}"]
+test = { cmd = "shellcheck --version", expected = "version: {{version}}" }

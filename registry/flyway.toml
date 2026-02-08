@@ -1,5 +1,5 @@
 description = "Flyway by Redgate • Database Migrations Made Easy"
-test = ["flyway --version", "{{version}}"]
+test = { cmd = "flyway --version", expected = "{{version}}" }
 
 [[backends]]
 full = "github:flyway/flyway[version_prefix=flyway-]"

@@ -3,4 +3,4 @@ backends = [
   "asdf:mise-plugins/mise-ginkgo",
 ]
 description = "A Modern Testing Framework for Go"
-test = ["ginkgo version", "Ginkgo Version {{version}}"]
+test = { cmd = "ginkgo version", expected = "Ginkgo Version {{version}}" }

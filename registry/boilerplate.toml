@@ -1,3 +1,3 @@
 backends = ["aqua:gruntwork-io/boilerplate"]
 description = 'A tool for generating files and folders ("boilerplate") from a set of templates'
-test = ["boilerplate --version", "boilerplate version v{{version}}"]
+test = { cmd = "boilerplate --version", expected = "boilerplate version v{{version}}" }

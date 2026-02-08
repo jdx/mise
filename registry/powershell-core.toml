@@ -4,4 +4,4 @@ backends = [
   "asdf:daveneeley/asdf-powershell-core",
 ]
 description = "PowerShell for every system"
-test = ["pwsh --version", "PowerShell {{version}}"]
+test = { cmd = "pwsh --version", expected = "PowerShell {{version}}" }

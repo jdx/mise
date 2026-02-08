@@ -1,3 +1,3 @@
 backends = ["github:localstack/localstack-cli[exe=localstack]"]
 description = "The LocalStack CLI packaged using pyinstaller"
-test = ["localstack --version", "LocalStack CLI {{version}}"]
+test = { cmd = "localstack --version", expected = "LocalStack CLI {{version}}" }

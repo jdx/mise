@@ -5,4 +5,4 @@ backends = [
   "asdf:gasuketsu/asdf-tokei",
 ]
 description = "Count your code, quickly"
-test = ["tokei --version", "tokei {{version}}"]
+test = { cmd = "tokei --version", expected = "tokei {{version}}" }

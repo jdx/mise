@@ -1,5 +1,5 @@
 description = "Executables, uberjar, and library to beautifully format Clojure and Clojurescript source code and s-expressions"
-test = ["zprint --version 2>&1", "zprint-{{version}}"]
+test = { cmd = "zprint --version 2>&1", expected = "zprint-{{version}}" }
 
 [[backends]]
 full = "aqua:kkinnear/zprint"

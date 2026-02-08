@@ -1,5 +1,5 @@
 description = "Sentinel is a policy as code tool that lets you control what users of HashiCorp products are allowed to do. It enforces policies proactively, preventing end users from deploying changes that are not allowed"
-test = ["sentinel version", "Sentinel v{{version}}"]
+test = { cmd = "sentinel version", expected = "Sentinel v{{version}}" }
 
 [[backends]]
 full = "http:sentinel"

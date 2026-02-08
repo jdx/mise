@@ -5,4 +5,4 @@ backends = [
 ]
 description = "The AWS Command Line Interface (AWS CLI v2) is a unified tool that provides a consistent interface for interacting with all parts of Amazon Web Services"
 os = ["linux", "macos"]
-test = ["aws --version", "aws-cli/{{version}}"]
+test = { cmd = "aws --version", expected = "aws-cli/{{version}}" }

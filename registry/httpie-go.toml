@@ -1,4 +1,4 @@
 backends = ["aqua:nojima/httpie-go", "asdf:abatilo/asdf-httpie-go"]
 description = "httpie-like HTTP client written in Go"
 os = ["linux", "macos"]
-test = ["ht --version 2>&1", "httpie-go {{version}}"]
+test = { cmd = "ht --version 2>&1", expected = "httpie-go {{version}}" }

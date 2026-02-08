@@ -1,3 +1,3 @@
 backends = ["aqua:barthr/redo", "asdf:chessmango/asdf-redo"]
 description = "Redo is the ultimate tool to create reusable functions from your history in an interactive way"
-test = ["which redo", "redo"]
+test = { cmd = "which redo", expected = "redo" }

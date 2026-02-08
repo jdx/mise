@@ -4,4 +4,4 @@ backends = [
   "asdf:carbonteq/asdf-choose",
 ]
 description = "A human-friendly and fast alternative to cut (and sometimes awk)"
-test = ["choose --version", "{{version}}"]
+test = { cmd = "choose --version", expected = "{{version}}" }

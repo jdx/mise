@@ -1,4 +1,4 @@
 backends = ["vfox:mise-plugins/vfox-android-sdk"]
 depends = ["java"]
 description = "Android Command-line tools"
-test = ["sdkmanager --version", ".0"]
+test = { cmd = "sdkmanager --version", expected = ".0" }

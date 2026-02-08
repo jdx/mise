@@ -6,4 +6,4 @@ backends = [
   "go:github.com/segmentio/golines",
 ]
 description = "A golang formatter that fixes long lines"
-test = ["golines --version", "golines v{{version}}"]
+test = { cmd = "golines --version", expected = "golines v{{version}}" }

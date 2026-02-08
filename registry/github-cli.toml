@@ -1,4 +1,4 @@
 aliases = ["gh"]
 backends = ["aqua:cli/cli", "asdf:bartlomiejdanek/asdf-github-cli"]
 description = "GitHub’s official command line tool"
-test = ["gh --version", "gh version {{version}}"]
+test = { cmd = "gh --version", expected = "gh version {{version}}" }

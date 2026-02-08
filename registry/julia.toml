@@ -1,6 +1,6 @@
 description = "The Julia Programming Language"
 detect = ["Project.toml", "Manifest.toml"]
-test = ["julia --version", "julia version"]
+test = { cmd = "julia --version", expected = "julia version" }
 
 [[backends]]
 full = "http:julia"

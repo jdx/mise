@@ -4,4 +4,4 @@ backends = [
 ]
 description = "The Flutter code generator for your assets, fonts, colors, … — Get rid of all String-based APIs"
 os = ["linux", "macos"]
-test = ["fluttergen --version", "v{{version}}"]
+test = { cmd = "fluttergen --version", expected = "v{{version}}" }

@@ -4,4 +4,4 @@ backends = [
   "cargo:sccache",
 ]
 description = "sccache is ccache with cloud storage"
-test = ["sccache --version", "sccache {{version}}"]
+test = { cmd = "sccache --version", expected = "sccache {{version}}" }

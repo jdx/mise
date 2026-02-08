@@ -1,3 +1,3 @@
 backends = ["pipx:ansible[uvx=false,pipx_args=--include-deps]"]
 description = "ansible python package contains the core runtime and CLI tools, such as ansible and ansible-playbook and extra modules, plugins, and roles"
-test = ["ansible --version", "ansible"]
+test = { cmd = "ansible --version", expected = "ansible" }

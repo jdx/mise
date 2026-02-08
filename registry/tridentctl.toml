@@ -5,4 +5,4 @@ backends = [
 depends = ["kubectl"]
 description = "Storage orchestrator for containers"
 os = ["linux", "macos"]
-test = ["tridentctl version --client", "{{version}}"]
+test = { cmd = "tridentctl version --client", expected = "{{version}}" }

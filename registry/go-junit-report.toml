@@ -3,4 +3,4 @@ backends = [
   "asdf:jwillker/asdf-go-junit-report",
 ]
 description = "Convert Go test output to JUnit XML"
-test = ["go-junit-report --version", "{{version}}"]
+test = { cmd = "go-junit-report --version", expected = "{{version}}" }

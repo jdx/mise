@@ -1,6 +1,3 @@
 backends = ["aqua:mrjosh/helm-ls"]
 description = "Helm-ls is a helm language server protocol LSP implementation"
-test = [
-  "helm_ls version",
-  "Helm-ls version: master",
-] # helm_ls version returns always "master" - https://github.com/mrjosh/helm-ls/issues/179
+test = { cmd = "helm_ls version", expected = "Helm-ls version: master" } # helm_ls version returns always "master" - https://github.com/mrjosh/helm-ls/issues/179

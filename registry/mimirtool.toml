@@ -4,4 +4,4 @@ backends = [
 ]
 description = "Mimirtool is a command-line tool that operators and tenants can use to execute a number of common tasks that involve Grafana Mimir or Grafana Cloud Metrics"
 os = ["linux", "macos"]
-test = ["mimirtool version", "Mimirtool, version {{version}}"]
+test = { cmd = "mimirtool version", expected = "Mimirtool, version {{version}}" }

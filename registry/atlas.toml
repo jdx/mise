@@ -1,3 +1,3 @@
 backends = ["aqua:ariga/atlas", "asdf:komi1230/asdf-atlas"]
 description = "A modern tool for managing database schemas"
-test = ["atlas version", "atlas version v{{version}}"]
+test = { cmd = "atlas version", expected = "atlas version v{{version}}" }

@@ -4,4 +4,4 @@ backends = [
   "cargo:git-delta",
 ]
 description = "A syntax-highlighting pager for git, diff, and grep output"
-test = ["delta --version", "delta {{version}}"]
+test = { cmd = "delta --version", expected = "delta {{version}}" }

@@ -1,4 +1,4 @@
 backends = ["aqua:pipe-cd/pipecd/pipectl", "asdf:pipe-cd/asdf-pipectl"]
 description = "The One CD for All {applications, platforms, operations}"
 os = ["linux", "macos"]
-test = ["pipectl version", "Version: v{{version}}"]
+test = { cmd = "pipectl version", expected = "Version: v{{version}}" }

@@ -1,3 +1,3 @@
 backends = ["github:zhanhb/cidr-merger", "asdf:ORCID/asdf-cidr-merger"]
 description = "A simple command line tool to merge ip/ip cidr/ip range, supports IPv4/IPv6"
-test = ["cidr-merger --version 2>&1", "cidr merger {{version}}"]
+test = { cmd = "cidr-merger --version 2>&1", expected = "cidr merger {{version}}" }

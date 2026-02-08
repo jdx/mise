@@ -3,4 +3,4 @@ backends = [
   "go:github.com/envoyproxy/protoc-gen-validate",
 ]
 description = "Protocol Buffer Validation - Being replaced by github.com/bufbuild/protovalidate"
-test = ["which protoc-gen-validate", "protoc-gen-validate"]
+test = { cmd = "which protoc-gen-validate", expected = "protoc-gen-validate" }

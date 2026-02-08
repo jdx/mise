@@ -4,4 +4,4 @@ backends = [
   "vfox:mise-plugins/vfox-etcd",
 ]
 description = "Distributed reliable key-value store for the most critical data of a distributed system"
-test = ["etcd --version", "etcd Version: {{version}}"]
+test = { cmd = "etcd --version", expected = "etcd Version: {{version}}" }

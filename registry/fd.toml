@@ -4,4 +4,4 @@ backends = [
   "cargo:fd-find",
 ]
 description = "A simple, fast and user-friendly alternative to 'find'"
-test = ["fd --version", "fd {{version}}"]
+test = { cmd = "fd --version", expected = "fd {{version}}" }

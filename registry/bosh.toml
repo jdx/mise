@@ -3,4 +3,4 @@ backends = [
   "asdf:mise-plugins/tanzu-plug-in-for-asdf",
 ]
 description = "The bosh CLI is the command line tool used for interacting with all things BOSH, from deployment operations to software release management"
-test = ["bosh --version", "version {{version}}"]
+test = { cmd = "bosh --version", expected = "version {{version}}" }
