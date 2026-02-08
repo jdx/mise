@@ -268,16 +268,13 @@ impl Install {
         let versions = if versions.is_empty() {
             measure!("run_postinstall_hook", {
                 info!("all tools are installed");
-                if let Err(e) = hooks::run_one_hook(
+                hooks::run_one_hook(
                     &config,
                     config.get_toolset().await?,
                     Hooks::Postinstall,
                     None,
                 )
-                .await
-                {
-                    warn!("error running postinstall hook: {e}");
-                }
+                .await;
                 vec![]
             })
         } else {

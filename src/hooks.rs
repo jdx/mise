@@ -115,9 +115,7 @@ pub async fn run_all_hooks(config: &Arc<Config>, ts: &Toolset, shell: &dyn Shell
         mu.drain(..).collect::<Vec<_>>()
     };
     for hook in hooks {
-        if let Err(e) = run_one_hook(config, ts, hook, Some(shell)).await {
-            warn!("error running {hook} hook: {e}");
-        }
+        run_one_hook(config, ts, hook, Some(shell)).await;
     }
 }
 
@@ -154,7 +152,7 @@ pub async fn run_one_hook(
     ts: &Toolset,
     hook: Hooks,
     shell: Option<&dyn Shell>,
-) -> Result<()> {
+) {
     run_one_hook_with_context(config, ts, hook, shell, None).await
 }
 
@@ -166,9 +164,9 @@ pub async fn run_one_hook_with_context(
     hook: Hooks,
     shell: Option<&dyn Shell>,
     installed_tools: Option<&[InstalledToolInfo]>,
-) -> Result<()> {
+) {
     if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
-        return Ok(());
+        return;
     }
     for (root, h) in all_hooks(config).await {
         if hook != h.hook || (h.shell.is_some() && h.shell != shell.map(|s| s.to_string())) {
@@ -245,7 +243,6 @@ pub async fn run_one_hook_with_context(
             warn!("{hook} hook in {} failed: {e}", root.display());
         }
     }
-    Ok(())
 }
 
 async fn execute(
