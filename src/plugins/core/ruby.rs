@@ -758,8 +758,8 @@ impl Backend for RubyPlugin {
         if settings.ruby.compile.is_none() && !settings.experimental {
             warn_once!(
                 "precompiled ruby will be the default in 2026.8.0.\n\
-                 To use precompiled binaries now: mise settings set ruby.compile=false\n\
-                 To keep compiling from source: mise settings set ruby.compile=true"
+                 To use precompiled binaries now: mise settings ruby.compile=false\n\
+                 To keep compiling from source: mise settings ruby.compile=true"
             );
         }
 
