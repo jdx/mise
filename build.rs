@@ -120,11 +120,20 @@ fn codegen_registry() {
             .map(|v| v.as_str().unwrap().to_string())
             .collect::<Vec<_>>();
         let test = info.get("test").map(|t| {
-            let t = t.as_table().unwrap();
-            (
-                t["cmd"].as_str().unwrap().to_string(),
-                t["expected"].as_str().unwrap().to_string(),
-            )
+            let t = t
+                .as_table()
+                .unwrap_or_else(|| panic!("[{short}] 'test' field must be a table"));
+            let cmd = t
+                .get("cmd")
+                .and_then(|v| v.as_str())
+                .unwrap_or_else(|| panic!("[{short}] 'test.cmd' must be a string"))
+                .to_string();
+            let expected = t
+                .get("expected")
+                .and_then(|v| v.as_str())
+                .unwrap_or_else(|| panic!("[{short}] 'test.expected' must be a string"))
+                .to_string();
+            (cmd, expected)
         });
         let mut backends = vec![];
         for backend in info.get("backends").unwrap().as_array().unwrap() {
