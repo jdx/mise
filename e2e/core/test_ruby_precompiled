@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
 # Test precompiled Ruby binaries from jdx/ruby
-# With experimental=true, precompiled is tried by default (falls back to compile if unavailable)
-export MISE_EXPERIMENTAL=1
+export MISE_RUBY_COMPILE=false
 
 # Install precompiled Ruby 3.4.1
 assert_contains "mise use ruby@3.4.1 2>&1" "ruby@3.4.1"

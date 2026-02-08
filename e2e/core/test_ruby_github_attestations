@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-export MISE_EXPERIMENTAL=1
+export MISE_RUBY_COMPILE=false
 export MISE_RUBY_GITHUB_ATTESTATIONS=true
 
 echo "=== Testing Ruby GitHub Attestations Verification ==="
