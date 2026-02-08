@@ -192,12 +192,21 @@ impl Toolset {
 
         // Skip hooks in dry-run mode
         if !opts.dry_run {
-            // Run post-install hook with installed tools info (ignoring errors)
+            // Run post-install hook with installed tools info
+            // Use the full resolved toolset so all installed tools are on PATH
+            // Fall back to self if toolset resolution fails (e.g. due to config issues)
             let installed_tools: Vec<InstalledToolInfo> =
                 installed.iter().map(InstalledToolInfo::from).collect();
-            let _ = hooks::run_one_hook_with_context(
+            let ts = match config.get_toolset().await {
+                Ok(ts) => ts,
+                Err(e) => {
+                    debug!("error resolving toolset for postinstall hook: {e:#}");
+                    self
+                }
+            };
+            hooks::run_one_hook_with_context(
                 config,
-                self,
+                ts,
                 Hooks::Postinstall,
                 None,
                 Some(&installed_tools),
