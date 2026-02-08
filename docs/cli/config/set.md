@@ -14,7 +14,7 @@ The path of the config to display
 
 ### `[VALUE]`
 
-The value to set the key to
+The value to set the key to (optional if provided as KEY=VALUE)
 
 ## Flags
 

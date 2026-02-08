@@ -17,7 +17,7 @@ The setting to set
 
 ### `[VALUE]`
 
-The value to set
+The value to set (optional if provided as KEY=VALUE)
 
 ## Flags
 

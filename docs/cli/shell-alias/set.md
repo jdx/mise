@@ -17,7 +17,7 @@ The alias name
 
 ### `[COMMAND]`
 
-The command to run
+The command to run (optional if provided as ALIAS=COMMAND)
 
 Examples:
 
