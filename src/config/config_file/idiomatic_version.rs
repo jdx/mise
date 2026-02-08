@@ -29,7 +29,13 @@ impl IdiomaticVersionFile {
         let mut tools = ToolRequestSet::new();
 
         for plugin in plugins {
-            let version = plugin.parse_idiomatic_file(&path).await?;
+            let version = match plugin.parse_idiomatic_file(&path).await {
+                Ok(v) => v,
+                Err(e) => {
+                    trace!("skipping {} for {}: {e}", plugin.id(), path.display());
+                    continue;
+                }
+            };
             for version in version.split_whitespace() {
                 let tr = ToolRequest::new(plugin.ba().clone(), version, source.clone())?;
                 tools.add_version(tr, &source);

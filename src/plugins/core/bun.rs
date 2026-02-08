@@ -142,7 +142,19 @@ impl Backend for BunPlugin {
     }
 
     async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
-        Ok(vec![".bun-version".into()])
+        Ok(vec![".bun-version".into(), "package.json".into()])
+    }
+
+    async fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
+        if path.file_name().is_some_and(|f| f == "package.json") {
+            let pkg = crate::package_json::PackageJson::parse(path)?;
+            return pkg
+                .runtime_version("bun")
+                .or_else(|| pkg.package_manager_version("bun"))
+                .ok_or_else(|| eyre::eyre!("no bun version found in package.json"));
+        }
+        let contents = file::read_to_string(path)?;
+        Ok(contents.trim().to_string())
     }
 
     async fn install_version_(
