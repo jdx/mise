@@ -299,8 +299,9 @@ pub struct Settings {"#
             .to_string(),
     ];
 
+    let settings_toml = fs::read_to_string("settings.toml").expect("Failed to read settings.toml");
     let settings: toml::Table =
-        toml::de::from_str(&fs::read_to_string("settings.toml").unwrap()).unwrap();
+        toml::de::from_str(&settings_toml).expect("Failed to parse settings.toml");
     let props_to_code = |key: &str, props: &toml::Value| {
         let mut lines = vec![];
         let props = props.as_table().unwrap();

@@ -56,8 +56,14 @@ _.python.venv = "/root/.venv" # can be absolute
 _.python.venv = "{{env.HOME}}/.cache/venv/myproj" # can use templates
 _.python.venv = { path = ".venv", create = true } # create the venv if it doesn't exist
 _.python.venv = { path = ".venv", create = true, python = "3.10" } # use a specific python version
-_.python.venv = { path = ".venv", create = true, python_create_args = ["--without-pip"] } # pass args to python -m venv
-_.python.venv = { path = ".venv", create = true, uv_create_args = ["--system-site-packages"] } # pass args to uv venv
+_.python.venv = {
+  path = ".venv", create = true,
+  python_create_args = ["--without-pip"], # pass args to python -m venv
+}
+_.python.venv = {
+  path = ".venv", create = true,
+  uv_create_args = ["--system-site-packages"], # pass args to uv venv
+}
 # Install seed packages (pip, setuptools, and wheel) into the virtual environment.
 _.python.venv = { path = ".venv", create = true, uv_create_args = ['--seed'] }
 ```

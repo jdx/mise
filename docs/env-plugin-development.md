@@ -192,7 +192,11 @@ With configuration options:
 
 ```toml
 [env]
-_.my-env-plugin = { api_url = "https://prod.api.example.com", debug = false, custom_bin_path = "/custom/path/bin" }
+_.my-env-plugin = {
+  api_url = "https://prod.api.example.com",
+  debug = false,
+  custom_bin_path = "/custom/path/bin",
+}
 ```
 
 All fields in the TOML table are passed to your hooks as `ctx.options`.
@@ -254,7 +258,10 @@ end
 
 ```toml
 [env]
-_.vault-secrets = { vault_url = "https://vault.example.com", secrets_path = "secret/data/myapp/production" }
+_.vault-secrets = {
+  vault_url = "https://vault.example.com",
+  secrets_path = "secret/data/myapp/production",
+}
 ```
 
 ## Available Lua Modules

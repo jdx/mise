@@ -113,8 +113,14 @@ _Instead of specifying the checksum here, you can use [mise.lock](/dev-tools/mis
 version = "latest"
 
 [tools."github:cli/cli".platforms]
-linux-x64 = { asset_pattern = "gh_*_linux_x64.tar.gz", checksum = "sha256:a1b2c3d4e5f6789..." }
-macos-arm64 = { asset_pattern = "gh_*_macOS_arm64.tar.gz", checksum = "sha256:b2c3d4e5f6789..." }
+linux-x64 = {
+  asset_pattern = "gh_*_linux_x64.tar.gz",
+  checksum = "sha256:a1b2c3d4e5f6789...",
+}
+macos-arm64 = {
+  asset_pattern = "gh_*_macOS_arm64.tar.gz",
+  checksum = "sha256:b2c3d4e5f6789...",
+}
 ```
 
 ### `size`

@@ -21,7 +21,11 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ```toml
 [tools]
-"forgejo:forgejo/runner" = { version = "latest", api_url = "https://code.forgejo.org/api/v1", bin = "forgejo-runner" }
+"forgejo:forgejo/runner" = {
+  version = "latest",
+  api_url = "https://code.forgejo.org/api/v1",
+  bin = "forgejo-runner",
+}
 ```
 
 ## Tool Options
@@ -115,8 +119,14 @@ _Instead of specifying the checksum here, you can use [mise.lock](/dev-tools/mis
 version = "latest"
 
 [tools."forgejo:user/repo".platforms]
-linux-x64 = { asset_pattern = "tool_*_linux_x64.tar.gz", checksum = "sha256:a1b2c3d4e5f6789..." }
-macos-arm64 = { asset_pattern = "tool_*_macOS_arm64.tar.gz", checksum = "sha256:b2c3d4e5f6789..." }
+linux-x64 = {
+  asset_pattern = "tool_*_linux_x64.tar.gz",
+  checksum = "sha256:a1b2c3d4e5f6789...",
+}
+macos-arm64 = {
+  asset_pattern = "tool_*_macOS_arm64.tar.gz",
+  checksum = "sha256:b2c3d4e5f6789...",
+}
 ```
 
 ### `size`

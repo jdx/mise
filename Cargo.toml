@@ -174,7 +174,7 @@ terminal_size = "0.4"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 tokio-retry = "0.3"
-toml = { version = "0.9", features = ["parse"] }
+toml = { version = "0.9", features = ["parse", "preserve_order"] }
 toml_edit = { version = "0.24", features = ["parse"] }
 ubi = { version = "0.8", default-features = false }
 url = "2"

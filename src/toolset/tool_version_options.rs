@@ -76,7 +76,7 @@ impl ToolVersionOptions {
 
         // Get the root value and try to parse it as TOML
         if let Some(value) = self.opts.get(root_key) {
-            if let Ok(toml_value) = value.parse::<toml::Value>() {
+            if let Ok(toml_value) = toml::de::from_str::<toml::Value>(value) {
                 return Self::value_exists_at_path(&toml_value, nested_path);
             } else if value.trim().starts_with('{') && value.trim().ends_with('}') {
                 // Try to parse as inline TOML table
@@ -122,7 +122,7 @@ impl ToolVersionOptions {
 
         // Get the root value and try to parse it as TOML
         if let Some(value) = self.opts.get(root_key) {
-            if let Ok(toml_value) = value.parse::<toml::Value>() {
+            if let Ok(toml_value) = toml::de::from_str::<toml::Value>(value) {
                 return Self::get_string_at_path(&toml_value, nested_path);
             } else if value.trim().starts_with('{') && value.trim().ends_with('}') {
                 // Try to parse as inline TOML table
