@@ -818,6 +818,12 @@ pub trait Backend: Debug + Send + Sync {
             .unwrap_or_default())
     }
     async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<String> {
+        if path.file_name().is_some_and(|f| f == "package.json") {
+            let pkg = crate::package_json::PackageJson::parse(path)?;
+            return pkg
+                .package_manager_version(self.id())
+                .ok_or_else(|| eyre::eyre!("no {} version found in package.json", self.id()));
+        }
         let contents = file::read_to_string(path)?;
         Ok(contents.trim().to_string())
     }
