@@ -225,8 +225,9 @@ pub async fn run_one_hook_with_context(
                 }
             }
             println!("{}", h.script);
-        } else {
-            execute(config, ts, root, h, installed_tools).await?;
+        } else if let Err(e) = execute(config, ts, root, h, installed_tools).await {
+            // Warn but continue running remaining hooks of this type
+            warn!("{hook} hook in {} failed: {e}", root.display());
         }
     }
     Ok(())

@@ -12,8 +12,12 @@ postinstall = 'echo POST'
 EOF
 
 # Preinstall fails but postinstall should still run and install should succeed
-assert_contains "mise i 2>&1" "error running preinstall hook"
-assert_contains "mise i dummy@1 2>&1" "POST"
+rm -rf ~/.local/share/mise/installs/dummy
+output=$(mise i 2>&1)
+assert_contains "echo '$output'" "hook in"
+assert_contains "echo '$output'" "failed:"
+# postinstall should still fire even though preinstall failed
+assert_contains "echo '$output'" "POST"
 
 # Test 2: Invalid hook script (nonexistent command) should warn
 rm -rf ~/.local/share/mise/installs/dummy
@@ -25,4 +29,6 @@ preinstall = 'nonexistent_command_12345'
 EOF
 
 # Should warn about hook error but not crash
-assert_contains "mise i 2>&1" "error running preinstall hook"
+output=$(mise i 2>&1)
+assert_contains "echo '$output'" "hook in"
+assert_contains "echo '$output'" "failed:"
