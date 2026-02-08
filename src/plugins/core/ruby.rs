@@ -391,7 +391,7 @@ impl RubyPlugin {
     /// TODO(2026.8.0): make precompiled the default when compile is unset, remove this debug_assert
     fn should_try_precompiled(&self) -> bool {
         debug_assert!(
-            *crate::cli::version::V < versions::Versioning::new("2026.8").unwrap(),
+            *crate::cli::version::V < versions::Versioning::new("2026.8.0").unwrap(),
             "precompiled ruby should be the default now, update should_try_precompiled()"
         );
         let settings = Settings::get();
@@ -756,11 +756,10 @@ impl Backend for RubyPlugin {
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let settings = Settings::get();
         if settings.ruby.compile.is_none() && !settings.experimental {
-            warn!(
-                "precompiled ruby will be the default in 2026.8.0. \
-                 To use precompiled binaries now, set ruby.compile=false. \
-                 To keep compiling from source, set ruby.compile=true. \
-                 e.g. mise settings ruby.compile=false"
+            warn_once!(
+                "precompiled ruby will be the default in 2026.8.0.\n\
+                 To use precompiled binaries now: mise settings set ruby.compile=false\n\
+                 To keep compiling from source: mise settings set ruby.compile=true"
             );
         }
 

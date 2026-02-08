@@ -1344,7 +1344,7 @@ Controls whether Ruby is compiled from source or downloaded as precompiled binar
 
 - If `false`: Try precompiled binaries first, fall back to compiling if unavailable
 - If `true`: Always compile from source using ruby-build
-- If unset: Defaults to compiling from source (will change to precompiled in 2026.8.0)
+- If unset: Defaults to compiling from source (will change to precompiled in 2026.8.0). Note: if `experimental = true`, precompiled binaries are used when unset.
 """
 env = "MISE_RUBY_COMPILE"
 optional = true
