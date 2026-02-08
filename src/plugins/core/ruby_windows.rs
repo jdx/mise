@@ -6,6 +6,7 @@ use std::{
 
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
+use crate::backend::normalize_idiomatic_contents;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -190,7 +191,7 @@ impl Backend for RubyPlugin {
             Some(name) if name == "Gemfile" => parse_gemfile(&file::read_to_string(path)?),
             _ => {
                 // .ruby-version
-                let body = file::read_to_string(path)?;
+                let body = normalize_idiomatic_contents(&file::read_to_string(path)?);
                 body.trim()
                     .trim_start_matches("ruby-")
                     .trim_start_matches('v')

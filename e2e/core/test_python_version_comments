@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+# Test that .python-version files with comments are parsed correctly
+export MISE_PYTHON_COMPILE=0
+
+# Enable idiomatic version files for python
+mise settings set idiomatic_version_file_enable_tools python
+
+# Test 1: Create .python-version with comments
+cat >.python-version <<'EOF'
+# This is a comment describing the Python version
+# Another comment line
+3.12.3 # inline comment
+EOF
+
+# Verify parsing - the list command should only show 3.12.3, not comment words
+assert_not_contains "mise ls --current python 2>&1" "# (missing)"
+assert_not_contains "mise ls --current python 2>&1" "This (missing)"
+assert_not_contains "mise ls --current python 2>&1" "comment (missing)"
+assert_not_contains "mise ls --current python 2>&1" "inline (missing)"
+assert_contains "mise ls --current python 2>&1" "3.12.3"
+
+# Test 2: Install and run Python
+assert_contains "mise i 2>&1" "mise python@3.12.3"
+assert_contains "mise x -- python --version" "Python 3.12.3"
+
+# Test 3: Test with multiple versions and comments
+cat >.python-versions <<'EOF'
+# Primary version
+3.12.3 # primary
+# Secondary version
+3.11.11 # secondary
+EOF
+
+# Verify both versions are parsed correctly
+assert_contains "mise ls --current python 2>&1" "3.12.3"
+assert_contains "mise ls --current python 2>&1" "3.11.11"
+assert_not_contains "mise ls --current python 2>&1" "primary (missing)"
+assert_not_contains "mise ls --current python 2>&1" "secondary (missing)"
+
+# Clean up
+rm -f .python-version .python-versions
+mise settings set idiomatic_version_file_enable_tools "[]"

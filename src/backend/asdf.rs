@@ -7,6 +7,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::external_plugin_cache::ExternalPluginCache;
+use crate::backend::normalize_idiomatic_contents;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
@@ -338,8 +339,8 @@ impl Backend for AsdfBackend {
             true => self.plugin.script_man.read(&script)?,
             false => fs::read_to_string(idiomatic_file)?,
         }
-        .trim()
         .to_string();
+        let idiomatic_version = normalize_idiomatic_contents(&idiomatic_version);
 
         self.write_idiomatic_cache(idiomatic_file, &idiomatic_version)?;
         Ok(idiomatic_version)

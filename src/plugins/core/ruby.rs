@@ -9,7 +9,7 @@ use itertools::Itertools;
 use xx::regex;
 
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::{Backend, VersionInfo};
+use crate::backend::{Backend, VersionInfo, normalize_idiomatic_contents};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -743,7 +743,7 @@ impl Backend for RubyPlugin {
             Some(name) if name == "Gemfile" => parse_gemfile(&file::read_to_string(path)?),
             _ => {
                 // .ruby-version
-                let body = file::read_to_string(path)?;
+                let body = normalize_idiomatic_contents(&file::read_to_string(path)?);
                 body.trim()
                     .trim_start_matches("ruby-")
                     .trim_start_matches('v')
