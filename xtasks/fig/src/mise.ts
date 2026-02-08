@@ -822,6 +822,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "value",
               description: "The value to set the key to",
+              isOptional: true,
             },
           ],
         },
@@ -2262,6 +2263,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "value",
               description: "The value to set",
+              isOptional: true,
             },
           ],
         },
@@ -2476,6 +2478,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "command",
               description: "The command to run",
+              isOptional: true,
             },
           ],
         },

@@ -47,7 +47,7 @@ Output in JSON format with sources
 
 ## Subcommands
 
-- [`mise settings add [-l --local] <SETTING> <VALUE>`](/cli/settings/add.md)
+- [`mise settings add [-l --local] <SETTING> [VALUE]`](/cli/settings/add.md)
 - [`mise settings get [-l --local] <SETTING>`](/cli/settings/get.md)
 - [`mise settings ls [FLAGS] [SETTING]`](/cli/settings/ls.md)
 - [`mise settings set [-l --local] <SETTING> [VALUE]`](/cli/settings/set.md)

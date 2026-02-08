@@ -205,7 +205,7 @@ cmd config help="Manage config files" {
             }
         }
         arg <KEY> help="The path of the config to display"
-        arg <VALUE> help="The value to set the key to"
+        arg "[VALUE]" help="The value to set the key to" required=#false
     }
 }
 cmd current hide=#true help="Shows current active and installed runtime versions" {
@@ -794,7 +794,7 @@ cmd settings help="Manage settings" {
         after_long_help "Examples:\n\n    $ mise settings add disable_hints python_multi\n"
         flag "-l --local" help="Use the local config file instead of the global one"
         arg <SETTING> help="The setting to set"
-        arg <VALUE> help="The value to set"
+        arg "[VALUE]" help="The value to set" required=#false
     }
     cmd get help="Show a current setting" {
         long_help "Show a current setting\n\nThis is the contents of a single entry in ~/.config/mise/config.toml\n\nNote that aliases are also stored in this file\nbut managed separately with `mise tool-alias get`"
@@ -858,7 +858,7 @@ cmd shell-alias help="Manage shell aliases." {
         long_help "Add/update a shell alias\n\nThis modifies the contents of ~/.config/mise/config.toml"
         after_long_help "Examples:\n\n    $ mise shell-alias set ll \"ls -la\"\n    $ mise shell-alias set gs \"git status\"\n"
         arg <shell_alias> help="The alias name"
-        arg <COMMAND> help="The command to run"
+        arg "[COMMAND]" help="The command to run" required=#false
     }
     cmd unset help="Removes a shell alias" {
         alias rm remove delete del
