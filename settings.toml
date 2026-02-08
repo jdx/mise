@@ -1338,20 +1338,13 @@ optional = true
 type = "String"
 
 [ruby.compile]
-description = "[experimental] Set to true to always compile ruby from source."
+description = "Set to true to compile ruby from source, false to use precompiled binaries."
 docs = """
 Controls whether Ruby is compiled from source or downloaded as precompiled binaries.
-Requires `experimental = true` to be enabled.
 
-- If unset or `false`: Try precompiled binaries first, fall back to compiling if unavailable
+- If `false`: Try precompiled binaries first, fall back to compiling if unavailable
 - If `true`: Always compile from source using ruby-build
-
-Example to force compilation:
-```toml
-[settings]
-experimental = true
-ruby.compile = true
-```
+- If unset: Defaults to compiling from source (will change to precompiled in 2026.8.0)
 """
 env = "MISE_RUBY_COMPILE"
 optional = true
@@ -1364,20 +1357,20 @@ env = "MISE_RUBY_DEFAULT_PACKAGES_FILE"
 type = "String"
 
 [ruby.precompiled_arch]
-description = "[experimental] Override architecture identifier for precompiled Ruby binaries."
+description = "Override architecture identifier for precompiled Ruby binaries."
 env = "MISE_RUBY_PRECOMPILED_ARCH"
 optional = true
 type = "String"
 
 [ruby.precompiled_os]
-description = "[experimental] Override OS identifier for precompiled Ruby binaries."
+description = "Override OS identifier for precompiled Ruby binaries."
 env = "MISE_RUBY_PRECOMPILED_OS"
 optional = true
 type = "String"
 
 [ruby.precompiled_url]
 default = "jdx/ruby"
-description = "[experimental] URL template or GitHub repo for precompiled Ruby binaries."
+description = "URL template or GitHub repo for precompiled Ruby binaries."
 docs = """
 Can be either:
 - A GitHub repo shorthand: `"jdx/ruby"` or `"yourorg/ruby"`
@@ -1397,11 +1390,10 @@ env = "MISE_RUBY_PRECOMPILED_URL"
 type = "String"
 
 [ruby.github_attestations]
-description = "[experimental] Enable GitHub Artifact Attestations verification for precompiled Ruby binaries."
+description = "Enable GitHub Artifact Attestations verification for precompiled Ruby binaries."
 docs = """
 Override the global `github_attestations` setting for Ruby precompiled binaries.
 When enabled, mise will verify the authenticity of precompiled Ruby binaries from jdx/ruby.
-Requires `experimental = true`.
 
 Defaults to the global `github_attestations` setting if not specified.
 """

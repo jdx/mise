@@ -387,10 +387,16 @@ impl RubyPlugin {
     // ===== Precompiled Ruby support =====
 
     /// Check if precompiled binaries should be tried
-    /// Requires experimental=true and compile not explicitly set to true
+    /// Precompiled if: explicit opt-in (compile=false), or experimental + not opted out
+    /// TODO(2026.8.0): make precompiled the default when compile is unset, remove this debug_assert
     fn should_try_precompiled(&self) -> bool {
+        debug_assert!(
+            *crate::cli::version::V < versions::Versioning::new("2026.8").unwrap(),
+            "precompiled ruby should be the default now, update should_try_precompiled()"
+        );
         let settings = Settings::get();
-        settings.experimental && settings.ruby.compile != Some(true)
+        settings.ruby.compile == Some(false)
+            || (settings.experimental && settings.ruby.compile.is_none())
     }
 
     /// Get platform identifier for precompiled binaries
@@ -678,10 +684,7 @@ impl Backend for RubyPlugin {
             .ruby
             .github_attestations
             .unwrap_or(settings.github_attestations);
-        if settings.experimental
-            && settings.ruby.compile != Some(true)
-            && github_attestations_enabled
-        {
+        if self.should_try_precompiled() && github_attestations_enabled {
             features.push(SecurityFeature::GithubAttestations {
                 signer_workflow: None,
             });
@@ -751,7 +754,17 @@ impl Backend for RubyPlugin {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        // Try precompiled if experimental mode is enabled and compile is not explicitly true
+        let settings = Settings::get();
+        if settings.ruby.compile.is_none() && !settings.experimental {
+            warn!(
+                "precompiled ruby will be the default in 2026.8.0. \
+                 To use precompiled binaries now, set ruby.compile=false. \
+                 To keep compiling from source, set ruby.compile=true. \
+                 e.g. mise settings ruby.compile=false"
+            );
+        }
+
+        // Try precompiled if compile=false or experimental + not opted out
         if self.should_try_precompiled()
             && let Some(installed_tv) = self.install_precompiled(ctx, &tv).await?
         {

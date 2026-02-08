@@ -1080,7 +1080,7 @@
               "type": "string"
             },
             "compile": {
-              "description": "[experimental] Set to true to always compile ruby from source.",
+              "description": "Set to true to compile ruby from source, false to use precompiled binaries.",
               "type": "boolean"
             },
             "default_packages_file": {
@@ -1089,20 +1089,20 @@
               "type": "string"
             },
             "precompiled_arch": {
-              "description": "[experimental] Override architecture identifier for precompiled Ruby binaries.",
+              "description": "Override architecture identifier for precompiled Ruby binaries.",
               "type": "string"
             },
             "precompiled_os": {
-              "description": "[experimental] Override OS identifier for precompiled Ruby binaries.",
+              "description": "Override OS identifier for precompiled Ruby binaries.",
               "type": "string"
             },
             "precompiled_url": {
               "default": "jdx/ruby",
-              "description": "[experimental] URL template or GitHub repo for precompiled Ruby binaries.",
+              "description": "URL template or GitHub repo for precompiled Ruby binaries.",
               "type": "string"
             },
             "github_attestations": {
-              "description": "[experimental] Enable GitHub Artifact Attestations verification for precompiled Ruby binaries.",
+              "description": "Enable GitHub Artifact Attestations verification for precompiled Ruby binaries.",
               "type": "boolean"
             },
             "ruby_build_opts": {
