@@ -3,4 +3,4 @@ backends = [
   "asdf:TheCubicleJockey/asdf-calicoctl",
 ]
 description = "Cloud native networking and network security"
-test = ["calicoctl version", "Client Version:    v{{version}}"]
+test = { cmd = "calicoctl version", expected = "Client Version:    v{{version}}" }

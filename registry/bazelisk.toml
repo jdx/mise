@@ -4,7 +4,4 @@ backends = [
   "asdf:josephtate/asdf-bazelisk",
 ]
 description = "A user-friendly launcher for Bazel"
-test = [
-  "bazelisk --version",
-  "bazel",
-] # shows bazel version, not bazelisk version
+test = { cmd = "bazelisk --version", expected = "bazel" } # shows bazel version, not bazelisk version

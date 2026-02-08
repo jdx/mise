@@ -3,7 +3,4 @@ backends = [
   "asdf:mise-plugins/mise-clickhouse",
 ]
 description = "ClickHouse® is a high-performance, column-oriented SQL database management system (DBMS) for online analytical processing (OLAP)"
-test = [
-  "clickhouse --version",
-  "ClickHouse local version {{version | trim_end_matches(pat='-lts') | trim_end_matches(pat='-stable')}}",
-]
+test = { cmd = "clickhouse --version", expected = "ClickHouse local version {{version | trim_end_matches(pat='-lts') | trim_end_matches(pat='-stable')}}" }

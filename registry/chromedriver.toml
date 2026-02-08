@@ -3,4 +3,4 @@ backends = [
   "asdf:mise-plugins/mise-chromedriver",
 ]
 description = "ChromeDriver is a standalone server that implements the W3C WebDriver and WebDriver BiDi standards"
-test = ["chromedriver --version", "ChromeDriver {{version}}"]
+test = { cmd = "chromedriver --version", expected = "ChromeDriver {{version}}" }

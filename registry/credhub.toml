@@ -3,4 +3,4 @@ backends = [
   "asdf:mise-plugins/tanzu-plug-in-for-asdf",
 ]
 description = "CredHub CLI provides a command line interface to interact with CredHub servers"
-test = ["credhub --version", "CLI Version: {{version}}"]
+test = { cmd = "credhub --version", expected = "CLI Version: {{version}}" }

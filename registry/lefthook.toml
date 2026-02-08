@@ -5,4 +5,4 @@ backends = [
   "go:github.com/evilmartians/lefthook",
 ]
 description = "Fast and powerful Git hooks manager for any type of projects"
-test = ["lefthook version", "{{version}}"]
+test = { cmd = "lefthook version", expected = "{{version}}" }

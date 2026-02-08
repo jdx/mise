@@ -6,4 +6,4 @@ backends = [
   "cargo:eza",
 ]
 description = "A modern, maintained replacement for ls"
-test = ["eza --version", "v{{version}}"]
+test = { cmd = "eza --version", expected = "v{{version}}" }

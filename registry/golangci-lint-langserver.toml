@@ -3,4 +3,4 @@ backends = [
   "go:github.com/nametake/golangci-lint-langserver",
 ]
 description = "golangci-lint language server"
-test = ["which golangci-lint-langserver", "golangci-lint-langserver"]
+test = { cmd = "which golangci-lint-langserver", expected = "golangci-lint-langserver" }

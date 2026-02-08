@@ -3,4 +3,4 @@ backends = [
   "asdf:asdf-community/asdf-opam",
 ]
 description = "(ocaml) opam is a source-based package manager. It supports multiple simultaneous compiler installations, flexible package constraints, and a Git-friendly development workflow"
-test = ["opam --version", "{{version}}"]
+test = { cmd = "opam --version", expected = "{{version}}" }

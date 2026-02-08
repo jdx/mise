@@ -3,4 +3,4 @@ backends = [
   "asdf:stefansedich/asdf-kubeseal",
 ]
 description = "A Kubernetes controller and tool for one-way encrypted Secrets"
-test = ["kubeseal --version", "kubeseal version: {{version}}"]
+test = { cmd = "kubeseal --version", expected = "kubeseal version: {{version}}" }

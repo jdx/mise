@@ -4,4 +4,4 @@ backends = [
   "asdf:bradym/asdf-docuum",
 ]
 description = "Docuum performs least recently used (LRU) eviction of Docker images"
-test = ["docuum --version", "Docuum {{version}}"]
+test = { cmd = "docuum --version", expected = "Docuum {{version}}" }

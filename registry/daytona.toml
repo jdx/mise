@@ -1,5 +1,5 @@
 description = "Daytona is a Secure and Elastic Infrastructure for Running AI-Generated Code"
-test = ["daytona version", "Daytona CLI version v{{version}}"]
+test = { cmd = "daytona version", expected = "Daytona CLI version v{{version}}" }
 
 [[backends]]
 full = "github:daytonaio/daytona[bin=daytona]"

@@ -3,4 +3,4 @@ backends = [
   "asdf:mise-plugins/mise-grain",
 ]
 description = "The Grain compiler toolchain and CLI. Home of the modern web staple"
-test = ["grain --version", "{{version}}"]
+test = { cmd = "grain --version", expected = "{{version}}" }

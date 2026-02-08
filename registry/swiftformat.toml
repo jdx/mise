@@ -3,4 +3,4 @@ backends = [
   "asdf:mise-plugins/mise-swiftformat",
 ]
 description = "A command-line tool and Xcode Extension for formatting Swift code"
-test = ["swiftformat --version", "{{version}}"]
+test = { cmd = "swiftformat --version", expected = "{{version}}" }

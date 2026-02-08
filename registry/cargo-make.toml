@@ -4,4 +4,4 @@ backends = [
   "cargo:cargo-make",
 ]
 description = "Rust task runner and build tool"
-test = ["makers --version", "cargo-make {{version}}"]
+test = { cmd = "makers --version", expected = "cargo-make {{version}}" }

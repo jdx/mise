@@ -1,4 +1,4 @@
 backends = ["aqua:cloud66-oss/copper", "asdf:vladlosev/asdf-copper"]
 description = "A configuration file validator for Kubernetes"
 os = ["linux", "macos"]
-test = ["copper version", ""]
+test = { cmd = "copper version", expected = "" }

@@ -5,4 +5,4 @@ backends = [
 ]
 description = "A shell parser, formatter, and interpreter with bash support; includes shfmt"
 os = ["linux", "macos"]
-test = ["shfmt --version", "v{{version}}"]
+test = { cmd = "shfmt --version", expected = "v{{version}}" }

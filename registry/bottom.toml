@@ -4,4 +4,4 @@ backends = [
   "cargo:bottom",
 ]
 description = "Yet another cross-platform graphical process/system monitor"
-test = ["btm --version", "bottom {{version}}"]
+test = { cmd = "btm --version", expected = "bottom {{version}}" }

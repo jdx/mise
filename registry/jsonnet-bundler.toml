@@ -1,4 +1,4 @@
 aliases = ["jb"]
 backends = ["aqua:jsonnet-bundler/jsonnet-bundler", "asdf:beardix/asdf-jb"]
 description = "A jsonnet package manager"
-test = ["jb --version 2>&1", "v{{version}}"]
+test = { cmd = "jb --version 2>&1", expected = "v{{version}}" }

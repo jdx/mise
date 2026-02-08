@@ -1,4 +1,4 @@
 backends = ["aqua:gradle/gradle", "vfox:mise-plugins/vfox-gradle"]
 depends = ["java"]
 description = "Gradle is the open source build system of choice for Java, Android, and Kotlin developers"
-test = ["gradle -V", "Gradle"]
+test = { cmd = "gradle -V", expected = "Gradle" }

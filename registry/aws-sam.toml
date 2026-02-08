@@ -8,4 +8,4 @@ backends = [
   "asdf:mise-plugins/mise-pyapp",
 ]
 description = "CLI tool to build, test, debug, and deploy Serverless applications using AWS SAM"
-test = ["sam --version", "SAM CLI, version {{version}}"]
+test = { cmd = "sam --version", expected = "SAM CLI, version {{version}}" }

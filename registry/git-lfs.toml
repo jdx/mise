@@ -1,3 +1,3 @@
 backends = ["aqua:git-lfs/git-lfs"]
 description = "Git extension for versioning large files"
-test = ["git-lfs --version", "git-lfs/{{version}}"]
+test = { cmd = "git-lfs --version", expected = "git-lfs/{{version}}" }

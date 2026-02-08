@@ -1,3 +1,3 @@
 backends = ["aqua:aduros/wasm4", "asdf:jtakakura/asdf-wasm4"]
 description = "Build retro games using WebAssembly for a fantasy console"
-test = ["w4 --version", "{{version}}"]
+test = { cmd = "w4 --version", expected = "{{version}}" }

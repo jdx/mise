@@ -5,4 +5,4 @@ backends = [
   "pipx:ast-grep-cli",
 ]
 description = "A CLI tool for code structural search, lint and rewriting. Written in Rust"
-test = ["sg --version", "ast-grep {{version}}"]
+test = { cmd = "sg --version", expected = "ast-grep {{version}}" }

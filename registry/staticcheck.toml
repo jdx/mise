@@ -4,4 +4,4 @@ backends = [
   "go:honnef.co/go/tools/cmd/staticcheck",
 ]
 description = "Staticcheck - The advanced Go linter"
-test = ["staticcheck --version", "staticcheck {{version}}"]
+test = { cmd = "staticcheck --version", expected = "staticcheck {{version}}" }

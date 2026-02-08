@@ -4,4 +4,4 @@ backends = [
   "asdf:mise-plugins/mise-mdbook-linkcheck",
 ]
 description = "A backend for `mdbook` which will check your links for you"
-test = ["mdbook-linkcheck --version", "mdbook-linkcheck {{version}}"]
+test = { cmd = "mdbook-linkcheck --version", expected = "mdbook-linkcheck {{version}}" }

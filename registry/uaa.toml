@@ -4,4 +4,4 @@ backends = [
   "asdf:mise-plugins/tanzu-plug-in-for-asdf",
 ]
 description = "CLI for UAA written in Go"
-test = ["uaa version", "{{version}}"]
+test = { cmd = "uaa version", expected = "{{version}}" }

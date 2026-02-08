@@ -3,4 +3,4 @@ backends = [
   "npm:@withgraphite/graphite-cli",
 ]
 description = "Code review for the age of AI"
-test = ["gt --version", "{{version}}"]
+test = { cmd = "gt --version", expected = "{{version}}" }

@@ -1,3 +1,3 @@
 backends = ["github:elm/compiler[bin=elm]", "asdf:asdf-community/asdf-elm"]
 description = "Compiler for Elm, a functional language for reliable webapps"
-test = ["elm --version", "{{version}}"]
+test = { cmd = "elm --version", expected = "{{version}}" }

@@ -4,4 +4,4 @@ backends = [
   "cargo:zellij",
 ]
 description = "A terminal workspace with batteries included"
-test = ["zellij --version", "zellij {{version}}"]
+test = { cmd = "zellij --version", expected = "zellij {{version}}" }

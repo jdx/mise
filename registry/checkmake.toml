@@ -1,3 +1,3 @@
 backends = ["aqua:mrtazz/checkmake"]
 description = "experimental linter/analyzer for Makefiles"
-test = ["checkmake --version", "checkmake v{{version}}"]
+test = { cmd = "checkmake --version", expected = "checkmake v{{version}}" }

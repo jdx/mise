@@ -3,4 +3,4 @@ backends = [
   "asdf:pfnet-research/asdf-clusterctl",
 ]
 description = "Home for Cluster API, a subproject of sig-cluster-lifecycle"
-test = ["clusterctl version", "{{version}}"]
+test = { cmd = "clusterctl version", expected = "{{version}}" }

@@ -4,4 +4,4 @@ backends = [
   "cargo:stylua",
 ]
 description = "A Lua code formatter"
-test = ["stylua --version", "stylua {{version}}"]
+test = { cmd = "stylua --version", expected = "stylua {{version}}" }

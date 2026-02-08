@@ -3,4 +3,4 @@ backends = [
   "asdf:asdf-community/asdf-kubectl",
 ]
 description = "kubectl cli"
-test = ["kubectl version --client", "Client Version: v{{version}}"]
+test = { cmd = "kubectl version --client", expected = "Client Version: v{{version}}" }

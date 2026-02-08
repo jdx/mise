@@ -4,4 +4,4 @@ backends = [
   "asdf:asdf-community/asdf-kpack-cli",
 ]
 description = "A command line interface for interacting with kpack"
-test = ["kp version", "{{version}}"]
+test = { cmd = "kp version", expected = "{{version}}" }

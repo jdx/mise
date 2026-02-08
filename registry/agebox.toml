@@ -1,3 +1,3 @@
 backends = ["aqua:slok/agebox", "asdf:slok/asdf-agebox"]
 description = "Age based repository file encryption gitops tool"
-test = ["agebox --version 2>&1", "v{{version}}"]
+test = { cmd = "agebox --version 2>&1", expected = "v{{version}}" }

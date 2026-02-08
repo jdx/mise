@@ -5,4 +5,4 @@ backends = [
   "cargo:ripgrep",
 ]
 description = "ripgrep recursively searches directories for a regex pattern while respecting your gitignore"
-test = ["rg --version", "ripgrep {{version}}"]
+test = { cmd = "rg --version", expected = "ripgrep {{version}}" }

@@ -4,4 +4,4 @@ backends = [
   "asdf:mathew-fleisch/asdf-semver",
 ]
 description = "semver bash implementation"
-test = ["semver --version", "semver: {{version}}"]
+test = { cmd = "semver --version", expected = "semver: {{version}}" }

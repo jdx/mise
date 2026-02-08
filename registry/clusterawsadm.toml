@@ -3,4 +3,4 @@ backends = [
   "asdf:kahun/asdf-clusterawsadm",
 ]
 description = "clusterawsadm provides helpers for bootstrapping Kubernetes Cluster API Provider AWS"
-test = ["cluster-api-provider-aws version", "clusterawsadm version:"]
+test = { cmd = "cluster-api-provider-aws version", expected = "clusterawsadm version:" }

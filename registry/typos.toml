@@ -4,4 +4,4 @@ backends = [
   "cargo:typos-cli",
 ]
 description = "Source code spell checker"
-test = ["typos --version", "typos-cli {{version}}"]
+test = { cmd = "typos --version", expected = "typos-cli {{version}}" }

@@ -4,4 +4,4 @@ backends = [
   "go:github.com/itchyny/gojq/cmd/gojq",
 ]
 description = "Pure Go implementation of jq"
-test = ["gojq --version", "gojq {{version}}"]
+test = { cmd = "gojq --version", expected = "gojq {{version}}" }

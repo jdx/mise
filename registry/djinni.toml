@@ -3,4 +3,4 @@ backends = [
   "asdf:cross-language-cpp/asdf-djinni",
 ]
 description = "Command-line tool that generates gluecode from a djinni-IDL file"
-test = ["djinni --version", "djinni generator version {{version}}"]
+test = { cmd = "djinni --version", expected = "djinni generator version {{version}}" }

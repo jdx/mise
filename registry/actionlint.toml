@@ -4,4 +4,4 @@ backends = [
   "go:github.com/rhysd/actionlint/cmd/actionlint",
 ]
 description = ":octocat: Static checker for GitHub Actions workflow files"
-test = ["actionlint --version", "{{version}}"]
+test = { cmd = "actionlint --version", expected = "{{version}}" }

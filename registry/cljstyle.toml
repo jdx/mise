@@ -1,4 +1,4 @@
 backends = ["github:greglook/cljstyle", "asdf:abogoyavlensky/asdf-cljstyle"]
 description = "A tool for formatting Clojure code"
 os = ["linux", "macos"]
-test = ["cljstyle version", "mvxcvi/cljstyle {{version}}"]
+test = { cmd = "cljstyle version", expected = "mvxcvi/cljstyle {{version}}" }

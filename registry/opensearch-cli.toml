@@ -3,4 +3,4 @@ backends = [
   "asdf:mise-plugins/mise-opensearch-cli",
 ]
 description = "A full-featured command line interface (CLI) for OpenSearch"
-test = ["opensearch-cli --version", "opensearch-cli version {{version}}"]
+test = { cmd = "opensearch-cli --version", expected = "opensearch-cli version {{version}}" }

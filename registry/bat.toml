@@ -4,4 +4,4 @@ backends = [
   "asdf:https://gitlab.com/wt0f/asdf-bat",
 ]
 description = "A cat(1) clone with wings"
-test = ["bat --version", "bat {{version}}"]
+test = { cmd = "bat --version", expected = "bat {{version}}" }

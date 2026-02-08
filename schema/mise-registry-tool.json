@@ -113,13 +113,20 @@
       "description": "List of tool IDs that this tool overrides"
     },
     "test": {
-      "type": "array",
-      "items": {
-        "type": "string"
+      "type": "object",
+      "properties": {
+        "cmd": {
+          "type": "string",
+          "description": "Command to run to test the tool installation"
+        },
+        "expected": {
+          "type": "string",
+          "description": "Expected substring in the command output"
+        }
       },
-      "description": "Command to test the tool installation [command, expected_output]",
-      "minItems": 2,
-      "maxItems": 2
+      "required": ["cmd", "expected"],
+      "additionalProperties": false,
+      "description": "Command to test the tool installation"
     }
   },
   "required": ["backends"],

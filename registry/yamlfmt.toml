@@ -4,4 +4,4 @@ backends = [
   "go:github.com/google/yamlfmt/cmd/yamlfmt",
 ]
 description = "An extensible command line tool or library to format yaml files"
-test = ["yamlfmt --version", "yamlfmt {{version}}"]
+test = { cmd = "yamlfmt --version", expected = "yamlfmt {{version}}" }

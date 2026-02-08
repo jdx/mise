@@ -1,5 +1,5 @@
 description = "Nomad Pack is a templating and packaging tool used with HashiCorp Nomad"
-test = ["nomad-pack version", "{{version}}"]
+test = { cmd = "nomad-pack version", expected = "{{version}}" }
 
 [[backends]]
 full = "http:nomad-pack"

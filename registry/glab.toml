@@ -9,4 +9,4 @@ backends = [
   "asdf:mise-plugins/mise-glab",
 ]
 description = "gitlab cli"
-test = ["glab version", "glab {{version}}"]
+test = { cmd = "glab version", expected = "glab {{version}}" }

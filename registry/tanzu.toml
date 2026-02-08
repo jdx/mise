@@ -1,3 +1,3 @@
 backends = ["github:vmware-tanzu/tanzu-cli[rename_exe=tanzu]"]
 description = "The Tanzu Core CLI project provides the core functionality of the Tanzu CLI. The CLI is based on a plugin architecture where CLI command functionality can be delivered through independently developed plugin binaries"
-test = ["tanzu version", "version: v{{version}}"]
+test = { cmd = "tanzu version", expected = "version: v{{version}}" }

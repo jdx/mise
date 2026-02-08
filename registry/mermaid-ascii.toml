@@ -3,4 +3,4 @@ backends = [
   "github:AlexanderGrooff/mermaid-ascii",
 ]
 description = "Render Mermaid graphs inside your terminal"
-test = ["which mermaid-ascii", "mermaid-ascii"]
+test = { cmd = "which mermaid-ascii", expected = "mermaid-ascii" }

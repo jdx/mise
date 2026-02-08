@@ -4,4 +4,4 @@ backends = [
   "pipx:pre-commit",
 ]
 description = "A framework for managing and maintaining multi-language pre-commit hooks"
-test = ["pre-commit --version", "pre-commit {{version}}"]
+test = { cmd = "pre-commit --version", expected = "pre-commit {{version}}" }

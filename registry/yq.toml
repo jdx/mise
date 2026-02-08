@@ -4,4 +4,4 @@ backends = [
   "go:github.com/mikefarah/yq/v4",
 ]
 description = "yq is a portable command-line YAML processor"
-test = ["yq --version", "version v{{version}}"]
+test = { cmd = "yq --version", expected = "version v{{version}}" }

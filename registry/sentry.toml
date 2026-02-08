@@ -1,4 +1,4 @@
 aliases = ["sentry-cli"]
 backends = ["aqua:getsentry/sentry-cli"]
 description = "A command line utility to work with Sentry"
-test = ["sentry-cli --version", "sentry-cli {{version}}"]
+test = { cmd = "sentry-cli --version", expected = "sentry-cli {{version}}" }

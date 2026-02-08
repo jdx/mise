@@ -3,4 +3,4 @@ backends = [
   "asdf:zekker6/asdf-aws-iam-authenticator",
 ]
 description = "A tool to use AWS IAM credentials to authenticate to a Kubernetes cluster"
-test = ["aws-iam-authenticator version", '"Version":"{{version}}"']
+test = { cmd = "aws-iam-authenticator version", expected = '"Version":"{{version}}"' }

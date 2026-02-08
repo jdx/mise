@@ -4,4 +4,4 @@ backends = [
   "asdf:mise-plugins/asdf-zigmod",
 ]
 description = "A package manager for the Zig programming language"
-test = ["zigmod version", "{{version}}"]
+test = { cmd = "zigmod version", expected = "{{version}}" }

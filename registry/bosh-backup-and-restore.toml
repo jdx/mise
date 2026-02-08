@@ -5,4 +5,4 @@ backends = [
 ]
 description = "BOSH Backup and Restore is a CLI utility for orchestrating the backup and restore of BOSH deployments and BOSH directors"
 os = ["linux", "macos"]
-test = ["bosh-backup-and-restore version", "bbr version {{version}}"]
+test = { cmd = "bosh-backup-and-restore version", expected = "bbr version {{version}}" }

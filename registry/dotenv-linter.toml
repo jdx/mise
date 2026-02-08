@@ -4,4 +4,4 @@ backends = [
   "cargo:dotenv-linter",
 ]
 description = "Lightning-fast linter for .env files. Written in Rust"
-test = ["dotenv-linter --version", "dotenv-linter {{version}}"]
+test = { cmd = "dotenv-linter --version", expected = "dotenv-linter {{version}}" }

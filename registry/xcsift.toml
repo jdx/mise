@@ -1,4 +1,4 @@
 backends = ["github:ldomaradzki/xcsift"]
 description = "Swift tool to parse and format xcodebuild output for coding agents"
 os = ["macos"]
-test = ["xcsift --version", "{{version}}"]
+test = { cmd = "xcsift --version", expected = "{{version}}" }

@@ -1,3 +1,3 @@
 backends = ["aqua:EnvCLI/EnvCLI", "asdf:zekker6/asdf-envcli"]
 description = "Don't install Node, Go, ... locally - use containers you define within your project. If you have a new machine / other contributors you just have to install docker and envcli to get started"
-test = ["envcli --version", "EnvCLI version {{version}}"]
+test = { cmd = "envcli --version", expected = "EnvCLI version {{version}}" }

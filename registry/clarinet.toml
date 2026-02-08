@@ -1,4 +1,4 @@
 backends = ["github:hirosystems/clarinet", "asdf:alexgo-io/asdf-clarinet"]
 description = "Write, test and deploy high-quality smart contracts to the Stacks blockchain and Bitcoin"
 os = ["linux", "macos"]
-test = ["clarinet --version", "clarinet {{version}}"]
+test = { cmd = "clarinet --version", expected = "clarinet {{version}}" }

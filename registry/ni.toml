@@ -1,3 +1,3 @@
 backends = ["npm:@antfu/ni"]
 description = "ni - use the right package manager"
-test = ["ni --version", "@antfu/ni  \u001B[36mv{{version}}\u001B[39m"]
+test = { cmd = "ni --version", expected = "@antfu/ni  \u001B[36mv{{version}}\u001B[39m" }
