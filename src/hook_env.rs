@@ -247,9 +247,9 @@ pub fn should_exit_early(
     }
     // Schedule hooks on directory change (can't do this in fast-path)
     if dir_change().is_some() {
+        hooks::schedule_hook(hooks::Hooks::Leave);
         hooks::schedule_hook(hooks::Hooks::Cd);
         hooks::schedule_hook(hooks::Hooks::Enter);
-        hooks::schedule_hook(hooks::Hooks::Leave);
         return false;
     }
     // Check full watch_files list from config (may include more than config files)

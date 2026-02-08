@@ -91,7 +91,10 @@ impl Shell for Pwsh {
 
             function Global:_mise_hook {{
                 if ($env:MISE_SHELL -eq "pwsh"){{
-                    & "{exe}" hook-env{flags} $args -s pwsh | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+                    $output = & "{exe}" hook-env{flags} $args -s pwsh | Out-String
+                    if ($output -and $output.Trim()) {{
+                        $output | Invoke-Expression
+                    }}
                 }}
             }}
 

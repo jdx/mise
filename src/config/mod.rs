@@ -712,8 +712,17 @@ impl Config {
             .get_or_try_init(|| async {
                 self.config_files
                     .values()
-                    .map(|cf| Ok((cf.project_root(), cf.hooks()?)))
-                    .filter_map_ok(|(root, hooks)| root.map(|r| (r.to_path_buf(), hooks)))
+                    .map(|cf| {
+                        let is_global = cf.project_root().is_none();
+                        let root = cf.project_root().unwrap_or_else(|| cf.config_root());
+                        let mut hooks = cf.hooks()?;
+                        if is_global {
+                            for h in &mut hooks {
+                                h.global = true;
+                            }
+                        }
+                        Ok((root, hooks))
+                    })
                     .map_ok(|(root, hooks)| {
                         hooks
                             .into_iter()
