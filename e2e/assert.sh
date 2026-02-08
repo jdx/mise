@@ -165,6 +165,16 @@ assert_matches() {
 	fi
 }
 
+assert_fail_contains() {
+	local actual
+	actual="$(quiet_assert_fail "$1")"
+	if [[ $actual == *"$2"* ]]; then
+		ok "[$1] '$2' is in failure output"
+	else
+		fail "[$1] expected '$2' to be in '$actual'"
+	fi
+}
+
 assert_fail_matches() {
 	local actual
 	actual="$(quiet_assert_fail "$1")"

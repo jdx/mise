@@ -12,7 +12,7 @@ use crate::toolset::{
 };
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::{config, ui};
+use crate::{config, exit, ui};
 use console::Term;
 use demand::DemandOption;
 use eyre::{Context, Result, eyre};
@@ -72,6 +72,12 @@ pub struct Upgrade {
     #[clap(long, verbatim_doc_comment)]
     before: Option<String>,
 
+    /// Like --dry-run but exits with code 1 if there are outdated tools
+    ///
+    /// This is useful for scripts to check if tools need to be upgraded.
+    #[clap(long, verbatim_doc_comment)]
+    dry_run_code: bool,
+
     /// Directly pipe stdin/stdout/stderr from plugin to user
     /// Sets --jobs=1
     #[clap(long, overrides_with = "jobs")]
@@ -79,6 +85,10 @@ pub struct Upgrade {
 }
 
 impl Upgrade {
+    fn is_dry_run(&self) -> bool {
+        self.dry_run || self.dry_run_code
+    }
+
     pub async fn run(self) -> Result<()> {
         let mut config = Config::get().await?;
         let ts = ToolsetBuilder::new()
@@ -177,7 +187,7 @@ impl Upgrade {
             })
             .collect();
 
-        if self.dry_run {
+        if self.is_dry_run() {
             for (o, current) in &to_remove {
                 miseprintln!("Would uninstall {}@{}", o.name, current);
             }
@@ -191,6 +201,9 @@ impl Upgrade {
                     o.tool_request.version(),
                     display_path(cf.get_path())
                 );
+            }
+            if self.dry_run_code {
+                exit::exit(1);
             }
             return Ok(());
         }

@@ -36,3 +36,13 @@ assert_contains "echo '$output'" "would update"
 assert_contains "echo '$output'" "jq@"
 assert_contains "echo '$output'" "shfmt@"
 assert_fail "test -f mise.toml" # File should not be created
+
+# Test: --dry-run-code should exit non-zero when there are changes to make
+rm -f mise.toml
+assert_fail_contains "mise use tiny@3.1.0 --dry-run-code 2>&1" "would update"
+assert_fail "test -f mise.toml" # File should not be created
+
+# Test: --dry-run-code for removing a tool should exit non-zero
+mise use tiny@3.1.0
+assert_fail_contains "mise use --remove tiny --dry-run-code 2>&1" "would update"
+assert_contains "cat mise.toml" "tiny" # Should still be there
