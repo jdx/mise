@@ -95,11 +95,12 @@ impl ErlangPlugin {
         }
         let release_tag = format!("OTP-{}", tv.version);
 
-        let arch: String = match ARCH {
-            "x86_64" => "amd64".to_string(),
-            "aarch64" => "arm64".to_string(),
-            _ => {
-                debug!("Unsupported architecture: {}", ARCH);
+        let settings = Settings::get();
+        let arch: String = match settings.arch() {
+            "x64" => "amd64".to_string(),
+            "arm64" => "arm64".to_string(),
+            other => {
+                debug!("Unsupported architecture: {}", other);
                 return Ok(None);
             }
         };
@@ -195,7 +196,17 @@ impl ErlangPlugin {
                 return Ok(None);
             }
         };
-        let tarball_name = format!("otp-{ARCH}-{OS}.tar.gz");
+        let settings = Settings::get();
+        let arch = match settings.arch() {
+            "x64" => "x86_64",
+            "arm64" => "aarch64",
+            other => other,
+        };
+        let os = match settings.os() {
+            "macos" => "apple-darwin",
+            other => other,
+        };
+        let tarball_name = format!("otp-{arch}-{os}.tar.gz");
         let asset = match gh_release.assets.iter().find(|a| a.name == tarball_name) {
             Some(asset) => asset,
             None => {
@@ -243,7 +254,12 @@ impl ErlangPlugin {
                 return Ok(None);
             }
         };
-        let zip_name = format!("otp_{OS}_{version}.zip", version = tv.version);
+        let settings = Settings::get();
+        let os = match settings.os() {
+            "windows" => "win64",
+            other => other,
+        };
+        let zip_name = format!("otp_{os}_{version}.zip", version = tv.version);
         let asset = match gh_release.assets.iter().find(|a| a.name == zip_name) {
             Some(asset) => asset,
             None => {
@@ -375,18 +391,3 @@ impl Backend for ErlangPlugin {
         opts
     }
 }
-
-#[cfg(all(target_arch = "x86_64", not(target_os = "windows")))]
-pub const ARCH: &str = "x86_64";
-
-#[cfg(all(target_arch = "aarch64", not(target_os = "windows")))]
-const ARCH: &str = "aarch64";
-
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-const ARCH: &str = "unknown";
-
-#[cfg(windows)]
-const OS: &str = "win64";
-
-#[cfg(macos)]
-const OS: &str = "apple-darwin";
