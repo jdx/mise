@@ -201,7 +201,7 @@ impl Toolset {
                 installed.iter().map(InstalledToolInfo::from).collect();
             if let Err(e) = hooks::run_one_hook_with_context(
                 config,
-                &full_ts,
+                full_ts,
                 Hooks::Postinstall,
                 None,
                 Some(&installed_tools),
