@@ -273,7 +273,7 @@ fn get_args(tv: &ToolVersion) -> (Option<String>, Option<Vec<String>>, Option<Ve
 
 fn parse_idiomatic_file(path: &Path) -> Result<RustToolchain> {
     let toml = file::read_to_string(path)?;
-    let toml = toml.parse::<toml::Value>()?;
+    let toml: toml::Value = toml::de::from_str(&toml)?;
     let mut rt = RustToolchain::default();
     if let Some(toolchain) = toml.get("toolchain") {
         if let Some(channel) = toolchain.get("channel") {

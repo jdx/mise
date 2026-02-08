@@ -328,7 +328,7 @@ impl Task {
             })
             .map(|captures| captures.extract().1)
             .map(|[toml]| {
-                toml.parse::<toml::Value>()
+                toml::de::from_str::<toml::Value>(toml)
                     .map_err(|e| eyre::eyre!("failed to parse task header TOML '{}': {}", toml, e))
             })
             .collect::<Result<Vec<_>>>()?
