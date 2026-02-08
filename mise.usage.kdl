@@ -820,7 +820,7 @@ cmd settings help="Manage settings" {
         after_long_help "Examples:\n\n    $ mise settings idiomatic_version_file=true\n"
         flag "-l --local" help="Use the local config file instead of the global one"
         arg <SETTING> help="The setting to set"
-        arg <VALUE> help="The value to set"
+        arg "[VALUE]" help="The value to set" required=#false
     }
     cmd unset help="Clears a setting" {
         alias rm remove delete del

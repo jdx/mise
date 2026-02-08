@@ -143,7 +143,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise settings add [-l --local] <SETTING> <VALUE>`](/cli/settings/add.md)
 - [`mise settings get [-l --local] <SETTING>`](/cli/settings/get.md)
 - [`mise settings ls [FLAGS] [SETTING]`](/cli/settings/ls.md)
-- [`mise settings set [-l --local] <SETTING> <VALUE>`](/cli/settings/set.md)
+- [`mise settings set [-l --local] <SETTING> [VALUE]`](/cli/settings/set.md)
 - [`mise settings unset [-l --local] <KEY>`](/cli/settings/unset.md)
 - [`mise shell [FLAGS] <TOOL@VERSION>…`](/cli/shell.md)
 - [`mise shell-alias [--no-header] <SUBCOMMAND>`](/cli/shell-alias.md)

@@ -2343,6 +2343,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "value",
               description: "The value to set",
+              isOptional: true,
             },
           ],
         },
