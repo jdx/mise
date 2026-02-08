@@ -195,9 +195,10 @@ pub async fn run_one_hook_with_context(
                 // Pre/postinstall hooks only run if CWD is under the config root
                 (Hooks::Preinstall | Hooks::Postinstall, _) => {
                     if let Some(cwd) = dirs::CWD.as_ref()
-                        && !cwd.starts_with(root) {
-                            continue;
-                        }
+                        && !cwd.starts_with(root)
+                    {
+                        continue;
+                    }
                 }
                 _ => {}
             }
@@ -283,6 +284,9 @@ async fn execute(
         "MISE_CONFIG_ROOT".to_string(),
         root.to_string_lossy().to_string(),
     );
+    // Prevent recursive hook execution (e.g. hook runs `mise run` which spawns
+    // a shell that activates mise and re-triggers hooks)
+    env.insert("MISE_NO_HOOKS".to_string(), "1".to_string());
     cmd(&shell[0], args)
         .stdout_to_stderr()
         // .dir(root)
