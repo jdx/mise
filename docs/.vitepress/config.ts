@@ -364,6 +364,24 @@ export default withMermaid(
           src: "//gc.zgo.at/count.js",
         },
       ],
+      // OpenGraph
+      ["meta", { property: "og:site_name", content: "mise-en-place" }],
+      ["meta", { property: "og:type", content: "website" }],
+      [
+        "meta",
+        {
+          property: "og:image",
+          content: "https://mise.jdx.dev/android-chrome-512x512.png",
+        },
+      ],
+      ["meta", { name: "twitter:card", content: "summary" }],
+      [
+        "meta",
+        {
+          name: "twitter:image",
+          content: "https://mise.jdx.dev/android-chrome-512x512.png",
+        },
+      ],
     ],
     transformPageData(pageData) {
       const canonicalUrl = `https://mise.jdx.dev/${pageData.relativePath}`
