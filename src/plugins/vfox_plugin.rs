@@ -75,9 +75,14 @@ impl VfoxPlugin {
 
     pub async fn mise_env(
         &self,
+        config: &Arc<Config>,
         opts: &toml::Value,
         env: &IndexMap<String, String>,
     ) -> Result<Option<MiseEnvResponse>> {
+        // Ensure plugin is installed before trying to use it
+        self.ensure_installed(config, &MultiProgressReport::get(), false, false)
+            .await?;
+
         let (vfox, _) = self.vfox();
         let result = vfox.mise_env(&self.name, opts, env).await?;
         let mut result_env = indexmap!();
@@ -93,9 +98,14 @@ impl VfoxPlugin {
 
     pub async fn mise_path(
         &self,
+        config: &Arc<Config>,
         opts: &toml::Value,
         env: &IndexMap<String, String>,
     ) -> Result<Option<Vec<String>>> {
+        // Ensure plugin is installed before trying to use it
+        self.ensure_installed(config, &MultiProgressReport::get(), false, false)
+            .await?;
+
         let (vfox, _) = self.vfox();
         let mut out = vec![];
         let results = vfox.mise_path(&self.name, opts, env).await?;

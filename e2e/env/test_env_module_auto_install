@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+# Test that env modules work correctly with vfox plugins when referenced
+# in the [env] section, creating the plugin directory beforehand to simulate
+# a plugin that's already been "installed" by other means.
+# This tests the scenario where mise loads env directives with vfox plugins.
+
+# Create a minimal vfox plugin directly in the plugins directory
+PLUGIN_NAME="test-env-module"
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/$PLUGIN_NAME"
+mkdir -p "$PLUGIN_DIR/hooks"
+
+# Create metadata.lua
+cat >"$PLUGIN_DIR/metadata.lua" <<'EOFMETA'
+PLUGIN = {}
+PLUGIN.name = "test-env-module"
+PLUGIN.version = "1.0.0"
+PLUGIN.homepage = "https://example.com"
+PLUGIN.license = "MIT"
+PLUGIN.description = "Test plugin for env module"
+PLUGIN.minRuntimeVersion = "0.3.0"
+EOFMETA
+
+# Create mise_env.lua hook
+cat >"$PLUGIN_DIR/hooks/mise_env.lua" <<'EOFHOOK'
+function PLUGIN:MiseEnv(ctx)
+    return {
+        env = {{key = "TEST_ENV_MODULE", value = "success"}},
+        cacheable = true,
+        watch_files = {}
+    }
+end
+EOFHOOK
+
+# Create config that uses the plugin module
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+_.$PLUGIN_NAME = {}
+EOF
+
+# Run mise env - should execute the plugin's mise_env hook
+OUTPUT=$(mise env -s bash 2>&1)
+EXIT_CODE=$?
+
+# Check that it succeeded
+if [ $EXIT_CODE -ne 0 ]; then
+	echo "FAILURE: mise env failed with exit code $EXIT_CODE"
+	echo "Output: $OUTPUT"
+	exit 1
+fi
+
+# Verify the env variable was set correctly
+if echo "$OUTPUT" | grep -q "TEST_ENV_MODULE=success"; then
+	echo "SUCCESS: Plugin env module executed correctly"
+else
+	echo "FAILURE: Expected TEST_ENV_MODULE=success in output"
+	echo "Output: $OUTPUT"
+	exit 1
+fi
