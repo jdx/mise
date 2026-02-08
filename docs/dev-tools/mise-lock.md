@@ -230,7 +230,7 @@ git commit -m "Update tool versions"
     mise install  # Uses exact versions from mise.lock
 
 - name: Cache lockfile
-  uses: actions/cache@v3
+  uses: actions/cache@v5
   with:
     key: mise-lock-${{ hashFiles('mise.lock') }}
 ```

@@ -55,8 +55,8 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v3
         with:
           version: 2024.12.14 # [default: latest] mise version to install
           install: true # [default: true] run `mise install`
