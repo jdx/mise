@@ -62,3 +62,14 @@ EOF
 
 # greet was removed, should be unaliased
 assert_contains "mise hook-env -s bash --force" "unalias greet"
+
+# Test 6: shell-alias set key=value format
+mise shell-alias set myalias="echo test"
+assert "mise shell-alias get myalias" "echo test"
+
+# shell-alias set with separate args still works
+mise shell-alias set myalias2 "echo test2"
+assert "mise shell-alias get myalias2" "echo test2"
+
+# shell-alias set with no value and no = fails
+assert_fail "mise shell-alias set myalias3"

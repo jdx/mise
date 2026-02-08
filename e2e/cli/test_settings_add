@@ -12,3 +12,10 @@ assert "mise settings add idiomatic_version_file_enable_tools rust" ""
 assert "mise settings get idiomatic_version_file_enable_tools" '["python", "rust"]'
 assert "mise settings add idiomatic_version_file_enable_tools python,rust,zig" ""
 assert "grep idiomatic_version_file_enable_tools ~/.config/mise/config.toml" 'idiomatic_version_file_enable_tools = ["python", "rust", "zig"]'
+
+# test "settings add key=value" format
+assert "mise settings add disable_hints=c" ""
+assert "mise settings get disable_hints" '["a", "b", "c"]'
+
+# test "settings add" with no value and no = fails
+assert_fail "mise settings add disable_hints"

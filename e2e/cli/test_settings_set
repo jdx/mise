@@ -26,3 +26,19 @@ assert "mise settings all_compile=0"
 assert "mise settings all_compile" "true"
 assert "mise settings -l set all_compile 0"
 assert "mise settings all_compile" "false"
+
+# test "settings set key=value" format
+mise settings -l unset all_compile
+assert "mise settings set all_compile=1"
+assert "mise settings all_compile" "true"
+assert "mise settings set all_compile=0"
+assert "mise settings all_compile" "false"
+
+# test "settings set key=value" with dotted keys
+mise settings set status.missing_tools=always
+assert "mise settings get status.missing_tools" "always"
+mise settings set status.missing_tools=never
+assert "mise settings get status.missing_tools" "never"
+
+# test "settings set" with no value and no = fails
+assert_fail "mise settings set all_compile"
