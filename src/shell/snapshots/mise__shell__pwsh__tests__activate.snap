@@ -64,7 +64,10 @@ function mise {
 
 function Global:_mise_hook {
     if ($env:MISE_SHELL -eq "pwsh"){
-        & "/some/dir/mise" hook-env --status $args -s pwsh | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+        $output = & "/some/dir/mise" hook-env --status $args -s pwsh | Out-String
+        if ($output -and $output.Trim()) {
+            $output | Invoke-Expression
+        }
     }
 }
 

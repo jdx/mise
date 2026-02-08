@@ -257,7 +257,13 @@ async fn execute(
         .map(|s| s.as_str())
         .chain(once(hook.script.as_str()))
         .collect_vec();
-    let mut env = ts.full_env(config).await?;
+    // Preinstall hooks skip `tools=true` env directives since the tools
+    // providing those env vars aren't installed yet (fixes #6162)
+    let mut env = if hook.hook == Hooks::Preinstall {
+        ts.full_env_without_tools(config).await?
+    } else {
+        ts.full_env(config).await?
+    };
     if let Some(cwd) = dirs::CWD.as_ref() {
         env.insert(
             "MISE_ORIGINAL_CWD".to_string(),
