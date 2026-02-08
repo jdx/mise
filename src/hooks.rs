@@ -131,9 +131,16 @@ async fn all_hooks(config: &Arc<Config>) -> &'static Vec<(PathBuf, Hook)> {
             let old_configs = prev_configs.difference(&cur_configs);
             for p in old_configs {
                 if let Ok(cf) = config_file::parse(p).await
-                    && let Ok(h) = cf.hooks()
+                    && let Ok(mut h) = cf.hooks()
                 {
-                    hooks.extend(h.into_iter().map(|h| (cf.config_root(), h)));
+                    let is_global = cf.project_root().is_none();
+                    if is_global {
+                        for hook in &mut h {
+                            hook.global = true;
+                        }
+                    }
+                    let root = cf.project_root().unwrap_or_else(|| cf.config_root());
+                    hooks.extend(h.into_iter().map(|h| (root.clone(), h)));
                 }
             }
             hooks
