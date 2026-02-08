@@ -10,7 +10,6 @@ use versions::Versioning;
 
 use crate::backend::static_helpers::fetch_checksum_from_shasums;
 use crate::cli::args::BackendArg;
-use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -351,65 +350,75 @@ impl BunPlugin {
 
     /// Get the platform variant suffix for the current system
     /// Returns Some("baseline"), Some("musl"), Some("musl-baseline"), or None
-    /// Uses runtime detection for AVX2 capability
+    /// Uses runtime detection for AVX2 capability and Settings::get().arch() for MISE_ARCH support
     fn get_platform_variant() -> Option<&'static str> {
-        if cfg!(target_arch = "x86_64") {
-            if Self::is_musl() {
-                if Self::has_avx2() {
+        let settings = Settings::get();
+        match settings.arch() {
+            "x64" => {
+                if Self::is_musl() {
+                    if Self::has_avx2() {
+                        Some("musl")
+                    } else {
+                        Some("musl-baseline")
+                    }
+                } else if Self::has_avx2() {
+                    None // Standard x64 with AVX2, no variant suffix
+                } else {
+                    Some("baseline")
+                }
+            }
+            "arm64" => {
+                if Self::is_musl() {
                     Some("musl")
                 } else {
-                    Some("musl-baseline")
+                    None // Standard aarch64, no variant suffix
                 }
-            } else if Self::has_avx2() {
-                None // Standard x64 with AVX2, no variant suffix
-            } else {
-                Some("baseline")
             }
-        } else if cfg!(target_arch = "aarch64") {
-            if Self::is_musl() {
-                Some("musl")
-            } else {
-                None // Standard aarch64, no variant suffix
-            }
-        } else {
-            None
+            _ => None,
         }
     }
 
     /// Get the full Bun arch string with variants (musl, baseline, etc.)
-    /// Uses runtime detection for AVX2 capability
-    fn get_bun_arch_with_variants() -> &'static str {
-        if cfg!(target_arch = "x86_64") {
-            if Self::is_musl() {
-                if Self::has_avx2() {
-                    "x64-musl"
+    /// Uses Settings::get().arch() to respect MISE_ARCH overrides and runtime AVX2 detection
+    fn get_bun_arch_with_variants() -> String {
+        let settings = Settings::get();
+        let arch = settings.arch();
+        let os = settings.os();
+        match arch {
+            "x64" => {
+                if Self::is_musl() {
+                    if Self::has_avx2() {
+                        "x64-musl".to_string()
+                    } else {
+                        "x64-musl-baseline".to_string()
+                    }
+                } else if Self::has_avx2() {
+                    "x64".to_string()
                 } else {
-                    "x64-musl-baseline"
+                    "x64-baseline".to_string()
                 }
-            } else if Self::has_avx2() {
-                "x64"
-            } else {
-                "x64-baseline"
             }
-        } else if cfg!(target_arch = "aarch64") {
-            if Self::is_musl() {
-                "aarch64-musl"
-            } else if cfg!(windows) {
-                "x64-baseline"
-            } else {
-                "aarch64"
+            "arm64" => {
+                if Self::is_musl() {
+                    "aarch64-musl".to_string()
+                } else if os == "windows" {
+                    // Bun has no native windows-arm64 build; fall back to x64 under emulation
+                    "x64-baseline".to_string()
+                } else {
+                    "aarch64".to_string()
+                }
             }
-        } else {
-            &ARCH
+            other => other.to_string(),
         }
     }
 }
 
-fn os() -> &'static str {
-    BunPlugin::map_os_to_bun(&OS)
+fn os() -> String {
+    let settings = Settings::get();
+    BunPlugin::map_os_to_bun(settings.os()).to_string()
 }
 
-fn arch() -> &'static str {
+fn arch() -> String {
     BunPlugin::get_bun_arch_with_variants()
 }
 
