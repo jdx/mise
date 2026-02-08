@@ -29,6 +29,12 @@ Do not actually delete anything
 
 Prune only tracked and trusted configuration links that point to non-existent configurations
 
+### `--dry-run-code`
+
+Like --dry-run but exits with code 1 if there are tools to prune
+
+This is useful for scripts to check if tools need to be pruned.
+
 ### `--tools`
 
 Prune only unused versions of tools

@@ -73,6 +73,12 @@ Only install versions released before this date
 
 Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
 
+### `--dry-run-code`
+
+Like --dry-run but exits with code 1 if there are changes to make
+
+This is useful for scripts to check if tools need to be added or removed.
+
 ### `--fuzzy`
 
 Save fuzzy version to config file

@@ -1259,6 +1259,11 @@ Only install versions released before this date
 
 Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
 .TP
+\fB\-\-dry\-run\-code\fR
+Like \-\-dry\-run but exits with code 1 if there are tools to install
+
+This is useful for scripts to check if tools need to be installed.
+.TP
 \fB\-\-raw\fR
 Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
 \fBArguments:\fR
@@ -1689,6 +1694,11 @@ Do not actually delete anything
 .TP
 \fB\-\-configs\fR
 Prune only tracked and trusted configuration links that point to non\-existent configurations
+.TP
+\fB\-\-dry\-run\-code\fR
+Like \-\-dry\-run but exits with code 1 if there are tools to prune
+
+This is useful for scripts to check if tools need to be pruned.
 .TP
 \fB\-\-tools\fR
 Prune only unused versions of tools
@@ -2767,6 +2777,11 @@ Delete all installed versions
 .TP
 \fB\-n, \-\-dry\-run\fR
 Do not actually delete anything
+.TP
+\fB\-\-dry\-run\-code\fR
+Like \-\-dry\-run but exits with code 1 if there are tools to uninstall
+
+This is useful for scripts to check if tools need to be uninstalled.
 \fBArguments:\fR
 .PP
 .TP
@@ -2880,6 +2895,11 @@ This can be useful for reproducibility or security purposes.
 This only affects fuzzy version matches like "20" or "latest".
 Explicitly pinned versions like "22.5.0" are not filtered.
 .TP
+\fB\-\-dry\-run\-code\fR
+Like \-\-dry\-run but exits with code 1 if there are outdated tools
+
+This is useful for scripts to check if tools need to be upgraded.
+.TP
 \fB\-\-raw\fR
 Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
 \fBArguments:\fR
@@ -2938,6 +2958,11 @@ If a directory is specified, it will look for a config file in that directory fo
 Only install versions released before this date
 
 Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
+.TP
+\fB\-\-dry\-run\-code\fR
+Like \-\-dry\-run but exits with code 1 if there are changes to make
+
+This is useful for scripts to check if tools need to be added or removed.
 .TP
 \fB\-\-fuzzy\fR
 Save fuzzy version to config file

@@ -167,7 +167,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise tool [FLAGS] <TOOL>`](/cli/tool.md)
 - [`mise tool-stub <FILE> [ARGS]…`](/cli/tool-stub.md)
 - [`mise trust [FLAGS] [CONFIG_FILE]`](/cli/trust.md)
-- [`mise uninstall [-a --all] [-n --dry-run] [INSTALLED_TOOL@VERSION]…`](/cli/uninstall.md)
+- [`mise uninstall [FLAGS] [INSTALLED_TOOL@VERSION]…`](/cli/uninstall.md)
 - [`mise unset [-f --file <FILE>] [-g --global] [ENV_KEY]…`](/cli/unset.md)
 - [`mise unuse [FLAGS] <INSTALLED_TOOL@VERSION>…`](/cli/unuse.md)
 - [`mise upgrade [FLAGS] [INSTALLED_TOOL@VERSION]…`](/cli/upgrade.md)
