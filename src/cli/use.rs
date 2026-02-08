@@ -19,7 +19,7 @@ use crate::toolset::{
     InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion, ToolsetBuilder,
 };
 use crate::ui::ctrlc;
-use crate::{config, env, file};
+use crate::{config, env, exit, file};
 
 /// Installs a tool and adds the version to mise.toml.
 ///
@@ -86,6 +86,12 @@ pub struct Use {
     #[clap(long, verbatim_doc_comment)]
     before: Option<String>,
 
+    /// Like --dry-run but exits with code 1 if there are changes to make
+    ///
+    /// This is useful for scripts to check if tools need to be added or removed.
+    #[clap(long, verbatim_doc_comment)]
+    dry_run_code: bool,
+
     /// Save fuzzy version to config file
     ///
     /// e.g.: `mise use --fuzzy node@20` will save 20 as the version
@@ -113,6 +119,10 @@ pub struct Use {
 }
 
 impl Use {
+    fn is_dry_run(&self) -> bool {
+        self.dry_run || self.dry_run_code
+    }
+
     pub async fn run(mut self) -> Result<()> {
         if self.tool.is_empty() && self.remove.is_empty() {
             self.tool = vec![self.tool_selector()?];
@@ -159,7 +169,7 @@ impl Use {
                     force: self.force,
                     jobs: self.jobs,
                     raw: self.raw,
-                    dry_run: self.dry_run,
+                    dry_run: self.is_dry_run(),
                     resolve_options,
                     ..Default::default()
                 },
@@ -201,7 +211,7 @@ impl Use {
             cf.remove_tool(plugin_name)?;
         }
 
-        if !self.dry_run {
+        if !self.is_dry_run() {
             cf.save()?;
             for tv in &mut versions {
                 // update the source so the lockfile is updated correctly
@@ -272,7 +282,7 @@ impl Use {
     ) -> Result<()> {
         let path = display_path(cf.get_path());
 
-        if self.dry_run {
+        if self.is_dry_run() {
             let mut messages = vec![];
 
             if !versions.is_empty() {
@@ -292,6 +302,9 @@ impl Use {
                     style(&path).cyan().for_stderr(),
                     messages.join(", ")
                 );
+                if self.dry_run_code {
+                    exit::exit(1);
+                }
             }
         } else {
             if !versions.is_empty() {

@@ -1434,6 +1434,12 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
+          name: "--dry-run-code",
+          description:
+            "Like --dry-run but exits with code 1 if there are tools to install",
+          isRepeatable: false,
+        },
+        {
           name: "--raw",
           description:
             "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
@@ -1925,6 +1931,12 @@ const completionSpec: Fig.Spec = {
           name: "--configs",
           description:
             "Prune only tracked and trusted configuration links that point to non-existent configurations",
+          isRepeatable: false,
+        },
+        {
+          name: "--dry-run-code",
+          description:
+            "Like --dry-run but exits with code 1 if there are tools to prune",
           isRepeatable: false,
         },
         {
@@ -3205,6 +3217,12 @@ const completionSpec: Fig.Spec = {
           description: "Do not actually delete anything",
           isRepeatable: false,
         },
+        {
+          name: "--dry-run-code",
+          description:
+            "Like --dry-run but exits with code 1 if there are tools to uninstall",
+          isRepeatable: false,
+        },
       ],
       args: {
         name: "installed_tool@version",
@@ -3335,6 +3353,12 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
+          name: "--dry-run-code",
+          description:
+            "Like --dry-run but exits with code 1 if there are outdated tools",
+          isRepeatable: false,
+        },
+        {
           name: "--raw",
           description:
             "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
@@ -3405,6 +3429,12 @@ const completionSpec: Fig.Spec = {
           args: {
             name: "before",
           },
+        },
+        {
+          name: "--dry-run-code",
+          description:
+            "Like --dry-run but exits with code 1 if there are changes to make",
+          isRepeatable: false,
         },
         {
           name: "--fuzzy",

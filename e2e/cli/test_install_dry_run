@@ -18,3 +18,20 @@ assert_contains "mise install tiny@3.1.0 shfmt@3.10.0 --dry-run 2>&1" "would ins
 
 # Verify neither tool was actually installed
 assert_fail "mise which tiny"
+
+# Test: --dry-run-code should exit non-zero when there are tools to install
+assert_fail_contains "mise install tiny@3.1.0 --dry-run-code 2>&1" "would install"
+
+# Test: --dry-run-code should exit 0 when all tools are already installed
+assert_contains "mise install jq@latest --dry-run-code 2>&1" "already installed"
+
+# Test: --dry-run-code with no args should exit non-zero when config has missing tools
+TEST_DIR=$(mktemp -d)
+cd "$TEST_DIR"
+echo 'tools.tiny = "3.1.0"' >mise.toml
+mise uninstall tiny@3.1.0 2>/dev/null || true
+assert_fail_contains "mise install --dry-run-code 2>&1" "would install"
+
+# Test: --dry-run-code with no args should exit 0 when all config tools are installed
+mise install
+assert_contains "mise install --dry-run-code 2>&1" "all tools are installed"

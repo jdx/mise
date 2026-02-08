@@ -9,7 +9,7 @@ use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{config, dirs, file};
+use crate::{config, dirs, exit, file};
 
 /// Removes installed tool versions
 ///
@@ -28,9 +28,19 @@ pub struct Uninstall {
     /// Do not actually delete anything
     #[clap(long, short = 'n')]
     dry_run: bool,
+
+    /// Like --dry-run but exits with code 1 if there are tools to uninstall
+    ///
+    /// This is useful for scripts to check if tools need to be uninstalled.
+    #[clap(long, verbatim_doc_comment)]
+    dry_run_code: bool,
 }
 
 impl Uninstall {
+    fn is_dry_run(&self) -> bool {
+        self.dry_run || self.dry_run_code
+    }
+
     pub async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let tool_versions = if self.installed_tool.is_empty() && self.all {
@@ -47,25 +57,34 @@ impl Uninstall {
         }
 
         let mpr = MultiProgressReport::get();
+        let mut has_work = false;
         for (plugin, tv) in tool_versions {
             if !plugin.is_version_installed(&config, &tv, true) {
                 warn!("{} is not installed", tv.style());
                 continue;
             }
 
+            has_work = true;
             let pr = mpr.add(&tv.style());
             if let Err(err) = plugin
-                .uninstall_version(&config, &tv, pr.as_ref(), self.dry_run)
+                .uninstall_version(&config, &tv, pr.as_ref(), self.is_dry_run())
                 .await
             {
                 error!("{err}");
                 return Err(eyre!(err).wrap_err(format!("failed to uninstall {tv}")));
             }
-            if self.dry_run {
+            if self.is_dry_run() {
                 pr.finish_with_message("uninstalled (dry-run)".into());
             } else {
                 pr.finish_with_message("uninstalled".into());
             }
+        }
+
+        if self.is_dry_run() {
+            if self.dry_run_code && has_work {
+                exit::exit(1);
+            }
+            return Ok(());
         }
 
         file::touch_dir(&dirs::DATA)?;

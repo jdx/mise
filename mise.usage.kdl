@@ -478,6 +478,9 @@ cmd install help="Install a tool version" {
         long_help "Only install versions released before this date\n\nSupports absolute dates like \"2024-06-01\" and relative durations like \"90d\" or \"1y\"."
         arg <BEFORE>
     }
+    flag --dry-run-code help="Like --dry-run but exits with code 1 if there are tools to install" {
+        long_help "Like --dry-run but exits with code 1 if there are tools to install\n\nThis is useful for scripts to check if tools need to be installed."
+    }
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
     arg "[TOOL@VERSION]…" help="Tool(s) to install e.g.: node@20" required=#false var=#true
 }
@@ -660,6 +663,9 @@ cmd prune help="Delete unused versions of tools" {
     after_long_help "Examples:\n\n    $ mise prune --dry-run\n    rm -rf ~/.local/share/mise/versions/node/20.0.0\n    rm -rf ~/.local/share/mise/versions/node/20.0.1\n"
     flag "-n --dry-run" help="Do not actually delete anything"
     flag --configs help="Prune only tracked and trusted configuration links that point to non-existent configurations"
+    flag --dry-run-code help="Like --dry-run but exits with code 1 if there are tools to prune" {
+        long_help "Like --dry-run but exits with code 1 if there are tools to prune\n\nThis is useful for scripts to check if tools need to be pruned."
+    }
     flag --tools help="Prune only unused versions of tools"
     arg "[INSTALLED_TOOL]…" help="Prune only these tools" required=#false var=#true
 }
@@ -1087,6 +1093,9 @@ cmd uninstall help="Removes installed tool versions" {
     after_long_help "Examples:\n\n    # will uninstall specific version\n    $ mise uninstall node@18.0.0\n\n    # will uninstall the current node version (if only one version is installed)\n    $ mise uninstall node\n\n    # will uninstall all installed versions of node\n    $ mise uninstall --all node@18.0.0 # will uninstall all node versions\n"
     flag "-a --all" help="Delete all installed versions"
     flag "-n --dry-run" help="Do not actually delete anything"
+    flag --dry-run-code help="Like --dry-run but exits with code 1 if there are tools to uninstall" {
+        long_help "Like --dry-run but exits with code 1 if there are tools to uninstall\n\nThis is useful for scripts to check if tools need to be uninstalled."
+    }
     arg "[INSTALLED_TOOL@VERSION]…" help="Tool(s) to remove" required=#false var=#true
 }
 cmd unset help="Remove environment variable(s) from the config file." {
@@ -1132,6 +1141,9 @@ cmd upgrade help="Upgrades outdated tools" {
         long_help "Only upgrade to versions released before this date\n\nSupports absolute dates like \"2024-06-01\" and relative durations like \"90d\" or \"1y\".\nThis can be useful for reproducibility or security purposes.\n\nThis only affects fuzzy version matches like \"20\" or \"latest\".\nExplicitly pinned versions like \"22.5.0\" are not filtered."
         arg <BEFORE>
     }
+    flag --dry-run-code help="Like --dry-run but exits with code 1 if there are outdated tools" {
+        long_help "Like --dry-run but exits with code 1 if there are outdated tools\n\nThis is useful for scripts to check if tools need to be upgraded."
+    }
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
     arg "[INSTALLED_TOOL@VERSION]…" help="Tool(s) to upgrade\ne.g.: node@20 python@3.10\nIf not specified, all current tools will be upgraded" required=#false var=#true
 }
@@ -1158,6 +1170,9 @@ cmd use help="Installs a tool and adds the version to mise.toml." {
     flag --before help="Only install versions released before this date" {
         long_help "Only install versions released before this date\n\nSupports absolute dates like \"2024-06-01\" and relative durations like \"90d\" or \"1y\"."
         arg <BEFORE>
+    }
+    flag --dry-run-code help="Like --dry-run but exits with code 1 if there are changes to make" {
+        long_help "Like --dry-run but exits with code 1 if there are changes to make\n\nThis is useful for scripts to check if tools need to be added or removed."
     }
     flag --fuzzy help="Save fuzzy version to config file" {
         long_help "Save fuzzy version to config file\n\ne.g.: `mise use --fuzzy node@20` will save 20 as the version\nthis is the default behavior unless `MISE_PIN=1`"

@@ -61,6 +61,12 @@ This can be useful for reproducibility or security purposes.
 This only affects fuzzy version matches like "20" or "latest".
 Explicitly pinned versions like "22.5.0" are not filtered.
 
+### `--dry-run-code`
+
+Like --dry-run but exits with code 1 if there are outdated tools
+
+This is useful for scripts to check if tools need to be upgraded.
+
 ### `--raw`
 
 Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
