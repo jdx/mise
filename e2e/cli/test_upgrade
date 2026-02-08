@@ -58,6 +58,18 @@ assert "mise up --bump"
 assert "cat mise.toml" '[tools]
 dummy = "latest"'
 
+# Test: --dry-run-code should exit non-zero when there are outdated tools
+echo "tools.dummy = 'prefix:1'" >mise.toml
+mise uninstall dummy --all
+mkdir -p "$MISE_DATA_DIR/installs/dummy/1.0.0"
+assert_fail_contains "mise up --dry-run-code 2>&1" "Would install"
+# Verify nothing was actually upgraded
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+
+# Test: --dry-run-code should exit 0 when everything is up to date
+mise up
+assert_contains "mise up --dry-run-code 2>&1" "All tools are up to date"
+
 # Test that upgrading a specific tool doesn't check other tools
 # This verifies the fix for https://github.com/jdx/mise/discussions/7328
 cat <<EOF >mise.toml

@@ -6,6 +6,10 @@ cd "$(mktemp -d)" || exit 1 # mise should not prune these files even though they
 
 assert_contains "mise prune --dry-run 2>&1" "mise dummy@2.0.0 [dryrun]"
 assert_contains "mise prune --dry-run 2>&1" "mise tiny@2.0.0 [dryrun]"
+
+# Test: --dry-run-code should exit non-zero when there are tools to prune
+assert_fail_contains "mise prune --dry-run-code 2>&1" "[dryrun]"
+# Verify nothing was actually pruned
 assert "ls $MISE_DATA_DIR/installs/dummy/2.0.0"
 assert "ls $MISE_DATA_DIR/installs/tiny/2.0.0"
 assert "mise prune tiny"
@@ -15,3 +19,6 @@ assert "mise prune"
 assert_fail "ls $MISE_DATA_DIR/installs/dummy/2.0.0"
 assert "ls $MISE_DATA_DIR/installs/dummy/3.0.0"
 assert "ls $MISE_DATA_DIR/installs/tiny/3.0.0"
+
+# Test: --dry-run-code should exit 0 when there is nothing to prune
+assert_succeed "mise prune --dry-run-code 2>&1"
