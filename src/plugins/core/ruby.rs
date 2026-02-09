@@ -483,11 +483,11 @@ impl RubyPlugin {
         repo: &str,
         version: &str,
         platform: &str,
+        prefer_no_yjit: bool,
     ) -> Result<Option<(String, Option<String>)>> {
         let releases = github::list_releases(repo).await?;
         let standard_name = format!("ruby-{}.{}.tar.gz", version, platform);
         let no_yjit_name = format!("ruby-{}.{}.no_yjit.tar.gz", version, platform);
-        let prefer_no_yjit = Self::needs_no_yjit();
 
         if prefer_no_yjit {
             debug!("glibc < 2.35 detected, preferring no-YJIT Ruby variant");
@@ -498,14 +498,16 @@ impl RubyPlugin {
 
         for release in &releases {
             for asset in &release.assets {
-                if asset.name == no_yjit_name && no_yjit_asset.is_none() {
+                if no_yjit_asset.is_none() && asset.name == no_yjit_name {
                     no_yjit_asset =
                         Some((asset.browser_download_url.clone(), asset.digest.clone()));
-                }
-                if asset.name == standard_name && standard_asset.is_none() {
+                } else if standard_asset.is_none() && asset.name == standard_name {
                     standard_asset =
                         Some((asset.browser_download_url.clone(), asset.digest.clone()));
                 }
+            }
+            if no_yjit_asset.is_some() && standard_asset.is_some() {
+                break;
             }
         }
 
@@ -523,6 +525,7 @@ impl RubyPlugin {
         &self,
         version: &str,
         platform: &str,
+        prefer_no_yjit: bool,
     ) -> Result<Option<(String, Option<String>)>> {
         let settings = Settings::get();
         let source = &settings.ruby.precompiled_url;
@@ -535,7 +538,7 @@ impl RubyPlugin {
             )))
         } else {
             // GitHub repo shorthand (default: "jdx/ruby")
-            self.find_precompiled_asset_in_repo(source, version, platform)
+            self.find_precompiled_asset_in_repo(source, version, platform, prefer_no_yjit)
                 .await
         }
     }
@@ -589,16 +592,17 @@ impl RubyPlugin {
             return Ok(None);
         };
 
-        let Some((url, checksum)) = self.resolve_precompiled_url(&tv.version, &platform).await?
+        let Some((url, checksum)) = self
+            .resolve_precompiled_url(&tv.version, &platform, Self::needs_no_yjit())
+            .await?
         else {
             return Ok(None);
         };
 
-        let filename = url
-            .rsplit('/')
-            .next()
-            .unwrap_or(&format!("ruby-{}.{}.tar.gz", tv.version, platform))
-            .to_string();
+        let filename = match url.rsplit('/').next() {
+            Some(name) if !name.is_empty() => name.to_string(),
+            _ => format!("ruby-{}.{}.tar.gz", tv.version, platform),
+        };
         let tarball_path = tv.download_path().join(&filename);
 
         ctx.pr.set_message(format!("download {}", filename));
@@ -881,8 +885,9 @@ impl Backend for RubyPlugin {
         // Precompiled binary info if enabled
         if self.should_try_precompiled()
             && let Some(platform) = self.precompiled_platform_for_target(target)
-            && let Some((url, checksum)) =
-                self.resolve_precompiled_url(&tv.version, &platform).await?
+            && let Some((url, checksum)) = self
+                .resolve_precompiled_url(&tv.version, &platform, false)
+                .await?
         {
             return Ok(PlatformInfo {
                 url: Some(url),
