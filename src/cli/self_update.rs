@@ -90,8 +90,13 @@ impl SelfUpdate {
         let status = self.do_update()?;
 
         if status.updated() {
-            let version = style(status.version()).bright().yellow();
-            miseprintln!("Updated mise to {version}");
+            let version = status.version().to_string();
+            let styled_version = style(&version).bright().yellow();
+            miseprintln!("Updated mise to {styled_version}");
+            #[cfg(windows)]
+            if let Err(e) = Self::update_mise_shim(&version) {
+                warn!("Failed to update mise-shim.exe: {e}");
+            }
         } else {
             miseprintln!("mise is already up to date");
         }
@@ -165,6 +170,46 @@ impl SelfUpdate {
         }
 
         Ok(status)
+    }
+
+    #[cfg(windows)]
+    fn update_mise_shim(version: &str) -> Result<()> {
+        use crate::http::HTTP;
+        use std::io::Read;
+
+        let url = format!(
+            "https://github.com/jdx/mise/releases/download/{version}/mise-{version}-{}-{}.zip",
+            *OS, *ARCH,
+        );
+        debug!("Downloading mise-shim.exe from {url}");
+
+        let temp_dir = tempfile::tempdir()?;
+        let zip_path = temp_dir.path().join("mise.zip");
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(HTTP.download_file(&url, &zip_path, None))
+        })?;
+
+        let file = fs::File::open(&zip_path)?;
+        let mut archive = zip::ZipArchive::new(file)?;
+
+        let mut shim_entry = match archive.by_name("mise/bin/mise-shim.exe") {
+            Ok(entry) => entry,
+            Err(_) => {
+                warn!("mise-shim.exe not found in release archive, skipping");
+                return Ok(());
+            }
+        };
+
+        let dest = env::MISE_BIN
+            .parent()
+            .expect("MISE_BIN should have a parent directory")
+            .join("mise-shim.exe");
+        let mut buf = Vec::new();
+        shim_entry.read_to_end(&mut buf)?;
+        xx::file::write(&dest, &buf)?;
+
+        debug!("Updated mise-shim.exe at {}", dest.display());
+        Ok(())
     }
 
     pub fn is_available() -> bool {
