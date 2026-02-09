@@ -24,13 +24,15 @@ from source. Ensure that you have the necessary
 You can check its [README](https://github.com/rbenv/ruby-build/blob/master/README.md) for additional settings and some
 troubleshooting.
 
-## Precompiled Binaries <Badge type="warning" text="experimental" />
+## Precompiled Binaries
 
-With `experimental = true` enabled, mise can download precompiled Ruby binaries instead of
+Mise can download precompiled Ruby binaries instead of
 compiling from source. This significantly reduces installation time.
 
+Precompiled binaries will become the default in 2026.8.0. To opt in now:
+
 ```sh
-mise settings experimental=true
+mise settings ruby.compile=false
 mise use ruby@3.4.1
 ```
 
