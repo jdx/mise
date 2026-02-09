@@ -309,6 +309,9 @@ pub static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
 pub static __MISE_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__MISE_ORIG_PATH").ok());
 pub static __MISE_ZSH_PRECMD_RUN: Lazy<bool> = Lazy::new(|| !var_is_false("__MISE_ZSH_PRECMD_RUN"));
 pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
+/// Detected glibc version on Linux as (major, minor), e.g. (2, 17).
+/// Returns None on non-Linux or if detection fails.
+pub static LINUX_GLIBC_VERSION: Lazy<Option<(u32, u32)>> = Lazy::new(linux_glibc_version);
 pub static PREFER_OFFLINE: Lazy<AtomicBool> =
     Lazy::new(|| prefer_offline(&ARGS.read().unwrap()).into());
 pub static OFFLINE: Lazy<bool> = Lazy::new(|| offline(&ARGS.read().unwrap()));
@@ -650,6 +653,33 @@ fn linux_distro() -> Option<String> {
         Ok(release) => release.id,
         _ => None,
     }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_glibc_version() -> Option<(u32, u32)> {
+    let output = std::process::Command::new("ldd")
+        .arg("--version")
+        .output()
+        .ok()?;
+    // ldd --version prints to stdout on glibc, stderr on some systems
+    let text = String::from_utf8_lossy(&output.stdout);
+    let text = if text.is_empty() {
+        String::from_utf8_lossy(&output.stderr)
+    } else {
+        text
+    };
+    let first_line = text.lines().next()?;
+    let version_str = first_line.rsplit(' ').next()?;
+    let mut parts = version_str.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    debug!("detected glibc version: {}.{}", major, minor);
+    Some((major, minor))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn linux_glibc_version() -> Option<(u32, u32)> {
+    None
 }
 
 fn filename(path: &str) -> &str {
