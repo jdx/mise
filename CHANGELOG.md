@@ -1,5 +1,33 @@
 # Changelog
 
+## [2026.2.8](https://github.com/jdx/mise/compare/v2026.2.7..v2026.2.8) - 2026-02-09
+
+### 🚀 Features
+
+- **(node)** support package.json as idiomatic version file by @jdx in [#8059](https://github.com/jdx/mise/pull/8059)
+- **(ruby)** graduate precompiled ruby from experimental (gradual rollout) by @jdx in [#8052](https://github.com/jdx/mise/pull/8052)
+- add --dry-run-code flag to exit non-zero when there is work to do by @jdx in [#8063](https://github.com/jdx/mise/pull/8063)
+
+### 🐛 Bug Fixes
+
+- **(core)** respect MISE_ARCH override in bun and erlang plugins by @jdx in [#8062](https://github.com/jdx/mise/pull/8062)
+- **(hooks)** resolve 12 community-reported hooks issues by @jdx in [#8058](https://github.com/jdx/mise/pull/8058)
+- accept key=value format in set/add subcommands by @jdx in [#8053](https://github.com/jdx/mise/pull/8053)
+
+### 📚 Documentation
+
+- bump action versions in GitHub Actions examples by @muzimuzhi in [#8065](https://github.com/jdx/mise/pull/8065)
+- add opengraph meta tags by @jdx in [#8066](https://github.com/jdx/mise/pull/8066)
+
+### 📦️ Dependency Updates
+
+- upgrade toml to 0.9 and toml_edit to 0.24 (TOML 1.1) by @jdx in [#8057](https://github.com/jdx/mise/pull/8057)
+
+### 📦 Registry
+
+- add quicktype (npm:quicktype) by @zdunecki in [#8054](https://github.com/jdx/mise/pull/8054)
+- use inline table for test definitions by @jdx in [#8056](https://github.com/jdx/mise/pull/8056)
+
 ## [2026.2.7](https://github.com/jdx/mise/compare/v2026.2.6..v2026.2.7) - 2026-02-08
 
 ### 🚀 Features
