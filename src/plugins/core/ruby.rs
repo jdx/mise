@@ -466,7 +466,18 @@ impl RubyPlugin {
             .replace("{arch}", arch)
     }
 
-    /// Find precompiled asset from a GitHub repo's releases
+    /// Check if the system needs the no-YJIT variant (glibc < 2.35 on Linux).
+    /// YJIT builds from jdx/ruby require glibc 2.35+.
+    fn needs_no_yjit() -> bool {
+        match *crate::env::LINUX_GLIBC_VERSION {
+            Some((major, minor)) => major < 2 || (major == 2 && minor < 35),
+            None => false, // non-Linux or can't detect, assume modern system
+        }
+    }
+
+    /// Find precompiled asset from a GitHub repo's releases.
+    /// On Linux with glibc < 2.35, prefers the no-YJIT variant (.no_yjit.) which
+    /// targets glibc 2.17. Falls back to the standard build if no variant is found.
     async fn find_precompiled_asset_in_repo(
         &self,
         repo: &str,
@@ -474,16 +485,37 @@ impl RubyPlugin {
         platform: &str,
     ) -> Result<Option<(String, Option<String>)>> {
         let releases = github::list_releases(repo).await?;
-        let expected_name = format!("ruby-{}.{}.tar.gz", version, platform);
+        let standard_name = format!("ruby-{}.{}.tar.gz", version, platform);
+        let no_yjit_name = format!("ruby-{}.{}.no_yjit.tar.gz", version, platform);
+        let prefer_no_yjit = Self::needs_no_yjit();
 
-        for release in releases {
-            for asset in release.assets {
-                if asset.name == expected_name {
-                    return Ok(Some((asset.browser_download_url, asset.digest)));
+        if prefer_no_yjit {
+            debug!("glibc < 2.35 detected, preferring no-YJIT Ruby variant");
+        }
+
+        let mut standard_asset = None;
+        let mut no_yjit_asset = None;
+
+        for release in &releases {
+            for asset in &release.assets {
+                if asset.name == no_yjit_name && no_yjit_asset.is_none() {
+                    no_yjit_asset =
+                        Some((asset.browser_download_url.clone(), asset.digest.clone()));
+                }
+                if asset.name == standard_name && standard_asset.is_none() {
+                    standard_asset =
+                        Some((asset.browser_download_url.clone(), asset.digest.clone()));
                 }
             }
         }
-        Ok(None)
+
+        if prefer_no_yjit {
+            if no_yjit_asset.is_some() {
+                return Ok(no_yjit_asset);
+            }
+            debug!("no-YJIT variant not found, falling back to standard build");
+        }
+        Ok(standard_asset)
     }
 
     /// Resolve precompiled binary URL and checksum for a given version and platform
@@ -562,7 +594,11 @@ impl RubyPlugin {
             return Ok(None);
         };
 
-        let filename = format!("ruby-{}.{}.tar.gz", tv.version, platform);
+        let filename = url
+            .rsplit('/')
+            .next()
+            .unwrap_or(&format!("ruby-{}.{}.tar.gz", tv.version, platform))
+            .to_string();
         let tarball_path = tv.download_path().join(&filename);
 
         ctx.pr.set_message(format!("download {}", filename));
