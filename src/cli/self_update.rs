@@ -94,7 +94,7 @@ impl SelfUpdate {
             let styled_version = style(&version).bright().yellow();
             miseprintln!("Updated mise to {styled_version}");
             #[cfg(windows)]
-            if let Err(e) = Self::update_mise_shim(&version) {
+            if let Err(e) = Self::update_mise_shim(&version).await {
                 warn!("Failed to update mise-shim.exe: {e}");
             }
         } else {
@@ -173,21 +173,20 @@ impl SelfUpdate {
     }
 
     #[cfg(windows)]
-    fn update_mise_shim(version: &str) -> Result<()> {
+    async fn update_mise_shim(version: &str) -> Result<()> {
         use crate::http::HTTP;
         use std::io::Read;
 
+        let version = version.strip_prefix('v').unwrap_or(version);
         let url = format!(
-            "https://github.com/jdx/mise/releases/download/{version}/mise-{version}-{}-{}.zip",
+            "https://github.com/jdx/mise/releases/download/v{version}/mise-v{version}-{}-{}.zip",
             *OS, *ARCH,
         );
         debug!("Downloading mise-shim.exe from {url}");
 
         let temp_dir = tempfile::tempdir()?;
         let zip_path = temp_dir.path().join("mise.zip");
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(HTTP.download_file(&url, &zip_path, None))
-        })?;
+        HTTP.download_file(&url, &zip_path, None).await?;
 
         let file = fs::File::open(&zip_path)?;
         let mut archive = zip::ZipArchive::new(file)?;
