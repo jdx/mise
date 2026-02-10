@@ -208,6 +208,7 @@ self_update = { version = "0.42", optional = true, default-features = false, fea
   "signatures",
   "rustls",
 ] }
+zipsign-api = "0.1"
 sevenz-rust = "0.6"
 winapi = { version = "0.3.9", features = ["consoleapi", "minwindef"] }
 
