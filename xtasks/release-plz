@@ -15,7 +15,7 @@ git config user.email release@mise.jdx.dev
 exists_on_crates() {
 	crate="$1"
 	version="$2"
-	if cargo info --registry "crates-io" --color never --quiet "$crate" | grep -E "^version:\s+$version$" >/dev/null 2>&1; then
+	if cargo info --registry "crates-io" --color never --quiet "$crate@$version" 2>/dev/null | grep -qE "^version:\s+$version\b"; then
 		return 0
 	fi
 	if curl -fsSL "https://crates.io/api/v1/crates/$crate/$version" >/dev/null 2>&1; then
