@@ -139,10 +139,13 @@ impl Backend for UnifiedGitBackend {
         features
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let repo = self.ba.tool_name();
         let id = self.ba.to_string();
-        let opts = self.ba.opts();
+        let opts = config
+            .get_tool_opts(&self.ba)
+            .await?
+            .unwrap_or_else(|| self.ba.opts());
         let api_url = self.get_api_url(&opts);
         let version_prefix = opts.get("version_prefix");
 
@@ -178,7 +181,7 @@ impl Backend for UnifiedGitBackend {
                 .into_iter()
                 .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
                 .map(|r| VersionInfo {
-                    version: self.strip_version_prefix(&r.tag_name),
+                    version: self.strip_version_prefix(&r.tag_name, &opts),
                     created_at: r.released_at,
                     release_url: Some(format!("{}/-/releases/{}", web_url_base, r.tag_name)),
                     ..Default::default()
@@ -190,7 +193,7 @@ impl Backend for UnifiedGitBackend {
                 .into_iter()
                 .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
                 .map(|r| VersionInfo {
-                    version: self.strip_version_prefix(&r.tag_name),
+                    version: self.strip_version_prefix(&r.tag_name, &opts),
                     created_at: Some(r.created_at),
                     release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
                     ..Default::default()
@@ -202,7 +205,7 @@ impl Backend for UnifiedGitBackend {
                 .into_iter()
                 .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
                 .map(|r| VersionInfo {
-                    version: self.strip_version_prefix(&r.tag_name),
+                    version: self.strip_version_prefix(&r.tag_name, &opts),
                     created_at: Some(r.created_at),
                     release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
                     ..Default::default()
@@ -232,7 +235,11 @@ impl Backend for UnifiedGitBackend {
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
         let repo = self.repo();
-        let opts = tv.request.options();
+        let opts = ctx
+            .config
+            .get_tool_opts(&self.ba)
+            .await?
+            .unwrap_or_else(|| tv.request.options());
         let api_url = self.get_api_url(&opts);
 
         // Check if URL already exists in lockfile platforms first
@@ -921,9 +928,7 @@ impl UnifiedGitBackend {
         }
     }
 
-    fn strip_version_prefix(&self, tag_name: &str) -> String {
-        let opts = self.ba.opts();
-
+    fn strip_version_prefix(&self, tag_name: &str, opts: &ToolVersionOptions) -> String {
         // If a custom version_prefix is configured, strip it first
         if let Some(prefix) = opts.get("version_prefix")
             && let Some(stripped) = tag_name.strip_prefix(prefix)
@@ -1339,7 +1344,7 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::cli::args::BackendArg;
 
     fn create_test_backend() -> UnifiedGitBackend {
         UnifiedGitBackend::from_arg(BackendArg::new(
@@ -1357,41 +1362,56 @@ mod tests {
 
     #[test]
     fn test_version_prefix_functionality() {
-        let mut backend = create_test_backend();
+        let backend = create_test_backend();
+        let default_opts = ToolVersionOptions::default();
 
         // Test with no version prefix configured
-        assert_eq!(backend.strip_version_prefix("v1.0.0"), "1.0.0");
-        assert_eq!(backend.strip_version_prefix("1.0.0"), "1.0.0");
+        assert_eq!(
+            backend.strip_version_prefix("v1.0.0", &default_opts),
+            "1.0.0"
+        );
+        assert_eq!(
+            backend.strip_version_prefix("1.0.0", &default_opts),
+            "1.0.0"
+        );
 
         // Test projectname@version format - only strips if prefix matches repo name
         // Backend uses "github:test/repo" so repo short name is "repo", full name is "test/repo"
-        assert_eq!(backend.strip_version_prefix("repo@0.15.0"), "0.15.0");
-        assert_eq!(backend.strip_version_prefix("repo@1.2.3"), "1.2.3");
+        assert_eq!(
+            backend.strip_version_prefix("repo@0.15.0", &default_opts),
+            "0.15.0"
+        );
+        assert_eq!(
+            backend.strip_version_prefix("repo@1.2.3", &default_opts),
+            "1.2.3"
+        );
         // Also accepts full repo name as prefix
-        assert_eq!(backend.strip_version_prefix("test/repo@2.0.0"), "2.0.0");
+        assert_eq!(
+            backend.strip_version_prefix("test/repo@2.0.0", &default_opts),
+            "2.0.0"
+        );
         // Should NOT strip if prefix doesn't match repo name (prevents listing
         // versions that can't be installed)
         assert_eq!(
-            backend.strip_version_prefix("other_package@0.15.0"),
+            backend.strip_version_prefix("other_package@0.15.0", &default_opts),
             "other_package@0.15.0"
         );
         // Should not match if part after @ doesn't start with a digit
-        assert_eq!(backend.strip_version_prefix("repo@beta"), "repo@beta");
+        assert_eq!(
+            backend.strip_version_prefix("repo@beta", &default_opts),
+            "repo@beta"
+        );
 
         // Test with custom version prefix
         let mut opts = ToolVersionOptions::default();
         opts.opts
             .insert("version_prefix".to_string(), "release-".to_string());
-        backend.ba = Arc::new(BackendArg::new_raw(
-            "test".to_string(),
-            Some("github:test/repo".to_string()),
-            "test".to_string(),
-            Some(opts),
-            BackendResolution::new(true),
-        ));
 
-        assert_eq!(backend.strip_version_prefix("release-1.0.0"), "1.0.0");
-        assert_eq!(backend.strip_version_prefix("1.0.0"), "1.0.0");
+        assert_eq!(
+            backend.strip_version_prefix("release-1.0.0", &opts),
+            "1.0.0"
+        );
+        assert_eq!(backend.strip_version_prefix("1.0.0", &opts), "1.0.0");
     }
 
     #[test]
