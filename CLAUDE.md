@@ -161,6 +161,33 @@ The configuration system supports multiple file formats and environment-specific
 - Shim system varies by platform (especially Windows)
 - we don't chmod mise e2e tests to be executable
 
+## Versions Host (mise-versions.jdx.dev)
+
+Mise uses an external service at `mise-versions.jdx.dev` to provide cached version lists for tools. The source code lives at `~/src/mise-versions` (GitHub: `jdx/mise-versions`).
+
+### How It Works
+
+**Client side (this repo):**
+- `src/versions_host.rs` fetches `https://mise-versions.jdx.dev/tools/<tool>.toml` to get version lists with `created_at` timestamps
+- Versions are returned as an `IndexMap` (preserving TOML key order) and used directly without re-sorting
+- `src/backend/mod.rs`: `find_match_in_list()` resolves "latest" by taking `list.last()` — so **ascending semver order is assumed**
+- `src/backend/mod.rs`: `fuzzy_match_filter()` filters versions for "latest" using `VERSION_REGEX` (in `src/plugins/mod.rs`) to exclude pre-release patterns (`-dev`, `-beta`, `-alpha`, `-rc`, `-pre`, etc.)
+- Controlled by `settings.use_versions_host` (default: true); disabled for tools with custom plugin remotes
+- Java and Python are excluded from versions host (complex version schemes)
+
+**Server side (mise-versions):**
+- **Stack**: TypeScript/Astro on Cloudflare Workers, D1 (SQLite) database, Drizzle ORM
+- **Version collection**: `scripts/update.sh` runs every 15 min via GitHub Actions, calls `mise ls-remote <tool>` in Docker, writes TOML files to `docs/<tool>.toml`
+- **Key principle**: mise-versions is a dumb cache — it simply calls `mise ls-remote` and preserves the output order. All version sorting/ordering is mise's responsibility (in `ls-remote` / the backend's `_list_remote_versions`)
+- **TOML generation**: `scripts/generate-toml.js` preserves order from `mise ls-remote` output
+- **D1 sync**: `scripts/sync-versions-to-d1.js` reads TOML files, assigns `sort_order` from position index, syncs to D1 (incremental — only tools in `updated_tools.txt`)
+- **TOML endpoint**: `web/src/pages/tools/[tool].toml.ts` and `web/src/pages/[...tool].toml.ts` query D1 with `ORDER BY sort_order ASC, id ASC`
+- **Stale data**: D1 cleanup only runs for tools included in the current sync batch; tools not recently updated retain old D1 data
+
+### Version Ordering Contract
+
+The mise client assumes versions from the host are in **ascending semver order** (oldest first, newest last). Since mise-versions just caches `mise ls-remote` output, the ordering responsibility lies in mise's backend implementations (`_list_remote_versions`). If a backend returns versions in the wrong order, the versions host will faithfully cache that wrong order, and `find_match_in_list()` (which takes `list.last()`) will resolve "latest" incorrectly.
+
 ## Documentation
 
 ### URL Structure
