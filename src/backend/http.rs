@@ -605,7 +605,11 @@ impl Backend for HttpBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let versions = self.fetch_versions(config).await?;
+        let mut versions = self.fetch_versions(config).await?;
+        // Sort versions in ascending semver order so that list.last() == latest.
+        // HTTP backends fetch from arbitrary sources that may return any order
+        // (e.g., Google's Flutter API returns newest-first).
+        versions.sort_by_cached_key(|v| versions::Versioning::new(v));
         Ok(versions
             .into_iter()
             .map(|v| VersionInfo {
