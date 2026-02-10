@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+# Path requires to be untrusted for test to work
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+AUTO_PLUGIN_DIR="$MISE_DATA_DIR/plugins/mise-env-sample"
+
+cat >mise.toml <<EOF
+[env]
+_.mise-env-sample = { path_to_add = "/sample/path" }
+
+[plugins]
+mise-env-sample = "https://github.com/jdx/mise-env-sample"
+EOF
+
+env mise trust >/dev/null 2>&1
+
+OUTPUT=$(mise env -s bash)
+
+EXIT_CODE=$?
+
+# Verify the command exited successfully
+assert "echo $EXIT_CODE" "0"
+
+# Verify the plugin directory was created
+assert_directory_exists "$AUTO_PLUGIN_DIR"
+
+# Verify the env variable was set correctly by the plugin
+assert_contains "echo $OUTPUT" "MISE_SAMPLE_ENV_KEY=foobar"

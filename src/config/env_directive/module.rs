@@ -1,15 +1,20 @@
 use crate::Result;
+use crate::config::Config;
 use crate::config::env_directive::EnvResults;
 use crate::dirs;
+use crate::plugins::Plugin;
 use crate::plugins::vfox_plugin::VfoxPlugin;
+use crate::ui::multi_progress_report::MultiProgressReport;
 use heck::ToKebabCase;
 use indexmap::IndexMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use toml::Value;
 
 impl EnvResults {
     pub async fn module(
         r: &mut EnvResults,
+        config: &Arc<Config>,
         source: PathBuf,
         name: String,
         value: &Value,
@@ -18,6 +23,9 @@ impl EnvResults {
     ) -> Result<()> {
         let path = dirs::PLUGINS.join(name.to_kebab_case());
         let plugin = VfoxPlugin::new(name, path.clone());
+        plugin
+            .ensure_installed(config, &MultiProgressReport::get(), false, false)
+            .await?;
         if let Some(response) = plugin.mise_env(value, &env).await? {
             // Track cacheability
             if !response.cacheable {
