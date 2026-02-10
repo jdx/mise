@@ -5,9 +5,22 @@
 use super::conda_common::{find_binary_files, is_elf_file};
 use crate::install_context::InstallContext;
 use eyre::Result;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use walkdir::WalkDir;
+
+/// Known dynamic linker names per architecture
+const LINKER_NAMES: &[&str] = &["ld-linux-x86-64.so.2", "ld-linux-aarch64.so.1"];
+
+/// System paths to search for dynamic linkers (in priority order)
+const SYSTEM_LINKER_PATHS: &[&str] = &[
+    "/lib64/ld-linux-x86-64.so.2",
+    "/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+    "/lib/ld-linux-x86-64.so.2",
+    "/lib64/ld-linux-aarch64.so.1",
+    "/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
+    "/lib/ld-linux-aarch64.so.1",
+];
 
 /// Fix library paths on Linux using patchelf
 pub fn fix_library_paths(ctx: &InstallContext, install_dir: &Path) -> Result<()> {
@@ -26,7 +39,15 @@ pub fn fix_library_paths(ctx: &InstallContext, install_dir: &Path) -> Result<()>
     let files = find_binary_files(install_dir, is_elf_file);
 
     for file_path in &files {
-        fix_interpreter(file_path, install_dir);
+        // Only fix interpreter for executables (files in bin/), not all ELF files.
+        // Shared libraries don't have PT_INTERP, so this avoids unnecessary
+        // patchelf --print-interpreter calls for large installs.
+        if file_path
+            .parent()
+            .is_some_and(|p| p.ends_with("bin") || p.ends_with("libexec"))
+        {
+            fix_interpreter(file_path, install_dir);
+        }
         let rpath = build_rpath(file_path, install_dir, &lib_dirs);
         set_rpath(file_path, &rpath);
     }
@@ -43,7 +64,7 @@ fn patchelf_available() -> bool {
 }
 
 /// Find all directories under install_dir that contain shared libraries (.so files)
-fn find_lib_dirs(install_dir: &Path) -> Vec<String> {
+fn find_lib_dirs(install_dir: &Path) -> Vec<PathBuf> {
     let mut dirs = std::collections::HashSet::new();
     for entry in WalkDir::new(install_dir).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
@@ -61,17 +82,11 @@ fn find_lib_dirs(install_dir: &Path) -> Vec<String> {
     let mut sorted: Vec<_> = dirs.into_iter().collect();
     sorted.sort();
     sorted
-        .into_iter()
-        .filter_map(|d| d.to_str().map(|s| s.to_string()))
-        .collect()
 }
 
 /// Build RPATH string for a binary, including all library directories
 /// Uses $ORIGIN-relative paths where possible
-fn build_rpath(path: &Path, install_dir: &Path, lib_dirs: &[String]) -> String {
-    let install_str = install_dir.to_str().unwrap_or("");
-
-    // Start with the standard entries
+fn build_rpath(path: &Path, install_dir: &Path, lib_dirs: &[PathBuf]) -> String {
     let mut entries = Vec::new();
 
     if path.parent().is_some_and(|p| p.ends_with("bin")) {
@@ -91,8 +106,10 @@ fn build_rpath(path: &Path, install_dir: &Path, lib_dirs: &[String]) -> String {
 
     // Add all discovered lib directories as $ORIGIN-relative paths
     for lib_dir in lib_dirs {
-        if let Some(rel) = lib_dir.strip_prefix(install_str) {
-            let rel = rel.trim_start_matches('/');
+        if let Ok(rel_path) = lib_dir.strip_prefix(install_dir) {
+            let Some(rel) = rel_path.to_str() else {
+                continue; // Skip non-UTF8 paths
+            };
             if let Some(parent) = path.parent() {
                 if let Ok(from_parent) = parent.strip_prefix(install_dir) {
                     let depth = from_parent.components().count();
@@ -111,14 +128,24 @@ fn build_rpath(path: &Path, install_dir: &Path, lib_dirs: &[String]) -> String {
 
 /// Fix ELF interpreter if it points to a conda build path
 fn fix_interpreter(path: &Path, install_dir: &Path) {
-    let path_str = path.to_str().unwrap_or("");
+    let Some(path_str) = path.to_str() else {
+        debug!(
+            "skipping non-UTF8 path in fix_interpreter: {}",
+            path.display()
+        );
+        return;
+    };
 
     // Read current interpreter
-    let Ok(output) = Command::new("patchelf")
+    let output = match Command::new("patchelf")
         .args(["--print-interpreter", path_str])
         .output()
-    else {
-        return; // Not an executable (shared libs don't have interpreters)
+    {
+        Ok(o) => o,
+        Err(e) => {
+            debug!("patchelf --print-interpreter failed to spawn for {path_str}: {e}");
+            return;
+        }
     };
 
     if !output.status.success() {
@@ -128,48 +155,49 @@ fn fix_interpreter(path: &Path, install_dir: &Path) {
     let interp = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     // Check if interpreter points to a conda build path
-    if is_conda_build_path(&interp) {
-        // Check if we have a linker in our install dir
-        let local_linker = install_dir.join("lib").join("ld-linux-x86-64.so.2");
+    if !is_conda_build_path(&interp) {
+        return;
+    }
+
+    // Try local linker first (check all known architectures)
+    for linker_name in LINKER_NAMES {
+        let local_linker = install_dir.join("lib").join(linker_name);
         if local_linker.exists() {
-            let local_str = local_linker.to_str().unwrap_or("");
-            let result = Command::new("patchelf")
-                .args(["--set-interpreter", local_str, path_str])
-                .output();
-            if let Ok(o) = result {
-                if !o.status.success() {
-                    debug!(
-                        "patchelf --set-interpreter failed for {}: {}",
-                        path_str,
-                        String::from_utf8_lossy(&o.stderr)
-                    );
+            if let Some(local_str) = local_linker.to_str() {
+                if run_set_interpreter(path_str, local_str) {
+                    return;
                 }
             }
-        } else {
-            // Fall back to system linker
-            for system_linker in &[
-                "/lib64/ld-linux-x86-64.so.2",
-                "/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
-                "/lib/ld-linux-x86-64.so.2",
-                "/lib/ld-linux-aarch64.so.1",
-                "/lib64/ld-linux-aarch64.so.1",
-            ] {
-                if Path::new(system_linker).exists() {
-                    let result = Command::new("patchelf")
-                        .args(["--set-interpreter", system_linker, path_str])
-                        .output();
-                    if let Ok(o) = result {
-                        if !o.status.success() {
-                            debug!(
-                                "patchelf --set-interpreter failed for {}: {}",
-                                path_str,
-                                String::from_utf8_lossy(&o.stderr)
-                            );
-                        }
-                    }
-                    break;
-                }
-            }
+        }
+    }
+
+    // Fall back to system linker — only break on successful patchelf
+    for system_linker in SYSTEM_LINKER_PATHS {
+        if Path::new(system_linker).exists() && run_set_interpreter(path_str, system_linker) {
+            return;
+        }
+    }
+
+    debug!("no working linker found for {path_str} (original: {interp})");
+}
+
+/// Run patchelf --set-interpreter, returning true on success
+fn run_set_interpreter(path_str: &str, interpreter: &str) -> bool {
+    match Command::new("patchelf")
+        .args(["--set-interpreter", interpreter, path_str])
+        .output()
+    {
+        Ok(o) if o.status.success() => true,
+        Ok(o) => {
+            debug!(
+                "patchelf --set-interpreter {interpreter} failed for {path_str}: {}",
+                String::from_utf8_lossy(&o.stderr)
+            );
+            false
+        }
+        Err(e) => {
+            debug!("patchelf --set-interpreter failed to spawn for {path_str}: {e}");
+            false
         }
     }
 }
@@ -186,17 +214,23 @@ fn is_conda_build_path(path: &str) -> bool {
 
 /// Set RPATH on a binary using patchelf
 fn set_rpath(path: &Path, rpath: &str) {
-    let path_str = path.to_str().unwrap_or("");
-    let result = Command::new("patchelf")
+    let Some(path_str) = path.to_str() else {
+        debug!("skipping non-UTF8 path in set_rpath: {}", path.display());
+        return;
+    };
+    match Command::new("patchelf")
         .args(["--set-rpath", rpath, path_str])
-        .output();
-    if let Ok(o) = result {
-        if !o.status.success() {
+        .output()
+    {
+        Ok(o) if !o.status.success() => {
             debug!(
-                "patchelf --set-rpath failed for {}: {}",
-                path_str,
+                "patchelf --set-rpath failed for {path_str}: {}",
                 String::from_utf8_lossy(&o.stderr)
             );
         }
+        Err(e) => {
+            debug!("patchelf --set-rpath failed to spawn for {path_str}: {e}");
+        }
+        _ => {}
     }
 }
