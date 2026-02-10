@@ -1,2 +1,3 @@
-backends = ["asdf:mise-plugins/mise-go-sdk"]
+backends = ["conda:go", "asdf:mise-plugins/mise-go-sdk"]
 description = "Install go sdk"
+test = { cmd = "go version", expected = "go version" }

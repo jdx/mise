@@ -1,2 +1,3 @@
-backends = ["asdf:mise-plugins/mise-elasticsearch"]
+backends = ["conda:elasticsearch", "asdf:mise-plugins/mise-elasticsearch"]
 description = "Elasticsearch is an open source, distributed search and analytics engine built for speed, scale, and AI applications"
+test = { cmd = "elasticsearch --version 2>&1", expected = "{{version}}" }

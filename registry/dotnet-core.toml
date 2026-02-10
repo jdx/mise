@@ -1,2 +1,3 @@
-backends = ["asdf:mise-plugins/mise-dotnet-core"]
+backends = ["conda:dotnet-sdk", "asdf:mise-plugins/mise-dotnet-core"]
 description = ".Net Core"
+test = { cmd = "dotnet --version", expected = "{{version}}" }

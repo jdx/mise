@@ -1,2 +1,3 @@
-backends = ["asdf:mise-plugins/mise-oci"]
+backends = ["conda:oci-cli", "asdf:mise-plugins/mise-oci"]
 description = "Oracle Cloud Infrastructure CLI"
+test = { cmd = "oci --version 2>&1", expected = "{{version}}" }
