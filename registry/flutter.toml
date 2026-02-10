@@ -4,7 +4,7 @@ description = "Flutter is an open source framework for building beautiful, nativ
 full = "http:flutter"
 
 [backends.options]
-version_json_path = ".releases[?channel=stable].version"
+version_expr = 'fromJSON(body).releases | filter({#.channel == "stable"}) | map({#.version}) | sortVersions()'
 version_list_url = "https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json"
 # Default URL for macos/windows (.zip archives)
 # arch() maps: x64 -> "" (no suffix), arm64 -> "_arm64"
