@@ -68,15 +68,13 @@ fn find_lib_dirs(install_dir: &Path) -> Vec<PathBuf> {
     let mut dirs = std::collections::HashSet::new();
     for entry in WalkDir::new(install_dir).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
-        if path.is_file() {
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.ends_with(".so") || name.contains(".so.") {
-                    if let Some(parent) = path.parent() {
+        if path.is_file()
+            && let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if (name.ends_with(".so") || name.contains(".so."))
+                    && let Some(parent) = path.parent() {
                         dirs.insert(parent.to_path_buf());
                     }
-                }
             }
-        }
     }
 
     let mut sorted: Vec<_> = dirs.into_iter().collect();
@@ -110,8 +108,8 @@ fn build_rpath(path: &Path, install_dir: &Path, lib_dirs: &[PathBuf]) -> String 
             let Some(rel) = rel_path.to_str() else {
                 continue; // Skip non-UTF8 paths
             };
-            if let Some(parent) = path.parent() {
-                if let Ok(from_parent) = parent.strip_prefix(install_dir) {
+            if let Some(parent) = path.parent()
+                && let Ok(from_parent) = parent.strip_prefix(install_dir) {
                     let depth = from_parent.components().count();
                     let up = "../".repeat(depth);
                     let entry = format!("$ORIGIN/{}{}", up, rel);
@@ -119,7 +117,6 @@ fn build_rpath(path: &Path, install_dir: &Path, lib_dirs: &[PathBuf]) -> String 
                         entries.push(entry);
                     }
                 }
-            }
         }
     }
 
@@ -162,13 +159,11 @@ fn fix_interpreter(path: &Path, install_dir: &Path) {
     // Try local linker first (check all known architectures)
     for linker_name in LINKER_NAMES {
         let local_linker = install_dir.join("lib").join(linker_name);
-        if local_linker.exists() {
-            if let Some(local_str) = local_linker.to_str() {
-                if run_set_interpreter(path_str, local_str) {
+        if local_linker.exists()
+            && let Some(local_str) = local_linker.to_str()
+                && run_set_interpreter(path_str, local_str) {
                     return;
                 }
-            }
-        }
     }
 
     // Fall back to system linker — only break on successful patchelf
