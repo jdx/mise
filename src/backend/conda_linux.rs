@@ -71,10 +71,10 @@ fn find_lib_dirs(install_dir: &Path) -> Vec<PathBuf> {
         if path.is_file()
             && let Some(name) = path.file_name().and_then(|n| n.to_str())
             && (name.ends_with(".so") || name.contains(".so."))
-                && let Some(parent) = path.parent()
-            {
-                dirs.insert(parent.to_path_buf());
-            }
+            && let Some(parent) = path.parent()
+        {
+            dirs.insert(parent.to_path_buf());
+        }
     }
 
     let mut sorted: Vec<_> = dirs.into_iter().collect();
