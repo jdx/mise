@@ -111,9 +111,10 @@ fn extract_placeholder_prefix(content: &str) -> Option<String> {
 
     // Walk backward to find start of the absolute path
     let before = &content[..idx];
-    let start = before
-        .rfind(|c: char| !c.is_alphanumeric() && !matches!(c, '/' | '_' | '-' | '.' | '+'))?
-        + 1;
+    let pos = before
+        .rfind(|c: char| !c.is_alphanumeric() && !matches!(c, '/' | '_' | '-' | '.' | '+'))?;
+    // Skip past the delimiter character (handles multi-byte UTF-8 correctly)
+    let start = pos + before[pos..].chars().next()?.len_utf8();
 
     // Validate it starts with /
     if !content[start..].starts_with('/') {
