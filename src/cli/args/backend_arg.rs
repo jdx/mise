@@ -558,11 +558,10 @@ mod tests {
         let npm = |s, full, name| t(s, full, name, BackendType::Npm);
         let vfox = |s, full, name| t(s, full, name, BackendType::Vfox);
 
-        let conda = |s, full, name| t(s, full, name, BackendType::Conda);
         #[cfg(unix)]
         {
             asdf("asdf:clojure", "asdf:clojure", "clojure");
-            conda("clojure", "conda:clojure", "clojure");
+            asdf("clojure", "asdf:mise-plugins/mise-clojure", "clojure");
         }
         cargo("cargo:eza", "cargo:eza", "eza");
         // core("node", "node", "node");

@@ -1,3 +1,2 @@
-backends = ["conda:clojure", "asdf:mise-plugins/mise-clojure"]
+backends = ["asdf:mise-plugins/mise-clojure"]
 description = "The Clojure Programming Language"
-test = { cmd = "clj --version 2>&1", expected = "{{version}}" }
