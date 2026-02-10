@@ -1,0 +1,3 @@
+backends = ["github:tidewave-ai/tidewave_app[asset_pattern=tidewave-cli-*,bin=tidewave]"]
+description = "The coding agent for full-stack web app development"
+test = { cmd = "tidewave --version", expected = "tidewave-cli {{version}}" }
