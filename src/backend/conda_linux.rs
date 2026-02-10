@@ -64,6 +64,10 @@ fn patchelf_available() -> bool {
 }
 
 /// Find all directories under install_dir that contain shared libraries (.so files)
+///
+/// Excludes sysroot directories which contain compilation stubs (e.g. libc.so)
+/// that must not be loaded at runtime — using them causes symbol lookup errors
+/// because they're incompatible with the system's dynamic linker.
 fn find_lib_dirs(install_dir: &Path) -> Vec<PathBuf> {
     let mut dirs = std::collections::HashSet::new();
     for entry in WalkDir::new(install_dir).into_iter().filter_map(|e| e.ok()) {
@@ -72,6 +76,7 @@ fn find_lib_dirs(install_dir: &Path) -> Vec<PathBuf> {
             && let Some(name) = path.file_name().and_then(|n| n.to_str())
             && (name.ends_with(".so") || name.contains(".so."))
             && let Some(parent) = path.parent()
+            && !path_contains_sysroot(parent)
         {
             dirs.insert(parent.to_path_buf());
         }
@@ -197,6 +202,12 @@ fn run_set_interpreter(path_str: &str, interpreter: &str) -> bool {
             false
         }
     }
+}
+
+/// Check if a path is inside a sysroot directory (compilation stubs, not runtime libs)
+fn path_contains_sysroot(path: &Path) -> bool {
+    path.components()
+        .any(|c| c.as_os_str() == "sysroot" || c.as_os_str().to_string_lossy().contains("sysroot"))
 }
 
 /// Check if a path looks like a conda build-time path
