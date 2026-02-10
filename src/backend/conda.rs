@@ -709,6 +709,11 @@ impl Backend for CondaBackend {
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         platform::fix_library_paths(ctx, &install_path)?;
 
+        // Fix hardcoded conda build prefixes in text files (shell scripts, etc.)
+        // Conda packages use a placeholder prefix that must be replaced at install time
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        conda_common::fix_text_prefixes(&install_path);
+
         // Store lockfile info
         let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();
         platform_info.url = Some(main_pkg.download_url.clone());
