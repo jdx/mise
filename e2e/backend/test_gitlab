@@ -47,3 +47,21 @@ PLATFORM_KEY=$(mise x --cd . -- bash -c "echo \"\$(uname -s | tr '[:upper:]' '[:
 assert_contains "cat mise.lock" "\"platforms.$PLATFORM_KEY\""
 assert_contains "cat mise.lock" 'checksum = "blake3:71f774faa03daf1a58cc3339f8c73e6557348c8e0a2f3fb8148cc26e26bad83f"'
 assert_contains "cat mise.lock" 'url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"'
+
+mise uninstall gitlab:jdxcode/mise-test-fixtures
+
+# Test GitLab backend with tool alias propagates options correctly
+# Regression test for https://github.com/jdx/mise/discussions/8079
+cat <<EOF >mise.toml
+[tools]
+"gitlab:jdxcode/mise-test-fixtures" = { version = "1.0.0", asset_pattern = "hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+
+[tool_alias]
+my-test-tool = 'gitlab:jdxcode/mise-test-fixtures'
+EOF
+
+# Verify ls-remote works via alias (exercises _list_remote_versions with get_tool_opts)
+assert_contains "mise ls-remote my-test-tool" "1.0.0"
+
+mise install
+assert_contains "mise x my-test-tool -- hello-world" "hello world"

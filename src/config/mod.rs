@@ -341,7 +341,17 @@ impl Config {
         backend_arg: &Arc<BackendArg>,
     ) -> Result<Option<ToolVersionOptions>> {
         let trs = self.get_tool_request_set().await?;
-        let tool_request = trs.iter().find(|tr| tr.0.short == backend_arg.short);
+        // Try matching by resolved full name first for aliased tools.
+        // e.g., ba.short="treesize" resolves to full="gitlab:FBibonne/treesize"
+        // while the config entry has short="gitlab-f-bibonne-treesize" with api_url set.
+        // We check the resolved name first because the direct short match might find
+        // a CLI-created tool request without options.
+        let full = backend_arg.full();
+        let resolved_ba = BackendArg::new(full, None);
+        let tool_request = trs
+            .iter()
+            .find(|tr| tr.0.short == resolved_ba.short)
+            .or_else(|| trs.iter().find(|tr| tr.0.short == backend_arg.short));
         Ok(tool_request.and_then(|tr| tr.1.first().map(|req| req.options())))
     }
 
