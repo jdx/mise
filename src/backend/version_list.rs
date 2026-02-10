@@ -349,6 +349,26 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_flutter_with_version_expr() {
+        let content = r#"{
+            "releases": [
+                {"version": "3.38.7", "channel": "stable"},
+                {"version": "3.41.0-0.0.pre", "channel": "beta"},
+                {"version": "3.38.6", "channel": "stable"},
+                {"version": "1.0.0", "channel": "stable"}
+            ]
+        }"#;
+        let versions = parse_version_list(
+            content,
+            None,
+            None,
+            Some(r#"fromJSON(body).releases | filter({#.channel == "stable"}) | map({#.version}) | sortVersions()"#),
+        )
+        .unwrap();
+        assert_eq!(versions, vec!["1.0.0", "3.38.6", "3.38.7"]);
+    }
+
+    #[test]
     fn test_parse_with_version_expr_json_keys() {
         // Test version_expr with fromJSON and keys for hashicorp-style JSON
         let content = r#"{"name":"sentinel","versions":{"0.1.0":{},"0.2.0":{},"1.0.0":{}}}"#;
