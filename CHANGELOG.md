@@ -1,5 +1,30 @@
 # Changelog
 
+## [2026.2.9](https://github.com/jdx/mise/compare/v2026.2.8..v2026.2.9) - 2026-02-10
+
+### 🚀 Features
+
+- auto-select no-YJIT Ruby on older glibc systems by @jdx in [#8069](https://github.com/jdx/mise/pull/8069)
+
+### 🐛 Bug Fixes
+
+- **(shim)** update mise-shim.exe during self-update on Windows by @jdx in [#8075](https://github.com/jdx/mise/pull/8075)
+- Bump xx to 2.5 by @erickt in [#8077](https://github.com/jdx/mise/pull/8077)
+
+### 📚 Documentation
+
+- **(ruby)** remove experimental language for precompiled binaries by @jdx in [#8073](https://github.com/jdx/mise/pull/8073)
+
+### New Contributors
+
+- @erickt made their first contribution in [#8077](https://github.com/jdx/mise/pull/8077)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (1)
+
+- [`carthage-software/mago`](https://github.com/carthage-software/mago)
+
 ## [2026.2.8](https://github.com/jdx/mise/compare/v2026.2.7..v2026.2.8) - 2026-02-09
 
 ### 🚀 Features
