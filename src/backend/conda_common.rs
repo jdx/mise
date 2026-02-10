@@ -120,9 +120,11 @@ fn extract_placeholder_prefix(content: &str) -> Option<String> {
         return None;
     }
 
-    // Walk forward from marker to find end of the placeholder segment (next /)
+    // Walk forward from marker to find end of the placeholder segment
     let after = &content[idx..];
-    let end = after.find('/').unwrap_or(after.len());
+    let end = after
+        .find(|c: char| c == '/' || c == '"' || c == '\'' || c == '\n' || c == ' ' || c == ':')
+        .unwrap_or(after.len());
 
     let prefix = &content[start..idx + end];
     if prefix.len() > 20 {
