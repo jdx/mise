@@ -13,7 +13,7 @@ _.mise-env-sample = { path_to_add = "/sample/path" }
 mise-env-sample = "https://github.com/jdx/mise-env-sample"
 EOF
 
-env mise trust 2>&1 >/dev/null
+env mise trust >/dev/null 2>&1
 
 OUTPUT=$(mise env -s bash)
 
