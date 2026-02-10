@@ -70,7 +70,7 @@ fn find_lib_dirs(install_dir: &Path) -> Vec<PathBuf> {
         let path = entry.path();
         if path.is_file() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.contains(".so") {
+                if name.ends_with(".so") || name.contains(".so.") {
                     if let Some(parent) = path.parent() {
                         dirs.insert(parent.to_path_buf());
                     }
