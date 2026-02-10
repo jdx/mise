@@ -73,9 +73,10 @@ fn find_conda_prefix(install_dir: &Path) -> Option<String> {
                 continue;
             }
             if let Ok(content) = std::fs::read_to_string(path)
-                && let Some(prefix) = extract_placeholder_prefix(&content) {
-                    return Some(prefix);
-                }
+                && let Some(prefix) = extract_placeholder_prefix(&content)
+            {
+                return Some(prefix);
+            }
         }
     }
 
@@ -92,9 +93,10 @@ fn find_conda_prefix(install_dir: &Path) -> Option<String> {
             continue;
         }
         if let Ok(content) = std::str::from_utf8(&bytes)
-            && let Some(prefix) = extract_placeholder_prefix(content) {
-                return Some(prefix);
-            }
+            && let Some(prefix) = extract_placeholder_prefix(content)
+        {
+            return Some(prefix);
+        }
     }
 
     None
