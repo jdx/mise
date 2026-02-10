@@ -90,8 +90,13 @@ impl SelfUpdate {
         let status = self.do_update()?;
 
         if status.updated() {
-            let version = style(status.version()).bright().yellow();
-            miseprintln!("Updated mise to {version}");
+            let version = status.version().to_string();
+            let styled_version = style(&version).bright().yellow();
+            miseprintln!("Updated mise to {styled_version}");
+            #[cfg(windows)]
+            if let Err(e) = Self::update_mise_shim(&version).await {
+                warn!("Failed to update mise-shim.exe: {e}");
+            }
         } else {
             miseprintln!("mise is already up to date");
         }
@@ -165,6 +170,76 @@ impl SelfUpdate {
         }
 
         Ok(status)
+    }
+
+    #[cfg(windows)]
+    async fn update_mise_shim(version: &str) -> Result<()> {
+        use crate::http::HTTP;
+        use std::io::Read;
+
+        let version = version.strip_prefix('v').unwrap_or(version);
+        let archive_name = format!("mise-v{version}-{}-{}.zip", *OS, *ARCH);
+        let url =
+            format!("https://github.com/jdx/mise/releases/download/v{version}/{archive_name}",);
+        debug!("Downloading mise-shim.exe from {url}");
+
+        let temp_dir = tempfile::tempdir()?;
+        // Use the real archive name so zipsign context matches the release signature
+        let zip_path = temp_dir.path().join(&archive_name);
+        HTTP.download_file(&url, &zip_path, None).await?;
+
+        // Verify the archive signature using the same key as the main update
+        Self::verify_zip_signature(&zip_path)?;
+
+        let file = fs::File::open(&zip_path)?;
+        let mut archive = zip::ZipArchive::new(file)?;
+
+        let mut shim_entry = match archive.by_name("mise/bin/mise-shim.exe") {
+            Ok(entry) => entry,
+            Err(_) => {
+                warn!("mise-shim.exe not found in release archive, skipping");
+                return Ok(());
+            }
+        };
+
+        let dest = env::MISE_BIN
+            .parent()
+            .expect("MISE_BIN should have a parent directory")
+            .join("mise-shim.exe");
+
+        // Write to a temp file first, then rename for atomic replacement
+        let mut buf = Vec::new();
+        shim_entry.read_to_end(&mut buf)?;
+        let temp_shim = temp_dir.path().join("mise-shim.exe");
+        fs::write(&temp_shim, &buf)?;
+        if fs::rename(&temp_shim, &dest).is_err() {
+            // Fallback for cross-filesystem moves
+            fs::copy(&temp_shim, &dest)?;
+        }
+
+        debug!("Updated mise-shim.exe at {}", dest.display());
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    fn verify_zip_signature(path: &std::path::Path) -> Result<()> {
+        let context = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|s| s.as_bytes())
+            .ok_or_else(|| color_eyre::eyre::eyre!("non-UTF8 archive path"))?;
+
+        let keys = zipsign_api::verify::collect_keys(
+            [*include_bytes!("../../zipsign.pub")].into_iter().map(Ok),
+        )
+        .map_err(|e| color_eyre::eyre::eyre!("failed to load verification keys: {e}"))?;
+
+        let mut file = fs::File::open(path)?;
+        zipsign_api::verify::verify_zip(&mut file, &keys, Some(context))
+            .map_err(|e| color_eyre::eyre::eyre!("zip signature verification failed: {e}"))?;
+
+        debug!("Verified zip signature for {}", path.display());
+        Ok(())
     }
 
     pub fn is_available() -> bool {

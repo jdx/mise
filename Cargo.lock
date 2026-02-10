@@ -5171,6 +5171,7 @@ dependencies = [
  "xx",
  "xz2",
  "zip 3.0.0",
+ "zipsign-api",
  "zstd",
 ]
 
@@ -9934,6 +9935,7 @@ dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
  "thiserror 2.0.18",
+ "zip 2.4.2",
 ]
 
 [[package]]
