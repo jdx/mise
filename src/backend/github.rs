@@ -49,6 +49,21 @@ enum VerificationStatus {
     Error(String),
 }
 
+/// Check if an SLSA verification error indicates a format/parsing issue rather than
+/// an actual verification failure. Some provenance files (e.g., BuildKit raw provenance)
+/// exist but aren't in a sigstore-verifiable format.
+fn is_slsa_format_issue(e: &sigstore_verification::AttestationError) -> bool {
+    match e {
+        sigstore_verification::AttestationError::NoAttestations => true,
+        sigstore_verification::AttestationError::Verification(msg) => {
+            msg.contains("does not contain valid attestations")
+                || msg.contains("No certificate found")
+                || msg.contains("neither DSSE envelope nor message signature")
+        }
+        _ => false,
+    }
+}
+
 /// Returns install-time-only option keys for GitHub/GitLab backend.
 pub fn install_time_option_keys() -> Vec<String> {
     vec![
@@ -1248,7 +1263,14 @@ impl UnifiedGitBackend {
                 }
                 Ok(verified)
             }
-            Err(e) => Err(VerificationStatus::Error(e.to_string())),
+            Err(e) => {
+                if is_slsa_format_issue(&e) {
+                    debug!("SLSA provenance file not in verifiable format for {tv}: {e}");
+                    Err(VerificationStatus::NoAttestations)
+                } else {
+                    Err(VerificationStatus::Error(e.to_string()))
+                }
+            }
         }
     }
 }
@@ -1465,5 +1487,60 @@ mod tests {
         let result =
             backend.find_asset_case_insensitive(&assets, "nonexistent-asset.tar.gz", |a| &a.name);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_is_slsa_format_issue_no_attestations() {
+        let err = sigstore_verification::AttestationError::NoAttestations;
+        assert!(is_slsa_format_issue(&err));
+    }
+
+    #[test]
+    fn test_is_slsa_format_issue_invalid_format() {
+        // This is the exact error from BuildKit raw provenance files parsed line-by-line
+        let err = sigstore_verification::AttestationError::Verification(
+            "File does not contain valid attestations or SLSA provenance".to_string(),
+        );
+        assert!(is_slsa_format_issue(&err));
+    }
+
+    #[test]
+    fn test_is_slsa_format_issue_no_certificate() {
+        let err = sigstore_verification::AttestationError::Verification(
+            "No certificate found in attestation bundle".to_string(),
+        );
+        assert!(is_slsa_format_issue(&err));
+    }
+
+    #[test]
+    fn test_is_slsa_format_issue_no_dsse_envelope() {
+        let err = sigstore_verification::AttestationError::Verification(
+            "Bundle has neither DSSE envelope nor message signature".to_string(),
+        );
+        assert!(is_slsa_format_issue(&err));
+    }
+
+    #[test]
+    fn test_is_slsa_format_issue_real_verification_failure() {
+        // Digest mismatch = real verification failure, NOT a format issue
+        let err = sigstore_verification::AttestationError::Verification(
+            "Artifact digest mismatch: expected abc123".to_string(),
+        );
+        assert!(!is_slsa_format_issue(&err));
+    }
+
+    #[test]
+    fn test_is_slsa_format_issue_signature_failure() {
+        // Signature verification failure = real failure, NOT a format issue
+        let err = sigstore_verification::AttestationError::Verification(
+            "P-256 signature verification failed: invalid signature".to_string(),
+        );
+        assert!(!is_slsa_format_issue(&err));
+    }
+
+    #[test]
+    fn test_is_slsa_format_issue_api_error() {
+        let err = sigstore_verification::AttestationError::Api("connection refused".to_string());
+        assert!(!is_slsa_format_issue(&err));
     }
 }
