@@ -1,2 +1,3 @@
-backends = ["asdf:mise-plugins/mise-minio"]
+backends = ["conda:minio-server", "asdf:mise-plugins/mise-minio"]
 description = "MinIO AIStor is a high-performance S3-compatible object store licensed under the MinIO Commercial License"
+test = { cmd = "minio --version 2>&1", expected = "minio" }

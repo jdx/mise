@@ -1,2 +1,3 @@
-backends = ["asdf:mise-plugins/mise-jfrog-cli"]
+backends = ["conda:jfrog-cli", "asdf:mise-plugins/mise-jfrog-cli"]
 description = "Frog CLI is a client that provides a simple interface that automates access to the JFrog products"
+test = { cmd = "jf --version 2>&1", expected = "{{version}}" }
