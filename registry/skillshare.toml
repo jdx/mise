@@ -1,0 +1,3 @@
+backends = ["github:runkids/skillshare"]
+description = "Sync AI CLI skills from a single source to Claude Code, Cursor, Gemini CLI, and 40+ tools"
+test = { cmd = "skillshare -v", expected = "skillshare v{{version}}" }
