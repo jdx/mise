@@ -123,7 +123,7 @@ fn extract_placeholder_prefix(content: &str) -> Option<String> {
     // Walk forward from marker to find end of the placeholder segment
     let after = &content[idx..];
     let end = after
-        .find(|c: char| c == '/' || c == '"' || c == '\'' || c == '\n' || c == ' ' || c == ':')
+        .find(['/', '"', '\'', '\n', ' ', ':'])
         .unwrap_or(after.len());
 
     let prefix = &content[start..idx + end];
