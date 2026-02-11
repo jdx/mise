@@ -234,14 +234,13 @@ impl ToolVersion {
             {
                 return build(v);
             }
-            if !is_offline {
-                if let Some(v) = backend
+            if !is_offline
+                && let Some(v) = backend
                     .latest_version_with_opts(config, None, opts.before_date)
                     .await?
                 {
                     return build(v);
                 }
-            }
         }
         if !opts.latest_versions {
             let matches = backend.list_installed_versions_matching(&v);
