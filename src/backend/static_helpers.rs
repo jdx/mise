@@ -159,6 +159,8 @@ where
         } else {
             vec![format!("{}{}", prefix, version), version.to_string()]
         }
+    } else if version == "latest" {
+        vec![version.to_string()]
     } else if version.starts_with('v') {
         vec![
             version.to_string(),
