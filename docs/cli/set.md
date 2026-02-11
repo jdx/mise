@@ -65,7 +65,7 @@ Prompt for environment variable values
 
 ### `--stdin`
 
-Read the value from stdin (for multiline or binary-safe input)
+Read the value from stdin (for multiline input)
 
 When using --stdin, provide a single key without a value. The value will be read from stdin until EOF.
 

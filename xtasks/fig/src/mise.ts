@@ -2242,8 +2242,7 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: "--stdin",
-          description:
-            "Read the value from stdin (for multiline or binary-safe input)",
+          description: "Read the value from stdin (for multiline input)",
           isRepeatable: false,
         },
       ],

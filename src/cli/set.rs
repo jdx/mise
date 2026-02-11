@@ -75,7 +75,7 @@ pub struct Set {
     #[clap(long)]
     prompt: bool,
 
-    /// Read the value from stdin (for multiline or binary-safe input)
+    /// Read the value from stdin (for multiline input)
     ///
     /// When using --stdin, provide a single key without a value.
     /// The value will be read from stdin until EOF.
@@ -181,11 +181,10 @@ impl Set {
                 let mut value = String::new();
                 std::io::stdin().read_to_string(&mut value)?;
                 // Strip a single trailing newline (matches `gh secret set` behavior)
-                if value.ends_with('\n') {
-                    value.pop();
-                    if value.ends_with('\r') {
-                        value.pop();
-                    }
+                if value.ends_with("\r\n") {
+                    value.truncate(value.len() - 2);
+                } else if value.ends_with('\n') {
+                    value.truncate(value.len() - 1);
                 }
                 ev.value = Some(value);
             }
