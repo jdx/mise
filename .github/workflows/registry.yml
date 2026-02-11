@@ -115,7 +115,7 @@ jobs:
         run: |
           missing_tests=""
           for tool in ${{ needs.list-changed-tools.outputs.new_tools }}; do
-            if ! grep -q '^test = \[' "registry/$tool.toml"; then
+            if ! grep -q '^test = ' "registry/$tool.toml"; then
               missing_tests="$missing_tests $tool"
             fi
           done
