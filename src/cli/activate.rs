@@ -152,6 +152,12 @@ impl Activate {
 }
 
 fn remove_shims() -> std::io::Result<Option<ActivatePrelude>> {
+    // When not_found_auto_install is enabled, preserve shims in PATH so they can
+    // trigger auto-install for tools that aren't installed yet
+    if Settings::get().not_found_auto_install {
+        return Ok(None);
+    }
+
     let shims = dirs::SHIMS
         .canonicalize()
         .unwrap_or(dirs::SHIMS.to_path_buf());
