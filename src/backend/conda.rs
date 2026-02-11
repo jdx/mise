@@ -377,6 +377,10 @@ impl CondaBackend {
         resolved: &mut HashMap<String, ResolvedPackage>,
         visited: &mut HashSet<String>,
     ) -> Result<()> {
+        // Extract version pins from parent package's build string.
+        // e.g., vim's build string "py310pl5321h..." tells us it needs Python 3.10
+        let build_pins = extract_build_pins(&pkg_file.basename);
+
         for dep in &pkg_file.attrs.depends {
             let Some((name, version_spec)) = parse_dependency(dep) else {
                 continue;
@@ -396,10 +400,24 @@ impl CondaBackend {
                 }
             };
 
-            // Find best matching version for this platform
-            let Some(matched) =
+            // If parent's build string pins this dependency version, try that first.
+            // e.g., vim built with py310 should get Python 3.10.*, not 3.15
+            let pinned_spec = build_pins.get(&name).map(|v| format!("{}.*", v));
+
+            let matched = if let Some(ref pinned) = pinned_spec {
+                Self::find_package_file(&dep_files, Some(pinned.as_str()), subdir).or_else(|| {
+                    // Fall back to original spec if pinned version not available
+                    debug!(
+                        "pinned {} {} not found for {}, falling back to {:?}",
+                        name, pinned, subdir, version_spec
+                    );
+                    Self::find_package_file(&dep_files, version_spec.as_deref(), subdir)
+                })
+            } else {
                 Self::find_package_file(&dep_files, version_spec.as_deref(), subdir)
-            else {
+            };
+
+            let Some(matched) = matched else {
                 // Skip dependencies not available for this platform
                 // This is common - many conda packages have platform-specific deps
                 debug!(
@@ -903,6 +921,51 @@ fn parse_dependency(dep: &str) -> Option<(String, Option<String>)> {
     // Get version spec if present (ignore build spec)
     let version = parts.get(1).map(|s| s.to_string());
     Some((name, version))
+}
+
+/// Extract dependency version pins from a conda package's build string.
+///
+/// Conda build strings encode key dependency versions at the start:
+/// - `py310` → Python 3.10 (first digit = major, rest = minor)
+/// - `pl5321` → Perl 5.32 (first digit = major, next 2 digits = minor)
+///
+/// Returns a map of (dep_name → pinned_version_prefix), e.g. {"python": "3.10"}
+fn extract_build_pins(basename: &str) -> HashMap<String, String> {
+    let name = strip_conda_extension(basename);
+    // Build string is the last segment: "pkg-version-buildstring"
+    let build_string = name.rsplit('-').next().unwrap_or("");
+
+    let mut pins = HashMap::new();
+    let mut remaining = build_string;
+
+    loop {
+        if let Some(rest) = remaining.strip_prefix("py") {
+            // Python: first digit = major, rest = minor → py310 = 3.10
+            let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if digits.len() >= 2 {
+                pins.insert(
+                    "python".to_string(),
+                    format!("{}.{}", &digits[..1], &digits[1..]),
+                );
+                remaining = &rest[digits.len()..];
+                continue;
+            }
+        } else if let Some(rest) = remaining.strip_prefix("pl") {
+            // Perl: first digit = major, next 2 = minor → pl5321 = 5.32
+            let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if digits.len() >= 3 {
+                pins.insert(
+                    "perl".to_string(),
+                    format!("{}.{}", &digits[..1], &digits[1..3]),
+                );
+                remaining = &rest[digits.len()..];
+                continue;
+            }
+        }
+        break;
+    }
+
+    pins
 }
 
 /// Strip conda extension from basename
