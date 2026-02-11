@@ -445,6 +445,14 @@ pub trait Backend: Debug + Send + Sync {
             true // Core plugins and plugins without remote URLs can use versions host
         };
 
+        if Settings::get().offline() {
+            trace!(
+                "Skipping remote version listing for {} due to offline mode",
+                ba.to_string()
+            );
+            return Ok(vec![]);
+        }
+
         let versions = remote_versions
             .get_or_try_init_async(|| async {
                 trace!("Listing remote versions for {}", ba.to_string());
@@ -464,13 +472,6 @@ pub trait Backend: Debug + Send + Sync {
                             debug!("Error getting versions from versions host: {:#}", e);
                         }
                     }
-                }
-                if Settings::get().offline() {
-                    trace!(
-                        "Skipping remote version listing for {} due to offline mode",
-                        ba.to_string()
-                    );
-                    return Ok(vec![]);
                 }
                 trace!(
                     "Calling backend to list remote versions for {}",
