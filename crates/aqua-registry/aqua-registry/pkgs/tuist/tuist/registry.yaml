@@ -28,6 +28,7 @@ packages:
           arm64: aarch64
         overrides:
           - goos: linux
+            asset: tuist-linux-{{.Arch}}.tar.gz
             format: tar.gz
         supported_envs:
           - darwin
