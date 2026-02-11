@@ -85,6 +85,8 @@ output=$(mise upgrade dummy --bump 2>&1)
 assert_not_contains "echo '$output'" "Error getting latest version for tiny"
 assert_not_contains "echo '$output'" "WARN.*tiny"
 assert_contains "mise ls --installed dummy" "2.0.0"
+# dummy 1.0.0 should have been uninstalled since we upgraded it
+assert_not_contains "mise ls --installed dummy" "1.0.0"
 # tiny should still be at 1.0.0 since we didn't upgrade it
 assert_contains "mise ls --installed tiny" "1.0.0"
 assert_not_contains "mise ls --installed tiny" "1.1.0"
