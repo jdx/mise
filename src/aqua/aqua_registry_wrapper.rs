@@ -107,7 +107,7 @@ fn fetch_latest_repo(repo: &Git) -> Result<()> {
     }
 
     if Settings::get().prefer_offline() {
-        trace!("skipping aqua registry update due to PREFER_OFFLINE");
+        trace!("skipping aqua registry update due to prefer-offline mode");
         return Ok(());
     }
 

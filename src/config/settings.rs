@@ -782,4 +782,53 @@ mod tests {
             ["foo".to_string(), "bar".to_string()].into_iter().collect();
         assert_eq!(result.unwrap(), expected);
     }
+
+    #[test]
+    fn test_offline_default_is_false() {
+        Settings::reset(None);
+        let settings = Settings::get();
+        // When neither setting nor env var is set, offline should be false
+        // (env::OFFLINE is process-global so we can't easily toggle it,
+        // but the setting field defaults to false)
+        assert!(!settings.offline);
+    }
+
+    #[test]
+    fn test_prefer_offline_default_is_false() {
+        Settings::reset(None);
+        let settings = Settings::get();
+        assert!(!settings.prefer_offline);
+    }
+
+    #[test]
+    fn test_offline_setting_enables_offline() {
+        let mut partial = SettingsPartial::empty();
+        partial.offline = Some(true);
+        Settings::reset(Some(partial));
+        let settings = Settings::get();
+        assert!(settings.offline());
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_offline_implies_prefer_offline() {
+        let mut partial = SettingsPartial::empty();
+        partial.offline = Some(true);
+        Settings::reset(Some(partial));
+        let settings = Settings::get();
+        assert!(settings.prefer_offline());
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_prefer_offline_setting() {
+        let mut partial = SettingsPartial::empty();
+        partial.prefer_offline = Some(true);
+        Settings::reset(Some(partial));
+        let settings = Settings::get();
+        assert!(settings.prefer_offline());
+        // prefer_offline does NOT imply offline
+        assert!(!settings.offline);
+        Settings::reset(None);
+    }
 }
