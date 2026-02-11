@@ -326,7 +326,6 @@ jobs:
         run: npm install -g @anthropic-ai/claude-code
       - name: Create Draft GitHub Release
         if: startsWith(github.event.ref, 'refs/tags/v')
-        continue-on-error: true
         run: |
           VERSION="$(./scripts/get-version.sh)"
           PREV_VERSION="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$VERSION^" 2>/dev/null || echo "")"
