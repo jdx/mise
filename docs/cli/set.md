@@ -63,6 +63,12 @@ Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`.
 
 Prompt for environment variable values
 
+### `--stdin`
+
+Read the value from stdin (for multiline input)
+
+When using --stdin, provide a single key without a value. The value will be read from stdin until EOF.
+
 Examples:
 
 ```
@@ -80,6 +86,12 @@ NODE_ENV  production  ~/.config/mise/config.toml
 
 $ mise set --prompt PASSWORD
 Enter value for PASSWORD: [hidden input]
+
+Multiline Values (--stdin):
+
+$ cat private.key | mise set --stdin MY_KEY
+
+$ printf "line1\nline2" | mise set --stdin MY_KEY
 
 [experimental] Age Encryption:
 

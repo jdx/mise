@@ -1,3 +1,4 @@
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
 use super::args::EnvVarArg;
@@ -79,6 +80,13 @@ pub struct Set {
     /// Can be used multiple times.
     #[clap(long, value_name = "ENV_KEY", verbatim_doc_comment, visible_aliases = ["rm", "unset"], hide = true)]
     remove: Option<Vec<String>>,
+
+    /// Read the value from stdin (for multiline input)
+    ///
+    /// When using --stdin, provide a single key without a value.
+    /// The value will be read from stdin until EOF.
+    #[clap(long, conflicts_with = "prompt", requires = "env_vars")]
+    stdin: bool,
 }
 
 impl Set {
@@ -108,7 +116,7 @@ impl Set {
                 return self.list_all().await;
             }
             (None, Some(env_vars))
-                if env_vars.iter().all(|ev| ev.value.is_none()) && !self.prompt =>
+                if env_vars.iter().all(|ev| ev.value.is_none()) && !self.prompt && !self.stdin =>
             {
                 return self.get().await;
             }
@@ -128,6 +136,7 @@ impl Set {
             && env_vars.len() == 1
             && env_vars[0].value.is_none()
             && !self.prompt
+            && !self.stdin
         {
             let key = &env_vars[0].key;
             // Use Config's centralized env loading which handles decryption
@@ -156,6 +165,28 @@ impl Set {
                         ev.value = Some(value);
                     }
                 }
+            }
+
+            // Read value from stdin if requested
+            if self.stdin {
+                if env_vars.len() != 1 {
+                    bail!("--stdin requires exactly one environment variable key");
+                }
+                let ev = &mut env_vars[0];
+                if ev.value.is_some() {
+                    bail!(
+                        "--stdin reads the value from stdin; do not provide a value with KEY=VALUE syntax"
+                    );
+                }
+                let mut value = String::new();
+                std::io::stdin().read_to_string(&mut value)?;
+                // Strip a single trailing newline (matches `gh secret set` behavior)
+                if value.ends_with("\r\n") {
+                    value.truncate(value.len() - 2);
+                } else if value.ends_with('\n') {
+                    value.truncate(value.len() - 1);
+                }
+                ev.value = Some(value);
             }
 
             // Handle age encryption if requested
@@ -431,6 +462,12 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     $ <bold>mise set --prompt PASSWORD</bold>
     Enter value for PASSWORD: [hidden input]
+
+    <bold><underline>Multiline Values (--stdin):</underline></bold>
+
+    $ <bold>cat private.key | mise set --stdin MY_KEY</bold>
+
+    $ <bold>printf "line1\nline2" | mise set --stdin MY_KEY</bold>
 
     <bold><underline>[experimental] Age Encryption:</underline></bold>
 
