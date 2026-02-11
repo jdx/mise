@@ -75,18 +75,18 @@ pub struct Set {
     #[clap(long)]
     prompt: bool,
 
-    /// Read the value from stdin (for multiline input)
-    ///
-    /// When using --stdin, provide a single key without a value.
-    /// The value will be read from stdin until EOF.
-    #[clap(long, conflicts_with = "prompt")]
-    stdin: bool,
-
     /// Remove the environment variable from config file
     ///
     /// Can be used multiple times.
     #[clap(long, value_name = "ENV_KEY", verbatim_doc_comment, visible_aliases = ["rm", "unset"], hide = true)]
     remove: Option<Vec<String>>,
+
+    /// Read the value from stdin (for multiline input)
+    ///
+    /// When using --stdin, provide a single key without a value.
+    /// The value will be read from stdin until EOF.
+    #[clap(long, conflicts_with = "prompt", requires = "env_vars")]
+    stdin: bool,
 }
 
 impl Set {
