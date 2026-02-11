@@ -1,0 +1,3 @@
+backends = ["npm:npq"]
+description = "safely install npm packages by auditing them pre-install stage"
+test = { cmd = "npq --version", expected = "{{version}}" }
