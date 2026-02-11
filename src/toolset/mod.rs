@@ -3,6 +3,8 @@ use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use serde::Serialize;
+
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::config::Config;
@@ -45,6 +47,12 @@ mod tool_version_options;
 mod toolset_env;
 mod toolset_install;
 mod toolset_paths;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ToolInfo {
+    pub version: String,
+    pub path: String,
+}
 
 /// a toolset is a collection of tools for various plugins
 ///
@@ -303,21 +311,18 @@ impl Toolset {
         outdated.into_iter().flatten().collect()
     }
 
-    pub fn build_tools_tera_map(
-        &self,
-        config: &Arc<Config>,
-    ) -> HashMap<String, HashMap<String, String>> {
-        let mut tools_map: HashMap<String, HashMap<String, String>> = HashMap::new();
+    pub fn build_tools_tera_map(&self, config: &Arc<Config>) -> HashMap<String, ToolInfo> {
+        let mut tools_map: HashMap<String, ToolInfo> = HashMap::new();
         for (_, tv) in self.list_current_installed_versions(config) {
             let tool_name = tv.ba().tool_name.clone();
             let short = tv.ba().short.clone();
-            let version = tv.version.clone();
-            let path = tv.install_path().to_string_lossy().to_string();
-            let inner =
-                HashMap::from([("version".to_string(), version), ("path".to_string(), path)]);
-            tools_map.entry(tool_name.clone()).or_insert(inner.clone());
+            let info = ToolInfo {
+                version: tv.version.clone(),
+                path: tv.install_path().to_string_lossy().to_string(),
+            };
+            tools_map.entry(tool_name.clone()).or_insert(info.clone());
             if short != tool_name {
-                tools_map.entry(short).or_insert(inner);
+                tools_map.entry(short).or_insert(info);
             }
         }
         tools_map

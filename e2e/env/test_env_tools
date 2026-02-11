@@ -21,5 +21,7 @@ TINY_V = { value = "{{ tools.tiny.version }}", tools = true }
 TINY_P = { value = "{{ tools.tiny.path }}", tools = true }
 EOF
 mise install tiny
-assert_contains "mise hook-env -s bash" "export TINY_V="
-assert_contains "mise hook-env -s bash" "export TINY_P="
+TINY_VERSION=$(mise latest tiny)
+TINY_PATH=$(mise where tiny)
+assert_contains "mise hook-env -s bash" "export TINY_V=$TINY_VERSION"
+assert_contains "mise hook-env -s bash" "export TINY_P=$TINY_PATH"
