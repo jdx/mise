@@ -2240,6 +2240,12 @@ const completionSpec: Fig.Spec = {
           description: "Prompt for environment variable values",
           isRepeatable: false,
         },
+        {
+          name: "--stdin",
+          description:
+            "Read the value from stdin (for multiline or binary-safe input)",
+          isRepeatable: false,
+        },
       ],
       args: {
         name: "env_var",

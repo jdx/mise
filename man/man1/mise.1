@@ -1985,6 +1985,11 @@ Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`.
 \fB\-\-prompt\fR
 Prompt for environment variable values
 .TP
+\fB\-\-stdin\fR
+Read the value from stdin (for multiline or binary\-safe input)
+
+When using \-\-stdin, provide a single key without a value. The value will be read from stdin until EOF.
+.TP
 \fB\-\-remove, \-\-rm, \-\-unset\fR \fI<ENV_KEY>\fR
 Remove the environment variable from config file
 

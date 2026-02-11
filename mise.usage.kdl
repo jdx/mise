@@ -754,7 +754,7 @@ cmd self-update help="Updates mise itself." {
 cmd set help="Set environment variables in mise.toml" {
     alias ev env-vars hide=#true
     long_help "Set environment variables in mise.toml\n\nBy default, this command modifies `mise.toml` in the current directory.\nIf multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),\nthe lowest precedence file (`mise.toml`) will be used.\nSee https://mise.jdx.dev/configuration.html#target-file-for-write-operations\n\nUse `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`."
-    after_long_help "Examples:\n\n    $ mise set NODE_ENV=production\n\n    $ mise set NODE_ENV\n    production\n\n    $ mise set -E staging NODE_ENV=staging\n    # creates or modifies mise.staging.toml\n\n    $ mise set\n    key       value       source\n    NODE_ENV  production  ~/.config/mise/config.toml\n\n    $ mise set --prompt PASSWORD\n    Enter value for PASSWORD: [hidden input]\n\n    [experimental] Age Encryption:\n\n    $ mise set --age-encrypt API_KEY=secret\n\n    $ mise set --age-encrypt --prompt API_KEY\n    Enter value for API_KEY: [hidden input]\n"
+    after_long_help "Examples:\n\n    $ mise set NODE_ENV=production\n\n    $ mise set NODE_ENV\n    production\n\n    $ mise set -E staging NODE_ENV=staging\n    # creates or modifies mise.staging.toml\n\n    $ mise set\n    key       value       source\n    NODE_ENV  production  ~/.config/mise/config.toml\n\n    $ mise set --prompt PASSWORD\n    Enter value for PASSWORD: [hidden input]\n\n    Multiline Values (--stdin):\n\n    $ cat private.key | mise set --stdin MY_KEY\n\n    $ printf \"line1\\nline2\" | mise set --stdin MY_KEY\n\n    [experimental] Age Encryption:\n\n    $ mise set --age-encrypt API_KEY=secret\n\n    $ mise set --age-encrypt --prompt API_KEY\n    Enter value for API_KEY: [hidden input]\n"
     flag "-E --env" help="Create/modify an environment-specific config file like .mise.<env>.toml" {
         arg <ENV>
     }
@@ -778,6 +778,9 @@ cmd set help="Set environment variables in mise.toml" {
         arg <FILE>
     }
     flag --prompt help="Prompt for environment variable values"
+    flag --stdin help="Read the value from stdin (for multiline or binary-safe input)" {
+        long_help "Read the value from stdin (for multiline or binary-safe input)\n\nWhen using --stdin, provide a single key without a value. The value will be read from stdin until EOF."
+    }
     flag "--remove --rm --unset" help="Remove the environment variable from config file" var=#true hide=#true {
         long_help "Remove the environment variable from config file\n\nCan be used multiple times."
         arg <ENV_KEY>
