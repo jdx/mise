@@ -831,4 +831,44 @@ mod tests {
         assert!(!settings.offline);
         Settings::reset(None);
     }
+
+    #[test]
+    fn test_settings_toml_is_sorted() {
+        let content =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/settings.toml"))
+                .expect("failed to read settings.toml");
+        let table: toml::Table = content.parse().expect("failed to parse settings.toml");
+
+        fn collect_keys(table: &toml::Table, prefix: &str) -> Vec<String> {
+            let mut keys = Vec::new();
+            for (key, value) in table {
+                let full_key = if prefix.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{prefix}.{key}")
+                };
+                if let toml::Value::Table(sub) = value {
+                    // A nested table that has no "type" or "description" is a grouping table
+                    // (e.g., [aqua], [node]), not a setting itself.
+                    if !sub.contains_key("type") && !sub.contains_key("description") {
+                        keys.extend(collect_keys(sub, &full_key));
+                        continue;
+                    }
+                }
+                keys.push(full_key);
+            }
+            keys
+        }
+
+        let keys = collect_keys(&table, "");
+        let mut sorted = keys.clone();
+        sorted.sort();
+
+        for (i, (got, expected)) in keys.iter().zip(sorted.iter()).enumerate() {
+            assert_eq!(
+                got, expected,
+                "settings.toml is not alphabetically sorted at index {i}: found \"{got}\", expected \"{expected}\". Run the sort script or reorder manually."
+            );
+        }
+    }
 }
