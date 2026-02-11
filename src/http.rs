@@ -100,7 +100,7 @@ impl Client {
         url: U,
         headers: &HeaderMap,
     ) -> Result<Response> {
-        ensure!(!*env::OFFLINE, "offline mode is enabled");
+        ensure!(!Settings::get().offline(), "offline mode is enabled");
         let url = url.into_url().unwrap();
         let resp = self
             .send_with_https_fallback(Method::GET, url, headers, "GET")
@@ -120,7 +120,7 @@ impl Client {
         url: U,
         headers: &HeaderMap,
     ) -> Result<Response> {
-        ensure!(!*env::OFFLINE, "offline mode is enabled");
+        ensure!(!Settings::get().offline(), "offline mode is enabled");
         let url = url.into_url().unwrap();
         let resp = self
             .send_with_https_fallback(Method::HEAD, url, headers, "HEAD")
@@ -271,7 +271,7 @@ impl Client {
         body: &T,
         headers: &HeaderMap,
     ) -> Result<bool> {
-        ensure!(!*env::OFFLINE, "offline mode is enabled");
+        ensure!(!Settings::get().offline(), "offline mode is enabled");
         let url = url.into_url()?;
         debug!("POST {}", &url);
         let resp = self

@@ -888,6 +888,10 @@
             }
           }
         },
+        "offline": {
+          "description": "Disable all HTTP requests. Tools will only use locally cached data.",
+          "type": "boolean"
+        },
         "os": {
           "description": "OS to use for precompiled binaries.",
           "type": "string"
@@ -933,6 +937,10 @@
         },
         "pipx_uvx": {
           "description": "Use uvx instead of pipx if uv is installed and on PATH.",
+          "type": "boolean"
+        },
+        "prefer_offline": {
+          "description": "Prefer locally cached data over remote fetches when possible.",
           "type": "boolean"
         },
         "plugin_autoupdate_last_check_duration": {

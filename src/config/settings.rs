@@ -516,7 +516,7 @@ impl Settings {
     /// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is set, use that
     /// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is not set, use HOURLY
     pub fn fetch_remote_versions_cache(&self) -> Option<Duration> {
-        if env::PREFER_OFFLINE.load(Ordering::Relaxed) {
+        if self.prefer_offline() {
             None
         } else {
             Some(duration::parse_duration(&self.fetch_remote_versions_cache).unwrap())
@@ -525,6 +525,18 @@ impl Settings {
 
     pub fn http_timeout(&self) -> Duration {
         duration::parse_duration(&self.http_timeout).unwrap()
+    }
+
+    /// Returns true if offline mode is enabled via setting or CLI flag/env var.
+    pub fn offline(&self) -> bool {
+        self.offline || *env::OFFLINE
+    }
+
+    /// Returns true if prefer-offline mode is enabled via setting, env var, or
+    /// because the current command is a "fast" command (hook-env, activate, etc.).
+    /// Also returns true if offline mode is enabled (offline implies prefer-offline).
+    pub fn prefer_offline(&self) -> bool {
+        self.offline() || self.prefer_offline || env::PREFER_OFFLINE.load(Ordering::Relaxed)
     }
 
     pub fn env_cache_ttl(&self) -> Duration {
@@ -769,5 +781,54 @@ mod tests {
         let expected: BTreeSet<String> =
             ["foo".to_string(), "bar".to_string()].into_iter().collect();
         assert_eq!(result.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_offline_default_is_false() {
+        Settings::reset(None);
+        let settings = Settings::get();
+        // When neither setting nor env var is set, offline should be false
+        // (env::OFFLINE is process-global so we can't easily toggle it,
+        // but the setting field defaults to false)
+        assert!(!settings.offline);
+    }
+
+    #[test]
+    fn test_prefer_offline_default_is_false() {
+        Settings::reset(None);
+        let settings = Settings::get();
+        assert!(!settings.prefer_offline);
+    }
+
+    #[test]
+    fn test_offline_setting_enables_offline() {
+        let mut partial = SettingsPartial::empty();
+        partial.offline = Some(true);
+        Settings::reset(Some(partial));
+        let settings = Settings::get();
+        assert!(settings.offline());
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_offline_implies_prefer_offline() {
+        let mut partial = SettingsPartial::empty();
+        partial.offline = Some(true);
+        Settings::reset(Some(partial));
+        let settings = Settings::get();
+        assert!(settings.prefer_offline());
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_prefer_offline_setting() {
+        let mut partial = SettingsPartial::empty();
+        partial.prefer_offline = Some(true);
+        Settings::reset(Some(partial));
+        let settings = Settings::get();
+        assert!(settings.prefer_offline());
+        // prefer_offline does NOT imply offline
+        assert!(!settings.offline);
+        Settings::reset(None);
     }
 }
