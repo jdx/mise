@@ -60,7 +60,11 @@ struct VersionEntry {
 /// List versions from the versions host (mise-versions.jdx.dev).
 /// Returns Vec<VersionInfo> with created_at timestamps from the TOML endpoint.
 pub async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>> {
-    if !Settings::get().use_versions_host || !PLUGINS_USE_VERSION_HOST.contains(tool) {
+    let settings = Settings::get();
+    if settings.prefer_offline()
+        || !settings.use_versions_host
+        || !PLUGINS_USE_VERSION_HOST.contains(tool)
+    {
         return Ok(None);
     }
 
@@ -127,6 +131,9 @@ pub async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<VersionInfo>>>
 /// Tracks all core plugins and registry tools (including java/python)
 pub fn track_install(tool: &str, full: &str, version: &str) {
     let settings = Settings::get();
+    if settings.offline() {
+        return;
+    }
 
     // Check if tracking is enabled (also requires use_versions_host to be enabled)
     if !settings.use_versions_host || !settings.use_versions_host_track {

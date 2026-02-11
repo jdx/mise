@@ -465,6 +465,13 @@ pub trait Backend: Debug + Send + Sync {
                         }
                     }
                 }
+                if Settings::get().offline() {
+                    trace!(
+                        "Skipping remote version listing for {} due to offline mode",
+                        ba.to_string()
+                    );
+                    return Ok(vec![]);
+                }
                 trace!(
                     "Calling backend to list remote versions for {}",
                     ba.to_string()

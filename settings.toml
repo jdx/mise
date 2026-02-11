@@ -983,6 +983,21 @@ This also runs in shims if the terminal is interactive.
 env = "MISE_NOT_FOUND_AUTO_INSTALL"
 type = "Bool"
 
+[offline]
+description = "Disable all HTTP requests. Tools will only use locally cached data."
+docs = """
+When enabled, mise will never make HTTP requests. This is useful for air-gapped environments,
+VPN issues, or when you want to ensure mise only uses locally cached data.
+
+Note: Commands like `hook-env`, `activate`, `exec`, `env`, and shims already avoid most network
+requests via the `prefer_offline` behavior. Set `offline = true` to completely block all
+HTTP requests for commands like `mise install` or `mise ls-remote` as well.
+
+Can also be set with the `--offline` CLI flag.
+"""
+env = "MISE_OFFLINE"
+type = "Bool"
+
 [npm.bun]
 deprecated = "Use npm.package_manager instead."
 description = "Use bun instead of npm if bun is installed and on PATH."
@@ -1068,6 +1083,18 @@ This sets `--pin` by default when running `mise use` in mise.toml files. This ca
 passing `--fuzzy` on the command line.
 """
 env = "MISE_PIN"
+type = "Bool"
+
+[prefer_offline]
+description = "Prefer locally cached data over remote fetches when possible."
+docs = """
+When enabled, mise will prefer locally cached data and avoid remote version fetching when
+possible. Unlike `offline`, this still allows network requests as a fallback.
+
+This is automatically enabled for fast commands like `hook-env`, `activate`, `exec`, `env`,
+`ls`, `current`, `where`, and shims.
+"""
+env = "MISE_PREFER_OFFLINE"
 type = "Bool"
 
 [pipx.registry_url]

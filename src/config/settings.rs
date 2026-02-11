@@ -516,7 +516,7 @@ impl Settings {
     /// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is set, use that
     /// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is not set, use HOURLY
     pub fn fetch_remote_versions_cache(&self) -> Option<Duration> {
-        if env::PREFER_OFFLINE.load(Ordering::Relaxed) {
+        if self.prefer_offline() {
             None
         } else {
             Some(duration::parse_duration(&self.fetch_remote_versions_cache).unwrap())
@@ -525,6 +525,18 @@ impl Settings {
 
     pub fn http_timeout(&self) -> Duration {
         duration::parse_duration(&self.http_timeout).unwrap()
+    }
+
+    /// Returns true if offline mode is enabled via setting or CLI flag/env var.
+    pub fn offline(&self) -> bool {
+        self.offline || *env::OFFLINE
+    }
+
+    /// Returns true if prefer-offline mode is enabled via setting, env var, or
+    /// because the current command is a "fast" command (hook-env, activate, etc.).
+    /// Also returns true if offline mode is enabled (offline implies prefer-offline).
+    pub fn prefer_offline(&self) -> bool {
+        self.offline() || self.prefer_offline || env::PREFER_OFFLINE.load(Ordering::Relaxed)
     }
 
     pub fn env_cache_ttl(&self) -> Duration {

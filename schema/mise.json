@@ -872,6 +872,10 @@
           "description": "Set to false to disable the \"command not found\" handler to autoinstall missing tool versions.",
           "type": "boolean"
         },
+        "offline": {
+          "description": "Disable all HTTP requests. Tools will only use locally cached data.",
+          "type": "boolean"
+        },
         "npm": {
           "type": "object",
           "additionalProperties": false,
@@ -914,6 +918,10 @@
         },
         "pin": {
           "description": "Default to pinning versions when running `mise use` in mise.toml files.",
+          "type": "boolean"
+        },
+        "prefer_offline": {
+          "description": "Prefer locally cached data over remote fetches when possible.",
           "type": "boolean"
         },
         "pipx": {

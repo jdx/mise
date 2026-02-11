@@ -1,7 +1,7 @@
 use crate::backend::aqua::{arch, os};
 use crate::config::Settings;
 use crate::git::{CloneOptions, Git};
-use crate::{dirs, duration::WEEKLY, env, file};
+use crate::{dirs, duration::WEEKLY, file};
 use aqua_registry::{AquaRegistry, AquaRegistryConfig};
 use eyre::Result;
 use std::collections::HashMap;
@@ -70,7 +70,7 @@ impl MiseAquaRegistry {
             cache_dir: path.clone(),
             registry_url: registry_url.map(|s| s.to_string()),
             use_baked_registry: settings.aqua.baked_registry,
-            prefer_offline: env::PREFER_OFFLINE.load(std::sync::atomic::Ordering::Relaxed),
+            prefer_offline: settings.prefer_offline(),
         };
 
         let inner = AquaRegistry::new(config);
@@ -106,7 +106,7 @@ fn fetch_latest_repo(repo: &Git) -> Result<()> {
         return Ok(());
     }
 
-    if env::PREFER_OFFLINE.load(std::sync::atomic::Ordering::Relaxed) {
+    if Settings::get().prefer_offline() {
         trace!("skipping aqua registry update due to PREFER_OFFLINE");
         return Ok(());
     }
