@@ -34,3 +34,20 @@ echo 'LOCAL_VAR = "local"' >>mise.local.toml
 assert "mise set NEW_VAR=new_value" ""
 assert_contains "cat mise.toml" "NEW_VAR"
 assert_not_contains "cat mise.local.toml" "NEW_VAR"
+
+# Test --stdin reads multiline value
+assert "printf 'line1\nline2' | mise set --stdin MULTI_LINE" ""
+assert "mise set MULTI_LINE" "line1
+line2"
+assert "mise set --rm MULTI_LINE" ""
+
+# Test --stdin strips trailing newline
+assert "printf 'hello\n' | mise set --stdin TRAILING_NL" ""
+assert "mise set TRAILING_NL" "hello"
+assert "mise set --rm TRAILING_NL" ""
+
+# Test --stdin fails with multiple keys
+assert_fail "printf 'val' | mise set --stdin KEY1 KEY2"
+
+# Test --stdin fails with KEY=VALUE syntax
+assert_fail "printf 'val' | mise set --stdin KEY1=value"
