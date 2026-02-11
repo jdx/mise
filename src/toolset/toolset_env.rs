@@ -320,6 +320,7 @@ impl Toolset {
         tera_env.insert(PATH_KEY.to_string(), path_env.to_string());
         let mut ctx = config.tera_ctx.clone();
         ctx.insert("env", &tera_env);
+        ctx.insert("tools", &self.build_tools_tera_map(config));
         let mut env_results = self.load_post_env(config, ctx, &tera_env).await?;
 
         // Store add_paths separately to maintain consistent PATH ordering

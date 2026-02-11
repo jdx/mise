@@ -303,12 +303,33 @@ impl Toolset {
         outdated.into_iter().flatten().collect()
     }
 
+    pub fn build_tools_tera_map(
+        &self,
+        config: &Arc<Config>,
+    ) -> HashMap<String, HashMap<String, String>> {
+        let mut tools_map: HashMap<String, HashMap<String, String>> = HashMap::new();
+        for (_, tv) in self.list_current_installed_versions(config) {
+            let tool_name = tv.ba().tool_name.clone();
+            let short = tv.ba().short.clone();
+            let version = tv.version.clone();
+            let path = tv.install_path().to_string_lossy().to_string();
+            let inner =
+                HashMap::from([("version".to_string(), version), ("path".to_string(), path)]);
+            tools_map.entry(tool_name.clone()).or_insert(inner.clone());
+            if short != tool_name {
+                tools_map.entry(short).or_insert(inner);
+            }
+        }
+        tools_map
+    }
+
     pub async fn tera_ctx(&self, config: &Arc<Config>) -> Result<&tera::Context> {
         self.tera_ctx
             .get_or_try_init(async || {
                 let env = self.full_env(config).await?;
                 let mut ctx = config.tera_ctx.clone();
                 ctx.insert("env", &env);
+                ctx.insert("tools", &self.build_tools_tera_map(config));
                 Ok(ctx)
             })
             .await
