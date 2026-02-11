@@ -864,10 +864,11 @@ struct ResolvedPackage {
     basename: String,
 }
 
-/// Packages to skip during dependency resolution
+/// Packages to skip during dependency resolution:
 /// - Virtual packages (__osx, __glibc, etc.) represent system requirements
 /// - Build-only constraints (python_abi) don't provide runtime files
 /// - System-provided libraries (gcc, vc runtime) should be installed separately
+///
 /// Note: python/perl/ruby are NOT skipped because some tools (e.g. vim) dynamically
 /// link against libpython/libperl and need the shared libraries at runtime.
 const SKIP_PACKAGES: &[&str] = &[
