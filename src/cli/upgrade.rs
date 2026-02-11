@@ -12,7 +12,7 @@ use crate::toolset::{
 };
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::{config, exit, ui};
+use crate::{config, exit, runtime_symlinks, ui};
 use console::Term;
 use demand::DemandOption;
 use eyre::{Context, Result, eyre};
@@ -259,10 +259,11 @@ impl Upgrade {
         // Reset config after upgrades so tracked configs resolve with new versions
         *config = Config::reset().await?;
 
-        // Rebuild shims and runtime symlinks BEFORE getting versions needed by tracked configs
+        // Rebuild symlinks BEFORE getting versions needed by tracked configs
         // This ensures "latest" symlinks point to the new versions, not the old ones
-        let ts = config.get_toolset().await?;
-        config::rebuild_shims_and_runtime_symlinks(config, ts, &successful_versions).await?;
+        runtime_symlinks::rebuild(config)
+            .await
+            .wrap_err("failed to rebuild runtime symlinks")?;
 
         // Get versions needed by tracked configs AFTER upgrade
         // This ensures we don't uninstall versions still needed by other projects
@@ -297,6 +298,9 @@ impl Upgrade {
                 }
             }
         }
+
+        let ts = config.get_toolset().await?;
+        config::rebuild_shims_and_runtime_symlinks(config, ts, &successful_versions).await?;
 
         if successful_versions.iter().any(|v| v.short() == "python") {
             PIPXBackend::reinstall_all(config)
