@@ -254,6 +254,14 @@ impl TestTool {
             Some(0) => {}
             Some(code) => {
                 if code == 127 {
+                    // Show captured stdout (which may include stderr via 2>&1)
+                    // to help diagnose dynamic linker or missing library errors
+                    if let Ok(stdout) = String::from_utf8(res.stdout.clone()) {
+                        let stdout = stdout.trim();
+                        if !stdout.is_empty() {
+                            info!("command output:\n{stdout}");
+                        }
+                    }
                     let bin_dirs = backend.list_bin_paths(config, &tv).await?;
                     for bin_dir in &bin_dirs {
                         let bins = file::ls(bin_dir)?
