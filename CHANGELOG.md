@@ -1,5 +1,20 @@
 # Changelog
 
+## [2026.2.11](https://github.com/jdx/mise/compare/v2026.2.10..v2026.2.11) - 2026-02-12
+
+### 🚀 Features
+
+- **(env)** support array access for multiple tool versions in tera templates by @jdx in [#8129](https://github.com/jdx/mise/pull/8129)
+
+### 🐛 Bug Fixes
+
+- **(hook-env)** watch files accessed by tera template functions by @jdx in [#8122](https://github.com/jdx/mise/pull/8122)
+
+### 📦 Registry
+
+- added mutagen by @tony-sol in [#8125](https://github.com/jdx/mise/pull/8125)
+- add communique by @jdx in [#8126](https://github.com/jdx/mise/pull/8126)
+
 ## [2026.2.10](https://github.com/jdx/mise/compare/v2026.2.9..v2026.2.10) - 2026-02-12
 
 ### 🚀 Features
