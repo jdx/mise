@@ -54,6 +54,13 @@ pub struct ToolInfo {
     pub path: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum ToolInfos {
+    Single(ToolInfo),
+    Multiple(Vec<ToolInfo>),
+}
+
 /// a toolset is a collection of tools for various plugins
 ///
 /// one example is a .tool-versions file
@@ -311,8 +318,8 @@ impl Toolset {
         outdated.into_iter().flatten().collect()
     }
 
-    pub fn build_tools_tera_map(&self, config: &Arc<Config>) -> HashMap<String, ToolInfo> {
-        let mut tools_map: HashMap<String, ToolInfo> = HashMap::new();
+    pub fn build_tools_tera_map(&self, config: &Arc<Config>) -> HashMap<String, ToolInfos> {
+        let mut tools_map: HashMap<String, Vec<ToolInfo>> = HashMap::new();
         for (_, tv) in self.list_current_installed_versions(config) {
             let tool_name = tv.ba().tool_name.clone();
             let short = tv.ba().short.clone();
@@ -320,12 +327,25 @@ impl Toolset {
                 version: tv.version.clone(),
                 path: tv.install_path().to_string_lossy().to_string(),
             };
-            tools_map.entry(tool_name.clone()).or_insert(info.clone());
+            tools_map
+                .entry(tool_name.clone())
+                .or_default()
+                .push(info.clone());
             if short != tool_name {
-                tools_map.entry(short).or_insert(info);
+                tools_map.entry(short).or_default().push(info);
             }
         }
         tools_map
+            .into_iter()
+            .map(|(k, v)| {
+                let infos = if v.len() == 1 {
+                    ToolInfos::Single(v.into_iter().next().unwrap())
+                } else {
+                    ToolInfos::Multiple(v)
+                };
+                (k, infos)
+            })
+            .collect()
     }
 
     pub async fn tera_ctx(&self, config: &Arc<Config>) -> Result<&tera::Context> {
