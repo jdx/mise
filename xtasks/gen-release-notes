@@ -107,16 +107,16 @@ echo "Raw output:"
 cat "$output_file"
 
 # Parse title from first line and body from rest
-title=$(echo "$output" | head -1)
-body=$(echo "$output" | tail -n +3)
+title=$(printf '%s\n' "$output" | head -1)
+body=$(printf '%s\n' "$output" | tail -n +3)
 
 # Validate we got non-empty output
 if [[ -z $body ]]; then
-	echo "Error: Empty body after parsing"
+	echo "Error: Empty body after parsing" >&2
 	exit 1
 fi
 
 # Write parsed results to output directory
-echo "$title" >"$output_dir/title"
-echo "$body" >"$output_dir/notes"
+printf '%s\n' "$title" >"$output_dir/title"
+printf '%s\n' "$body" >"$output_dir/notes"
 echo "Wrote title and notes to $output_dir"
