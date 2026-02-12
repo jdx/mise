@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+# Test that shell aliases using template functions like read_file()
+# update when the referenced file changes, without needing to cd away and back.
+# See: https://github.com/jdx/mise/discussions/8121
+
+# Create a file that will be read by the template
+echo "initial value" >dynamic.txt
+
+cat >mise.toml <<'EOF'
+[shell_alias]
+debug = "echo '{{ read_file(path='dynamic.txt') | trim }}'"
+EOF
+
+# Establish initial session
+unset __MISE_SESSION
+unset __MISE_DIFF
+assert_contains "mise hook-env -s bash --force" "initial value"
+eval "$(mise hook-env -s bash --force)"
+
+# Change the referenced file (NOT the config file)
+sleep 1 # ensure mtime difference even on filesystems with 1-second resolution
+echo "updated value" >dynamic.txt
+
+# hook-env should detect the file change and re-evaluate the template
+# Without the fix, this will produce no output (fast-path exit) because
+# only mise.toml mtime is checked, not dynamic.txt
+output=$(mise hook-env -s bash)
+if [[ $output == *"updated value"* ]]; then
+	ok "alias updated after referenced file changed"
+else
+	fail "expected alias with 'updated value' but got: '$output'"
+fi

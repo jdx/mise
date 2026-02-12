@@ -186,6 +186,18 @@ pub fn should_exit_early_fast() -> bool {
             return false;
         }
     }
+    // Check if any files accessed by tera template functions have been modified
+    for path in &PREV_SESSION.tera_files {
+        if let Ok(metadata) = path.metadata() {
+            if let Ok(modified) = metadata.modified()
+                && mtime_to_millis(modified) > PREV_SESSION.latest_update
+            {
+                return false;
+            }
+        } else if !path.exists() {
+            return false;
+        }
+    }
     // Check if data dir has been modified (new tools installed, etc.)
     // Also check if it's been deleted - this requires a full update
     if !dirs::DATA.exists() {
@@ -322,6 +334,10 @@ pub struct HookEnvSession {
     pub env: EnvMap,
     #[serde(default)]
     pub aliases: indexmap::IndexMap<String, String>,
+    /// Files accessed by tera template functions (read_file, hash_file, etc.)
+    /// that should be watched for changes.
+    #[serde(default)]
+    pub tera_files: Vec<PathBuf>,
     dir: Option<PathBuf>,
     env_var_hash: String,
     latest_update: u128,
@@ -356,6 +372,13 @@ pub async fn build_session(
             max_modtime = std::cmp::max(modified, max_modtime);
         }
     }
+    // Include tera template files in max_modtime so latest_update reflects
+    // their mtimes even when watch_files comes from env_cache
+    for tf in &config.tera_files {
+        if let Ok(Ok(modified)) = tf.metadata().map(|m| m.modified()) {
+            max_modtime = std::cmp::max(modified, max_modtime);
+        }
+    }
 
     let loaded_configs: IndexSet<PathBuf> = config.config_files.keys().cloned().collect();
 
@@ -377,6 +400,7 @@ pub async fn build_session(
         env_var_hash: get_mise_env_vars_hashed(),
         env,
         aliases,
+        tera_files: config.tera_files.clone(),
         loaded_configs,
         loaded_tools,
         config_paths,
