@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
+#MISE description="Generate editorialized release notes with Claude Code"
+#USAGE arg "<version>" help="Git tag/version to generate notes for"
+#USAGE arg "<output_dir>" help="Directory to write title and notes files"
+#USAGE arg "[prev_version]" help="Previous version"
 set -euo pipefail
 
-# Generate rich release notes for GitHub releases using Claude Code
-# Usage: ./scripts/gen-release-notes.sh <version> [prev_version]
+# shellcheck disable=SC2154
+version="${usage_version}"
+# shellcheck disable=SC2154
+output_dir="${usage_output_dir}"
+# shellcheck disable=SC2154
+prev_version="${usage_prev_version:-}"
 
-version="${1:-}"
-prev_version="${2:-}"
-
-if [[ -z $version ]]; then
-	echo "Usage: $0 <version> [prev_version]" >&2
-	exit 1
-fi
+mkdir -p "$output_dir"
 
 # Get the git-cliff changelog for context
 # Use the tag range if prev_version provided, otherwise unreleased
@@ -100,4 +102,21 @@ if [[ ! -s $output_file ]]; then
 fi
 
 output=$(cat "$output_file")
-echo "$output"
+
+echo "Raw output:"
+cat "$output_file"
+
+# Parse title from first line and body from rest
+title=$(printf '%s\n' "$output" | head -1)
+body=$(printf '%s\n' "$output" | tail -n +3)
+
+# Validate we got non-empty output
+if [[ -z $body ]]; then
+	echo "Error: Empty body after parsing" >&2
+	exit 1
+fi
+
+# Write parsed results to output directory
+printf '%s\n' "$title" >"$output_dir/title"
+printf '%s\n' "$body" >"$output_dir/notes"
+echo "Wrote title and notes to $output_dir"
