@@ -107,7 +107,7 @@ packages:
         supported_envs:
           - linux
           - darwin
-      - version_constraint: "true"
+      - version_constraint: semver("<= 18.10.0")
         asset: atuin-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         files:
@@ -127,3 +127,34 @@ packages:
         supported_envs:
           - linux
           - darwin
+      - version_constraint: "true"
+        asset: atuin-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: atuin
+            src: "{{.AssetWithoutExt}}/atuin"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+            files:
+              - name: atuin
+        github_artifact_attestations:
+          signer_workflow: atuinsh/atuin/.github/workflows/release.yml
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
