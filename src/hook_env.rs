@@ -188,10 +188,13 @@ pub fn should_exit_early_fast() -> bool {
     }
     // Check if any files accessed by tera template functions have been modified
     for path in &PREV_SESSION.tera_files {
-        if let Ok(metadata) = path.metadata()
-            && let Ok(modified) = metadata.modified()
-            && mtime_to_millis(modified) > PREV_SESSION.latest_update
-        {
+        if let Ok(metadata) = path.metadata() {
+            if let Ok(modified) = metadata.modified()
+                && mtime_to_millis(modified) > PREV_SESSION.latest_update
+            {
+                return false;
+            }
+        } else if !path.exists() {
             return false;
         }
     }

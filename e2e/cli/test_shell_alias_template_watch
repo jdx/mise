@@ -19,7 +19,7 @@ assert_contains "mise hook-env -s bash --force" "initial value"
 eval "$(mise hook-env -s bash --force)"
 
 # Change the referenced file (NOT the config file)
-sleep 0.1 # ensure mtime difference
+sleep 1 # ensure mtime difference even on filesystems with 1-second resolution
 echo "updated value" >dynamic.txt
 
 # hook-env should detect the file change and re-evaluate the template

@@ -32,10 +32,13 @@ fn track_tera_file(path: &Path) {
 
 /// Take all tracked files, clearing the global list.
 pub fn take_tera_accessed_files() -> Vec<PathBuf> {
-    TERA_ACCESSED_FILES
+    let mut files = TERA_ACCESSED_FILES
         .lock()
         .map(|mut f| std::mem::take(&mut *f))
-        .unwrap_or_default()
+        .unwrap_or_default();
+    files.sort();
+    files.dedup();
+    files
 }
 
 pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {

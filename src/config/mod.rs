@@ -65,7 +65,7 @@ pub struct Config {
     pub shorthands: Shorthands,
     pub shell_aliases: EnvWithSources,
     /// Files accessed by tera template functions (read_file, hash_file, etc.)
-    /// during config loading, used to watch for changes in hook-env.
+    /// during shell alias template rendering, used to watch for changes in hook-env.
     pub tera_files: Vec<PathBuf>,
     aliases: AliasMap,
     env: OnceCell<EnvResults>,
