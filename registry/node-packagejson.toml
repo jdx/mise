@@ -1,0 +1,3 @@
+backends = ["vfox:jtl-software/mise-node-packagejson"]
+description = "Read Node.js version from package.json (supports volta.node, engines.node, volta.extends). Delegates to mise's built-in node backend. Compatible with GitHub Actions setup-node."
+detect = ["package.json"]
