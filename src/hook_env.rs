@@ -372,6 +372,13 @@ pub async fn build_session(
             max_modtime = std::cmp::max(modified, max_modtime);
         }
     }
+    // Include tera template files in max_modtime so latest_update reflects
+    // their mtimes even when watch_files comes from env_cache
+    for tf in &config.tera_files {
+        if let Ok(Ok(modified)) = tf.metadata().map(|m| m.modified()) {
+            max_modtime = std::cmp::max(modified, max_modtime);
+        }
+    }
 
     let loaded_configs: IndexSet<PathBuf> = config.config_files.keys().cloned().collect();
 
