@@ -190,10 +190,10 @@ pub fn should_exit_early_fast() -> bool {
     for path in &PREV_SESSION.tera_files {
         if let Ok(metadata) = path.metadata()
             && let Ok(modified) = metadata.modified()
-                && mtime_to_millis(modified) > PREV_SESSION.latest_update
-            {
-                return false;
-            }
+            && mtime_to_millis(modified) > PREV_SESSION.latest_update
+        {
+            return false;
+        }
     }
     // Check if data dir has been modified (new tools installed, etc.)
     // Also check if it's been deleted - this requires a full update
