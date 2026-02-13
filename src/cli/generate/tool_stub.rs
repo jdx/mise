@@ -471,7 +471,7 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         let checksum = format!("blake3:{}", blake3::hash(&bytes).to_hex());
 
         // Detect binary path if this is an archive
-        let bin_path = if self.is_archive_format(url) {
+        let bin_path = if TarFormat::from_file_name(url).is_archive() {
             // Update progress message for extraction and reuse the same progress reporter
             pr.set_message(format!("extract {filename}"));
             match self
@@ -509,7 +509,12 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
 
         // Try extraction using mise's built-in extraction logic (reuse the passed progress reporter)
         let tar_opts = TarOptions {
-            format: TarFormat::Auto,
+            format: TarFormat::from_file_name(
+                &archive_path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy(),
+            ),
             strip_components: 0,
             pr: Some(pr),
             ..Default::default()
@@ -517,12 +522,8 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         file::untar(archive_path, &extracted_dir, &tar_opts)?;
 
         // Check if strip_components would be applied during actual installation
-        let format = TarFormat::from_ext(
-            &archive_path
-                .extension()
-                .unwrap_or_default()
-                .to_string_lossy(),
-        );
+        let format =
+            TarFormat::from_file_name(&archive_path.file_name().unwrap().to_string_lossy());
         let will_strip = file::should_strip_components(archive_path, format)?;
 
         // Find executable files
@@ -548,20 +549,6 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         }
 
         Ok(selected_exe)
-    }
-
-    fn is_archive_format(&self, url: &str) -> bool {
-        // Check if the URL appears to be an archive format that mise can extract
-        url.ends_with(".tar.gz")
-            || url.ends_with(".tgz")
-            || url.ends_with(".tar.xz")
-            || url.ends_with(".txz")
-            || url.ends_with(".tar.bz2")
-            || url.ends_with(".tbz2")
-            || url.ends_with(".tar.zst")
-            || url.ends_with(".tzst")
-            || url.ends_with(".zip")
-            || url.ends_with(".7z")
     }
 
     fn find_executables(&self, dir: &std::path::Path) -> Result<Vec<String>> {

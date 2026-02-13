@@ -140,7 +140,9 @@ impl JavaPlugin {
                 tarball_path,
                 &tv.download_path(),
                 &TarOptions {
-                    format: TarFormat::Auto,
+                    format: TarFormat::from_file_name(
+                        &tarball_path.file_name().unwrap().to_string_lossy(),
+                    ),
                     pr: Some(pr),
                     ..Default::default()
                 },

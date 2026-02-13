@@ -420,27 +420,36 @@ pub fn install_artifact(
 
     // Use TarFormat for format detection
     // Check for explicit format option first, then fall back to file extension
-    let ext = if let Some(format_opt) = lookup_with_fallback(opts, "format") {
-        format_opt
+    let format = if let Some(format_opt) = lookup_with_fallback(opts, "format") {
+        file::TarFormat::from_ext(&format_opt)
     } else {
-        file_path
-            .extension()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_string()
+        file::TarFormat::from_file_name(
+            &file_path.file_name().unwrap_or_default().to_string_lossy(),
+        )
     };
-    let format = file::TarFormat::from_ext(&ext);
 
     // Get file extension and detect format
     let file_name = file_path.file_name().unwrap().to_string_lossy();
 
-    // Check if it's a compressed binary (not a tar archive)
-    let is_compressed_binary =
-        !file_name.contains(".tar") && matches!(ext.as_str(), "gz" | "xz" | "bz2" | "zst");
-
-    if is_compressed_binary {
+    if !format.is_archive() {
         // Handle compressed single binary
+        let ext = if file_name.ends_with(".tar.gz") {
+            "tar.gz".to_string()
+        } else if file_name.ends_with(".tar.xz") {
+            "tar.xz".to_string()
+        } else if file_name.ends_with(".tar.bz2") {
+            "tar.bz2".to_string()
+        } else if file_name.ends_with(".tar.zst") {
+            "tar.zst".to_string()
+        } else {
+            Path::new(&*file_name)
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string()
+        };
         let decompressed_name = file_name.trim_end_matches(&format!(".{}", ext));
+
         // Determine the destination path with support for bin_path
         let dest = if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
             let bin_path = template_string(&bin_path_template, tv);
@@ -455,13 +464,15 @@ pub fn install_artifact(
             install_path.join(cleaned_name)
         };
 
-        match ext.as_str() {
-            "gz" => file::un_gz(file_path, &dest)?,
-            "xz" => file::un_xz(file_path, &dest)?,
-            "bz2" => file::un_bz2(file_path, &dest)?,
-            "zst" => file::un_zst(file_path, &dest)?,
-            _ => unreachable!(),
-        }
+        file::untar(
+            file_path,
+            &dest,
+            &file::TarOptions {
+                format,
+                pr,
+                ..Default::default()
+            },
+        )?;
 
         file::make_executable(&dest)?;
     } else if format == file::TarFormat::Raw {
