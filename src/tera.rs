@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::iter::once;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
@@ -17,6 +18,28 @@ use crate::cmd::cmd;
 use crate::config::Settings;
 use crate::env_diff::EnvMap;
 use crate::{dirs, duration, env, hash};
+
+/// Global tracker for files accessed during tera template rendering.
+/// Functions like `read_file`, `hash_file`, `file_size`, and `last_modified`
+/// push paths here so that hook-env can watch them for changes.
+static TERA_ACCESSED_FILES: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+fn track_tera_file(path: &Path) {
+    if let Ok(mut files) = TERA_ACCESSED_FILES.lock() {
+        files.push(path.to_path_buf());
+    }
+}
+
+/// Take all tracked files, clearing the global list.
+pub fn take_tera_accessed_files() -> Vec<PathBuf> {
+    let mut files = TERA_ACCESSED_FILES
+        .lock()
+        .map(|mut f| std::mem::take(&mut *f))
+        .unwrap_or_default();
+    files.sort();
+    files.dedup();
+    files
+}
 
 pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     let mut context = Context::new();
@@ -129,6 +152,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
         move |input: &Value, args: &HashMap<String, Value>| match input {
             Value::String(s) => {
                 let path = Path::new(s);
+                track_tera_file(path);
                 let mut hash = hash::file_hash_blake3(path, None).unwrap();
                 if let Some(len) = args.get("len").and_then(Value::as_u64) {
                     hash = hash.chars().take(len as usize).collect();
@@ -230,6 +254,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
         move |input: &Value, _args: &HashMap<String, Value>| match input {
             Value::String(s) => {
                 let p = Path::new(s);
+                track_tera_file(p);
                 let metadata = p.metadata()?;
                 let size = metadata.len();
                 Ok(Value::Number(size.into()))
@@ -242,6 +267,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
         move |input: &Value, _args: &HashMap<String, Value>| match input {
             Value::String(s) => {
                 let p = Path::new(s);
+                track_tera_file(p);
                 let metadata = p.metadata()?;
                 let modified = metadata.modified()?;
                 let modified = modified.duration_since(std::time::UNIX_EPOCH).unwrap();
@@ -445,6 +471,7 @@ pub fn tera_read_file(
                     PathBuf::from(path_str)
                 };
 
+                track_tera_file(&path);
                 match std::fs::read_to_string(&path) {
                     Ok(contents) => Ok(Value::String(contents)),
                     Err(e) => {

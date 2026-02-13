@@ -118,7 +118,23 @@ Generate a flamegraph for performance analysis
 
 ## `gen-release-notes`
 
-- **Usage**: `gen-release-notes`
+- **Usage**: `gen-release-notes <ARGS>…`
+
+Generate editorialized release notes with Claude Code
+
+### Arguments
+
+#### `<version>`
+
+Git tag/version to generate notes for
+
+#### `<output_dir>`
+
+Directory to write title and notes files
+
+#### `[prev_version]`
+
+Previous version
 
 ## `install-dev`
 

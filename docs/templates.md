@@ -137,10 +137,15 @@ These variables offer key information about the current environment:
 - `xdg_config_home: PathBuf` - Points to the directory of XDG config home
 - `xdg_data_home: PathBuf` - Points to the directory of XDG data home
 - `xdg_state_home: PathBuf` - Points to the directory of XDG state home
-- `tools: HashMap<String, ToolInfo>` – Maps installed tool names to their info.
+- `tools: HashMap<String, ToolInfo | ToolInfo[]>` – Maps installed tool names to their info.
   Available in task templates and env directives with `tools = true`.
-  - `tools.<name>.version: String` – The resolved version (e.g., `"22.1.0"`)
-  - `tools.<name>.path: String` – The install path
+  - When a single version is installed:
+    - `tools.<name>.version: String` – The resolved version (e.g., `"22.1.0"`)
+    - `tools.<name>.path: String` – The install path
+  - When multiple versions are installed, it becomes an array:
+    - `tools.<name>[0].version: String` – The first version
+    - `tools.<name>[0].path: String` – The first install path
+    - `tools.<name>[1].version: String` – The second version, etc.
 
 In **task run scripts**, mise also exposes a `usage` map when the task has a usage
 specification (see [Task Arguments](/tasks/task-arguments#usage-field)):

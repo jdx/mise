@@ -813,6 +813,7 @@ type = "String"
 [java.shorthand_vendor]
 default = "openjdk"
 description = "Shorthand for Java. Used when installing Java without a vendor prefix."
+env = "MISE_JAVA_SHORTHAND_VENDOR"
 type = "String"
 
 [jobs]

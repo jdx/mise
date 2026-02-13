@@ -8,7 +8,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.2.9"
+version = "2026.2.11"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
