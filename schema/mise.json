@@ -812,6 +812,7 @@
           "type": "string"
         },
         "java": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "shorthand_vendor": {
