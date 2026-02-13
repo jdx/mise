@@ -16,7 +16,7 @@ not already installed) and makes it the global default:
 
 ```sh
 mise use -g java@openjdk-21
-mise use -g java@21         # alternate shorthands for openjdk-only
+mise use -g java@21         # alternate shorthands for openjdk
 ```
 
 You can also install a jdk from a different vendor. To get the latest version from a vendor just use the
@@ -32,8 +32,7 @@ mise use -g java@corretto-21
 See available versions with `mise ls-remote java`.
 
 ::: warning
-Note that shorthand versions (like `21` in the example) use [`OpenJDK`](https://openjdk.org/) as the vendor.
-The OpenJDK versions will only be updated for a 6-month period. Updates and security patches will not be available after this short period. This also applies for LTS versions.
+Note that shorthand versions (like `21` in the example) use [`OpenJDK`](https://openjdk.org/) as the default vendor. The default vendor can be changed with the setting [`java.shorthand_vendor`](../configuration/settings.md#java.shorthand_vendor). The OpenJDK versions will only be updated for a 6-month period. Updates and security patches will not be available after this short period. This also applies for LTS versions.
 
 For more information on which JDK to choose, see <https://whichjdk.com>.
 :::

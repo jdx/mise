@@ -76,7 +76,7 @@ impl JavaPlugin {
 
                 for m in self.download_java_metadata(&release_type).await? {
                     // add openjdk short versions like "java@17.0.0" which default to openjdk
-                    if m.vendor == "openjdk" {
+                    if m.vendor == Settings::get().java.shorthand_vendor {
                         metadata.insert(m.version.to_string(), m.clone());
                     }
                     metadata.insert(m.to_string(), m);
@@ -250,7 +250,7 @@ impl JavaPlugin {
     fn tv_to_java_version(&self, tv: &ToolVersion) -> String {
         if regex!(r"^\d").is_match(&tv.version) {
             // undo openjdk shorthand
-            format!("openjdk-{}", tv.version)
+            format!("{}-{}", Settings::get().java.shorthand_vendor, tv.version)
         } else {
             tv.version.clone()
         }
