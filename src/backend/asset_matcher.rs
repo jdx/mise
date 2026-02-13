@@ -315,7 +315,7 @@ impl AssetPicker {
     }
 
     fn score_format_preferences(&self, asset: &str) -> i32 {
-        let format = TarFormat::from_file_name(&asset);
+        let format = TarFormat::from_file_name(asset);
 
         if format == TarFormat::Zip {
             if self.target_os == "windows" {
