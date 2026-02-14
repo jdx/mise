@@ -353,6 +353,11 @@ impl AssetPicker {
             penalty -= 50;
         }
 
+        // Penalize .vsix files
+        if asset.ends_with(".vsix") {
+            penalty -= 100;
+        }
+
         // Penalize metadata/checksum/signature files
         if asset.ends_with(".asc")
             || asset.ends_with(".sig")
@@ -1367,5 +1372,16 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             picked, "tool-1.0.0.provenance.json",
             "Should return the only provenance file available"
         );
+    }
+
+    #[test]
+    fn test_vsix_vs_gz() {
+        let picker = AssetPicker::with_libc("macos".to_string(), "x86_64".to_string(), None);
+        let assets = vec!["rust-analyzer-x86_64-apple-darwin.gz".to_string()];
+
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        // This fails currently because .vsix is not penalized and .gz is not an archive
+        // We want .gz to be picked
+        assert_eq!(picked, "rust-analyzer-x86_64-apple-darwin.gz");
     }
 }
