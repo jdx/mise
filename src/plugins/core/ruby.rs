@@ -628,7 +628,7 @@ impl RubyPlugin {
                 format: file::TarFormat::TarGz,
                 strip_components: 1,
                 pr: Some(ctx.pr.as_ref()),
-                ..Default::default()
+                preserve_mtime: true,
             },
         )?;
 

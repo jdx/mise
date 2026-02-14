@@ -144,7 +144,8 @@ impl JavaPlugin {
                         &tarball_path.file_name().unwrap().to_string_lossy(),
                     ),
                     pr: Some(pr),
-                    ..Default::default()
+                    strip_components: 0,
+                    preserve_mtime: true,
                 },
             )?,
         }

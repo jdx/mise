@@ -11,7 +11,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
-use crate::file::TarOptions;
+use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
@@ -141,9 +141,10 @@ impl ZigPlugin {
             tarball_path,
             &tv.install_path(),
             &TarOptions {
+                format: TarFormat::from_file_name(&filename),
                 strip_components: 1,
                 pr: Some(ctx.pr.as_ref()),
-                ..Default::default()
+                preserve_mtime: true,
             },
         )?;
 

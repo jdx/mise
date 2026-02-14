@@ -340,7 +340,8 @@ impl HttpBackend {
             &file::TarOptions {
                 format: file_info.format,
                 pr,
-                ..Default::default()
+                strip_components: 0,
+                preserve_mtime: true,
             },
         )?;
 

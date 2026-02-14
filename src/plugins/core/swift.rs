@@ -95,7 +95,7 @@ impl SwiftPlugin {
                     format: file::TarFormat::TarGz,
                     pr: Some(ctx.pr.as_ref()),
                     strip_components: 1,
-                    ..Default::default()
+                    preserve_mtime: true,
                 },
             )?;
         }

@@ -144,7 +144,7 @@ impl ErlangPlugin {
                 strip_components: 0,
                 pr: Some(ctx.pr.as_ref()),
                 format: file::TarFormat::TarGz,
-                ..Default::default()
+                preserve_mtime: true,
             },
         )?;
 
@@ -231,7 +231,7 @@ impl ErlangPlugin {
                 strip_components: 0,
                 pr: Some(ctx.pr.as_ref()),
                 format: file::TarFormat::TarGz,
-                ..Default::default()
+                preserve_mtime: true,
             },
         )?;
         Ok(Some(tv))

@@ -517,7 +517,7 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
             ),
             strip_components: 0,
             pr: Some(pr),
-            ..Default::default()
+            preserve_mtime: true,
         };
         file::untar(archive_path, &extracted_dir, &tar_opts)?;
 

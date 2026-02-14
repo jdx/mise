@@ -704,7 +704,7 @@ pub fn un_bz2(input: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-#[derive(Default, Clone, Copy, PartialEq, strum::EnumString, strum::Display)]
+#[derive(Debug, Clone, Copy, PartialEq, strum::EnumString, strum::Display)]
 pub enum TarFormat {
     #[strum(serialize = "tar.gz", serialize = "tgz")]
     TarGz,
@@ -728,7 +728,6 @@ pub enum TarFormat {
     Zip,
     #[strum(serialize = "7z")]
     SevenZip,
-    #[default]
     #[strum(serialize = "raw")]
     Raw,
 }
@@ -781,17 +780,6 @@ pub struct TarOptions<'a> {
     pub pr: Option<&'a dyn SingleReport>,
     /// When false, files will be extracted with current timestamp instead of archive's mtime
     pub preserve_mtime: bool,
-}
-
-impl<'a> Default for TarOptions<'a> {
-    fn default() -> Self {
-        Self {
-            format: TarFormat::default(),
-            strip_components: 0,
-            pr: None,
-            preserve_mtime: true, // Default to preserving mtime for backward compatibility
-        }
-    }
 }
 
 pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
@@ -1500,7 +1488,8 @@ mod tests {
             &TarOptions {
                 format: TarFormat::Gz,
                 pr: None,
-                ..Default::default()
+                strip_components: 0,
+                preserve_mtime: true,
             },
         )
         .unwrap();

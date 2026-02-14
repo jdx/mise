@@ -289,7 +289,8 @@ impl CondaBackend {
             let tar_opts = TarOptions {
                 format: file::TarFormat::TarBz2,
                 pr: Some(ctx.pr.as_ref()),
-                ..Default::default()
+                strip_components: 0,
+                preserve_mtime: true,
             };
             file::untar(tarball_path, install_path, &tar_opts)?;
         } else {
@@ -334,7 +335,8 @@ impl CondaBackend {
             let tar_opts = TarOptions {
                 format: file::TarFormat::TarZst,
                 pr: Some(ctx.pr.as_ref()),
-                ..Default::default()
+                strip_components: 0,
+                preserve_mtime: true,
             };
             file::untar(&pkg_tar_path, install_path, &tar_opts)?;
         } else {

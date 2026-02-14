@@ -155,7 +155,8 @@ impl GoPlugin {
                 &TarOptions {
                     format: TarFormat::TarGz,
                     pr: Some(pr),
-                    ..Default::default()
+                    strip_components: 0,
+                    preserve_mtime: true,
                 },
             )?;
         }

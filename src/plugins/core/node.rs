@@ -116,7 +116,7 @@ impl NodePlugin {
                         format: TarFormat::TarGz,
                         strip_components: 1,
                         pr: Some(ctx.pr.as_ref()),
-                        ..Default::default()
+                        preserve_mtime: true,
                     },
                 )?;
                 Ok(())
@@ -175,7 +175,8 @@ impl NodePlugin {
             &TarOptions {
                 format: TarFormat::TarGz,
                 pr: Some(ctx.pr.as_ref()),
-                ..Default::default()
+                strip_components: 0,
+                preserve_mtime: true,
             },
         )?;
         self.exec_configure(ctx, opts)?;
