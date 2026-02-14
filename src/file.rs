@@ -1454,4 +1454,61 @@ mod tests {
         assert!(result.contains(&PathBuf::from("a/b")));
         assert!(result.contains(&PathBuf::from("a")));
     }
+
+    #[test]
+    fn test_tar_format_from_file_name() {
+        assert_eq!(TarFormat::from_file_name("foo.tar.gz"), TarFormat::TarGz);
+        assert_eq!(TarFormat::from_file_name("foo.tgz"), TarFormat::TarGz);
+        assert_eq!(TarFormat::from_file_name("foo.tar.xz"), TarFormat::TarXz);
+        assert_eq!(TarFormat::from_file_name("foo.txz"), TarFormat::TarXz);
+        assert_eq!(TarFormat::from_file_name("foo.tar.bz2"), TarFormat::TarBz2);
+        assert_eq!(TarFormat::from_file_name("foo.tbz2"), TarFormat::TarBz2);
+        assert_eq!(TarFormat::from_file_name("foo.tar.zst"), TarFormat::TarZst);
+        assert_eq!(TarFormat::from_file_name("foo.tzst"), TarFormat::TarZst);
+        assert_eq!(TarFormat::from_file_name("foo.tar"), TarFormat::Tar);
+        assert_eq!(TarFormat::from_file_name("foo.zip"), TarFormat::Zip);
+        assert_eq!(TarFormat::from_file_name("foo.7z"), TarFormat::SevenZip);
+        assert_eq!(TarFormat::from_file_name("foo.gz"), TarFormat::Gz);
+        assert_eq!(TarFormat::from_file_name("foo.xz"), TarFormat::Xz);
+        assert_eq!(TarFormat::from_file_name("foo.bz2"), TarFormat::Bz2);
+        assert_eq!(TarFormat::from_file_name("foo.zst"), TarFormat::Zst);
+        assert_eq!(TarFormat::from_file_name("foo"), TarFormat::Raw);
+        assert_eq!(TarFormat::from_file_name("foo.txt"), TarFormat::Raw);
+    }
+
+    #[test]
+    fn test_untar_single_file() {
+        use flate2::Compression;
+        use flate2::write::GzEncoder;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let src_path = dir.path().join("test.gz");
+        let dest_path = dir.path().join("test-out");
+
+        // Create a dummy gzip file
+        let file = File::create(&src_path).unwrap();
+        let mut encoder = GzEncoder::new(file, Compression::default());
+        encoder.write_all(b"hello world").unwrap();
+        encoder.finish().unwrap();
+
+        // untar (decompress) it
+        untar(
+            &src_path,
+            &dest_path,
+            &TarOptions {
+                format: TarFormat::Gz,
+                pr: None,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        // Verify output
+        assert!(dest_path.exists());
+        assert!(dest_path.is_file());
+        let content = std::fs::read_to_string(&dest_path).unwrap();
+        assert_eq!(content, "hello world");
+    }
 }
