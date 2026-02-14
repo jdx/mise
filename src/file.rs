@@ -837,17 +837,7 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
             let name = archive.file_name().unwrap().to_string_lossy();
             let name_str: &str = name.as_ref();
 
-            let ext = if name_str.ends_with(".tar.gz") {
-                "tar.gz"
-            } else if name_str.ends_with(".tar.xz") {
-                "tar.xz"
-            } else if name_str.ends_with(".tar.bz2") {
-                "tar.bz2"
-            } else if name_str.ends_with(".tar.zst") {
-                "tar.zst"
-            } else {
-                archive.extension().and_then(|s| s.to_str()).unwrap_or("")
-            };
+            let ext = archive.extension().and_then(|s| s.to_str()).unwrap_or("");
 
             let name = if name_str.ends_with(ext) && !ext.is_empty() {
                 &name_str[..name_str.len() - ext.len() - 1]

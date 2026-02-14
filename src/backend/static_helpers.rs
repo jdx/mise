@@ -431,23 +431,13 @@ pub fn install_artifact(
     // Get file extension and detect format
     let file_name = file_path.file_name().unwrap().to_string_lossy();
 
-    if !format.is_archive() {
+    if !format.is_archive() && format != file::TarFormat::Raw {
         // Handle compressed single binary
-        let ext = if file_name.ends_with(".tar.gz") {
-            "tar.gz".to_string()
-        } else if file_name.ends_with(".tar.xz") {
-            "tar.xz".to_string()
-        } else if file_name.ends_with(".tar.bz2") {
-            "tar.bz2".to_string()
-        } else if file_name.ends_with(".tar.zst") {
-            "tar.zst".to_string()
-        } else {
-            Path::new(&*file_name)
-                .extension()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_string()
-        };
+        let ext = Path::new(&*file_name)
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
         let decompressed_name = file_name.trim_end_matches(&format!(".{}", ext));
 
         // Determine the destination path with support for bin_path
