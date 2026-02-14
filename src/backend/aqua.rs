@@ -1418,7 +1418,7 @@ impl AquaBackend {
         let first_bin_path = bin_paths
             .first()
             .expect("at least one bin path should exist");
-        let mut tar_opts = TarOptions {
+        let tar_opts = TarOptions {
             format: format.parse().unwrap_or_default(),
             pr: Some(ctx.pr.as_ref()),
             strip_components: 0,
