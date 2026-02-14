@@ -1409,7 +1409,7 @@ impl AquaBackend {
             .expect("at least one bin path should exist");
         let mut tar_opts = TarOptions {
             pr: Some(ctx.pr.as_ref()),
-            ..TarOptions::new(format.parse().unwrap_or(TarFormat::Raw))
+            ..TarOptions::new(TarFormat::from_ext(format))
         };
         let mut make_executable = false;
         if let AquaPackageType::GithubArchive = pkg.r#type {
