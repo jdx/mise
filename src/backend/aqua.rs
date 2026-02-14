@@ -1428,14 +1428,9 @@ impl AquaBackend {
         if let AquaPackageType::GithubArchive = pkg.r#type {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
         } else if let AquaPackageType::GithubContent = pkg.r#type {
-            if pkg.path.is_some() {
-                file::create_dir_all(&install_path)?;
-                file::copy(&tarball_path, first_bin_path)?;
-                make_executable = true;
-            } else {
-                tar_opts.strip_components = 1;
-                file::untar(&tarball_path, &install_path, &tar_opts)?;
-            }
+            file::create_dir_all(&install_path)?;
+            file::copy(&tarball_path, first_bin_path)?;
+            make_executable = true;
         } else if format == "raw" {
             file::create_dir_all(&install_path)?;
             file::copy(&tarball_path, first_bin_path)?;
