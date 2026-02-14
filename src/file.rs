@@ -734,20 +734,17 @@ pub enum TarFormat {
 
 impl TarFormat {
     pub fn from_file_name(filename: &str) -> Self {
-        let filename_lower = filename.to_lowercase();
+        let filename = filename.to_lowercase();
 
-        if let Some(tar_pos) = filename_lower.rfind(".tar.") {
-            let compression_ext = &filename_lower[tar_pos + 5..];
-            return match compression_ext {
-                "gz" => TarFormat::TarGz,
-                "xz" => TarFormat::TarXz,
-                "bz2" => TarFormat::TarBz2,
-                "zst" => TarFormat::TarZst,
-                _ => TarFormat::Tar,
-            };
+        if let Some(idx) = filename.rfind(".tar.") {
+            let ext = &filename[idx + 1..];
+            let fmt = Self::from_ext(ext);
+            if fmt != TarFormat::Raw {
+                return fmt;
+            }
         }
 
-        if let Some(ext) = Path::new(filename).extension().and_then(|s| s.to_str()) {
+        if let Some(ext) = Path::new(&filename).extension().and_then(|s| s.to_str()) {
             Self::from_ext(ext)
         } else {
             TarFormat::Raw
@@ -755,7 +752,7 @@ impl TarFormat {
     }
 
     pub fn from_ext(ext: &str) -> Self {
-        ext.parse().unwrap_or(TarFormat::Raw)
+        ext.to_lowercase().parse().unwrap_or(TarFormat::Raw)
     }
 
     pub fn is_archive(&self) -> bool {
@@ -1457,6 +1454,7 @@ mod tests {
     #[test]
     fn test_tar_format_from_file_name() {
         assert_eq!(TarFormat::from_file_name("foo.tar.gz"), TarFormat::TarGz);
+        assert_eq!(TarFormat::from_file_name("foo.tgz"), TarFormat::TarGz);
         assert_eq!(TarFormat::from_file_name("foo.tgz"), TarFormat::TarGz);
         assert_eq!(TarFormat::from_file_name("foo.tar.xz"), TarFormat::TarXz);
         assert_eq!(TarFormat::from_file_name("foo.txz"), TarFormat::TarXz);
