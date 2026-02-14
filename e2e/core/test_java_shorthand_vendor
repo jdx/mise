@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+# Test default OpenJDK vendor
+mise i java@17
+assert_not_contains "mise x java@17 -- java -version 2>&1" 'Temurin-17'
+mise cache clear
+
+# Test setting shorthand vendor to Temurin
+mise settings set java.shorthand_vendor temurin
+mise i java@21
+assert_contains "mise x java@21 -- java -version 2>&1" 'Temurin-21'

@@ -811,6 +811,17 @@
           "description": "Only install versions released before this date",
           "type": "string"
         },
+        "java": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "shorthand_vendor": {
+              "default": "openjdk",
+              "description": "Shorthand for Java. Used when installing Java without a vendor prefix.",
+              "type": "string"
+            }
+          }
+        },
         "jobs": {
           "default": 8,
           "description": "How many jobs to run concurrently such as tool installs.",
