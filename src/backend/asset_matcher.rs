@@ -1377,11 +1377,12 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
     #[test]
     fn test_vsix_vs_gz() {
         let picker = AssetPicker::with_libc("macos".to_string(), "x86_64".to_string(), None);
-        let assets = vec!["rust-analyzer-x86_64-apple-darwin.gz".to_string()];
+        let assets = vec![
+            "rust-analyzer-x86_64-apple-darwin.gz".to_string(),
+            "rust-analyzer-x86_64-apple-darwin.vsix".to_string(),
+        ];
 
         let picked = picker.pick_best_asset(&assets).unwrap();
-        // This fails currently because .vsix is not penalized and .gz is not an archive
-        // We want .gz to be picked
         assert_eq!(picked, "rust-analyzer-x86_64-apple-darwin.gz");
     }
 }
