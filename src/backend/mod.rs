@@ -830,6 +830,7 @@ pub trait Backend: Debug + Send + Sync {
             let pkg = crate::package_json::PackageJson::parse(path)?;
             return pkg
                 .package_manager_version(self.id())
+                .or_else(|| pkg.volta_version(self.id()))
                 .ok_or_else(|| eyre::eyre!("no {} version found in package.json", self.id()));
         }
         let contents = file::read_to_string(path)?;

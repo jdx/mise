@@ -11,6 +11,16 @@ use crate::file;
 pub struct PackageJson {
     dev_engines: Option<DevEngines>,
     package_manager: Option<String>,
+    volta: Option<Volta>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Volta {
+    node: Option<String>,
+    npm: Option<String>,
+    yarn: Option<String>,
+    pnpm: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -93,6 +103,17 @@ impl PackageJson {
                 }
                 Some(version.to_string())
             })
+    }
+
+    pub fn volta_version(&self, tool_name: &str) -> Option<String> {
+        let volta = self.volta.as_ref()?;
+        match tool_name {
+            "node" => volta.node.clone(),
+            "npm" => volta.npm.clone(),
+            "yarn" => volta.yarn.clone(),
+            "pnpm" => volta.pnpm.clone(),
+            _ => None,
+        }
     }
 }
 
@@ -355,5 +376,24 @@ mod tests {
             pkg.package_manager_version("bun"),
             Some("1.2.0".to_string())
         );
+    }
+
+    #[test]
+    fn test_volta_version() {
+        let pkg: PackageJson = serde_json::from_str(
+            r#"{
+                "volta": {
+                    "node": "20.0.0",
+                    "npm": "10.0.0",
+                    "yarn": "1.22.19",
+                    "pnpm": "8.0.0"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(pkg.volta_version("node"), Some("20.0.0".to_string()));
+        assert_eq!(pkg.volta_version("npm"), Some("10.0.0".to_string()));
+        assert_eq!(pkg.volta_version("yarn"), Some("1.22.19".to_string()));
+        assert_eq!(pkg.volta_version("pnpm"), Some("8.0.0".to_string()));
     }
 }

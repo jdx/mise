@@ -500,6 +500,7 @@ impl Backend for NodePlugin {
             let pkg = crate::package_json::PackageJson::parse(path)?;
             return pkg
                 .runtime_version("node")
+                .or_else(|| pkg.volta_version("node"))
                 .ok_or_else(|| eyre::eyre!("no node version found in package.json"));
         }
         let body = file::read_to_string(path)?;
