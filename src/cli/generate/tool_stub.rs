@@ -471,7 +471,7 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         let checksum = format!("blake3:{}", blake3::hash(&bytes).to_hex());
 
         // Detect binary path if this is an archive
-        let bin_path = if TarFormat::from_file_name(url).is_archive() {
+        let bin_path = if TarFormat::from_file_name(&filename).is_archive() {
             // Update progress message for extraction and reuse the same progress reporter
             pr.set_message(format!("extract {filename}"));
             match self
