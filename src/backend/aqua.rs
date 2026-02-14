@@ -774,7 +774,7 @@ impl AquaBackend {
 
     fn github_content_url(&self, pkg: &AquaPackage, v: &str) -> String {
         let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        let path = pkg.path.as_deref().unwrap_or_default();
+        let path = pkg.path.as_deref().unwrap();
         format!("https://raw.githubusercontent.com/{gh_id}/{v}/{path}")
     }
 
