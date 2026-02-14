@@ -1,0 +1,8 @@
+aliases = ["dist"]
+backends = [
+  "aqua:axodotdev/cargo-dist",
+  "github:axodotdev/cargo-dist",
+  "cargo:cargo-dist",
+]
+description = "📦 shippable application packaging"
+test = { cmd = "cargo-dist --version", expected = "cargo-dist {{version}}" }
