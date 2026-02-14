@@ -1,5 +1,10 @@
-backends = [
-  "github:charmbracelet/soft-serve[exe=soft]",
-  "asdf:chessmango/asdf-soft-serve",
-]
 description = "The mighty, self-hostable Git server for the command line"
+
+[[backends]]
+full = "github:charmbracelet/soft-serve"
+
+[backends.options]
+exe = "soft"
+
+[[backends]]
+full = "asdf:chessmango/asdf-soft-serve"

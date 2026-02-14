@@ -2,7 +2,10 @@ description = "Flyway by Redgate • Database Migrations Made Easy"
 test = { cmd = "flyway --version", expected = "{{version}}" }
 
 [[backends]]
-full = "github:flyway/flyway[version_prefix=flyway-]"
+full = "github:flyway/flyway"
+
+[backends.options]
+version_prefix = "flyway-"
 
 [backends.options.platforms.macos-arm64]
 asset_pattern = "flyway-commandline-{{ version }}-macosx-arm64.tar.gz"

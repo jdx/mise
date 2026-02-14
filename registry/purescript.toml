@@ -1,5 +1,10 @@
-backends = [
-  "github:purescript/purescript[exe=purs]",
-  "asdf:jrrom/asdf-purescript",
-]
 description = "A strongly-typed language that compiles to JavaScript"
+
+[[backends]]
+full = "github:purescript/purescript"
+
+[backends.options]
+exe = "purs"
+
+[[backends]]
+full = "asdf:jrrom/asdf-purescript"
