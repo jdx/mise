@@ -287,10 +287,8 @@ impl CondaBackend {
             // Legacy format: plain tar.bz2
             ctx.pr.set_message(format!("extract {filename}"));
             let tar_opts = TarOptions {
-                format: file::TarFormat::TarBz2,
                 pr: Some(ctx.pr.as_ref()),
-                strip_components: 0,
-                preserve_mtime: true,
+                ..TarOptions::new(file::TarFormat::TarBz2)
             };
             file::untar(tarball_path, install_path, &tar_opts)?;
         } else {
@@ -333,10 +331,8 @@ impl CondaBackend {
 
         if let Some(pkg_tar_path) = pkg_tar {
             let tar_opts = TarOptions {
-                format: file::TarFormat::TarZst,
                 pr: Some(ctx.pr.as_ref()),
-                strip_components: 0,
-                preserve_mtime: true,
+                ..TarOptions::new(file::TarFormat::TarZst)
             };
             file::untar(&pkg_tar_path, install_path, &tar_opts)?;
         } else {

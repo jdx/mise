@@ -509,15 +509,13 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
 
         // Try extraction using mise's built-in extraction logic (reuse the passed progress reporter)
         let tar_opts = TarOptions {
-            format: TarFormat::from_file_name(
+            pr: Some(pr),
+            ..TarOptions::new(TarFormat::from_file_name(
                 &archive_path
                     .file_name()
                     .unwrap_or_default()
                     .to_string_lossy(),
-            ),
-            strip_components: 0,
-            pr: Some(pr),
-            preserve_mtime: true,
+            ))
         };
         file::untar(archive_path, &extracted_dir, &tar_opts)?;
 

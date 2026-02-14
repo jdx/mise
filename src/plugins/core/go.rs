@@ -153,10 +153,8 @@ impl GoPlugin {
                 tarball_path,
                 tmp_extract_path.path(),
                 &TarOptions {
-                    format: TarFormat::TarGz,
                     pr: Some(pr),
-                    strip_components: 0,
-                    preserve_mtime: true,
+                    ..TarOptions::new(TarFormat::TarGz)
                 },
             )?;
         }

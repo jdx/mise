@@ -625,10 +625,9 @@ impl RubyPlugin {
             &tarball_path,
             &install_path,
             &file::TarOptions {
-                format: file::TarFormat::TarGz,
                 strip_components: 1,
                 pr: Some(ctx.pr.as_ref()),
-                preserve_mtime: true,
+                ..file::TarOptions::new(file::TarFormat::TarGz)
             },
         )?;
 

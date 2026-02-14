@@ -280,10 +280,9 @@ impl PythonPlugin {
             &tarball_path,
             &install,
             &TarOptions {
-                format: TarFormat::from_file_name(filename),
                 strip_components: 1,
                 pr: Some(ctx.pr.as_ref()),
-                preserve_mtime: true,
+                ..TarOptions::new(TarFormat::from_file_name(filename))
             },
         )?;
         if !install.join("bin").exists() {

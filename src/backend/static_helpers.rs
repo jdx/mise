@@ -458,10 +458,8 @@ pub fn install_artifact(
             file_path,
             &dest,
             &file::TarOptions {
-                format,
                 pr,
-                strip_components: 0,
-                preserve_mtime: true,
+                ..file::TarOptions::new(format)
             },
         )?;
 
@@ -503,10 +501,9 @@ pub fn install_artifact(
             strip_components = Some(1);
         }
         let tar_opts = file::TarOptions {
-            format,
             strip_components: strip_components.unwrap_or(0),
             pr,
-            preserve_mtime: true,
+            ..file::TarOptions::new(format)
         };
 
         // Extract with determined strip_components

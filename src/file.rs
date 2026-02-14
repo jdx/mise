@@ -782,6 +782,17 @@ pub struct TarOptions<'a> {
     pub preserve_mtime: bool,
 }
 
+impl<'a> TarOptions<'a> {
+    pub fn new(format: TarFormat) -> Self {
+        Self {
+            format,
+            strip_components: 0,
+            pr: None,
+            preserve_mtime: true,
+        }
+    }
+}
+
 pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
     if opts.format == TarFormat::Zip {
         return unzip(
@@ -1486,10 +1497,8 @@ mod tests {
             &src_path,
             &dest_path,
             &TarOptions {
-                format: TarFormat::Gz,
                 pr: None,
-                strip_components: 0,
-                preserve_mtime: true,
+                ..TarOptions::new(TarFormat::Gz)
             },
         )
         .unwrap();

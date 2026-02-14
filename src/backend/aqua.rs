@@ -1408,10 +1408,8 @@ impl AquaBackend {
             .first()
             .expect("at least one bin path should exist");
         let mut tar_opts = TarOptions {
-            format: format.parse().unwrap_or(TarFormat::Raw),
             pr: Some(ctx.pr.as_ref()),
-            strip_components: 0,
-            preserve_mtime: true,
+            ..TarOptions::new(format.parse().unwrap_or(TarFormat::Raw))
         };
         let mut make_executable = false;
         if let AquaPackageType::GithubArchive = pkg.r#type {
