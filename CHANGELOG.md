@@ -1,5 +1,21 @@
 # Changelog
 
+## [2026.2.13](https://github.com/jdx/mise/compare/v2026.2.12..v2026.2.13) - 2026-02-15
+
+### 📦️ Dependency Updates
+
+- bump sigstore-verification to 0.2 by @jdx in [e8897c9](https://github.com/jdx/mise/commit/e8897c9fbc873fe272495a65e5a88b04b97f3b6d)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`k1LoW/tcmux`](https://github.com/k1LoW/tcmux)
+
+#### Updated Packages (1)
+
+- [`jdx/usage`](https://github.com/jdx/usage)
+
 ## [2026.2.12](https://github.com/jdx/mise/compare/v2026.2.11..v2026.2.12) - 2026-02-14
 
 ### 🚀 Features
