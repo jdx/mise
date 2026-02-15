@@ -94,6 +94,7 @@ ARCH_TYPE = ""
 ---@field env? EnvKey[] Environment variables to set
 ---@field cacheable? boolean Whether the result can be cached (default false)
 ---@field watch_files? string[] Files to watch for cache invalidation
+---@field redact? boolean Whether env vars should be redacted in output (default false)
 
 ---@class MisePathCtx
 ---@field options table Plugin options from mise.toml
