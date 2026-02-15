@@ -1,4 +1,9 @@
-backends = ["github:facebook/buck2[bin=buck2]"]
 description = "A fast, hermetic, multi-language build system"
 # test disabled: facebook replaces assets in-place on "latest" tag causing checksum race conditions
 # test = ["buck2 --version", "buck2"]
+
+[[backends]]
+full = "github:facebook/buck2"
+
+[backends.options]
+bin = "buck2"

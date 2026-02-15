@@ -166,14 +166,13 @@ echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
 
 == Windows
 
+Add the following to your PowerShell profile (`$PROFILE`):
+
 ```powershell
-$shimPath = "$env:USERPROFILE\AppData\Local\mise\shims"
-$currentPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-$newPath = $currentPath + ";" + $shimPath
-[Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+(&mise activate pwsh) | Out-String | Invoke-Expression
 ```
 
-In case you need to open your powershell profile:
+In case you need to open your PowerShell profile:
 
 ```powershell
 # create profile if it doesn't already exist
@@ -182,7 +181,7 @@ if (-not (Test-Path $profile)) { New-Item $profile -Force }
 Invoke-Item $profile
 ```
 
-- If not using powershell, add `<homedir>\AppData\Local\mise\shims` to `PATH`.
+- If not using PowerShell, add `<homedir>\AppData\Local\mise\shims` to `PATH`.
 
 == Other package managers
 

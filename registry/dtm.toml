@@ -1,5 +1,10 @@
-backends = [
-  "github:devstream-io/devstream[exe=dtm]",
-  "asdf:zhenyuanlau/asdf-dtm",
-]
 description = "DevStream: the open-source DevOps toolchain manager (DTM)"
+
+[[backends]]
+full = "github:devstream-io/devstream"
+
+[backends.options]
+exe = "dtm"
+
+[[backends]]
+full = "asdf:zhenyuanlau/asdf-dtm"

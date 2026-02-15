@@ -3,6 +3,8 @@ use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use serde::Serialize;
+
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::config::Config;
@@ -45,6 +47,19 @@ mod tool_version_options;
 mod toolset_env;
 mod toolset_install;
 mod toolset_paths;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ToolInfo {
+    pub version: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum ToolInfos {
+    Single(ToolInfo),
+    Multiple(Vec<ToolInfo>),
+}
 
 /// a toolset is a collection of tools for various plugins
 ///
@@ -303,12 +318,43 @@ impl Toolset {
         outdated.into_iter().flatten().collect()
     }
 
+    pub fn build_tools_tera_map(&self, config: &Arc<Config>) -> HashMap<String, ToolInfos> {
+        let mut tools_map: HashMap<String, Vec<ToolInfo>> = HashMap::new();
+        for (_, tv) in self.list_current_installed_versions(config) {
+            let tool_name = tv.ba().tool_name.clone();
+            let short = tv.ba().short.clone();
+            let info = ToolInfo {
+                version: tv.version.clone(),
+                path: tv.install_path().to_string_lossy().to_string(),
+            };
+            tools_map
+                .entry(tool_name.clone())
+                .or_default()
+                .push(info.clone());
+            if short != tool_name {
+                tools_map.entry(short).or_default().push(info);
+            }
+        }
+        tools_map
+            .into_iter()
+            .map(|(k, v)| {
+                let infos = if v.len() == 1 {
+                    ToolInfos::Single(v.into_iter().next().unwrap())
+                } else {
+                    ToolInfos::Multiple(v)
+                };
+                (k, infos)
+            })
+            .collect()
+    }
+
     pub async fn tera_ctx(&self, config: &Arc<Config>) -> Result<&tera::Context> {
         self.tera_ctx
             .get_or_try_init(async || {
                 let env = self.full_env(config).await?;
                 let mut ctx = config.tera_ctx.clone();
                 ctx.insert("env", &env);
+                ctx.insert("tools", &self.build_tools_tera_map(config));
                 Ok(ctx)
             })
             .await

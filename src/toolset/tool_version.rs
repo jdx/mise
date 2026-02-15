@@ -7,8 +7,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use crate::backend::ABackend;
 use crate::cli::args::BackendArg;
-use crate::config::Config;
-use crate::env;
+use crate::config::{Config, Settings};
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
@@ -227,15 +226,19 @@ impl ToolVersion {
             return build(v);
         }
 
+        let settings = Settings::get();
+        let is_offline = settings.offline();
+
         if v == "latest" {
             if !opts.latest_versions
                 && let Some(v) = backend.latest_installed_version(None)?
             {
                 return build(v);
             }
-            if let Some(v) = backend
-                .latest_version_with_opts(config, None, opts.before_date)
-                .await?
+            if !is_offline
+                && let Some(v) = backend
+                    .latest_version_with_opts(config, None, opts.before_date)
+                    .await?
             {
                 return build(v);
             }
@@ -249,12 +252,14 @@ impl ToolVersion {
                 return build(v.clone());
             }
         }
+        // When OFFLINE, skip ALL remote version fetching regardless of version format
+        if is_offline {
+            return build(v);
+        }
         // In prefer-offline mode (hook-env, activate, exec), skip remote version
         // fetching for fully-qualified versions (e.g. "2.3.2") that aren't installed.
         // Prefix versions like "2" still need remote resolution to find e.g. "2.1.0".
-        if env::PREFER_OFFLINE.load(std::sync::atomic::Ordering::Relaxed)
-            && v.matches('.').count() >= 2
-        {
+        if settings.prefer_offline() && v.matches('.').count() >= 2 {
             return build(v);
         }
         // First try with date filter (common case)

@@ -378,6 +378,35 @@
           "description": "Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after activation to take precedence.",
           "type": "boolean"
         },
+        "age": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "identity_files": {
+              "description": "[experimental] List of age identity files to use for decryption.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "key_file": {
+              "description": "[experimental] Path to the age private key file to use for encryption/decryption.",
+              "type": "string"
+            },
+            "ssh_identity_files": {
+              "description": "[experimental] List of SSH identity files to use for age decryption.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "strict": {
+              "default": true,
+              "description": "If true, fail when age decryption fails (including when age is not available, the key is missing, or the key is invalid). If false, skip decryption and continue in these cases.",
+              "type": "boolean"
+            }
+          }
+        },
         "all_compile": {
           "description": "do not use precompiled binaries for any tool",
           "type": "boolean"
@@ -483,17 +512,6 @@
           "type": "boolean",
           "deprecated": true
         },
-        "conda": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "channel": {
-              "default": "conda-forge",
-              "description": "Default channel for conda packages.",
-              "type": "string"
-            }
-          }
-        },
         "cd": {
           "description": "Path to change to after launching mise",
           "type": "string"
@@ -521,6 +539,17 @@
           "description": "Theme for interactive prompts (default/charm, base16, catppuccin, dracula)",
           "type": "string",
           "enum": ["default", "charm", "base16", "catppuccin", "dracula"]
+        },
+        "conda": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "channel": {
+              "default": "conda-forge",
+              "description": "Default channel for conda packages.",
+              "type": "string"
+            }
+          }
         },
         "debug": {
           "description": "Sets log level to debug",
@@ -614,13 +643,13 @@
           "description": "TTL for cached environments",
           "type": "string"
         },
-        "env_shell_expand": {
-          "description": "Enable shell-style variable expansion in env values (e.g., $FOO, ${BAR:-default})",
-          "type": "boolean"
-        },
         "env_file": {
           "description": "Path to a file containing environment variables to automatically load.",
           "type": "string"
+        },
+        "env_shell_expand": {
+          "description": "Enable shell-style variable expansion in env values (e.g., $FOO, ${BAR:-default})",
+          "type": "boolean"
         },
         "erlang": {
           "type": "object",
@@ -651,19 +680,6 @@
           "description": "Timeout in seconds for HTTP requests to fetch new tool versions in mise.",
           "type": "string"
         },
-        "gix": {
-          "default": true,
-          "description": "Use gix for git operations, set to false to shell out to git.",
-          "type": "boolean"
-        },
-        "global_config_file": {
-          "description": "Path to the global mise config file. Default is `~/.config/mise/config.toml`. This must be an env var.",
-          "type": "string"
-        },
-        "global_config_root": {
-          "description": "Path which is used as `{{config_root}}` for the global config file. Default is `$HOME`. This must be an env var.",
-          "type": "string"
-        },
         "github": {
           "type": "object",
           "additionalProperties": false,
@@ -680,10 +696,23 @@
             }
           }
         },
-        "slsa": {
+        "github_attestations": {
           "default": true,
-          "description": "Enable SLSA provenance verification globally.",
+          "description": "Enable GitHub Artifact Attestations verification for supported tools.",
           "type": "boolean"
+        },
+        "gix": {
+          "default": true,
+          "description": "Use gix for git operations, set to false to shell out to git.",
+          "type": "boolean"
+        },
+        "global_config_file": {
+          "description": "Path to the global mise config file. Default is `~/.config/mise/config.toml`. This must be an env var.",
+          "type": "string"
+        },
+        "global_config_root": {
+          "description": "Path which is used as `{{config_root}}` for the global config file. Default is `$HOME`. This must be an env var.",
+          "type": "string"
         },
         "go_default_packages_file": {
           "default": "~/.default-go-packages",
@@ -722,21 +751,6 @@
           "description": "Use gpg to verify all tool signatures.",
           "type": "boolean"
         },
-        "github_attestations": {
-          "default": true,
-          "description": "Enable GitHub Artifact Attestations verification for supported tools.",
-          "type": "boolean"
-        },
-        "http_timeout": {
-          "default": "30s",
-          "description": "Timeout in seconds for all HTTP requests in mise.",
-          "type": "string"
-        },
-        "http_retries": {
-          "default": 0,
-          "description": "Number of retries for HTTP requests in mise.",
-          "type": "number"
-        },
         "hook_env": {
           "type": "object",
           "additionalProperties": false,
@@ -752,6 +766,16 @@
               "type": "boolean"
             }
           }
+        },
+        "http_retries": {
+          "default": 0,
+          "description": "Number of retries for HTTP requests in mise.",
+          "type": "number"
+        },
+        "http_timeout": {
+          "default": "30s",
+          "description": "Timeout in seconds for all HTTP requests in mise.",
+          "type": "string"
         },
         "idiomatic_version_file": {
           "description": "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc.",
@@ -787,6 +811,17 @@
           "description": "Only install versions released before this date",
           "type": "string"
         },
+        "java": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "shorthand_vendor": {
+              "default": "openjdk",
+              "description": "Shorthand for Java. Used when installing Java without a vendor prefix.",
+              "type": "string"
+            }
+          }
+        },
         "jobs": {
           "default": 8,
           "description": "How many jobs to run concurrently such as tool installs.",
@@ -812,14 +847,14 @@
           "description": "Use libgit2 for git operations, set to false to shell out to git.",
           "type": "boolean"
         },
-        "lockfile": {
-          "default": true,
-          "description": "Create and read lockfiles for tool versions.",
-          "type": "boolean"
-        },
         "locked": {
           "default": false,
           "description": "Require lockfile URLs to be present during installation.",
+          "type": "boolean"
+        },
+        "lockfile": {
+          "default": true,
+          "description": "Create and read lockfiles for tool versions.",
           "type": "boolean"
         },
         "log_level": {
@@ -888,6 +923,10 @@
             }
           }
         },
+        "offline": {
+          "description": "Disable all HTTP requests. Tools will only use locally cached data.",
+          "type": "boolean"
+        },
         "os": {
           "description": "OS to use for precompiled binaries.",
           "type": "string"
@@ -939,6 +978,10 @@
           "default": "7d",
           "description": "How long to wait before updating plugins automatically (note this isn't currently implemented).",
           "type": "string"
+        },
+        "prefer_offline": {
+          "description": "Prefer locally cached data over remote fetches when possible.",
+          "type": "boolean"
         },
         "profile": {
           "description": "Profile to use for mise.${MISE_PROFILE}.toml files.",
@@ -1066,11 +1109,6 @@
           "description": "Connect stdin/stdout/stderr to child processes.",
           "type": "boolean"
         },
-        "terminal_progress": {
-          "default": true,
-          "description": "Enable terminal progress indicators (OSC 9;4) for compatible terminals.",
-          "type": "boolean"
-        },
         "ruby": {
           "type": "object",
           "additionalProperties": false,
@@ -1088,6 +1126,10 @@
               "description": "Path to a file containing default ruby gems to install when installing ruby.",
               "type": "string"
             },
+            "github_attestations": {
+              "description": "Enable GitHub Artifact Attestations verification for precompiled Ruby binaries.",
+              "type": "boolean"
+            },
             "precompiled_arch": {
               "description": "Override architecture identifier for precompiled Ruby binaries.",
               "type": "string"
@@ -1100,10 +1142,6 @@
               "default": "jdx/ruby",
               "description": "URL template or GitHub repo for precompiled Ruby binaries.",
               "type": "string"
-            },
-            "github_attestations": {
-              "description": "Enable GitHub Artifact Attestations verification for precompiled Ruby binaries.",
-              "type": "boolean"
             },
             "ruby_build_opts": {
               "description": "Options to pass to ruby-build.",
@@ -1141,6 +1179,10 @@
               "description": "Path to the cargo home directory. Defaults to `~/.cargo` or `%USERPROFILE%\\.cargo`",
               "type": "string"
             },
+            "default_host": {
+              "description": "Default host triple to pass to `rustup init` via `--default-host`.",
+              "type": "string"
+            },
             "rustup_home": {
               "description": "Path to the rustup home directory. Defaults to `~/.rustup` or `%USERPROFILE%\\.rustup`",
               "type": "string"
@@ -1155,34 +1197,10 @@
           "description": "Suppress all `mise run|watch` output except errors—including what tasks output.",
           "type": "boolean"
         },
-        "age": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "identity_files": {
-              "description": "[experimental] List of age identity files to use for decryption.",
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "key_file": {
-              "description": "[experimental] Path to the age private key file to use for encryption/decryption.",
-              "type": "string"
-            },
-            "ssh_identity_files": {
-              "description": "[experimental] List of SSH identity files to use for age decryption.",
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "strict": {
-              "default": true,
-              "description": "If true, fail when age decryption fails (including when age is not available, the key is missing, or the key is invalid). If false, skip decryption and continue in these cases.",
-              "type": "boolean"
-            }
-          }
+        "slsa": {
+          "default": true,
+          "description": "Enable SLSA provenance verification globally.",
+          "type": "boolean"
         },
         "sops": {
           "type": "object",
@@ -1225,13 +1243,13 @@
               "description": "Show configured env vars when entering a directory with a mise.toml file.",
               "type": "boolean"
             },
-            "show_tools": {
-              "description": "Show configured tools when entering a directory with a mise.toml file.",
-              "type": "boolean"
-            },
             "show_prepare_stale": {
               "default": true,
               "description": "Show warning when prepare providers have stale dependencies.",
+              "type": "boolean"
+            },
+            "show_tools": {
+              "description": "Show configured tools when entering a directory with a mise.toml file.",
               "type": "boolean"
             },
             "truncate": {
@@ -1258,6 +1276,45 @@
         "system_config_file": {
           "description": "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var.",
           "type": "string"
+        },
+        "task": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "disable_spec_from_run_scripts": {
+              "default": false,
+              "description": "Opt out of parsing task run scripts to infer the usage spec (arguments and flags). When enabled, mise will derive the usage spec only from the `usage` field, ignoring any `arg()`, `option()`, or `flag()` templates used in run scripts. This can restore previous behavior and avoid the extra template pass over run scripts when collecting specs.",
+              "type": "boolean"
+            },
+            "monorepo_depth": {
+              "default": 5,
+              "description": "Maximum depth to search for task files in monorepo subdirectories.",
+              "type": "number"
+            },
+            "monorepo_exclude_dirs": {
+              "default": [],
+              "description": "Directory patterns to exclude when discovering monorepo subdirectories.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "monorepo_respect_gitignore": {
+              "default": true,
+              "description": "Whether to respect .gitignore files when discovering monorepo subdirectories.",
+              "type": "boolean"
+            },
+            "source_freshness_equal_mtime_is_fresh": {
+              "default": false,
+              "description": "When source mtime equals output mtime, consider sources fresh (use <=). Default false uses strict < comparison.",
+              "type": "boolean"
+            },
+            "source_freshness_hash_contents": {
+              "default": false,
+              "description": "Use content hashing (blake3) instead of metadata for source freshness. More accurate but slower.",
+              "type": "boolean"
+            }
+          }
         },
         "task_disable_paths": {
           "default": [],
@@ -1289,6 +1346,10 @@
           "description": "Automatically install missing tools when executing tasks.",
           "type": "boolean"
         },
+        "task_show_full_cmd": {
+          "description": "Disable truncation of command lines in task execution output. When true, the full command line will be shown.",
+          "type": "boolean"
+        },
         "task_skip": {
           "default": [],
           "description": "Tasks to skip when running `mise run`.",
@@ -1309,8 +1370,9 @@
           "description": "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`.",
           "type": "boolean"
         },
-        "task_show_full_cmd": {
-          "description": "Disable truncation of command lines in task execution output. When true, the full command line will be shown.",
+        "terminal_progress": {
+          "default": true,
+          "description": "Enable terminal progress indicators (OSC 9;4) for compatible terminals.",
           "type": "boolean"
         },
         "trace": {
@@ -1403,45 +1465,6 @@
               "type": "boolean"
             }
           }
-        },
-        "task": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "disable_spec_from_run_scripts": {
-              "default": false,
-              "description": "Opt out of parsing task run scripts to infer the usage spec (arguments and flags). When enabled, mise will derive the usage spec only from the `usage` field, ignoring any `arg()`, `option()`, or `flag()` templates used in run scripts. This can restore previous behavior and avoid the extra template pass over run scripts when collecting specs.",
-              "type": "boolean"
-            },
-            "monorepo_depth": {
-              "default": 5,
-              "description": "Maximum depth to search for task files in monorepo subdirectories.",
-              "type": "number"
-            },
-            "monorepo_exclude_dirs": {
-              "default": [],
-              "description": "Directory patterns to exclude when discovering monorepo subdirectories.",
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "monorepo_respect_gitignore": {
-              "default": true,
-              "description": "Whether to respect .gitignore files when discovering monorepo subdirectories.",
-              "type": "boolean"
-            },
-            "source_freshness_equal_mtime_is_fresh": {
-              "default": false,
-              "description": "When source mtime equals output mtime, consider sources fresh (use <=). Default false uses strict < comparison.",
-              "type": "boolean"
-            },
-            "source_freshness_hash_contents": {
-              "default": false,
-              "description": "Use content hashing (blake3) instead of metadata for source freshness. More accurate but slower.",
-              "type": "boolean"
-            }
-          }
         }
       }
     },
@@ -1494,264 +1517,20 @@
           "type": "array"
         },
         {
-          "additionalProperties": false,
-          "properties": {
-            "alias": {
-              "oneOf": [
-                {
-                  "description": "alias for this task",
-                  "type": "string"
-                },
-                {
-                  "description": "alias for this task",
-                  "items": {
-                    "description": "alias for this task",
-                    "type": "string"
-                  },
-                  "type": "array"
-                }
-              ]
+          "allOf": [
+            {
+              "$ref": "#/$defs/task_props"
             },
-            "confirm": {
-              "description": "confirmation message before running this task",
-              "type": "string"
-            },
-            "depends": {
-              "oneOf": [
-                {
-                  "description": "task with args to run before this task",
-                  "type": "string"
-                },
-                {
-                  "description": "task with args to run before this task",
-                  "type": "array",
-                  "items": {
-                    "description": "task name and args",
-                    "oneOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
-                    ]
-                  }
-                }
-              ]
-            },
-            "depends_post": {
-              "oneOf": [
-                {
-                  "description": "task with args to run after this task",
-                  "type": "string"
-                },
-                {
-                  "description": "task with args to run after this task",
-                  "type": "array",
-                  "items": {
-                    "description": "task name and args",
-                    "oneOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
-                    ]
-                  }
-                }
-              ]
-            },
-            "wait_for": {
-              "oneOf": [
-                {
-                  "description": "task with args to wait for completion first",
-                  "type": "string"
-                },
-                {
-                  "description": "task with args to wait for completion first",
-                  "items": {
-                    "description": "task name and args",
-                    "type": "string"
-                  },
-                  "type": "array"
-                }
-              ]
-            },
-            "description": {
-              "description": "description of task",
-              "type": "string"
-            },
-            "dir": {
-              "default": "{{ config_root }}",
-              "description": "directory to run script in, default is the project's base directory",
-              "type": "string"
-            },
-            "env": {
-              "$ref": "#/$defs/env"
-            },
-            "tools": {
-              "description": "tools to install/activate before running this task",
-              "additionalProperties": {
-                "oneOf": [
-                  {
-                    "description": "version of the tool to install",
-                    "type": "string"
-                  },
-                  {
-                    "properties": {
-                      "version": {
-                        "description": "version of the tool to install",
-                        "type": "string"
-                      },
-                      "os": {
-                        "oneOf": [
-                          {
-                            "description": "operating system to install on",
-                            "type": "array"
-                          },
-                          {
-                            "description": "option to pass to tool",
-                            "type": "string"
-                          },
-                          {
-                            "description": "option to pass to tool",
-                            "type": "boolean"
-                          }
-                        ]
-                      }
-                    },
-                    "required": ["version"],
-                    "type": "object",
-                    "additionalProperties": {
-                      "oneOf": [
-                        {
-                          "type": "string"
-                        }
-                      ]
-                    }
-                  }
-                ]
-              },
-              "type": "object"
-            },
-            "hide": {
-              "default": false,
-              "description": "do not display this task",
-              "type": "boolean"
-            },
-            "outputs": {
-              "oneOf": [
-                {
-                  "description": "files created by this task",
-                  "items": {
-                    "description": "glob pattern or path to files created by this task",
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                {
-                  "description": "glob pattern or path to files created by this task",
-                  "type": "string"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "auto": {
-                      "description": "automatically touch an internal tracked file instead of specifying outputs",
-                      "enum": [true],
-                      "type": "boolean"
-                    }
-                  },
-                  "required": ["auto"],
-                  "type": "object"
-                }
-              ]
-            },
-            "quiet": {
-              "default": false,
-              "description": "do not display mise information for this task",
-              "type": "boolean"
-            },
-            "silent": {
-              "default": false,
-              "description": "suppress all output for this task",
-              "oneOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "enum": ["stdout", "stderr"],
+            {
+              "properties": {
+                "extends": {
+                  "description": "name of the task template to extend",
                   "type": "string"
                 }
-              ]
-            },
-            "raw": {
-              "default": false,
-              "description": "directly connect task to stdin/stdout/stderr",
-              "type": "boolean"
-            },
-            "run": {
-              "oneOf": [
-                {
-                  "$ref": "#/$defs/task_run_entry"
-                },
-                {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/task_run_entry"
-                  }
-                }
-              ]
-            },
-            "run_windows": {
-              "oneOf": [
-                {
-                  "$ref": "#/$defs/task_run_entry"
-                },
-                {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/task_run_entry"
-                  }
-                }
-              ]
-            },
-            "file": {
-              "description": "Execute an external script",
-              "type": "string"
-            },
-            "sources": {
-              "oneOf": [
-                {
-                  "description": "files that this task depends on",
-                  "items": {
-                    "description": "glob pattern or path to files that this task depends on",
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                {
-                  "description": "glob pattern or path to files that this task depends on",
-                  "type": "string"
-                }
-              ]
-            },
-            "shell": {
-              "description": "specify a shell command to run the script with",
-              "type": "string"
-            },
-            "usage": {
-              "description": "Specify usage (https://usage.jdx.dev/) specs for the task",
-              "type": "string"
+              }
             }
-          },
+          ],
+          "unevaluatedProperties": false,
           "type": "object"
         }
       ]
@@ -2046,6 +1825,281 @@
       },
       "additionalProperties": false,
       "description": "Prepare provider configuration"
+    },
+    "task_props": {
+      "description": "common task properties",
+      "properties": {
+        "alias": {
+          "oneOf": [
+            {
+              "description": "alias for this task",
+              "type": "string"
+            },
+            {
+              "description": "alias for this task",
+              "items": {
+                "description": "alias for this task",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ]
+        },
+        "confirm": {
+          "description": "confirmation message before running this task",
+          "type": "string"
+        },
+        "depends": {
+          "oneOf": [
+            {
+              "description": "task with args to run before this task",
+              "type": "string"
+            },
+            {
+              "description": "task with args to run before this task",
+              "type": "array",
+              "items": {
+                "description": "task name and args",
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "depends_post": {
+          "oneOf": [
+            {
+              "description": "task with args to run after this task",
+              "type": "string"
+            },
+            {
+              "description": "task with args to run after this task",
+              "type": "array",
+              "items": {
+                "description": "task name and args",
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "wait_for": {
+          "oneOf": [
+            {
+              "description": "task with args to wait for completion first",
+              "type": "string"
+            },
+            {
+              "description": "task with args to wait for completion first",
+              "items": {
+                "description": "task name and args",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ]
+        },
+        "description": {
+          "description": "description of task",
+          "type": "string"
+        },
+        "dir": {
+          "default": "{{ config_root }}",
+          "description": "directory to run script in, default is the project's base directory",
+          "type": "string"
+        },
+        "env": {
+          "$ref": "#/$defs/env"
+        },
+        "tools": {
+          "description": "tools to install/activate before running this task",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "description": "version of the tool to install",
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "version": {
+                    "description": "version of the tool to install",
+                    "type": "string"
+                  },
+                  "os": {
+                    "oneOf": [
+                      {
+                        "description": "operating system to install on",
+                        "type": "array"
+                      },
+                      {
+                        "description": "option to pass to tool",
+                        "type": "string"
+                      },
+                      {
+                        "description": "option to pass to tool",
+                        "type": "boolean"
+                      }
+                    ]
+                  }
+                },
+                "required": ["version"],
+                "type": "object",
+                "additionalProperties": {
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "type": "object"
+        },
+        "hide": {
+          "default": false,
+          "description": "do not display this task",
+          "type": "boolean"
+        },
+        "outputs": {
+          "oneOf": [
+            {
+              "description": "files created by this task",
+              "items": {
+                "description": "glob pattern or path to files created by this task",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "description": "glob pattern or path to files created by this task",
+              "type": "string"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "auto": {
+                  "description": "automatically touch an internal tracked file instead of specifying outputs",
+                  "enum": [true],
+                  "type": "boolean"
+                }
+              },
+              "required": ["auto"],
+              "type": "object"
+            }
+          ]
+        },
+        "quiet": {
+          "default": false,
+          "description": "do not display mise information for this task",
+          "type": "boolean"
+        },
+        "silent": {
+          "default": false,
+          "description": "suppress all output for this task",
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "enum": ["stdout", "stderr"],
+              "type": "string"
+            }
+          ]
+        },
+        "raw": {
+          "default": false,
+          "description": "directly connect task to stdin/stdout/stderr",
+          "type": "boolean"
+        },
+        "run": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/task_run_entry"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/task_run_entry"
+              }
+            }
+          ]
+        },
+        "run_windows": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/task_run_entry"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/task_run_entry"
+              }
+            }
+          ]
+        },
+        "file": {
+          "description": "Execute an external script",
+          "type": "string"
+        },
+        "sources": {
+          "oneOf": [
+            {
+              "description": "files that this task depends on",
+              "items": {
+                "description": "glob pattern or path to files that this task depends on",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "description": "glob pattern or path to files that this task depends on",
+              "type": "string"
+            }
+          ]
+        },
+        "shell": {
+          "description": "specify a shell command to run the script with",
+          "type": "string"
+        },
+        "usage": {
+          "description": "Specify usage (https://usage.jdx.dev/) specs for the task",
+          "type": "string"
+        },
+        "timeout": {
+          "description": "timeout for this task",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "task_template": {
+      "description": "task template that can be extended by tasks",
+      "allOf": [
+        {
+          "$ref": "#/$defs/task_props"
+        }
+      ],
+      "unevaluatedProperties": false,
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -2222,6 +2276,13 @@
         "$ref": "#/$defs/task"
       },
       "description": "task runner tasks",
+      "type": "object"
+    },
+    "task_templates": {
+      "description": "task templates that can be extended by tasks via extends",
+      "additionalProperties": {
+        "$ref": "#/$defs/task_template"
+      },
       "type": "object"
     },
     "tools": {

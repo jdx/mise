@@ -28,6 +28,7 @@ use crate::file::display_path;
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::{Task, TaskTemplate};
+use crate::tera::take_tera_accessed_files;
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
     ToolRequestSet, ToolRequestSetBuilder, ToolVersion, ToolVersionOptions, Toolset, install_state,
@@ -63,6 +64,9 @@ pub struct Config {
     pub tera_ctx: tera::Context,
     pub shorthands: Shorthands,
     pub shell_aliases: EnvWithSources,
+    /// Files accessed by tera template functions (read_file, hash_file, etc.)
+    /// during shell alias template rendering, used to watch for changes in hook-env.
+    pub tera_files: Vec<PathBuf>,
     aliases: AliasMap,
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
@@ -150,6 +154,7 @@ impl Config {
             project_root: Default::default(),
             repo_urls: Default::default(),
             shell_aliases: Default::default(),
+            tera_files: Default::default(),
             vars: Default::default(),
             vars_loader: None,
             vars_results: OnceCell::new(),
@@ -169,6 +174,7 @@ impl Config {
             project_root: config.project_root.clone(),
             repo_urls: config.repo_urls.clone(),
             shell_aliases: config.shell_aliases.clone(),
+            tera_files: config.tera_files.clone(),
             vars: config.vars.clone(),
             vars_loader: None,
             vars_results: OnceCell::new(),
@@ -189,7 +195,10 @@ impl Config {
 
         config.vars = vars;
         config.aliases = load_aliases(&config.config_files)?;
+        // Clear any previously tracked files before loading shell aliases
+        let _ = take_tera_accessed_files();
         config.shell_aliases = load_shell_aliases(&config.config_files)?;
+        config.tera_files = take_tera_accessed_files();
         config.project_root = get_project_root(&config.config_files);
         config.repo_urls = load_plugins(&config.config_files)?;
         measure!("config::load validate", {
@@ -789,6 +798,7 @@ impl Config {
                     .iter()
                     .map(|p| p.as_path().into()),
             )
+            .chain(self.tera_files.iter().map(|p| p.as_path().into()))
             .collect())
     }
 

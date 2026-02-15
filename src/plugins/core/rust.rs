@@ -41,13 +41,16 @@ impl RustPlugin {
         file::make_executable(rustup_path())?;
         file::create_dir_all(rustup_home())?;
         let ts = ctx.config.get_toolset().await?;
-        let cmd = CmdLineRunner::new(rustup_path())
+        let mut cmd = CmdLineRunner::new(rustup_path())
             .with_pr(ctx.pr.as_ref())
             .arg("--no-modify-path")
             .arg("--default-toolchain")
             .arg("none")
             .arg("-y")
             .envs(self.exec_env(&ctx.config, ts, tv).await?);
+        if let Some(host) = settings.rust.default_host.as_ref() {
+            cmd = cmd.arg("--default-host").arg(host);
+        }
         cmd.execute()?;
         Ok(())
     }
@@ -128,18 +131,19 @@ impl Backend for RustPlugin {
 
         let (profile, components, targets) = get_args(&tv);
 
-        CmdLineRunner::new(RUSTUP_BIN)
+        let mut cmd = CmdLineRunner::new(RUSTUP_BIN)
             .with_pr(ctx.pr.as_ref())
             .arg("toolchain")
             .arg("install")
             .arg(&tv.version)
-            .opt_arg(profile.as_ref().map(|_| "--profile"))
-            .opt_arg(profile)
             .opt_args("--component", components)
             .opt_args("--target", targets)
             .prepend_path(self.list_bin_paths(&ctx.config, &tv).await?)?
-            .envs(self.exec_env(&ctx.config, ts, &tv).await?)
-            .execute()?;
+            .envs(self.exec_env(&ctx.config, ts, &tv).await?);
+        if let Some(profile) = profile.as_ref() {
+            cmd = cmd.arg("--profile").arg(profile);
+        }
+        cmd.execute()?;
 
         file::remove_all(tv.install_path())?;
         file::make_symlink(&cargo_home().join("bin"), &tv.install_path())?;

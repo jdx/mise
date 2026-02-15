@@ -115,6 +115,7 @@ tools. To do that, turn the value into a map with `tools = true`:
 [env]
 MY_VAR = { value = "tools path: {{env.PATH}}", tools = true }
 _.path = { path = ["{{env.GEM_HOME}}/bin"], tools = true } # directives may also set tools = true
+NODE_VERSION = { value = "{{ tools.node.version }}", tools = true }
 ```
 
 ## Redactions
