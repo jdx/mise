@@ -1,5 +1,10 @@
-backends = [
-  "github:weaveworks/weave-gitops[exe=gitops]",
-  "asdf:deas/asdf-weave-gitops",
-]
 description = "Command line utility for managing Kubernetes applications via GitOps"
+
+[[backends]]
+full = "github:weaveworks/weave-gitops"
+
+[backends.options]
+exe = "gitops"
+
+[[backends]]
+full = "asdf:deas/asdf-weave-gitops"

@@ -1,6 +1,11 @@
-backends = [
-  "github:opsgenie/opsgenie-lamp[bin=opsgenie-lamp]",
-  "asdf:mise-plugins/mise-opsgenie-lamp",
-]
 description = "OpsGenie Lamp with Go SDK"
 test = { cmd = "opsgenie-lamp --version", expected = "lamp version " } # 3.1.4 reports 3.2.0
+
+[[backends]]
+full = "github:opsgenie/opsgenie-lamp"
+
+[backends.options]
+bin = "opsgenie-lamp"
+
+[[backends]]
+full = "asdf:mise-plugins/mise-opsgenie-lamp"
