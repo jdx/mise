@@ -1468,6 +1468,12 @@ env = "MISE_CARGO_HOME"
 optional = true
 type = "Path"
 
+[rust.default_host]
+description = "Default host triple to pass to `rustup init` via `--default-host`."
+env = "MISE_RUST_DEFAULT_HOST"
+optional = true
+type = "String"
+
 [rust.rustup_home]
 description = "Path to the rustup home directory. Defaults to `~/.rustup` or `%USERPROFILE%\\.rustup`"
 env = "MISE_RUSTUP_HOME"

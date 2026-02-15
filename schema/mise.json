@@ -1179,6 +1179,10 @@
               "description": "Path to the cargo home directory. Defaults to `~/.cargo` or `%USERPROFILE%\\.cargo`",
               "type": "string"
             },
+            "default_host": {
+              "description": "Default host triple to pass to `rustup init` via `--default-host`.",
+              "type": "string"
+            },
             "rustup_home": {
               "description": "Path to the rustup home directory. Defaults to `~/.rustup` or `%USERPROFILE%\\.rustup`",
               "type": "string"
