@@ -6,9 +6,26 @@ packages:
     description: A specification for CLIs
     version_constraint: "false"
     version_overrides:
-      - version_constraint: Version in ["v0.1.16", "v0.7.1", "0.7.2"]
+      - version_constraint: Version == "v0.1.16"
         no_asset: true
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.7.0")
+        asset: usage-universal-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        overrides:
+          - goos: linux
+            asset: usage-{{.Arch}}-{{.OS}}.{{.Format}}
+            replacements:
+              amd64: x86_64
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.7.2")
+        no_asset: true
+      - version_constraint: semver("<= 2.15.1")
         asset: usage-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         replacements:
@@ -24,3 +41,17 @@ packages:
         supported_envs:
           - linux
           - darwin
+      - version_constraint: "true"
+        asset: usage-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            asset: usage-universal-{{.OS}}.{{.Format}}
+          - goos: windows
+            format: zip

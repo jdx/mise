@@ -54,7 +54,7 @@ xx = { version = "2", default-features = false, features = ["archive", "hash"] }
 env_logger = { version = "0.11", optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
 tempfile = "3"
-sigstore-verification = "0.1"
+sigstore-verification = "0.2"
 
 [dev-dependencies]
 insta = "1"
