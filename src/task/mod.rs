@@ -1415,8 +1415,11 @@ where
                 };
 
                 // Match task part with asterisk support and extension stripping
+                // When task_glob is "*", require the key to actually have a task part
+                // (i.e., contain a `:` separator). This prevents "test" from matching
+                // "test:*", which would cause circular dependencies.
                 let task_matches = if task_glob == "*" {
-                    true
+                    !key_task.is_empty()
                 } else if let Some(ref matcher) = task_matcher {
                     // Check exact match OR match without extension
                     matcher.is_match(key_task) || matcher.is_match(strip_extension(key_task))
@@ -1441,7 +1444,7 @@ where
                     };
 
                     let rel_task_matches = if task_glob == "*" {
-                        true
+                        !stripped_task.is_empty()
                     } else if let Some(ref matcher) = rel_task_matcher {
                         // Check exact match OR match without extension
                         matcher.is_match(stripped_task)
@@ -2340,5 +2343,24 @@ echo "test"
         );
         assert_eq!(task.tools.get("git-cliff").unwrap(), "1.0");
         assert_eq!(task.tools.get("1password-cli").unwrap(), "2.0");
+    }
+
+    #[test]
+    fn test_get_matching_wildcard_does_not_match_parent() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        let mut tasks: BTreeMap<String, String> = BTreeMap::new();
+        tasks.insert("test".to_string(), "test".to_string());
+        tasks.insert("test:foo".to_string(), "test:foo".to_string());
+        tasks.insert("test:bar".to_string(), "test:bar".to_string());
+
+        // "test:*" should match "test:foo" and "test:bar" but NOT "test" itself
+        let matches = tasks.get_matching("test:*").unwrap();
+        assert_eq!(matches.len(), 2);
+        assert!(matches.contains(&&"test:foo".to_string()));
+        assert!(matches.contains(&&"test:bar".to_string()));
+        assert!(!matches.contains(&&"test".to_string()));
     }
 }
