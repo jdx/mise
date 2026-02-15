@@ -1,7 +1,12 @@
 aliases = ["kp"]
-backends = [
-  "github:vmware-tanzu/kpack-cli[exe=kp]",
-  "asdf:asdf-community/asdf-kpack-cli",
-]
 description = "A command line interface for interacting with kpack"
 test = { cmd = "kp version", expected = "{{version}}" }
+
+[[backends]]
+full = "github:vmware-tanzu/kpack-cli"
+
+[backends.options]
+exe = "kp"
+
+[[backends]]
+full = "asdf:asdf-community/asdf-kpack-cli"

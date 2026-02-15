@@ -1,2 +1,7 @@
-backends = ["github:foundry-rs/starknet-foundry[exe=snforge]"]
 description = "Starknet testing framework (like Truffle, Hardhat and DappTools but for Starknet)"
+
+[[backends]]
+full = "github:foundry-rs/starknet-foundry"
+
+[backends.options]
+exe = "snforge"

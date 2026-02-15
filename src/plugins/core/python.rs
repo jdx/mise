@@ -1,4 +1,5 @@
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::static_helpers::fetch_checksum_from_shasums;
 use crate::backend::{Backend, VersionCacheManager, VersionInfo};
 use crate::build_time::built_info;
 use crate::cache::{CacheManager, CacheManagerBuilder};
@@ -9,6 +10,7 @@ use crate::file::{TarOptions, display_path};
 use crate::git::{CloneOptions, Git};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{Result, lock_file::LockFile};
@@ -460,6 +462,56 @@ impl PythonPlugin {
             .envs(config.env().await?)
             .execute()
     }
+
+    /// Fetch the best precompiled release for a specific version and platform target.
+    /// Unlike `fetch_precompiled_remote_versions` which uses compile-time cfg!() macros,
+    /// this takes a PlatformTarget to support cross-platform lockfile generation.
+    async fn fetch_precompiled_for_target(
+        &self,
+        version: &str,
+        target: &PlatformTarget,
+    ) -> eyre::Result<Option<(String, String)>> {
+        let arch = python_arch_for_target(target);
+        let os = python_os_for_target(target);
+        let platform = format!("{arch}-{os}");
+        let url_path = format!("python-precompiled-{arch}-{os}.gz");
+        let rsp = HTTP_FETCH
+            .get_bytes(format!("https://mise-versions.jdx.dev/tools/{url_path}"))
+            .await?;
+        let mut decoder = GzDecoder::new(rsp.as_ref());
+        let mut raw = String::new();
+        decoder.read_to_string(&mut raw)?;
+        // Find all entries matching this version, then pick the best one:
+        // prefer install_only_stripped > install_only > other, then most recent date
+        let result = raw
+            .lines()
+            .filter(|v| v.contains(&platform))
+            .flat_map(|v| {
+                regex!(r"^cpython-(\d+\.\d+\.[\da-z]+)\+(\d+).*")
+                    .captures(v)
+                    .map(|caps| {
+                        (
+                            caps[1].to_string(),
+                            caps[2].to_string(),
+                            caps[0].to_string(),
+                        )
+                    })
+            })
+            .filter(|(v, _, _)| v == version)
+            .min_by_key(|(_, date, name)| {
+                let install_type = if name.contains("install_only_stripped") {
+                    0
+                } else if name.contains("install_only") {
+                    1
+                } else {
+                    2
+                };
+                let date = date.parse::<i64>().unwrap_or_default();
+                (install_type, -date)
+            })
+            .map(|(_, tag, filename)| (tag, filename));
+        Ok(result)
+    }
 }
 
 #[async_trait]
@@ -609,6 +661,38 @@ impl Backend for PythonPlugin {
 
         opts
     }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        let version = &tv.version;
+
+        // Look up the precompiled release for this version and target platform
+        let Some((tag, filename)) = self.fetch_precompiled_for_target(version, target).await?
+        else {
+            return Ok(PlatformInfo::default());
+        };
+
+        let url = format!(
+            "https://github.com/astral-sh/python-build-standalone/releases/download/{tag}/{filename}"
+        );
+
+        // Fetch SHA256SUMS from the release to get the checksum
+        let shasums_url = format!(
+            "https://github.com/astral-sh/python-build-standalone/releases/download/{tag}/SHA256SUMS"
+        );
+        let checksum = fetch_checksum_from_shasums(&shasums_url, &filename).await;
+
+        Ok(PlatformInfo {
+            url: Some(url),
+            checksum,
+            size: None,
+            url_api: None,
+            conda_deps: None,
+        })
+    }
 }
 
 fn python_precompiled_url_path(settings: &Settings) -> String {
@@ -673,6 +757,23 @@ fn python_precompiled_platform() -> String {
         format!("{arch}-{os}-{flavor}")
     } else {
         format!("{arch}-{os}")
+    }
+}
+
+/// Map a PlatformTarget OS to the python-build-standalone OS string.
+fn python_os_for_target(target: &PlatformTarget) -> &'static str {
+    match target.os_name() {
+        "macos" => "apple-darwin",
+        "windows" => "pc-windows-msvc",
+        _ => "unknown-linux-gnu",
+    }
+}
+
+/// Map a PlatformTarget arch to the python-build-standalone arch string.
+fn python_arch_for_target(target: &PlatformTarget) -> &'static str {
+    match target.arch_name() {
+        "arm64" => "aarch64",
+        _ => "x86_64",
     }
 }
 
