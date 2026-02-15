@@ -99,7 +99,7 @@ expr-lang = "1"
 eyre = "0.6"
 filetime = "0.2"
 flate2 = "1"
-sigstore-verification = { version = "0.1", default-features = false }
+sigstore-verification = { version = "0.2", default-features = false }
 fslock = "0.2.1"
 fuzzy-matcher = "0.3"
 gix = { version = "<1", features = ["worktree-mutation"] }
