@@ -475,6 +475,9 @@ impl Run {
                 }
                 this.add_failed_task(task.clone(), status);
             }
+            if let Some(oh) = &this.output_handler {
+                oh.keep_order_state.lock().unwrap().on_task_finished(&task);
+            }
             deps_for_remove.lock().await.remove(&task);
             trace!("deps removed: {} {}", task.name, task.args.join(" "));
             in_flight_c.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);

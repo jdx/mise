@@ -669,27 +669,27 @@ impl TaskExecutor {
             }
             TaskOutput::KeepOrder => {
                 if !task.silent.suppresses_stdout() {
-                    cmd = cmd.with_on_stdout(|line| {
-                        let mut map = self.output_handler.keep_order_output.lock().unwrap();
-                        if !map.contains_key(task) {
-                            map.insert(task.clone(), Default::default());
-                        }
-                        if let Some(entry) = map.get_mut(task) {
-                            entry.0.push((prefix.to_string(), line));
-                        }
+                    let state = self.output_handler.keep_order_state.clone();
+                    let task_clone = task.clone();
+                    let prefix_str = prefix.to_string();
+                    cmd = cmd.with_on_stdout(move |line| {
+                        state
+                            .lock()
+                            .unwrap()
+                            .on_stdout(&task_clone, prefix_str.clone(), line);
                     });
                 } else {
                     cmd = cmd.stdout(Stdio::null());
                 }
                 if !task.silent.suppresses_stderr() {
-                    cmd = cmd.with_on_stderr(|line| {
-                        let mut map = self.output_handler.keep_order_output.lock().unwrap();
-                        if !map.contains_key(task) {
-                            map.insert(task.clone(), Default::default());
-                        }
-                        if let Some(entry) = map.get_mut(task) {
-                            entry.1.push((prefix.to_string(), line));
-                        }
+                    let state = self.output_handler.keep_order_state.clone();
+                    let task_clone = task.clone();
+                    let prefix_str = prefix.to_string();
+                    cmd = cmd.with_on_stderr(move |line| {
+                        state
+                            .lock()
+                            .unwrap()
+                            .on_stderr(&task_clone, prefix_str.clone(), line);
                     });
                 } else {
                     cmd = cmd.stderr(Stdio::null());
