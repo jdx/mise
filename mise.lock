@@ -1,17 +1,17 @@
 [[tools.actionlint]]
-version = "1.7.10"
+version = "1.7.11"
 backend = "aqua:rhysd/actionlint"
-"platforms.linux-arm64" = { checksum = "sha256:cd3dfe5f66887ec6b987752d8d9614e59fd22f39415c5ad9f28374623f41773a", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.10/actionlint_1.7.10_linux_arm64.tar.gz"}
-"platforms.linux-arm64-musl" = { checksum = "sha256:cd3dfe5f66887ec6b987752d8d9614e59fd22f39415c5ad9f28374623f41773a", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.10/actionlint_1.7.10_linux_arm64.tar.gz"}
-"platforms.linux-x64" = { checksum = "sha256:f4c76b71db5755a713e6055cbb0857ed07e103e028bda117817660ebadb4386f", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.10/actionlint_1.7.10_linux_amd64.tar.gz"}
-"platforms.linux-x64-baseline" = { checksum = "sha256:f4c76b71db5755a713e6055cbb0857ed07e103e028bda117817660ebadb4386f", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.10/actionlint_1.7.10_linux_amd64.tar.gz"}
-"platforms.linux-x64-musl" = { checksum = "sha256:f4c76b71db5755a713e6055cbb0857ed07e103e028bda117817660ebadb4386f", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.10/actionlint_1.7.10_linux_amd64.tar.gz"}
-"platforms.linux-x64-musl-baseline" = { checksum = "sha256:f4c76b71db5755a713e6055cbb0857ed07e103e028bda117817660ebadb4386f", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.10/actionlint_1.7.10_linux_amd64.tar.gz"}
-"platforms.macos-arm64" = { checksum = "sha256:004ca87b367b37f4d75c55ab6cf80f9b8c043adbfbd440f31c604d417939c442", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.10/actionlint_1.7.10_darwin_arm64.tar.gz"}
-"platforms.macos-x64" = { checksum = "sha256:16782c41f2af264db80f855ee5d09164ca98fc78edf3bcd0f46eecff279682ba", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.10/actionlint_1.7.10_darwin_amd64.tar.gz"}
-"platforms.macos-x64-baseline" = { checksum = "sha256:16782c41f2af264db80f855ee5d09164ca98fc78edf3bcd0f46eecff279682ba", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.10/actionlint_1.7.10_darwin_amd64.tar.gz"}
-"platforms.windows-x64" = { checksum = "sha256:283467f9d6202a8cb8c00ad8dd0ee4e685b71fb86a6a56c68fcbb9ae8ed91237", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.10/actionlint_1.7.10_windows_amd64.zip"}
-"platforms.windows-x64-baseline" = { checksum = "sha256:283467f9d6202a8cb8c00ad8dd0ee4e685b71fb86a6a56c68fcbb9ae8ed91237", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.10/actionlint_1.7.10_windows_amd64.zip"}
+"platforms.linux-arm64" = { checksum = "sha256:21bc0dfb57a913fe175298c2a9e906ee630f747cb66d0a934d0d4b69f4ee1235", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_arm64.tar.gz"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:21bc0dfb57a913fe175298c2a9e906ee630f747cb66d0a934d0d4b69f4ee1235", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_arm64.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:900919a84f2229bac68ca9cd4103ea297abc35e9689ebb842c6e34a3d1b01b0a", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_amd64.tar.gz"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:900919a84f2229bac68ca9cd4103ea297abc35e9689ebb842c6e34a3d1b01b0a", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_amd64.tar.gz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:900919a84f2229bac68ca9cd4103ea297abc35e9689ebb842c6e34a3d1b01b0a", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_amd64.tar.gz"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:900919a84f2229bac68ca9cd4103ea297abc35e9689ebb842c6e34a3d1b01b0a", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_amd64.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:a21ba7366d8329e7223faee0ed69eb13da27fe8acabb356bb7eb0b7f1e1cb6d8", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_darwin_arm64.tar.gz"}
+"platforms.macos-x64" = { checksum = "sha256:17ffc17fed8f0258ef6ad4aed932d3272464c7ef7d64e1cb0d65aa97c9752107", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_darwin_amd64.tar.gz"}
+"platforms.macos-x64-baseline" = { checksum = "sha256:17ffc17fed8f0258ef6ad4aed932d3272464c7ef7d64e1cb0d65aa97c9752107", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_darwin_amd64.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:5414b7124a91f4b5abee62e5c9d84802237734f8d15b9b7032732a32c3ebffa3", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_windows_amd64.zip"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:5414b7124a91f4b5abee62e5c9d84802237734f8d15b9b7032732a32c3ebffa3", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_windows_amd64.zip"}
 
 [[tools.age]]
 version = "1.3.1"
