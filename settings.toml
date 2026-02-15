@@ -594,8 +594,6 @@ docs = """
 Enable/disable GitHub Artifact Attestations verification globally.
 When enabled, mise will verify the authenticity and integrity of downloaded tools
 using GitHub's artifact attestation system for tools that support it (e.g., Ruby precompiled binaries).
-
-Individual tools can override this setting with their own `<tool>.github_attestations` setting.
 """
 env = "MISE_GITHUB_ATTESTATIONS"
 type = "Bool"
