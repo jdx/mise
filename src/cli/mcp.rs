@@ -348,7 +348,10 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
       "mcpServers": {
         "mise": {
           "command": "mise",
-          "args": ["mcp"]
+          "args": ["mcp"],
+          "env": {
+            "MISE_EXPERIMENTAL": "1"
+          }
         }
       }
     }
