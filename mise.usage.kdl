@@ -778,9 +778,6 @@ cmd set help="Set environment variables in mise.toml" {
         arg <FILE>
     }
     flag --prompt help="Prompt for environment variable values"
-    flag --stdin help="Read the value from stdin (for multiline input)" {
-        long_help "Read the value from stdin (for multiline input)\n\nWhen using --stdin, provide a single key without a value. The value will be read from stdin until EOF."
-    }
     flag "--remove --rm --unset" help="Remove the environment variable from config file" var=#true hide=#true {
         long_help "Remove the environment variable from config file\n\nCan be used multiple times."
         arg <ENV_KEY>
