@@ -208,6 +208,7 @@ impl Backend for NPMBackend {
                     .arg(tv.install_path())
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path(&ctx.config).await?)
+                    .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(
                         self.dependency_toolset(&ctx.config)
