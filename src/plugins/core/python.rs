@@ -5,7 +5,7 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::file::{TarOptions, display_path};
+use crate::file::{TarFormat, TarOptions, display_path};
 use crate::git::{CloneOptions, Git};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -282,7 +282,7 @@ impl PythonPlugin {
             &TarOptions {
                 strip_components: 1,
                 pr: Some(ctx.pr.as_ref()),
-                ..Default::default()
+                ..TarOptions::new(TarFormat::from_file_name(filename))
             },
         )?;
         if !install.join("bin").exists() {

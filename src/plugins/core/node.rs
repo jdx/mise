@@ -113,10 +113,9 @@ impl NodePlugin {
                     &opts.binary_tarball_path,
                     &opts.install_path,
                     &TarOptions {
-                        format: TarFormat::TarGz,
                         strip_components: 1,
                         pr: Some(ctx.pr.as_ref()),
-                        ..Default::default()
+                        ..TarOptions::new(TarFormat::TarGz)
                     },
                 )?;
                 Ok(())
@@ -173,9 +172,8 @@ impl NodePlugin {
             &opts.source_tarball_path,
             opts.build_dir.parent().unwrap(),
             &TarOptions {
-                format: TarFormat::TarGz,
                 pr: Some(ctx.pr.as_ref()),
-                ..Default::default()
+                ..TarOptions::new(TarFormat::TarGz)
             },
         )?;
         self.exec_configure(ctx, opts)?;

@@ -92,10 +92,9 @@ impl SwiftPlugin {
                 tarball_path,
                 &tv.install_path(),
                 &file::TarOptions {
-                    format: file::TarFormat::TarGz,
-                    pr: Some(ctx.pr.as_ref()),
                     strip_components: 1,
-                    ..Default::default()
+                    pr: Some(ctx.pr.as_ref()),
+                    ..file::TarOptions::new(file::TarFormat::TarGz)
                 },
             )?;
         }
