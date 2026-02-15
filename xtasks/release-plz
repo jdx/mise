@@ -313,7 +313,8 @@ mise lock
 
 # Update embedded vfox plugins (delete all and re-clone fresh, similar to aqua-registry)
 EMBEDDED_PLUGINS_DIR="crates/vfox/embedded-plugins"
-rm -rf "$EMBEDDED_PLUGINS_DIR"/vfox-*
+rm -rf "$EMBEDDED_PLUGINS_DIR"
+mkdir -p "$EMBEDDED_PLUGINS_DIR"
 
 # Clone all tools where vfox is the FIRST (default) backend
 mise registry | awk '$2 ~ /^vfox:/ {print $2}' | sed 's|vfox:||' | sort -u | while read -r repo_path; do
