@@ -280,9 +280,9 @@ impl TomlDocument {
     fn value_to_string(value: &Value) -> String {
         match value {
             Value::String(s) => s.value().to_string(),
-            Value::Integer(i) => i.to_string(),
-            Value::Float(f) => f.to_string(),
-            Value::Boolean(b) => b.to_string(),
+            Value::Integer(i) => i.value().to_string(),
+            Value::Float(f) => f.value().to_string(),
+            Value::Boolean(b) => b.value().to_string(),
             Value::Array(arr) => {
                 let items: Vec<String> = arr.iter().map(Self::value_to_string).collect();
                 format!("[{}]", items.join(", "))
@@ -294,7 +294,7 @@ impl TomlDocument {
                     .collect();
                 format!("{{ {} }}", pairs.join(", "))
             }
-            Value::Datetime(dt) => dt.to_string(),
+            Value::Datetime(dt) => dt.value().to_string(),
         }
     }
 
