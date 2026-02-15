@@ -16,3 +16,23 @@ tasks.b = "echo b ; exit 1"
 tasks.all.depends = ['a', 'b']
 EOF
 assert_fail "mise run -o keep-order all" "[b] b"
+
+# Verify definition order is preserved even when later tasks finish first
+cat <<EOF >mise.toml
+[tasks.slow]
+run = "sleep 2 && echo slow"
+
+[tasks.fast]
+run = "echo fast"
+
+[tasks.all]
+depends = ['slow', 'fast']
+EOF
+output=$(MISE_JOBS=4 mise run -o keep-order all 2>&1)
+slow_pos=$(echo "$output" | grep -n '^\[slow\] slow$' | cut -d: -f1)
+fast_pos=$(echo "$output" | grep -n '^\[fast\] fast$' | cut -d: -f1)
+if [ "$slow_pos" -ge "$fast_pos" ]; then
+	echo "keep-order did not preserve definition order: slow at $slow_pos, fast at $fast_pos"
+	echo "$output"
+	exit 1
+fi
