@@ -1,2 +1,10 @@
-backends = ["github:odin-lang/Odin[exe=odin]", "asdf:jtakakura/asdf-odin"]
 description = "Odin Programming Language"
+
+[[backends]]
+full = "github:odin-lang/Odin"
+
+[backends.options]
+exe = "odin"
+
+[[backends]]
+full = "asdf:jtakakura/asdf-odin"

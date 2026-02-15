@@ -52,13 +52,13 @@
                       "type": "object",
                       "description": "Platform-specific configuration",
                       "additionalProperties": {
-                        "type": "string"
+                        "type": ["string", "boolean"]
                       }
                     }
                   }
                 },
                 "additionalProperties": {
-                  "type": "string"
+                  "type": ["string", "boolean"]
                 }
               }
             },
