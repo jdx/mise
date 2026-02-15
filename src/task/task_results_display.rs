@@ -35,30 +35,16 @@ impl TaskResultsDisplay {
         self.exit_if_failed();
     }
 
-    /// Display keep-order output if using that mode
+    /// Flush any remaining keep-order output (safety net)
     fn display_keep_order_output(&self) {
         if self.output_handler.output(None) != TaskOutput::KeepOrder {
             return;
         }
-
-        let output = self.output_handler.keep_order_output.lock().unwrap();
-
-        for (out, err) in output.values() {
-            for (prefix, line) in out {
-                if console::colors_enabled() {
-                    prefix_println!(prefix, "{line}\x1b[0m");
-                } else {
-                    prefix_println!(prefix, "{line}");
-                }
-            }
-            for (prefix, line) in err {
-                if console::colors_enabled_stderr() {
-                    prefix_eprintln!(prefix, "{line}\x1b[0m");
-                } else {
-                    prefix_eprintln!(prefix, "{line}");
-                }
-            }
-        }
+        self.output_handler
+            .keep_order_state
+            .lock()
+            .unwrap()
+            .flush_all();
     }
 
     /// Display timing summary if enabled

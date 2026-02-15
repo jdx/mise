@@ -1697,7 +1697,7 @@ Change output style when executing tasks. This controls the output of `mise run`
 enum = [
   { value = "prefix", description = "(default if jobs > 1) print by line with the prefix of the task name" },
   { value = "interleave", description = "(default if jobs == 1 or all tasks run sequentially) print output as it comes in" },
-  { value = "keep-order", description = "print output from tasks in the order they are defined" },
+  { value = "keep-order", description = "stream one task at a time, buffering others to avoid interleaving" },
   { value = "replacing", description = "replace stdout each time a line is printed-this uses similar logic as `mise install`" },
   { value = "timed", description = "only show stdout lines that take longer than 1s to complete" },
   { value = "quiet", description = "print only stdout/stderr from tasks and nothing from mise" },
