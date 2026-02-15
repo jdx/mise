@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# Test that task glob pattern "test:*" does not match the "test" task itself.
+# This prevents circular invocation when a parent task delegates to its children.
+# See: https://github.com/jdx/mise/discussions/8138
+
+cat <<'EOF' >mise.toml
+[tasks."test:foo"]
+run = 'echo foo'
+
+[tasks."test:bar"]
+run = 'echo bar'
+
+[tasks.test]
+run = [
+  { task = "test:*" },
+]
+EOF
+
+# "mise run test" should run test:foo and test:bar without circular dependency
+assert_contains "mise run test" "foo"
+assert_contains "mise run test" "bar"
