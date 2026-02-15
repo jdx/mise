@@ -141,6 +141,8 @@ const taskSchema = JSON.parse(
 taskSchema["$defs"].env_directive = schema["$defs"].env_directive;
 taskSchema["$defs"].env = schema["$defs"].env;
 taskSchema["$defs"].task_run_entry = schema["$defs"].task_run_entry;
+taskSchema["$defs"].task_props = schema["$defs"].task_props;
+taskSchema["$defs"].task_template = schema["$defs"].task_template;
 taskSchema["$defs"].task = schema["$defs"].task;
 fs.writeFileSync("schema/mise-task.json.tmp", JSON.stringify(taskSchema));
 child_process.execSync(
