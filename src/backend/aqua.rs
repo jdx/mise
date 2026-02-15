@@ -717,9 +717,14 @@ impl AquaBackend {
                 .github_release_url(pkg, v)
                 .await
                 .map(|(url, digest)| (url, true, digest)),
-            AquaPackageType::GithubArchive | AquaPackageType::GithubContent => {
-                Ok((self.github_archive_url(pkg, v), false, None))
+            AquaPackageType::GithubContent => {
+                if pkg.path.is_some() {
+                    Ok((self.github_content_url(pkg, v), false, None))
+                } else {
+                    bail!("github_content package requires `path`")
+                }
             }
+            AquaPackageType::GithubArchive => Ok((self.github_archive_url(pkg, v), false, None)),
             AquaPackageType::Http => pkg.url(v, os(), arch()).map(|url| (url, false, None)),
             ref t => bail!("unsupported aqua package type: {t}"),
         }
@@ -765,6 +770,12 @@ impl AquaBackend {
     fn github_archive_url(&self, pkg: &AquaPackage, v: &str) -> String {
         let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         format!("https://github.com/{gh_id}/archive/refs/tags/{v}.tar.gz")
+    }
+
+    fn github_content_url(&self, pkg: &AquaPackage, v: &str) -> String {
+        let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+        let path = pkg.path.as_deref().unwrap();
+        format!("https://raw.githubusercontent.com/{gh_id}/{v}/{path}")
     }
 
     /// Fetch checksum from a checksum file without downloading the actual tarball.
@@ -1407,7 +1418,7 @@ impl AquaBackend {
         let first_bin_path = bin_paths
             .first()
             .expect("at least one bin path should exist");
-        let mut tar_opts = TarOptions {
+        let tar_opts = TarOptions {
             format: format.parse().unwrap_or_default(),
             pr: Some(ctx.pr.as_ref()),
             strip_components: 0,
@@ -1417,8 +1428,9 @@ impl AquaBackend {
         if let AquaPackageType::GithubArchive = pkg.r#type {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
         } else if let AquaPackageType::GithubContent = pkg.r#type {
-            tar_opts.strip_components = 1;
-            file::untar(&tarball_path, &install_path, &tar_opts)?;
+            file::create_dir_all(&install_path)?;
+            file::copy(&tarball_path, first_bin_path)?;
+            make_executable = true;
         } else if format == "raw" {
             file::create_dir_all(&install_path)?;
             file::copy(&tarball_path, first_bin_path)?;

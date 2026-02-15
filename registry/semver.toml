@@ -1,5 +1,5 @@
 backends = [
-  # "aqua:fsaintjacques/semver-tool", # see https://github.com/jdx/mise/discussions/5833
+  "aqua:fsaintjacques/semver-tool",
   "vfox:mise-plugins/vfox-semver",
   "asdf:mathew-fleisch/asdf-semver",
 ]
