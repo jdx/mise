@@ -356,4 +356,20 @@ mod tests {
             Some("1.2.0".to_string())
         );
     }
+
+    #[test]
+    fn test_deno_dev_engines() {
+        let pkg: PackageJson = serde_json::from_str(
+            r#"{
+                "devEngines": {
+                    "runtime": {
+                        "name": "deno",
+                        "version": "1.40.0"
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(pkg.runtime_version("deno"), Some("1.40.0".to_string()));
+    }
 }
