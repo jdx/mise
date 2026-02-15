@@ -120,7 +120,18 @@ impl Backend for DenoPlugin {
     }
 
     async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
-        Ok(vec![".deno-version".into()])
+        Ok(vec![".deno-version".into(), "package.json".into()])
+    }
+
+    async fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
+        if path.file_name().is_some_and(|f| f == "package.json") {
+            let pkg = crate::package_json::PackageJson::parse(path)?;
+            return pkg
+                .runtime_version("deno")
+                .ok_or_else(|| eyre::eyre!("no deno version found in package.json"));
+        }
+        let body = file::read_to_string(path)?;
+        Ok(body.trim().to_string())
     }
 
     async fn install_version_(

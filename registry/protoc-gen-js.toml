@@ -1,5 +1,10 @@
-backends = [
-  "github:protocolbuffers/protobuf-javascript[exe=protoc-gen-js]",
-  "asdf:pbr0ck3r/asdf-protoc-gen-js",
-]
 description = "This directory contains the JavaScript Protocol Buffers runtime library"
+
+[[backends]]
+full = "github:protocolbuffers/protobuf-javascript"
+
+[backends.options]
+exe = "protoc-gen-js"
+
+[[backends]]
+full = "asdf:pbr0ck3r/asdf-protoc-gen-js"

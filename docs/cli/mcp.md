@@ -35,7 +35,10 @@ $ mise mcp
   "mcpServers": {
     "mise": {
       "command": "mise",
-      "args": ["mcp"]
+      "args": ["mcp"],
+      "env": {
+        "MISE_EXPERIMENTAL": "1"
+      }
     }
   }
 }
