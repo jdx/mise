@@ -5,7 +5,10 @@ test = { cmd = "zprint --version 2>&1", expected = "zprint-{{version}}" }
 full = "aqua:kkinnear/zprint"
 
 [[backends]]
-full = "github:kkinnear/zprint[bin=zprint]"
+full = "github:kkinnear/zprint"
+
+[backends.options]
+bin = "zprint"
 
 [backends.options.platforms.macos-arm64]
 asset_pattern = "zprintma-{{ version }}"
