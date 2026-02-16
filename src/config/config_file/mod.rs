@@ -517,9 +517,10 @@ fn trust_file_hash(path: &Path) -> eyre::Result<bool> {
 async fn filename_is_idiomatic(file_name: String) -> bool {
     for b in backend::list() {
         if let Ok(filenames) = b.idiomatic_filenames().await
-            && filenames.contains(&file_name) {
-                return true;
-            }
+            && filenames.contains(&file_name)
+        {
+            return true;
+        }
     }
     false
 }
