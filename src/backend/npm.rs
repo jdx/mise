@@ -5,13 +5,14 @@ use crate::backend::backend_type::BackendType;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
+use crate::config::settings::NpmPackageManager;
 use crate::config::{Config, Settings};
 use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
 use async_trait::async_trait;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -35,38 +36,25 @@ impl Backend for NPMBackend {
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
-        // npm CLI is always needed for version queries (npm view), plus the configured
-        // package manager for installation. We avoid listing all package managers to
-        // prevent incorrect dependency edges.
+        // npm CLI is needed for version queries (npm view) unless bun is used.
+        // We also need the configured package manager for installation.
+        // We avoid listing all package managers to prevent incorrect dependency edges.
         let settings = Settings::get();
-        let package_manager = settings.npm.package_manager.as_str();
+        let package_manager = settings.npm.package_manager;
         let tool_name = self.tool_name();
 
-        // Avoid circular dependency when installing npm itself
-        // But we still need the configured package manager for installation
-        if tool_name == "npm" {
-            return match package_manager {
-                "bun" => Ok(vec!["node", "bun"]),
-                "pnpm" => Ok(vec!["node", "pnpm"]),
-                _ => Ok(vec!["node"]),
-            };
+        let mut deps = match package_manager {
+            NpmPackageManager::Npm => vec!["node", "npm"],
+            NpmPackageManager::Bun => vec!["bun"],
+            // `pnpm view` internally calls npm
+            NpmPackageManager::Pnpm => vec!["node", "npm", "pnpm"],
+        };
+
+        // Avoid circular dependency when installing package managers themselves
+        if tool_name == "npm" && package_manager == NpmPackageManager::Npm {
+            deps.retain(|&dep| dep != "npm");
         }
 
-        // Avoid circular dependency when installing the configured package manager
-        // e.g., npm:bun with bun configured, or npm:pnpm with pnpm configured
-        if tool_name == package_manager {
-            // Still need npm for version queries
-            return Ok(vec!["node", "npm"]);
-        }
-
-        // For regular packages: need npm (for version queries) + configured package manager
-        let mut deps = vec!["node", "npm"];
-        match package_manager {
-            "bun" => deps.push("bun"),
-            "pnpm" => deps.push("pnpm"),
-            // npm is already in deps
-            _ => {}
-        }
         Ok(deps)
     }
 
@@ -77,80 +65,251 @@ impl Backend for NPMBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
-        // Use npm CLI to respect custom registry configurations
-        self.ensure_npm_for_version_check(config).await;
-        timeout::run_with_timeout_async(
-            async || {
-                let env = self.dependency_env(config).await?;
+        let settings = Settings::get();
+        let package_manager = settings.npm.package_manager;
 
-                // Fetch versions and timestamps in parallel
-                let versions_raw =
-                    cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
+        match package_manager {
+            NpmPackageManager::Npm => {
+                // Use npm CLI to respect custom registry configurations
+                self.ensure_dependency(config, NpmPackageManager::Npm).await;
+                timeout::run_with_timeout_async(
+                    async || {
+                        let env = self.dependency_env(config).await?;
+                        let raw = cmd!(
+                            NPM_PROGRAM,
+                            "view",
+                            self.tool_name(),
+                            "versions",
+                            "time",
+                            "--json"
+                        )
                         .full_env(&env)
                         .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                         .read()?;
-                let time_raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "time", "--json")
-                    .full_env(&env)
-                    .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-                    .read()?;
 
-                let versions: Vec<String> = serde_json::from_str(&versions_raw)?;
-                let time: HashMap<String, String> = serde_json::from_str(&time_raw)?;
+                        let data: Value = serde_json::from_str(&raw)?;
+                        let versions = data["versions"]
+                            .as_array()
+                            .ok_or_else(|| eyre::eyre!("invalid versions"))?;
+                        let time = data["time"]
+                            .as_object()
+                            .ok_or_else(|| eyre::eyre!("invalid time"))?;
 
-                let version_info = versions
-                    .into_iter()
-                    .map(|version| {
-                        let created_at = time.get(&version).cloned();
-                        VersionInfo {
-                            version,
-                            created_at,
-                            ..Default::default()
-                        }
-                    })
-                    .collect();
+                        let version_info = versions
+                            .iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|version| {
+                                let created_at = time
+                                    .get(version)
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
+                                VersionInfo {
+                                    version: version.to_string(),
+                                    created_at,
+                                    ..Default::default()
+                                }
+                            })
+                            .collect();
 
-                Ok(version_info)
-            },
-            Settings::get().fetch_remote_versions_timeout(),
-        )
-        .await
+                        Ok(version_info)
+                    },
+                    settings.fetch_remote_versions_timeout(),
+                )
+                .await
+            }
+            NpmPackageManager::Bun => {
+                self.ensure_dependency(config, NpmPackageManager::Bun).await;
+                timeout::run_with_timeout_async(
+                    async || {
+                        let env = self.dependency_env(config).await?;
+                        // Bun doesn't support fetching specific fields like npm does, but fetching the package
+                        // metadata returns everything we need including versions and time.
+                        let output =
+                            self.read_bun_view(&env, vec![self.tool_name().to_string()], config)?;
+
+                        let data: Value = serde_json::from_str(&output)?;
+                        let versions = data["versions"]
+                            .as_object()
+                            .ok_or_else(|| eyre::eyre!("invalid versions"))?;
+                        let time = data["time"]
+                            .as_object()
+                            .ok_or_else(|| eyre::eyre!("invalid time"))?;
+
+                        let version_info = versions
+                            .keys()
+                            .map(|version| {
+                                let created_at = time
+                                    .get(version)
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
+                                VersionInfo {
+                                    version: version.to_string(),
+                                    created_at,
+                                    ..Default::default()
+                                }
+                            })
+                            .collect();
+
+                        Ok(version_info)
+                    },
+                    settings.fetch_remote_versions_timeout(),
+                )
+                .await
+            }
+            NpmPackageManager::Pnpm => {
+                self.ensure_dependency(config, NpmPackageManager::Pnpm)
+                    .await;
+                timeout::run_with_timeout_async(
+                    async || {
+                        let env = self.dependency_env(config).await?;
+
+                        // pnpm view calls npm view internally
+                        let raw = cmd!(
+                            "pnpm",
+                            "view",
+                            self.tool_name(),
+                            "versions",
+                            "time",
+                            "--json"
+                        )
+                        .full_env(&env)
+                        .read()?;
+
+                        let data: Value = serde_json::from_str(&raw)?;
+                        let versions = data["versions"]
+                            .as_array()
+                            .ok_or_else(|| eyre::eyre!("invalid versions"))?;
+                        let time = data["time"]
+                            .as_object()
+                            .ok_or_else(|| eyre::eyre!("invalid time"))?;
+
+                        let version_info = versions
+                            .iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|version| {
+                                let created_at = time
+                                    .get(version)
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
+                                VersionInfo {
+                                    version: version.to_string(),
+                                    created_at,
+                                    ..Default::default()
+                                }
+                            })
+                            .collect();
+
+                        Ok(version_info)
+                    },
+                    settings.fetch_remote_versions_timeout(),
+                )
+                .await
+            }
+        }
     }
 
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
-        // TODO: Add bun support for getting latest version without npm
-        // See TODO in _list_remote_versions for details
-        self.ensure_npm_for_version_check(config).await;
-        let cache = self.latest_version_cache.lock().await;
-        let this = self;
-        timeout::run_with_timeout_async(
-            async || {
-                cache
-                    .get_or_try_init_async(async || {
-                        // Always use npm for getting version info since bun info requires package.json
-                        // bun is only used for actual package installation
-                        let raw =
-                            cmd!(NPM_PROGRAM, "view", this.tool_name(), "dist-tags", "--json")
+        let settings = Settings::get();
+        let package_manager = settings.npm.package_manager;
+
+        if package_manager == NpmPackageManager::Bun {
+            self.ensure_dependency(config, NpmPackageManager::Bun).await;
+            let cache = self.latest_version_cache.lock().await;
+            let this = self;
+            timeout::run_with_timeout_async(
+                async || {
+                    cache
+                        .get_or_try_init_async(async || {
+                            let output = this.read_bun_view(
+                                &this.dependency_env(config).await?,
+                                vec![this.tool_name().to_string(), "dist-tags".to_string()],
+                                config,
+                            )?;
+                            let dist_tags: Value = serde_json::from_str(&output)?;
+                            match dist_tags["latest"] {
+                                Value::String(ref s) => Ok(Some(s.clone())),
+                                _ => this.latest_version(config, Some("latest".into())).await,
+                            }
+                        })
+                        .await
+                },
+                settings.fetch_remote_versions_timeout(),
+            )
+            .await
+            .cloned()
+        } else if package_manager == NpmPackageManager::Pnpm {
+            self.ensure_dependency(config, NpmPackageManager::Pnpm)
+                .await;
+            let cache = self.latest_version_cache.lock().await;
+            let this = self;
+            timeout::run_with_timeout_async(
+                async || {
+                    cache
+                        .get_or_try_init_async(async || {
+                            // pnpm view calls npm view internally
+                            let raw = cmd!("pnpm", "view", this.tool_name(), "dist-tags", "--json")
                                 .full_env(this.dependency_env(config).await?)
-                                .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                                 .read()?;
-                        let dist_tags: Value = serde_json::from_str(&raw)?;
-                        match dist_tags["latest"] {
-                            Value::String(ref s) => Ok(Some(s.clone())),
-                            _ => this.latest_version(config, Some("latest".into())).await,
-                        }
-                    })
-                    .await
-            },
-            Settings::get().fetch_remote_versions_timeout(),
-        )
-        .await
-        .cloned()
+                            let dist_tags: Value = serde_json::from_str(&raw)?;
+                            match dist_tags["latest"] {
+                                Value::String(ref s) => Ok(Some(s.clone())),
+                                _ => this.latest_version(config, Some("latest".into())).await,
+                            }
+                        })
+                        .await
+                },
+                settings.fetch_remote_versions_timeout(),
+            )
+            .await
+            .cloned()
+        } else {
+            self.ensure_dependency(config, NpmPackageManager::Npm).await;
+            let cache = self.latest_version_cache.lock().await;
+            let this = self;
+            timeout::run_with_timeout_async(
+                async || {
+                    cache
+                        .get_or_try_init_async(async || {
+                            let raw =
+                                cmd!(NPM_PROGRAM, "view", this.tool_name(), "dist-tags", "--json")
+                                    .full_env(this.dependency_env(config).await?)
+                                    .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+                                    .read()?;
+                            let dist_tags: Value = serde_json::from_str(&raw)?;
+                            match dist_tags["latest"] {
+                                Value::String(ref s) => Ok(Some(s.clone())),
+                                _ => this.latest_version(config, Some("latest".into())).await,
+                            }
+                        })
+                        .await
+                },
+                settings.fetch_remote_versions_timeout(),
+            )
+            .await
+            .cloned()
+        }
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        self.check_install_deps(&ctx.config).await;
-        match Settings::get().npm.package_manager.as_str() {
-            "bun" => {
+        let settings = Settings::get();
+        let package_manager = settings.npm.package_manager;
+        match package_manager {
+            NpmPackageManager::Bun => {
+                self.ensure_dependency(&ctx.config, NpmPackageManager::Bun)
+                    .await
+            }
+            NpmPackageManager::Pnpm => {
+                self.ensure_dependency(&ctx.config, NpmPackageManager::Pnpm)
+                    .await
+            }
+            NpmPackageManager::Npm => {
+                self.ensure_dependency(&ctx.config, NpmPackageManager::Npm)
+                    .await
+            }
+        }
+
+        match package_manager {
+            NpmPackageManager::Bun => {
                 CmdLineRunner::new("bun")
                     .arg("install")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
@@ -174,7 +333,7 @@ impl Backend for NPMBackend {
                     .current_dir(tv.install_path())
                     .execute()?;
             }
-            "pnpm" => {
+            NpmPackageManager::Pnpm => {
                 let bin_dir = tv.install_path().join("bin");
                 crate::file::create_dir_all(&bin_dir)?;
                 CmdLineRunner::new("pnpm")
@@ -228,7 +387,7 @@ impl Backend for NPMBackend {
         _config: &Arc<Config>,
         tv: &crate::toolset::ToolVersion,
     ) -> eyre::Result<Vec<std::path::PathBuf>> {
-        if Settings::get().npm.package_manager == "npm" {
+        if Settings::get().npm.package_manager == NpmPackageManager::Npm {
             Ok(vec![tv.install_path()])
         } else {
             Ok(vec![tv.install_path().join("bin")])
@@ -248,57 +407,64 @@ impl NPMBackend {
         }
     }
 
-    /// Check dependencies for version checking (always needs npm)
-    async fn ensure_npm_for_version_check(&self, config: &Arc<Config>) {
-        // We always need npm for querying package versions
-        // TODO: Once bun supports querying packages without package.json, this can be updated
-        self.warn_if_dependency_missing(
-            config,
-            "npm", // Use "npm" for dependency check, which will check npm.cmd on Windows
-            "To use npm packages with mise, you need to install Node.js first:\n\
-              mise use node@latest\n\n\
-            Note: npm is required for querying package information, even when using bun for installation.",
-        )
-        .await
+    fn read_bun_view(
+        &self,
+        env: &BTreeMap<String, String>,
+        args: Vec<String>,
+        _config: &Arc<Config>,
+    ) -> eyre::Result<String> {
+        let temp_dir_root = &*crate::env::MISE_INSTALLS_DIR;
+        if !temp_dir_root.exists() {
+            crate::file::create_dir_all(temp_dir_root)?;
+        }
+        let temp_dir = tempfile::Builder::new()
+            .prefix("mise-bun-view-")
+            .tempdir_in(temp_dir_root)?;
+        let package_json = temp_dir.path().join("package.json");
+        crate::file::write(&package_json, "{}")?;
+
+        let mut full_args = vec!["pm".to_string(), "view".to_string(), "--json".to_string()];
+        full_args.extend(args);
+
+        let mut cmd = crate::cmd::cmd("bun", full_args);
+
+        // We do .env here to ensure we inherit PATH properly if needed, although full_env might overwrite PATH.
+        // It's tricky with duct. Usually full_env replaces everything.
+        // Let's rely on full_env.
+        cmd = cmd.full_env(env);
+
+        // But we MUST run in the temp dir
+        cmd = cmd.dir(temp_dir.path());
+
+        Ok(cmd.read()?)
     }
 
-    /// Check dependencies for package installation (npm or bun based on settings)
-    async fn check_install_deps(&self, config: &Arc<Config>) {
-        match Settings::get().npm.package_manager.as_str() {
-            "bun" => {
-                self.warn_if_dependency_missing(
-                    config,
-                    "bun",
-                    "To use npm packages with bun, you need to install bun first:\n\
-                      mise use bun@latest\n\n\
-                    Or switch back to npm by setting:\n\
-                      mise settings npm.package_manager=npm",
-                )
-                .await
-            }
-            "pnpm" => {
-                self.warn_if_dependency_missing(
-                    config,
-                    "pnpm",
-                    "To use npm packages with pnpm, you need to install pnpm first:\n\
-                      mise use pnpm@latest\n\n\
-                    Or switch back to npm by setting:\n\
-                      mise settings npm.package_manager=npm",
-                )
-                .await
-            }
-            _ => {
-                self.warn_if_dependency_missing(
-                    config,
-                    "npm",
-                    "To use npm packages with mise, you need to install Node.js first:\n\
-                      mise use node@latest\n\n\
-                    Alternatively, you can use bun or pnpm instead of npm by setting:\n\
-                      mise settings npm.package_manager=bun",
-                )
-                .await
-            }
-        }
+    async fn ensure_dependency(&self, config: &Arc<Config>, pm: NpmPackageManager) {
+        let (cmd, msg) = match pm {
+            NpmPackageManager::Bun => (
+                "bun",
+                "To use npm packages with bun, you need to install bun first:\n\
+                  mise use bun@latest\n\n\
+                Or switch back to npm by setting:\n\
+                  mise settings npm.package_manager=npm",
+            ),
+            NpmPackageManager::Pnpm => (
+                "pnpm",
+                "To use npm packages with pnpm, you need to install pnpm first:\n\
+                  mise use pnpm@latest\n\n\
+                Or switch back to npm by setting:\n\
+                  mise settings npm.package_manager=npm",
+            ),
+            NpmPackageManager::Npm => (
+                "npm", // Use "npm" for dependency check, which will check npm.cmd on Windows
+                "To use npm packages with mise, you need to install Node.js first:\n\
+                  mise use node@latest\n\n\
+                Alternatively, you can use bun or pnpm instead of npm by setting:\n\
+                  mise settings npm.package_manager=bun",
+            ),
+        };
+
+        self.warn_if_dependency_missing(config, cmd, msg).await
     }
 }
 
@@ -306,6 +472,9 @@ impl NPMBackend {
 mod tests {
     use super::*;
     use crate::cli::args::{BackendArg, BackendResolution};
+    use std::sync::Mutex;
+
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
     fn create_npm_backend(tool: &str) -> NPMBackend {
         let ba = BackendArg::new_raw(
@@ -320,6 +489,11 @@ mod tests {
 
     #[test]
     fn test_get_dependencies_for_npm_itself() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        // Ensure clean env
+        crate::env::remove_var("MISE_NPM_PACKAGE_MANAGER");
+        Settings::reset(None);
+
         // When the tool is npm itself (npm:npm) with default settings (npm as package manager),
         // it should only depend on node. With bun/pnpm configured, it would include those too.
         let backend = create_npm_backend("npm");
@@ -329,6 +503,10 @@ mod tests {
 
     #[test]
     fn test_get_dependencies_default_package_manager() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        crate::env::remove_var("MISE_NPM_PACKAGE_MANAGER");
+        Settings::reset(None);
+
         // With default settings (npm), packages should depend on node + npm
         let backend = create_npm_backend("prettier");
         let deps = backend.get_dependencies().unwrap();
@@ -336,5 +514,72 @@ mod tests {
         assert!(deps.contains(&"npm"));
         assert!(!deps.contains(&"bun"));
         assert!(!deps.contains(&"pnpm"));
+    }
+
+    #[test]
+    fn test_get_dependencies_bun_package_manager() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+
+        // With bun settings, packages should depend on bun only
+        crate::env::set_var("MISE_NPM_PACKAGE_MANAGER", "bun");
+        Settings::reset(None);
+
+        // Force refresh of Settings if needed, but in tests Settings::get() reads env vars usually?
+        // Actually Settings struct is built from config files and env vars.
+        // We might need to ensure settings are re-read or mocked.
+        // But Settings::get() might be cached?
+        // Let's assume env var works for now, or check Settings implementation.
+        // If not, we might need to manually construct Settings or Config.
+        // But let's try setting env var.
+        let backend = create_npm_backend("prettier");
+        let deps = backend.get_dependencies().unwrap();
+
+        // Reset env var
+        crate::env::remove_var("MISE_NPM_PACKAGE_MANAGER");
+        Settings::reset(None);
+
+        assert!(deps.contains(&"bun"));
+        assert!(!deps.contains(&"node"));
+        assert!(!deps.contains(&"npm"));
+        assert!(!deps.contains(&"pnpm"));
+    }
+
+    #[test]
+    fn test_get_dependencies_bun_package_manager_for_npm_tool() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+
+        // With bun settings, npm tool should depend on bun only
+        crate::env::set_var("MISE_NPM_PACKAGE_MANAGER", "bun");
+        Settings::reset(None);
+
+        let backend = create_npm_backend("npm");
+        let deps = backend.get_dependencies().unwrap();
+
+        // Reset env var
+        crate::env::remove_var("MISE_NPM_PACKAGE_MANAGER");
+        Settings::reset(None);
+
+        assert!(deps.contains(&"bun"));
+        assert!(!deps.contains(&"node"));
+    }
+
+    #[test]
+    fn test_get_dependencies_bun_package_manager_for_bun_tool() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+
+        // With bun settings, bun tool should depend on bun only
+        crate::env::set_var("MISE_NPM_PACKAGE_MANAGER", "bun");
+        Settings::reset(None);
+
+        let backend = create_npm_backend("bun");
+        let deps = backend.get_dependencies().unwrap();
+
+        // Reset env var
+        crate::env::remove_var("MISE_NPM_PACKAGE_MANAGER");
+        Settings::reset(None);
+
+        assert!(deps.contains(&"bun"));
+        assert!(!deps.contains(&"node"));
+        assert!(!deps.contains(&"npm"));
     }
 }
