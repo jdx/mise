@@ -65,6 +65,7 @@ fn get_name_from_path(path: &Path) -> String {
     let name = name.strip_prefix("asdf-").unwrap_or(name);
     let name = name.strip_prefix("rtx-").unwrap_or(name);
     let name = name.strip_prefix("mise-").unwrap_or(name);
+    let name = name.strip_prefix("vfox-").unwrap_or(name);
     unalias_backend(name).to_string()
 }
 

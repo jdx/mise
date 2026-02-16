@@ -63,6 +63,6 @@ impl PluginsUninstall {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise uninstall cmake</bold>
+    $ <bold>mise plugins uninstall cmake</bold>
 "#
 );
