@@ -48,10 +48,10 @@ run = "echo common build ran"
 EOF
 
 # Create package config with includes pointing to common tasks
-# The path is relative to the config file's directory (packages/foo/mise/)
+# The path is relative to the config root (packages/foo/)
 cat <<EOF >packages/foo/mise/config.toml
 [task_config]
-includes = ["../../../mise/common.tasks.toml"]
+includes = ["../../mise/common.tasks.toml"]
 
 [tasks.foo-task]
 run = "echo foo-task ran"
@@ -99,7 +99,7 @@ mkdir -p packages/bar/src/mise
 # Create a more deeply nested config with include going back multiple levels
 cat <<EOF >packages/bar/src/mise/config.toml
 [task_config]
-includes = ["../../../../mise/common.tasks.toml"]
+includes = ["../../../mise/common.tasks.toml"]
 
 [tasks.bar-task]
 run = "echo bar-task ran"

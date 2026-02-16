@@ -2243,13 +2243,13 @@ async fn load_file_tasks(
 
     let mut tasks = vec![];
     let config_root = Arc::new(config_root.to_path_buf());
-    let cf_dir = cf.get_path().parent().unwrap();
+    let cf_root = cf.config_root();
 
     for include in includes {
         let paths = if include.starts_with("git::") {
             vec![resolve_git_url_to_path(&include).await?]
         } else {
-            expand_task_include(cf_dir, &include)
+            expand_task_include(&cf_root, &include)
         };
         for path in paths {
             tasks.extend(load_tasks_includes(config, &path, &config_root).await?);
@@ -2268,9 +2268,8 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBu
         .rev()
         .find_map(|cf| {
             cf.task_config().includes.clone().map(|includes| {
-                // Resolve relative paths from the config file's directory, not the search directory
-                let cf_dir = cf.get_path().parent().unwrap_or(dir);
-                (includes, cf_dir.to_path_buf())
+                // Resolve relative paths from the config root, not the config file's directory
+                (includes, cf.config_root())
             })
         })
         .unwrap_or_else(|| {
