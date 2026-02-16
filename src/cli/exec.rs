@@ -211,16 +211,11 @@ where
     // causing an infinite loop. The child process still inherits the full PATH
     // (with shims) so subprocesses can find tools via shims.
     let lookup_path = env.get(&*env::PATH_KEY).map(|path_val| {
-        let shims_dir = crate::dirs::SHIMS.to_path_buf();
-        let filtered: Vec<_> = if let Ok(shims_canonical) = shims_dir.canonicalize() {
-            std::env::split_paths(&OsString::from(path_val))
-                .filter(|p| p.canonicalize().map_or(true, |cp| cp != shims_canonical))
-                .collect()
-        } else {
-            std::env::split_paths(&OsString::from(path_val))
-                .filter(|p| *p != shims_dir)
-                .collect()
-        };
+        // Use case-insensitive comparison for Windows paths
+        let shims_str = crate::dirs::SHIMS.to_string_lossy().to_lowercase();
+        let filtered: Vec<_> = std::env::split_paths(&OsString::from(path_val))
+            .filter(|p| p.to_string_lossy().to_lowercase() != shims_str)
+            .collect();
         std::env::join_paths(&filtered).unwrap()
     });
     let program = which::which_in(program, lookup_path, cwd)?;
