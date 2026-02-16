@@ -1,5 +1,49 @@
 # Changelog
 
+## [2026.2.14](https://github.com/jdx/mise/compare/v2026.2.13..v2026.2.14) - 2026-02-16
+
+### 🚀 Features
+
+- **(vfox)** allow plugins to request env var redaction via MiseEnvResult by @jdx in [#8166](https://github.com/jdx/mise/pull/8166)
+- add a default_host setting for rust by @aacebedo in [#8154](https://github.com/jdx/mise/pull/8154)
+- add github_content package support for aqua backend by @risu729 in [#8147](https://github.com/jdx/mise/pull/8147)
+- support devEngines.runtime in deno by @risu729 in [#8144](https://github.com/jdx/mise/pull/8144)
+
+### 🐛 Bug Fixes
+
+- **(asset_matcher)** penalize vsix files by @risu729 in [#8151](https://github.com/jdx/mise/pull/8151)
+- **(edit)** strip formatting whitespace from TOML values in `mise edit` by @jdx in [#8162](https://github.com/jdx/mise/pull/8162)
+- **(install)** improve --locked support for python and ubi backends by @jdx in [#8163](https://github.com/jdx/mise/pull/8163)
+- **(npm)** suppress npm update notifier while npm install by @risu729 in [#8152](https://github.com/jdx/mise/pull/8152)
+- **(schema)** add task_templates, extends, and timeout by @risu729 in [#8145](https://github.com/jdx/mise/pull/8145)
+
+### 🚜 Refactor
+
+- **(registry)** remove [key=value] options syntax from backends by @risu729 in [#8146](https://github.com/jdx/mise/pull/8146)
+
+### 📚 Documentation
+
+- **(settings)** remove wrong tip for github_attestations by @risu729 in [#8158](https://github.com/jdx/mise/pull/8158)
+
+### Chore
+
+- **(release-plz)** delete embedded plugins directory before update by @risu729 in [#8149](https://github.com/jdx/mise/pull/8149)
+- adds necessary env var to the mcp help message in cli by @joaommartins in [#8133](https://github.com/jdx/mise/pull/8133)
+
+### New Contributors
+
+- @joaommartins made their first contribution in [#8133](https://github.com/jdx/mise/pull/8133)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (5)
+
+- [`containers/podlet`](https://github.com/containers/podlet)
+- [`hickford/git-credential-azure`](https://github.com/hickford/git-credential-azure)
+- [`hickford/git-credential-oauth`](https://github.com/hickford/git-credential-oauth)
+- [`kovetskiy/mark`](https://github.com/kovetskiy/mark)
+- [`openbao/openbao/bao`](https://github.com/openbao/openbao/bao)
+
 ## [2026.2.13](https://github.com/jdx/mise/compare/v2026.2.12..v2026.2.13) - 2026-02-15
 
 ### 📦️ Dependency Updates
