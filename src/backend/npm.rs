@@ -11,7 +11,6 @@ use crate::timeout;
 use crate::toolset::ToolVersion;
 use async_trait::async_trait;
 use serde_json::Value;
-use std::collections::HashMap;
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
 
