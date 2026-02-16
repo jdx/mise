@@ -1,0 +1,21 @@
+description = "Kubernetes IDE for managing clusters, resources, and workloads"
+os = ["linux", "macos", "windows"]
+test = { cmd = "kunobi --version", expected = "{{version}}" }
+
+[[backends]]
+full = "http:kunobi"
+
+[backends.options]
+version_list_url = "https://r2.kunobi.ninja/mise/versions.txt"
+
+[backends.options.platforms.linux-x64]
+url = "https://r2.kunobi.ninja/v{{ version }}/Kunobi_{{ version }}_linux_x86_64.AppImage"
+bin = "kunobi"
+
+[backends.options.platforms.macos-arm64]
+url = "https://r2.kunobi.ninja/v{{ version }}/Kunobi_{{ version }}_darwin_aarch64.app.tar.gz"
+bin_path = "Kunobi.app/Contents/MacOS"
+
+[backends.options.platforms.windows-x64]
+url = "https://r2.kunobi.ninja/v{{ version }}/Kunobi_{{ version }}_windows_x86_64.exe"
+bin = "kunobi.exe"
