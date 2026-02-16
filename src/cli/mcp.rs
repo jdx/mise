@@ -13,10 +13,10 @@ use rmcp::{
         ProtocolVersion, RawResource, ReadResourceRequestParam, ReadResourceResult,
         ResourceContents, ServerCapabilities, ServerInfo,
     },
+    schemars::JsonSchema,
     service::RequestContext,
     tool, tool_router,
 };
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::borrow::Cow;
@@ -41,6 +41,7 @@ use std::collections::HashMap;
 /// - mise://config - Show configuration files and project root
 ///
 /// Tools available:
+/// - install_tool - Install a tool with an optional version (not yet implemented)
 /// - run_task - Execute a mise task with optional arguments
 ///
 /// Note: This is primarily intended for integration with AI assistants like Claude,
@@ -52,6 +53,16 @@ pub struct Mcp {}
 #[derive(Clone)]
 struct MiseServer {
     tool_router: ToolRouter<Self>,
+}
+
+/// Parameters for installing a tool
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+struct InstallToolParams {
+    /// Tool name (e.g. "node", "python", "go")
+    tool: String,
+    /// Optional version to install (e.g. "20", "3.12"). Defaults to latest.
+    #[serde(default)]
+    version: Option<String>,
 }
 
 /// Parameters for running a mise task
@@ -72,6 +83,17 @@ impl MiseServer {
         }
     }
 
+    /// Install a tool with an optional version
+    #[tool(description = "Install a tool with an optional version (e.g. node@20, python@3.12)")]
+    async fn install_tool(
+        &self,
+        Parameters(_params): Parameters<InstallToolParams>,
+    ) -> std::result::Result<CallToolResult, ErrorData> {
+        Ok(CallToolResult::error(vec![Content::text(
+            "Tool installation not yet implemented",
+        )]))
+    }
+
     /// Execute a mise task with optional arguments
     #[tool(description = "Execute a mise task with optional arguments")]
     async fn run_task(
@@ -79,23 +101,43 @@ impl MiseServer {
         Parameters(RunTaskParams { task, args }): Parameters<RunTaskParams>,
     ) -> std::result::Result<CallToolResult, ErrorData> {
         let exe = std::env::current_exe().map_err(|e| ErrorData {
-            code: ErrorCode(500),
+            code: ErrorCode::INTERNAL_ERROR,
             message: Cow::Owned(format!("Failed to get current exe: {e}")),
             data: None,
         })?;
 
-        let output = tokio::process::Command::new(exe)
+        let child = tokio::process::Command::new(exe)
             .arg("run")
             .arg(&task)
+            .arg("--")
             .args(&args)
             .env("NO_COLOR", "1")
-            .output()
-            .await
+            .kill_on_drop(true)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
             .map_err(|e| ErrorData {
-                code: ErrorCode(500),
-                message: Cow::Owned(format!("Failed to execute mise run: {e}")),
+                code: ErrorCode::INTERNAL_ERROR,
+                message: Cow::Owned(format!("Failed to spawn mise run: {e}")),
                 data: None,
             })?;
+
+        let output = match crate::config::Settings::get().task_timeout_duration() {
+            Some(timeout) => tokio::time::timeout(timeout, child.wait_with_output())
+                .await
+                .map_err(|_| ErrorData {
+                    code: ErrorCode::INTERNAL_ERROR,
+                    message: Cow::Owned(format!("Task '{task}' timed out after {timeout:?}")),
+                    data: None,
+                })?,
+            None => child.wait_with_output().await,
+        }
+        .map_err(|e| ErrorData {
+            code: ErrorCode::INTERNAL_ERROR,
+            message: Cow::Owned(format!("Failed to execute mise run: {e}")),
+            data: None,
+        })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -161,7 +203,7 @@ impl ServerHandler for MiseServer {
         // Parse URI to extract query parameters
         // Example: mise://tools?include_inactive=true
         let url = url::Url::parse(&params.uri).map_err(|e| ErrorData {
-            code: ErrorCode(400),
+            code: ErrorCode::INVALID_REQUEST,
             message: Cow::Owned(format!("Invalid URI: {e}")),
             data: None,
         })?;
@@ -178,7 +220,7 @@ impl ServerHandler for MiseServer {
                 // By default only shows active tools (those in current .mise.toml)
                 // With ?include_inactive=true, shows all installed tools
                 let config = Config::get().await.map_err(|e| ErrorData {
-                    code: ErrorCode(500),
+                    code: ErrorCode::INTERNAL_ERROR,
                     message: Cow::Owned(format!("Failed to load config: {e}")),
                     data: None,
                 })?;
@@ -188,7 +230,7 @@ impl ServerHandler for MiseServer {
                     .get_tool_request_set()
                     .await
                     .map_err(|e| ErrorData {
-                        code: ErrorCode(500),
+                        code: ErrorCode::INTERNAL_ERROR,
                         message: Cow::Owned(format!("Failed to get tool request set: {e}")),
                         data: None,
                     })?
@@ -196,7 +238,7 @@ impl ServerHandler for MiseServer {
 
                 let mut ts = crate::toolset::Toolset::from(trs);
                 ts.resolve(&config).await.map_err(|e| ErrorData {
-                    code: ErrorCode(500),
+                    code: ErrorCode::INTERNAL_ERROR,
                     message: Cow::Owned(format!("Failed to resolve toolset: {e}")),
                     data: None,
                 })?;
@@ -212,7 +254,7 @@ impl ServerHandler for MiseServer {
                 let versions = if include_inactive {
                     // Include all versions (active + installed)
                     ts.list_all_versions(&config).await.map_err(|e| ErrorData {
-                        code: ErrorCode(500),
+                        code: ErrorCode::INTERNAL_ERROR,
                         message: Cow::Owned(format!("Failed to list tool versions: {e}")),
                         data: None,
                     })?
@@ -253,13 +295,13 @@ impl ServerHandler for MiseServer {
             }
             ("mise", Some("tasks")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
-                    code: ErrorCode(500),
+                    code: ErrorCode::INTERNAL_ERROR,
                     message: Cow::Owned(format!("Failed to load config: {e}")),
                     data: None,
                 })?;
 
                 let tasks = config.tasks().await.map_err(|e| ErrorData {
-                    code: ErrorCode(500),
+                    code: ErrorCode::INTERNAL_ERROR,
                     message: Cow::Owned(format!("Failed to load tasks: {e}")),
                     data: None,
                 })?;
@@ -299,13 +341,13 @@ impl ServerHandler for MiseServer {
             }
             ("mise", Some("env")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
-                    code: ErrorCode(500),
+                    code: ErrorCode::INTERNAL_ERROR,
                     message: Cow::Owned(format!("Failed to load config: {e}")),
                     data: None,
                 })?;
 
                 let env_template = config.env().await.map_err(|e| ErrorData {
-                    code: ErrorCode(500),
+                    code: ErrorCode::INTERNAL_ERROR,
                     message: Cow::Owned(format!("Failed to load env: {e}")),
                     data: None,
                 })?;
@@ -326,7 +368,7 @@ impl ServerHandler for MiseServer {
             }
             ("mise", Some("config")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
-                    code: ErrorCode(500),
+                    code: ErrorCode::INTERNAL_ERROR,
                     message: Cow::Owned(format!("Failed to load config: {e}")),
                     data: None,
                 })?;
@@ -346,7 +388,7 @@ impl ServerHandler for MiseServer {
                 Ok(ReadResourceResult { contents })
             }
             _ => Err(ErrorData {
-                code: ErrorCode(404),
+                code: ErrorCode::RESOURCE_NOT_FOUND,
                 message: Cow::Owned(format!("Unknown resource URI: {}", params.uri)),
                 data: None,
             }),
@@ -430,6 +472,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     - <bold>mise://config</bold> - Show configuration info
 
     # Tools available:
+    - <bold>install_tool</bold> - Install a tool (not yet implemented)
     - <bold>run_task</bold> - Execute a mise task with optional arguments
       Example: {"task": "build", "args": ["--verbose"]}
 "#
