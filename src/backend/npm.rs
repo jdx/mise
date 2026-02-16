@@ -49,7 +49,7 @@ impl Backend for NPMBackend {
             return match package_manager {
                 NpmPackageManager::Bun => Ok(vec!["node", "bun"]),
                 NpmPackageManager::Pnpm => Ok(vec!["node", "pnpm"]),
-                _ => Ok(vec!["node"]),
+                NpmPackageManager::Npm => Ok(vec!["node"]),
             };
         }
 
