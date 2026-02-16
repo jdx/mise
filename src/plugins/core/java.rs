@@ -424,10 +424,14 @@ impl Backend for JavaPlugin {
             }
             Ok(vec![format!("{vendor}-{version}")])
         } else {
+<<<<<<< HEAD
             Ok(normalize_idiomatic_contents(&contents)
                 .lines()
                 .map(|s| s.to_string())
                 .collect())
+=======
+            Ok(vec![contents.trim().to_string()])
+>>>>>>> 87f3fe68f (fix: trim in java.rs)
         }
     }
 
