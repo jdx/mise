@@ -3,6 +3,7 @@ use crate::task::Task;
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::path::Path;
 
 #[derive(Debug, Clone, Eq, PartialEq, strum::EnumIs)]
 pub enum TaskOutputs {
@@ -32,17 +33,25 @@ impl TaskOutputs {
         }
     }
 
-    pub fn paths(&self, task: &Task) -> Vec<String> {
+    pub fn patterns(&self) -> Vec<String> {
         match self {
             TaskOutputs::Files(files) => files.clone(),
-            TaskOutputs::Auto => vec![self.auto_path(task)],
+            TaskOutputs::Auto => vec![],
         }
     }
 
-    fn auto_path(&self, task: &Task) -> String {
+    pub fn paths(&self, task: &Task, root: &Path) -> Vec<String> {
+        match self {
+            TaskOutputs::Files(files) => files.clone(),
+            TaskOutputs::Auto => vec![self.auto_path(task, root)],
+        }
+    }
+
+    fn auto_path(&self, task: &Task, root: &Path) -> String {
         let mut hasher = DefaultHasher::new();
         task.hash(&mut hasher);
         task.config_source.hash(&mut hasher);
+        root.hash(&mut hasher);
         let hash = format!("{:x}", hasher.finish());
         dirs::STATE
             .join("task-auto-outputs")

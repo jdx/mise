@@ -142,11 +142,11 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
         } else {
             file_metadatas_to_hash(&source_metadatas)
         };
-        let source_hash_path = sources_hash_path(task, use_content_hash);
+        let source_hash_path = sources_hash_path(task, &root, use_content_hash);
         if let Some(dir) = source_hash_path.parent() {
             file::create_dir_all(dir)?;
         }
-        if source_existing_hash(task, use_content_hash).is_some_and(|h| h != source_hash) {
+        if source_existing_hash(task, &root, use_content_hash).is_some_and(|h| h != source_hash) {
             debug!(
                 "source {} hash mismatch in {}",
                 if use_content_hash {
@@ -160,7 +160,7 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
             return Ok(false);
         }
         let sources = get_last_modified_from_metadatas(&source_metadatas);
-        let outputs = get_last_modified(&root, &task.outputs.paths(task))?;
+        let outputs = get_last_modified(&root, &task.outputs.paths(task, &root))?;
         file::write(&source_hash_path, &source_hash)?;
         trace!("sources: {sources:?}, outputs: {outputs:?}");
         match (sources, outputs) {
@@ -186,7 +186,8 @@ pub async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<()> {
         return Ok(());
     }
     if task.outputs.is_auto() {
-        for p in task.outputs.paths(task) {
+        let root = task_cwd(task, config).await?;
+        for p in task.outputs.paths(task, &root) {
             debug!("touching auto output file: {p}");
             file::touch_file(&PathBuf::from(&p))?;
         }
@@ -194,7 +195,7 @@ pub async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<()> {
         // Check if explicitly defined outputs were generated
         // Use task_cwd to respect the task's dir setting, matching sources_are_fresh behavior
         let root = task_cwd(task, config).await?;
-        for output in task.outputs.paths(task) {
+        for output in task.outputs.paths(task, &root) {
             let output_exists = if is_glob_pattern(&output) {
                 // For glob patterns, check if any files match
                 let pattern = root.join(&output);
@@ -223,10 +224,11 @@ pub async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<()> {
 }
 
 /// Get the path to store source hashes for a task
-fn sources_hash_path(task: &Task, content_hash: bool) -> PathBuf {
+fn sources_hash_path(task: &Task, root: &Path, content_hash: bool) -> PathBuf {
     let mut hasher = DefaultHasher::new();
     task.hash(&mut hasher);
     task.config_source.hash(&mut hasher);
+    root.hash(&mut hasher);
     let hash = format!("{:x}", hasher.finish());
     let suffix = if content_hash { "-content" } else { "" };
     dirs::STATE
@@ -235,8 +237,8 @@ fn sources_hash_path(task: &Task, content_hash: bool) -> PathBuf {
 }
 
 /// Get the existing source hash for a task, if it exists
-fn source_existing_hash(task: &Task, content_hash: bool) -> Option<String> {
-    let path = sources_hash_path(task, content_hash);
+fn source_existing_hash(task: &Task, root: &Path, content_hash: bool) -> Option<String> {
+    let path = sources_hash_path(task, root, content_hash);
     if path.exists() {
         Some(file::read_to_string(&path).unwrap_or_default())
     } else {
