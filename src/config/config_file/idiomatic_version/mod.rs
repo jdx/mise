@@ -40,19 +40,24 @@ impl IdiomaticVersionFile {
         for plugin in plugins {
             if path.file_name().is_some_and(|f| f == "package.json") {
                 let versions = package_json::parse(&path, plugin.id())?;
-                for v in versions {
-                    add_version(&mut tools, &plugin, &v)?;
+                for v in versions.iter() {
+                    add_version(&mut tools, &plugin, v)?;
                 }
-                continue;
+                if !versions.is_empty() {
+                    continue;
+                }
             }
 
             let versions = plugin.parse_idiomatic_file(&path).await?;
             if !versions.is_empty() {
-                for v in versions {
-                    add_version(&mut tools, &plugin, &v)?;
+                for v in versions.iter() {
+                    add_version(&mut tools, &plugin, v)?;
                 }
-                continue;
+                if !versions.is_empty() {
+                    continue;
+                }
             }
+
             let body = crate::file::read_to_string(&path).unwrap_or_default();
             let body = body.trim();
             if !body.is_empty() {
