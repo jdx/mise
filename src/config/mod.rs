@@ -529,12 +529,16 @@ impl Config {
     pub async fn get_tracked_config_files(&self) -> Result<ConfigMap> {
         let mut config_files: ConfigMap = ConfigMap::default();
         for path in Tracker::list_all()?.into_iter() {
-            // Skip untrusted/ignored configs to avoid interactive prompts
-            // when loading tracked configs (e.g., during `mise upgrade`)
-            let trust_root = config_file::config_trust_root(&path);
-            if !config_file::is_trusted(&trust_root) && !config_file::is_trusted(&path) {
-                debug!("skipping untrusted tracked config: {}", display_path(&path));
-                continue;
+            // Skip untrusted/ignored TOML configs to avoid interactive trust
+            // prompts when loading tracked configs (e.g., during `mise upgrade`).
+            // Only TOML files trigger trust_check during parsing—.tool-versions
+            // and idiomatic version files are always safe to parse.
+            if path.extension().is_some_and(|ext| ext == "toml") {
+                let trust_root = config_file::config_trust_root(&path);
+                if !config_file::is_trusted(&trust_root) && !config_file::is_trusted(&path) {
+                    debug!("skipping untrusted tracked config: {}", display_path(&path));
+                    continue;
+                }
             }
             match config_file::parse(&path).await {
                 Ok(cf) => {
