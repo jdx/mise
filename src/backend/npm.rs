@@ -83,26 +83,34 @@ impl Backend for NPMBackend {
             async || {
                 let env = self.dependency_env(config).await?;
 
-                // Fetch versions and timestamps in parallel
-                let versions_raw =
-                    cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
-                        .full_env(&env)
-                        .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-                        .read()?;
-                let time_raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "time", "--json")
-                    .full_env(&env)
-                    .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-                    .read()?;
-
-                let versions: Vec<String> = serde_json::from_str(&versions_raw)?;
-                let time: HashMap<String, String> = serde_json::from_str(&time_raw)?;
-
+                let raw = cmd!(
+                    NPM_PROGRAM,
+                    "view",
+                    self.tool_name(),
+                    "versions",
+                    "time",
+                    "--json"
+                )
+                .full_env(&env)
+                .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+                .read()?;
+                let data: Value = serde_json::from_str(&raw)?;
+                let versions = data["versions"]
+                    .as_array()
+                    .ok_or_else(|| eyre::eyre!("invalid versions"))?;
+                let time = data["time"]
+                    .as_object()
+                    .ok_or_else(|| eyre::eyre!("invalid time"))?;
                 let version_info = versions
-                    .into_iter()
+                    .iter()
+                    .filter_map(|v| v.as_str())
                     .map(|version| {
-                        let created_at = time.get(&version).cloned();
+                        let created_at = time
+                            .get(version)
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
                         VersionInfo {
-                            version,
+                            version: version.to_string(),
                             created_at,
                             ..Default::default()
                         }
