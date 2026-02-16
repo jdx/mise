@@ -476,7 +476,9 @@ impl Run {
                 this.add_failed_task(task.clone(), status);
             }
             if let Some(oh) = &this.output_handler {
-                oh.keep_order_state.lock().unwrap().on_task_finished(&task);
+                if oh.output(None) == TaskOutput::KeepOrder {
+                    oh.keep_order_state.lock().unwrap().on_task_finished(&task);
+                }
             }
             deps_for_remove.lock().await.remove(&task);
             trace!("deps removed: {} {}", task.name, task.args.join(" "));
