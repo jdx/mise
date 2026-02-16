@@ -65,8 +65,7 @@ impl Backend for NPMBackend {
         match package_manager {
             NpmPackageManager::Bun => deps.push("bun"),
             NpmPackageManager::Pnpm => deps.push("pnpm"),
-            // npm is already in deps
-            _ => {}
+            NpmPackageManager::Npm => {} // npm is already in deps
         }
         Ok(deps)
     }
