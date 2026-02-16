@@ -3,7 +3,10 @@ use crate::config::Config;
 use clap::Parser;
 use rmcp::{
     RoleServer, ServiceExt,
-    handler::server::ServerHandler,
+    handler::server::{
+        ServerHandler,
+        tool::{Parameters, ToolRouter},
+    },
     model::{
         AnnotateAble, CallToolRequestParam, CallToolResult, Content, ErrorCode, ErrorData,
         Implementation, ListResourcesResult, ListToolsResult, PaginatedRequestParam,
@@ -11,7 +14,10 @@ use rmcp::{
         ResourceContents, ServerCapabilities, ServerInfo,
     },
     service::RequestContext,
+    tool, tool_router,
 };
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -26,12 +32,16 @@ use std::collections::HashMap;
 /// - Task definitions and execution
 /// - Environment variables
 /// - Configuration information
+/// - Task execution via the run_task tool
 ///
 /// Resources available:
 /// - mise://tools - List all tools (use ?include_inactive=true to include inactive tools)
 /// - mise://tasks - List all tasks with their configurations
 /// - mise://env - List all environment variables
 /// - mise://config - Show configuration files and project root
+///
+/// Tools available:
+/// - run_task - Execute a mise task with optional arguments
 ///
 /// Note: This is primarily intended for integration with AI assistants like Claude,
 /// Cursor, or other tools that support the Model Context Protocol.
@@ -40,11 +50,109 @@ use std::collections::HashMap;
 pub struct Mcp {}
 
 #[derive(Clone)]
-struct MiseServer {}
+struct MiseServer {
+    tool_router: ToolRouter<Self>,
+}
 
+/// Parameters for running a mise task
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+struct RunTaskParams {
+    /// Name of the task to run
+    task: String,
+    /// Optional arguments to pass to the task
+    #[serde(default)]
+    args: Vec<String>,
+}
+
+#[tool_router]
 impl MiseServer {
     fn new() -> Self {
-        Self {}
+        Self {
+            tool_router: Self::tool_router(),
+        }
+    }
+
+    /// Execute a mise task with optional arguments
+    #[tool(description = "Execute a mise task with optional arguments")]
+    async fn run_task(
+        &self,
+        Parameters(RunTaskParams { task, args }): Parameters<RunTaskParams>,
+    ) -> std::result::Result<CallToolResult, ErrorData> {
+        // Execute the task in a blocking task to avoid Send issues
+        let result = tokio::task::spawn_blocking(move || {
+            use std::process::Command;
+
+            let exe =
+                std::env::current_exe().map_err(|e| format!("Failed to get current exe: {}", e))?;
+
+            let mut cmd = Command::new(exe);
+            cmd.arg("run");
+            cmd.arg(&task);
+
+            for arg in args {
+                cmd.arg(arg);
+            }
+
+            // Capture output
+            let output = cmd
+                .output()
+                .map_err(|e| format!("Failed to execute mise run: {}", e))?;
+
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let mut result = String::new();
+
+                // Include stderr first if it has warnings/info
+                if !stderr.is_empty() {
+                    result.push_str(&stderr);
+                    if !stdout.is_empty() {
+                        result.push('\n');
+                    }
+                }
+                // Main output is stdout
+                if !stdout.is_empty() {
+                    result.push_str(&stdout);
+                } else {
+                    result.push_str(&format!("✓ Task '{}' completed successfully", task));
+                }
+
+                Ok(result)
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                
+                // On failure, include both stderr (error messages) and stdout (partial output)
+                let mut error_msg = String::new();
+                if !stderr.is_empty() {
+                    error_msg.push_str(&stderr);
+                }
+                if !stdout.is_empty() {
+                    if !error_msg.is_empty() {
+                        error_msg.push('\n');
+                    }
+                    error_msg.push_str("Partial output:\n");
+                    error_msg.push_str(&stdout);
+                }
+                
+                Err(format!(
+                    "Task '{}' failed with exit code {}:\n{}",
+                    task,
+                    output.status.code().unwrap_or(-1),
+                    error_msg
+                ))
+            }
+        })
+        .await;
+
+        match result {
+            Ok(Ok(output)) => Ok(CallToolResult::success(vec![Content::text(output)])),
+            Ok(Err(e)) => Ok(CallToolResult::error(vec![Content::text(e)])),
+            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
+                "Task execution panicked: {}",
+                e
+            ))])),
+        }
     }
 }
 
@@ -284,9 +392,8 @@ impl ServerHandler for MiseServer {
         _pagination: Option<PaginatedRequestParam>,
         _context: RequestContext<RoleServer>,
     ) -> std::result::Result<ListToolsResult, ErrorData> {
-        // For now, return empty tools list
         Ok(ListToolsResult {
-            tools: vec![],
+            tools: self.tool_router.list_all(),
             next_cursor: None,
         })
     }
@@ -294,21 +401,11 @@ impl ServerHandler for MiseServer {
     async fn call_tool(
         &self,
         request: CallToolRequestParam,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> std::result::Result<CallToolResult, ErrorData> {
-        match &request.name[..] {
-            "install_tool" => Ok(CallToolResult::success(vec![Content::text(
-                "Tool installation not yet implemented".to_string(),
-            )])),
-            "run_task" => Ok(CallToolResult::success(vec![Content::text(
-                "Task execution not yet implemented".to_string(),
-            )])),
-            _ => Err(ErrorData {
-                code: ErrorCode(404),
-                message: Cow::Owned(format!("Unknown tool: {}", request.name)),
-                data: None,
-            }),
-        }
+        let tool_call_context =
+            rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        self.tool_router.call(tool_call_context).await
     }
 }
 
@@ -365,5 +462,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     - <bold>mise://tasks</bold> - List all tasks
     - <bold>mise://env</bold> - List environment variables
     - <bold>mise://config</bold> - Show configuration info
+
+    # Tools available:
+    - <bold>run_task</bold> - Execute a mise task with optional arguments
+      Example: {"task": "build", "args": ["--verbose"]}
 "#
 );

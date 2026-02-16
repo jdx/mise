@@ -5130,6 +5130,7 @@ dependencies = [
  "rmcp-macros",
  "rmp-serde",
  "rops",
+ "schemars 1.2.1",
  "self_update",
  "serde",
  "serde_derive",
