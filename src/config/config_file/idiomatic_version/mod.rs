@@ -10,6 +10,8 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
 use super::ConfigFileType;
 
+pub mod package_json;
+
 #[derive(Debug, Clone)]
 pub struct IdiomaticVersionFile {
     path: PathBuf,
@@ -28,17 +30,35 @@ impl IdiomaticVersionFile {
         let source = ToolSource::IdiomaticVersionFile(path.clone());
         let mut tools = ToolRequestSet::new();
 
-        for plugin in plugins {
-            let version = match plugin.parse_idiomatic_file(&path).await {
-                Ok(v) => v,
-                Err(e) => {
-                    trace!("skipping {} for {}: {e}", plugin.id(), path.display());
-                    continue;
-                }
-            };
-            for version in version.split_whitespace() {
+        let add_version =
+            |tools: &mut ToolRequestSet, plugin: &Arc<dyn Backend>, version: &str| -> Result<()> {
                 let tr = ToolRequest::new(plugin.ba().clone(), version, source.clone())?;
                 tools.add_version(tr, &source);
+                Ok(())
+            };
+
+        for plugin in plugins {
+            if path.file_name().is_some_and(|f| f == "package.json") {
+                let versions = package_json::parse(&path, plugin.id())?;
+                for v in versions {
+                    add_version(&mut tools, &plugin, &v)?;
+                }
+                continue;
+            }
+
+            let versions = plugin.parse_idiomatic_file(&path).await?;
+            if !versions.is_empty() {
+                for v in versions {
+                    add_version(&mut tools, &plugin, &v)?;
+                }
+                continue;
+            }
+            let body = crate::file::read_to_string(&path).unwrap_or_default();
+            let body = body.trim();
+            if !body.is_empty() {
+                for v in body.split_whitespace() {
+                    add_version(&mut tools, &plugin, v)?;
+                }
             }
         }
 
@@ -47,12 +67,19 @@ impl IdiomaticVersionFile {
 
     pub async fn from_file(path: &Path) -> Result<Self> {
         trace!("parsing idiomatic version: {}", path.display());
-        let file_name = &path.file_name().unwrap().to_string_lossy().to_string();
+        let file_name = path.file_name().unwrap().to_string_lossy().to_string();
         let mut tools: Vec<Arc<dyn Backend>> = vec![];
+        let enable_tools = crate::config::Settings::get()
+            .idiomatic_version_file_enable_tools
+            .clone();
         for b in backend::list().into_iter() {
+            if !enable_tools.contains(b.id()) {
+                continue;
+            }
+
             if b.idiomatic_filenames()
                 .await
-                .is_ok_and(|f| f.contains(file_name))
+                .is_ok_and(|f| f.contains(&file_name))
             {
                 tools.push(b);
             }

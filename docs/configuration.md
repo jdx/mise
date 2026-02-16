@@ -414,22 +414,26 @@ other developers to use a specific tool like mise or asdf.
 They support aliases, which means you can have an `.nvmrc` file with `lts/hydrogen` and it will work
 in mise and nvm. Here are some of the supported idiomatic version files:
 
-| Plugin     | Idiomatic Files                       |
-| ---------- | ------------------------------------- |
-| atmos      | `.atmos-version`                      |
-| crystal    | `.crystal-version`                    |
-| elixir     | `.exenv-version`                      |
-| go         | `.go-version`                         |
-| java       | `.java-version`, `.sdkmanrc`          |
-| node       | `.nvmrc`, `.node-version`             |
-| opentofu   | `.opentofu-version`                   |
-| packer     | `.packer-version`                     |
-| python     | `.python-version`, `.python-versions` |
-| ruby       | `.ruby-version`, `Gemfile`            |
-| terraform  | `.terraform-version`, `main.tf`       |
-| terragrunt | `.terragrunt-version`                 |
-| terramate  | `.terramate-version`                  |
-| yarn       | `.yvmrc`                              |
+| Plugin     | Idiomatic Files                           |
+| ---------- | ----------------------------------------- |
+| atmos      | `.atmos-version`                          |
+| bun        | `.bun-version`, `package.json`            |
+| crystal    | `.crystal-version`                        |
+| deno       | `.deno-version`, `package.json`           |
+| elixir     | `.exenv-version`                          |
+| go         | `.go-version`                             |
+| java       | `.java-version`, `.sdkmanrc`              |
+| node       | `.nvmrc`, `.node-version`, `package.json` |
+| npm        | `package.json`                            |
+| opentofu   | `.opentofu-version`                       |
+| packer     | `.packer-version`                         |
+| pnpm       | `package.json`                            |
+| python     | `.python-version`, `.python-versions`     |
+| ruby       | `.ruby-version`, `Gemfile`                |
+| terraform  | `.terraform-version`, `main.tf`           |
+| terragrunt | `.terragrunt-version`                     |
+| terramate  | `.terramate-version`                      |
+| yarn       | `.yvmrc`, `package.json`                  |
 
 In mise, these are disabled by default, see <https://github.com/jdx/mise/discussions/4345> for rationale.
 

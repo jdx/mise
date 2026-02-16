@@ -300,7 +300,7 @@ impl Backend for ZigPlugin {
         }
     }
 
-    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".zig-version".into()])
     }
 

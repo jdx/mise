@@ -171,16 +171,20 @@ impl Backend for VfoxBackend {
         Some(&self.plugin_enum)
     }
 
-    async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<String> {
+    async fn _idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
+        let (vfox, _log_rx) = self.plugin.vfox();
+
+        let metadata = vfox.metadata(&self.pathname).await?;
+        Ok(metadata.legacy_filenames)
+    }
+
+    async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
         let (vfox, _log_rx) = self.plugin.vfox();
         let response = vfox.parse_legacy_file(&self.pathname, path).await?;
-        response.version.ok_or_else(|| {
-            eyre::eyre!(
-                "Version for {} not found in '{}'",
-                self.pathname,
-                path.display()
-            )
-        })
+        if let Some(version) = response.version {
+            return Ok(version.split_whitespace().map(|s| s.to_string()).collect());
+        }
+        Ok(vec![])
     }
 
     async fn get_tarball_url(

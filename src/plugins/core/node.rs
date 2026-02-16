@@ -562,7 +562,7 @@ impl Backend for NodePlugin {
         Ok(aliases)
     }
 
-    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![
             ".node-version".into(),
             ".nvmrc".into(),
@@ -570,19 +570,19 @@ impl Backend for NodePlugin {
         ])
     }
 
-    async fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
-        if path.file_name().is_some_and(|f| f == "package.json") {
-            let pkg = crate::package_json::PackageJson::parse(path)?;
-            return pkg
-                .runtime_version("node")
-                .ok_or_else(|| eyre::eyre!("no node version found in package.json"));
-        }
-        let body = normalize_idiomatic_contents(&file::read_to_string(path)?);
-        // trim "v" prefix
-        let body = body.trim().strip_prefix('v').unwrap_or(&body);
-        // replace lts/* with lts
-        let body = body.replace("lts/*", "lts");
-        Ok(body.to_string())
+    async fn parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
+        let contents = file::read_to_string(path)?;
+        let body = normalize_idiomatic_contents(&contents);
+
+        let versions = body
+            .lines()
+            .map(|line| {
+                let mut version = line.trim().strip_prefix('v').unwrap_or(line).to_string();
+                version = version.replace("lts/*", "lts");
+                version
+            })
+            .collect();
+        Ok(versions)
     }
 
     async fn install_version_(

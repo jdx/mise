@@ -125,7 +125,7 @@ impl Config {
     pub async fn load() -> Result<Arc<Self>> {
         backend::load_tools().await?;
         let idiomatic_files = measure!("config::load idiomatic_files", {
-            load_idiomatic_files().await
+            load_idiomatic_filenames().await
         });
         let config_filenames = idiomatic_files
             .keys()
@@ -898,7 +898,7 @@ fn find_monorepo_config(config_files: &ConfigMap) -> Option<&Arc<dyn ConfigFile>
         .find(|cf| cf.experimental_monorepo_root() == Some(true))
 }
 
-async fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
+async fn load_idiomatic_filenames() -> BTreeMap<String, Vec<String>> {
     let enable_tools = Settings::get().idiomatic_version_file_enable_tools.clone();
     if enable_tools.is_empty() {
         return BTreeMap::new();
@@ -1434,7 +1434,7 @@ async fn load_all_config_files(
 /// Load config files from a list of paths (for monorepo task config contexts)
 pub async fn load_config_files_from_paths(config_paths: &[PathBuf]) -> Result<ConfigMap> {
     backend::load_tools().await?;
-    let idiomatic_filenames = BTreeMap::new(); // TODO: support idiomatic files in config hierarchy loading
+    let idiomatic_filenames = load_idiomatic_filenames().await;
     let mut config_map = ConfigMap::default();
 
     for f in config_paths.iter().unique() {

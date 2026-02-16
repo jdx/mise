@@ -915,22 +915,31 @@ pub trait Backend: Debug + Send + Sync {
     fn get_aliases(&self) -> eyre::Result<BTreeMap<String, String>> {
         Ok(BTreeMap::new())
     }
+
+    /// Returns a list of idiomatic filenames for this tool.
+    ///
+    /// This method is additive:
+    /// 1. It calls `_idiomatic_filenames` to get backend-specific filenames.
+    /// 2. It checks the Registry for any additional filenames defined there.
     async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
-        Ok(REGISTRY
-            .get(self.id())
-            .map(|rt| rt.idiomatic_files.iter().map(|s| s.to_string()).collect())
-            .unwrap_or_default())
-    }
-    async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<String> {
-        if path.file_name().is_some_and(|f| f == "package.json") {
-            let pkg = crate::package_json::PackageJson::parse(path)?;
-            return pkg
-                .package_manager_version(self.id())
-                .ok_or_else(|| eyre::eyre!("no {} version found in package.json", self.id()));
+        let mut filenames = self._idiomatic_filenames().await?;
+        if let Some(rt) = REGISTRY.get(self.id()) {
+            filenames.extend(rt.idiomatic_files.iter().map(|s| s.to_string()));
         }
-        let contents = file::read_to_string(path)?;
-        Ok(normalize_idiomatic_contents(&contents))
+        Ok(filenames)
     }
+
+    /// Backend-specific implementation for `idiomatic_filenames`.
+    /// Override this to provide native idiomatic filenames for the backend.
+    async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
+        Ok(vec![])
+    }
+
+    /// Parses an idiomatic version file to extract the version.
+    async fn parse_idiomatic_file(&self, _path: &Path) -> eyre::Result<Vec<String>> {
+        Ok(vec![])
+    }
+
     fn plugin(&self) -> Option<&PluginEnum> {
         None
     }

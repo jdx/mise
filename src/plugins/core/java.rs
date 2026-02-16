@@ -387,11 +387,11 @@ impl Backend for JavaPlugin {
         Ok(aliases)
     }
 
-    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".java-version".into(), ".sdkmanrc".into()])
     }
 
-    async fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
+    async fn parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
         let contents = file::read_to_string(path)?;
         if path.file_name() == Some(".sdkmanrc".as_ref()) {
             let version = contents
@@ -402,7 +402,7 @@ impl Backend for JavaPlugin {
                 .unwrap_or_default()
                 .1;
             if !version.contains('-') {
-                return Ok(version.to_string());
+                return Ok(vec![version.to_string()]);
             }
             let (version, vendor) = version.rsplit_once('-').unwrap_or_default();
             let vendor = match vendor {
@@ -422,9 +422,12 @@ impl Backend for JavaPlugin {
             if vendor == "zulu" {
                 version = version.split_once('.').unwrap_or_default().0;
             }
-            Ok(format!("{vendor}-{version}"))
+            Ok(vec![format!("{vendor}-{version}")])
         } else {
-            Ok(normalize_idiomatic_contents(&contents))
+            Ok(normalize_idiomatic_contents(&contents)
+                .lines()
+                .map(|s| s.to_string())
+                .collect())
         }
     }
 

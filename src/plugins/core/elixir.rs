@@ -126,7 +126,7 @@ impl Backend for ElixirPlugin {
         Ok(versions)
     }
 
-    async fn idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
+    async fn _idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
         Ok(vec![".exenv-version".into()])
     }
 

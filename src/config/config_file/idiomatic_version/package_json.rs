@@ -1,14 +1,12 @@
-use std::path::Path;
-
+use crate::file;
 use eyre::Result;
 use serde::Deserialize;
 use serde::de::Deserializer;
-
-use crate::file;
+use std::path::Path;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PackageJson {
+struct PackageJsonData {
     dev_engines: Option<DevEngines>,
     package_manager: Option<String>,
 }
@@ -50,15 +48,15 @@ where
     }
 }
 
-impl PackageJson {
-    pub fn parse(path: &Path) -> Result<Self> {
+impl PackageJsonData {
+    fn parse(path: &Path) -> Result<Self> {
         let contents = file::read_to_string(path)?;
-        let pkg: PackageJson = serde_json::from_str(&contents)?;
+        let pkg: PackageJsonData = serde_json::from_str(&contents)?;
         Ok(pkg)
     }
 
-    /// Extract a runtime version for the given tool name from devEngines.runtime
-    pub fn runtime_version(&self, tool_name: &str) -> Option<String> {
+    /// Extract a runtime version for the given tool name.
+    fn runtime_version(&self, tool_name: &str) -> Option<String> {
         self.dev_engines
             .as_ref()
             .and_then(|de| de.runtime.as_ref())
@@ -70,7 +68,7 @@ impl PackageJson {
 
     /// Extract a package manager version for the given tool name.
     /// Checks devEngines.packageManager first, then falls back to the packageManager field.
-    pub fn package_manager_version(&self, tool_name: &str) -> Option<String> {
+    fn package_manager_version(&self, tool_name: &str) -> Option<String> {
         // Try devEngines.packageManager first
         self.dev_engines
             .as_ref()
@@ -107,7 +105,7 @@ impl PackageJson {
 /// This doesn't handle all edge cases correctly. For example, `^20.0.1` should not
 /// match `20.0.0`, but our simplified approach strips it to `20` which would match.
 /// Full semver range support may be added in the future.
-pub fn simplify_semver(input: &str) -> String {
+fn simplify_semver(input: &str) -> String {
     let input = input.trim();
     if input == "*" || input == "x" {
         return "latest".to_string();
@@ -161,9 +159,32 @@ pub fn simplify_semver(input: &str) -> String {
     }
 }
 
+pub fn parse(path: &Path, tool_name: &str) -> Result<Vec<String>> {
+    let pkg = PackageJsonData::parse(path)?;
+    let v = match tool_name {
+        "node" | "deno" => pkg.runtime_version(tool_name),
+        "bun" => {
+            if let Some(v) = pkg.runtime_version(tool_name) {
+                Some(v)
+            } else {
+                pkg.package_manager_version(tool_name)
+            }
+        }
+        "npm" | "yarn" | "pnpm" => pkg.package_manager_version(tool_name),
+        _ => None,
+    };
+    if let Some(v) = v {
+        Ok(vec![v])
+    } else {
+        Ok(vec![])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn test_simplify_semver() {
@@ -182,6 +203,47 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_package_json() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        fs::write(
+            &path,
+            r#"{
+                "devEngines": {
+                    "packageManager": {
+                        "name": "yarn",
+                        "version": "1.22.19"
+                    },
+                    "runtime": {
+                        "name": "node",
+                        "version": "20.0.0"
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(parse(&path, "yarn").unwrap(), vec!["1.22.19".to_string()]);
+        assert_eq!(parse(&path, "node").unwrap(), vec!["20.0.0".to_string()]);
+    }
+
+    #[test]
+    fn test_bun_logic() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        fs::write(
+            &path,
+            r#"{
+                "packageManager": "bun@1.0.0"
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(parse(&path, "bun").unwrap(), vec!["1.0.0".to_string()]);
+        assert_eq!(parse(&path, "node").unwrap(), Vec::<String>::new());
+    }
+
+    #[test]
     fn test_simplify_semver_upper_bound() {
         assert_eq!(simplify_semver("<18.0.0"), "");
         assert_eq!(simplify_semver("<=18.0.0"), "");
@@ -197,7 +259,7 @@ mod tests {
 
     #[test]
     fn test_runtime_version() {
-        let pkg: PackageJson = serde_json::from_str(
+        let pkg: PackageJsonData = serde_json::from_str(
             r#"{
                 "devEngines": {
                     "runtime": {
@@ -214,7 +276,7 @@ mod tests {
 
     #[test]
     fn test_runtime_version_bun() {
-        let pkg: PackageJson = serde_json::from_str(
+        let pkg: PackageJsonData = serde_json::from_str(
             r#"{
                 "devEngines": {
                     "runtime": {
@@ -231,7 +293,7 @@ mod tests {
 
     #[test]
     fn test_runtime_version_array_form() {
-        let pkg: PackageJson = serde_json::from_str(
+        let pkg: PackageJsonData = serde_json::from_str(
             r#"{
                 "devEngines": {
                     "runtime": [
@@ -247,7 +309,7 @@ mod tests {
 
     #[test]
     fn test_runtime_version_missing_name() {
-        let pkg: PackageJson = serde_json::from_str(
+        let pkg: PackageJsonData = serde_json::from_str(
             r#"{
                 "devEngines": {
                     "runtime": {
@@ -262,7 +324,7 @@ mod tests {
 
     #[test]
     fn test_package_manager_version_dev_engines() {
-        let pkg: PackageJson = serde_json::from_str(
+        let pkg: PackageJsonData = serde_json::from_str(
             r#"{
                 "devEngines": {
                     "packageManager": {
@@ -279,7 +341,7 @@ mod tests {
 
     #[test]
     fn test_package_manager_version_field() {
-        let pkg: PackageJson = serde_json::from_str(
+        let pkg: PackageJsonData = serde_json::from_str(
             r#"{
                 "packageManager": "pnpm@9.1.0+sha256.abcdef"
             }"#,
@@ -294,7 +356,7 @@ mod tests {
 
     #[test]
     fn test_package_manager_version_no_hash() {
-        let pkg: PackageJson = serde_json::from_str(
+        let pkg: PackageJsonData = serde_json::from_str(
             r#"{
                 "packageManager": "yarn@4.1.0"
             }"#,
@@ -308,7 +370,7 @@ mod tests {
 
     #[test]
     fn test_dev_engines_overrides_package_manager_field() {
-        let pkg: PackageJson = serde_json::from_str(
+        let pkg: PackageJsonData = serde_json::from_str(
             r#"{
                 "devEngines": {
                     "packageManager": {
@@ -325,14 +387,14 @@ mod tests {
 
     #[test]
     fn test_missing_fields() {
-        let pkg: PackageJson = serde_json::from_str(r#"{}"#).unwrap();
+        let pkg: PackageJsonData = serde_json::from_str(r#"{}"#).unwrap();
         assert_eq!(pkg.runtime_version("node"), None);
         assert_eq!(pkg.package_manager_version("pnpm"), None);
     }
 
     #[test]
     fn test_empty_dev_engines() {
-        let pkg: PackageJson = serde_json::from_str(
+        let pkg: PackageJsonData = serde_json::from_str(
             r#"{
                 "devEngines": {}
             }"#,
@@ -344,7 +406,7 @@ mod tests {
 
     #[test]
     fn test_bun_as_package_manager() {
-        let pkg: PackageJson = serde_json::from_str(
+        let pkg: PackageJsonData = serde_json::from_str(
             r#"{
                 "packageManager": "bun@1.2.0"
             }"#,
@@ -359,7 +421,7 @@ mod tests {
 
     #[test]
     fn test_deno_dev_engines() {
-        let pkg: PackageJson = serde_json::from_str(
+        let pkg: PackageJsonData = serde_json::from_str(
             r#"{
                 "devEngines": {
                     "runtime": {
@@ -371,5 +433,41 @@ mod tests {
         )
         .unwrap();
         assert_eq!(pkg.runtime_version("deno"), Some("1.40.0".to_string()));
+    }
+
+    #[test]
+    fn test_engines_field_ignored() {
+        let pkg: PackageJsonData = serde_json::from_str(
+            r#"{
+                "engines": {
+                    "node": ">=18.0.0",
+                    "pnpm": "9.0.0"
+                }
+            }"#,
+        )
+        .unwrap();
+        // Should ignore engines field
+        assert_eq!(pkg.runtime_version("node"), None);
+        assert_eq!(pkg.package_manager_version("pnpm"), None);
+    }
+
+    #[test]
+    fn test_engines_field_does_not_interfere() {
+        let pkg: PackageJsonData = serde_json::from_str(
+            r#"{
+                "devEngines": {
+                    "runtime": {
+                        "name": "node",
+                        "version": "20.0.0"
+                    }
+                },
+                "engines": {
+                    "node": "18.0.0"
+                }
+            }"#,
+        )
+        .unwrap();
+        // Should ignore engines and pick devEngines
+        assert_eq!(pkg.runtime_version("node"), Some("20.0.0".to_string()));
     }
 }

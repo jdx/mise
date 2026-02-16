@@ -308,7 +308,7 @@ impl Backend for AsdfBackend {
         Ok(aliases)
     }
 
-    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
         if let Some(data) = &self.toml.list_idiomatic_filenames.data {
             return Ok(self.plugin.parse_idiomatic_filenames(data));
         }
@@ -326,9 +326,9 @@ impl Backend for AsdfBackend {
             .cloned()
     }
 
-    async fn parse_idiomatic_file(&self, idiomatic_file: &Path) -> Result<String> {
+    async fn parse_idiomatic_file(&self, idiomatic_file: &Path) -> Result<Vec<String>> {
         if let Some(cached) = self.fetch_cached_idiomatic_file(idiomatic_file)? {
-            return Ok(cached);
+            return Ok(cached.split_whitespace().map(|s| s.to_string()).collect());
         }
         trace!(
             "parsing idiomatic file: {}",
@@ -343,7 +343,13 @@ impl Backend for AsdfBackend {
         let idiomatic_version = normalize_idiomatic_contents(&idiomatic_version);
 
         self.write_idiomatic_cache(idiomatic_file, &idiomatic_version)?;
-        Ok(idiomatic_version)
+        if idiomatic_version.is_empty() {
+            return Ok(vec![]);
+        }
+        Ok(idiomatic_version
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect())
     }
 
     fn plugin(&self) -> Option<&PluginEnum> {
