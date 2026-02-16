@@ -425,6 +425,7 @@ impl Backend for JavaPlugin {
             Ok(vec![format!("{vendor}-{version}")])
         } else {
 <<<<<<< HEAD
+<<<<<<< HEAD
             Ok(normalize_idiomatic_contents(&contents)
                 .lines()
                 .map(|s| s.to_string())
@@ -432,6 +433,9 @@ impl Backend for JavaPlugin {
 =======
             Ok(vec![contents.trim().to_string()])
 >>>>>>> 87f3fe68f (fix: trim in java.rs)
+=======
+            Ok(vec![contents])
+>>>>>>> 079998d53 (Revert "fix: trim in java.rs")
         }
     }
 
