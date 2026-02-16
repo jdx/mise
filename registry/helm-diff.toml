@@ -6,6 +6,7 @@ full = "github:databus23/helm-diff"
 
 [backends.options]
 bin_path = "diff/bin"
+bin = "diff"
 rename_exe = "helm-diff"
 
 [[backends]]
