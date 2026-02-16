@@ -1335,6 +1335,7 @@ where
         // Split pattern into path and task parts
         // Pattern format: //path/...:task* or //path:task*
         let parts: Vec<&str> = normalized_pat.splitn(2, ':').collect();
+        let has_explicit_task_glob = parts.len() > 1;
         let (path_pattern, task_pattern) = match parts.as_slice() {
             [path, task] => (*path, *task),
             [path] => (*path, "*"),
@@ -1415,11 +1416,13 @@ where
                 };
 
                 // Match task part with asterisk support and extension stripping
-                // When task_glob is "*", require the key to actually have a task part
-                // (i.e., contain a `:` separator). This prevents "test" from matching
-                // "test:*", which would cause circular dependencies.
+                // When the pattern explicitly uses a wildcard after `:` (e.g., "test:*"),
+                // require the key to actually have a task part (i.e., contain a `:`
+                // separator). This prevents "test" from matching "test:*", which would
+                // cause circular dependencies. Implicit wildcards (bare names like "test")
+                // should still match the exact task.
                 let task_matches = if task_glob == "*" {
-                    !key_task.is_empty()
+                    !has_explicit_task_glob || !key_task.is_empty()
                 } else if let Some(ref matcher) = task_matcher {
                     // Check exact match OR match without extension
                     matcher.is_match(key_task) || matcher.is_match(strip_extension(key_task))
@@ -1444,7 +1447,7 @@ where
                     };
 
                     let rel_task_matches = if task_glob == "*" {
-                        !stripped_task.is_empty()
+                        !has_explicit_task_glob || !stripped_task.is_empty()
                     } else if let Some(ref matcher) = rel_task_matcher {
                         // Check exact match OR match without extension
                         matcher.is_match(stripped_task)
@@ -2358,9 +2361,13 @@ echo "test"
 
         // "test:*" should match "test:foo" and "test:bar" but NOT "test" itself
         let matches = tasks.get_matching("test:*").unwrap();
-        assert_eq!(matches.len(), 2);
-        assert!(matches.contains(&&"test:foo".to_string()));
-        assert!(matches.contains(&&"test:bar".to_string()));
-        assert!(!matches.contains(&&"test".to_string()));
+        assert_eq!(
+            matches,
+            vec![&"test:bar".to_string(), &"test:foo".to_string()]
+        );
+
+        // Bare name "test" should still match the "test" task (implicit wildcard)
+        let matches = tasks.get_matching("test").unwrap();
+        assert!(matches.contains(&&"test".to_string()));
     }
 }
