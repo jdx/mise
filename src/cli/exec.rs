@@ -12,10 +12,10 @@ use crate::cli::args::ToolArg;
 #[cfg(any(test, windows))]
 use crate::cmd;
 use crate::config::{Config, Settings};
+use crate::env;
 use crate::prepare::{PrepareEngine, PrepareOptions};
 use crate::toolset::env_cache::CachedEnv;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolsetBuilder};
-use crate::{dirs, env};
 
 /// Execute a command with tool(s) set
 ///
@@ -127,28 +127,6 @@ impl Exec {
         let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
         let mut env = measure!("env_with_path", { ts.env_with_path(&config).await? });
 
-        // Strip shims directory from PATH to prevent recursive shim execution.
-        // On Windows, "file" mode shim scripts call `mise x -- tool`, which re-enters
-        // Exec. If shims remain in PATH (due to not_found_auto_install), exec_program
-        // would resolve "tool" back to the shim, causing an infinite loop.
-        if let Some(path_val) = env.get(&*env::PATH_KEY) {
-            let shims_dir = dirs::SHIMS.to_path_buf();
-            let filtered: Vec<_> = if let Ok(shims_canonical) = shims_dir.canonicalize() {
-                std::env::split_paths(&OsString::from(path_val))
-                    .filter(|p| p.canonicalize().map_or(true, |cp| cp != shims_canonical))
-                    .collect()
-            } else {
-                std::env::split_paths(&OsString::from(path_val))
-                    .filter(|p| *p != shims_dir)
-                    .collect()
-            };
-            let new_path = std::env::join_paths(&filtered).unwrap();
-            env.insert(
-                env::PATH_KEY.to_string(),
-                new_path.to_string_lossy().to_string(),
-            );
-        }
-
         // Run auto-enabled prepare steps (unless --no-prepare)
         if !self.no_prepare {
             let engine = PrepareEngine::new(&config)?;
@@ -226,8 +204,26 @@ where
     }
     let cwd = crate::dirs::CWD.clone().unwrap_or_default();
     let program = program.to_executable();
-    let path = env.get(&*env::PATH_KEY).map(OsString::from);
-    let program = which::which_in(program, path, cwd)?;
+    // Strip shims directory from PATH for program resolution only, to prevent
+    // recursive shim execution. On Windows, "file" mode shim scripts call
+    // `mise x -- tool`, which re-enters Exec. If shims remain in PATH (due to
+    // not_found_auto_install), which::which_in resolves "tool" back to the shim,
+    // causing an infinite loop. The child process still inherits the full PATH
+    // (with shims) so subprocesses can find tools via shims.
+    let lookup_path = env.get(&*env::PATH_KEY).map(|path_val| {
+        let shims_dir = crate::dirs::SHIMS.to_path_buf();
+        let filtered: Vec<_> = if let Ok(shims_canonical) = shims_dir.canonicalize() {
+            std::env::split_paths(&OsString::from(path_val))
+                .filter(|p| p.canonicalize().map_or(true, |cp| cp != shims_canonical))
+                .collect()
+        } else {
+            std::env::split_paths(&OsString::from(path_val))
+                .filter(|p| *p != shims_dir)
+                .collect()
+        };
+        std::env::join_paths(&filtered).unwrap()
+    });
+    let program = which::which_in(program, lookup_path, cwd)?;
     let cmd = cmd::cmd(program, args);
 
     // Windows does not support exec in the same way as Unix,
