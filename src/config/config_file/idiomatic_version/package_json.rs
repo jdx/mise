@@ -163,13 +163,9 @@ pub fn parse(path: &Path, tool_name: &str) -> Result<Vec<String>> {
     let pkg = PackageJsonData::parse(path)?;
     let v = match tool_name {
         "node" | "deno" => pkg.runtime_version(tool_name),
-        "bun" => {
-            if let Some(v) = pkg.runtime_version(tool_name) {
-                Some(v)
-            } else {
-                pkg.package_manager_version(tool_name)
-            }
-        }
+        "bun" => pkg
+            .runtime_version(tool_name)
+            .or_else(|| pkg.package_manager_version(tool_name)),
         "npm" | "yarn" | "pnpm" => pkg.package_manager_version(tool_name),
         _ => None,
     };
