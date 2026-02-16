@@ -5,6 +5,7 @@ use crate::backend::backend_type::BackendType;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
+use crate::config::settings::NpmPackageManager;
 use crate::config::{Config, Settings};
 use crate::install_context::InstallContext;
 use crate::timeout;
@@ -39,22 +40,22 @@ impl Backend for NPMBackend {
         // package manager for installation. We avoid listing all package managers to
         // prevent incorrect dependency edges.
         let settings = Settings::get();
-        let package_manager = settings.npm.package_manager.as_str();
+        let package_manager = settings.npm.package_manager;
         let tool_name = self.tool_name();
 
         // Avoid circular dependency when installing npm itself
         // But we still need the configured package manager for installation
         if tool_name == "npm" {
             return match package_manager {
-                "bun" => Ok(vec!["node", "bun"]),
-                "pnpm" => Ok(vec!["node", "pnpm"]),
+                NpmPackageManager::Bun => Ok(vec!["node", "bun"]),
+                NpmPackageManager::Pnpm => Ok(vec!["node", "pnpm"]),
                 _ => Ok(vec!["node"]),
             };
         }
 
         // Avoid circular dependency when installing the configured package manager
         // e.g., npm:bun with bun configured, or npm:pnpm with pnpm configured
-        if tool_name == package_manager {
+        if tool_name == package_manager.to_string() {
             // Still need npm for version queries
             return Ok(vec!["node", "npm"]);
         }
@@ -62,8 +63,8 @@ impl Backend for NPMBackend {
         // For regular packages: need npm (for version queries) + configured package manager
         let mut deps = vec!["node", "npm"];
         match package_manager {
-            "bun" => deps.push("bun"),
-            "pnpm" => deps.push("pnpm"),
+            NpmPackageManager::Bun => deps.push("bun"),
+            NpmPackageManager::Pnpm => deps.push("pnpm"),
             // npm is already in deps
             _ => {}
         }
@@ -149,8 +150,8 @@ impl Backend for NPMBackend {
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         self.check_install_deps(&ctx.config).await;
-        match Settings::get().npm.package_manager.as_str() {
-            "bun" => {
+        match Settings::get().npm.package_manager {
+            NpmPackageManager::Bun => {
                 CmdLineRunner::new("bun")
                     .arg("install")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
@@ -174,7 +175,7 @@ impl Backend for NPMBackend {
                     .current_dir(tv.install_path())
                     .execute()?;
             }
-            "pnpm" => {
+            NpmPackageManager::Pnpm => {
                 let bin_dir = tv.install_path().join("bin");
                 crate::file::create_dir_all(&bin_dir)?;
                 CmdLineRunner::new("pnpm")
@@ -228,7 +229,7 @@ impl Backend for NPMBackend {
         _config: &Arc<Config>,
         tv: &crate::toolset::ToolVersion,
     ) -> eyre::Result<Vec<std::path::PathBuf>> {
-        if Settings::get().npm.package_manager == "npm" {
+        if Settings::get().npm.package_manager == NpmPackageManager::Npm {
             Ok(vec![tv.install_path()])
         } else {
             Ok(vec![tv.install_path().join("bin")])
@@ -264,8 +265,8 @@ impl NPMBackend {
 
     /// Check dependencies for package installation (npm or bun based on settings)
     async fn check_install_deps(&self, config: &Arc<Config>) {
-        match Settings::get().npm.package_manager.as_str() {
-            "bun" => {
+        match Settings::get().npm.package_manager {
+            NpmPackageManager::Bun => {
                 self.warn_if_dependency_missing(
                     config,
                     "bun",
@@ -276,7 +277,7 @@ impl NPMBackend {
                 )
                 .await
             }
-            "pnpm" => {
+            NpmPackageManager::Pnpm => {
                 self.warn_if_dependency_missing(
                     config,
                     "pnpm",

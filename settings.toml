@@ -1030,7 +1030,9 @@ Can be one of:
 - `bun`
 - `pnpm`
 """
+enum = ["npm", "bun", "pnpm"]
 env = "MISE_NPM_PACKAGE_MANAGER"
+rust_type = "NpmPackageManager"
 type = "String"
 
 [offline]

@@ -73,6 +73,27 @@ pub enum SettingsStatusMissingTools {
     Always,
 }
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    Default,
+    strum::EnumString,
+    strum::Display,
+    PartialEq,
+    Eq,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum NpmPackageManager {
+    #[default]
+    Npm,
+    Bun,
+    Pnpm,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PythonUvVenvAuto {
     #[default]
@@ -359,7 +380,7 @@ impl Settings {
             self.python.venv_auto_create = python_venv_auto_create;
         }
         if self.npm.bun {
-            self.npm.package_manager = "bun".to_string();
+            self.npm.package_manager = NpmPackageManager::Bun;
         }
     }
 
