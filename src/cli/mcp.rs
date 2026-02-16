@@ -78,80 +78,46 @@ impl MiseServer {
         &self,
         Parameters(RunTaskParams { task, args }): Parameters<RunTaskParams>,
     ) -> std::result::Result<CallToolResult, ErrorData> {
-        // Execute the task in a blocking task to avoid Send issues
-        let result = tokio::task::spawn_blocking(move || {
-            use std::process::Command;
+        let exe = std::env::current_exe().map_err(|e| ErrorData {
+            code: ErrorCode(500),
+            message: Cow::Owned(format!("Failed to get current exe: {e}")),
+            data: None,
+        })?;
 
-            let exe =
-                std::env::current_exe().map_err(|e| format!("Failed to get current exe: {}", e))?;
+        let output = tokio::process::Command::new(exe)
+            .arg("run")
+            .arg(&task)
+            .args(&args)
+            .env("NO_COLOR", "1")
+            .output()
+            .await
+            .map_err(|e| ErrorData {
+                code: ErrorCode(500),
+                message: Cow::Owned(format!("Failed to execute mise run: {e}")),
+                data: None,
+            })?;
 
-            let mut cmd = Command::new(exe);
-            cmd.arg("run");
-            cmd.arg(&task);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
 
-            for arg in args {
-                cmd.arg(arg);
-            }
-
-            // Capture output
-            let output = cmd
-                .output()
-                .map_err(|e| format!("Failed to execute mise run: {}", e))?;
-
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let mut result = String::new();
-
-                // Include stderr first if it has warnings/info
-                if !stderr.is_empty() {
-                    result.push_str(&stderr);
-                    if !stdout.is_empty() {
-                        result.push('\n');
-                    }
-                }
-                // Main output is stdout
-                if !stdout.is_empty() {
-                    result.push_str(&stdout);
-                } else {
-                    result.push_str(&format!("✓ Task '{}' completed successfully", task));
-                }
-
-                Ok(result)
-            } else {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                
-                // On failure, include both stderr (error messages) and stdout (partial output)
-                let mut error_msg = String::new();
-                if !stderr.is_empty() {
-                    error_msg.push_str(&stderr);
-                }
-                if !stdout.is_empty() {
-                    if !error_msg.is_empty() {
-                        error_msg.push('\n');
-                    }
-                    error_msg.push_str("Partial output:\n");
-                    error_msg.push_str(&stdout);
-                }
-                
-                Err(format!(
-                    "Task '{}' failed with exit code {}:\n{}",
-                    task,
-                    output.status.code().unwrap_or(-1),
-                    error_msg
-                ))
-            }
-        })
-        .await;
-
-        match result {
-            Ok(Ok(output)) => Ok(CallToolResult::success(vec![Content::text(output)])),
-            Ok(Err(e)) => Ok(CallToolResult::error(vec![Content::text(e)])),
-            Err(e) => Ok(CallToolResult::error(vec![Content::text(format!(
-                "Task execution panicked: {}",
-                e
-            ))])),
+        if output.status.success() {
+            let text = match (stderr.is_empty(), stdout.is_empty()) {
+                (true, true) => format!("Task '{task}' completed successfully"),
+                (true, false) => stdout.into_owned(),
+                (false, true) => stderr.into_owned(),
+                (false, false) => format!("{stderr}\n{stdout}"),
+            };
+            Ok(CallToolResult::success(vec![Content::text(text)]))
+        } else {
+            let text = match (stderr.is_empty(), stdout.is_empty()) {
+                (_, true) => stderr.into_owned(),
+                (true, false) => stdout.into_owned(),
+                (false, false) => format!("{stderr}\n{stdout}"),
+            };
+            Ok(CallToolResult::error(vec![Content::text(format!(
+                "Task '{task}' failed with exit code {}:\n{text}",
+                output.status.code().unwrap_or(1),
+            ))]))
         }
     }
 }

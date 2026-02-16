@@ -61,15 +61,21 @@ Provides information about mise configuration:
 
 The following tools are available for AI assistants to call:
 
+### `install_tool`
+
+Install a specific tool version (not yet implemented)
+
 ### `run_task`
 
 Execute a mise task with optional arguments.
 
 **Parameters:**
+
 - `task` (required, string): Name of the task to run
 - `args` (optional, array of strings): Arguments to pass to the task
 
 **Example:**
+
 ```json
 {
   "task": "build",
@@ -78,14 +84,6 @@ Execute a mise task with optional arguments.
 ```
 
 When the AI assistant calls this tool, it will execute the specified task and return the output, including stdout, stderr, and the exit status.
-
-### `install_tool`
-
-Install a specific tool version (not yet implemented)
-
-### `run_task`
-
-Execute a mise task (not yet implemented)
 
 ## Integration with AI Assistants
 
