@@ -152,7 +152,8 @@ impl MiseServer {
             Ok(CallToolResult::success(vec![Content::text(text)]))
         } else {
             let text = match (stderr.is_empty(), stdout.is_empty()) {
-                (_, true) => stderr.into_owned(),
+                (true, true) => format!("Task '{task}' failed with no output"),
+                (false, true) => stderr.into_owned(),
                 (true, false) => stdout.into_owned(),
                 (false, false) => format!("{stderr}\n{stdout}"),
             };
