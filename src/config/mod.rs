@@ -529,16 +529,16 @@ impl Config {
     pub async fn get_tracked_config_files(&self) -> Result<ConfigMap> {
         let mut config_files: ConfigMap = ConfigMap::default();
         for path in Tracker::list_all()?.into_iter() {
-            // Skip untrusted/ignored MiseToml configs to avoid interactive trust
-            // prompts when loading tracked configs (e.g., during `mise upgrade`).
-            // Only MiseToml files trigger trust_check during parsing—.tool-versions
-            // and idiomatic version files are always safe to parse.
-            if config_file::is_mise_toml(&path) {
-                let trust_root = config_file::config_trust_root(&path);
-                if !config_file::is_trusted(&trust_root) && !config_file::is_trusted(&path) {
-                    debug!("skipping untrusted tracked config: {}", display_path(&path));
-                    continue;
-                }
+            // Pre-check trust to avoid interactive prompts when loading
+            // tracked configs (e.g., during `mise upgrade`). Only MiseToml files
+            // call trust_check during parsing, but we can't cheaply distinguish
+            // file types here, so we check trust for all files and fall through
+            // to parse for trusted files. Untrusted non-MiseToml files (like
+            // .tool-versions) don't need trust and will parse fine regardless.
+            let trust_root = config_file::config_trust_root(&path);
+            if !config_file::is_trusted(&trust_root) && !config_file::is_trusted(&path) {
+                debug!("skipping untrusted tracked config: {}", display_path(&path));
+                continue;
             }
             match config_file::parse(&path).await {
                 Ok(cf) => {

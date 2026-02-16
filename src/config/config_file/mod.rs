@@ -529,18 +529,6 @@ async fn filename_is_idiomatic(file_name: String) -> bool {
     false
 }
 
-/// Check if a path would be parsed as a MiseToml config file (which requires trust).
-/// This is a synchronous check that covers .toml extensions and override config filenames.
-pub fn is_mise_toml(path: &Path) -> bool {
-    let filename = path
-        .file_name()
-        .and_then(|f| f.to_str())
-        .unwrap_or_default();
-    filename.ends_with(".toml")
-        || env::MISE_OVERRIDE_CONFIG_FILENAMES.contains(filename)
-        || env::MISE_DEFAULT_CONFIG_FILENAME.as_str() == filename
-}
-
 async fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
     match path
         .file_name()
