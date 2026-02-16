@@ -599,7 +599,7 @@ cmd plugins help="Manage plugins" {
             arg <JOBS>
         }
         flag "-v --verbose" help="Show installation output" var=#true count=#true
-        arg "[NEW_PLUGIN]" help="The name of the plugin to install\ne.g.: cmake, poetry\nCan specify multiple plugins: `mise plugins install cmake poetry elixir`" required=#false
+        arg "[NEW_PLUGIN]" help="The name of the plugin to install\ne.g.: cmake, poetry\nCan specify multiple plugins: `mise plugins install cmake poetry`" required=#false
         arg "[GIT_URL]" help="The git url of the plugin" required=#false
         arg "[REST]…" required=#false var=#true hide=#true
     }
@@ -629,7 +629,7 @@ cmd plugins help="Manage plugins" {
     }
     cmd uninstall help="Removes a plugin" {
         alias remove rm
-        after_long_help "Examples:\n\n    $ mise uninstall cmake\n"
+        after_long_help "Examples:\n\n    $ mise plugins uninstall cmake\n"
         flag "-a --all" help="Remove all plugins"
         flag "-p --purge" help="Also remove the plugin's installs, downloads, and cache"
         arg "[PLUGIN]…" help="Plugin(s) to remove" required=#false var=#true

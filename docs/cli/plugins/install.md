@@ -18,7 +18,7 @@ This behavior can be modified in ~/.config/mise/config.toml
 
 The name of the plugin to install
 e.g.: cmake, poetry
-Can specify multiple plugins: `mise plugins install cmake poetry elixir`
+Can specify multiple plugins: `mise plugins install cmake poetry`
 
 ### `[GIT_URL]`
 

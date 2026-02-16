@@ -1748,7 +1748,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "new_plugin",
               description:
-                "The name of the plugin to install\ne.g.: cmake, poetry\nCan specify multiple plugins: `mise plugins install cmake poetry elixir`",
+                "The name of the plugin to install\ne.g.: cmake, poetry\nCan specify multiple plugins: `mise plugins install cmake poetry`",
               isOptional: true,
               generators: completionGeneratorTemplate(`mise plugins --all`),
               debounce: true,
