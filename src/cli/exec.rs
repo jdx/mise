@@ -128,22 +128,25 @@ impl Exec {
         let mut env = measure!("env_with_path", { ts.env_with_path(&config).await? });
 
         // Strip shims directory from PATH to prevent recursive shim execution.
-        // On Windows, "file" mode shims are bash scripts that call `mise x -- tool "$@"`,
-        // which re-enters Exec. If shims remain in PATH (due to not_found_auto_install),
-        // exec_program would resolve "tool" back to the shim, causing an infinite loop.
+        // On Windows, "file" mode shim scripts call `mise x -- tool`, which re-enters
+        // Exec. If shims remain in PATH (due to not_found_auto_install), exec_program
+        // would resolve "tool" back to the shim, causing an infinite loop.
         if let Some(path_val) = env.get(&*env::PATH_KEY) {
-            let shims_dir = dirs::SHIMS
-                .canonicalize()
-                .unwrap_or_else(|_| dirs::SHIMS.to_path_buf());
-            let filtered: Vec<_> = std::env::split_paths(&OsString::from(path_val))
-                .filter(|p| p.canonicalize().unwrap_or_default() != shims_dir)
-                .collect();
-            if let Ok(new_path) = std::env::join_paths(&filtered) {
-                env.insert(
-                    env::PATH_KEY.to_string(),
-                    new_path.to_string_lossy().to_string(),
-                );
-            }
+            let shims_dir = dirs::SHIMS.to_path_buf();
+            let filtered: Vec<_> = if let Ok(shims_canonical) = shims_dir.canonicalize() {
+                std::env::split_paths(&OsString::from(path_val))
+                    .filter(|p| p.canonicalize().map_or(true, |cp| cp != shims_canonical))
+                    .collect()
+            } else {
+                std::env::split_paths(&OsString::from(path_val))
+                    .filter(|p| *p != shims_dir)
+                    .collect()
+            };
+            let new_path = std::env::join_paths(&filtered).unwrap();
+            env.insert(
+                env::PATH_KEY.to_string(),
+                new_path.to_string_lossy().to_string(),
+            );
         }
 
         // Run auto-enabled prepare steps (unless --no-prepare)

@@ -4,38 +4,38 @@ Describe 'shim_exec_recursion' {
     # which would cause infinite process spawning on Windows.
 
     BeforeAll {
-        $originalPath = Get-Location
+        $script:originalPath = Get-Location
         Set-Location TestDrive:
         $env:MISE_TRUSTED_CONFIG_PATHS = $TestDrive
 
-        $shimPath = Join-Path -Path $env:MISE_DATA_DIR -ChildPath "shims"
+        $script:shimPath = Join-Path -Path $env:MISE_DATA_DIR -ChildPath "shims"
 
         # Create a fake "mytool" binary that just echoes a marker
-        $toolDir = Join-Path $TestDrive "toolbin"
-        New-Item -ItemType Directory -Path $toolDir -Force | Out-Null
+        $script:toolDir = Join-Path $TestDrive "toolbin"
+        New-Item -ItemType Directory -Path $script:toolDir -Force | Out-Null
         @'
 @echo off
 echo REAL_TOOL_OUTPUT
-'@ | Out-File -FilePath (Join-Path $toolDir "mytool.cmd") -Encoding ascii -NoNewline
+'@ | Out-File -FilePath (Join-Path $script:toolDir "mytool.cmd") -Encoding ascii -NoNewline
 
         # Create a shim script for mytool in the shims directory (mimics "file" mode)
-        New-Item -ItemType Directory -Path $shimPath -Force | Out-Null
+        New-Item -ItemType Directory -Path $script:shimPath -Force | Out-Null
         @"
 @echo off
 setlocal
 mise x -- mytool %*
-"@ | Out-File -FilePath (Join-Path $shimPath "mytool.cmd") -Encoding ascii -NoNewline
+"@ | Out-File -FilePath (Join-Path $script:shimPath "mytool.cmd") -Encoding ascii -NoNewline
 
         # Put both the tool dir and shims dir on PATH (shims before tool, the
         # problematic ordering). The fix should strip shims from the exec PATH
         # so the real tool is found instead.
-        $env:PATH = "$shimPath;$toolDir;$env:PATH"
+        $env:PATH = "$($script:shimPath);$($script:toolDir);$env:PATH"
     }
 
     AfterAll {
-        # Clean up the fake shim
-        Remove-Item -Path (Join-Path $shimPath "mytool.cmd") -ErrorAction SilentlyContinue
-        Set-Location $originalPath
+        Remove-Item -Path (Join-Path $script:shimPath "mytool.cmd") -ErrorAction SilentlyContinue
+        Remove-Item -Path $script:toolDir -Recurse -ErrorAction SilentlyContinue
+        Set-Location $script:originalPath
         Remove-Item -Path Env:\MISE_TRUSTED_CONFIG_PATHS -ErrorAction SilentlyContinue
     }
 
