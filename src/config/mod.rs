@@ -529,12 +529,22 @@ impl Config {
     pub async fn get_tracked_config_files(&self) -> Result<ConfigMap> {
         let mut config_files: ConfigMap = ConfigMap::default();
         for path in Tracker::list_all()?.into_iter() {
+            // Skip untrusted/ignored configs to avoid interactive prompts
+            // when loading tracked configs (e.g., during `mise upgrade`)
+            let trust_root = config_file::config_trust_root(&path);
+            if !config_file::is_trusted(&trust_root) && !config_file::is_trusted(&path) {
+                debug!("skipping untrusted tracked config: {}", display_path(&path));
+                continue;
+            }
             match config_file::parse(&path).await {
                 Ok(cf) => {
                     config_files.insert(path, cf);
                 }
                 Err(err) => {
-                    error!("Error loading config file: {:?}", err);
+                    warn!(
+                        "error loading tracked config file {}: {err:#}",
+                        display_path(&path)
+                    );
                 }
             }
         }
