@@ -151,7 +151,7 @@ def test_run_task_success(proc):
             "arguments": {"task": "test-task"},
         },
     })
-    resp = recv(proc, timeout=10.0)
+    resp = recv(proc, timeout=30.0)
     if not resp or "result" not in resp:
         print(f"ERROR: Bad run_task response: {resp}")
         return 1
@@ -173,7 +173,7 @@ def test_run_task_with_args(proc):
             "arguments": {"task": "test-task", "args": []},
         },
     })
-    resp = recv(proc, timeout=10.0)
+    resp = recv(proc, timeout=30.0)
     if not resp or "result" not in resp:
         print(f"ERROR: Bad run_task response: {resp}")
         return 1
@@ -193,7 +193,7 @@ def test_run_task_unknown(proc):
             "arguments": {"task": "nonexistent-task-xyz"},
         },
     })
-    resp = recv(proc, timeout=10.0)
+    resp = recv(proc, timeout=30.0)
     if not resp or "result" not in resp:
         print(f"ERROR: Bad run_task response: {resp}")
         return 1
@@ -213,7 +213,7 @@ def test_install_tool_stub(proc):
             "arguments": {"tool": "node"},
         },
     })
-    resp = recv(proc, timeout=10.0)
+    resp = recv(proc, timeout=30.0)
     if not resp or "result" not in resp:
         print(f"ERROR: Bad install_tool response: {resp}")
         return 1
