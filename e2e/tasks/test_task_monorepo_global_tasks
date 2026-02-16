@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Test that global tasks can be run from within a monorepo context
+# Regression test for: https://github.com/jdx/mise/discussions/6564#discussioncomment-15828264
+export MISE_EXPERIMENTAL=1
+
+# Create a global config with a task
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[tasks.hello]
+run = "echo hello-from-global"
+TOML
+
+# Create monorepo root config
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+
+[tasks.root-task]
+run = "echo root-task-ran"
+TOML
+
+# Create a subproject
+mkdir -p packages/foo
+cat <<'TOML' >packages/foo/mise.toml
+[tasks.foo-task]
+run = "echo foo-task-ran"
+TOML
+
+# Test 1: Global task can be run from monorepo root
+echo "=== Test 1: Global task from monorepo root ==="
+assert "mise run hello" "hello-from-global"
+
+# Test 2: Root task still works
+echo "=== Test 2: Root task still works ==="
+assert "mise run root-task" "root-task-ran"
+
+# Test 3: Subproject task works with full monorepo syntax
+echo "=== Test 3: Subproject task with monorepo syntax ==="
+assert "mise run '//packages/foo:foo-task'" "foo-task-ran"
+
+# Test 4: Global task visible in task list
+echo "=== Test 4: Global task visible in task list ==="
+assert_contains "mise tasks --all" "hello"
+
+# Test 5: Explicit colon syntax should not fall back to global tasks
+echo "=== Test 5: Colon syntax does not fall back to global tasks ==="
+assert_fail "mise run :hello"
+
+echo "=== All monorepo global task tests passed! ==="
