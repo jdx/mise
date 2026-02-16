@@ -17,7 +17,7 @@ Normally these are not shown
 ### `-u --urls`
 
 Show the git url for each plugin
-e.g.: <https://github.com/asdf-vm/asdf-nodejs.git>
+e.g.: <https://github.com/mise-plugins/vfox-cmake.git>
 
 ### `--user`
 

@@ -1490,7 +1490,7 @@ Normally these are not shown
 .TP
 \fB\-u, \-\-urls\fR
 Show the git url for each plugin
-e.g.: https://github.com/asdf\-vm/asdf\-nodejs.git
+e.g.: https://github.com/mise\-plugins/vfox\-cmake.git
 .TP
 \fB\-\-refs\fR
 Show the git refs for each plugin
@@ -1505,7 +1505,7 @@ to show core and user plugins
 Install a plugin
 
 note that mise automatically can install plugins when you install a tool
-e.g.: `mise install node@20` will autoinstall the node plugin
+e.g.: `mise install cmake@3.30` will autoinstall the cmake plugin
 
 This behavior can be modified in ~/.config/mise/config.toml
 .PP
@@ -1532,8 +1532,8 @@ Show installation output
 .TP
 \fB<NEW_PLUGIN>\fR
 The name of the plugin to install
-e.g.: node, ruby
-Can specify multiple plugins: `mise plugins install node ruby python`
+e.g.: cmake, poetry
+Can specify multiple plugins: `mise plugins install cmake poetry`
 .TP
 \fB<GIT_URL>\fR
 The git url of the plugin
@@ -1554,11 +1554,11 @@ Overwrite existing plugin
 .TP
 \fB<NAME>\fR
 The name of the plugin
-e.g.: node, ruby
+e.g.: cmake, poetry
 .TP
 \fB<DIR>\fR
 The local path to the plugin
-e.g.: ./mise\-node
+e.g.: ./vfox\-cmake
 .SH "MISE PLUGINS LS"
 List installed plugins
 
@@ -1579,7 +1579,7 @@ Normally these are not shown
 .TP
 \fB\-u, \-\-urls\fR
 Show the git url for each plugin
-e.g.: https://github.com/asdf\-vm/asdf\-nodejs.git
+e.g.: https://github.com/mise\-plugins/vfox\-cmake.git
 .TP
 \fB\-\-refs\fR
 Show the git refs for each plugin

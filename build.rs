@@ -308,6 +308,7 @@ pub struct Settings {"#
             .to_string(),
     ];
 
+    println!("cargo:rerun-if-changed=settings.toml");
     let settings_toml = fs::read_to_string("settings.toml").expect("Failed to read settings.toml");
     let settings: toml::Table =
         toml::de::from_str(&settings_toml).expect("Failed to parse settings.toml");

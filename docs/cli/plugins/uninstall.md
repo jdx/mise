@@ -26,5 +26,5 @@ Also remove the plugin's installs, downloads, and cache
 Examples:
 
 ```
-mise uninstall node
+mise plugins uninstall cmake
 ```

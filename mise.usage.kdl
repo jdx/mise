@@ -584,14 +584,14 @@ cmd plugins help="Manage plugins" {
         long_help "list all available remote plugins\n\nsame as `mise plugins ls-remote`"
     }
     flag "-c --core" help="The built-in plugins only\nNormally these are not shown"
-    flag "-u --urls" help="Show the git url for each plugin\ne.g.: https://github.com/asdf-vm/asdf-nodejs.git"
+    flag "-u --urls" help="Show the git url for each plugin\ne.g.: https://github.com/mise-plugins/vfox-cmake.git"
     flag --refs help="Show the git refs for each plugin\ne.g.: main 1234abc" hide=#true
     flag --user help="List installed plugins" {
         long_help "List installed plugins\n\nThis is the default behavior but can be used with --core\nto show core and user plugins"
     }
     cmd install help="Install a plugin" {
         alias i a add
-        long_help "Install a plugin\n\nnote that mise automatically can install plugins when you install a tool\ne.g.: `mise install node@20` will autoinstall the node plugin\n\nThis behavior can be modified in ~/.config/mise/config.toml"
+        long_help "Install a plugin\n\nnote that mise automatically can install plugins when you install a tool\ne.g.: `mise install cmake@3.30` will autoinstall the cmake plugin\n\nThis behavior can be modified in ~/.config/mise/config.toml"
         after_long_help "Examples:\n\n    # install the poetry via shorthand\n    $ mise plugins install poetry\n\n    # install the poetry plugin using a specific git url\n    $ mise plugins install poetry https://github.com/mise-plugins/mise-poetry.git\n\n    # install the poetry plugin using the git url only\n    # (poetry is inferred from the url)\n    $ mise plugins install https://github.com/mise-plugins/mise-poetry.git\n\n    # install the poetry plugin using a specific ref\n    $ mise plugins install poetry https://github.com/mise-plugins/mise-poetry.git#11d0c1e\n"
         flag "-a --all" help="Install all missing plugins\nThis will only install plugins that have matching shorthands.\ni.e.: they don't need the full git repo url"
         flag "-f --force" help="Reinstall even if plugin exists"
@@ -599,25 +599,25 @@ cmd plugins help="Manage plugins" {
             arg <JOBS>
         }
         flag "-v --verbose" help="Show installation output" var=#true count=#true
-        arg "[NEW_PLUGIN]" help="The name of the plugin to install\ne.g.: node, ruby\nCan specify multiple plugins: `mise plugins install node ruby python`" required=#false
+        arg "[NEW_PLUGIN]" help="The name of the plugin to install\ne.g.: cmake, poetry\nCan specify multiple plugins: `mise plugins install cmake poetry`" required=#false
         arg "[GIT_URL]" help="The git url of the plugin" required=#false
         arg "[REST]…" required=#false var=#true hide=#true
     }
     cmd link help="Symlinks a plugin into mise" {
         alias ln
         long_help "Symlinks a plugin into mise\n\nThis is used for developing a plugin."
-        after_long_help "Examples:\n\n    # essentially just `ln -s ./mise-node ~/.local/share/mise/plugins/node`\n    $ mise plugins link node ./mise-node\n\n    # infer plugin name as \"node\"\n    $ mise plugins link ./mise-node\n"
+        after_long_help "Examples:\n\n    # essentially just `ln -s ./vfox-cmake ~/.local/share/mise/plugins/cmake`\n    $ mise plugins link cmake ./vfox-cmake\n\n    # infer plugin name as \"cmake\"\n    $ mise plugins link ./vfox-cmake\n"
         flag "-f --force" help="Overwrite existing plugin"
-        arg <NAME> help="The name of the plugin\ne.g.: node, ruby"
-        arg "[DIR]" help="The local path to the plugin\ne.g.: ./mise-node" required=#false
+        arg <NAME> help="The name of the plugin\ne.g.: cmake, poetry"
+        arg "[DIR]" help="The local path to the plugin\ne.g.: ./vfox-cmake" required=#false
     }
     cmd ls help="List installed plugins" {
         alias list
         long_help "List installed plugins\n\nCan also show remotely available plugins to install."
-        after_long_help "Examples:\n\n    $ mise plugins ls\n    node\n    ruby\n\n    $ mise plugins ls --urls\n    node    https://github.com/asdf-vm/asdf-nodejs.git\n    ruby    https://github.com/asdf-vm/asdf-ruby.git\n"
+        after_long_help "Examples:\n\n    $ mise plugins ls\n    cmake\n    poetry\n\n    $ mise plugins ls --urls\n    cmake     https://github.com/mise-plugins/vfox-cmake.git\n    poetry    https://github.com/mise-plugins/vfox-poetry.git\n"
         flag "-a --all" help="List all available remote plugins\nSame as `mise plugins ls-remote`" hide=#true
         flag "-c --core" help="The built-in plugins only\nNormally these are not shown" hide=#true
-        flag "-u --urls" help="Show the git url for each plugin\ne.g.: https://github.com/asdf-vm/asdf-nodejs.git"
+        flag "-u --urls" help="Show the git url for each plugin\ne.g.: https://github.com/mise-plugins/vfox-cmake.git"
         flag --refs help="Show the git refs for each plugin\ne.g.: main 1234abc" hide=#true
         flag --user help="List installed plugins" hide=#true
     }
@@ -629,7 +629,7 @@ cmd plugins help="Manage plugins" {
     }
     cmd uninstall help="Removes a plugin" {
         alias remove rm
-        after_long_help "Examples:\n\n    $ mise uninstall node\n"
+        after_long_help "Examples:\n\n    $ mise plugins uninstall cmake\n"
         flag "-a --all" help="Remove all plugins"
         flag "-p --purge" help="Also remove the plugin's installs, downloads, and cache"
         arg "[PLUGIN]…" help="Plugin(s) to remove" required=#false var=#true
@@ -637,7 +637,7 @@ cmd plugins help="Manage plugins" {
     cmd update help="Updates a plugin to the latest version" {
         alias up upgrade
         long_help "Updates a plugin to the latest version\n\nnote: this updates the plugin itself, not the runtime versions"
-        after_long_help "Examples:\n\n    $ mise plugins update            # update all plugins\n    $ mise plugins update node       # update only node\n    $ mise plugins update node#beta  # specify a ref\n"
+        after_long_help "Examples:\n\n    $ mise plugins update              # update all plugins\n    $ mise plugins update cmake       # update only cmake\n    $ mise plugins update cmake#beta  # specify a ref\n"
         flag "-j --jobs" help="Number of jobs to run in parallel\nDefault: 4" {
             arg <JOBS>
         }

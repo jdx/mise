@@ -919,7 +919,8 @@
             "package_manager": {
               "default": "npm",
               "description": "Package manager to use for installing npm packages.",
-              "type": "string"
+              "type": "string",
+              "enum": ["npm", "bun", "pnpm"]
             }
           }
         },

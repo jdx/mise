@@ -1,5 +1,6 @@
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
+
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::args::BackendArg;
@@ -577,10 +578,10 @@ impl Backend for AquaBackend {
             None => vec![v.as_str()],
         };
 
-        // Get package with version for the target platform
-        let pkg = AQUA_REGISTRY
-            .package_with_version(&self.id, &versions)
-            .await?;
+        // Get package and apply version/overrides directly for the target platform.
+        // Using package_with_version() here would apply overrides for the current host
+        // platform first, which can leak host-specific overrides into cross-platform lock.
+        let pkg = AQUA_REGISTRY.package(&self.id).await?;
         let pkg = pkg.with_version(&versions, target_os, target_arch);
 
         // Apply version prefix if present

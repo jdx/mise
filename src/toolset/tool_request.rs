@@ -260,30 +260,34 @@ impl ToolRequest {
     }
 
     pub fn lockfile_resolve(&self, config: &Config) -> Result<Option<LockfileTool>> {
-        // Get the resolved lockfile options from the backend
+        self.lockfile_resolve_with_prefix(config, &self.version())
+    }
+
+    /// Like lockfile_resolve but uses a custom prefix instead of self.version().
+    /// This is used after alias resolution (e.g., "lts" → "24") so the lockfile
+    /// prefix match can find entries like "24.13.0".starts_with("24").
+    pub fn lockfile_resolve_with_prefix(
+        &self,
+        config: &Config,
+        prefix: &str,
+    ) -> Result<Option<LockfileTool>> {
         let request_options = if let Ok(backend) = self.backend() {
             let target = PlatformTarget::from_current();
             backend.resolve_lockfile_options(self, &target)
         } else {
             BTreeMap::new()
         };
-
-        match self.source() {
-            ToolSource::MiseToml(path) => lockfile::get_locked_version(
-                config,
-                Some(path),
-                &self.ba().short,
-                &self.version(),
-                &request_options,
-            ),
-            _ => lockfile::get_locked_version(
-                config,
-                None,
-                &self.ba().short,
-                &self.version(),
-                &request_options,
-            ),
-        }
+        let path = match self.source() {
+            ToolSource::MiseToml(path) => Some(path),
+            _ => None,
+        };
+        lockfile::get_locked_version(
+            config,
+            path.map(|p| p.as_path()),
+            &self.ba().short,
+            prefix,
+            &request_options,
+        )
     }
 
     pub fn local_resolve(&self, config: &Config, v: &str) -> eyre::Result<Option<String>> {

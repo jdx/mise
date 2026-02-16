@@ -5,6 +5,7 @@ test = { cmd = "helm-diff version", expected = "{{version}}" }
 full = "github:databus23/helm-diff"
 
 [backends.options]
+bin = "diff"
 bin_path = "diff/bin"
 rename_exe = "helm-diff"
 

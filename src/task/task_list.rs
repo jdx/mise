@@ -246,6 +246,7 @@ pub async fn get_task_lists(
     let arg_re = xx::regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#);
     for (t, args) in args {
         // Expand :task pattern to match tasks in current directory's config root
+        let original_name = t.clone();
         let t = crate::task::expand_colon_task_syntax(&t, config)?;
 
         // A path starting with "//" on Windows will be treated as a UNC path by
@@ -296,11 +297,24 @@ pub async fn get_task_lists(
 
         let tasks_with_aliases = crate::task::build_task_ref_map(all_tasks.iter());
 
-        let cur_tasks = tasks_with_aliases
+        let mut cur_tasks = tasks_with_aliases
             .get_matching(&t)?
             .into_iter()
             .cloned()
             .collect_vec();
+        // If the task name was auto-expanded to monorepo syntax (e.g., "hello" -> "//:hello")
+        // but no monorepo task matched, fall back to the original bare name to find global tasks
+        if cur_tasks.is_empty()
+            && t != original_name
+            && !original_name.starts_with("//")
+            && !original_name.starts_with(':')
+        {
+            cur_tasks = tasks_with_aliases
+                .get_matching(&original_name)?
+                .into_iter()
+                .cloned()
+                .collect_vec();
+        }
         if cur_tasks.is_empty() {
             // Check if this is a "default" task (either plain "default" or monorepo syntax like "//:default")
             // For monorepo tasks, ensure it starts with "//" and has exactly one ":" before "default"

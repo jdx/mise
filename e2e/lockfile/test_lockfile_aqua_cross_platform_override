@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+# Test that aqua lockfile URL resolution uses the target platform and does not
+# leak host-only overrides.
+
+export MISE_EXPERIMENTAL=1
+export MISE_LOCKFILE=1
+
+detect_platform
+
+if [[ $MISE_PLATFORM_OS == "macos" ]]; then
+	HOST_GOOS="darwin"
+elif [[ $MISE_PLATFORM_OS == "linux" ]]; then
+	HOST_GOOS="linux"
+else
+	echo "Skipping unsupported host OS: $MISE_PLATFORM_OS"
+	return 0
+fi
+
+TARGET_PLATFORM="windows-x64"
+TARGET_AQUA_OS="windows"
+
+REGISTRY_DIR="$PWD/aqua-registry-local"
+mkdir -p "$REGISTRY_DIR/pkgs/example/testtool"
+
+cat <<EOF_REGISTRY >"$REGISTRY_DIR/pkgs/example/testtool/registry.yaml"
+packages:
+  - type: http
+    supported_envs:
+      - linux
+      - darwin
+      - windows
+    url: https://example.com/base-{{.OS}}-{{.Arch}}-{{.Version}}.zip
+    overrides:
+      - goos: $HOST_GOOS
+        url: https://example.com/host-{{.OS}}-{{.Arch}}-{{.Version}}.pkg
+        format: pkg
+EOF_REGISTRY
+
+(
+	cd "$REGISTRY_DIR"
+	git init -q
+	git add pkgs/example/testtool/registry.yaml
+	git commit -qm "init local aqua registry"
+)
+
+export MISE_AQUA_BAKED_REGISTRY=0
+export MISE_AQUA_REGISTRY_URL="file://$REGISTRY_DIR"
+
+cat <<'EOF_MISE' >mise.toml
+[tools]
+"aqua:example/testtool" = "1.0.0"
+EOF_MISE
+
+output=$(mise lock --platform "$TARGET_PLATFORM" 2>&1)
+assert_contains "echo '$output'" "Targeting 1 platform(s)"
+assert_contains "echo '$output'" "$TARGET_PLATFORM"
+
+EXPECTED_URL="https://example.com/base-${TARGET_AQUA_OS}-amd64-1.0.0.zip"
+assert_contains "cat mise.lock" "\"platforms.$TARGET_PLATFORM\" = { url = \"$EXPECTED_URL\"}"
+assert_not_contains "cat mise.lock" "https://example.com/host-"

@@ -11,7 +11,7 @@ use crate::config::{Config, Settings};
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
-use crate::lockfile::{CondaPackageInfo, PlatformInfo};
+use crate::lockfile::{CondaPackageInfo, LockfileTool, PlatformInfo};
 use crate::toolset::{ToolRequest, ToolVersionOptions, tool_request};
 use console::style;
 use dashmap::DashMap;
@@ -52,9 +52,7 @@ impl ToolVersion {
             && !has_linked_version(request.ba())
             && let Some(lt) = request.lockfile_resolve(config)?
         {
-            let mut tv = Self::new(request.clone(), lt.version);
-            tv.lock_platforms = lt.platforms;
-            return Ok(tv);
+            return Ok(Self::from_lockfile(request.clone(), lt));
         }
         let backend = request.ba().backend()?;
         if let Some(plugin) = backend.plugin()
@@ -80,6 +78,12 @@ impl ToolVersion {
         };
         trace!("resolved: {tv}");
         Ok(tv)
+    }
+
+    fn from_lockfile(request: ToolRequest, lt: LockfileTool) -> Self {
+        let mut tv = Self::new(request, lt.version);
+        tv.lock_platforms = lt.platforms;
+        tv
     }
 
     pub fn ba(&self) -> &BackendArg {
@@ -196,6 +200,17 @@ impl ToolVersion {
     ) -> Result<ToolVersion> {
         let backend = request.backend()?;
         let v = config.resolve_alias(&backend, v).await?;
+
+        // Re-check the lockfile after alias resolution (e.g., "lts" → "24")
+        // The initial lockfile check in resolve() uses the unresolved alias which
+        // won't match lockfile entries like "24.13.0".starts_with("lts")
+        if opts.use_locked_version
+            && !has_linked_version(request.ba())
+            && let Some(lt) = request.lockfile_resolve_with_prefix(config, &v)?
+        {
+            return Ok(Self::from_lockfile(request.clone(), lt));
+        }
+
         match v.split_once(':') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
                 return Ok(Self::resolve_ref(

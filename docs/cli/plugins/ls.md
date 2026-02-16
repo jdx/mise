@@ -14,16 +14,16 @@ Can also show remotely available plugins to install.
 ### `-u --urls`
 
 Show the git url for each plugin
-e.g.: <https://github.com/asdf-vm/asdf-nodejs.git>
+e.g.: <https://github.com/mise-plugins/vfox-cmake.git>
 
 Examples:
 
 ```
 $ mise plugins ls
-node
-ruby
+cmake
+poetry
 
 $ mise plugins ls --urls
-node    https://github.com/asdf-vm/asdf-nodejs.git
-ruby    https://github.com/asdf-vm/asdf-ruby.git
+cmake     https://github.com/mise-plugins/vfox-cmake.git
+poetry    https://github.com/mise-plugins/vfox-poetry.git
 ```
