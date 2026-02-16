@@ -57,6 +57,7 @@ struct MiseServer {
 
 /// Parameters for installing a tool
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 struct InstallToolParams {
     /// Tool name (e.g. "node", "python", "go")
     tool: String,
@@ -67,6 +68,7 @@ struct InstallToolParams {
 
 /// Parameters for running a mise task
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 struct RunTaskParams {
     /// Name of the task to run
     task: String,
@@ -106,12 +108,16 @@ impl MiseServer {
             data: None,
         })?;
 
+        let mut cmd_args = vec!["run".to_string(), task.clone()];
+        if !args.is_empty() {
+            cmd_args.push("--".to_string());
+            cmd_args.extend(args);
+        }
+
         let child = tokio::process::Command::new(exe)
-            .arg("run")
-            .arg(&task)
-            .arg("--")
-            .args(&args)
+            .args(&cmd_args)
             .env("NO_COLOR", "1")
+            .env("MISE_YES", "1")
             .kill_on_drop(true)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())

@@ -18,6 +18,10 @@ API_KEY = "secret123"
 run = "echo 'Running test task'"
 description = "A test task for MCP"
 
+[tasks.echo-args]
+run = 'echo "args: $@"'
+description = "Echo arguments back"
+
 [tasks.build]
 run = "echo 'Building...'"
 description = "Build the project"
@@ -170,7 +174,7 @@ def test_run_task_with_args(proc):
         "method": "tools/call",
         "params": {
             "name": "run_task",
-            "arguments": {"task": "test-task", "args": []},
+            "arguments": {"task": "echo-args", "args": ["hello", "world"]},
         },
     })
     resp = recv(proc, timeout=30.0)
@@ -180,7 +184,9 @@ def test_run_task_with_args(proc):
 
     result = resp["result"]
     assert not result.get("isError", False), f"run_task returned error: {result}"
-    print("✓ run_task with explicit args works")
+    text = result["content"][0]["text"]
+    assert "hello" in text and "world" in text, f"args not forwarded: {text}"
+    print(f"✓ run_task with args forwarded correctly: {text.strip()}")
     return 0
 
 
