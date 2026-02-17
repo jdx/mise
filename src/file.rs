@@ -1443,7 +1443,7 @@ mod tests {
         
         create(&dir.path().join("invalid.txt")).unwrap();
         
-        let invalid = which_iterator("invelid", [dir.path().to_path_buf()].iter());
+        let invalid = which_iterator("invalid", [dir.path().to_path_buf()].iter());
         assert!(invalid.is_none());
     }
 }
