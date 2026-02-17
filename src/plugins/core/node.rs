@@ -571,6 +571,7 @@ impl Backend for NodePlugin {
     }
 
     async fn parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
+<<<<<<< HEAD
         let contents = file::read_to_string(path)?;
         let body = normalize_idiomatic_contents(&contents);
 
@@ -583,6 +584,16 @@ impl Backend for NodePlugin {
             })
             .collect();
         Ok(versions)
+=======
+        let body = file::read_to_string(path)?;
+        // strip comments
+        let body = body.split('#').next().unwrap_or_default().trim();
+        // trim "v" prefix
+        let body = body.strip_prefix('v').unwrap_or(body);
+        // replace lts/* with lts
+        let body = body.replace("lts/*", "lts");
+        Ok(vec![body])
+>>>>>>> 3ed60bf99 (fix: compile error)
     }
 
     async fn install_version_(
