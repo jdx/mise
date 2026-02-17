@@ -721,12 +721,20 @@ impl SettingsNode {
             })
     }
 
+    pub fn cflags(&self) -> Option<String> {
+        self.cflags.clone().or_else(|| env::var("NODE_CFLAGS").ok())
+    }
+
     pub fn configure_cmd(&self, install_path: &Path) -> String {
         let mut configure_cmd = format!("./configure --prefix={}", install_path.display());
         if self.ninja() {
             configure_cmd.push_str(" --ninja");
         }
-        if let Some(opts) = &self.configure_opts {
+        if let Some(opts) = self
+            .configure_opts
+            .clone()
+            .or_else(|| env::var("NODE_CONFIGURE_OPTS").ok())
+        {
             configure_cmd.push_str(&format!(" {opts}"));
         }
         configure_cmd
@@ -737,7 +745,11 @@ impl SettingsNode {
         if let Some(concurrency) = self.concurrency() {
             make_cmd.push_str(&format!(" -j{concurrency}"));
         }
-        if let Some(opts) = &self.make_opts {
+        if let Some(opts) = self
+            .make_opts
+            .clone()
+            .or_else(|| env::var("NODE_MAKE_OPTS").ok())
+        {
             make_cmd.push_str(&format!(" {opts}"));
         }
         make_cmd
@@ -746,7 +758,11 @@ impl SettingsNode {
     pub fn make_install_cmd(&self) -> String {
         let make = self.make.clone().unwrap_or_else(|| "make".into());
         let mut make_install_cmd = format!("{} install", make);
-        if let Some(opts) = &self.make_install_opts {
+        if let Some(opts) = self
+            .make_install_opts
+            .clone()
+            .or_else(|| env::var("NODE_MAKE_INSTALL_OPTS").ok())
+        {
             make_install_cmd.push_str(&format!(" {opts}"));
         }
         make_install_cmd

@@ -221,7 +221,7 @@ impl NodePlugin {
             .with_pr(ctx.pr.as_ref())
             .current_dir(&opts.build_dir)
             .arg("-c");
-        if let Some(cflags) = &settings.node.cflags {
+        if let Some(cflags) = settings.node.cflags() {
             cmd = cmd.env("CFLAGS", cflags);
         }
         Ok(cmd)
