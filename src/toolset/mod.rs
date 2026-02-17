@@ -292,9 +292,11 @@ impl Toolset {
             .map(|(t, tv)| (config.clone(), t, tv, bump, opts.clone()))
             .collect::<Vec<_>>();
         let outdated = parallel::parallel(versions, |(config, t, tv, bump, opts)| async move {
-            let mut outdated = vec![];
+            let mut outdated = HashSet::new();
             match t.outdated_info(&config, &tv, bump, &opts).await {
-                Ok(Some(oi)) => outdated.push(oi),
+                Ok(Some(oi)) => {
+                    outdated.insert(oi);
+                }
                 Ok(None) => {}
                 Err(e) => {
                     warn!("Error getting outdated info for {tv}: {e:#}");
@@ -306,7 +308,9 @@ impl Toolset {
                 return Ok(outdated);
             }
             match OutdatedInfo::resolve(&config, tv.clone(), bump, &opts).await {
-                Ok(Some(oi)) => outdated.push(oi),
+                Ok(Some(oi)) => {
+                    outdated.insert(oi);
+                }
                 Ok(None) => {}
                 Err(e) => {
                     warn!("Error creating OutdatedInfo for {tv}: {e:#}");

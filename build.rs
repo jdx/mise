@@ -104,7 +104,10 @@ fn load_registry_tools() -> toml::map::Map<String, toml::Value> {
 fn codegen_registry() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("registry.rs");
-    let mut lines = vec!["[".to_string()];
+    let mut lines = vec![
+        "{".to_string(),
+        "    let mut m = std::collections::BTreeMap::new();".to_string(),
+    ];
 
     let tools = load_registry_tools();
     for (short, info) in &tools {
@@ -288,12 +291,13 @@ fn codegen_registry() {
                 .collect::<Vec<_>>()
                 .join(", "),
         );
-        lines.push(format!(r#"    ("{short}", {rt}),"#));
+        lines.push(format!(r#"    m.insert("{short}", {rt});"#));
         for alias in aliases {
-            lines.push(format!(r#"    ("{alias}", {rt}),"#));
+            lines.push(format!(r#"    m.insert("{alias}", {rt});"#));
         }
     }
-    lines.push(r#"].into()"#.to_string());
+    lines.push("    m".to_string());
+    lines.push("}".to_string());
 
     fs::write(&dest_path, lines.join("\n")).unwrap();
 }
