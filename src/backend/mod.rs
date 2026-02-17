@@ -1057,31 +1057,14 @@ pub trait Backend: Debug + Send + Sync {
         config: &Arc<Config>,
         tv: &ToolVersion,
         bin_name: &str,
-    ) -> eyre::Result<Option<PathBuf>> {
+    ) -> Result<Option<PathBuf>> {
         let bin_paths = self
             .list_bin_paths(config, tv)
-            .await?
-            .into_iter()
+            .await?;
+        let bin_paths_iter = bin_paths
+            .iter()
             .filter(|p| p.parent().is_some());
-        for bin_path in bin_paths {
-            let paths_with_ext = if cfg!(windows) {
-                vec![
-                    bin_path.clone(),
-                    bin_path.join(bin_name).with_extension("exe"),
-                    bin_path.join(bin_name).with_extension("cmd"),
-                    bin_path.join(bin_name).with_extension("bat"),
-                    bin_path.join(bin_name).with_extension("ps1"),
-                ]
-            } else {
-                vec![bin_path.join(bin_name)]
-            };
-            for bin_path in paths_with_ext {
-                if bin_path.exists() && file::is_executable(&bin_path) {
-                    return Ok(Some(bin_path));
-                }
-            }
-        }
-        Ok(None)
+        Ok(file::which_iterator(bin_name, bin_paths_iter))
     }
 
     fn create_install_dirs(&self, tv: &ToolVersion) -> eyre::Result<()> {

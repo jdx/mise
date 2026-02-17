@@ -642,7 +642,7 @@ pub fn which<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     if let Some(path) = CACHE.lock().unwrap().get(name) {
         return path.clone();
     }
-    let path = _which(name, &env::PATH);
+    let path = which_iterator(name, env::PATH.iter());
     CACHE
         .lock()
         .unwrap()
@@ -653,14 +653,33 @@ pub fn which<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
 /// returns the first executable in PATH
 /// will include mise bin paths or other paths added by mise
 pub fn which_non_pristine<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
-    _which(name, &env::PATH_NON_PRISTINE)
+    which_iterator(name, env::PATH_NON_PRISTINE.iter())
 }
 
-fn _which<P: AsRef<Path>>(name: P, paths: &[PathBuf]) -> Option<PathBuf> {
+/// returns first executable in `paths`.
+/// Takes into consideration different executable extensions on Windows
+pub fn which_iterator<'a, P: AsRef<Path>, T: Iterator<Item = &'a PathBuf>>(
+    name: P,
+    mut paths: T,
+) -> Option<PathBuf> {
     let name = name.as_ref();
-    paths.iter().find_map(|path| {
-        let bin = path.join(name);
-        if is_executable(&bin) { Some(bin) } else { None }
+    paths.find_map(|path| {
+        let paths_with_ext = if cfg!(windows) {
+            Settings::get()
+                .windows_executable_extensions
+                .iter()
+                .map(|ext| path.join(name).with_extension(ext))
+                .collect()
+        } else {
+            vec![path.join(name)]
+        };
+        for bin_path in paths_with_ext {
+            if bin_path.exists() && is_executable(&bin_path) {
+                return Some(bin_path);
+            }
+        }
+
+        None
     })
 }
 
@@ -1406,5 +1425,30 @@ mod tests {
         assert!(result.contains(&PathBuf::from("a/b/c")));
         assert!(result.contains(&PathBuf::from("a/b")));
         assert!(result.contains(&PathBuf::from("a")));
+    }
+    
+    #[test]
+    #[cfg(windows)]
+    fn test_find_windows_executables() {
+        use tempfile::tempdir;
+
+        let extensions = Settings::get().windows_executable_extensions.clone();
+        // Just to be sure
+        assert!(extensions.len() > 1);
+        
+        for ext in extensions {
+            let dir = tempdir().unwrap();
+            let file_name = format!("test_executable.{}", ext);
+            create(&dir.path().join(&file_name)).unwrap();
+            let maybe_exe = which_iterator("test_executable", [dir.path().to_path_buf()].iter());
+            assert_eq!(maybe_exe, Some(dir.path().join(&file_name)));
+        }
+        
+        let dir = tempdir().unwrap();
+        
+        create(&dir.path().join("invalid.txt")).unwrap();
+        
+        let invalid = which_iterator("invelid", [dir.path().to_path_buf()].iter());
+        assert!(invalid.is_none());
     }
 }
