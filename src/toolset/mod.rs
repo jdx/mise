@@ -1,13 +1,3 @@
-use std::fmt::{Display, Formatter};
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::{
-    cmp::Reverse,
-    collections::{BinaryHeap, HashMap},
-};
-
-use serde::Serialize;
-
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::config::Config;
@@ -19,23 +9,31 @@ use crate::{backend, parallel};
 pub use builder::ToolsetBuilder;
 use console::truncate_str;
 use eyre::{Result, bail};
+use helpers::TVTuple;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use outdated_info::OutdatedInfo;
 pub use outdated_info::is_outdated_version;
 use petgraph::Direction;
 use petgraph::graphmap::DiGraphMap;
+use serde::Serialize;
+use std::collections::HashSet;
+use std::fmt::{Display, Formatter};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::{
+    cmp::Reverse,
+    collections::{BinaryHeap, HashMap},
+};
 use tokio::sync::OnceCell;
 
+pub use install_options::InstallOptions;
 pub use tool_request::ToolRequest;
 pub use tool_request_set::{ToolRequestSet, ToolRequestSetBuilder};
 pub use tool_source::ToolSource;
 pub use tool_version::{ResolveOptions, ToolVersion};
 pub use tool_version_list::ToolVersionList;
 pub use tool_version_options::{ToolVersionOptions, parse_tool_options};
-
-use helpers::TVTuple;
-pub use install_options::InstallOptions;
 
 mod builder;
 pub mod env_cache;
@@ -373,15 +371,23 @@ impl Toolset {
         installed: &mut Vec<(Arc<dyn Backend>, ToolVersion)>,
     ) -> Result<()> {
         let mut graph = DiGraphMap::<&str, ()>::new();
-        let ids: Vec<String> = installed.iter().map(|(b, _)| b.id().to_string()).collect();
+
+        // Collect unique IDs to build the graph (deduplicates multi-version tools)
+        let unique_ids: HashSet<String> =
+            installed.iter().map(|(b, _)| b.id().to_string()).collect();
+        let unique_ids: Vec<String> = unique_ids.into_iter().collect();
 
         let mut original_index: HashMap<&str, usize> = HashMap::new();
-        for (i, id) in ids.iter().enumerate() {
-            original_index.insert(id.as_str(), i);
+        for (i, (b, _)) in installed.iter().enumerate() {
+            let id = b.id();
+            original_index.entry(id).or_insert(i);
+        }
+
+        for id in &unique_ids {
             graph.add_node(id.as_str());
         }
 
-        for id in &ids {
+        for id in &unique_ids {
             let id_str = id.as_str();
             if let Some(tool) = REGISTRY.get(id_str) {
                 for overridden in tool.overrides {
@@ -433,7 +439,7 @@ impl Toolset {
             }
         }
 
-        let mut sorted_ids: Vec<&str> = Vec::with_capacity(installed.len());
+        let mut sorted_ids: Vec<&str> = Vec::with_capacity(graph.node_count());
         while let Some(Reverse((_, _, id))) = pq.pop() {
             sorted_ids.push(id);
 
@@ -449,8 +455,7 @@ impl Toolset {
             }
         }
 
-        // Check for cycles
-        if sorted_ids.len() != ids.len() {
+        if sorted_ids.len() != graph.node_count() {
             bail!("Cycle detected in tool overrides");
         }
 
