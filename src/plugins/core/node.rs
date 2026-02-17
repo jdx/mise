@@ -171,12 +171,12 @@ impl NodePlugin {
         {
             if let Some(reqwest_err) = err.root_cause().downcast_ref::<reqwest::Error>()
                 && reqwest_err.status() == Some(reqwest::StatusCode::NOT_FOUND)
-                    && let Ok(Some(msg)) = self
-                        .suggest_available_flavors(&opts.version, &Settings::get())
-                        .await
-                    {
-                        return Err(eyre::eyre!("{err}\n{msg}"));
-                    }
+                && let Ok(Some(msg)) = self
+                    .suggest_available_flavors(&opts.version, &Settings::get())
+                    .await
+            {
+                return Err(eyre::eyre!("{err}\n{msg}"));
+            }
             return Err(err);
         }
         ctx.pr.next_operation();
