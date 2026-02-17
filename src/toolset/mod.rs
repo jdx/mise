@@ -673,5 +673,36 @@ mod tests {
         Toolset::sort_by_overrides(&mut input).unwrap();
         let ids: Vec<&str> = input.iter().map(|(b, _)| b.id()).collect();
         assert_eq!(ids, vec!["jc", "npm", "jq", "node"]);
+
+        // Test with multiple versions of the same tool
+        let tv_node_18 = mk_tv(node.clone(), "18.0.0");
+        let tv_node_20 = mk_tv(node.clone(), "20.0.0");
+        let tv_npm_9 = mk_tv(npm.clone(), "9.0.0");
+
+        let mut input = vec![
+            (node.clone(), tv_node_20.clone()),
+            (node.clone(), tv_node_18.clone()),
+            (jc.clone(), tv_jc.clone()),
+            (npm.clone(), tv_npm_9.clone()),
+            (npm.clone(), tv_npm.clone()),
+        ];
+        Toolset::sort_by_overrides(&mut input).unwrap();
+
+        // npm should come before node (due to override)
+        // Multiple versions of same tool should maintain original order
+        let result: Vec<(&str, &str)> = input
+            .iter()
+            .map(|(b, tv)| (b.id(), tv.version.as_str()))
+            .collect();
+        assert_eq!(
+            result,
+            vec![
+                ("npm", "9.0.0"),
+                ("npm", "10.2.5"),
+                ("node", "20.0.0"),
+                ("node", "18.0.0"),
+                ("jc", "1.0.0"),
+            ]
+        );
     }
 }
