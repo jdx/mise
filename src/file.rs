@@ -674,7 +674,7 @@ pub fn which_iterator<'a, P: AsRef<Path>, T: Iterator<Item = &'a PathBuf>>(
         };
         paths_with_ext
             .into_iter()
-            .find(|bin_path| bin_path.exists() && is_executable(&bin_path))
+            .find(|bin_path| bin_path.exists() && is_executable(bin_path))
     })
 }
 
@@ -1421,7 +1421,7 @@ mod tests {
         assert!(result.contains(&PathBuf::from("a/b")));
         assert!(result.contains(&PathBuf::from("a")));
     }
-    
+
     #[test]
     #[cfg(windows)]
     fn test_find_windows_executables() {
@@ -1430,7 +1430,7 @@ mod tests {
         let extensions = Settings::get().windows_executable_extensions.clone();
         // Just to be sure
         assert!(extensions.len() > 1);
-        
+
         for ext in extensions {
             let dir = tempdir().unwrap();
             let file_name = format!("test_executable.{}", ext);
@@ -1438,11 +1438,11 @@ mod tests {
             let maybe_exe = which_iterator("test_executable", [dir.path().to_path_buf()].iter());
             assert_eq!(maybe_exe, Some(dir.path().join(&file_name)));
         }
-        
+
         let dir = tempdir().unwrap();
-        
+
         create(&dir.path().join("invalid.txt")).unwrap();
-        
+
         let invalid = which_iterator("invalid", [dir.path().to_path_buf()].iter());
         assert!(invalid.is_none());
     }

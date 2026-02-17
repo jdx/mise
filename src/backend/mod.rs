@@ -1058,12 +1058,8 @@ pub trait Backend: Debug + Send + Sync {
         tv: &ToolVersion,
         bin_name: &str,
     ) -> Result<Option<PathBuf>> {
-        let bin_paths = self
-            .list_bin_paths(config, tv)
-            .await?;
-        let bin_paths_iter = bin_paths
-            .iter()
-            .filter(|p| p.parent().is_some());
+        let bin_paths = self.list_bin_paths(config, tv).await?;
+        let bin_paths_iter = bin_paths.iter().filter(|p| p.parent().is_some());
         Ok(file::which_iterator(bin_name, bin_paths_iter))
     }
 
