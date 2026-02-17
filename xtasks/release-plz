@@ -12,6 +12,16 @@ fi
 git config user.name mise-en-dev
 git config user.email release@mise.jdx.dev
 
+# Check if the most recent tag has a matching GitHub Release.
+# If not, the previous release workflow likely failed to fire — re-trigger it.
+latest_tag="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1)"
+if [[ -n $latest_tag ]]; then
+	if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$latest_tag" --silent 2>/dev/null; then
+		echo "Tag $latest_tag has no GitHub Release — triggering release workflow"
+		gh workflow run release.yml --ref "$latest_tag"
+	fi
+fi
+
 exists_on_crates() {
 	crate="$1"
 	version="$2"

@@ -6,13 +6,18 @@ on:
   pull_request:
     branches: ["main"]
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Force release even if one already exists"
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ github.ref_name }}
 
 env:
   CARGO_TERM_COLOR: always
-  DRY_RUN: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) && '0' || '1' }}
+  DRY_RUN: ${{ startsWith(github.ref, 'refs/tags/v') && '0' || '1' }}
   RUST_BACKTRACE: 1
   GITHUB_API_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
   GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
@@ -260,6 +265,24 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
+      - name: Check for existing release
+        id: check-release
+        if: startsWith(github.ref, 'refs/tags/v') && inputs.force != true
+        run: |
+          VERSION="$(./scripts/get-version.sh)"
+          if gh api "repos/${{ github.repository }}/releases/tags/$VERSION" --jq '.draft' 2>/dev/null; then
+            DRAFT="$(gh api "repos/${{ github.repository }}/releases/tags/$VERSION" --jq '.draft')"
+            if [[ "$DRAFT" == "false" ]]; then
+              echo "::warning::Release $VERSION already exists and is published — skipping publish steps"
+              echo "exists=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "Draft release $VERSION exists — will continue publishing"
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "No release found for $VERSION"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Skip release for non-release branch PRs
         if: github.event_name == 'pull_request' && github.head_ref != 'release'
         run: |
@@ -322,10 +345,10 @@ jobs:
       - run: mise x -- scripts/release.sh
         if: github.event_name != 'pull_request' || github.head_ref == 'release'
       - name: Install Claude Code CLI
-        if: startsWith(github.event.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
         run: npm install -g @anthropic-ai/claude-code
       - name: Create Draft GitHub Release
-        if: startsWith(github.event.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
         run: |
           VERSION="$(./scripts/get-version.sh)"
           PREV_VERSION="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$VERSION^" 2>/dev/null || echo "")"
@@ -357,14 +380,14 @@ jobs:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       - name: Publish Release Assets to CDN
-        if: startsWith(github.event.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
         run: mise x -- scripts/publish-release.sh
         env:
           CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
           CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
       - name: Publish GitHub Release
-        if: startsWith(github.event.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
         run: |
           VERSION="$(./scripts/get-version.sh)"
           gh release edit "$VERSION" --draft=false
