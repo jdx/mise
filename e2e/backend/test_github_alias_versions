@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# Test that when a registry tool is aliased to a different github backend,
+# version resolution uses the actual GitHub releases, not the versions host.
+# This is a regression test for https://github.com/jdx/mise/discussions/8215
+
+# "tiny" is in the registry (asdf:mise-plugins/mise-tiny) but we alias it
+# to a different github backend. The versions host would return versions for
+# the default "tiny" backend, which won't match github:jdx/mise-test-fixtures.
+cat <<EOF >mise.toml
+[tool_alias]
+tiny = "github:jdx/mise-test-fixtures"
+
+[tools]
+"tiny" = { version = "latest", asset_pattern = "hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+
+# ls-remote should return versions from the github backend (1.0.0), not the versions host
+assert_contains "mise ls-remote tiny" "1.0.0"
+
+# Installing with @latest should resolve to 1.0.0 from the github releases
+mise install
+assert "mise where tiny" "$MISE_DATA_DIR/installs/tiny/1.0.0"
+assert_contains "mise x -- hello-world" "hello world"
