@@ -313,10 +313,13 @@ impl Backend for JavaPlugin {
             .sorted_by_cached_key(|(v, m)| {
                 let is_shorthand = regex!(r"^\d").is_match(v);
                 let vendor = &m.vendor;
-                let is_jdk = m
-                    .image_type
-                    .as_ref()
-                    .is_some_and(|image_type| image_type == "jdk");
+                let is_jdk = match is_shorthand {
+                    true => true,
+                    false => m
+                        .image_type
+                        .as_ref()
+                        .is_some_and(|image_type| image_type == "jdk"),
+                };
                 let features = 10 - m.features.as_ref().map_or(0, |f| f.len());
                 let version = Versioning::new(v);
                 // Extract build suffix after a '+', '.' if present. If not present, treat as 0.
