@@ -412,7 +412,7 @@ impl UnifiedGitBackend {
 
         // Store the asset URL and digest (if available) in the tool version
         let platform_key = self.get_platform_key();
-        let platform_info = tv.lock_platforms.entry(platform_key).or_default();
+        let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();
         platform_info.url = Some(asset.url.clone());
         platform_info.url_api = Some(asset.url_api.clone());
         if let Some(digest) = &asset.digest {
@@ -466,7 +466,10 @@ impl UnifiedGitBackend {
         };
 
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file_with_headers(url, &file_path, &headers, Some(ctx.pr.as_ref()))
+        let checksum = asset.digest.as_deref().or_else(|| {
+            tv.lock_platforms.get(&platform_key).and_then(|p| p.checksum.as_deref())
+        });
+        HTTP.download_file_with_checksum(url, &file_path, checksum, Some(&headers), Some(ctx.pr.as_ref()))
             .await?;
 
         // Verify and install
