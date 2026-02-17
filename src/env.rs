@@ -304,6 +304,8 @@ pub static MISE_BIN: Lazy<PathBuf> = Lazy::new(|| {
 });
 pub static MISE_TIMINGS: Lazy<u8> = Lazy::new(|| var_u8("MISE_TIMINGS"));
 pub static MISE_PID: Lazy<String> = Lazy::new(|| process::id().to_string());
+pub static MISE_JOBS: Lazy<Option<usize>> =
+    Lazy::new(|| var("MISE_JOBS").ok().and_then(|v| v.parse::<usize>().ok()));
 pub static __MISE_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SCRIPT"));
 pub static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
 pub static __MISE_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__MISE_ORIG_PATH").ok());
@@ -381,63 +383,6 @@ pub static UV_PYTHON_INSTALL_DIR: Lazy<PathBuf> = Lazy::new(|| {
     var_path("UV_PYTHON_INSTALL_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("uv").join("python"))
 });
 
-// node
-pub static MISE_NODE_CONCURRENCY: Lazy<Option<usize>> = Lazy::new(|| {
-    var("MISE_NODE_CONCURRENCY")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .map(|v| v.max(1))
-        .or_else(|| {
-            if *MISE_NODE_NINJA {
-                None
-            } else {
-                Some(num_cpus::get_physical())
-            }
-        })
-});
-pub static MISE_NODE_MAKE: Lazy<String> =
-    Lazy::new(|| var("MISE_NODE_MAKE").unwrap_or_else(|_| "make".into()));
-pub static MISE_NODE_NINJA: Lazy<bool> =
-    Lazy::new(|| var_option_bool("MISE_NODE_NINJA").unwrap_or_else(is_ninja_on_path));
-pub static MISE_NODE_VERIFY: Lazy<bool> = Lazy::new(|| !var_is_false("MISE_NODE_VERIFY"));
-pub static MISE_NODE_CFLAGS: Lazy<Option<String>> =
-    Lazy::new(|| var("MISE_NODE_CFLAGS").or_else(|_| var("NODE_CFLAGS")).ok());
-pub static MISE_NODE_CONFIGURE_OPTS: Lazy<Option<String>> = Lazy::new(|| {
-    var("MISE_NODE_CONFIGURE_OPTS")
-        .or_else(|_| var("NODE_CONFIGURE_OPTS"))
-        .ok()
-});
-pub static MISE_NODE_MAKE_OPTS: Lazy<Option<String>> = Lazy::new(|| {
-    var("MISE_NODE_MAKE_OPTS")
-        .or_else(|_| var("NODE_MAKE_OPTS"))
-        .ok()
-});
-pub static MISE_NODE_MAKE_INSTALL_OPTS: Lazy<Option<String>> = Lazy::new(|| {
-    var("MISE_NODE_MAKE_INSTALL_OPTS")
-        .or_else(|_| var("NODE_MAKE_INSTALL_OPTS"))
-        .ok()
-});
-pub static MISE_JOBS: Lazy<Option<usize>> =
-    Lazy::new(|| var("MISE_JOBS").ok().and_then(|v| v.parse::<usize>().ok()));
-pub static MISE_NODE_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
-    var_path("MISE_NODE_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| {
-        let p = HOME.join(".default-nodejs-packages");
-        if p.exists() {
-            return p;
-        }
-        let p = HOME.join(".default-node-packages");
-        if p.exists() {
-            return p;
-        }
-        HOME.join(".default-npm-packages")
-    })
-});
-pub static MISE_NODE_COREPACK: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NODE_COREPACK"));
-pub static NVM_DIR: Lazy<PathBuf> =
-    Lazy::new(|| var_path("NVM_DIR").unwrap_or_else(|| HOME.join(".nvm")));
-pub static NODENV_ROOT: Lazy<PathBuf> =
-    Lazy::new(|| var_path("NODENV_ROOT").unwrap_or_else(|| HOME.join(".nodenv")));
-
 #[cfg(unix)]
 pub const PATH_ENV_SEP: char = ':';
 #[cfg(windows)]
@@ -478,18 +423,6 @@ fn var_is_false(key: &str) -> bool {
             v == "n" || v == "no" || v == "false" || v == "0" || v == "off"
         }
         Err(_) => false,
-    }
-}
-
-fn var_option_bool(key: &str) -> Option<bool> {
-    match var(key) {
-        Ok(_) if var_is_true(key) => Some(true),
-        Ok(_) if var_is_false(key) => Some(false),
-        Ok(v) => {
-            warn!("Invalid value for env var {}={}", key, v);
-            None
-        }
-        _ => None,
     }
 }
 
@@ -692,10 +625,6 @@ fn get_token(keys: &[&str]) -> Option<String> {
     keys.iter()
         .find_map(|key| var(key).ok())
         .and_then(|v| if v.trim().is_empty() { None } else { Some(v) })
-}
-
-fn is_ninja_on_path() -> bool {
-    which::which("ninja").is_ok()
 }
 
 pub fn is_activated() -> bool {

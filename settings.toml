@@ -962,11 +962,40 @@ env = "MISE_NO_HOOKS"
 optional = true
 type = "Bool"
 
+[node.cflags]
+description = "Additional CFLAGS options (e.g., to override -O3)."
+env = "MISE_NODE_CFLAGS"
+optional = true
+type = "String"
+
 [node.compile]
 description = "Compile node from source."
 env = "MISE_NODE_COMPILE"
 optional = true
 type = "Bool"
+
+[node.concurrency]
+description = "How many jobs should be used in compilation."
+env = "MISE_NODE_CONCURRENCY"
+optional = true
+type = "Integer"
+
+[node.configure_opts]
+description = "Additional ./configure options."
+env = "MISE_NODE_CONFIGURE_OPTS"
+optional = true
+type = "String"
+
+[node.corepack]
+description = "Installs the default corepack shims after installing any node version."
+env = "MISE_NODE_COREPACK"
+type = "Bool"
+
+[node.default_packages_file]
+description = "Path to a file containing default npm packages to install."
+env = "MISE_NODE_DEFAULT_PACKAGES_FILE"
+optional = true
+type = "Path"
 
 [node.flavor]
 description = "Install a specific node flavor like glibc-217 or musl. Use with unofficial node build repo."
@@ -980,11 +1009,53 @@ env = "MISE_NODE_GPG_VERIFY"
 optional = true
 type = "Bool"
 
+[node.make]
+description = "Make command to use."
+env = "MISE_NODE_MAKE"
+optional = true
+type = "String"
+
+[node.make_install_opts]
+description = "Additional make install options."
+env = "MISE_NODE_MAKE_INSTALL_OPTS"
+optional = true
+type = "String"
+
+[node.make_opts]
+description = "Additional make options."
+env = "MISE_NODE_MAKE_OPTS"
+optional = true
+type = "String"
+
+[node.nodenv_root]
+default = "~/.nodenv"
+description = "Directory for nodenv."
+env = "NODENV_ROOT"
+type = "Path"
+
+[node.nvm_dir]
+default = "~/.nvm"
+description = "Directory for nvm."
+env = "NVM_DIR"
+type = "Path"
+
 [node.mirror_url]
 description = "Mirror to download node tarballs from."
 env = "MISE_NODE_MIRROR_URL"
 optional = true
 type = "Url"
+
+[node.ninja]
+description = "Use ninja instead of make to compile node."
+env = "MISE_NODE_NINJA"
+optional = true
+type = "Bool"
+
+[node.verify]
+default = true
+description = "Verify the downloaded assets using GPG."
+env = "MISE_NODE_VERIFY"
+type = "Bool"
 
 [not_found_auto_install]
 default = true

@@ -193,6 +193,7 @@ impl NodePlugin {
         local: &Path,
         version: &str,
     ) -> Result<()> {
+        let settings = Settings::get();
         let tarball_name = local.file_name().unwrap().to_string_lossy().to_string();
         if local.exists() {
             pr.set_message(format!("using previously downloaded {tarball_name}"));
@@ -206,7 +207,7 @@ impl NodePlugin {
             .entry(self.get_platform_key())
             .or_default();
         platform_info.url = Some(url.to_string());
-        if *env::MISE_NODE_VERIFY && platform_info.checksum.is_none() {
+        if settings.node.verify && platform_info.checksum.is_none() {
             platform_info.checksum = Some(self.get_checksum(ctx, local, version).await?);
         }
         self.verify_checksum(ctx, tv, local)?;
@@ -214,12 +215,13 @@ impl NodePlugin {
     }
 
     fn sh<'a>(&self, ctx: &'a InstallContext, opts: &BuildOpts) -> eyre::Result<CmdLineRunner<'a>> {
+        let settings = Settings::get();
         let mut cmd = CmdLineRunner::new("sh")
             .prepend_path(opts.path.clone())?
             .with_pr(ctx.pr.as_ref())
             .current_dir(&opts.build_dir)
             .arg("-c");
-        if let Some(cflags) = &*env::MISE_NODE_CFLAGS {
+        if let Some(cflags) = &settings.node.cflags {
             cmd = cmd.env("CFLAGS", cflags);
         }
         Ok(cmd)
@@ -323,7 +325,24 @@ impl NodePlugin {
         tv: &ToolVersion,
         pr: &dyn SingleReport,
     ) -> Result<()> {
-        let body = file::read_to_string(&*env::MISE_NODE_DEFAULT_PACKAGES_FILE).unwrap_or_default();
+        let settings = Settings::get();
+        let default_packages_file =
+            settings
+                .node
+                .default_packages_file
+                .clone()
+                .unwrap_or_else(|| {
+                    let p = env::HOME.join(".default-nodejs-packages");
+                    if p.exists() {
+                        return p;
+                    }
+                    let p = env::HOME.join(".default-node-packages");
+                    if p.exists() {
+                        return p;
+                    }
+                    env::HOME.join(".default-npm-packages")
+                });
+        let body = file::read_to_string(&default_packages_file).unwrap_or_default();
         for package in body.lines() {
             let package = package.split('#').next().unwrap_or_default().trim();
             if package.is_empty() {
@@ -544,7 +563,7 @@ impl Backend for NodePlugin {
         {
             warn!("failed to install default npm packages: {err:#}");
         }
-        if *env::MISE_NODE_COREPACK && self.corepack_path(&tv).exists() {
+        if settings.node.corepack && self.corepack_path(&tv).exists() {
             self.enable_default_corepack_shims(&tv, ctx.pr.as_ref())?;
         }
 
@@ -772,30 +791,53 @@ impl BuildOpts {
 }
 
 fn configure_cmd(install_path: &Path) -> String {
+    let settings = Settings::get();
     let mut configure_cmd = format!("./configure --prefix={}", install_path.display());
-    if *env::MISE_NODE_NINJA {
+    if settings
+        .node
+        .ninja
+        .unwrap_or_else(|| which::which("ninja").is_ok())
+    {
         configure_cmd.push_str(" --ninja");
     }
-    if let Some(opts) = &*env::MISE_NODE_CONFIGURE_OPTS {
+    if let Some(opts) = &settings.node.configure_opts {
         configure_cmd.push_str(&format!(" {opts}"));
     }
     configure_cmd
 }
 
 fn make_cmd() -> String {
-    let mut make_cmd = env::MISE_NODE_MAKE.to_string();
-    if let Some(concurrency) = *env::MISE_NODE_CONCURRENCY {
+    let settings = Settings::get();
+    let mut make_cmd = settings.node.make.clone().unwrap_or_else(|| "make".into());
+    if let Some(concurrency) = settings
+        .node
+        .concurrency
+        .map(|c| std::cmp::max(c, 1) as usize)
+        .or_else(|| {
+            if settings
+                .node
+                .ninja
+                .unwrap_or_else(|| which::which("ninja").is_ok())
+            {
+                None
+            } else {
+                Some(num_cpus::get_physical())
+            }
+        })
+    {
         make_cmd.push_str(&format!(" -j{concurrency}"));
     }
-    if let Some(opts) = &*env::MISE_NODE_MAKE_OPTS {
+    if let Some(opts) = &settings.node.make_opts {
         make_cmd.push_str(&format!(" {opts}"));
     }
     make_cmd
 }
 
 fn make_install_cmd() -> String {
-    let mut make_install_cmd = format!("{} install", &*env::MISE_NODE_MAKE);
-    if let Some(opts) = &*env::MISE_NODE_MAKE_INSTALL_OPTS {
+    let settings = Settings::get();
+    let make = settings.node.make.clone().unwrap_or_else(|| "make".into());
+    let mut make_install_cmd = format!("{} install", make);
+    if let Some(opts) = &settings.node.make_install_opts {
         make_install_cmd.push_str(&format!(" {opts}"));
     }
     make_install_cmd

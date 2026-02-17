@@ -884,9 +884,29 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "cflags": {
+              "description": "Additional CFLAGS options (e.g., to override -O3).",
+              "type": "string"
+            },
             "compile": {
               "description": "Compile node from source.",
               "type": "boolean"
+            },
+            "concurrency": {
+              "description": "How many jobs should be used in compilation.",
+              "type": "number"
+            },
+            "configure_opts": {
+              "description": "Additional ./configure options.",
+              "type": "string"
+            },
+            "corepack": {
+              "description": "Installs the default corepack shims after installing any node version.",
+              "type": "boolean"
+            },
+            "default_packages_file": {
+              "description": "Path to a file containing default npm packages to install.",
+              "type": "string"
             },
             "flavor": {
               "description": "Install a specific node flavor like glibc-217 or musl. Use with unofficial node build repo.",
@@ -896,9 +916,40 @@
               "description": "Use gpg to verify node tool signatures.",
               "type": "boolean"
             },
+            "make": {
+              "description": "Make command to use.",
+              "type": "string"
+            },
+            "make_install_opts": {
+              "description": "Additional make install options.",
+              "type": "string"
+            },
+            "make_opts": {
+              "description": "Additional make options.",
+              "type": "string"
+            },
+            "nodenv_root": {
+              "default": "~/.nodenv",
+              "description": "Directory for nodenv.",
+              "type": "string"
+            },
+            "nvm_dir": {
+              "default": "~/.nvm",
+              "description": "Directory for nvm.",
+              "type": "string"
+            },
             "mirror_url": {
               "description": "Mirror to download node tarballs from.",
               "type": "string"
+            },
+            "ninja": {
+              "description": "Use ninja instead of make to compile node.",
+              "type": "boolean"
+            },
+            "verify": {
+              "default": true,
+              "description": "Verify the downloaded assets using GPG.",
+              "type": "boolean"
             }
           }
         },
