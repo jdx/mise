@@ -928,6 +928,14 @@
               "description": "Additional make options.",
               "type": "string"
             },
+            "mirror_url": {
+              "description": "Mirror to download node tarballs from.",
+              "type": "string"
+            },
+            "ninja": {
+              "description": "Use ninja instead of make to compile node.",
+              "type": "boolean"
+            },
             "nodenv_root": {
               "default": "~/.nodenv",
               "description": "Directory for nodenv.",
@@ -937,14 +945,6 @@
               "default": "~/.nvm",
               "description": "Directory for nvm.",
               "type": "string"
-            },
-            "mirror_url": {
-              "description": "Mirror to download node tarballs from.",
-              "type": "string"
-            },
-            "ninja": {
-              "description": "Use ninja instead of make to compile node.",
-              "type": "boolean"
             },
             "verify": {
               "default": true,

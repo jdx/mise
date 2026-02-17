@@ -683,6 +683,74 @@ impl SettingsNode {
             .unwrap_or_else(|| DEFAULT_NODE_MIRROR_URL.to_string());
         Url::parse(&s).unwrap()
     }
+
+    pub fn ninja(&self) -> bool {
+        self.ninja.unwrap_or_else(|| which::which("ninja").is_ok())
+    }
+
+    pub fn concurrency(&self) -> Option<usize> {
+        self.concurrency
+            .map(|c| std::cmp::max(c, 1) as usize)
+            .or_else(|| {
+                if self.ninja() {
+                    None
+                } else {
+                    Some(num_cpus::get_physical())
+                }
+            })
+    }
+
+    pub fn default_packages_file(&self) -> PathBuf {
+        self.default_packages_file
+            .clone()
+            .or_else(|| {
+                env::var("NODE_DEFAULT_PACKAGES_FILE")
+                    .ok()
+                    .map(PathBuf::from)
+            })
+            .unwrap_or_else(|| {
+                let p = env::HOME.join(".default-nodejs-packages");
+                if p.exists() {
+                    return p;
+                }
+                let p = env::HOME.join(".default-node-packages");
+                if p.exists() {
+                    return p;
+                }
+                env::HOME.join(".default-npm-packages")
+            })
+    }
+
+    pub fn configure_cmd(&self, install_path: &Path) -> String {
+        let mut configure_cmd = format!("./configure --prefix={}", install_path.display());
+        if self.ninja() {
+            configure_cmd.push_str(" --ninja");
+        }
+        if let Some(opts) = &self.configure_opts {
+            configure_cmd.push_str(&format!(" {opts}"));
+        }
+        configure_cmd
+    }
+
+    pub fn make_cmd(&self) -> String {
+        let mut make_cmd = self.make.clone().unwrap_or_else(|| "make".into());
+        if let Some(concurrency) = self.concurrency() {
+            make_cmd.push_str(&format!(" -j{concurrency}"));
+        }
+        if let Some(opts) = &self.make_opts {
+            make_cmd.push_str(&format!(" {opts}"));
+        }
+        make_cmd
+    }
+
+    pub fn make_install_cmd(&self) -> String {
+        let make = self.make.clone().unwrap_or_else(|| "make".into());
+        let mut make_install_cmd = format!("{} install", make);
+        if let Some(opts) = &self.make_install_opts {
+            make_install_cmd.push_str(&format!(" {opts}"));
+        }
+        make_install_cmd
+    }
 }
 
 impl SettingsStatus {
@@ -891,5 +959,34 @@ mod tests {
                 "settings.toml is not alphabetically sorted at index {i}: found \"{got}\", expected \"{expected}\". Run the sort script or reorder manually."
             );
         }
+    }
+
+    #[test]
+    fn test_settings_node_build_cmds() {
+        let node = SettingsNode::default();
+        let path = Path::new("/tmp/install");
+
+        // Defaults
+        assert!(
+            node.configure_cmd(path)
+                .starts_with("./configure --prefix=/tmp/install")
+        );
+        assert!(node.make_cmd().starts_with("make"));
+        assert_eq!(node.make_install_cmd(), "make install");
+    }
+
+    #[test]
+    fn test_settings_node_build_cmds_with_opts() {
+        let mut node = SettingsNode::default();
+        node.configure_opts = Some("--verbose".to_string());
+        node.make_opts = Some("-s".to_string());
+        node.make_install_opts = Some("--no-strip".to_string());
+        node.make = Some("gmake".to_string());
+        node.concurrency = Some(4);
+
+        let path = Path::new("/tmp/install");
+        assert!(node.configure_cmd(path).contains("--verbose"));
+        assert!(node.make_cmd().starts_with("gmake -j4 -s"));
+        assert_eq!(node.make_install_cmd(), "gmake install --no-strip");
     }
 }

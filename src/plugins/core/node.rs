@@ -326,22 +326,7 @@ impl NodePlugin {
         pr: &dyn SingleReport,
     ) -> Result<()> {
         let settings = Settings::get();
-        let default_packages_file =
-            settings
-                .node
-                .default_packages_file
-                .clone()
-                .unwrap_or_else(|| {
-                    let p = env::HOME.join(".default-nodejs-packages");
-                    if p.exists() {
-                        return p;
-                    }
-                    let p = env::HOME.join(".default-node-packages");
-                    if p.exists() {
-                        return p;
-                    }
-                    env::HOME.join(".default-npm-packages")
-                });
+        let default_packages_file = settings.node.default_packages_file();
         let body = file::read_to_string(&default_packages_file).unwrap_or_default();
         for package in body.lines() {
             let package = package.split('#').next().unwrap_or_default().trim();
@@ -770,9 +755,9 @@ impl BuildOpts {
             version: v.clone(),
             path: ctx.ts.list_paths(&ctx.config).await,
             build_dir: env::MISE_TMP_DIR.join(format!("node-v{v}")),
-            configure_cmd: configure_cmd(&install_path),
-            make_cmd: make_cmd(),
-            make_install_cmd: make_install_cmd(),
+            configure_cmd: Settings::get().node.configure_cmd(&install_path),
+            make_cmd: Settings::get().node.make_cmd(),
+            make_install_cmd: Settings::get().node.make_install_cmd(),
             source_tarball_path: tv.download_path().join(&source_tarball_name),
             source_tarball_url: Settings::get()
                 .node
@@ -788,59 +773,6 @@ impl BuildOpts {
             install_path,
         })
     }
-}
-
-fn configure_cmd(install_path: &Path) -> String {
-    let settings = Settings::get();
-    let mut configure_cmd = format!("./configure --prefix={}", install_path.display());
-    if settings
-        .node
-        .ninja
-        .unwrap_or_else(|| which::which("ninja").is_ok())
-    {
-        configure_cmd.push_str(" --ninja");
-    }
-    if let Some(opts) = &settings.node.configure_opts {
-        configure_cmd.push_str(&format!(" {opts}"));
-    }
-    configure_cmd
-}
-
-fn make_cmd() -> String {
-    let settings = Settings::get();
-    let mut make_cmd = settings.node.make.clone().unwrap_or_else(|| "make".into());
-    if let Some(concurrency) = settings
-        .node
-        .concurrency
-        .map(|c| std::cmp::max(c, 1) as usize)
-        .or_else(|| {
-            if settings
-                .node
-                .ninja
-                .unwrap_or_else(|| which::which("ninja").is_ok())
-            {
-                None
-            } else {
-                Some(num_cpus::get_physical())
-            }
-        })
-    {
-        make_cmd.push_str(&format!(" -j{concurrency}"));
-    }
-    if let Some(opts) = &settings.node.make_opts {
-        make_cmd.push_str(&format!(" {opts}"));
-    }
-    make_cmd
-}
-
-fn make_install_cmd() -> String {
-    let settings = Settings::get();
-    let make = settings.node.make.clone().unwrap_or_else(|| "make".into());
-    let mut make_install_cmd = format!("{} install", make);
-    if let Some(opts) = &settings.node.make_install_opts {
-        make_install_cmd.push_str(&format!(" {opts}"));
-    }
-    make_install_cmd
 }
 
 fn os() -> &'static str {

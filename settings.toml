@@ -975,7 +975,11 @@ optional = true
 type = "Bool"
 
 [node.concurrency]
+default_docs = "Number of physical CPUs (unless ninja is enabled)"
 description = "How many jobs should be used in compilation."
+docs = """
+Number of parallel jobs for node compilation. Defaults to the number of physical CPU cores when using make. When ninja is enabled, this defaults to unset (ninja handles concurrency automatically).
+"""
 env = "MISE_NODE_CONCURRENCY"
 optional = true
 type = "Integer"
@@ -992,7 +996,19 @@ env = "MISE_NODE_COREPACK"
 type = "Bool"
 
 [node.default_packages_file]
+default_docs = "~/.default-npm-packages"
 description = "Path to a file containing default npm packages to install."
+docs = """
+Path to a file containing packages to install with npm after installing a new Node.js version.
+Defaults to `~/.default-npm-packages`. Also checks `~/.default-nodejs-packages` and `~/.default-node-packages` for backwards compatibility.
+
+Format: one package per line, with optional version specifier:
+```
+lodash
+typescript@latest
+@types/node@^20
+```
+"""
 env = "MISE_NODE_DEFAULT_PACKAGES_FILE"
 optional = true
 type = "Path"
@@ -1027,6 +1043,25 @@ env = "MISE_NODE_MAKE_OPTS"
 optional = true
 type = "String"
 
+[node.mirror_url]
+description = "Mirror to download node tarballs from."
+env = "MISE_NODE_MIRROR_URL"
+optional = true
+type = "Url"
+
+[node.ninja]
+default_docs = "Auto-detected: true if ninja is on PATH"
+description = "Use ninja instead of make to compile node."
+docs = """
+If true, use ninja build system instead of make for faster compilation.
+Defaults to true if `ninja` is found on PATH, false otherwise.
+
+Ninja is generally faster than make for incremental builds.
+"""
+env = "MISE_NODE_NINJA"
+optional = true
+type = "Bool"
+
 [node.nodenv_root]
 default = "~/.nodenv"
 description = "Directory for nodenv."
@@ -1038,18 +1073,6 @@ default = "~/.nvm"
 description = "Directory for nvm."
 env = "NVM_DIR"
 type = "Path"
-
-[node.mirror_url]
-description = "Mirror to download node tarballs from."
-env = "MISE_NODE_MIRROR_URL"
-optional = true
-type = "Url"
-
-[node.ninja]
-description = "Use ninja instead of make to compile node."
-env = "MISE_NODE_NINJA"
-optional = true
-type = "Bool"
 
 [node.verify]
 default = true
