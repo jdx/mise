@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -e
+. test/lib.sh
+
+# Mock cargo-binstall
+cat >"$MISE_DATA_DIR/bin/cargo-binstall" <<EOF
+#!/usr/bin/env bash
+echo "cargo-binstall executed"
+EOF
+chmod +x "$MISE_DATA_DIR/bin/cargo-binstall"
+
+# Test default behavior (false)
+assert "mise settings get cargo.binstall_only" "false"
+
+# Test setting via env var
+export MISE_CARGO_BINSTALL_ONLY=true
+assert "mise settings get cargo.binstall_only" "true"
+unset MISE_CARGO_BINSTALL_ONLY
+
+# Test setting via CLI
+mise settings set cargo.binstall_only true
+assert "mise settings get cargo.binstall_only" "true"
+
+mise settings set cargo.binstall_only false
+assert "mise settings get cargo.binstall_only" "false"
+
+echo "cargo.binstall_only settings verification passed!"
