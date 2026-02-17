@@ -673,13 +673,9 @@ pub fn which_iterator<'a, P: AsRef<Path>, T: Iterator<Item = &'a PathBuf>>(
         } else {
             vec![path.join(name)]
         };
-        for bin_path in paths_with_ext {
-            if bin_path.exists() && is_executable(&bin_path) {
-                return Some(bin_path);
-            }
-        }
-
-        None
+        paths_with_ext
+            .into_iter()
+            .find(|bin_path| bin_path.exists() && is_executable(&bin_path))
     })
 }
 
