@@ -120,7 +120,7 @@ impl Backend for CargoBackend {
             }
             cmd.arg(install_arg)
         } else if Settings::get().cargo.binstall_only {
-            bail!("cargo-binstall is not available, but MISE_CARGO_BINSTALL_ONLY is set");
+            bail!("cargo-binstall is not available, but cargo.binstall_only is set");
         } else {
             cmd.arg(install_arg)
         };
