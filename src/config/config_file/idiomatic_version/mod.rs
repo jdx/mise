@@ -69,14 +69,7 @@ impl IdiomaticVersionFile {
         trace!("parsing idiomatic version: {}", path.display());
         let file_name = path.file_name().unwrap().to_string_lossy().to_string();
         let mut tools: Vec<Arc<dyn Backend>> = vec![];
-        let enable_tools = crate::config::Settings::get()
-            .idiomatic_version_file_enable_tools
-            .clone();
         for b in backend::list().into_iter() {
-            if !enable_tools.contains(b.id()) {
-                continue;
-            }
-
             if b.idiomatic_filenames()
                 .await
                 .is_ok_and(|f| f.contains(&file_name))
