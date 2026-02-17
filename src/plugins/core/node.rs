@@ -428,7 +428,7 @@ impl Backend for NodePlugin {
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let settings = Settings::get();
-        let base = Settings::get().node.mirror_url();
+        let base = settings.node.mirror_url();
         let versions = HTTP_FETCH
             .json::<Vec<NodeVersion>, _>(base.join("index.json")?)
             .await?
@@ -568,13 +568,14 @@ impl Backend for NodePlugin {
         static CACHE: OnceLock<Arc<Mutex<VersionCacheManager>>> = OnceLock::new();
         CACHE
             .get_or_init(|| {
+                let settings = Settings::get();
                 Mutex::new(
                     CacheManagerBuilder::new(
                         self.ba().cache_path.join("remote_versions.msgpack.z"),
                     )
-                    .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
-                    .with_cache_key(Settings::get().node.mirror_url.clone().unwrap_or_default())
-                    .with_cache_key(Settings::get().node.flavor.clone().unwrap_or_default())
+                    .with_fresh_duration(settings.fetch_remote_versions_cache())
+                    .with_cache_key(settings.node.mirror_url.clone().unwrap_or_default())
+                    .with_cache_key(settings.node.flavor.clone().unwrap_or_default())
                     .build(),
                 )
                 .into()
@@ -751,21 +752,22 @@ impl BuildOpts {
         #[cfg(not(windows))]
         let binary_tarball_name = format!("{slug}.tar.gz");
 
+        let settings = Settings::get();
         Ok(Self {
             version: v.clone(),
             path: ctx.ts.list_paths(&ctx.config).await,
             build_dir: env::MISE_TMP_DIR.join(format!("node-v{v}")),
-            configure_cmd: Settings::get().node.configure_cmd(&install_path),
-            make_cmd: Settings::get().node.make_cmd(),
-            make_install_cmd: Settings::get().node.make_install_cmd(),
+            configure_cmd: settings.node.configure_cmd(&install_path),
+            make_cmd: settings.node.make_cmd(),
+            make_install_cmd: settings.node.make_install_cmd(),
             source_tarball_path: tv.download_path().join(&source_tarball_name),
-            source_tarball_url: Settings::get()
+            source_tarball_url: settings
                 .node
                 .mirror_url()
                 .join(&format!("v{v}/{source_tarball_name}"))?,
             source_tarball_name,
             binary_tarball_path: tv.download_path().join(&binary_tarball_name),
-            binary_tarball_url: Settings::get()
+            binary_tarball_url: settings
                 .node
                 .mirror_url()
                 .join(&format!("v{v}/{binary_tarball_name}"))?,

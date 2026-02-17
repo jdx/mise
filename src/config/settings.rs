@@ -993,12 +993,14 @@ mod tests {
 
     #[test]
     fn test_settings_node_build_cmds_with_opts() {
-        let mut node = SettingsNode::default();
-        node.configure_opts = Some("--verbose".to_string());
-        node.make_opts = Some("-s".to_string());
-        node.make_install_opts = Some("--no-strip".to_string());
-        node.make = Some("gmake".to_string());
-        node.concurrency = Some(4);
+        let node = SettingsNode {
+            configure_opts: Some("--verbose".to_string()),
+            make_opts: Some("-s".to_string()),
+            make_install_opts: Some("--no-strip".to_string()),
+            make: Some("gmake".to_string()),
+            concurrency: Some(4),
+            ..Default::default()
+        };
 
         let path = Path::new("/tmp/install");
         assert!(node.configure_cmd(path).contains("--verbose"));
