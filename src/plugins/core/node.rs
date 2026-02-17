@@ -5,6 +5,7 @@ use crate::build_time::built_info;
 use crate::cache::CacheManagerBuilder;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
+use crate::config::settings::DEFAULT_NODE_MIRROR_URL;
 use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
@@ -157,15 +158,29 @@ impl NodePlugin {
     ) -> Result<()> {
         debug!("{:?}: we will fetch the source and compile", self);
         let tarball_name = &opts.source_tarball_name;
-        self.fetch_tarball(
-            ctx,
-            tv,
-            ctx.pr.as_ref(),
-            &opts.source_tarball_url,
-            &opts.source_tarball_path,
-            &opts.version,
-        )
-        .await?;
+        if let Err(err) = self
+            .fetch_tarball(
+                ctx,
+                tv,
+                ctx.pr.as_ref(),
+                &opts.source_tarball_url,
+                &opts.source_tarball_path,
+                &opts.version,
+            )
+            .await
+        {
+            if let Some(reqwest_err) = err.root_cause().downcast_ref::<reqwest::Error>() {
+                if reqwest_err.status() == Some(reqwest::StatusCode::NOT_FOUND) {
+                    if let Ok(Some(msg)) = self
+                        .suggest_available_flavors(&opts.version, &Settings::get())
+                        .await
+                    {
+                        return Err(eyre::eyre!("{err}\n{msg}"));
+                    }
+                }
+            }
+            return Err(err);
+        }
         ctx.pr.next_operation();
         ctx.pr.set_message(format!("extract {tarball_name}"));
         file::remove_all(&opts.build_dir)?;
@@ -398,6 +413,64 @@ impl NodePlugin {
             .mirror_url()
             .join(&format!("v{v}/SHASUMS256.txt"))?;
         Ok(url)
+    }
+
+    async fn suggest_available_flavors(
+        &self,
+        v: &str,
+        settings: &Settings,
+    ) -> Result<Option<String>> {
+        let base = settings.node.mirror_url();
+        // If using default mirror, we don't need to suggest anything as it's likely a real 404
+        if base.to_string() == DEFAULT_NODE_MIRROR_URL {
+            return Ok(None);
+        }
+
+        let versions: Vec<NodeVersion> = HTTP_FETCH
+            .json(base.join("index.json")?)
+            .await
+            .unwrap_or_default();
+
+        if let Some(version) = versions.iter().find(|nv| {
+            nv.version == format!("v{v}") || nv.version == v || nv.version == format!("v{v}.")
+        }) {
+            let os = os();
+            let arch = arch(settings);
+            let candidates: Vec<&String> = version
+                .files
+                .iter()
+                .filter(|f| f.starts_with(&format!("{os}-{arch}-")))
+                .collect();
+
+            if !candidates.is_empty() {
+                let mut msg = format!("Could not find node@{v} with the current settings.\n");
+                msg.push_str(&format!(
+                    "However, the following flavors are available on the mirror for {os}-{arch}:\n"
+                ));
+                for candidate in candidates {
+                    // Extract flavor from "linux-x64-musl" -> "musl"
+                    // format is {os}-{arch}-{flavor}
+                    let prefix = format!("{os}-{arch}-");
+                    if let Some(flavor) = candidate.strip_prefix(&prefix) {
+                        msg.push_str(&format!("  - {flavor}\n"));
+                    } else {
+                        msg.push_str(&format!("  - {candidate} (unknown format)\n"));
+                    }
+                }
+                msg.push_str("\nYou can try setting the flavor using:\n");
+                msg.push_str("  mise settings set node.flavor <flavor>\n");
+                return Ok(Some(msg));
+            } else {
+                // Fallback: list all files for that version if no arch match
+                let mut msg = format!("Could not find node@{v} for {os}-{arch}.\n");
+                msg.push_str("Available files for this version on the mirror:\n");
+                for file in &version.files {
+                    msg.push_str(&format!("  - {file}\n"));
+                }
+                return Ok(Some(msg));
+            }
+        }
+        Ok(None)
     }
 }
 
