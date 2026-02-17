@@ -442,7 +442,23 @@ pub trait Backend: Debug + Send + Sync {
             }
             matches
         } else {
-            true // Core plugins and plugins without remote URLs can use versions host
+            // For non-plugin backends (e.g. github:, cargo:), check if the backend matches
+            // the registry's default. When a user aliases a tool to a different backend
+            // (e.g. `php = "github:verzly/php"`), the versions host would return versions
+            // from the registry's default backend which may not match the aliased backend.
+            let full = ba.full();
+            if let Some(rt) = REGISTRY.get(ba.short.as_str()) {
+                let is_registry_backend = rt.backends().iter().any(|b| *b == full);
+                if !is_registry_backend {
+                    trace!(
+                        "Skipping versions host for {} because backend {} is not the registry default",
+                        ba.short, full
+                    );
+                }
+                is_registry_backend
+            } else {
+                true // Not in registry, safe to use versions host
+            }
         };
 
         if Settings::get().offline() {
