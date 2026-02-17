@@ -926,6 +926,7 @@ pub trait Backend: Debug + Send + Sync {
         if let Some(rt) = REGISTRY.get(self.id()) {
             filenames.extend(rt.idiomatic_files.iter().map(|s| s.to_string()));
         }
+        filenames = filenames.into_iter().unique().collect();
         Ok(filenames)
     }
 
