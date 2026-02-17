@@ -665,7 +665,7 @@ mod tests {
             (jq.clone(), tv_jq.clone()),
             (node.clone(), tv_node.clone()),
         ];
-        Toolset::sort_by_overrides(&mut input);
+        Toolset::sort_by_overrides(&mut input).unwrap();
         let ids: Vec<&str> = input.iter().map(|(b, _)| b.id()).collect();
         assert_eq!(ids, vec!["jc", "npm", "jq", "node"]);
     }
