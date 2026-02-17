@@ -1,5 +1,31 @@
 # Changelog
 
+## [2026.2.16](https://github.com/jdx/mise/compare/v2026.2.15..v2026.2.16) - 2026-02-17
+
+### 🚀 Features
+
+- **(mcp)** add run_task tool for executing mise tasks by @joaommartins in [#8179](https://github.com/jdx/mise/pull/8179)
+- **(node)** suggest setting node.flavor if the flavor is not found in mirror by @risu729 in [#8206](https://github.com/jdx/mise/pull/8206)
+
+### 🐛 Bug Fixes
+
+- **(java)** sort order for shorthand versions by @roele in [#8197](https://github.com/jdx/mise/pull/8197)
+- **(node)** migrate env vars to settings by @risu729 in [#8200](https://github.com/jdx/mise/pull/8200)
+- **(registry)** apply overrides in shims by @risu729 in [#8199](https://github.com/jdx/mise/pull/8199)
+- migrate MISE_CARGO_BINSTALL_ONLY to settings by @risu729 in [#8202](https://github.com/jdx/mise/pull/8202)
+
+### 📚 Documentation
+
+- **(doctor)** fix subcommand in an example by @risu729 in [#8198](https://github.com/jdx/mise/pull/8198)
+
+### 📦 Registry
+
+- add github backend for typst by @3w36zj6 in [#8210](https://github.com/jdx/mise/pull/8210)
+
+### Chore
+
+- **(test)** disable flaky Forgejo e2e test by @jdx in [#8211](https://github.com/jdx/mise/pull/8211)
+
 ## [2026.2.15](https://github.com/jdx/mise/compare/v2026.2.14..v2026.2.15) - 2026-02-17
 
 ### 🚀 Features
