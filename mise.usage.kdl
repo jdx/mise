@@ -232,7 +232,7 @@ cmd doctor help="Check mise installation for possible problems" {
     flag "-J --json"
     cmd path help="Print the current PATH entries mise is providing" {
         alias paths hide=#true
-        after_long_help "Examples:\n\n    Get the current PATH entries mise is providing\n    $ mise path\n    /home/user/.local/share/mise/installs/node/24.0.0/bin\n    /home/user/.local/share/mise/installs/rust/1.90.0/bin\n    /home/user/.local/share/mise/installs/python/3.10.0/bin\n"
+        after_long_help "Examples:\n\n    Get the current PATH entries mise is providing\n    $ mise doctor path\n    /home/user/.local/share/mise/installs/node/24.0.0/bin\n    /home/user/.local/share/mise/installs/rust/1.90.0/bin\n    /home/user/.local/share/mise/installs/python/3.10.0/bin\n"
         flag "-f --full" help="Print all entries including those not provided by mise"
     }
 }
