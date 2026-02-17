@@ -204,8 +204,29 @@ where
     }
     let cwd = crate::dirs::CWD.clone().unwrap_or_default();
     let program = program.to_executable();
-    let path = env.get(&*env::PATH_KEY).map(OsString::from);
-    let program = which::which_in(program, path, cwd)?;
+    // Strip shims directory from PATH for program resolution only, to prevent
+    // recursive shim execution. On Windows, "file" mode shim scripts call
+    // `mise x -- tool`, which re-enters Exec. If shims remain in PATH (due to
+    // not_found_auto_install), which::which_in resolves "tool" back to the shim,
+    // causing an infinite loop. The child process still inherits the full PATH
+    // (with shims) so subprocesses can find tools via shims.
+    let lookup_path = env.get(&*env::PATH_KEY).map(|path_val| {
+        // Compare with ~ expansion, normalized separators, and case-insensitive
+        // to handle Windows path variations (e.g. ~/.local/share/mise\shims vs
+        // C:\Users\user\.local\share\mise\shims)
+        let shims_normalized = crate::dirs::SHIMS
+            .to_string_lossy()
+            .to_lowercase()
+            .replace('/', "\\");
+        let filtered: Vec<_> = std::env::split_paths(&OsString::from(path_val))
+            .filter(|p| {
+                let expanded = crate::file::replace_path(p);
+                expanded.to_string_lossy().to_lowercase().replace('/', "\\") != shims_normalized
+            })
+            .collect();
+        std::env::join_paths(&filtered).unwrap()
+    });
+    let program = which::which_in(program, lookup_path, cwd)?;
     let cmd = cmd::cmd(program, args);
 
     // Windows does not support exec in the same way as Unix,
