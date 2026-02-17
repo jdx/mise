@@ -1,5 +1,49 @@
 # Changelog
 
+## [2026.2.15](https://github.com/jdx/mise/compare/v2026.2.14..v2026.2.15) - 2026-02-17
+
+### 🚀 Features
+
+- **(task)** stream keep-order output in real-time per task by @jdx in [#8164](https://github.com/jdx/mise/pull/8164)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** resolve lockfile artifacts for target platform (fix discussion #7479) by @mackwic in [#8183](https://github.com/jdx/mise/pull/8183)
+- **(exec)** strip shims from PATH to prevent recursive shim execution by @jdx in [#8189](https://github.com/jdx/mise/pull/8189)
+- **(hook-env)** preserve PATH reordering done after activation by @jdx in [#8190](https://github.com/jdx/mise/pull/8190)
+- **(lockfile)** resolve version aliases before lockfile lookup by @jdx in [#8194](https://github.com/jdx/mise/pull/8194)
+- **(registry)** set helm-diff archive bin name to diff by @jean-humann in [#8173](https://github.com/jdx/mise/pull/8173)
+- **(task)** improve source freshness checks with dynamic task dirs by @rooperuu in [#8169](https://github.com/jdx/mise/pull/8169)
+- **(task)** resolve global tasks when running from monorepo root by @jdx in [#8192](https://github.com/jdx/mise/pull/8192)
+- **(task)** prevent wildcard glob `test:*` from matching parent task `test` by @jdx in [#8165](https://github.com/jdx/mise/pull/8165)
+- **(task)** resolve task_config.includes relative to config root by @jdx in [#8193](https://github.com/jdx/mise/pull/8193)
+- **(upgrade)** skip untrusted tracked configs during upgrade by @jdx in [#8195](https://github.com/jdx/mise/pull/8195)
+
+### 🚜 Refactor
+
+- use enum for npm.pacakge_manager by @risu729 in [#8180](https://github.com/jdx/mise/pull/8180)
+
+### 📚 Documentation
+
+- **(plugins)** replace node/asdf-nodejs examples with vfox plugins by @jdx in [#8191](https://github.com/jdx/mise/pull/8191)
+
+### ⚡ Performance
+
+- call npm view only once by @risu729 in [#8181](https://github.com/jdx/mise/pull/8181)
+
+### New Contributors
+
+- @jean-humann made their first contribution in [#8173](https://github.com/jdx/mise/pull/8173)
+- @mackwic made their first contribution in [#8183](https://github.com/jdx/mise/pull/8183)
+- @rooperuu made their first contribution in [#8169](https://github.com/jdx/mise/pull/8169)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`BetterDiscord/cli`](https://github.com/BetterDiscord/cli)
+- [`glossia.ai/cli`](https://github.com/glossia.ai/cli)
+
 ## [2026.2.14](https://github.com/jdx/mise/compare/v2026.2.13..v2026.2.14) - 2026-02-16
 
 ### 🚀 Features
