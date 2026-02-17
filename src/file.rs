@@ -22,7 +22,6 @@ use tar::Archive;
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
-#[cfg(windows)]
 use crate::config::Settings;
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env};
