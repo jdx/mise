@@ -592,6 +592,9 @@ impl Backend for NodePlugin {
         let body = body.strip_prefix('v').unwrap_or(body);
         // replace lts/* with lts
         let body = body.replace("lts/*", "lts");
+        if body.is_empty() {
+            return Ok(vec![]);
+        }
         Ok(vec![body])
 >>>>>>> 3ed60bf99 (fix: compile error)
     }
