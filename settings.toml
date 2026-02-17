@@ -217,6 +217,12 @@ mise use -g cargo-binstall
 env = "MISE_CARGO_BINSTALL"
 type = "Bool"
 
+[cargo.binstall_only]
+default = false
+description = "Only use cargo-binstall for installation, fail if not available."
+env = "MISE_CARGO_BINSTALL_ONLY"
+type = "Bool"
+
 [cargo.registry_name]
 description = "Name of the cargo registry to use."
 docs = """
@@ -229,12 +235,6 @@ Please follow the [cargo alternative registries documentation](https://doc.rust-
 env = "MISE_CARGO_REGISTRY_NAME"
 optional = true
 type = "String"
-
-[cargo.binstall_only]
-default = false
-description = "Only use cargo-binstall for installation, fail if not available."
-env = "MISE_CARGO_BINSTALL_ONLY"
-type = "Bool"
 
 [cargo_binstall]
 deprecated = "Use cargo.binstall instead."
