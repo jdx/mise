@@ -1,7 +1,10 @@
-use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::{
+    cmp::Reverse,
+    collections::{BinaryHeap, HashMap},
+};
 
 use serde::Serialize;
 
@@ -10,15 +13,18 @@ use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::settings::{Settings, SettingsStatusMissingTools};
 use crate::env::TERM_WIDTH;
+use crate::registry::REGISTRY;
 use crate::registry::tool_enabled;
 use crate::{backend, parallel};
 pub use builder::ToolsetBuilder;
 use console::truncate_str;
-use eyre::Result;
+use eyre::{Result, bail};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use outdated_info::OutdatedInfo;
 pub use outdated_info::is_outdated_version;
+use petgraph::Direction;
+use petgraph::graphmap::DiGraphMap;
 use tokio::sync::OnceCell;
 
 pub use tool_request::ToolRequest;
@@ -360,12 +366,112 @@ impl Toolset {
             .await
     }
 
+    /// Sort installed tools so that tools with `overrides` in the registry
+    /// appear before the tools they override. e.g., npm overrides node so that
+    /// the explicitly-installed npm binary is found before node's bundled npm.
+    pub(crate) fn sort_by_overrides(
+        installed: &mut Vec<(Arc<dyn Backend>, ToolVersion)>,
+    ) -> Result<()> {
+        let mut graph = DiGraphMap::<&str, ()>::new();
+        let ids: Vec<String> = installed.iter().map(|(b, _)| b.id().to_string()).collect();
+
+        let mut original_index: HashMap<&str, usize> = HashMap::new();
+        for (i, id) in ids.iter().enumerate() {
+            original_index.insert(id.as_str(), i);
+            graph.add_node(id.as_str());
+        }
+
+        for id in &ids {
+            let id_str = id.as_str();
+            if let Some(tool) = REGISTRY.get(id_str) {
+                for overridden in tool.overrides {
+                    // Edge: id -> overridden (overrider -> overridden)
+                    // Only add edge if overridden tool is also in the list
+                    if graph.contains_node(overridden) {
+                        graph.add_edge(id_str, overridden, ());
+                    }
+                }
+            }
+        }
+
+        if graph.edge_count() == 0 {
+            return Ok(());
+        }
+
+        // Priority = min(priority, priority_of_dependencies)
+        let mut priorities: HashMap<&str, usize> = original_index.clone();
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for (overrider, overridden, _) in graph.all_edges() {
+                let p_overridden = *priorities.get(overridden).unwrap_or(&usize::MAX);
+                let p_overrider = *priorities.get(overrider).unwrap_or(&usize::MAX);
+                if p_overridden < p_overrider {
+                    priorities.insert(overrider, p_overridden);
+                    changed = true;
+                }
+            }
+        }
+
+        // Topological Sort with Priority Queue
+        let mut in_degree: HashMap<&str, usize> = graph
+            .nodes()
+            .map(|node| {
+                (
+                    node,
+                    graph.neighbors_directed(node, Direction::Incoming).count(),
+                )
+            })
+            .collect();
+
+        let mut pq = BinaryHeap::new();
+        for (&node, &deg) in &in_degree {
+            if deg == 0 {
+                let p = priorities[node];
+                let idx = original_index[node];
+                pq.push(Reverse((p, idx, node)));
+            }
+        }
+
+        let mut sorted_ids: Vec<&str> = Vec::with_capacity(installed.len());
+        while let Some(Reverse((_, _, id))) = pq.pop() {
+            sorted_ids.push(id);
+
+            for neighbor in graph.neighbors(id) {
+                if let Some(deg) = in_degree.get_mut(neighbor) {
+                    *deg -= 1;
+                    if *deg == 0 {
+                        let p = priorities[neighbor];
+                        let idx = original_index[neighbor];
+                        pq.push(Reverse((p, idx, neighbor)));
+                    }
+                }
+            }
+        }
+
+        // Check for cycles
+        if sorted_ids.len() != ids.len() {
+            bail!("Cycle detected in tool overrides");
+        }
+
+        let order: HashMap<&str, usize> = sorted_ids
+            .iter()
+            .enumerate()
+            .map(|(i, &id)| (id, i))
+            .collect();
+        installed.sort_by_cached_key(|(b, _)| order.get(b.id()).copied().unwrap_or(usize::MAX));
+
+        Ok(())
+    }
+
     pub async fn which(
         &self,
         config: &Arc<Config>,
         bin_name: &str,
     ) -> Option<(Arc<dyn Backend>, ToolVersion)> {
-        for (p, tv) in self.list_current_installed_versions(config) {
+        let mut installed = self.list_current_installed_versions(config);
+        Self::sort_by_overrides(&mut installed).unwrap();
+        for (p, tv) in installed {
             match Box::pin(p.which(config, &tv, bin_name)).await {
                 Ok(Some(_bin)) => return Some((p, tv)),
                 Ok(None) => {}
@@ -378,7 +484,9 @@ impl Toolset {
     }
 
     pub async fn which_bin(&self, config: &Arc<Config>, bin_name: &str) -> Option<PathBuf> {
-        for (p, tv) in self.list_current_installed_versions(config) {
+        let mut installed = self.list_current_installed_versions(config);
+        Self::sort_by_overrides(&mut installed).unwrap();
+        for (p, tv) in installed {
             if let Ok(Some(bin)) = Box::pin(p.which(config, &tv, bin_name)).await {
                 return Some(bin);
             }
@@ -499,4 +607,66 @@ pub async fn get_versions_needed_by_tracked_configs(
         }
     }
     Ok(needed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::arg_to_backend;
+    use crate::cli::args::BackendArg;
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
+
+    #[tokio::test]
+    async fn test_sort_by_overrides() {
+        crate::toolset::install_state::init().await.unwrap();
+        let node = arg_to_backend(BackendArg::from("node")).unwrap();
+        let npm = arg_to_backend(BackendArg::from("npm")).unwrap();
+        let jc = arg_to_backend(BackendArg::from("jc")).unwrap();
+        let jq = arg_to_backend(BackendArg::from("jq")).unwrap();
+
+        let mk_tv = |backend: Arc<dyn Backend>, version: &str| {
+            let ba = backend.ba().clone();
+            let req = ToolRequest::System {
+                backend: ba,
+                source: ToolSource::Argument,
+                options: Default::default(),
+            };
+            ToolVersion::new(req, version.into())
+        };
+
+        let tv_node = mk_tv(node.clone(), "20.0.0");
+        let tv_npm = mk_tv(npm.clone(), "10.2.5");
+        let tv_jc = mk_tv(jc.clone(), "1.0.0");
+        let tv_jq = mk_tv(jq.clone(), "1.0.0");
+
+        let mut input = vec![
+            (node.clone(), tv_node.clone()),
+            (jc.clone(), tv_jc.clone()),
+            (jq.clone(), tv_jq.clone()),
+            (npm.clone(), tv_npm.clone()),
+        ];
+        Toolset::sort_by_overrides(&mut input).unwrap();
+        let ids: Vec<&str> = input.iter().map(|(b, _)| b.id()).collect();
+        assert_eq!(ids, vec!["npm", "node", "jc", "jq"]);
+
+        let mut input = vec![
+            (node.clone(), tv_node.clone()),
+            (jq.clone(), tv_jq.clone()),
+            (npm.clone(), tv_npm.clone()),
+            (jc.clone(), tv_jc.clone()),
+        ];
+        Toolset::sort_by_overrides(&mut input).unwrap();
+        let ids: Vec<&str> = input.iter().map(|(b, _)| b.id()).collect();
+        assert_eq!(ids, vec!["npm", "node", "jq", "jc"]);
+
+        let mut input = vec![
+            (jc.clone(), tv_jc.clone()),
+            (npm.clone(), tv_npm.clone()),
+            (jq.clone(), tv_jq.clone()),
+            (node.clone(), tv_node.clone()),
+        ];
+        Toolset::sort_by_overrides(&mut input);
+        let ids: Vec<&str> = input.iter().map(|(b, _)| b.id()).collect();
+        assert_eq!(ids, vec!["jc", "npm", "jq", "node"]);
+    }
 }
