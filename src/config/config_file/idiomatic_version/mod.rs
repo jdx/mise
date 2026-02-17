@@ -46,7 +46,13 @@ impl IdiomaticVersionFile {
                 continue;
             }
 
-            let versions = plugin.parse_idiomatic_file(&path).await?;
+            let versions = match plugin.parse_idiomatic_file(&path).await {
+                Ok(versions) => versions,
+                Err(e) => {
+                    trace!("failed to parse idiomatic file {}: {}", path.display(), e);
+                    continue;
+                }
+            };
             if !versions.is_empty() {
                 for v in versions {
                     add_version(&mut tools, &plugin, &v)?;
@@ -120,5 +126,96 @@ impl ConfigFile for IdiomaticVersionFile {
 
     fn to_tool_request_set(&self) -> Result<ToolRequestSet> {
         Ok(self.tools.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::{Backend, VersionInfo};
+    use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::config::Config;
+    use crate::install_context::InstallContext;
+    use crate::toolset::ToolVersion;
+    use async_trait::async_trait;
+    use std::sync::Arc;
+
+    #[derive(Debug)]
+    struct MockBackend {
+        ba: Arc<BackendArg>,
+        fail: bool,
+        version: Option<String>,
+    }
+
+    impl MockBackend {
+        fn new(short: &str, fail: bool, version: Option<String>) -> Self {
+            let ba = BackendArg::new_raw(
+                short.to_string(),
+                None,
+                short.to_string(),
+                None,
+                BackendResolution::new(false),
+            );
+            Self {
+                ba: Arc::new(ba),
+                fail,
+                version,
+            }
+        }
+    }
+
+    #[async_trait]
+    impl Backend for MockBackend {
+        fn ba(&self) -> &Arc<BackendArg> {
+            &self.ba
+        }
+
+        async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+            Ok(vec![])
+        }
+
+        async fn install_version_(
+            &self,
+            _ctx: &InstallContext,
+            _tv: ToolVersion,
+        ) -> Result<ToolVersion> {
+            unimplemented!()
+        }
+
+        async fn parse_idiomatic_file(&self, _path: &Path) -> Result<Vec<String>> {
+            if self.fail {
+                eyre::bail!("mock error");
+            }
+            if let Some(v) = &self.version {
+                Ok(vec![v.clone()])
+            } else {
+                Ok(vec![])
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_idiomatic_parse_error_propagation() {
+        let _config = Config::get().await.unwrap();
+        let path = PathBuf::from(".tool-versions");
+        let backend1 = Arc::new(MockBackend::new("node", true, None));
+        let backend2 = Arc::new(MockBackend::new(
+            "python",
+            false,
+            Some("3.10.0".to_string()),
+        ));
+        let plugins: BackendList = vec![backend1, backend2];
+
+        let result = IdiomaticVersionFile::parse(path, plugins).await;
+
+        assert!(result.is_ok(), "Should not propagate error from backend1");
+
+        let file = result.unwrap();
+        let trs = file.to_tool_request_set().unwrap();
+        let tools: Vec<_> = trs.into_iter().collect();
+        assert_eq!(tools.len(), 1);
+        let (ba, versions, _) = &tools[0];
+        assert_eq!(ba.short, "python");
+        assert_eq!(versions[0].version(), "3.10.0");
     }
 }
