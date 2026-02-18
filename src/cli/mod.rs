@@ -673,6 +673,7 @@ impl Cli {
                         skip_deps: false,
                         no_prepare: false,
                         fresh_env: false,
+                        changed_since_ref: None,
                     })));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(

@@ -180,6 +180,133 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
     }))
 }
 
+/// Check if task sources have changed since a git ref.
+/// Returns true if sources changed (task should run).
+/// Returns false if unchanged (task can be skipped).
+/// Tasks with no sources always return true (always run).
+pub async fn sources_changed_since_ref(
+    task: &Task,
+    config: &Arc<Config>,
+    git_ref: &str,
+) -> Result<bool> {
+    if task.sources.is_empty() {
+        return Ok(true);
+    }
+    let run = async || -> Result<bool> {
+        let root = task_cwd(task, config).await?;
+
+        // Find the git repo root so we can make paths repo-relative
+        let toplevel_output = std::process::Command::new("git")
+            .args(["-C", &root.to_string_lossy()])
+            .args(["rev-parse", "--show-toplevel"])
+            .output()?;
+        if !toplevel_output.status.success() {
+            let stderr = String::from_utf8_lossy(&toplevel_output.stderr);
+            return Err(eyre!(
+                "--changed-since-ref requires a git repository: {}",
+                stderr.trim()
+            ));
+        }
+        let git_root = PathBuf::from(
+            String::from_utf8_lossy(&toplevel_output.stdout)
+                .trim()
+                .to_string(),
+        );
+        // Canonicalize to handle macOS /private/var vs /var symlinks
+        let git_root = git_root.canonicalize().unwrap_or(git_root);
+        let root_canonical = root.canonicalize().unwrap_or_else(|_| root.clone());
+
+        // Get all files changed between ref and HEAD (paths relative to repo root)
+        let mut diff_cmd = std::process::Command::new("git");
+        diff_cmd.args(["-C", &git_root.to_string_lossy()]).args([
+            "diff",
+            "--name-only",
+            git_ref,
+            "HEAD",
+        ]);
+        let diff_output = diff_cmd.output()?;
+        if !diff_output.status.success() {
+            let stderr = String::from_utf8_lossy(&diff_output.stderr);
+            return Err(eyre!(
+                "git diff failed for ref '{}': {}",
+                git_ref,
+                stderr.trim()
+            ));
+        }
+        let changed_files_raw: Vec<PathBuf> = String::from_utf8_lossy(&diff_output.stdout)
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| git_root.join(l))
+            .collect();
+
+        if changed_files_raw.is_empty() {
+            debug!(
+                "task {} no files changed since {}, skipping",
+                task.name, git_ref
+            );
+            return Ok(false);
+        }
+
+        // Canonicalize all changed paths once upfront (avoids repeated syscalls in loops)
+        let changed_canonical: Vec<PathBuf> = changed_files_raw
+            .iter()
+            .map(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))
+            .collect();
+        let changed_canonical_set: std::collections::HashSet<&PathBuf> =
+            changed_canonical.iter().collect();
+
+        // Check if any changed file matches the task's source patterns
+        let mut sources = task.sources.clone();
+        sources.push(task.config_source.to_string_lossy().to_string());
+
+        for source in &sources {
+            let source_path = if Path::new(source).is_relative() {
+                root_canonical.join(source)
+            } else {
+                PathBuf::from(source)
+            };
+
+            if is_glob_pattern(source) {
+                let pattern_str = source_path.to_string_lossy();
+                for (i, changed) in changed_canonical.iter().enumerate() {
+                    if glob_match(&pattern_str, &changed.to_string_lossy()) {
+                        debug!(
+                            "task {} has changed source {} matching {}",
+                            task.name,
+                            changed_files_raw[i].display(),
+                            source
+                        );
+                        return Ok(true);
+                    }
+                }
+            } else {
+                let source_canonical = source_path
+                    .canonicalize()
+                    .unwrap_or_else(|_| source_path.clone());
+                if changed_canonical_set.contains(&source_canonical) {
+                    debug!(
+                        "task {} has changed source {}",
+                        task.name,
+                        source_path.display()
+                    );
+                    return Ok(true);
+                }
+            }
+        }
+
+        debug!("task {} sources unchanged since {}", task.name, git_ref);
+        Ok(false)
+    };
+    run().await
+}
+
+/// Match a path against a glob pattern
+fn glob_match(pattern: &str, path: &str) -> bool {
+    glob::Pattern::new(pattern)
+        .map(|p| p.matches(path))
+        .unwrap_or(false)
+}
+
 /// Save a checksum file after a task completes successfully
 pub async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<()> {
     if task.sources.is_empty() {

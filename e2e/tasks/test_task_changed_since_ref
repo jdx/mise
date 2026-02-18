@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+
+# Test --changed-since-ref flag for git-based source change detection
+
+# Setup: initialize a git repo with a task that has sources
+git init
+git config user.email "test@test.com"
+git config user.name "Test"
+
+cat <<EOF >mise.toml
+[tasks.build]
+sources = ["src/**"]
+run = "echo built"
+EOF
+
+mkdir src
+echo v1 >src/app.txt
+git add .
+git commit -m "v1"
+BASE=$(git rev-parse HEAD)
+
+# Unchanged sources → should skip (no output in quiet mode)
+assert_empty "mise run -q --changed-since-ref=$BASE build"
+
+# Changed source → should run
+echo v2 >src/app.txt
+git add .
+git commit -m "v2"
+assert "mise run -q --changed-since-ref=$BASE build" "built"
+
+# Task with no sources → should always run
+cat <<EOF >mise.toml
+[tasks.nosrc]
+run = "echo always-run"
+EOF
+git add .
+git commit -m "nosrc"
+assert "mise run -q --changed-since-ref=$BASE nosrc" "always-run"
+
+# --force overrides --changed-since-ref
+cat <<EOF >mise.toml
+[tasks.build]
+sources = ["src/**"]
+run = "echo force-built"
+EOF
+git checkout "$BASE" -- src/
+git add .
+git commit -m "revert"
+assert "mise run -q --force --changed-since-ref=$BASE build" "force-built"
+
+# Invalid ref → should fail
+assert_fail "mise run --changed-since-ref=nonexistent_ref_xyz build"
+
+# Change to non-source file → should skip
+cat <<EOF >mise.toml
+[tasks.build]
+sources = ["src/**"]
+run = "echo built"
+EOF
+git checkout "$BASE" -- src/
+git add .
+git commit -m "reset"
+NEWBASE=$(git rev-parse HEAD)
+echo "unrelated" >docs.txt
+git add .
+git commit -m "docs only"
+assert_empty "mise run -q --changed-since-ref=$NEWBASE build"
+
+# Config file change detection: mise.toml itself is included in sources check
+cat <<EOF >mise.toml
+[tasks.build]
+sources = ["src/**"]
+run = "echo config-changed"
+EOF
+git add .
+git commit -m "change config only"
+assert "mise run -q --changed-since-ref=$BASE build" "config-changed"
+
+# Not a git repo → should fail
+NOGIT=$(mktemp -d)
+cat <<EOF >"$NOGIT/mise.toml"
+[tasks.build]
+sources = ["src/**"]
+run = "echo built"
+EOF
+mkdir -p "$NOGIT/src"
+echo v1 >"$NOGIT/src/app.txt"
+MISE_YES=1 mise trust "$NOGIT"
+assert_fail "mise -C $NOGIT run --changed-since-ref=HEAD build" "requires a git repository"
+
+# Ambiguous/bad ref that git can't resolve → should fail
+assert_fail "mise run --changed-since-ref=not-a-real-ref-at-all build" "git diff failed"

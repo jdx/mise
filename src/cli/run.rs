@@ -82,6 +82,11 @@ pub struct Run {
     #[clap(long, short, verbatim_doc_comment)]
     pub force: bool,
 
+    /// Skip tasks whose sources haven't changed since this git ref
+    /// e.g., --changed-since-ref=origin/main, --changed-since-ref=HEAD~3, --changed-since-ref=abc123
+    #[clap(long, verbatim_doc_comment)]
+    pub changed_since_ref: Option<String>,
+
     /// Print directly to stdout/stderr instead of by line
     /// Defaults to true if --jobs == 1
     /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
@@ -563,6 +568,7 @@ impl Run {
             continue_on_error: self.continue_on_error,
             dry_run: self.dry_run,
             skip_deps: self.skip_deps,
+            changed_since_ref: self.changed_since_ref.clone(),
         };
         self.executor = Some(crate::task::task_executor::TaskExecutor::new(
             self.context_builder.clone(),

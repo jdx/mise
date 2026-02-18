@@ -6,7 +6,9 @@ use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_output_handler::OutputHandler;
-use crate::task::task_source_checker::{save_checksum, sources_are_fresh, task_cwd};
+use crate::task::task_source_checker::{
+    save_checksum, sources_are_fresh, sources_changed_since_ref, task_cwd,
+};
 use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
 use crate::toolset::env_cache::CachedEnv;
 use crate::ui::{style, time};
@@ -36,6 +38,7 @@ pub struct TaskExecutorConfig {
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
+    pub changed_since_ref: Option<String>,
 }
 
 /// Executes tasks with proper context, environment, and output handling
@@ -53,6 +56,7 @@ pub struct TaskExecutor {
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
+    pub changed_since_ref: Option<String>,
 }
 
 impl TaskExecutor {
@@ -73,6 +77,7 @@ impl TaskExecutor {
             continue_on_error: config.continue_on_error,
             dry_run: config.dry_run,
             skip_deps: config.skip_deps,
+            changed_since_ref: config.changed_since_ref,
         }
     }
 
@@ -125,11 +130,23 @@ impl TaskExecutor {
             }
             return Ok(());
         }
-        if !self.force && sources_are_fresh(task, config).await? {
-            if !self.quiet(Some(task)) {
-                self.eprint(task, &prefix, "sources up-to-date, skipping");
+        if !self.force {
+            let should_skip = if let Some(ref git_ref) = self.changed_since_ref {
+                !sources_changed_since_ref(task, config, git_ref).await?
+            } else {
+                sources_are_fresh(task, config).await?
+            };
+            if should_skip {
+                if !self.quiet(Some(task)) {
+                    let msg = if self.changed_since_ref.is_some() {
+                        "sources unchanged, skipping"
+                    } else {
+                        "sources up-to-date, skipping"
+                    };
+                    self.eprint(task, &prefix, msg);
+                }
+                return Ok(());
             }
-            return Ok(());
         }
 
         let mut tools = self.tool.clone();
