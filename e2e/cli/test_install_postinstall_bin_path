@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# Test that the per-tool postinstall hook has the tool's actual bin paths on PATH.
+# This uses the backend's list_bin_paths() to set PATH, ensuring tools like helm
+# (where the binary is not in $install_path/bin/) are found during postinstall.
+# Regression test for https://github.com/jdx/mise/discussions/6323
+
+cat <<EOF >mise.toml
+[tools]
+dummy = { version = "latest", postinstall = "dummy" }
+EOF
+
+# Remove any existing dummy installation to force reinstall
+rm -rf "$MISE_DATA_DIR/installs/dummy"
+
+# Install the tool — the postinstall hook should be able to run the dummy command
+output=$(mise install dummy 2>&1)
+
+if [[ $output == *"2.0.0"* ]]; then
+	echo "✓ postinstall hook found tool binary on PATH"
+else
+	echo "✗ postinstall hook could not find tool binary"
+	echo "Output: $output"
+	exit 1
+fi
