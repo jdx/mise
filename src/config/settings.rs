@@ -227,23 +227,24 @@ fn warn_deprecated(key: &str) {
             meta.deprecated,
             meta.deprecated_warn_at,
             meta.deprecated_remove_at,
-        ) {
-            use versions::Versioning;
-            let warn_version = Versioning::new(warn_at).unwrap();
-            let remove_version = Versioning::new(remove_at).unwrap();
-            debug_assert!(
-                *crate::cli::version::V < remove_version,
-                "Deprecated setting [{key}] should have been removed in {remove_at}. Please remove this deprecated setting.",
-            );
-            if *crate::cli::version::V >= warn_version {
-                let id = Box::leak(format!("setting.{key}").into_boxed_str());
-                if crate::output::DEPRECATED.lock().unwrap().insert(id) {
-                    warn!(
-                        "deprecated [setting.{key}]: {msg} This will be removed in mise {remove_at}."
-                    );
-                }
+        )
+    {
+        use versions::Versioning;
+        let warn_version = Versioning::new(warn_at).unwrap();
+        let remove_version = Versioning::new(remove_at).unwrap();
+        debug_assert!(
+            *crate::cli::version::V < remove_version,
+            "Deprecated setting [{key}] should have been removed in {remove_at}. Please remove this deprecated setting.",
+        );
+        if *crate::cli::version::V >= warn_version {
+            let id = Box::leak(format!("setting.{key}").into_boxed_str());
+            if crate::output::DEPRECATED.lock().unwrap().insert(id) {
+                warn!(
+                    "deprecated [setting.{key}]: {msg} This will be removed in mise {remove_at}."
+                );
             }
         }
+    }
 }
 
 impl Settings {
@@ -362,10 +363,11 @@ impl Settings {
     fn set_hidden_configs(&mut self) {
         // Migrate task_* settings to task.* (must run before auto_install override below)
         if let Some(v) = self.task_disable_paths.take()
-            && !v.is_empty() {
-                warn_deprecated("task_disable_paths");
-                self.task.disable_paths.extend(v);
-            }
+            && !v.is_empty()
+        {
+            warn_deprecated("task_disable_paths");
+            self.task.disable_paths.extend(v);
+        }
         if let Some(v) = self.task_output.take() {
             warn_deprecated("task_output");
             self.task.output = Some(v);
@@ -383,10 +385,11 @@ impl Settings {
             self.task.show_full_cmd = v;
         }
         if let Some(v) = self.task_skip.take()
-            && !v.is_empty() {
-                warn_deprecated("task_skip");
-                self.task.skip.extend(v);
-            }
+            && !v.is_empty()
+        {
+            warn_deprecated("task_skip");
+            self.task.skip.extend(v);
+        }
         if let Some(v) = self.task_skip_depends {
             warn_deprecated("task_skip_depends");
             self.task.skip_depends = v;
