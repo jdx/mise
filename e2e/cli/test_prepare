@@ -265,6 +265,7 @@ assert_contains "mise prepare --dry-run" "custom_venv"
 mkdir -p .venv
 touch -t 202301010000 requirements.txt # Jan 1, 2023
 touch -t 202401010000 .venv/pyvenv.cfg # Jan 1, 2024 (newer)
+touch -t 202401010000 .venv            # Set directory mtime too (mkdir sets it to NOW)
 # In dry-run mode, fresh providers produce no output, so check provider name is absent
 assert_not_contains "mise prepare --dry-run" "custom_venv"
 
@@ -276,6 +277,48 @@ assert_contains "mise prepare --dry-run" "custom_venv"
 # Clean up
 rm -rf .venv requirements.txt
 rm -f composer.lock composer.json package.json mise.toml schema.graphql
+
+# Test touch_outputs: after a successful run, output mtime should be updated
+cat >mise.toml <<'EOF'
+[prepare.touch_test]
+sources = ["src_file.txt"]
+outputs = ["out_dir"]
+run = "echo TOUCH_RAN"
+EOF
+
+touch src_file.txt
+mkdir -p out_dir
+# Make source newer than output so provider is stale
+touch -t 202501010000 out_dir
+touch -t 202601010000 src_file.txt
+
+# First run: should execute (stale)
+assert_contains "mise prepare --only touch_test" "Prepared: touch_test"
+
+# Second run: outputs should now be fresh (mtime was touched after first run)
+assert_contains "mise prepare --only touch_test" "up to date"
+
+# Test touch_outputs = false: output mtime should NOT be updated
+cat >mise.toml <<'EOF'
+[prepare.notouch_test]
+sources = ["src_file.txt"]
+outputs = ["out_dir"]
+run = "echo NOTOUCH_RAN"
+touch_outputs = false
+EOF
+
+# Make source newer than output so provider is stale
+touch -t 202501010000 out_dir
+touch -t 202601010000 src_file.txt
+
+# First run: should execute (stale)
+assert_contains "mise prepare --only notouch_test" "Prepared: notouch_test"
+
+# Second run: should still be stale since we didn't touch outputs
+# (the "echo" command doesn't modify out_dir, and we disabled mtime update)
+assert_contains "mise prepare --only notouch_test" "Prepared: notouch_test"
+
+rm -rf src_file.txt out_dir
 
 # Test that prepare providers are NOT inherited from parent config files
 # (monorepo scenario: root defines [prepare.pnpm], subdirectory should not inherit it)

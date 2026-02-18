@@ -84,4 +84,8 @@ impl PrepareProvider for CustomPrepareProvider {
     fn is_auto(&self) -> bool {
         self.config.auto
     }
+
+    fn touch_outputs(&self) -> bool {
+        self.config.touch_outputs
+    }
 }

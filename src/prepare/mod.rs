@@ -85,6 +85,11 @@ pub trait PrepareProvider: Debug + Send + Sync {
     fn is_auto(&self) -> bool {
         false
     }
+
+    /// Whether to update mtime of output files/dirs after a successful run
+    fn touch_outputs(&self) -> bool {
+        true
+    }
 }
 
 /// Warn if any auto-enabled prepare providers are stale
