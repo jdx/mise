@@ -66,8 +66,13 @@ impl PrepareCommand {
 
 /// Trait for prepare providers that can check and install dependencies
 pub trait PrepareProvider: Debug + Send + Sync {
+    /// Access the shared base (project root + config)
+    fn base(&self) -> &providers::ProviderBase;
+
     /// Unique identifier for this provider (e.g., "npm", "cargo", "codegen")
-    fn id(&self) -> &str;
+    fn id(&self) -> &str {
+        &self.base().id
+    }
 
     /// Returns the source files to check for freshness (lock files, config files)
     fn sources(&self) -> Vec<PathBuf>;
@@ -83,12 +88,12 @@ pub trait PrepareProvider: Debug + Send + Sync {
 
     /// Whether this provider should auto-run before mise x/run
     fn is_auto(&self) -> bool {
-        false
+        self.base().is_auto()
     }
 
     /// Whether to update mtime of output files/dirs after a successful run
     fn touch_outputs(&self) -> bool {
-        true
+        self.base().touch_outputs()
     }
 }
 

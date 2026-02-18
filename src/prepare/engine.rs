@@ -190,7 +190,7 @@ impl PrepareEngine {
                     Box::new(CustomPrepareProvider::new(
                         id.clone(),
                         provider_config.clone(),
-                        config_root.clone(),
+                        &config_root,
                     ))
                 };
 

@@ -41,12 +41,7 @@ pub struct PrepareProviderConfig {
     /// Whether to update mtime of output files/dirs after a successful run (default: true)
     /// This is useful when the prepare command is a no-op (e.g., `uv sync` when all is well)
     /// so that the outputs appear fresh for subsequent freshness checks.
-    #[serde(default = "default_true")]
-    pub touch_outputs: bool,
-}
-
-fn default_true() -> bool {
-    true
+    pub touch_outputs: Option<bool>,
 }
 
 impl PrepareProviderConfig {
