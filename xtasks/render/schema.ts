@@ -170,6 +170,7 @@ const taskSchema = JSON.parse(
 );
 taskSchema["$defs"].env_directive = schema["$defs"].env_directive;
 taskSchema["$defs"].env = schema["$defs"].env;
+taskSchema["$defs"].vars = schema["$defs"].vars;
 taskSchema["$defs"].task_run_entry = schema["$defs"].task_run_entry;
 taskSchema["$defs"].task = schema["$defs"].task;
 taskSchema["$defs"].task_template = schema["$defs"].task_template;

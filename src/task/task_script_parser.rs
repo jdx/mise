@@ -45,8 +45,17 @@ impl TaskScriptParser {
 
     /// Inject extra vars (from monorepo task config hierarchy) into the tera context
     fn inject_extra_vars(&self, tera_ctx: &mut tera::Context) {
-        if let Some(vars) = &self.extra_vars {
-            tera_ctx.insert("vars", vars);
+        if let Some(extra_vars) = &self.extra_vars {
+            // Merge extra_vars (base config-level vars from the config hierarchy) with any
+            // vars already set in the context by task.tera_ctx() (which includes per-task
+            // vars). Per-task vars take precedence over config-level vars.
+            let existing: IndexMap<String, String> = tera_ctx
+                .get("vars")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            let mut merged = extra_vars.clone();
+            merged.extend(existing);
+            tera_ctx.insert("vars", &merged);
         }
     }
 

@@ -24,6 +24,8 @@ pub struct TaskTemplate {
     #[serde(default)]
     pub env: EnvList,
     #[serde(default)]
+    pub vars: EnvList,
+    #[serde(default)]
     pub dir: Option<String>,
     #[serde(default)]
     pub hide: Option<bool>,
@@ -61,6 +63,7 @@ impl Task {
     /// - run, run_windows: Local overrides completely (if non-empty)
     /// - tools: Deep merge (local tools added/override template)
     /// - env: Deep merge (template first, then local overrides)
+    /// - vars: Deep merge (template first, then local overrides)
     /// - depends, depends_post, wait_for: Local overrides completely (if non-empty)
     /// - dir: Local overrides; defaults to None if not in template
     /// - sources, outputs: Local overrides completely (if non-empty)
@@ -87,6 +90,11 @@ impl Task {
         let mut merged_env = template.env.clone();
         merged_env.0.extend(self.env.0.clone());
         self.env = merged_env;
+
+        // vars: deep merge (template first, then local overrides)
+        let mut merged_vars = template.vars.clone();
+        merged_vars.0.extend(self.vars.0.clone());
+        self.vars = merged_vars;
 
         // depends: local overrides completely if non-empty
         if self.depends.is_empty() && !template.depends.is_empty() {
@@ -274,5 +282,75 @@ mod tests {
         // Local depends should be completely preserved (not merged)
         assert_eq!(task.depends.len(), 1);
         assert_eq!(task.depends[0].task, "local-dep");
+    }
+
+    #[test]
+    fn test_merge_template_vars_deep_merge() {
+        let mut task = Task {
+            vars: EnvList(vec![crate::config::env_directive::EnvDirective::Val(
+                "target".to_string(),
+                "linux".to_string(),
+                Default::default(),
+            )]),
+            ..Default::default()
+        };
+        let template = TaskTemplate {
+            vars: EnvList(vec![crate::config::env_directive::EnvDirective::Val(
+                "profile".to_string(),
+                "release".to_string(),
+                Default::default(),
+            )]),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        // Should contain template vars + local vars (local appended)
+        assert_eq!(task.vars.0.len(), 2);
+    }
+
+    #[test]
+    fn test_merge_template_vars_override() {
+        let mut task = Task {
+            vars: EnvList(vec![
+                crate::config::env_directive::EnvDirective::Val(
+                    "target".to_string(),
+                    "linux".to_string(),
+                    Default::default(),
+                ),
+                crate::config::env_directive::EnvDirective::Val(
+                    "shared".to_string(),
+                    "task_value".to_string(),
+                    Default::default(),
+                ),
+            ]),
+            ..Default::default()
+        };
+        let template = TaskTemplate {
+            vars: EnvList(vec![
+                crate::config::env_directive::EnvDirective::Val(
+                    "profile".to_string(),
+                    "release".to_string(),
+                    Default::default(),
+                ),
+                crate::config::env_directive::EnvDirective::Val(
+                    "shared".to_string(),
+                    "template_value".to_string(),
+                    Default::default(),
+                ),
+            ]),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        // Last matching directive should win when vars are resolved.
+        let shared_val = task.vars.0.iter().rev().find_map(|d| match d {
+            crate::config::env_directive::EnvDirective::Val(name, value, _) if name == "shared" => {
+                Some(value.as_str())
+            }
+            _ => None,
+        });
+        assert_eq!(shared_val, Some("task_value"));
     }
 }

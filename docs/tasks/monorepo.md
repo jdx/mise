@@ -175,13 +175,16 @@ mise '//...:test*'
 mise //.../frontend:build
 ```
 
-## Tool and Environment Layering
+## Tool, Environment, and Vars Layering
 
 Subdirectory tasks automatically use tools and environment variables from parent config files in the hierarchy. However, each subdirectory can also define its own tools and environment variables in its config_root. This allows you to:
 
 1. Define common tools and environment at the monorepo root
 2. Override tools or environment in specific subdirectories
 3. Add additional tools or environment in subdirectories
+
+`vars` follow the same hierarchy for task templating, so child config vars are available when
+running subdirectory tasks from the monorepo root.
 
 ### Layering Example
 

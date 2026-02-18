@@ -66,4 +66,29 @@ assert_contains "echo '$output'" "DEV_VAR=dev_value"
 # MISE_ENV vars should override base vars
 assert_contains "echo '$output'" "SHARED_VAR=from_gcp_dev"
 
+# Test 4: Per-task vars override subdirectory config vars
+echo "=== Test 4: Per-task vars override subdirectory config vars ==="
+cat <<EOF >infra/stacks/gcp/mise.toml
+[vars]
+GCP_VAR = "gcp_value"
+SHARED_VAR = "from_gcp"
+
+[tasks.greet]
+run = 'echo "GCP_VAR={{vars.GCP_VAR}} SHARED_VAR={{vars.SHARED_VAR}} ROOT_VAR={{vars.ROOT_VAR}}"'
+
+[tasks.greet-dev]
+run = 'echo "DEV_VAR={{vars.DEV_VAR}} SHARED_VAR={{vars.SHARED_VAR}}"'
+
+[tasks.greet-override]
+run = 'echo "GCP_VAR={{vars.GCP_VAR}} SHARED_VAR={{vars.SHARED_VAR}}"'
+vars = { SHARED_VAR = "task_override" }
+EOF
+unset MISE_ENV
+output=$(mise run '//infra/stacks/gcp:greet-override')
+echo "$output"
+# Per-task var overrides config-level var
+assert_contains "echo '$output'" "SHARED_VAR=task_override"
+# Config-level var not overridden at task level is still accessible
+assert_contains "echo '$output'" "GCP_VAR=gcp_value"
+
 echo "=== All tests passed! ==="

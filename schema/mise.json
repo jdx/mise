@@ -1729,6 +1729,9 @@
             "env": {
               "$ref": "#/$defs/env"
             },
+            "vars": {
+              "$ref": "#/$defs/vars"
+            },
             "tools": {
               "description": "tools to install/activate before running this task",
               "additionalProperties": {
@@ -2326,6 +2329,9 @@
         "env": {
           "$ref": "#/$defs/env"
         },
+        "vars": {
+          "$ref": "#/$defs/vars"
+        },
         "tools": {
           "description": "tools to install/activate before running this task",
           "additionalProperties": {
@@ -2590,6 +2596,9 @@
         },
         "env": {
           "$ref": "#/$defs/env"
+        },
+        "vars": {
+          "$ref": "#/$defs/vars"
         },
         "tools": {
           "description": "tools to install/activate before running this task",
