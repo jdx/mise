@@ -161,7 +161,7 @@ fn simplify_semver(input: &str) -> String {
 
 pub fn parse(path: &Path, tool_name: &str) -> Result<Vec<String>> {
     let pkg = PackageJsonData::parse(path)?;
-    // We ignore unknown tools in pacakge.json
+    // We ignore unknown tools in package.json
     let v = match tool_name {
         "node" | "deno" => pkg.runtime_version(tool_name),
         "bun" => pkg
