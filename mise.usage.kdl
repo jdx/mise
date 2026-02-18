@@ -697,7 +697,7 @@ cmd run restart_token=::: help="Run task(s)" {
         arg <CD>
     }
     flag "-f --force" help="Force the tasks to run even if outputs are up to date"
-    flag "-i --interleave" help="Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var" hide=#true
+    flag "-i --interleave" help="Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task.output` config or `MISE_TASK_OUTPUT` env var" hide=#true
     flag "-j --jobs" help="Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var" {
         arg <JOBS>
     }
@@ -706,7 +706,7 @@ cmd run restart_token=::: help="Run task(s)" {
         long_help "Change how tasks information is output when running tasks\n\n- `prefix` - Print stdout/stderr by line, prefixed with the task's label\n- `interleave` - Print directly to stdout/stderr instead of by line\n- `replacing` - Stdout is replaced each time, stderr is printed as is\n- `timed` - Only show stdout lines if they are displayed for more than 1 second\n- `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output\n- `quiet` - Don't show extra output\n- `silent` - Don't show any output including stdout and stderr from the task except for errors"
         arg <OUTPUT>
     }
-    flag "-p --prefix" help="Print stdout/stderr by line, prefixed with the task's label\nDefaults to true if --jobs > 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var" hide=#true
+    flag "-p --prefix" help="Print stdout/stderr by line, prefixed with the task's label\nDefaults to true if --jobs > 1\nConfigure with `task.output` config or `MISE_TASK_OUTPUT` env var" hide=#true
     flag "-q --quiet" help="Don't show extra output"
     flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var"
     flag "-s --shell" help="Shell to use to run toml tasks" {
@@ -1009,7 +1009,7 @@ cmd tasks help="Manage tasks" {
             arg <CD>
         }
         flag "-f --force" help="Force the tasks to run even if outputs are up to date"
-        flag "-i --interleave" help="Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var" hide=#true
+        flag "-i --interleave" help="Print directly to stdout/stderr instead of by line\nDefaults to true if --jobs == 1\nConfigure with `task.output` config or `MISE_TASK_OUTPUT` env var" hide=#true
         flag "-j --jobs" help="Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var" {
             arg <JOBS>
         }
@@ -1018,7 +1018,7 @@ cmd tasks help="Manage tasks" {
             long_help "Change how tasks information is output when running tasks\n\n- `prefix` - Print stdout/stderr by line, prefixed with the task's label\n- `interleave` - Print directly to stdout/stderr instead of by line\n- `replacing` - Stdout is replaced each time, stderr is printed as is\n- `timed` - Only show stdout lines if they are displayed for more than 1 second\n- `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output\n- `quiet` - Don't show extra output\n- `silent` - Don't show any output including stdout and stderr from the task except for errors"
             arg <OUTPUT>
         }
-        flag "-p --prefix" help="Print stdout/stderr by line, prefixed with the task's label\nDefaults to true if --jobs > 1\nConfigure with `task_output` config or `MISE_TASK_OUTPUT` env var" hide=#true
+        flag "-p --prefix" help="Print stdout/stderr by line, prefixed with the task's label\nDefaults to true if --jobs > 1\nConfigure with `task.output` config or `MISE_TASK_OUTPUT` env var" hide=#true
         flag "-q --quiet" help="Don't show extra output"
         flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var"
         flag "-s --shell" help="Shell to use to run toml tasks" {

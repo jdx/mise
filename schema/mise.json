@@ -1338,6 +1338,14 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "disable_paths": {
+              "default": [],
+              "description": "Paths that mise will not look for tasks in.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "disable_spec_from_run_scripts": {
               "default": false,
               "description": "Opt out of parsing task run scripts to infer the usage spec (arguments and flags). When enabled, mise will derive the usage spec only from the `usage` field, ignoring any `arg()`, `option()`, or `flag()` templates used in run scripts. This can restore previous behavior and avoid the extra template pass over run scripts when collecting specs.",
@@ -1361,6 +1369,44 @@
               "description": "Whether to respect .gitignore files when discovering monorepo subdirectories.",
               "type": "boolean"
             },
+            "output": {
+              "description": "Change output style when executing tasks.",
+              "type": "string",
+              "enum": [
+                "prefix",
+                "interleave",
+                "keep-order",
+                "replacing",
+                "timed",
+                "quiet",
+                "silent"
+              ]
+            },
+            "remote_no_cache": {
+              "description": "Mise will always fetch the latest tasks from the remote, by default the cache is used.",
+              "type": "boolean"
+            },
+            "run_auto_install": {
+              "default": true,
+              "description": "Automatically install missing tools when executing tasks.",
+              "type": "boolean"
+            },
+            "show_full_cmd": {
+              "description": "Disable truncation of command lines in task execution output. When true, the full command line will be shown.",
+              "type": "boolean"
+            },
+            "skip": {
+              "default": [],
+              "description": "Tasks to skip when running `mise run`.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "skip_depends": {
+              "description": "Run only specified tasks skipping all dependencies.",
+              "type": "boolean"
+            },
             "source_freshness_equal_mtime_is_fresh": {
               "default": false,
               "description": "When source mtime equals output mtime, consider sources fresh (use <=). Default false uses strict < comparison.",
@@ -1370,13 +1416,21 @@
               "default": false,
               "description": "Use content hashing (blake3) instead of metadata for source freshness. More accurate but slower.",
               "type": "boolean"
+            },
+            "timeout": {
+              "description": "Default timeout for tasks. Can be overridden by individual tasks.",
+              "type": "string"
+            },
+            "timings": {
+              "description": "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`.",
+              "type": "boolean"
             }
           }
         },
         "task_disable_paths": {
-          "default": [],
           "description": "Paths that mise will not look for tasks in.",
           "type": "array",
+          "deprecated": true,
           "items": {
             "type": "string"
           }
@@ -1384,48 +1438,45 @@
         "task_output": {
           "description": "Change output style when executing tasks.",
           "type": "string",
-          "enum": [
-            "prefix",
-            "interleave",
-            "keep-order",
-            "replacing",
-            "timed",
-            "quiet",
-            "silent"
-          ]
+          "deprecated": true
         },
         "task_remote_no_cache": {
           "description": "Mise will always fetch the latest tasks from the remote, by default the cache is used.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "task_run_auto_install": {
-          "default": true,
           "description": "Automatically install missing tools when executing tasks.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "task_show_full_cmd": {
           "description": "Disable truncation of command lines in task execution output. When true, the full command line will be shown.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "task_skip": {
-          "default": [],
           "description": "Tasks to skip when running `mise run`.",
           "type": "array",
+          "deprecated": true,
           "items": {
             "type": "string"
           }
         },
         "task_skip_depends": {
           "description": "Run only specified tasks skipping all dependencies.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "task_timeout": {
           "description": "Default timeout for tasks. Can be overridden by individual tasks.",
-          "type": "string"
+          "type": "string",
+          "deprecated": true
         },
         "task_timings": {
           "description": "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "terminal_progress": {
           "default": true,

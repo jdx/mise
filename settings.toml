@@ -1708,6 +1708,14 @@ env = "MISE_SYSTEM_CONFIG_FILE"
 optional = true
 type = "Path"
 
+[task.disable_paths]
+default = []
+description = "Paths that mise will not look for tasks in."
+env = "MISE_TASK_DISABLE_PATHS"
+parse_env = "list_by_colon"
+rust_type = "BTreeSet<PathBuf>"
+type = "ListPath"
+
 [task.disable_spec_from_run_scripts]
 default = false
 description = "Opt out of parsing task run scripts to infer the usage spec (arguments and flags). When enabled, mise will derive the usage spec only from the `usage` field, ignoring any `arg()`, `option()`, or `flag()` templates used in run scripts. This can restore previous behavior and avoid the extra template pass over run scripts when collecting specs."
@@ -1775,27 +1783,7 @@ when discovering tasks in a monorepo.
 env = "MISE_TASK_MONOREPO_RESPECT_GITIGNORE"
 type = "Bool"
 
-[task.source_freshness_equal_mtime_is_fresh]
-default = false
-description = "When source mtime equals output mtime, consider sources fresh (use <=). Default false uses strict < comparison."
-env = "MISE_TASK_SOURCE_FRESHNESS_EQUAL_MTIME_IS_FRESH"
-type = "Bool"
-
-[task.source_freshness_hash_contents]
-default = false
-description = "Use content hashing (blake3) instead of metadata for source freshness. More accurate but slower."
-env = "MISE_TASK_SOURCE_FRESHNESS_HASH_CONTENTS"
-type = "Bool"
-
-[task_disable_paths]
-default = []
-description = "Paths that mise will not look for tasks in."
-env = "MISE_TASK_DISABLE_PATHS"
-parse_env = "list_by_colon"
-rust_type = "BTreeSet<PathBuf>"
-type = "ListPath"
-
-[task_output]
+[task.output]
 description = "Change output style when executing tasks."
 docs = """
 Change output style when executing tasks. This controls the output of `mise run`.
@@ -1814,24 +1802,24 @@ optional = true
 rust_type = "crate::task::TaskOutput"
 type = "String"
 
-[task_remote_no_cache]
+[task.remote_no_cache]
 description = "Mise will always fetch the latest tasks from the remote, by default the cache is used."
 env = "MISE_TASK_REMOTE_NO_CACHE"
 optional = true
 type = "Bool"
 
-[task_run_auto_install]
+[task.run_auto_install]
 default = true
 description = "Automatically install missing tools when executing tasks."
 env = "MISE_TASK_RUN_AUTO_INSTALL"
 type = "Bool"
 
-[task_show_full_cmd]
+[task.show_full_cmd]
 description = "Disable truncation of command lines in task execution output. When true, the full command line will be shown."
 env = "MISE_TASK_SHOW_CMD_NO_TRUNC"
 type = "Bool"
 
-[task_skip]
+[task.skip]
 default = []
 description = "Tasks to skip when running `mise run`."
 env = "MISE_TASK_SKIP"
@@ -1839,20 +1827,116 @@ parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
 
-[task_skip_depends]
+[task.skip_depends]
 description = "Run only specified tasks skipping all dependencies."
 env = "MISE_TASK_SKIP_DEPENDS"
 type = "Bool"
 
-[task_timeout]
+[task.source_freshness_equal_mtime_is_fresh]
+default = false
+description = "When source mtime equals output mtime, consider sources fresh (use <=). Default false uses strict < comparison."
+env = "MISE_TASK_SOURCE_FRESHNESS_EQUAL_MTIME_IS_FRESH"
+type = "Bool"
+
+[task.source_freshness_hash_contents]
+default = false
+description = "Use content hashing (blake3) instead of metadata for source freshness. More accurate but slower."
+env = "MISE_TASK_SOURCE_FRESHNESS_HASH_CONTENTS"
+type = "Bool"
+
+[task.timeout]
 description = "Default timeout for tasks. Can be overridden by individual tasks."
 env = "MISE_TASK_TIMEOUT"
 optional = true
 type = "Duration"
 
-[task_timings]
+[task.timings]
 description = "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`."
 env = "MISE_TASK_TIMINGS"
+optional = true
+type = "Bool"
+
+[task_disable_paths]
+deprecated = "Use task.disable_paths instead."
+deprecated_remove_at = "2027.2.0"
+deprecated_warn_at = "2026.8.0"
+description = "Paths that mise will not look for tasks in."
+hide = true
+optional = true
+rust_type = "BTreeSet<PathBuf>"
+type = "ListPath"
+
+[task_output]
+deprecated = "Use task.output instead."
+deprecated_remove_at = "2027.2.0"
+deprecated_warn_at = "2026.8.0"
+description = "Change output style when executing tasks."
+hide = true
+optional = true
+rust_type = "crate::task::TaskOutput"
+type = "String"
+
+[task_remote_no_cache]
+deprecated = "Use task.remote_no_cache instead."
+deprecated_remove_at = "2027.2.0"
+deprecated_warn_at = "2026.8.0"
+description = "Mise will always fetch the latest tasks from the remote, by default the cache is used."
+hide = true
+optional = true
+type = "Bool"
+
+[task_run_auto_install]
+deprecated = "Use task.run_auto_install instead."
+deprecated_remove_at = "2027.2.0"
+deprecated_warn_at = "2026.8.0"
+description = "Automatically install missing tools when executing tasks."
+hide = true
+optional = true
+type = "Bool"
+
+[task_show_full_cmd]
+deprecated = "Use task.show_full_cmd instead."
+deprecated_remove_at = "2027.2.0"
+deprecated_warn_at = "2026.8.0"
+description = "Disable truncation of command lines in task execution output. When true, the full command line will be shown."
+hide = true
+optional = true
+type = "Bool"
+
+[task_skip]
+deprecated = "Use task.skip instead."
+deprecated_remove_at = "2027.2.0"
+deprecated_warn_at = "2026.8.0"
+description = "Tasks to skip when running `mise run`."
+hide = true
+optional = true
+rust_type = "BTreeSet<String>"
+type = "SetString"
+
+[task_skip_depends]
+deprecated = "Use task.skip_depends instead."
+deprecated_remove_at = "2027.2.0"
+deprecated_warn_at = "2026.8.0"
+description = "Run only specified tasks skipping all dependencies."
+hide = true
+optional = true
+type = "Bool"
+
+[task_timeout]
+deprecated = "Use task.timeout instead."
+deprecated_remove_at = "2027.2.0"
+deprecated_warn_at = "2026.8.0"
+description = "Default timeout for tasks. Can be overridden by individual tasks."
+hide = true
+optional = true
+type = "Duration"
+
+[task_timings]
+deprecated = "Use task.timings instead."
+deprecated_remove_at = "2027.2.0"
+deprecated_warn_at = "2026.8.0"
+description = "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`."
+hide = true
 optional = true
 type = "Bool"
 

@@ -104,7 +104,7 @@ impl TaskExecutor {
     pub fn task_timings(&self) -> bool {
         let output_mode = self.output_handler.output(None);
         self.timings
-            || Settings::get().task_timings.unwrap_or(
+            || Settings::get().task.timings.unwrap_or(
                 output_mode == TaskOutput::Prefix
                     || output_mode == TaskOutput::Timed
                     || output_mode == TaskOutput::KeepOrder,
@@ -119,7 +119,7 @@ impl TaskExecutor {
     ) -> Result<()> {
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
-        if Settings::get().task_skip.contains(&task.name) {
+        if Settings::get().task.skip.contains(&task.name) {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "skipping task");
             }

@@ -45,6 +45,14 @@
           "type": "string",
           "description": "Deprecation message if this setting is deprecated"
         },
+        "deprecated_warn_at": {
+          "type": "string",
+          "description": "Mise version at which the deprecation warning starts showing (e.g. \"2026.8.0\")"
+        },
+        "deprecated_remove_at": {
+          "type": "string",
+          "description": "Mise version at which the deprecated code should be removed (triggers debug_assert, e.g. \"2027.2.0\")"
+        },
         "description": {
           "type": "string",
           "description": "Brief description of what this setting does"

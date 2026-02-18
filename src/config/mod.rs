@@ -2168,7 +2168,8 @@ async fn load_tasks_includes(
             .filter(|p| file::is_executable(p))
             .filter(|p| {
                 !Settings::get()
-                    .task_disable_paths
+                    .task
+                    .disable_paths
                     .iter()
                     .any(|d| p.starts_with(d))
             })
@@ -2189,7 +2190,7 @@ async fn load_tasks_includes(
 }
 
 async fn resolve_git_url_to_path(git_url: &str) -> Result<PathBuf> {
-    let no_cache = Settings::get().task_remote_no_cache.unwrap_or(false);
+    let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
     let task_file_providers = TaskFileProvidersBuilder::new()
         .with_cache(!no_cache)
         .build();

@@ -419,6 +419,32 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
     indexmap!{"#
             .to_string(),
     );
+    let push_deprecated_fields = |lines: &mut Vec<String>, props: &toml::Table| {
+        let deprecated = props
+            .get("deprecated")
+            .map(|v| v.as_str().unwrap().to_string());
+        let warn_at = props
+            .get("deprecated_warn_at")
+            .map(|v| v.as_str().unwrap().to_string());
+        let remove_at = props
+            .get("deprecated_remove_at")
+            .map(|v| v.as_str().unwrap().to_string());
+        match deprecated {
+            Some(msg) => lines.push(format!(
+                "        deprecated: Some({}),",
+                raw_string_literal(&msg)
+            )),
+            None => lines.push("        deprecated: None,".to_string()),
+        }
+        match warn_at {
+            Some(v) => lines.push(format!("        deprecated_warn_at: Some({v:?}),")),
+            None => lines.push("        deprecated_warn_at: None,".to_string()),
+        }
+        match remove_at {
+            Some(v) => lines.push(format!("        deprecated_remove_at: Some({v:?}),")),
+            None => lines.push("        deprecated_remove_at: None,".to_string()),
+        }
+    };
     for (name, props) in &settings {
         let props = props.as_table().unwrap();
         if let Some(type_) = props.get("type").map(|v| v.as_str().unwrap()) {
@@ -439,6 +465,7 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
                     raw_string_literal(&description)
                 ));
             }
+            push_deprecated_fields(&mut lines, props);
             lines.push("    },".to_string());
         }
     }
@@ -464,6 +491,7 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
                     raw_string_literal(&description)
                 ));
             }
+            push_deprecated_fields(&mut lines, props);
             lines.push("    },".to_string());
         }
     }
