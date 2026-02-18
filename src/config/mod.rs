@@ -1080,8 +1080,13 @@ fn is_tool_versions_file(p: &Path) -> bool {
 fn first_config_file(files: &IndexSet<PathBuf>) -> Option<&PathBuf> {
     files
         .iter()
-        .find(|p| !is_tool_versions_file(p))
+        .find(|p| !is_tool_versions_file(p) && !is_conf_d_file(p))
         .or_else(|| files.first())
+}
+
+fn is_conf_d_file(p: &Path) -> bool {
+    p.parent()
+        .is_some_and(|d| d.file_name().is_some_and(|n| n == "conf.d"))
 }
 
 pub fn config_file_from_dir(p: &Path) -> PathBuf {
@@ -1270,10 +1275,13 @@ fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
     files.into_iter().filter(|p| p.is_file()).collect()
 }
 
-/// the top-most global config file or the path to where it should be written to
+/// the preferred global config file to write to, or the path where it should be created.
+/// Uses first_config_file() to pick the lowest-precedence non-local TOML (i.e., config.toml
+/// rather than config.local.toml) so that `mise use -g` writes to config.toml.
+/// See: https://github.com/jdx/mise/discussions/8236
 pub fn global_config_path() -> PathBuf {
-    global_config_files()
-        .last()
+    let files = global_config_files();
+    first_config_file(&files)
         .cloned()
         .or_else(|| env::MISE_GLOBAL_CONFIG_FILE.clone())
         .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
