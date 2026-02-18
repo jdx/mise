@@ -222,8 +222,8 @@ pub struct SettingsFile {
 }
 
 fn warn_deprecated(key: &str) {
-    if let Some(meta) = SETTINGS_META.get(key) {
-        if let (Some(msg), Some(warn_at), Some(remove_at)) = (
+    if let Some(meta) = SETTINGS_META.get(key)
+        && let (Some(msg), Some(warn_at), Some(remove_at)) = (
             meta.deprecated,
             meta.deprecated_warn_at,
             meta.deprecated_remove_at,
@@ -244,7 +244,6 @@ fn warn_deprecated(key: &str) {
                 }
             }
         }
-    }
 }
 
 impl Settings {
@@ -362,12 +361,11 @@ impl Settings {
     /// Sets deprecated settings to new names
     fn set_hidden_configs(&mut self) {
         // Migrate task_* settings to task.* (must run before auto_install override below)
-        if let Some(v) = self.task_disable_paths.take() {
-            if !v.is_empty() {
+        if let Some(v) = self.task_disable_paths.take()
+            && !v.is_empty() {
                 warn_deprecated("task_disable_paths");
                 self.task.disable_paths.extend(v);
             }
-        }
         if let Some(v) = self.task_output.take() {
             warn_deprecated("task_output");
             self.task.output = Some(v);
@@ -384,12 +382,11 @@ impl Settings {
             warn_deprecated("task_show_full_cmd");
             self.task.show_full_cmd = v;
         }
-        if let Some(v) = self.task_skip.take() {
-            if !v.is_empty() {
+        if let Some(v) = self.task_skip.take()
+            && !v.is_empty() {
                 warn_deprecated("task_skip");
                 self.task.skip.extend(v);
             }
-        }
         if let Some(v) = self.task_skip_depends {
             warn_deprecated("task_skip_depends");
             self.task.skip_depends = v;
