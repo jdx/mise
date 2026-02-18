@@ -1803,6 +1803,10 @@ Change to this directory before executing the command
 \fB\-f, \-\-force\fR
 Force the tasks to run even if outputs are up to date
 .TP
+\fB\-\-changed\-since\-ref\fR \fI<CHANGED_SINCE_REF>\fR
+Skip tasks whose sources haven't changed since this git ref
+e.g., \-\-changed\-since\-ref=origin/main, \-\-changed\-since\-ref=HEAD~3, \-\-changed\-since\-ref=abc123
+.TP
 \fB\-i, \-\-interleave\fR
 Print directly to stdout/stderr instead of by line
 Defaults to true if \-\-jobs == 1
@@ -2530,6 +2534,10 @@ Change to this directory before executing the command
 .TP
 \fB\-f, \-\-force\fR
 Force the tasks to run even if outputs are up to date
+.TP
+\fB\-\-changed\-since\-ref\fR \fI<CHANGED_SINCE_REF>\fR
+Skip tasks whose sources haven't changed since this git ref
+e.g., \-\-changed\-since\-ref=origin/main, \-\-changed\-since\-ref=HEAD~3, \-\-changed\-since\-ref=abc123
 .TP
 \fB\-i, \-\-interleave\fR
 Print directly to stdout/stderr instead of by line

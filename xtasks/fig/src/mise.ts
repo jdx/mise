@@ -2022,6 +2022,15 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--changed-since-ref",
+          description:
+            "Skip tasks whose sources haven't changed since this git ref\ne.g., --changed-since-ref=origin/main, --changed-since-ref=HEAD~3, --changed-since-ref=abc123",
+          isRepeatable: false,
+          args: {
+            name: "changed_since_ref",
+          },
+        },
+        {
           name: ["-j", "--jobs"],
           description:
             "Number of tasks to run in parallel\n[default: 4]\nConfigure with `jobs` config or `MISE_JOBS` env var",
@@ -2855,6 +2864,15 @@ const completionSpec: Fig.Spec = {
               description:
                 "Force the tasks to run even if outputs are up to date",
               isRepeatable: false,
+            },
+            {
+              name: "--changed-since-ref",
+              description:
+                "Skip tasks whose sources haven't changed since this git ref\ne.g., --changed-since-ref=origin/main, --changed-since-ref=HEAD~3, --changed-since-ref=abc123",
+              isRepeatable: false,
+              args: {
+                name: "changed_since_ref",
+              },
             },
             {
               name: ["-j", "--jobs"],

@@ -49,6 +49,11 @@ Change to this directory before executing the command
 
 Force the tasks to run even if outputs are up to date
 
+### `--changed-since-ref <CHANGED_SINCE_REF>`
+
+Skip tasks whose sources haven't changed since this git ref
+e.g., --changed-since-ref=origin/main, --changed-since-ref=HEAD~3, --changed-since-ref=abc123
+
 ### `-j --jobs <JOBS>`
 
 Number of tasks to run in parallel
