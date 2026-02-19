@@ -343,14 +343,18 @@ impl Client {
         pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
         let url = url.into_url()?;
-        
+
         // Parse checksum (format: "algo:hash" or just "hash")
         let Some((algo, hash)) = checksum.and_then(|c| {
             let (algo, hash) = c.split_once(':').unwrap_or(("sha256", c));
             fetchurl_sdk::is_supported(algo).then(|| (algo.to_string(), hash.to_string()))
         }) else {
-            let headers = extra_headers.cloned().unwrap_or_else(|| github_headers(&url));
-            return self.download_file_with_headers(url, path, &headers, pr).await;
+            let headers = extra_headers
+                .cloned()
+                .unwrap_or_else(|| github_headers(&url));
+            return self
+                .download_file_with_headers(url, path, &headers, pr)
+                .await;
         };
 
         let mut session = FetchSession::new(&algo, &hash, &[url.as_str()])
@@ -363,14 +367,14 @@ impl Client {
             debug!("fetchurl trying: {}", attempt.url());
 
             let mut req = self.reqwest.get(attempt.url());
-            
+
             // Add SDK headers
             for (key, value) in attempt.headers() {
                 if let Ok(hv) = HeaderValue::from_str(value) {
                     req = req.header(key, hv);
                 }
             }
-            
+
             // Add extra headers (e.g., auth for GitHub/GitLab)
             if let Some(extra) = extra_headers {
                 for (key, value) in extra {
@@ -379,9 +383,13 @@ impl Client {
             }
 
             let Ok(resp) = req.send().await else { continue };
-            if !resp.status().is_success() { continue }
+            if !resp.status().is_success() {
+                continue;
+            }
 
-            if let Some(length) = resp.content_length() && let Some(pr) = pr {
+            if let Some(length) = resp.content_length()
+                && let Some(pr) = pr
+            {
                 pr.set_length(length);
                 pr.set_position(0);
             }
@@ -394,15 +402,25 @@ impl Client {
             while let Some(chunk) = stream.next().await {
                 match chunk {
                     Ok(data) => {
-                        if verifier.write_all(&data).is_err() { success = false; break }
-                        if let Some(pr) = pr { pr.inc(data.len() as u64); }
+                        if verifier.write_all(&data).is_err() {
+                            success = false;
+                            break;
+                        }
+                        if let Some(pr) = pr {
+                            pr.inc(data.len() as u64);
+                        }
                     }
-                    Err(_) => { success = false; break }
+                    Err(_) => {
+                        success = false;
+                        break;
+                    }
                 }
             }
 
             if !success {
-                if verifier.bytes_written() > 0 { session.report_partial() }
+                if verifier.bytes_written() > 0 {
+                    session.report_partial()
+                }
                 continue;
             }
 
@@ -412,7 +430,7 @@ impl Client {
                     file.persist(path)?;
                     return Ok(());
                 }
-                Err(_) => { session.report_partial() }
+                Err(_) => session.report_partial(),
             }
         }
 

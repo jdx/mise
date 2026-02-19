@@ -662,7 +662,9 @@ impl Backend for HttpBackend {
         ctx.pr.set_message(format!("download {filename}"));
         let checksum = get_opt(&opts, "checksum");
         let checksum = checksum.as_deref().or_else(|| {
-            tv.lock_platforms.get(&platform_key).and_then(|p| p.checksum.as_deref())
+            tv.lock_platforms
+                .get(&platform_key)
+                .and_then(|p| p.checksum.as_deref())
         });
         HTTP.download_file_with_checksum(&url, &file_path, checksum, None, Some(ctx.pr.as_ref()))
             .await?;

@@ -208,13 +208,13 @@ impl NodePlugin {
     ) -> Result<()> {
         let settings = Settings::get();
         let tarball_name = local.file_name().unwrap().to_string_lossy().to_string();
-        
+
         let platform_info = tv
             .lock_platforms
             .entry(self.get_platform_key())
             .or_default();
         platform_info.url = Some(url.to_string());
-        
+
         // Get checksum first (from lockfile or SHASUMS256.txt)
         let checksum = if let Some(c) = &platform_info.checksum {
             c.clone()
@@ -225,13 +225,18 @@ impl NodePlugin {
         } else {
             String::new()
         };
-        
+
         if local.exists() {
             pr.set_message(format!("using previously downloaded {tarball_name}"));
         } else {
             pr.set_message(format!("download {tarball_name}"));
-            let checksum_opt = if checksum.is_empty() { None } else { Some(checksum.as_str()) };
-            HTTP.download_file_with_checksum(url.clone(), local, checksum_opt, None, Some(pr)).await?;
+            let checksum_opt = if checksum.is_empty() {
+                None
+            } else {
+                Some(checksum.as_str())
+            };
+            HTTP.download_file_with_checksum(url.clone(), local, checksum_opt, None, Some(pr))
+                .await?;
         }
         ctx.pr.next_operation();
         self.verify_checksum(ctx, tv, local)?;

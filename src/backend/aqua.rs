@@ -437,7 +437,8 @@ impl Backend for AquaBackend {
 
         let format = pkg.format(&v, os(), arch()).unwrap_or_default();
 
-        self.download(ctx, &tv, &url, &filename, api_digest.as_deref()).await?;
+        self.download(ctx, &tv, &url, &filename, api_digest.as_deref())
+            .await?;
 
         if validated_url.is_none() {
             // Store the asset URL and digest (if available) in the tool version
