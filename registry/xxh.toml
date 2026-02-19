@@ -1,3 +1,3 @@
-backends = ["pipx:xxh-xxh"]
+backends = ["uv:xxh-xxh"]
 description = "🚀 Bring your favorite shell wherever you go through the ssh. Xonsh shell, fish, zsh, osquery and so on."
 test = { cmd = "xxh --version", expected = "xxh/{{version}}" }

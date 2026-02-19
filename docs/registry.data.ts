@@ -65,6 +65,7 @@ export default {
       gitlab: (slug) => `https://gitlab.com/${slug}`,
       go: (slug) => `https://pkg.go.dev/${slug}`,
       npm: (slug) => `https://www.npmjs.com/package/${slug}`,
+      uv: (slug) => `https://pypi.org/project/${slug}`,
       pipx: (slug) => `https://pypi.org/project/${slug}`,
       spm: (slug, options) =>
         slug.startsWith("http")

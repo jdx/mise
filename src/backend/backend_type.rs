@@ -26,7 +26,8 @@ pub enum BackendType {
     Gitlab,
     Go,
     Npm,
-    Pipx,
+    #[strum(serialize = "uv", serialize = "pipx")]
+    UvTool,
     Spm,
     Http,
     S3,
@@ -39,6 +40,7 @@ pub enum BackendType {
 impl Display for BackendType {
     fn fmt(&self, formatter: &mut Formatter) -> std::fmt::Result {
         match self {
+            BackendType::UvTool => write!(formatter, "uv"),
             BackendType::VfoxBackend(plugin_name) => write!(formatter, "{plugin_name}"),
             _ => write!(formatter, "{}", format!("{self:?}").to_lowercase()),
         }
@@ -62,7 +64,16 @@ impl BackendType {
             "gitlab" => BackendType::Gitlab,
             "go" => BackendType::Go,
             "npm" => BackendType::Npm,
-            "pipx" => BackendType::Pipx,
+            "uv" => BackendType::UvTool,
+            "pipx" => {
+                deprecated_at!(
+                    "2026.8.0",
+                    "2027.8.0",
+                    "pipx-backend",
+                    "The `pipx:` backend prefix is deprecated. Use `uv:` instead."
+                );
+                BackendType::UvTool
+            }
             "spm" => BackendType::Spm,
             "http" => BackendType::Http,
             "s3" => BackendType::S3,

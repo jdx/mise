@@ -201,7 +201,7 @@ Backend support for lockfile features varies:
 - ✅ **Full support** (version + checksum + size + URL): `aqua`, `http`, `github`, `gitlab`
 - ⚠️ **Partial support** (version + checksum + size): `ubi`
 - 📝 **Basic support** (version + checksum): `core` (some tools)
-- 📝 **Version only**: `asdf`, `npm`, `cargo`, `pipx`
+- 📝 **Version only**: `asdf`, `npm`, `cargo`, `uv`
 - 📝 **Planned**: More backends will add full asset tracking support over time
 
 ## Best Practices

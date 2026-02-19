@@ -252,7 +252,7 @@ mise is written in Rust and uses itself for development tasks. To contribute to 
 #### Prerequisites
 - Rust (latest stable)
 - Node.js
-- `pipx` or `uv` 
+- `uv` (preferred) or `pipx` for legacy workflows
 - Bash (newer than macOS default)
 
 #### Getting Started
@@ -898,7 +898,7 @@ pub trait Backend: Debug + Send + Sync {
 - **Core Backends**: Built-in support (Node.js, Python, etc.)
 - **ASDF Backends**: External plugin system compatibility
 - **Aqua Backends**: Package manager integration
-- **Language-specific**: npm, cargo, pipx, gem, go, etc.
+- **Language-specific**: npm, cargo, uv, gem, go, etc.
 - **Universal**: ubi (GitHub releases)
 
 #### 4. **Configuration System** (`src/config/`)

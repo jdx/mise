@@ -32,7 +32,7 @@ Only use asdf plugins when:
 
 1. [aqua backend](dev-tools/backends/aqua.md) - Preferred for GitHub releases
 2. [github backend](dev-tools/backends/github.md) - Simple GitHub releases
-3. [Language package managers](dev-tools/backends/) - npm, pipx, cargo, gem, etc.
+3. [Language package managers](dev-tools/backends/) - npm, uv, cargo, gem, etc.
 4. [backend plugins](backend-plugin-development.md) - Enhanced plugins with backend methods
 5. [tool plugins](tool-plugin-development.md) - Hook-based cross-platform plugins
 
@@ -329,7 +329,7 @@ Consider migrating from asdf plugins to modern alternatives:
 1. **Check if tool is available in [aqua registry](https://aquaproj.github.io/aqua-registry/)**
 2. **Use [github backend](dev-tools/backends/github.md) for simple GitHub releases**
 3. **Create a [mise plugin](tool-plugin-development.md) for complex tools** - use the [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) for a quick start
-4. **Use language-specific package managers** (npm, pipx, cargo, gem)
+4. **Use language-specific package managers** (npm, uv, cargo, gem)
 
 ## Community Resources
 

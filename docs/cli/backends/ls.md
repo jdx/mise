@@ -19,7 +19,7 @@ dotnet
 gem
 go
 npm
-pipx
+uv
 spm
 ubi
 vfox

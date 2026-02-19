@@ -117,7 +117,7 @@ Fast, native implementations for major languages:
 - **Vfox Plugins**: Modern Lua-based plugin system
 - **Aqua Registry**: 1000+ tools with security verification
 - **GitHub Releases**: Direct installation from GitHub
-- **Package Managers**: npm, cargo, gem, pipx, go install
+- **Package Managers**: npm, cargo, gem, uv tool, go install
 
 ### Backend Prioritization
 

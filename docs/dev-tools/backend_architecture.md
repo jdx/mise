@@ -47,7 +47,7 @@ Core tools like Node.js and Java are implemented as backends even though they re
 Leverage existing language ecosystems:
 
 - **npm** - npm packages (`npm:prettier`, `npm:typescript`)
-- **pipx** - Python packages (`pipx:black`, `pipx:poetry`)
+- **uv** - Python packages (`uv:black`, `uv:poetry`)
 - **cargo** - Rust crates (`cargo:ripgrep`, `cargo:fd-find`)
 - **gem** - Ruby gems (`gem:bundler`, `gem:rails`)
 - **go** - Go modules (`go:github.com/golangci/golangci-lint/cmd/golangci-lint`)
@@ -119,17 +119,17 @@ terraform = "aqua:hashicorp/terraform"  # Use aqua backend
 
 ## Backend Capabilities Comparison
 
-| Feature                   | Core | npm/pipx/cargo | aqua | ubi | Backend Plugins | Tool Plugins (vfox) | asdf Plugins (legacy) |
-| ------------------------- | ---- | -------------- | ---- | --- | --------------- | ------------------- | --------------------- |
-| **Speed**                 | ✅   | ⚠️             | ✅   | ✅  | ⚠️              | ⚠️                  | ⚠️                    |
-| **Security**              | ✅   | ⚠️             | ✅   | ⚠️  | ⚠️              | ⚠️                  | ⚠️                    |
-| **Windows Support**       | ✅   | ✅             | ✅   | ✅  | ✅              | ✅                  | ❌                    |
-| **Env Var Support**       | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ✅                    |
-| **Custom Scripts**        | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ✅                    |
-| **Built-in Modules**      | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ❌                    |
-| **Security Attestations** | ❌   | ❌             | ✅   | ❌  | ✅              | ✅                  | ❌                    |
-| **Multi-tool Plugins**    | ❌   | ❌             | ❌   | ❌  | ✅              | ❌                  | ❌                    |
-| **Progress/Logging**      | ✅   | ✅             | ✅   | ✅  | ✅              | ✅                  | ❌                    |
+| Feature                   | Core | npm/uv/cargo | aqua | ubi | Backend Plugins | Tool Plugins (vfox) | asdf Plugins (legacy) |
+| ------------------------- | ---- | ------------ | ---- | --- | --------------- | ------------------- | --------------------- |
+| **Speed**                 | ✅   | ⚠️           | ✅   | ✅  | ⚠️              | ⚠️                  | ⚠️                    |
+| **Security**              | ✅   | ⚠️           | ✅   | ⚠️  | ⚠️              | ⚠️                  | ⚠️                    |
+| **Windows Support**       | ✅   | ✅           | ✅   | ✅  | ✅              | ✅                  | ❌                    |
+| **Env Var Support**       | ✅   | ❌           | ❌   | ❌  | ✅              | ✅                  | ✅                    |
+| **Custom Scripts**        | ✅   | ❌           | ❌   | ❌  | ✅              | ✅                  | ✅                    |
+| **Built-in Modules**      | ✅   | ❌           | ❌   | ❌  | ✅              | ✅                  | ❌                    |
+| **Security Attestations** | ❌   | ❌           | ✅   | ❌  | ✅              | ✅                  | ❌                    |
+| **Multi-tool Plugins**    | ❌   | ❌           | ❌   | ❌  | ✅              | ❌                  | ❌                    |
+| **Progress/Logging**      | ✅   | ✅           | ✅   | ✅  | ✅              | ✅                  | ❌                    |
 
 ## When to Use Each Backend
 
@@ -200,12 +200,12 @@ Some backends have dependencies on others:
 ```mermaid
 graph TD
     A[npm backend] --> B[Node.js]
-    C[pipx backend] --> D[pipx]
+    C[uv backend] --> D[uv]
     E[cargo backend] --> F[Rust]
     G[gem backend] --> H[Ruby]
 ```
 
-mise automatically handles these dependencies, installing Node.js before npm tools, pipx before pipx tools, etc.
+mise automatically handles these dependencies, installing Node.js before npm tools, uv before uv tools, etc.
 
 ## Configuration and Overrides
 
@@ -234,7 +234,7 @@ Some backends support additional configuration:
 # mise.toml
 [tools]
 python = { version = "3.12", virtualenv = ".venv" }  # Core backend options
-black = { version = "latest", python = "3.12" }      # pipx backend options
+black = { version = "latest", python = "3.12" }      # uv backend options
 ```
 
 ## Troubleshooting Backend Issues

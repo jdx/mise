@@ -413,14 +413,30 @@ impl Settings {
         if let Some(false) = self.vfox {
             self.disable_backends.push("vfox".to_string());
         }
+        if self.disable_backends.iter().any(|b| b == "pipx") {
+            self.disable_backends.retain(|b| b != "pipx");
+            if !self.disable_backends.iter().any(|b| b == "uv") {
+                self.disable_backends.push("uv".to_string());
+            }
+        }
         if let Some(disable_default_shorthands) = self.disable_default_shorthands {
             self.disable_default_registry = disable_default_shorthands;
         }
         if let Some(cargo_binstall) = self.cargo_binstall {
             self.cargo.binstall = cargo_binstall;
         }
-        if let Some(pipx_uvx) = self.pipx_uvx {
-            self.pipx.uvx = Some(pipx_uvx);
+        if self.uv.pipx.is_none() {
+            if let Some(pipx_uvx) = self.pipx.uvx {
+                self.uv.pipx = Some(!pipx_uvx);
+            } else if let Some(pipx_uvx) = self.pipx_uvx {
+                self.uv.pipx = Some(!pipx_uvx);
+            }
+        }
+        const DEFAULT_UV_REGISTRY_URL: &str = "https://pypi.org/pypi/{}/json";
+        if self.uv.registry_url == DEFAULT_UV_REGISTRY_URL
+            && self.pipx.registry_url != DEFAULT_UV_REGISTRY_URL
+        {
+            self.uv.registry_url = self.pipx.registry_url.clone();
         }
         if let Some(python_compile) = self.python_compile {
             self.python.compile = Some(python_compile);

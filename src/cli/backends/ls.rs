@@ -31,7 +31,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     gem
     go
     npm
-    pipx
+    uv
     spm
     ubi
     vfox

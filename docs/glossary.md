@@ -74,8 +74,8 @@ mise supports multiple backends for installing tools from different sources:
 **npm**
 : Installs Node.js packages and CLI tools from the npm registry. See [npm backend](/dev-tools/backends/npm).
 
-**pipx**
-: Installs Python CLI tools in isolated environments using pipx. See [pipx backend](/dev-tools/backends/pipx).
+**uv**
+: Installs Python CLI tools in isolated environments using `uv tool` (formerly pipx). See [uv backend](/dev-tools/backends/uv).
 
 **spm**
 : Installs tools via Swift Package Manager. See [spm backend](/dev-tools/backends/spm).

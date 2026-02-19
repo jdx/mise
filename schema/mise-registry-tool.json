@@ -19,7 +19,7 @@
         "oneOf": [
           {
             "type": "string",
-            "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|gem|github|gitlab|go|http|npm|pipx|spm|ubi|vfox):.+$",
+            "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|gem|github|gitlab|go|http|npm|uv|pipx|spm|ubi|vfox):.+$",
             "description": "Backend specification as a string (e.g., 'aqua:owner/repo')"
           },
           {
@@ -27,7 +27,7 @@
             "properties": {
               "full": {
                 "type": "string",
-                "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|gem|github|gitlab|go|http|npm|pipx|spm|ubi|vfox):.+$",
+                "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|gem|github|gitlab|go|http|npm|uv|pipx|spm|ubi|vfox):.+$",
                 "description": "Full backend specification"
               },
               "platforms": {
