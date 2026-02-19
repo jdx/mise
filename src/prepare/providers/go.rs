@@ -5,50 +5,50 @@ use eyre::Result;
 use crate::prepare::rule::PrepareProviderConfig;
 use crate::prepare::{PrepareCommand, PrepareProvider};
 
+use super::ProviderBase;
+
 /// Prepare provider for Go (go.sum)
 #[derive(Debug)]
 pub struct GoPrepareProvider {
-    project_root: PathBuf,
-    config: PrepareProviderConfig,
+    base: ProviderBase,
 }
 
 impl GoPrepareProvider {
     pub fn new(project_root: &Path, config: PrepareProviderConfig) -> Self {
         Self {
-            project_root: project_root.to_path_buf(),
-            config,
+            base: ProviderBase::new("go", project_root, config),
         }
     }
 }
 
 impl PrepareProvider for GoPrepareProvider {
-    fn id(&self) -> &str {
-        "go"
+    fn base(&self) -> &ProviderBase {
+        &self.base
     }
 
     fn sources(&self) -> Vec<PathBuf> {
         // go.mod defines dependencies - changes here trigger downloads
-        vec![self.project_root.join("go.mod")]
+        vec![self.base.project_root.join("go.mod")]
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
         // Go downloads modules to GOPATH/pkg/mod, but we can check vendor/ if used
-        let vendor = self.project_root.join("vendor");
+        let vendor = self.base.project_root.join("vendor");
         if vendor.exists() {
             vec![vendor]
         } else {
             // go.sum gets updated after go mod download completes
-            vec![self.project_root.join("go.sum")]
+            vec![self.base.project_root.join("go.sum")]
         }
     }
 
     fn prepare_command(&self) -> Result<PrepareCommand> {
-        if let Some(run) = &self.config.run {
-            return PrepareCommand::from_string(run, &self.project_root, &self.config);
+        if let Some(run) = &self.base.config.run {
+            return PrepareCommand::from_string(run, &self.base.project_root, &self.base.config);
         }
 
         // Use `go mod vendor` if vendor/ exists, otherwise `go mod download`
-        let vendor = self.project_root.join("vendor");
+        let vendor = self.base.project_root.join("vendor");
         let (args, desc) = if vendor.exists() {
             (
                 vec!["mod".to_string(), "vendor".to_string()],
@@ -64,9 +64,10 @@ impl PrepareProvider for GoPrepareProvider {
         Ok(PrepareCommand {
             program: "go".to_string(),
             args,
-            env: self.config.env.clone(),
-            cwd: Some(self.project_root.clone()),
+            env: self.base.config.env.clone(),
+            cwd: Some(self.base.project_root.clone()),
             description: self
+                .base
                 .config
                 .description
                 .clone()
@@ -76,10 +77,6 @@ impl PrepareProvider for GoPrepareProvider {
 
     fn is_applicable(&self) -> bool {
         // Check for go.mod (the source/lockfile), not go.sum (which may be an output)
-        self.project_root.join("go.mod").exists()
-    }
-
-    fn is_auto(&self) -> bool {
-        self.config.auto
+        self.base.project_root.join("go.mod").exists()
     }
 }

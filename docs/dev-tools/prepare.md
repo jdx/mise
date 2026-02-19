@@ -87,15 +87,16 @@ run = "npx prisma generate"
 
 ### Provider Options
 
-| Option        | Type     | Description                                              |
-| ------------- | -------- | -------------------------------------------------------- |
-| `auto`        | bool     | Auto-run before `mise x` and `mise run` (default: false) |
-| `sources`     | string[] | Files/patterns to check for changes                      |
-| `outputs`     | string[] | Files/directories that should be newer than sources      |
-| `run`         | string   | Command to run when stale                                |
-| `env`         | table    | Environment variables to set                             |
-| `dir`         | string   | Working directory for the command                        |
-| `description` | string   | Description shown in output                              |
+| Option          | Type     | Description                                                                     |
+| --------------- | -------- | ------------------------------------------------------------------------------- |
+| `auto`          | bool     | Auto-run before `mise x` and `mise run` (default: false)                        |
+| `sources`       | string[] | Files/patterns to check for changes                                             |
+| `outputs`       | string[] | Files/directories that should be newer than sources                             |
+| `run`           | string   | Command to run when stale                                                       |
+| `env`           | table    | Environment variables to set                                                    |
+| `dir`           | string   | Working directory for the command                                               |
+| `description`   | string   | Description shown in output                                                     |
+| `touch_outputs` | bool     | Touch output mtimes after a successful run so they appear fresh (default: true) |
 
 ## Freshness Checking
 
@@ -110,6 +111,11 @@ This means:
 - If you modify `package-lock.json`, `node_modules/` will be considered stale
 - If `node_modules/` doesn't exist, the provider is always stale
 - If sources don't exist, the provider is considered fresh (nothing to do)
+
+After a successful run, mise touches the mtime of each output to now (controlled by
+`touch_outputs`, default `true`). This ensures that commands which are no-ops when
+dependencies are already satisfied (e.g. `uv sync` when the venv is up to date) still
+mark outputs as fresh, preventing repeated stale warnings on subsequent invocations.
 
 ## Auto-Prepare
 

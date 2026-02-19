@@ -283,7 +283,7 @@ impl OutputHandler {
             TaskOutput::Prefix
         } else if self.interleave {
             TaskOutput::Interleave
-        } else if let Some(output) = Settings::get().task_output {
+        } else if let Some(output) = Settings::get().task.output {
             // Silent/quiet from config override raw (output suppression takes precedence)
             // Other modes (prefix, etc.) allow raw to take precedence for stdin/stdout
             if output.is_silent() || output.is_quiet() {

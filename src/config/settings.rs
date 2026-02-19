@@ -47,6 +47,9 @@ pub struct SettingsMeta {
     // pub key: String,
     pub type_: SettingsType,
     pub description: &'static str,
+    pub deprecated: Option<&'static str>,
+    pub deprecated_warn_at: Option<&'static str>,
+    pub deprecated_remove_at: Option<&'static str>,
 }
 
 #[derive(
@@ -218,6 +221,32 @@ pub struct SettingsFile {
     pub settings: SettingsPartial,
 }
 
+fn warn_deprecated(key: &str) {
+    if let Some(meta) = SETTINGS_META.get(key)
+        && let (Some(msg), Some(warn_at), Some(remove_at)) = (
+            meta.deprecated,
+            meta.deprecated_warn_at,
+            meta.deprecated_remove_at,
+        )
+    {
+        use versions::Versioning;
+        let warn_version = Versioning::new(warn_at).unwrap();
+        let remove_version = Versioning::new(remove_at).unwrap();
+        debug_assert!(
+            *crate::cli::version::V < remove_version,
+            "Deprecated setting [{key}] should have been removed in {remove_at}. Please remove this deprecated setting.",
+        );
+        if *crate::cli::version::V >= warn_version {
+            let id = Box::leak(format!("setting.{key}").into_boxed_str());
+            if crate::output::DEPRECATED.lock().unwrap().insert(id) {
+                warn!(
+                    "deprecated [setting.{key}]: {msg} This will be removed in mise {remove_at}."
+                );
+            }
+        }
+    }
+}
+
 impl Settings {
     pub fn get() -> Arc<Self> {
         Self::try_get().unwrap()
@@ -332,10 +361,51 @@ impl Settings {
 
     /// Sets deprecated settings to new names
     fn set_hidden_configs(&mut self) {
+        // Migrate task_* settings to task.* (must run before auto_install override below)
+        if let Some(v) = self.task_disable_paths.take()
+            && !v.is_empty()
+        {
+            warn_deprecated("task_disable_paths");
+            self.task.disable_paths.extend(v);
+        }
+        if let Some(v) = self.task_output.take() {
+            warn_deprecated("task_output");
+            self.task.output = Some(v);
+        }
+        if let Some(v) = self.task_remote_no_cache {
+            warn_deprecated("task_remote_no_cache");
+            self.task.remote_no_cache = Some(v);
+        }
+        if let Some(v) = self.task_run_auto_install {
+            warn_deprecated("task_run_auto_install");
+            self.task.run_auto_install = v;
+        }
+        if let Some(v) = self.task_show_full_cmd {
+            warn_deprecated("task_show_full_cmd");
+            self.task.show_full_cmd = v;
+        }
+        if let Some(v) = self.task_skip.take()
+            && !v.is_empty()
+        {
+            warn_deprecated("task_skip");
+            self.task.skip.extend(v);
+        }
+        if let Some(v) = self.task_skip_depends {
+            warn_deprecated("task_skip_depends");
+            self.task.skip_depends = v;
+        }
+        if let Some(v) = self.task_timeout.take() {
+            warn_deprecated("task_timeout");
+            self.task.timeout = Some(v);
+        }
+        if let Some(v) = self.task_timings {
+            warn_deprecated("task_timings");
+            self.task.timings = Some(v);
+        }
         if !self.auto_install {
             self.exec_auto_install = false;
             self.not_found_auto_install = false;
-            self.task_run_auto_install = false;
+            self.task.run_auto_install = false;
         }
         if let Some(false) = self.asdf {
             self.disable_backends.push("asdf".to_string());
@@ -565,7 +635,8 @@ impl Settings {
     }
 
     pub fn task_timeout_duration(&self) -> Option<Duration> {
-        self.task_timeout
+        self.task
+            .timeout
             .as_ref()
             .and_then(|s| duration::parse_duration(s).ok())
     }

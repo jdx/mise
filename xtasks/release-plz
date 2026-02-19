@@ -14,7 +14,7 @@ git config user.email release@mise.jdx.dev
 
 # Check if the most recent tag has a matching GitHub Release.
 # If not, the previous release workflow likely failed to fire — re-trigger it.
-latest_tag="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1)"
+latest_tag="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1 || true)"
 if [[ -n $latest_tag ]]; then
 	if ! gh api "repos/$GITHUB_REPOSITORY/releases/tags/$latest_tag" --silent 2>/dev/null; then
 		echo "Tag $latest_tag has no GitHub Release — triggering release workflow"
@@ -42,7 +42,7 @@ has_crate_changes() {
 
 	# Get the latest tag for this crate
 	local latest_tag
-	latest_tag=$(git tag --list "${crate_name}-v*" --sort=-v:refname | head -1)
+	latest_tag=$(git tag --list "${crate_name}-v*" --sort=-v:refname | head -1 || true)
 
 	if [[ -z $latest_tag ]]; then
 		echo "No previous tag found for $crate_name, will publish"

@@ -1159,6 +1159,8 @@ impl UnifiedGitBackend {
         {
             Ok(verified) => {
                 if verified {
+                    ctx.pr
+                        .set_message("✓ GitHub attestations verified".to_string());
                     debug!("GitHub attestations verified successfully for {tv}");
                 }
                 Ok(verified)

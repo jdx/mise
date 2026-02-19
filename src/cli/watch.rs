@@ -1103,13 +1103,13 @@ pub struct WatchexecArgs {
     //
     // /// Print stdout/stderr by line, prefixed with the tasks's label
     // /// Defaults to true if --jobs > 1
-    // /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
+    // /// Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
     // #[clap(long, short, verbatim_doc_comment, overrides_with = "interleave")]
     // pub prefix: bool,
     //
     // /// Print directly to stdout/stderr instead of by line
     // /// Defaults to true if --jobs == 1
-    // /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
+    // /// Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
     // #[clap(long, short, verbatim_doc_comment, overrides_with = "prefix")]
     // pub interleave: bool,
     //

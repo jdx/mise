@@ -34,7 +34,7 @@ pub fn trunc(prefix: &str, msg: &str) -> String {
     let settings = Settings::get();
 
     // Skip width truncation when explicitly disabled
-    if settings.task_show_full_cmd {
+    if settings.task.show_full_cmd {
         return msg.to_string();
     }
     let msg = msg.lines().next().unwrap_or_default();

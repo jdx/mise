@@ -40,10 +40,10 @@ assert_not_contains "mise run --skip-deps c ::: b" "a"
 assert "mise run --skip-deps e" "a
 b"
 
-# Test task_skip_depends setting
+# Test task.skip_depends setting
 cat <<EOF >mise.toml
 [settings]
-task_skip_depends = true
+task.skip_depends = true
 
 [tasks.a]
 run = "echo a"

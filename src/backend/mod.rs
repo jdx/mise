@@ -16,6 +16,7 @@ use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
+use crate::path_env::PathEnv;
 use crate::platform::Platform;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{PluginType, VERSION_REGEX};
@@ -30,7 +31,7 @@ use crate::{
     cache::{CacheManager, CacheManagerBuilder},
     plugins::PluginEnum,
 };
-use crate::{dirs, env, file, hash, lock_file, plugins, versions_host};
+use crate::{dirs, env, file, hash, lock_file, versions_host};
 use async_trait::async_trait;
 use backend_type::BackendType;
 use console::style;
@@ -442,7 +443,23 @@ pub trait Backend: Debug + Send + Sync {
             }
             matches
         } else {
-            true // Core plugins and plugins without remote URLs can use versions host
+            // For non-plugin backends (e.g. github:, cargo:), check if the backend matches
+            // the registry's default. When a user aliases a tool to a different backend
+            // (e.g. `php = "github:verzly/php"`), the versions host would return versions
+            // from the registry's default backend which may not match the aliased backend.
+            let full = ba.full();
+            if let Some(rt) = REGISTRY.get(ba.short.as_str()) {
+                let is_registry_backend = rt.backends().iter().any(|b| *b == full);
+                if !is_registry_backend {
+                    trace!(
+                        "Skipping versions host for {} because backend {} is not the registry default",
+                        ba.short, full
+                    );
+                }
+                is_registry_backend
+            } else {
+                true // Not in registry, safe to use versions host
+            }
         };
 
         if Settings::get().offline() {
@@ -974,8 +991,17 @@ pub trait Backend: Debug + Send + Sync {
             }
         }
 
+        // Use the backend's list_bin_paths to get the correct binary directories
+        // instead of hardcoding install_path/bin, which may not match the actual
+        // binary location for backends like aqua
+        let bin_paths = self.list_bin_paths(&ctx.config, tv).await?;
+        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        for p in bin_paths {
+            path_env.add(p);
+        }
+
         CmdLineRunner::new(&*env::SHELL)
-            .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
+            .env(&*env::PATH_KEY, path_env.join())
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
             .env("MISE_TOOL_NAME", tv.ba().short.clone())
             .env("MISE_TOOL_VERSION", tv.version.clone())

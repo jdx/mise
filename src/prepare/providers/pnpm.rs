@@ -5,49 +5,50 @@ use eyre::Result;
 use crate::prepare::rule::PrepareProviderConfig;
 use crate::prepare::{PrepareCommand, PrepareProvider};
 
+use super::ProviderBase;
+
 /// Prepare provider for pnpm (pnpm-lock.yaml)
 #[derive(Debug)]
 pub struct PnpmPrepareProvider {
-    project_root: PathBuf,
-    config: PrepareProviderConfig,
+    base: ProviderBase,
 }
 
 impl PnpmPrepareProvider {
     pub fn new(project_root: &Path, config: PrepareProviderConfig) -> Self {
         Self {
-            project_root: project_root.to_path_buf(),
-            config,
+            base: ProviderBase::new("pnpm", project_root, config),
         }
     }
 }
 
 impl PrepareProvider for PnpmPrepareProvider {
-    fn id(&self) -> &str {
-        "pnpm"
+    fn base(&self) -> &ProviderBase {
+        &self.base
     }
 
     fn sources(&self) -> Vec<PathBuf> {
         vec![
-            self.project_root.join("pnpm-lock.yaml"),
-            self.project_root.join("package.json"),
+            self.base.project_root.join("pnpm-lock.yaml"),
+            self.base.project_root.join("package.json"),
         ]
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        vec![self.project_root.join("node_modules")]
+        vec![self.base.project_root.join("node_modules")]
     }
 
     fn prepare_command(&self) -> Result<PrepareCommand> {
-        if let Some(run) = &self.config.run {
-            return PrepareCommand::from_string(run, &self.project_root, &self.config);
+        if let Some(run) = &self.base.config.run {
+            return PrepareCommand::from_string(run, &self.base.project_root, &self.base.config);
         }
 
         Ok(PrepareCommand {
             program: "pnpm".to_string(),
             args: vec!["install".to_string()],
-            env: self.config.env.clone(),
-            cwd: Some(self.project_root.clone()),
+            env: self.base.config.env.clone(),
+            cwd: Some(self.base.project_root.clone()),
             description: self
+                .base
                 .config
                 .description
                 .clone()
@@ -56,10 +57,6 @@ impl PrepareProvider for PnpmPrepareProvider {
     }
 
     fn is_applicable(&self) -> bool {
-        self.project_root.join("pnpm-lock.yaml").exists()
-    }
-
-    fn is_auto(&self) -> bool {
-        self.config.auto
+        self.base.project_root.join("pnpm-lock.yaml").exists()
     }
 }

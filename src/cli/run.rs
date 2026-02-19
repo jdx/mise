@@ -84,7 +84,7 @@ pub struct Run {
 
     /// Print directly to stdout/stderr instead of by line
     /// Defaults to true if --jobs == 1
-    /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
+    /// Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
     #[clap(
         long,
         short,
@@ -118,7 +118,7 @@ pub struct Run {
 
     /// Print stdout/stderr by line, prefixed with the task's label
     /// Defaults to true if --jobs > 1
-    /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
+    /// Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
     #[clap(
         long,
         short,
@@ -293,7 +293,7 @@ impl Run {
         }
 
         if !self.skip_deps {
-            self.skip_deps = Settings::get().task_skip_depends;
+            self.skip_deps = Settings::get().task.skip_depends;
         }
 
         time!("run init");

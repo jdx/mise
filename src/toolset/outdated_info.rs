@@ -10,7 +10,7 @@ use std::{
 use tabled::Tabled;
 use versions::Version;
 
-#[derive(Debug, Serialize, Clone, Tabled)]
+#[derive(Debug, Serialize, Clone, Tabled, PartialEq, Eq, Hash)]
 pub struct OutdatedInfo {
     pub name: String,
     #[serde(skip)]

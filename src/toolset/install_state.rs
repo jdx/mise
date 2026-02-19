@@ -127,7 +127,7 @@ fn read_legacy_backend_meta(short: &str) -> Option<(String, Option<String>, bool
     let lines: Vec<&str> = body.lines().filter(|f| !f.is_empty()).collect();
     let s = lines.first().unwrap_or(&short).to_string();
     let full = lines.get(1).map(|f| f.to_string());
-    let explicit_backend = lines.get(2).is_none_or(|v| *v == "1");
+    let explicit_backend = lines.get(2).is_some_and(|v| *v == "1");
     Some((s, full, explicit_backend))
 }
 
