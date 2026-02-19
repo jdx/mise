@@ -4,9 +4,11 @@ use std::fmt::{Debug, Display, Formatter};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::channel;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, RwLock};
 use std::thread;
+use std::time::Duration;
 
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
@@ -14,7 +16,7 @@ use std::os::unix::process::CommandExt;
 use crate::redactions::Redactor;
 use color_eyre::Result;
 use duct::{Expression, IntoExecutablePath};
-use eyre::Context;
+use eyre::{Context, bail};
 #[cfg(not(any(test, target_os = "windows")))]
 use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
 #[cfg(not(any(test, target_os = "windows")))]
@@ -110,6 +112,124 @@ pub struct CmdLineRunner<'a> {
     pass_signals: bool,
     on_stdout: Option<Box<dyn Fn(String) + Send + 'a>>,
     on_stderr: Option<Box<dyn Fn(String) + Send + 'a>>,
+    timeout: Option<Duration>,
+}
+
+const GUARD_RUNNING: u8 = 0;
+const GUARD_CANCELLED: u8 = 1;
+const GUARD_TIMED_OUT: u8 = 2;
+
+fn wait_for_cancel_or_deadline<'a>(
+    cvar: &'a Condvar,
+    mut guard: MutexGuard<'a, bool>,
+    deadline: std::time::Instant,
+) -> (MutexGuard<'a, bool>, bool) {
+    loop {
+        if *guard {
+            return (guard, true);
+        }
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            return (guard, false);
+        }
+        let (g, result) = cvar.wait_timeout(guard, remaining).unwrap();
+        guard = g;
+        if result.timed_out() {
+            return (guard, false);
+        }
+    }
+}
+
+struct TimeoutGuard {
+    state: Arc<AtomicU8>,
+    cancel: Arc<(Mutex<bool>, Condvar)>,
+    timeout: Duration,
+}
+
+impl TimeoutGuard {
+    fn new(timeout: Duration, pid: u32) -> Self {
+        let state = Arc::new(AtomicU8::new(GUARD_RUNNING));
+        let cancel = Arc::new((Mutex::new(false), Condvar::new()));
+        let state_clone = state.clone();
+        let cancel_clone = cancel.clone();
+        thread::spawn(move || {
+            let (lock, cvar) = &*cancel_clone;
+            let guard = lock.lock().unwrap();
+            let deadline = std::time::Instant::now() + timeout;
+            let (guard, cancelled) = wait_for_cancel_or_deadline(cvar, guard, deadline);
+            if cancelled {
+                return;
+            }
+            if state_clone
+                .compare_exchange(
+                    GUARD_RUNNING,
+                    GUARD_TIMED_OUT,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                )
+                .is_err()
+            {
+                return;
+            }
+            #[cfg(unix)]
+            {
+                let pid = nix::unistd::Pid::from_raw(pid as i32);
+                if nix::sys::signal::killpg(pid, nix::sys::signal::Signal::SIGTERM).is_err() {
+                    let _ = nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGTERM);
+                }
+                drop(guard);
+                let guard = lock.lock().unwrap();
+                let grace_deadline = std::time::Instant::now() + Duration::from_secs(5);
+                let (_guard, cancelled) = wait_for_cancel_or_deadline(cvar, guard, grace_deadline);
+                if !cancelled
+                    && nix::sys::signal::killpg(pid, nix::sys::signal::Signal::SIGKILL).is_err()
+                {
+                    let _ = nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGKILL);
+                }
+            }
+            #[cfg(windows)]
+            {
+                drop(guard);
+                // TODO: Windows lacks graceful shutdown parity with Unix.
+                // Currently force-kills immediately via taskkill /F with no grace period.
+                // Consider using GenerateConsoleCtrlEvent for CTRL_C_EVENT before force kill.
+                let _ = Command::new("taskkill")
+                    .args(["/F", "/PID", &pid.to_string()])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
+        });
+        Self {
+            state,
+            cancel,
+            timeout,
+        }
+    }
+
+    fn cancel(&self) {
+        self.state
+            .compare_exchange(
+                GUARD_RUNNING,
+                GUARD_CANCELLED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .ok();
+        let (lock, cvar) = &*self.cancel;
+        *lock.lock().unwrap() = true;
+        cvar.notify_one();
+    }
+
+    fn timed_out(&self) -> Option<Duration> {
+        (self.state.load(Ordering::Acquire) == GUARD_TIMED_OUT).then_some(self.timeout)
+    }
+}
+
+impl Drop for TimeoutGuard {
+    fn drop(&mut self) {
+        self.cancel();
+    }
 }
 
 static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
@@ -133,6 +253,7 @@ impl<'a> CmdLineRunner<'a> {
             pass_signals: false,
             on_stdout: None,
             on_stderr: None,
+            timeout: None,
         }
     }
 
@@ -290,6 +411,11 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
     pub fn stdin_string(mut self, input: impl Into<String>) -> Self {
         self.cmd.stdin(Stdio::piped());
         self.stdin = Some(input.into());
@@ -339,7 +465,9 @@ impl<'a> CmdLineRunner<'a> {
                 move || {
                     for line in BufReader::new(stdout).lines() {
                         match line {
-                            Ok(line) => tx.send(ChildProcessOutput::Stdout(line)).unwrap(),
+                            Ok(line) => {
+                                let _ = tx.send(ChildProcessOutput::Stdout(line));
+                            }
                             Err(e) => warn!("Failed to read stdout for {name}: {e}"),
                         }
                     }
@@ -353,7 +481,9 @@ impl<'a> CmdLineRunner<'a> {
                 move || {
                     for line in BufReader::new(stderr).lines() {
                         match line {
-                            Ok(line) => tx.send(ChildProcessOutput::Stderr(line)).unwrap(),
+                            Ok(line) => {
+                                let _ = tx.send(ChildProcessOutput::Stderr(line));
+                            }
                             Err(e) => warn!("Failed to read stderr for {name}: {e}"),
                         }
                     }
@@ -376,7 +506,7 @@ impl<'a> CmdLineRunner<'a> {
             let tx = tx.clone();
             thread::spawn(move || {
                 for sig in &mut signals {
-                    tx.send(ChildProcessOutput::Signal(sig)).unwrap();
+                    let _ = tx.send(ChildProcessOutput::Signal(sig));
                 }
             });
         }
@@ -386,8 +516,10 @@ impl<'a> CmdLineRunner<'a> {
             if let Some(sighandle) = sighandle {
                 sighandle.close();
             }
-            tx.send(ChildProcessOutput::ExitStatus(status)).unwrap();
+            let _ = tx.send(ChildProcessOutput::ExitStatus(status));
         });
+
+        let timeout_guard = self.timeout.map(|t| TimeoutGuard::new(t, id));
 
         let mut combined_output = vec![];
         let mut status = None;
@@ -404,9 +536,10 @@ impl<'a> CmdLineRunner<'a> {
                     combined_output.push((line, OutputSource::Stderr));
                 }
                 ChildProcessOutput::ExitStatus(s) => {
-                    RUNNING_PIDS.lock().unwrap().remove(&id);
                     status = Some(s);
                 }
+                // Signal forwarding may send SIGTERM concurrently with TimeoutGuard.
+                // Duplicate signals are harmless: the process is already being terminated.
                 #[cfg(not(any(test, windows)))]
                 ChildProcessOutput::Signal(sig) => {
                     debug!("Received signal {sig}, forwarding to pgid {id}");
@@ -418,10 +551,19 @@ impl<'a> CmdLineRunner<'a> {
                 }
             }
         }
+        // Removed after rx loop drains (not inside ExitStatus arm) so kill_all
+        // can still reach this PID while output is being processed.
         RUNNING_PIDS.lock().unwrap().remove(&id);
+        if let Some(g) = &timeout_guard {
+            g.cancel();
+        }
+
         let status = status.unwrap();
 
         if !status.success() {
+            if let Some(duration) = timeout_guard.as_ref().and_then(|g| g.timed_out()) {
+                bail!("timed out after {duration:?}");
+            }
             self.on_error(combined_output, status)?;
         }
 
@@ -429,11 +571,19 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     fn execute_raw(mut self) -> Result<()> {
-        let status = self.spawn_with_etxtbsy_retry()?.wait()?;
-        match status.success() {
-            true => Ok(()),
-            false => self.on_error(vec![], status),
+        let mut cp = self.spawn_with_etxtbsy_retry()?;
+        let timeout_guard = self.timeout.map(|t| TimeoutGuard::new(t, cp.id()));
+        let status = cp.wait()?;
+        if let Some(g) = &timeout_guard {
+            g.cancel();
         }
+        if !status.success() {
+            if let Some(duration) = timeout_guard.as_ref().and_then(|g| g.timed_out()) {
+                bail!("timed out after {duration:?}");
+            }
+            return self.on_error(vec![], status);
+        }
+        Ok(())
     }
 
     /// Retry spawning a process if it fails with ETXTBSY (Text file busy).

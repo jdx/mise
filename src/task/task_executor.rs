@@ -1,6 +1,7 @@
 use crate::cli::args::ToolArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
+use crate::duration;
 use crate::file::{display_path, is_executable};
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
@@ -767,6 +768,19 @@ impl TaskExecutor {
         cmd = cmd.current_dir(dir);
         if self.dry_run {
             return Ok(());
+        }
+        let effective_timeout =
+            task.timeout
+                .as_ref()
+                .and_then(|s| match duration::parse_duration(s) {
+                    Ok(d) => Some(d),
+                    Err(e) => {
+                        warn!("invalid timeout {:?} for task {}: {e}", s, task.name);
+                        None
+                    }
+                });
+        if let Some(timeout) = effective_timeout {
+            cmd = cmd.with_timeout(timeout);
         }
         cmd.execute()?;
         trace!("{prefix} exited successfully");
