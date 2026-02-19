@@ -8,6 +8,7 @@ packages:
     files:
       - name: nsc
       - name: docker-credential-nsc
+      - name: bazel-credential-nsc
     version_constraint: "false"
     version_overrides:
       - version_constraint: semver("<= 0.0.158")
@@ -17,6 +18,19 @@ packages:
         format: tar.gz
         files:
           - name: nsc
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.0.391")
+        asset: nsc_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: nsc
+          - name: docker-credential-nsc
         checksum:
           type: github_release
           asset: checksums.txt

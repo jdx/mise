@@ -1,5 +1,31 @@
 # Changelog
 
+## [2026.2.17](https://github.com/jdx/mise/compare/v2026.2.16..v2026.2.17) - 2026-02-19
+
+### 🚀 Features
+
+- **(prepare)** update mtime of outputs after command is run by @halms in [#8243](https://github.com/jdx/mise/pull/8243)
+
+### 🐛 Bug Fixes
+
+- **(install)** use backend bin paths for per-tool postinstall hooks by @jdx in [#8234](https://github.com/jdx/mise/pull/8234)
+- **(use)** write to config.toml instead of config.local.toml by @jdx in [#8240](https://github.com/jdx/mise/pull/8240)
+- default legacy .mise.backend installs to non-explicit by @jean-humann in [#8245](https://github.com/jdx/mise/pull/8245)
+
+### 🚜 Refactor
+
+- **(config)** consolidate flat task_* settings into nested task.* by @jdx in [#8239](https://github.com/jdx/mise/pull/8239)
+
+### Chore
+
+- **(prepare)** refactor common code into ProviderBase by @halms in [#8246](https://github.com/jdx/mise/pull/8246)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (1)
+
+- [`namespacelabs/foundation/nsc`](https://github.com/namespacelabs/foundation/nsc)
+
 ## [2026.2.16](https://github.com/jdx/mise/compare/v2026.2.15..v2026.2.16) - 2026-02-17
 
 ### 🚀 Features
