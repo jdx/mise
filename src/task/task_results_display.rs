@@ -30,6 +30,7 @@ impl TaskResultsDisplay {
     /// Display final results and handle failures
     pub fn display_results(&self, num_tasks: usize, timer: std::time::Instant) {
         self.display_keep_order_output();
+        self.display_prefix_output();
         self.display_timing_summary(num_tasks, timer);
         self.maybe_print_failure_summary();
         self.exit_if_failed();
@@ -45,6 +46,11 @@ impl TaskResultsDisplay {
             .lock()
             .unwrap()
             .flush_all();
+    }
+
+    /// Flush any remaining debounced prefix output.
+    fn display_prefix_output(&self) {
+        self.output_handler.flush_prefix_all();
     }
 
     /// Display timing summary if enabled

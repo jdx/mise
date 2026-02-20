@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+
+# Regression test for https://github.com/jdx/mise/discussions/8255.
+# Expected behavior: task commands should keep TTY access in all of these cases.
+
+require_cmd python3
+
+run_in_pty() {
+	python3 - "$@" <<'PY'
+import os
+import pty
+import subprocess
+import sys
+
+cmd = sys.argv[1:]
+master_fd, slave_fd = pty.openpty()
+proc = subprocess.Popen(
+    cmd,
+    stdin=slave_fd,
+    stdout=slave_fd,
+    stderr=slave_fd,
+    close_fds=True,
+)
+os.close(slave_fd)
+
+output = bytearray()
+while True:
+    try:
+        chunk = os.read(master_fd, 4096)
+    except OSError:
+        break
+    if not chunk:
+        break
+    output.extend(chunk)
+os.close(master_fd)
+
+status = proc.wait()
+sys.stdout.buffer.write(bytes(output).replace(b"\r\n", b"\n"))
+sys.exit(status)
+PY
+}
+export -f run_in_pty
+
+cat <<EOF >mise.toml
+[tasks.dep1]
+run = 'echo dep1'
+
+[tasks.dep2]
+run = 'echo dep2'
+
+[tasks.no-dep]
+run = '''
+if tty -s; then
+  echo "This task runs in interactive mode"
+else
+  echo "This task does NOT run in interactive mode"
+  exit 1
+fi
+'''
+
+[tasks.example-one-dep]
+depends = ["dep1"]
+run = '''
+if tty -s; then
+  echo "This task runs in interactive mode"
+else
+  echo "This task does NOT run in interactive mode"
+  exit 1
+fi
+'''
+
+[tasks.example-two-deps]
+depends = ["dep1", "dep2"]
+run = '''
+if tty -s; then
+  echo "This task runs in interactive mode"
+else
+  echo "This task does NOT run in interactive mode"
+  exit 1
+fi
+'''
+EOF
+
+# Expected: interactive in all scenarios.
+assert_contains "run_in_pty mise run example-one-dep" "This task runs in interactive mode"
+assert_contains "run_in_pty mise run example-two-deps" "This task runs in interactive mode"
+
+assert_contains "MISE_TASK_OUTPUT=prefix run_in_pty mise run no-dep" "This task runs in interactive mode"

@@ -7,7 +7,7 @@ use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::task_source_checker::{save_checksum, sources_are_fresh, task_cwd};
-use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
+use crate::task::{Deps, FailedTasks, GetMatchingExt, Silent, Task};
 use crate::toolset::env_cache::CachedEnv;
 use crate::ui::{style, time};
 use duct::IntoExecutablePath;
@@ -53,6 +53,32 @@ pub struct TaskExecutor {
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StdioDirective {
+    Unchanged,
+    Inherit,
+    Null,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TaskStdioPlan {
+    stdin: StdioDirective,
+    stdout: StdioDirective,
+    stderr: StdioDirective,
+}
+
+impl Default for TaskStdioPlan {
+    fn default() -> Self {
+        Self {
+            // CmdLineRunner::new defaults:
+            // stdin = null, stdout = piped, stderr = piped
+            stdin: StdioDirective::Unchanged,
+            stdout: StdioDirective::Unchanged,
+            stderr: StdioDirective::Unchanged,
+        }
+    }
 }
 
 impl TaskExecutor {
@@ -641,30 +667,25 @@ impl TaskExecutor {
             );
         }
         let output = self.output(Some(task));
+        let stdio_plan = task_stdio_plan(output, &task.silent, raw, redactions.is_empty());
         cmd.with_pass_signals();
         match output {
             TaskOutput::Prefix => {
                 if !task.silent.suppresses_stdout() {
-                    cmd = cmd.with_on_stdout(|line| {
-                        if console::colors_enabled() {
-                            prefix_println!(prefix, "{line}\x1b[0m");
-                        } else {
-                            prefix_println!(prefix, "{line}");
-                        }
+                    let output_handler = self.output_handler.clone();
+                    let task_clone = task.clone();
+                    let prefix_str = prefix.to_string();
+                    cmd = cmd.with_on_stdout(move |line| {
+                        output_handler.on_prefix_stdout(&task_clone, prefix_str.clone(), line);
                     });
-                } else {
-                    cmd = cmd.stdout(Stdio::null());
                 }
                 if !task.silent.suppresses_stderr() {
-                    cmd = cmd.with_on_stderr(|line| {
-                        if console::colors_enabled() {
-                            self.eprint(task, prefix, &format!("{line}\x1b[0m"));
-                        } else {
-                            self.eprint(task, prefix, &line);
-                        }
+                    let output_handler = self.output_handler.clone();
+                    let task_clone = task.clone();
+                    let prefix_str = prefix.to_string();
+                    cmd = cmd.with_on_stderr(move |line| {
+                        output_handler.on_prefix_stderr(&task_clone, prefix_str.clone(), line);
                     });
-                } else {
-                    cmd = cmd.stderr(Stdio::null());
                 }
             }
             TaskOutput::KeepOrder => {
@@ -678,8 +699,6 @@ impl TaskExecutor {
                             .unwrap()
                             .on_stdout(&task_clone, prefix_str.clone(), line);
                     });
-                } else {
-                    cmd = cmd.stdout(Stdio::null());
                 }
                 if !task.silent.suppresses_stderr() {
                     let state = self.output_handler.keep_order_state.clone();
@@ -691,18 +710,9 @@ impl TaskExecutor {
                             .unwrap()
                             .on_stderr(&task_clone, prefix_str.clone(), line);
                     });
-                } else {
-                    cmd = cmd.stderr(Stdio::null());
                 }
             }
             TaskOutput::Replacing => {
-                // Replacing mode shows a progress indicator unless both streams are suppressed
-                if task.silent.suppresses_stdout() {
-                    cmd = cmd.stdout(Stdio::null());
-                }
-                if task.silent.suppresses_stderr() {
-                    cmd = cmd.stderr(Stdio::null());
-                }
                 // Show progress indicator except when both streams are fully suppressed
                 if !task.silent.suppresses_both() {
                     let pr = self.output_handler.task_prs.get(task).unwrap().clone();
@@ -718,8 +728,6 @@ impl TaskExecutor {
                             .unwrap()
                             .insert(prefix.to_string(), (SystemTime::now(), line));
                     });
-                } else {
-                    cmd = cmd.stdout(Stdio::null());
                 }
                 if !task.silent.suppresses_stderr() {
                     cmd = cmd.with_on_stderr(|line| {
@@ -729,29 +737,11 @@ impl TaskExecutor {
                             self.eprint(task, prefix, &line);
                         }
                     });
-                } else {
-                    cmd = cmd.stderr(Stdio::null());
                 }
             }
-            TaskOutput::Silent => {
-                cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
-            }
-            TaskOutput::Quiet | TaskOutput::Interleave => {
-                if raw || redactions.is_empty() {
-                    cmd = cmd.stdin(Stdio::inherit());
-                    if !task.silent.suppresses_stdout() {
-                        cmd = cmd.stdout(Stdio::inherit());
-                    } else {
-                        cmd = cmd.stdout(Stdio::null());
-                    }
-                    if !task.silent.suppresses_stderr() {
-                        cmd = cmd.stderr(Stdio::inherit());
-                    } else {
-                        cmd = cmd.stderr(Stdio::null());
-                    }
-                }
-            }
+            TaskOutput::Silent | TaskOutput::Quiet | TaskOutput::Interleave => {}
         }
+        cmd = apply_task_stdio_plan(cmd, stdio_plan);
         let dir = task_cwd(task, &config).await?;
         if !dir.exists() {
             self.eprint(
@@ -852,6 +842,69 @@ impl TaskExecutor {
     }
 }
 
+fn apply_task_stdio_plan<'a>(mut cmd: CmdLineRunner<'a>, plan: TaskStdioPlan) -> CmdLineRunner<'a> {
+    match plan.stdin {
+        StdioDirective::Unchanged => {}
+        StdioDirective::Inherit => cmd = cmd.stdin(Stdio::inherit()),
+        StdioDirective::Null => cmd = cmd.stdin(Stdio::null()),
+    }
+    match plan.stdout {
+        StdioDirective::Unchanged => {}
+        StdioDirective::Inherit => cmd = cmd.stdout(Stdio::inherit()),
+        StdioDirective::Null => cmd = cmd.stdout(Stdio::null()),
+    }
+    match plan.stderr {
+        StdioDirective::Unchanged => {}
+        StdioDirective::Inherit => cmd = cmd.stderr(Stdio::inherit()),
+        StdioDirective::Null => cmd = cmd.stderr(Stdio::null()),
+    }
+    cmd
+}
+
+fn task_stdio_plan(
+    output: TaskOutput,
+    silent: &Silent,
+    raw: bool,
+    redactions_empty: bool,
+) -> TaskStdioPlan {
+    let mut plan = TaskStdioPlan::default();
+
+    match output {
+        TaskOutput::Prefix | TaskOutput::KeepOrder | TaskOutput::Replacing | TaskOutput::Timed => {
+            // Keep stdin attached to the terminal so interactive commands still work
+            // even when stdout/stderr are captured for structured output modes.
+            plan.stdin = StdioDirective::Inherit;
+            if silent.suppresses_stdout() {
+                plan.stdout = StdioDirective::Null;
+            }
+            if silent.suppresses_stderr() {
+                plan.stderr = StdioDirective::Null;
+            }
+        }
+        TaskOutput::Silent => {
+            plan.stdout = StdioDirective::Null;
+            plan.stderr = StdioDirective::Null;
+        }
+        TaskOutput::Quiet | TaskOutput::Interleave => {
+            if raw || redactions_empty {
+                plan.stdin = StdioDirective::Inherit;
+                plan.stdout = if silent.suppresses_stdout() {
+                    StdioDirective::Null
+                } else {
+                    StdioDirective::Inherit
+                };
+                plan.stderr = if silent.suppresses_stderr() {
+                    StdioDirective::Null
+                } else {
+                    StdioDirective::Inherit
+                };
+            }
+        }
+    }
+
+    plan
+}
+
 /// Check if a file can be executed directly by the OS without a shell wrapper.
 /// On Unix, this checks the executable permission bit.
 /// On Windows, this checks for a known executable extension (.bat, .ps1, etc.)
@@ -902,4 +955,145 @@ fn shell_from_shebang(path: &Path) -> Option<Vec<String>> {
     };
     let args: Vec<String> = parts.map(|s| s.to_string()).collect();
     Some(once(shell.to_string()).chain(args).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{StdioDirective, TaskStdioPlan, task_stdio_plan};
+    use crate::task::Silent;
+    use crate::task::task_output::TaskOutput;
+
+    fn assert_plan(
+        plan: TaskStdioPlan,
+        stdin: StdioDirective,
+        stdout: StdioDirective,
+        stderr: StdioDirective,
+    ) {
+        assert_eq!(
+            (plan.stdin, plan.stdout, plan.stderr),
+            (stdin, stdout, stderr)
+        );
+    }
+
+    #[test]
+    fn test_interleave_without_redactions_inherits_all_streams() {
+        let plan = task_stdio_plan(TaskOutput::Interleave, &Silent::Off, false, true);
+        assert_plan(
+            plan,
+            StdioDirective::Inherit,
+            StdioDirective::Inherit,
+            StdioDirective::Inherit,
+        );
+    }
+
+    #[test]
+    fn test_interleave_with_redactions_keeps_default_streams_for_filtering() {
+        let plan = task_stdio_plan(TaskOutput::Interleave, &Silent::Off, false, false);
+        assert_plan(
+            plan,
+            StdioDirective::Unchanged,
+            StdioDirective::Unchanged,
+            StdioDirective::Unchanged,
+        );
+    }
+
+    #[test]
+    fn test_quiet_with_stdout_suppressed_keeps_stdin_and_stderr_interactive() {
+        let plan = task_stdio_plan(TaskOutput::Quiet, &Silent::Stdout, false, true);
+        assert_plan(
+            plan,
+            StdioDirective::Inherit,
+            StdioDirective::Null,
+            StdioDirective::Inherit,
+        );
+    }
+
+    #[test]
+    fn test_quiet_with_redactions_keeps_default_streams_for_filtering_even_when_silent_flags_set() {
+        let plan = task_stdio_plan(TaskOutput::Quiet, &Silent::Stderr, false, false);
+        assert_plan(
+            plan,
+            StdioDirective::Unchanged,
+            StdioDirective::Unchanged,
+            StdioDirective::Unchanged,
+        );
+    }
+
+    #[test]
+    fn test_quiet_with_raw_uses_inherited_stdio_even_with_redactions() {
+        let plan = task_stdio_plan(TaskOutput::Quiet, &Silent::Off, true, false);
+        assert_plan(
+            plan,
+            StdioDirective::Inherit,
+            StdioDirective::Inherit,
+            StdioDirective::Inherit,
+        );
+    }
+
+    #[test]
+    fn test_interleave_with_silent_bool_true_nulls_stdout_and_stderr() {
+        let plan = task_stdio_plan(TaskOutput::Interleave, &Silent::Bool(true), false, true);
+        assert_plan(
+            plan,
+            StdioDirective::Inherit,
+            StdioDirective::Null,
+            StdioDirective::Null,
+        );
+    }
+
+    #[test]
+    fn test_silent_output_nulls_both_streams_and_leaves_stdin_default() {
+        let plan = task_stdio_plan(TaskOutput::Silent, &Silent::Off, false, true);
+        assert_plan(
+            plan,
+            StdioDirective::Unchanged,
+            StdioDirective::Null,
+            StdioDirective::Null,
+        );
+    }
+
+    #[test]
+    fn test_structured_outputs_keep_stdin_interactive() {
+        for output in [
+            TaskOutput::Prefix,
+            TaskOutput::KeepOrder,
+            TaskOutput::Replacing,
+            TaskOutput::Timed,
+        ] {
+            let plan = task_stdio_plan(output, &Silent::Off, false, true);
+            assert_eq!(plan.stdin, StdioDirective::Inherit, "{output:?}");
+        }
+    }
+
+    #[test]
+    fn test_structured_outputs_apply_silent_stream_suppression() {
+        for output in [
+            TaskOutput::Prefix,
+            TaskOutput::KeepOrder,
+            TaskOutput::Replacing,
+            TaskOutput::Timed,
+        ] {
+            let stdout_suppressed = task_stdio_plan(output, &Silent::Stdout, false, true);
+            assert_plan(
+                stdout_suppressed,
+                StdioDirective::Inherit,
+                StdioDirective::Null,
+                StdioDirective::Unchanged,
+            );
+
+            let stderr_suppressed = task_stdio_plan(output, &Silent::Stderr, false, true);
+            assert_plan(
+                stderr_suppressed,
+                StdioDirective::Inherit,
+                StdioDirective::Unchanged,
+                StdioDirective::Null,
+            );
+        }
+    }
+
+    #[test]
+    fn test_regression_prefix_should_keep_tty_stdin_for_interactive_tasks() {
+        let plan = task_stdio_plan(TaskOutput::Prefix, &Silent::Off, false, true);
+        assert_eq!(plan.stdin, StdioDirective::Inherit);
+    }
 }

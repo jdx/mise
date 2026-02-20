@@ -525,6 +525,9 @@ impl Run {
 
     /// Initialize output handler and validate tasks
     fn setup_output_and_validate(&mut self, tasks: &Deps) -> Result<()> {
+        const PREFIX_FLUSH_TICK_MS: u64 = 20;
+        const PREFIX_FLUSH_DEBOUNCE_MS: u64 = 30;
+
         // Initialize OutputHandler AFTER is_linear is determined
         let output_config = crate::task::task_output_handler::OutputHandlerConfig {
             prefix: self.prefix,
@@ -558,6 +561,19 @@ impl Run {
                             }
                         }
                     }
+                    interval.tick().await;
+                }
+            });
+        }
+
+        if self.output(None) == TaskOutput::Prefix {
+            let output_handler = self.output_handler.as_ref().unwrap().clone();
+            tokio::spawn(async move {
+                let debounce = Duration::from_millis(PREFIX_FLUSH_DEBOUNCE_MS);
+                let mut interval =
+                    tokio::time::interval(Duration::from_millis(PREFIX_FLUSH_TICK_MS));
+                loop {
+                    output_handler.flush_prefix_debounced(debounce);
                     interval.tick().await;
                 }
             });
