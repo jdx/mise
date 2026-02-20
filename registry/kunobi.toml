@@ -1,0 +1,3 @@
+backends = ["aqua:kunobi-ninja/kunobi-releases"]
+description = "Kubernetes IDE for managing clusters, resources, and workloads"
+test = { cmd = "kunobi --version", expected = "{{version}}" }
