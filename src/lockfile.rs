@@ -394,6 +394,47 @@ impl Lockfile {
         platforms
     }
 
+    /// Keep only tools matching configured short names or backend identifiers.
+    /// Also removes conda packages that become unreferenced.
+    pub fn retain_tools_by_short_or_backend(
+        &mut self,
+        keep_shorts: &BTreeSet<String>,
+        keep_backends: &BTreeSet<String>,
+    ) {
+        self.tools.retain(|short, versions| {
+            Self::should_keep_tool(short, versions, keep_shorts, keep_backends)
+        });
+        self.cleanup_unreferenced_conda_packages();
+    }
+
+    /// Return tool keys that would be removed by `retain_tools_by_short_or_backend`.
+    pub fn stale_tool_shorts(
+        &self,
+        keep_shorts: &BTreeSet<String>,
+        keep_backends: &BTreeSet<String>,
+    ) -> BTreeSet<String> {
+        self.tools
+            .iter()
+            .filter_map(|(short, versions)| {
+                (!Self::should_keep_tool(short, versions, keep_shorts, keep_backends))
+                    .then_some(short.clone())
+            })
+            .collect()
+    }
+
+    fn should_keep_tool(
+        short: &str,
+        versions: &[LockfileTool],
+        keep_shorts: &BTreeSet<String>,
+        keep_backends: &BTreeSet<String>,
+    ) -> bool {
+        keep_shorts.contains(short)
+            || versions
+                .iter()
+                .filter_map(|v| v.backend.as_ref())
+                .any(|backend| keep_backends.contains(backend))
+    }
+
     /// Update or add platform info for a tool version
     /// Merges with existing info, preserving fields we don't have new values for
     pub fn set_platform_info(
@@ -1364,7 +1405,54 @@ fn format(mut doc: DocumentMut) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    fn basic_tool(version: &str, backend: &str) -> LockfileTool {
+        LockfileTool {
+            version: version.to_string(),
+            backend: Some(backend.to_string()),
+            options: BTreeMap::new(),
+            env: None,
+            platforms: BTreeMap::new(),
+        }
+    }
+
+    fn tool_with_conda_dep(
+        version: &str,
+        backend: &str,
+        platform: &str,
+        dep: &str,
+    ) -> LockfileTool {
+        let mut platforms = BTreeMap::new();
+        platforms.insert(
+            platform.to_string(),
+            PlatformInfo {
+                checksum: None,
+                size: None,
+                url: None,
+                url_api: None,
+                conda_deps: Some(vec![dep.to_string()]),
+            },
+        );
+        LockfileTool {
+            version: version.to_string(),
+            backend: Some(backend.to_string()),
+            options: BTreeMap::new(),
+            env: None,
+            platforms,
+        }
+    }
+
+    fn add_test_conda_package(lockfile: &mut Lockfile, platform: &str, basename: &str) {
+        lockfile.set_conda_package(
+            platform,
+            basename,
+            CondaPackageInfo {
+                url: format!("https://example.com/{basename}.conda"),
+                checksum: Some(format!("sha256:{basename}")),
+            },
+        );
+    }
 
     #[test]
     fn test_array_format_required() {
@@ -1802,6 +1890,109 @@ backend = "conda:jq"
         assert_eq!(lockfile.conda_packages["macos-arm64"].len(), 1);
         assert!(lockfile.conda_packages["macos-arm64"].contains_key("referenced-pkg"));
         assert!(!lockfile.conda_packages["macos-arm64"].contains_key("unreferenced-pkg"));
+    }
+
+    #[test]
+    fn test_retain_tools_by_short_prunes_removed_tools() {
+        let mut lockfile = Lockfile::default();
+        lockfile
+            .tools
+            .insert("dummy".to_string(), vec![basic_tool("1.0.0", "asdf:dummy")]);
+        lockfile
+            .tools
+            .insert("tiny".to_string(), vec![basic_tool("2.1.0", "asdf:tiny")]);
+
+        let keep_shorts = BTreeSet::from(["tiny".to_string()]);
+        lockfile.retain_tools_by_short_or_backend(&keep_shorts, &BTreeSet::new());
+
+        assert!(!lockfile.tools.contains_key("dummy"));
+        assert!(lockfile.tools.contains_key("tiny"));
+    }
+
+    #[test]
+    fn test_stale_tool_shorts_identifies_removed_tools() {
+        let mut lockfile = Lockfile::default();
+        lockfile
+            .tools
+            .insert("dummy".to_string(), vec![basic_tool("1.0.0", "asdf:dummy")]);
+        lockfile
+            .tools
+            .insert("tiny".to_string(), vec![basic_tool("2.1.0", "asdf:tiny")]);
+
+        let keep_shorts = BTreeSet::from(["tiny".to_string()]);
+        let stale = lockfile.stale_tool_shorts(&keep_shorts, &BTreeSet::new());
+        assert_eq!(stale, BTreeSet::from(["dummy".to_string()]));
+    }
+
+    #[test]
+    fn test_stale_tool_shorts_respects_backend_identifiers() {
+        let mut lockfile = Lockfile::default();
+        lockfile.tools.insert(
+            "jq".to_string(),
+            vec![basic_tool("1.7.1", "aqua:jqlang/jq")],
+        );
+
+        let keep_backends = BTreeSet::from(["aqua:jqlang/jq".to_string()]);
+        let stale = lockfile.stale_tool_shorts(&BTreeSet::new(), &keep_backends);
+        assert!(stale.is_empty());
+    }
+
+    #[test]
+    fn test_retain_tools_by_short_cleans_unreferenced_conda_packages() {
+        let mut lockfile = Lockfile::default();
+
+        add_test_conda_package(&mut lockfile, "linux-x64", "keep-pkg");
+        add_test_conda_package(&mut lockfile, "linux-x64", "drop-pkg");
+
+        lockfile.tools.insert(
+            "tiny".to_string(),
+            vec![tool_with_conda_dep(
+                "2.1.0",
+                "conda:tiny",
+                "linux-x64",
+                "keep-pkg",
+            )],
+        );
+        lockfile.tools.insert(
+            "dummy".to_string(),
+            vec![tool_with_conda_dep(
+                "1.0.0",
+                "conda:dummy",
+                "linux-x64",
+                "drop-pkg",
+            )],
+        );
+
+        let keep_shorts = BTreeSet::from(["tiny".to_string()]);
+        lockfile.retain_tools_by_short_or_backend(&keep_shorts, &BTreeSet::new());
+
+        assert!(lockfile.tools.contains_key("tiny"));
+        assert!(!lockfile.tools.contains_key("dummy"));
+
+        let linux_packages = lockfile.conda_packages.get("linux-x64").unwrap();
+        assert!(linux_packages.contains_key("keep-pkg"));
+        assert!(!linux_packages.contains_key("drop-pkg"));
+    }
+
+    #[test]
+    fn test_retain_tools_by_short_or_backend_preserves_legacy_keyed_entries() {
+        let mut lockfile = Lockfile::default();
+        lockfile.tools.insert(
+            "jq".to_string(),
+            vec![LockfileTool {
+                version: "1.7.1".to_string(),
+                backend: Some("aqua:jqlang/jq".to_string()),
+                options: BTreeMap::new(),
+                env: None,
+                platforms: BTreeMap::new(),
+            }],
+        );
+
+        let keep_shorts = BTreeSet::from(["aqua:jqlang/jq".to_string()]);
+        let keep_backends = BTreeSet::from(["aqua:jqlang/jq".to_string()]);
+        lockfile.retain_tools_by_short_or_backend(&keep_shorts, &keep_backends);
+
+        assert!(lockfile.tools.contains_key("jq"));
     }
 
     #[test]
