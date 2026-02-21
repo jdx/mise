@@ -129,6 +129,36 @@ for (const key in doc) {
 
 const schema = JSON.parse(fs.readFileSync("schema/mise.json", "utf-8"));
 schema["$defs"].settings.properties = settings;
+
+// Generate task and task_template from task_props to avoid unevaluatedProperties
+// (which Tombi doesn't support) while keeping extends only on tasks, not templates.
+const taskProps = schema["$defs"].task_props;
+
+// task_template: task_props + additionalProperties: false
+schema["$defs"].task_template = {
+  description: "task template that can be extended by tasks",
+  properties: { ...taskProps.properties },
+  additionalProperties: false,
+  type: "object",
+};
+
+// task (object variant): task_props + extends + additionalProperties: false
+const taskObjectVariant = {
+  properties: {
+    ...taskProps.properties,
+    extends: {
+      description: "name of the task template to extend",
+      type: "string",
+    },
+  },
+  additionalProperties: false,
+  type: "object",
+};
+
+// Overwrite the object variant (last entry) in task oneOf with inlined properties
+const taskDef = schema["$defs"].task;
+taskDef.oneOf[taskDef.oneOf.length - 1] = taskObjectVariant;
+
 fs.writeFileSync("schema/mise.json.tmp", JSON.stringify(schema));
 
 child_process.execSync("jq . < schema/mise.json.tmp > schema/mise.json");
@@ -141,9 +171,9 @@ const taskSchema = JSON.parse(
 taskSchema["$defs"].env_directive = schema["$defs"].env_directive;
 taskSchema["$defs"].env = schema["$defs"].env;
 taskSchema["$defs"].task_run_entry = schema["$defs"].task_run_entry;
-taskSchema["$defs"].task_props = schema["$defs"].task_props;
-taskSchema["$defs"].task_template = schema["$defs"].task_template;
 taskSchema["$defs"].task = schema["$defs"].task;
+taskSchema["$defs"].task_template = schema["$defs"].task_template;
+delete taskSchema["$defs"].task_props;
 fs.writeFileSync("schema/mise-task.json.tmp", JSON.stringify(taskSchema));
 child_process.execSync(
   "jq . < schema/mise-task.json.tmp > schema/mise-task.json",

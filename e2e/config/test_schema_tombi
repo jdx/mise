@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+# Validate that the mise JSON schema works correctly with tombi (strict mode).
+# Regression test for https://github.com/jdx/mise/discussions/8254
+# where unevaluatedProperties caused tombi to reject valid task properties.
+
+# Install tombi via mise
+mise use -g tombi
+
+SCHEMA_PATH="$ROOT/schema/mise.json"
+TOMBI="mise x tombi -- tombi"
+
+# Set up tombi config pointing to local schema
+cat >"$HOME/tombi.toml" <<EOF
+toml-version = "v1.0.0"
+
+[schema]
+enabled = true
+strict = true
+
+[[schemas]]
+path = "file://$SCHEMA_PATH"
+include = ["mise.toml"]
+EOF
+
+# Create a mise.toml exercising task properties that were previously broken
+cat >"$HOME/workdir/mise.toml" <<'TOML'
+[task_templates.base]
+quiet = true
+dir = "{{config_root}}"
+
+[tasks.build]
+description = "Build the project"
+depends = ["lint"]
+run = "cargo build"
+dir = "{{config_root}}"
+quiet = true
+usage = "build [args]"
+
+[tasks.lint]
+extends = "base"
+run = "cargo clippy"
+description = "Lint the project"
+TOML
+
+# tombi lint should succeed with no errors (warnings about table order are ok)
+cd "$HOME/workdir"
+assert_succeed "$TOMBI lint --offline --no-cache --quiet mise.toml"
+
+# Verify that invalid properties on tasks are rejected
+cat >"$HOME/workdir/mise-bad.toml" <<'TOML'
+[tasks.build]
+description = "Build the project"
+run = "cargo build"
+bogus_invalid_property = "should fail"
+TOML
+
+cat >"$HOME/tombi.toml" <<EOF
+toml-version = "v1.0.0"
+
+[schema]
+enabled = true
+strict = true
+
+[[schemas]]
+path = "file://$SCHEMA_PATH"
+include = ["mise-bad.toml", "mise-bad-tmpl.toml"]
+EOF
+
+assert_fail "$TOMBI lint --offline --no-cache --quiet mise-bad.toml"
+
+# Verify that extends is rejected on task_templates (not supported at runtime)
+cat >"$HOME/workdir/mise-bad-tmpl.toml" <<'TOML'
+[task_templates.derived]
+extends = "base"
+quiet = true
+TOML
+
+assert_fail "$TOMBI lint --offline --no-cache --quiet mise-bad-tmpl.toml"
