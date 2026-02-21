@@ -83,6 +83,15 @@ backend = "cargo:usage-cli"
 [[tools.communique]]
 version = "0.1.8"
 backend = "github:jdx/communique"
+"platforms.linux-arm64" = { checksum = "sha256:3388df35e8f8c5920698a0e0558ab175cde3db2a7606782f1d7a8170aaa6756a", url = "https://github.com/jdx/communique/releases/download/v0.1.8/communique-aarch64-unknown-linux-gnu.tar.gz", url_api = "https://api.github.com/repos/jdx/communique/releases/assets/357980531"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:3388df35e8f8c5920698a0e0558ab175cde3db2a7606782f1d7a8170aaa6756a", url = "https://github.com/jdx/communique/releases/download/v0.1.8/communique-aarch64-unknown-linux-gnu.tar.gz", url_api = "https://api.github.com/repos/jdx/communique/releases/assets/357980531"}
+"platforms.linux-x64" = { checksum = "sha256:bca0dcb9588d6fc186641c8135efc660f6f2d45c56c28568279538fd04a7e757", url = "https://github.com/jdx/communique/releases/download/v0.1.8/communique-x86_64-unknown-linux-gnu.tar.gz", url_api = "https://api.github.com/repos/jdx/communique/releases/assets/357980500"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:bca0dcb9588d6fc186641c8135efc660f6f2d45c56c28568279538fd04a7e757", url = "https://github.com/jdx/communique/releases/download/v0.1.8/communique-x86_64-unknown-linux-gnu.tar.gz", url_api = "https://api.github.com/repos/jdx/communique/releases/assets/357980500"}
+"platforms.linux-x64-musl" = { checksum = "sha256:bca0dcb9588d6fc186641c8135efc660f6f2d45c56c28568279538fd04a7e757", url = "https://github.com/jdx/communique/releases/download/v0.1.8/communique-x86_64-unknown-linux-gnu.tar.gz", url_api = "https://api.github.com/repos/jdx/communique/releases/assets/357980500"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:bca0dcb9588d6fc186641c8135efc660f6f2d45c56c28568279538fd04a7e757", url = "https://github.com/jdx/communique/releases/download/v0.1.8/communique-x86_64-unknown-linux-gnu.tar.gz", url_api = "https://api.github.com/repos/jdx/communique/releases/assets/357980500"}
+"platforms.macos-arm64" = { checksum = "sha256:ff6b529ef3b5d74c741948dc9e571f34da77f65e45adfed867cbb42806609670", url = "https://github.com/jdx/communique/releases/download/v0.1.8/communique-aarch64-apple-darwin.tar.gz", url_api = "https://api.github.com/repos/jdx/communique/releases/assets/357980544"}
+"platforms.windows-x64" = { checksum = "sha256:79bc907c655200c0fc456c63852db928bec272d76d154d85067c0f38211710d9", url = "https://github.com/jdx/communique/releases/download/v0.1.8/communique-x86_64-pc-windows-msvc.zip", url_api = "https://api.github.com/repos/jdx/communique/releases/assets/357980700"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:79bc907c655200c0fc456c63852db928bec272d76d154d85067c0f38211710d9", url = "https://github.com/jdx/communique/releases/download/v0.1.8/communique-x86_64-pc-windows-msvc.zip", url_api = "https://api.github.com/repos/jdx/communique/releases/assets/357980700"}
 
 [[tools.fd]]
 version = "10.3.0"
