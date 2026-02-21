@@ -1,11 +1,13 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use eyre::Result;
 use filetime::FileTime;
 
 use crate::cmd::CmdLineRunner;
+use crate::config::config_file::ConfigFile;
 use crate::config::{Config, Settings};
 use crate::parallel;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -134,68 +136,12 @@ impl PrepareEngine {
                     continue;
                 }
 
-                let provider: Box<dyn PrepareProvider> = if BUILTIN_PROVIDERS.contains(&id.as_str())
+                if let Some(provider) =
+                    Self::build_provider(id, &config_root, provider_config.clone())
                 {
-                    // Built-in provider with specialized implementation
-                    match id.as_str() {
-                        // Node.js package managers
-                        "npm" => Box::new(NpmPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        "yarn" => Box::new(YarnPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        "pnpm" => Box::new(PnpmPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        "bun" => Box::new(BunPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        // Go
-                        "go" => Box::new(GoPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        // Python
-                        "pip" => Box::new(PipPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        "poetry" => Box::new(PoetryPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        "uv" => Box::new(UvPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        // Ruby
-                        "bundler" => Box::new(BundlerPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        // PHP
-                        "composer" => Box::new(ComposerPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        _ => continue, // Skip unimplemented built-ins
+                    if provider.is_applicable() {
+                        providers.push(provider);
                     }
-                } else {
-                    // Custom provider
-                    Box::new(CustomPrepareProvider::new(
-                        id.clone(),
-                        provider_config.clone(),
-                        &config_root,
-                    ))
-                };
-
-                if provider.is_applicable() {
-                    providers.push(provider);
                 }
             }
         }
@@ -204,6 +150,106 @@ impl PrepareEngine {
         providers.retain(|p| !disabled.contains(&p.id().to_string()));
 
         Ok(providers)
+    }
+
+    /// Build a provider from its ID, config root, and configuration
+    fn build_provider(
+        id: &str,
+        config_root: &Path,
+        provider_config: super::rule::PrepareProviderConfig,
+    ) -> Option<Box<dyn PrepareProvider>> {
+        if BUILTIN_PROVIDERS.contains(&id) {
+            match id {
+                "npm" => Some(Box::new(NpmPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "yarn" => Some(Box::new(YarnPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "pnpm" => Some(Box::new(PnpmPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "bun" => Some(Box::new(BunPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "go" => Some(Box::new(GoPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "pip" => Some(Box::new(PipPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "poetry" => Some(Box::new(PoetryPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "uv" => Some(Box::new(UvPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "bundler" => Some(Box::new(BundlerPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "composer" => Some(Box::new(ComposerPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                _ => None,
+            }
+        } else {
+            Some(Box::new(CustomPrepareProvider::new(
+                id.to_string(),
+                provider_config,
+                config_root,
+            )))
+        }
+    }
+
+    /// Add providers from additional config files (e.g., monorepo subdirectory configs).
+    ///
+    /// Unlike `discover_providers`, this does NOT filter by project root, since these
+    /// configs are intentionally from different directories (monorepo subdirectories).
+    pub fn add_config_files(
+        &mut self,
+        config_files: impl IntoIterator<Item = Arc<dyn ConfigFile>>,
+    ) {
+        let mut seen_ids: HashSet<String> =
+            self.providers.iter().map(|p| p.id().to_string()).collect();
+        let mut disabled: Vec<String> = vec![];
+
+        for cf in config_files {
+            let Some(prepare_config) = cf.prepare_config() else {
+                continue;
+            };
+
+            disabled.extend(prepare_config.disable.iter().cloned());
+            let config_root = cf.config_root();
+
+            for (id, provider_config) in &prepare_config.providers {
+                if !seen_ids.insert(id.clone()) {
+                    continue;
+                }
+
+                if let Some(provider) =
+                    Self::build_provider(id, &config_root, provider_config.clone())
+                {
+                    if provider.is_applicable() {
+                        self.providers.push(provider);
+                    }
+                }
+            }
+        }
+
+        if !disabled.is_empty() {
+            self.providers
+                .retain(|p| !disabled.contains(&p.id().to_string()));
+        }
     }
 
     /// List all discovered providers

@@ -279,19 +279,6 @@ impl Run {
         };
         let _ = ts.install_missing_versions(&mut config, &opts).await?;
 
-        // Run auto-enabled prepare steps (unless --no-prepare)
-        if !self.no_prepare {
-            let env = ts.env_with_path(&config).await?;
-            let engine = PrepareEngine::new(&config)?;
-            engine
-                .run(PrepareOptions {
-                    auto_only: true, // Only run providers with auto=true
-                    env,
-                    ..Default::default()
-                })
-                .await?;
-        }
-
         if !self.skip_deps {
             self.skip_deps = Settings::get().task.skip_depends;
         }
@@ -314,6 +301,31 @@ impl Run {
             }
         }
         time!("run get_task_lists");
+
+        // Run auto-enabled prepare steps (unless --no-prepare)
+        // This runs after task resolution so we can discover prepare providers
+        // from monorepo subdirectory configs referenced by the resolved tasks.
+        if !self.no_prepare {
+            let env = ts.env_with_path(&config).await?;
+            let mut engine = PrepareEngine::new(&config)?;
+
+            // Collect subdirectory config files from resolved tasks
+            let subdir_configs: Vec<_> = task_list
+                .iter()
+                .filter_map(|task| task.cf.clone())
+                .collect();
+            if !subdir_configs.is_empty() {
+                engine.add_config_files(subdir_configs);
+            }
+
+            engine
+                .run(PrepareOptions {
+                    auto_only: true, // Only run providers with auto=true
+                    env,
+                    ..Default::default()
+                })
+                .await?;
+        }
 
         // Apply global timeout for entire run if configured
         let timeout = if let Some(timeout_str) = &self.timeout {

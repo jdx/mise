@@ -350,3 +350,36 @@ assert_not_contains "mise prepare --list" "custom_sub"
 	assert_contains "mise prepare --list" "custom_sub"
 	assert_not_contains "mise prepare --list" "custom_root"
 )
+
+# Clean up previous test
+rm -rf subproject root_input.txt root_output.txt mise.toml
+
+# Test that monorepo subdirectory prepare steps run when using //subdir:task from root
+export MISE_EXPERIMENTAL=1
+mkdir -p subapp
+
+cat >mise.toml <<'EOF'
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["subapp"]
+EOF
+
+cat >subapp/mise.toml <<'EOF'
+[prepare.subapp_deps]
+auto = true
+sources = ["input.txt"]
+outputs = ["deps_marker"]
+run = "touch deps_marker"
+
+[tasks.check]
+run = "test -f deps_marker && echo SUBAPP_PREPARE_OK || echo SUBAPP_PREPARE_MISSING"
+EOF
+
+touch subapp/input.txt
+
+# Run the task from root using monorepo syntax
+assert_contains "mise run //subapp:check" "SUBAPP_PREPARE_OK"
+
+# Clean up
+rm -rf subapp mise.toml
