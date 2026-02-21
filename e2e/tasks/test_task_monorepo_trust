@@ -56,4 +56,4 @@ EOF
 export MISE_TRUSTED_CONFIG_PATHS=""
 
 # Verify trust error appears for the parent config (command should fail)
-assert_contains "mise -C ../parent-dir tasks ls 2>&1 || true" "are not trusted"
+assert_contains "MISE_YES=0 mise -C ../parent-dir tasks ls 2>&1 || true" "are not trusted"
