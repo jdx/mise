@@ -258,8 +258,12 @@ Directories where mise stops searching for config files. By default, mise
 will search from the current directory up to the root of the filesystem.
 
 Setting this to a list of directories will stop the search when one of
-those directories is reached. This is useful to prevent mise from searching
-outside of a project directory.
+those directories is reached. Config files **in** the ceiling directory
+itself are excluded—only directories below it are searched. For example,
+if `MISE_CEILING_PATHS="/home/user"`, then `/home/user/mise.toml` is
+**not** loaded, but `/home/user/projects/myapp/mise.toml` is.
+
+This follows the same semantics as Git's `GIT_CEILING_DIRECTORIES`.
 
 This is an early-init setting: it must be set in `.miserc.toml`, environment
 variables, or CLI flags. Setting it in `mise.toml` will have no effect because
