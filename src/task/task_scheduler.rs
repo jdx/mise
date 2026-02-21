@@ -162,7 +162,13 @@ impl Scheduler {
                         drained_any = true;
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
                         if should_stop() && !continue_on_error {
-                            break;
+                            // Still allow post-dep (cleanup) tasks to run on failure
+                            let mut deps = deps_for_remove.lock().await;
+                            if !deps.is_post_dep(&task) {
+                                deps.remove(&task);
+                                continue;
+                            }
+                            drop(deps);
                         }
                         spawn_job(task, deps_for_remove).await?;
                     }
@@ -173,15 +179,24 @@ impl Scheduler {
 
             // Check if we should stop early due to failure
             if should_stop() && !continue_on_error {
-                trace!("scheduler: stopping early due to failure, cleaning up main deps");
-                // Clean up the dependency graph to ensure the main_done signal is sent
+                trace!("scheduler: stopping early due to failure, cleaning up non-post-dep tasks");
+                // Clean up non-post-dep tasks so the graph can drain, but
+                // keep post-dep (cleanup) tasks so they still run
                 let mut deps = main_deps.lock().await;
-                let tasks_to_remove: Vec<Task> = deps.all().cloned().collect();
+                let tasks_to_remove: Vec<Task> = deps
+                    .all()
+                    .filter(|t| !deps.is_post_dep(t))
+                    .cloned()
+                    .collect();
                 for task in tasks_to_remove {
                     deps.remove(&task);
                 }
+                if deps.is_empty() {
+                    drop(deps);
+                    break;
+                }
                 drop(deps);
-                break;
+                // Don't break — continue loop to process remaining post-dep tasks
             }
 
             // Exit if main deps finished and nothing is running/queued
@@ -195,7 +210,15 @@ impl Scheduler {
                 m = sched_rx.recv() => {
                     if let Some((task, deps_for_remove)) = m {
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
-                        if should_stop() && !continue_on_error { break; }
+                        if should_stop() && !continue_on_error {
+                            // Still allow post-dep (cleanup) tasks to run on failure
+                            let mut deps = deps_for_remove.lock().await;
+                            if !deps.is_post_dep(&task) {
+                                deps.remove(&task);
+                                continue;
+                            }
+                            drop(deps);
+                        }
                         spawn_job(task, deps_for_remove).await?;
                     } else {
                         // channel closed; rely on main_done/in_flight to exit soon

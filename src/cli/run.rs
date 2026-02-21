@@ -409,16 +409,20 @@ impl Run {
         ctx: crate::task::task_scheduler::SpawnContext,
     ) -> Result<()> {
         // If we're already stopping due to a previous failure and not in
-        // continue-on-error mode, do not launch this task. Ensure we remove
-        // it from the dependency graph so the scheduler can make progress.
+        // continue-on-error mode, do not launch this task unless it's a
+        // post-dependency (cleanup task that should run even on failure).
         if this.is_stopping() && !this.continue_on_error {
-            trace!(
-                "aborting spawn before start (not continue-on-error): {} {}",
-                task.name,
-                task.args.join(" ")
-            );
-            deps_for_remove.lock().await.remove(&task);
-            return Ok(());
+            let mut deps = deps_for_remove.lock().await;
+            if !deps.is_post_dep(&task) {
+                trace!(
+                    "aborting spawn before start (not continue-on-error): {} {}",
+                    task.name,
+                    task.args.join(" ")
+                );
+                deps.remove(&task);
+                return Ok(());
+            }
+            drop(deps);
         }
         let needs_permit = task_needs_permit(&task);
         let permit_opt = if needs_permit {
@@ -430,18 +434,22 @@ impl Run {
                 wait_start.elapsed().as_millis()
             );
             // If a failure occurred while we were waiting for a permit and we're not
-            // in continue-on-error mode, skip launching this task. This prevents
-            // subsequently queued tasks (e.g., from CLI ":::" groups) from running
-            // after the first failure when --jobs=1 and ensures immediate stop.
+            // in continue-on-error mode, skip launching this task unless it's a
+            // post-dependency (cleanup task). This prevents subsequently queued
+            // tasks from running after failure, while still allowing cleanup.
             if this.is_stopping() && !this.continue_on_error {
-                trace!(
-                    "aborting spawn after failure (not continue-on-error): {} {}",
-                    task.name,
-                    task.args.join(" ")
-                );
-                // Remove from deps so the scheduler can drain and not hang
-                deps_for_remove.lock().await.remove(&task);
-                return Ok(());
+                let mut deps = deps_for_remove.lock().await;
+                if !deps.is_post_dep(&task) {
+                    trace!(
+                        "aborting spawn after failure (not continue-on-error): {} {}",
+                        task.name,
+                        task.args.join(" ")
+                    );
+                    // Remove from deps so the scheduler can drain and not hang
+                    deps.remove(&task);
+                    return Ok(());
+                }
+                drop(deps);
             }
             p
         } else {

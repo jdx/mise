@@ -18,6 +18,7 @@ pub struct Deps {
     pub graph: DiGraph<Task, ()>,
     sent: HashSet<TaskKey>, // tasks that have already started so should not run again
     removed: HashSet<TaskKey>, // tasks that have already finished to track if we are in an infinitve loop
+    post_deps: HashSet<TaskKey>, // tasks that are post-dependencies (should run even on failure)
     tx: mpsc::UnboundedSender<Option<Task>>,
     // not clone, notify waiters via tx None
 }
@@ -46,6 +47,7 @@ impl Deps {
         let mut indexes = HashMap::new();
         let mut stack = vec![];
         let mut seen = HashSet::new();
+        let mut post_deps = HashSet::new();
 
         let mut add_idx = |task: &Task, graph: &mut DiGraph<Task, ()>| {
             *indexes
@@ -75,6 +77,7 @@ impl Deps {
             for b in post {
                 let b_idx = add_idx(&b, &mut graph);
                 graph.update_edge(b_idx, a_idx, ());
+                post_deps.insert(task_key(&b));
                 stack.push(b.clone());
             }
             seen.insert(a);
@@ -87,6 +90,7 @@ impl Deps {
             tx,
             sent,
             removed,
+            post_deps,
         })
     }
 
@@ -130,6 +134,11 @@ impl Deps {
 
     pub fn is_empty(&self) -> bool {
         self.graph.node_count() == 0
+    }
+
+    /// Check if a task is a post-dependency (cleanup task that should run even on failure)
+    pub fn is_post_dep(&self, task: &Task) -> bool {
+        self.post_deps.contains(&task_key(task))
     }
 
     // use contracts::{ensures, requires};

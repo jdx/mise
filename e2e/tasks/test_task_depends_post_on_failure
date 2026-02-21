@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+# Test that depends_post tasks run even when the parent task fails
+cat <<EOF >mise.toml
+[tasks.cleanup]
+run = "echo cleanup ran"
+
+[tasks.deploy]
+depends_post = ["cleanup"]
+run = "echo deploying && exit 1"
+EOF
+
+# The task should fail (deploy exits 1) but cleanup should still run
+assert_fail "mise run deploy" "cleanup ran"
+
+# Test with multiple post-deps: all should run on failure
+cat <<EOF >mise.toml
+[tasks.notify]
+run = "echo notified"
+
+[tasks.cleanup]
+run = "echo cleaned up"
+
+[tasks.deploy]
+depends_post = ["cleanup", "notify"]
+run = "echo deploying && exit 1"
+EOF
+
+assert_fail "mise run deploy" "cleaned up"
+assert_fail "mise run deploy" "notified"
+
+# Test that depends_post still works on success (no regression)
+cat <<EOF >mise.toml
+[tasks.cleanup]
+run = "echo cleanup ran"
+
+[tasks.deploy]
+depends_post = ["cleanup"]
+run = "echo deployed"
+EOF
+
+assert_contains "mise run deploy" "cleanup ran"
+assert_contains "mise run deploy" "deployed"
