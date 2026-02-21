@@ -8,6 +8,9 @@ use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
 use crate::redactions::Redactor;
 use color_eyre::Result;
 use duct::{Expression, IntoExecutablePath};
@@ -138,9 +141,13 @@ impl<'a> CmdLineRunner<'a> {
         let pids = RUNNING_PIDS.lock().unwrap();
         for pid in pids.iter() {
             let pid = *pid as i32;
-            trace!("{signal}: {pid}");
-            if let Err(e) = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), signal) {
-                debug!("Failed to kill cmd {pid}: {e}");
+            let nix_pid = nix::unistd::Pid::from_raw(pid);
+            trace!("{signal}: pgid {pid}");
+            if nix::sys::signal::killpg(nix_pid, signal).is_err() {
+                trace!("killpg failed for {pid}, falling back to kill");
+                if let Err(e) = nix::sys::signal::kill(nix_pid, signal) {
+                    debug!("Failed to kill cmd {pid}: {e}");
+                }
             }
         }
     }
@@ -299,6 +306,16 @@ impl<'a> CmdLineRunner<'a> {
             let _write_lock = RAW_LOCK.write().unwrap();
             return self.execute_raw();
         }
+        #[cfg(unix)]
+        unsafe {
+            self.cmd.pre_exec(|| {
+                let _ = nix::unistd::setpgid(
+                    nix::unistd::Pid::from_raw(0),
+                    nix::unistd::Pid::from_raw(0),
+                );
+                Ok(())
+            });
+        }
         let mut cp = self
             .spawn_with_etxtbsy_retry()
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
@@ -383,11 +400,11 @@ impl<'a> CmdLineRunner<'a> {
                 }
                 #[cfg(not(any(test, windows)))]
                 ChildProcessOutput::Signal(sig) => {
-                    if sig != SIGINT {
-                        debug!("Received signal {sig}, {id}");
-                        let pid = nix::unistd::Pid::from_raw(id as i32);
-                        let sig = nix::sys::signal::Signal::try_from(sig).unwrap();
-                        nix::sys::signal::kill(pid, sig)?;
+                    debug!("Received signal {sig}, forwarding to pgid {id}");
+                    let pgid = nix::unistd::Pid::from_raw(id as i32);
+                    let sig = nix::sys::signal::Signal::try_from(sig).unwrap();
+                    if nix::sys::signal::killpg(pgid, sig).is_err() {
+                        let _ = nix::sys::signal::kill(pgid, sig);
                     }
                 }
             }
