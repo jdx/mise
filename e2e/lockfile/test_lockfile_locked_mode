@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+# Test --locked mode enforcement during install and dry-run
+
+export MISE_LOCKFILE=1
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+# Use jq via aqua backend, which supports lockfile URLs
+cat <<'EOF' >mise.toml
+[tools]
+jq = "1.7.1"
+EOF
+
+# Uninstall jq so it's not already present
+mise uninstall jq@1.7.1 2>/dev/null || true
+
+# --- Test 1: --locked fails when no lockfile URL exists ---
+cat <<EOF >mise.lock
+[[tools.jq]]
+version = "1.7.1"
+backend = "aqua:jqlang/jq"
+EOF
+
+assert_fail_contains "mise install --locked 2>&1" "No lockfile URL found"
+
+# --- Test 2: --locked --dry-run also fails when no lockfile URL exists ---
+# This is the key behavior: locked validation must run before dry-run short-circuit
+assert_fail_contains "mise install --locked --dry-run 2>&1" "No lockfile URL found"
+
+# --- Test 3: --locked --dry-run succeeds when lockfile URL exists ---
+cat <<EOF >mise.lock
+[[tools.jq]]
+version = "1.7.1"
+backend = "aqua:jqlang/jq"
+"platforms.$PLATFORM" = { url = "https://example.com/jq-1.7.1.tar.gz" }
+EOF
+
+assert_contains "mise install --locked --dry-run 2>&1" "would install"
