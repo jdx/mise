@@ -109,19 +109,19 @@ backend = "aqua:sharkdp/fd"
 "platforms.windows-x64-baseline" = { checksum = "sha256:318aa2a6fa664325933e81fda60d523fff29444129e91ebf0726b5b3bcd8b059", url = "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-x86_64-pc-windows-msvc.zip"}
 
 [[tools.gh]]
-version = "2.87.0"
+version = "2.87.2"
 backend = "aqua:cli/cli"
-"platforms.linux-arm64" = { checksum = "sha256:7f7fbaf65baa1e438ae5b7134bff014c0122944dd2e83bb5db8088fe3888fe39", url = "https://github.com/cli/cli/releases/download/v2.87.0/gh_2.87.0_linux_arm64.tar.gz"}
-"platforms.linux-arm64-musl" = { checksum = "sha256:7f7fbaf65baa1e438ae5b7134bff014c0122944dd2e83bb5db8088fe3888fe39", url = "https://github.com/cli/cli/releases/download/v2.87.0/gh_2.87.0_linux_arm64.tar.gz"}
-"platforms.linux-x64" = { checksum = "sha256:5f461c1dc2b80483ea5617f9253d591fb427b3ecfdd69c69089e1ee6156dc234", url = "https://github.com/cli/cli/releases/download/v2.87.0/gh_2.87.0_linux_amd64.tar.gz"}
-"platforms.linux-x64-baseline" = { checksum = "sha256:5f461c1dc2b80483ea5617f9253d591fb427b3ecfdd69c69089e1ee6156dc234", url = "https://github.com/cli/cli/releases/download/v2.87.0/gh_2.87.0_linux_amd64.tar.gz"}
-"platforms.linux-x64-musl" = { checksum = "sha256:5f461c1dc2b80483ea5617f9253d591fb427b3ecfdd69c69089e1ee6156dc234", url = "https://github.com/cli/cli/releases/download/v2.87.0/gh_2.87.0_linux_amd64.tar.gz"}
-"platforms.linux-x64-musl-baseline" = { checksum = "sha256:5f461c1dc2b80483ea5617f9253d591fb427b3ecfdd69c69089e1ee6156dc234", url = "https://github.com/cli/cli/releases/download/v2.87.0/gh_2.87.0_linux_amd64.tar.gz"}
-"platforms.macos-arm64" = { checksum = "sha256:b1e6e3ab764892a33a1fe464c239be393e6bbd4220804692f919c4c805b1dbbf", url = "https://github.com/cli/cli/releases/download/v2.87.0/gh_2.87.0_macOS_arm64.zip"}
-"platforms.macos-x64" = { checksum = "sha256:9cb05a2bc5438762707a25bf1586e438ed3dbadf0fc782f47ca0b057bb4093a4", url = "https://github.com/cli/cli/releases/download/v2.87.0/gh_2.87.0_macOS_amd64.zip"}
-"platforms.macos-x64-baseline" = { checksum = "sha256:9cb05a2bc5438762707a25bf1586e438ed3dbadf0fc782f47ca0b057bb4093a4", url = "https://github.com/cli/cli/releases/download/v2.87.0/gh_2.87.0_macOS_amd64.zip"}
-"platforms.windows-x64" = { checksum = "sha256:0765688b92edca7f08a314317512deba00baa3405001ce25b69d2580f8137c36", url = "https://github.com/cli/cli/releases/download/v2.87.0/gh_2.87.0_windows_amd64.zip"}
-"platforms.windows-x64-baseline" = { checksum = "sha256:0765688b92edca7f08a314317512deba00baa3405001ce25b69d2580f8137c36", url = "https://github.com/cli/cli/releases/download/v2.87.0/gh_2.87.0_windows_amd64.zip"}
+"platforms.linux-arm64" = { checksum = "sha256:e37efdd8ec98425f44175040b5037c767bbd49f192aed1de5aabc4b4ea9e22c5", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_linux_arm64.tar.gz"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:e37efdd8ec98425f44175040b5037c767bbd49f192aed1de5aabc4b4ea9e22c5", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_linux_arm64.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:18360b2243e3bf9c1457035db45f6400ae4cf957dcc2f674e69717b4e0b14d55", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_linux_amd64.tar.gz"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:18360b2243e3bf9c1457035db45f6400ae4cf957dcc2f674e69717b4e0b14d55", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_linux_amd64.tar.gz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:18360b2243e3bf9c1457035db45f6400ae4cf957dcc2f674e69717b4e0b14d55", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_linux_amd64.tar.gz"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:18360b2243e3bf9c1457035db45f6400ae4cf957dcc2f674e69717b4e0b14d55", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_linux_amd64.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:18d90c7ae5b462d47cc665d4c59de61af1e208edb81a9abee1b5a82c94e91d94", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_macOS_arm64.zip"}
+"platforms.macos-x64" = { checksum = "sha256:5ce4da6da0f29e6aa46e54ea6adb2528243d2bb517a7098e75cca16a5d983d28", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_macOS_amd64.zip"}
+"platforms.macos-x64-baseline" = { checksum = "sha256:5ce4da6da0f29e6aa46e54ea6adb2528243d2bb517a7098e75cca16a5d983d28", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_macOS_amd64.zip"}
+"platforms.windows-x64" = { checksum = "sha256:8483c9f5e5f777e5d7994d5ba3562c5face6ea5046af142b208eb4d6713f7749", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_windows_amd64.zip"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:8483c9f5e5f777e5d7994d5ba3562c5face6ea5046af142b208eb4d6713f7749", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_windows_amd64.zip"}
 
 [[tools.hk]]
 version = "1.36.0"

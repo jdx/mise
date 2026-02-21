@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: kunobi-ninja
+    repo_name: kunobi-releases
+    description: Kubernetes IDE for managing clusters, resources, and workloads
+    link: https://kunobi.ninja
+    version_source: github_tag
+    url: https://r2.kunobi.ninja/v{{.Version}}/Kunobi_{{.Version}}_{{.OS}}_{{.Arch}}.AppImage
+    format: raw
+    replacements:
+      amd64: x86_64
+    files:
+      - name: kunobi
+    overrides:
+      - goos: darwin
+        url: https://r2.kunobi.ninja/v{{.Version}}/Kunobi_{{.Version}}_darwin_aarch64.app.tar.gz
+        format: tar.gz
+        files:
+          - name: kunobi
+            src: Kunobi.app/Contents/MacOS/kunobi
+    supported_envs:
+      - darwin/arm64
+      - linux/amd64

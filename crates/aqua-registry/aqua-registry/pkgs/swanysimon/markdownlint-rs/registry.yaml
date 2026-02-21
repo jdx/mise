@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: swanysimon
+    repo_name: markdownlint-rs
+    description: Attempting to port markdownlint (and the markdownlint-cli2 interface) to Rust using mostly vibes
+    files:
+      - name: mdlint
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: mdlint-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: mdlint
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: amd64
+            asset: mdlint-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+          - goos: windows
+            format: zip
+            asset: mdlint-{{.OS}}-{{.Arch}}.exe.{{.Format}}

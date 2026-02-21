@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Skarlso
+    repo_name: crd-to-sample-yaml
+    description: Generate a sample YAML file from a CRD and view it rendered on a nice website
+    files:
+      - name: cty
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.8")
+        asset: crd-to-yaml_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: crd-to-yaml
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: crd-to-yaml_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.1.4")
+        asset: cty_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: cty
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: cty_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: cty_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: cty
+        checksum:
+          type: github_release
+          asset: cty_checksums.txt
+          algorithm: sha256
