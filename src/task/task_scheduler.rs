@@ -152,6 +152,7 @@ impl Scheduler {
         Fut: std::future::Future<Output = Result<()>>,
     {
         let mut sched_rx = self.take_receiver().expect("receiver already taken");
+        let mut failure_cleanup_done = false;
 
         loop {
             // Drain ready tasks without awaiting
@@ -162,9 +163,10 @@ impl Scheduler {
                         drained_any = true;
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
                         if should_stop() && !continue_on_error {
-                            // Still allow post-dep (cleanup) tasks to run on failure
+                            // Still allow post-dep (cleanup) tasks to run on failure,
+                            // but only if their parent was actually started
                             let mut deps = deps_for_remove.lock().await;
-                            if !deps.is_post_dep(&task) {
+                            if !deps.is_runnable_post_dep(&task) {
                                 deps.remove(&task);
                                 continue;
                             }
@@ -177,20 +179,20 @@ impl Scheduler {
                 }
             }
 
-            // Check if we should stop early due to failure
-            if should_stop() && !continue_on_error {
+            // Check if we should stop early due to failure (run cleanup only once)
+            if should_stop() && !continue_on_error && !failure_cleanup_done {
+                failure_cleanup_done = true;
                 trace!("scheduler: stopping early due to failure, cleaning up non-post-dep tasks");
-                // Clean up non-post-dep tasks so the graph can drain, but
-                // keep post-dep (cleanup) tasks so they still run
+                // Clean up tasks that shouldn't run: non-post-deps and post-deps whose
+                // parent was never started. Use batch removal so intermediate emit_leaves
+                // calls don't schedule post-deps of never-started tasks.
                 let mut deps = main_deps.lock().await;
                 let tasks_to_remove: Vec<Task> = deps
                     .all()
-                    .filter(|t| !deps.is_post_dep(t))
+                    .filter(|t| !deps.is_runnable_post_dep(t))
                     .cloned()
                     .collect();
-                for task in tasks_to_remove {
-                    deps.remove(&task);
-                }
+                deps.remove_batch(&tasks_to_remove);
                 if deps.is_empty() {
                     drop(deps);
                     break;
@@ -211,9 +213,8 @@ impl Scheduler {
                     if let Some((task, deps_for_remove)) = m {
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
                         if should_stop() && !continue_on_error {
-                            // Still allow post-dep (cleanup) tasks to run on failure
                             let mut deps = deps_for_remove.lock().await;
-                            if !deps.is_post_dep(&task) {
+                            if !deps.is_runnable_post_dep(&task) {
                                 deps.remove(&task);
                                 continue;
                             }

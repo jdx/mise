@@ -18,7 +18,7 @@ pub struct Deps {
     pub graph: DiGraph<Task, ()>,
     sent: HashSet<TaskKey>, // tasks that have already started so should not run again
     removed: HashSet<TaskKey>, // tasks that have already finished to track if we are in an infinitve loop
-    post_deps: HashSet<TaskKey>, // tasks that are post-dependencies (should run even on failure)
+    post_dep_parents: HashMap<TaskKey, HashSet<TaskKey>>, // maps each post-dep to its parent tasks
     tx: mpsc::UnboundedSender<Option<Task>>,
     // not clone, notify waiters via tx None
 }
@@ -47,7 +47,7 @@ impl Deps {
         let mut indexes = HashMap::new();
         let mut stack = vec![];
         let mut seen = HashSet::new();
-        let mut post_deps = HashSet::new();
+        let mut post_dep_parents: HashMap<TaskKey, HashSet<TaskKey>> = HashMap::new();
 
         let mut add_idx = |task: &Task, graph: &mut DiGraph<Task, ()>| {
             *indexes
@@ -77,7 +77,10 @@ impl Deps {
             for b in post {
                 let b_idx = add_idx(&b, &mut graph);
                 graph.update_edge(b_idx, a_idx, ());
-                post_deps.insert(task_key(&b));
+                post_dep_parents
+                    .entry(task_key(&b))
+                    .or_default()
+                    .insert(task_key(&a));
                 stack.push(b.clone());
             }
             seen.insert(a);
@@ -90,7 +93,7 @@ impl Deps {
             tx,
             sent,
             removed,
-            post_deps,
+            post_dep_parents,
         })
     }
 
@@ -136,9 +139,28 @@ impl Deps {
         self.graph.node_count() == 0
     }
 
-    /// Check if a task is a post-dependency (cleanup task that should run even on failure)
-    pub fn is_post_dep(&self, task: &Task) -> bool {
-        self.post_deps.contains(&task_key(task))
+    /// Check if a post-dep task should actually run: it must be a post-dependency
+    /// AND its parent must have been scheduled.
+    /// Returns false for non-post-dep tasks or post-deps whose parent was never started.
+    pub fn is_runnable_post_dep(&self, task: &Task) -> bool {
+        let key = task_key(task);
+        match self.post_dep_parents.get(&key) {
+            Some(parent_keys) => parent_keys.iter().any(|pk| self.sent.contains(pk)),
+            None => false,
+        }
+    }
+
+    /// Remove multiple tasks from the graph in a batch, emitting leaves only once at the end.
+    /// This prevents intermediate emit_leaves from scheduling tasks that will be removed later.
+    pub fn remove_batch(&mut self, tasks: &[Task]) {
+        for task in tasks {
+            if let Some(idx) = self.node_idx(task) {
+                self.graph.remove_node(idx);
+                let key = task_key(task);
+                self.removed.insert(key);
+            }
+        }
+        self.emit_leaves();
     }
 
     // use contracts::{ensures, requires};

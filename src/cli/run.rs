@@ -413,7 +413,7 @@ impl Run {
         // post-dependency (cleanup task that should run even on failure).
         if this.is_stopping() && !this.continue_on_error {
             let mut deps = deps_for_remove.lock().await;
-            if !deps.is_post_dep(&task) {
+            if !deps.is_runnable_post_dep(&task) {
                 trace!(
                     "aborting spawn before start (not continue-on-error): {} {}",
                     task.name,
@@ -439,7 +439,7 @@ impl Run {
             // tasks from running after failure, while still allowing cleanup.
             if this.is_stopping() && !this.continue_on_error {
                 let mut deps = deps_for_remove.lock().await;
-                if !deps.is_post_dep(&task) {
+                if !deps.is_runnable_post_dep(&task) {
                     trace!(
                         "aborting spawn after failure (not continue-on-error): {} {}",
                         task.name,
