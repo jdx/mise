@@ -567,14 +567,13 @@ pub trait Backend: Debug + Send + Sync {
                     // matching the prefix (e.g., "1.0.0" for prefix "1"), but if
                     // the ToolVersion resolved to a different version (e.g., "1.1.0"),
                     // we must not treat it as installed.
-                    if let ToolRequest::Prefix { .. } = &tv.request {
-                        if install_path
+                    if let ToolRequest::Prefix { .. } = &tv.request
+                        && install_path
                             .file_name()
-                            .map_or(false, |f| f.to_string_lossy() != tv.version)
+                            .is_some_and(|f| f.to_string_lossy() != tv.version)
                         {
                             return check_path(&tv.install_path(), check_symlink);
                         }
-                    }
                     return true;
                 }
                 check_path(&tv.install_path(), check_symlink)
