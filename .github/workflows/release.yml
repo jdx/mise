@@ -344,32 +344,23 @@ jobs:
         if: github.event_name != 'pull_request' || github.head_ref == 'release'
       - run: mise x -- scripts/release.sh
         if: github.event_name != 'pull_request' || github.head_ref == 'release'
-      - name: Install Claude Code CLI
+      - name: Generate release notes
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
-        run: npm install -g @anthropic-ai/claude-code
+        run: |
+          VERSION="$(./scripts/get-version.sh)"
+          if communique generate "$VERSION" -o /tmp/release-notes.txt; then
+            echo "RELEASE_TITLE=$VERSION: $(head -1 /tmp/release-notes.txt)" >> "$GITHUB_ENV"
+          else
+            echo "::warning::communique failed, falling back to git-cliff changelog"
+            git cliff --strip all --latest > /tmp/release-notes.txt 2>/dev/null || echo "Release $VERSION" > /tmp/release-notes.txt
+            echo "RELEASE_TITLE=$VERSION" >> "$GITHUB_ENV"
+          fi
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       - name: Create Draft GitHub Release
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
         run: |
           VERSION="$(./scripts/get-version.sh)"
-          PREV_VERSION="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$VERSION^" 2>/dev/null || echo "")"
-          # Generate rich release notes using LLM (non-blocking — fall back to changelog on failure)
-          OUTPUT_DIR=$(mktemp -d)
-          trap 'rm -rf "$OUTPUT_DIR"' EXIT
-          if mise run gen-release-notes "$VERSION" "$OUTPUT_DIR" "$PREV_VERSION"; then
-            RELEASE_TITLE="$VERSION: $(cat "$OUTPUT_DIR/title")"
-            cp "$OUTPUT_DIR/notes" /tmp/release-notes.txt
-          else
-            echo "::warning::gen-release-notes failed, falling back to git-cliff changelog"
-            RELEASE_TITLE="$VERSION"
-            git cliff --strip all --latest > /tmp/release-notes.txt 2>/dev/null || echo "Release $VERSION" > /tmp/release-notes.txt
-          fi
-          # Append aqua section from CHANGELOG.md (LLM doesn't see it)
-          CURRENT_RELEASE="$(awk '/^## \[/{if(found) exit; found=1; next} found{print}' CHANGELOG.md)"
-          AQUA_SECTION="$(printf '%s\n' "$CURRENT_RELEASE" | awk '/^### 📦 Aqua Registry Updates/{found=1} found{print}')"
-          if [[ -n "$AQUA_SECTION" ]]; then
-            echo "" >> /tmp/release-notes.txt
-            printf '%s\n' "$AQUA_SECTION" >> /tmp/release-notes.txt
-          fi
           gh release create "$VERSION" \
             --title "$RELEASE_TITLE" \
             --notes-file /tmp/release-notes.txt \
@@ -378,7 +369,6 @@ jobs:
             "releases/$VERSION"/*
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       - name: Publish Release Assets to CDN
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
         run: mise x -- scripts/publish-release.sh

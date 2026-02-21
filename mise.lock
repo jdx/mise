@@ -80,6 +80,10 @@ backend = "cargo:toml-cli"
 version = "2.18.0"
 backend = "cargo:usage-cli"
 
+[[tools.communique]]
+version = "0.1.8"
+backend = "github:jdx/communique"
+
 [[tools.fd]]
 version = "10.3.0"
 backend = "aqua:sharkdp/fd"
