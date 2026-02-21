@@ -571,9 +571,9 @@ pub trait Backend: Debug + Send + Sync {
                         && install_path
                             .file_name()
                             .is_some_and(|f| f.to_string_lossy() != tv.version)
-                        {
-                            return check_path(&tv.install_path(), check_symlink);
-                        }
+                    {
+                        return check_path(&tv.install_path(), check_symlink);
+                    }
                     return true;
                 }
                 check_path(&tv.install_path(), check_symlink)
