@@ -370,12 +370,12 @@ impl<'a> CmdLineRunner<'a> {
                 ChildProcessOutput::Stdout(line) => {
                     let line = self.redactor.redact(&line);
                     self.on_stdout(line.clone());
-                    combined_output.push(line);
+                    combined_output.push((line, OutputSource::Stdout));
                 }
                 ChildProcessOutput::Stderr(line) => {
                     let line = self.redactor.redact(&line);
                     self.on_stderr(line.clone());
-                    combined_output.push(line);
+                    combined_output.push((line, OutputSource::Stderr));
                 }
                 ChildProcessOutput::ExitStatus(s) => {
                     RUNNING_PIDS.lock().unwrap().remove(&id);
@@ -396,7 +396,7 @@ impl<'a> CmdLineRunner<'a> {
         let status = status.unwrap();
 
         if !status.success() {
-            self.on_error(combined_output.join("\n"), status)?;
+            self.on_error(combined_output, status)?;
         }
 
         Ok(())
@@ -406,7 +406,7 @@ impl<'a> CmdLineRunner<'a> {
         let status = self.spawn_with_etxtbsy_retry()?.wait()?;
         match status.success() {
             true => Ok(()),
-            false => self.on_error(String::new(), status),
+            false => self.on_error(vec![], status),
         }
     }
 
@@ -484,15 +484,27 @@ impl<'a> CmdLineRunner<'a> {
         }
     }
 
-    fn on_error(&self, output: String, status: ExitStatus) -> Result<()> {
+    fn on_error(&self, output: Vec<(String, OutputSource)>, status: ExitStatus) -> Result<()> {
         match self
             .pr
             .or(self.pr_arc.as_ref().map(|arc| arc.as_ref().as_ref()))
         {
             Some(pr) => {
                 error!("{} failed", self.get_program());
-                if !Settings::get().verbose && !output.trim().is_empty() {
-                    pr.println(output);
+                if self.on_stdout.is_none() {
+                    // Stdout was hidden behind the progress indicator
+                    // (pr.set_message) so replay it on failure. Only replay
+                    // stdout — stderr was already printed during execution
+                    // via pr.println.
+                    let stdout_only: String = output
+                        .into_iter()
+                        .filter(|(_, source)| matches!(source, OutputSource::Stdout))
+                        .map(|(line, _)| line)
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if !stdout_only.trim().is_empty() {
+                        pr.println(stdout_only);
+                    }
                 }
             }
             None => {
@@ -526,6 +538,13 @@ impl Debug for CmdLineRunner<'_> {
         let args = self.get_args().join(" ");
         write!(f, "{} {args}", self.get_program())
     }
+}
+
+/// Tracks whether an output line came from stdout or stderr,
+/// so on_error can decide which lines need replaying.
+enum OutputSource {
+    Stdout,
+    Stderr,
 }
 
 enum ChildProcessOutput {
