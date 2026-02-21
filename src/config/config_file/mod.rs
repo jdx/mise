@@ -300,11 +300,12 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
         return Ok(());
     }
     if cmd != "hook-env" && !is_ignored(&config_root) && !is_ignored(path) {
-        let ans = prompt::confirm_with_all(format!(
-            "{} config files in {} are not trusted. Trust them?",
-            style::eyellow("mise"),
-            style::epath(&config_root)
-        ))?;
+        let ans = (settings::is_loaded() && Settings::get().yes)
+            || prompt::confirm_with_all(format!(
+                "{} config files in {} are not trusted. Trust them?",
+                style::eyellow("mise"),
+                style::epath(&config_root)
+            ))?;
         if ans {
             trust(&config_root)?;
             return Ok(());
