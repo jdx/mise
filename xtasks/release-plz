@@ -320,6 +320,8 @@ fi
 
 mise up
 mise lock
+# Refresh PATH after mise up, since upgraded tools have new install paths
+eval "$(mise env)"
 
 # Update embedded vfox plugins (delete all and re-clone fresh, similar to aqua-registry)
 EMBEDDED_PLUGINS_DIR="crates/vfox/embedded-plugins"
