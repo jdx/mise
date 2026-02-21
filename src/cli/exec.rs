@@ -188,6 +188,30 @@ where
     }
     let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
     let program = program.to_executable();
+    // Strip shims directory from PATH for program resolution only, to prevent
+    // recursive shim execution. Wrapper scripts may call `mise x -- tool`,
+    // which re-enters Exec. If shims remain in PATH (due to
+    // not_found_auto_install), the wrapper is found again instead of the real
+    // tool, causing an infinite loop that grows PATH until E2BIG.
+    // The child process still inherits the full PATH (with shims) so
+    // subprocesses can find tools via shims.
+    let program = if program.to_string_lossy().contains('/') {
+        // Already a path, no need to resolve
+        program
+    } else {
+        let cwd = crate::dirs::CWD.clone().unwrap_or_default();
+        let lookup_path = env.get(&*env::PATH_KEY).map(|path_val| {
+            let shims_dir = &*crate::dirs::SHIMS;
+            let filtered: Vec<_> = std::env::split_paths(&OsString::from(path_val))
+                .filter(|p| p != shims_dir)
+                .collect();
+            std::env::join_paths(&filtered).unwrap()
+        });
+        match which::which_in(&program, lookup_path, cwd) {
+            Ok(resolved) => resolved.into_os_string(),
+            Err(_) => program, // Fall back to original if resolution fails
+        }
+    };
     let err = exec::Command::new(program.clone()).args(&args).exec();
     bail!("{:?} {err}", program.to_string_lossy())
 }

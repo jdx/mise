@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+# Regression test: when not_found_auto_install preserves shims in PATH,
+# `mise x -- tool` should resolve the real tool binary, not a shim,
+# preventing infinite recursion.
+
+# Create a real tool binary
+tooldir="$HOME/toolbin"
+mkdir -p "$tooldir"
+cat >"$tooldir/mytool" <<'TOOL'
+#!/bin/sh
+echo REAL_TOOL_OUTPUT
+TOOL
+chmod +x "$tooldir/mytool"
+
+# Create a fake shim that would be found first if shims aren't stripped
+shimdir="$MISE_DATA_DIR/shims"
+mkdir -p "$shimdir"
+cat >"$shimdir/mytool" <<'SHIM'
+#!/bin/sh
+echo SHIM_NOT_REAL
+SHIM
+chmod +x "$shimdir/mytool"
+
+# Put shims BEFORE tooldir in PATH (the problematic ordering)
+export PATH="$shimdir:$tooldir:$PATH"
+
+# mise x should strip shims from lookup path and find the real tool
+assert_contains "mise x -- mytool" "REAL_TOOL_OUTPUT"
+assert_not_contains "mise x -- mytool" "SHIM_NOT_REAL"
