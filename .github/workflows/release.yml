@@ -348,14 +348,14 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
         run: |
           VERSION="$(./scripts/get-version.sh)"
-          if communique generate "$VERSION" -o /tmp/release-notes.txt; then
+          if mise x -- communique generate "$VERSION" -o /tmp/release-notes.txt; then
             echo "RELEASE_TITLE=$VERSION: $(head -1 /tmp/release-notes.txt)" >> "$GITHUB_ENV"
             # Remove the title line (and any blank line after it) from the notes body
             tail -n +2 /tmp/release-notes.txt | sed '/./,$!d' > /tmp/release-notes-body.txt
             mv /tmp/release-notes-body.txt /tmp/release-notes.txt
           else
             echo "::warning::communique failed, falling back to git-cliff changelog"
-            git cliff --strip all --latest > /tmp/release-notes.txt 2>/dev/null || echo "Release $VERSION" > /tmp/release-notes.txt
+            mise x -- git cliff --strip all --latest > /tmp/release-notes.txt 2>/dev/null || echo "Release $VERSION" > /tmp/release-notes.txt
             echo "RELEASE_TITLE=$VERSION" >> "$GITHUB_ENV"
           fi
         env:
