@@ -217,7 +217,25 @@ impl Watch {
         for (k, v) in ts.env_with_path(&config).await? {
             cmd = cmd.env(k, v);
         }
-        cmd.run()?;
+
+        // Save terminal state before running watchexec, because --clear=reset
+        // sends a full terminal reset (RIS) which can corrupt terminal settings
+        // (e.g. disabling echo) if watchexec is interrupted with Ctrl+C.
+        #[cfg(unix)]
+        let saved_termios = nix::sys::termios::tcgetattr(std::io::stdin()).ok();
+
+        let result = cmd.run();
+
+        #[cfg(unix)]
+        if let Some(termios) = saved_termios {
+            let _ = nix::sys::termios::tcsetattr(
+                std::io::stdin(),
+                nix::sys::termios::SetArg::TCSANOW,
+                &termios,
+            );
+        }
+
+        result?;
         Ok(())
     }
 
