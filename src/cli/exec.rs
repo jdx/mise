@@ -125,6 +125,22 @@ impl Exec {
         });
 
         let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
+
+        // Resolve the program to its full mise-installed path if it is provided
+        // by a mise-managed tool. This prevents infinite recursion when a wrapper
+        // script (e.g., .devcontainer/bin/tool) calls `mise x -- tool`: without
+        // this, execvp would find the wrapper again (since it precedes the mise
+        // install path in PATH) and loop until E2BIG.
+        let program = if !program.contains('/') {
+            if let Some(bin) = ts.which_bin(&config, &program).await {
+                bin.to_string_lossy().to_string()
+            } else {
+                program
+            }
+        } else {
+            program
+        };
+
         let mut env = measure!("env_with_path", { ts.env_with_path(&config).await? });
 
         // Run auto-enabled prepare steps (unless --no-prepare)
