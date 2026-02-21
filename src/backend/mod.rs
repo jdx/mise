@@ -563,6 +563,18 @@ pub trait Backend: Debug + Send + Sync {
                 if let Some(install_path) = tv.request.install_path(config)
                     && check_path(&install_path, true)
                 {
+                    // For Prefix requests, install_path finds any installed dir
+                    // matching the prefix (e.g., "1.0.0" for prefix "1"), but if
+                    // the ToolVersion resolved to a different version (e.g., "1.1.0"),
+                    // we must not treat it as installed.
+                    if let ToolRequest::Prefix { .. } = &tv.request {
+                        if install_path
+                            .file_name()
+                            .map_or(false, |f| f.to_string_lossy() != tv.version)
+                        {
+                            return check_path(&tv.install_path(), check_symlink);
+                        }
+                    }
                     return true;
                 }
                 check_path(&tv.install_path(), check_symlink)

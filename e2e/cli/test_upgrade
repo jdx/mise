@@ -70,6 +70,44 @@ assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 mise up
 assert_contains "mise up --dry-run-code 2>&1" "All tools are up to date"
 
+# Test: upgrade should not re-download a version that is already installed
+# This verifies the fix for https://github.com/jdx/mise/discussions/8260
+cat <<EOF >mise.toml
+[tools]
+dummy = "1"
+EOF
+mise uninstall dummy --all
+# Install 1.0.0 first (old version), then also install 1.1.0 (the latest 1.x)
+mise install dummy@1.0.0
+mise install dummy@1.1.0
+assert_contains "mise ls --installed dummy" "1.0.0"
+assert_contains "mise ls --installed dummy" "1.1.0"
+# upgrade should report "All tools are up to date" since 1.1.0 is already installed
+assert_contains "mise up 2>&1" "All tools are up to date"
+
+# Test: upgrade with lockfile should update the lockfile to the new version
+cat <<EOF >mise.toml
+[tools]
+dummy = "1"
+EOF
+mise uninstall dummy --all
+mise install dummy@1.0.0
+# Write a lockfile pinning to 1.0.0
+cat <<EOF >mise.lock
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+# Verify the lockfile pins to 1.0.0
+assert "mise ls dummy" "dummy  1.0.0  ~/workdir/mise.toml  1"
+# Upgrade should install 1.1.0 and update the lockfile
+mise up
+assert "mise ls dummy" "dummy  1.1.0  ~/workdir/mise.toml  1"
+# Verify the lockfile was updated to 1.1.0
+assert_contains "cat mise.lock" "1.1.0"
+assert_not_contains "cat mise.lock" "1.0.0"
+rm -f mise.lock
+
 # Test that upgrading a specific tool doesn't check other tools
 # This verifies the fix for https://github.com/jdx/mise/discussions/7328
 cat <<EOF >mise.toml
