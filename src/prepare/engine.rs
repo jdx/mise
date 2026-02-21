@@ -138,11 +138,9 @@ impl PrepareEngine {
 
                 if let Some(provider) =
                     Self::build_provider(id, &config_root, provider_config.clone())
-                {
-                    if provider.is_applicable() {
+                    && provider.is_applicable() {
                         providers.push(provider);
                     }
-                }
             }
         }
 
@@ -238,11 +236,9 @@ impl PrepareEngine {
 
                 if let Some(provider) =
                     Self::build_provider(id, &config_root, provider_config.clone())
-                {
-                    if provider.is_applicable() {
+                    && provider.is_applicable() {
                         self.providers.push(provider);
                     }
-                }
             }
         }
 
