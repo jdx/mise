@@ -1,5 +1,24 @@
 # Changelog
 
+## [2026.2.19](https://github.com/jdx/mise/compare/v2026.2.18..v2026.2.19) - 2026-02-22
+
+### 🐛 Bug Fixes
+
+- **(docs)** correct ripgrep command by @nguyenvulong in [#8299](https://github.com/jdx/mise/pull/8299)
+- **(task)** skip setpgid for TTY stdin to fix interactive tasks by @jdx in [#8301](https://github.com/jdx/mise/pull/8301)
+- clean up empty parent install dir on failed install by @jdx in [#8302](https://github.com/jdx/mise/pull/8302)
+
+### Chore
+
+- **(release)** run communique via mise x for PATH resolution by @jdx in [#8294](https://github.com/jdx/mise/pull/8294)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`kubie-org/kubie`](https://github.com/kubie-org/kubie)
+- [`steipete/gogcli`](https://github.com/steipete/gogcli)
+
 ## [2026.2.18](https://github.com/jdx/mise/compare/v2026.2.17..v2026.2.18) - 2026-02-21
 
 ### 🚀 Features

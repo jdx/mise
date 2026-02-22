@@ -1,8 +1,10 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
 packages:
   - type: github_release
-    repo_owner: sbstp
+    repo_owner: kubie-org
     repo_name: kubie
+    aliases:
+      - name: sbstp/kubie
     description: A more powerful alternative to kubectx and kubens
     version_constraint: "false"
     version_overrides:
