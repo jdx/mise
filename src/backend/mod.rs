@@ -1120,13 +1120,11 @@ pub trait Backend: Debug + Send + Sync {
             let _ = file::remove_file(self.incomplete_file_path(tv));
             // Remove parent installs dir if it's now empty (no other versions present)
             let installs_path = &self.ba().installs_path;
-            if installs_path.exists() {
-                if let Ok(entries) = file::dir_subdirs(installs_path) {
-                    if entries.is_empty() {
+            if installs_path.exists()
+                && let Ok(entries) = file::dir_subdirs(installs_path)
+                    && entries.is_empty() {
                         let _ = remove_all_with_warning(installs_path);
                     }
-                }
-            }
             self.cleanup_install_dirs(tv);
         }
     }
