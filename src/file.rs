@@ -735,6 +735,7 @@ impl TarFormat {
             "bz2" | "tbz2" => TarFormat::TarBz2,
             "zst" | "tzst" => TarFormat::TarZst,
             "zip" => TarFormat::Zip,
+            "vsix" => TarFormat::Zip,
             "7z" => TarFormat::SevenZip,
             _ => TarFormat::Raw,
         }
