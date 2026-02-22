@@ -309,10 +309,16 @@ impl<'a> CmdLineRunner<'a> {
         #[cfg(unix)]
         unsafe {
             self.cmd.pre_exec(|| {
-                let _ = nix::unistd::setpgid(
-                    nix::unistd::Pid::from_raw(0),
-                    nix::unistd::Pid::from_raw(0),
-                );
+                // Don't create a new process group when stdin is a TTY.
+                // Interactive tools (e.g. Tilt) need to stay in the terminal's
+                // foreground process group; moving them to a new one triggers
+                // SIGTTIN and hangs them.
+                if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+                    let _ = nix::unistd::setpgid(
+                        nix::unistd::Pid::from_raw(0),
+                        nix::unistd::Pid::from_raw(0),
+                    );
+                }
                 Ok(())
             });
         }
