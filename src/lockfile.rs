@@ -516,7 +516,7 @@ fn extract_env_from_config_path(path: &Path) -> Option<String> {
 }
 
 pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersion]) -> Result<()> {
-    if !Settings::get().lockfile {
+    if !Settings::get().lockfile || Settings::get().locked {
         return Ok(());
     }
 
@@ -677,7 +677,7 @@ fn determine_target_platforms_from_lockfile(lockfile: Option<&Lockfile>) -> Vec<
 /// so the lockfile is complete and doesn't change when other developers on different
 /// platforms run `mise install`.
 pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersion]) -> Result<()> {
-    if !Settings::get().lockfile || new_versions.is_empty() {
+    if !Settings::get().lockfile || Settings::get().locked || new_versions.is_empty() {
         return Ok(());
     }
 
