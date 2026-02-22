@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Regression test: failed installs should not leave empty parent directories.
+#
+# Before the fix, cleanup_install_dirs_on_error only removed the version-specific
+# subdirectory (e.g. installs/tilt/9999.9999.9999) but left the parent
+# (installs/tilt/) as an empty directory behind.
+
+# Trigger a failed install using a non-existent version number.
+# This causes the GitHub API to return 404 after create_install_dirs() has
+# already created installs/tilt/9999.9999.9999.
+assert_fail "mise x tilt@9999.9999.9999 -- tilt version"
+
+# The parent installs directory should be fully cleaned up, not left empty.
+assert_directory_not_exists "$MISE_DATA_DIR/installs/tilt"
+
+# A subsequent successful install should work correctly.
+assert_contains "mise x tilt@0.36.3 -- tilt version" "v0.36.3"
