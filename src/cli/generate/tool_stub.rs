@@ -561,6 +561,7 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
             || url.ends_with(".tar.zst")
             || url.ends_with(".tzst")
             || url.ends_with(".zip")
+            || url.ends_with(".vsix")
             || url.ends_with(".7z")
     }
 

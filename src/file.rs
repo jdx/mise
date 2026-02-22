@@ -901,6 +901,7 @@ fn open_tar(format: TarFormat, archive: &Path) -> Result<Box<dyn std::io::Read>>
             Some("zst") => open_tar(TarFormat::TarZst, archive)?,
             Some("tar") => open_tar(TarFormat::Tar, archive)?,
             Some("zip") => bail!("zip format not supported"),
+            Some("vsix") => bail!("vsix format not supported"),
             _ => open_tar(TarFormat::TarGz, archive)?,
         },
     })
