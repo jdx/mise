@@ -313,7 +313,10 @@ impl<'a> CmdLineRunner<'a> {
                 // Interactive tools (e.g. Tilt) need to stay in the terminal's
                 // foreground process group; moving them to a new one triggers
                 // SIGTTIN and hangs them.
-                if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+                // Use BorrowedFd::borrow_raw rather than std::io::stdin() —
+                // pre_exec runs post-fork where OnceLock/malloc are not safe.
+                let stdin = std::os::fd::BorrowedFd::borrow_raw(0);
+                if !std::io::IsTerminal::is_terminal(&stdin) {
                     let _ = nix::unistd::setpgid(
                         nix::unistd::Pid::from_raw(0),
                         nix::unistd::Pid::from_raw(0),
