@@ -18,7 +18,7 @@ impl EnvResults {
         source: PathBuf,
         name: String,
         value: &Value,
-        redact: bool,
+        redact: Option<bool>,
         env: IndexMap<String, String>,
     ) -> Result<()> {
         let path = dirs::PLUGINS.join(name.to_kebab_case());
@@ -49,8 +49,10 @@ impl EnvResults {
             }
 
             // Add env vars
+            // User's explicit redact setting takes priority, otherwise use plugin's preference
+            let should_redact = redact.unwrap_or(response.redact);
             for (k, v) in response.env {
-                if redact {
+                if should_redact {
                     r.redactions.push(k.clone());
                 }
                 r.env.insert(k, (v, source.clone()));

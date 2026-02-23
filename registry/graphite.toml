@@ -1,6 +1,11 @@
-backends = [
-  "github:withgraphite/homebrew-tap[exe=gt]",
-  "npm:@withgraphite/graphite-cli",
-]
 description = "Code review for the age of AI"
 test = { cmd = "gt --version", expected = "{{version}}" }
+
+[[backends]]
+full = "github:withgraphite/homebrew-tap"
+
+[backends.options]
+exe = "gt"
+
+[[backends]]
+full = "npm:@withgraphite/graphite-cli"

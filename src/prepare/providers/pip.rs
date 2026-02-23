@@ -5,39 +5,39 @@ use eyre::Result;
 use crate::prepare::rule::PrepareProviderConfig;
 use crate::prepare::{PrepareCommand, PrepareProvider};
 
+use super::ProviderBase;
+
 /// Prepare provider for pip (requirements.txt)
 #[derive(Debug)]
 pub struct PipPrepareProvider {
-    project_root: PathBuf,
-    config: PrepareProviderConfig,
+    base: ProviderBase,
 }
 
 impl PipPrepareProvider {
     pub fn new(project_root: &Path, config: PrepareProviderConfig) -> Self {
         Self {
-            project_root: project_root.to_path_buf(),
-            config,
+            base: ProviderBase::new("pip", project_root, config),
         }
     }
 }
 
 impl PrepareProvider for PipPrepareProvider {
-    fn id(&self) -> &str {
-        "pip"
+    fn base(&self) -> &ProviderBase {
+        &self.base
     }
 
     fn sources(&self) -> Vec<PathBuf> {
-        vec![self.project_root.join("requirements.txt")]
+        vec![self.base.project_root.join("requirements.txt")]
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
         // Check for .venv directory as output indicator
-        vec![self.project_root.join(".venv")]
+        vec![self.base.project_root.join(".venv")]
     }
 
     fn prepare_command(&self) -> Result<PrepareCommand> {
-        if let Some(run) = &self.config.run {
-            return PrepareCommand::from_string(run, &self.project_root, &self.config);
+        if let Some(run) = &self.base.config.run {
+            return PrepareCommand::from_string(run, &self.base.project_root, &self.base.config);
         }
 
         Ok(PrepareCommand {
@@ -47,9 +47,10 @@ impl PrepareProvider for PipPrepareProvider {
                 "-r".to_string(),
                 "requirements.txt".to_string(),
             ],
-            env: self.config.env.clone(),
-            cwd: Some(self.project_root.clone()),
+            env: self.base.config.env.clone(),
+            cwd: Some(self.base.project_root.clone()),
             description: self
+                .base
                 .config
                 .description
                 .clone()
@@ -58,10 +59,6 @@ impl PrepareProvider for PipPrepareProvider {
     }
 
     fn is_applicable(&self) -> bool {
-        self.project_root.join("requirements.txt").exists()
-    }
-
-    fn is_auto(&self) -> bool {
-        self.config.auto
+        self.base.project_root.join("requirements.txt").exists()
     }
 }

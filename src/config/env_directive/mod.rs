@@ -552,16 +552,7 @@ impl EnvResults {
                         }
                         env_map.insert(env::PATH_KEY.to_string(), path_env.to_string());
                     }
-                    Self::module(
-                        &mut r,
-                        config,
-                        source,
-                        name,
-                        &value,
-                        redact.unwrap_or(false),
-                        env_map,
-                    )
-                    .await?;
+                    Self::module(&mut r, config, source, name, &value, redact, env_map).await?;
                 }
             };
         }

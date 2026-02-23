@@ -1,7 +1,12 @@
-backends = [
-  "github:FlutterGen/flutter_gen[exe=fluttergen]",
-  "asdf:FlutterGen/asdf-fluttergen",
-]
 description = "The Flutter code generator for your assets, fonts, colors, … — Get rid of all String-based APIs"
 os = ["linux", "macos"]
 test = { cmd = "fluttergen --version", expected = "v{{version}}" }
+
+[[backends]]
+full = "github:FlutterGen/flutter_gen"
+
+[backends.options]
+exe = "fluttergen"
+
+[[backends]]
+full = "asdf:FlutterGen/asdf-fluttergen"

@@ -16,10 +16,10 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::env::GITHUB_TOKEN;
+use crate::file;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion};
-use crate::{env, file};
 
 #[derive(Debug)]
 pub struct CargoBackend {
@@ -119,8 +119,8 @@ impl Backend for CargoBackend {
                 cmd = cmd.env("GITHUB_TOKEN", token)
             }
             cmd.arg(install_arg)
-        } else if env::var("MISE_CARGO_BINSTALL_ONLY").is_ok_and(|v| v == "1") {
-            bail!("cargo-binstall is not available, but MISE_CARGO_BINSTALL_ONLY is set");
+        } else if Settings::get().cargo.binstall_only {
+            bail!("cargo-binstall is not available, but cargo.binstall_only is set");
         } else {
             cmd.arg(install_arg)
         };

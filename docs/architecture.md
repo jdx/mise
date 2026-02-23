@@ -43,8 +43,8 @@ The backend system is mise's core abstraction for tool management, implementing 
 
 ```rust
 pub trait Backend: Debug + Send + Sync {
-    async fn list_remote_versions(&self) -> Result<Vec<String>>;
-    async fn install_version(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()>;
+    async fn list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<String>>;
+    async fn install_version(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion>;
     async fn uninstall_version(&self, tv: &ToolVersion) -> Result<()>;
     // ... additional methods for lifecycle management
 }
@@ -97,7 +97,7 @@ Coordinates tool resolution, installation, and environment setup:
 **Tool Resolution Pipeline:**
 
 1. **Configuration Parsing**: Extract tool requirements from config files
-2. **Version Resolution**: Resolve version specifications (`latest`, `~1.2.0`, etc.) to concrete versions
+2. **Version Resolution**: Resolve version specifications (`latest`, `prefix:1.2`, `sub-1:latest`, etc.) to concrete versions
 3. **Backend Selection**: Choose appropriate backend for each tool
 4. **Dependency Analysis**: Resolve tool dependencies (e.g., npm requires Node.js)
 5. **Installation Coordination**: Install missing tools in dependency order
@@ -139,8 +139,8 @@ Extensibility layer supporting multiple plugin architectures:
 pub trait Plugin: Debug + Send {
     fn name(&self) -> &str;
     fn path(&self) -> PathBuf;
-    async fn install(&self, config: &Arc<Config>, pr: &Box<dyn SingleReport>) -> Result<()>;
-    async fn update(&self, pr: &Box<dyn SingleReport>, gitref: Option<String>) -> Result<()>;
+    async fn install(&self, config: &Arc<Config>, pr: &dyn SingleReport) -> Result<()>;
+    async fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> Result<()>;
     // ... lifecycle management methods
 }
 ```
@@ -160,7 +160,7 @@ Shell-specific code generation that abstracts commands like `mise env` and conta
 **Shell Trait:**
 
 ```rust
-pub trait Shell {
+pub trait Shell: Display {
     fn activate(&self, opts: ActivateOptions) -> String;
     fn set_env(&self, k: &str, v: &str) -> String;
     fn unset_env(&self, k: &str) -> String;
@@ -352,9 +352,11 @@ async fn test_parse() {
 
 ```
 test/
-├── fixtures/          # Sample configuration files
 ├── config/           # Test-specific configs
+├── cwd/              # Test working directories
 ├── data/             # Test plugins and mock data
+├── fixtures/         # Sample configuration files
+├── plugins/          # Test plugin definitions
 └── state/            # Test state directory
 ```
 

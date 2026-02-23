@@ -18,6 +18,10 @@ API_KEY = "secret123"
 run = "echo 'Running test task'"
 description = "A test task for MCP"
 
+[tasks.echo-args]
+run = 'echo "args: $@"'
+description = "Echo arguments back"
+
 [tasks.build]
 run = "echo 'Building...'"
 description = "Build the project"
@@ -31,22 +35,6 @@ run = "echo 'Linting code'"
 description = "Run linters"
 usage = "lint [files...]"
 EOF
-
-# Helper function to send JSON-RPC request to MCP server
-send_mcp_request() {
-	local method=$1
-	local params=$2
-	local id=${3:-1}
-
-	local request="{\"jsonrpc\":\"2.0\",\"id\":$id,\"method\":\"$method\",\"params\":$params}"
-	echo "$request"
-}
-
-# Helper to extract result from JSON-RPC response
-extract_result() {
-	local response=$1
-	echo "$response" | grep -o '"result":[^}]*' | sed 's/"result"://'
-}
 
 echo "Testing MCP server startup and error handling..."
 
@@ -65,138 +53,230 @@ echo -e "\nTesting MCP protocol with actual requests..."
 cat >test_mcp.py <<'EOF'
 #!/usr/bin/env python3
 import json
+import os
+import select
 import subprocess
 import sys
-from typing import Dict, Any
 
-def test_initialize_only():
-    """Test only the initialize handshake since that's what we can reliably test"""
-    import os
-    # Try multiple paths to find mise binary
-    mise_paths = [
+
+def find_mise():
+    paths = [
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "target", "debug", "mise"),
-        "/Users/jdx/src/mise/alt/target/debug/mise",
-        "mise"  # fallback to PATH
+        "mise",
     ]
-    
-    mise_path = None
-    for path in mise_paths:
+    for path in paths:
         if os.path.exists(path) or path == "mise":
-            mise_path = path
-            break
+            return path
+    return None
+
+
+def send(proc, msg):
+    proc.stdin.write((json.dumps(msg) + "\n").encode())
+    proc.stdin.flush()
+
+
+def recv(proc, timeout=5.0):
+    ready, _, _ = select.select([proc.stdout], [], [], timeout)
+    if not ready:
+        return None
+    line = proc.stdout.readline().decode().strip()
+    if not line:
+        return None
+    return json.loads(line)
+
+
+def handshake(proc):
+    """Perform initialize + initialized handshake, return initialize result."""
+    send(proc, {
+        "jsonrpc": "2.0", "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "test-client", "version": "1.0.0"},
+        },
+    })
+    resp = recv(proc)
+    if not resp or "result" not in resp:
+        print(f"ERROR: Bad initialize response: {resp}")
+        return None
+    # Send initialized notification (no id = notification)
+    send(proc, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+    return resp["result"]
+
+
+def test_initialize(proc):
+    result = handshake(proc)
+    if not result:
+        return 1
+
+    assert result["protocolVersion"] == "2025-03-26", "wrong protocol version"
+    print("✓ Protocol version correct")
+
+    caps = result["capabilities"]
+    assert "resources" in caps, "resources capability missing"
+    print("✓ Resources capability present")
+    assert "tools" in caps, "tools capability missing"
+    print("✓ Tools capability present")
+
+    assert result["serverInfo"]["name"] == "rmcp", "wrong server name"
+    print("✓ Server info correct")
+    return 0
+
+
+def test_tools_list(proc):
+    send(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+    resp = recv(proc)
+    if not resp or "result" not in resp:
+        print(f"ERROR: Bad tools/list response: {resp}")
+        return 1
+
+    tools = resp["result"]["tools"]
+    tool_names = {t["name"] for t in tools}
+    assert "run_task" in tool_names, f"run_task not in tools: {tool_names}"
+    assert "install_tool" in tool_names, f"install_tool not in tools: {tool_names}"
+    print(f"✓ tools/list returned {len(tools)} tools: {tool_names}")
+
+    # Verify run_task has proper input schema
+    run_task = next(t for t in tools if t["name"] == "run_task")
+    schema_props = run_task["inputSchema"]["properties"]
+    assert "task" in schema_props, "run_task missing 'task' param"
+    assert "args" in schema_props, "run_task missing 'args' param"
+    print("✓ run_task schema has task and args parameters")
+    return 0
+
+
+def test_run_task_success(proc):
+    send(proc, {
+        "jsonrpc": "2.0", "id": 3,
+        "method": "tools/call",
+        "params": {
+            "name": "run_task",
+            "arguments": {"task": "test-task"},
+        },
+    })
+    resp = recv(proc, timeout=30.0)
+    if not resp or "result" not in resp:
+        print(f"ERROR: Bad run_task response: {resp}")
+        return 1
+
+    result = resp["result"]
+    assert not result.get("isError", False), f"run_task returned error: {result}"
+    text = result["content"][0]["text"]
+    assert "Running test task" in text, f"unexpected output: {text}"
+    print(f"✓ run_task success: {text.strip()}")
+    return 0
+
+
+def test_run_task_with_args(proc):
+    send(proc, {
+        "jsonrpc": "2.0", "id": 4,
+        "method": "tools/call",
+        "params": {
+            "name": "run_task",
+            "arguments": {"task": "echo-args", "args": ["hello", "world"]},
+        },
+    })
+    resp = recv(proc, timeout=30.0)
+    if not resp or "result" not in resp:
+        print(f"ERROR: Bad run_task response: {resp}")
+        return 1
+
+    result = resp["result"]
+    assert not result.get("isError", False), f"run_task returned error: {result}"
+    text = result["content"][0]["text"]
+    assert "hello" in text and "world" in text, f"args not forwarded: {text}"
+    print(f"✓ run_task with args forwarded correctly: {text.strip()}")
+    return 0
+
+
+def test_run_task_unknown(proc):
+    send(proc, {
+        "jsonrpc": "2.0", "id": 5,
+        "method": "tools/call",
+        "params": {
+            "name": "run_task",
+            "arguments": {"task": "nonexistent-task-xyz"},
+        },
+    })
+    resp = recv(proc, timeout=30.0)
+    if not resp or "result" not in resp:
+        print(f"ERROR: Bad run_task response: {resp}")
+        return 1
+
+    result = resp["result"]
+    assert result.get("isError", False), "expected error for unknown task"
+    print("✓ run_task with unknown task returns error")
+    return 0
+
+
+def test_install_tool_stub(proc):
+    send(proc, {
+        "jsonrpc": "2.0", "id": 6,
+        "method": "tools/call",
+        "params": {
+            "name": "install_tool",
+            "arguments": {"tool": "node"},
+        },
+    })
+    resp = recv(proc, timeout=30.0)
+    if not resp or "result" not in resp:
+        print(f"ERROR: Bad install_tool response: {resp}")
+        return 1
+
+    result = resp["result"]
+    assert result.get("isError", False), "expected error from stub"
+    text = result["content"][0]["text"]
+    assert "not yet implemented" in text, f"unexpected stub message: {text}"
+    print("✓ install_tool stub returns not-yet-implemented error")
+    return 0
+
+
+def main():
+    mise_path = find_mise()
     if not mise_path:
         print("ERROR: Could not find mise binary")
         return 1
-    
     print(f"Using mise binary: {mise_path}")
-    
-    # Test initialize request only
+
     proc = subprocess.Popen(
         [mise_path, "mcp"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        env={**dict(os.environ), "MISE_EXPERIMENTAL": "1"}
+        env={**dict(os.environ), "MISE_EXPERIMENTAL": "1"},
     )
-    
+
     try:
-        # Send initialize request
-        init_request = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2025-03-26",
-                "capabilities": {},
-                "clientInfo": {"name": "test-client", "version": "1.0.0"}
-            }
-        }
-        
-        request_str = json.dumps(init_request) + "\n"
-        proc.stdin.write(request_str.encode())
-        proc.stdin.flush()
-        
-        # Read response with timeout
-        import select
-        ready, _, _ = select.select([proc.stdout], [], [], 3.0)
-        if not ready:
-            print("ERROR: No response to initialize request")
-            return 1
-            
-        response_line = proc.stdout.readline().decode().strip()
-        if not response_line:
-            print("ERROR: Empty response to initialize request")
-            return 1
-            
-        try:
-            response = json.loads(response_line)
-        except json.JSONDecodeError as e:
-            print(f"ERROR: Invalid JSON response: {e}")
-            print(f"Response was: {response_line}")
-            return 1
-        
-        print(f"✓ Initialize response received: {json.dumps(response, indent=2)}")
-        
-        # Validate response structure
-        if "result" not in response:
-            print(f"ERROR: No result in initialize response: {response}")
-            return 1
-            
-        result = response["result"]
-        
-        # Check protocol version
-        if result.get("protocolVersion") != "2025-03-26":
-            print(f"ERROR: Wrong protocol version: {result.get('protocolVersion')}")
-            return 1
-        print("✓ Protocol version correct")
-        
-        # Check capabilities
-        if "capabilities" not in result:
-            print("ERROR: No capabilities in response")
-            return 1
-        capabilities = result["capabilities"]
-        
-        if "resources" not in capabilities:
-            print("ERROR: Resources capability not advertised")
-            return 1
-        print("✓ Resources capability present")
-        
-        if "tools" not in capabilities:
-            print("ERROR: Tools capability not advertised")
-            return 1
-        print("✓ Tools capability present")
-        
-        # Check server info
-        if "serverInfo" not in result:
-            print("ERROR: No serverInfo in response")
-            return 1
-        server_info = result["serverInfo"]
-        
-        if server_info.get("name") != "rmcp":
-            print(f"ERROR: Wrong server name: {server_info.get('name')}")
-            return 1
-        print("✓ Server info correct")
-        
-        print("✓ All initialize validation passed!")
+        tests = [
+            ("initialize", test_initialize),
+            ("tools/list", test_tools_list),
+            ("run_task success", test_run_task_success),
+            ("run_task with args", test_run_task_with_args),
+            ("run_task unknown task", test_run_task_unknown),
+            ("install_tool stub", test_install_tool_stub),
+        ]
+        for name, test_fn in tests:
+            print(f"\n--- {name} ---")
+            rc = test_fn(proc)
+            if rc != 0:
+                print(f"FAIL: {name}")
+                return 1
+        print("\n✓ All MCP protocol tests passed!")
         return 0
-        
     except Exception as e:
-        print(f"ERROR: Exception during test: {e}")
+        print(f"ERROR: {e}")
         return 1
     finally:
         proc.terminate()
         proc.wait()
 
-def main():
-    return test_initialize_only()
 
 if __name__ == "__main__":
-    from os import environ
     sys.exit(main())
 EOF
 
 # Run the Python test script
-chmod +x test_mcp.py
 python3 test_mcp.py || exit 1
 
 # Clean up

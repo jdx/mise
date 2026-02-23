@@ -59,7 +59,7 @@ Provides information about mise configuration:
 
 ## Available Tools
 
-The following tools are available for AI assistants to call (currently stubbed for future implementation):
+The following tools are available for AI assistants to call:
 
 ### `install_tool`
 
@@ -67,7 +67,23 @@ Install a specific tool version (not yet implemented)
 
 ### `run_task`
 
-Execute a mise task (not yet implemented)
+Execute a mise task with optional arguments.
+
+**Parameters:**
+
+- `task` (required, string): Name of the task to run
+- `args` (optional, array of strings): Arguments to pass to the task
+
+**Example:**
+
+```json
+{
+  "task": "build",
+  "args": ["--verbose"]
+}
+```
+
+When the AI assistant calls this tool, it will execute the specified task and return the output, including stdout, stderr, and the exit status.
 
 ## Integration with AI Assistants
 
@@ -75,8 +91,8 @@ Execute a mise task (not yet implemented)
 
 To use mise with Claude Desktop, add the following to your Claude configuration file:
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`  
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`  
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 **Linux**: `~/.config/claude/claude_desktop_config.json`
 
 ```json
@@ -97,6 +113,7 @@ After adding this configuration and restarting Claude Desktop, the assistant wil
 
 - Query your installed tools and versions
 - List available tasks in your project
+- Execute tasks directly (e.g., "run the build task")
 - Access environment variables from your mise configuration
 - View your mise configuration structure
 
@@ -110,17 +127,19 @@ When integrated with an AI assistant, you can ask questions like:
 
 - "What version of Node.js is this project using?"
 - "List all the tasks available in this project"
+- "Run the build task"
+- "Execute the test task with verbose output"
 - "What environment variables are set by mise?"
 - "Show me the mise configuration for this project"
 
-The AI assistant will query the MCP server to provide accurate, up-to-date information about your development environment.
+The AI assistant will query the MCP server to provide accurate, up-to-date information about your development environment and can execute tasks on your behalf.
 
 ## Technical Details
 
 The MCP server implementation can be found in [`src/cli/mcp.rs`](https://github.com/jdx/mise/blob/main/src/cli/mcp.rs). It implements the ServerHandler trait from the rmcp crate to handle:
 
 - Resource listing and reading
-- Tool invocation (planned)
+- Tool invocation (task execution)
 - JSON-RPC communication over stdio
 
 For more information about the Model Context Protocol, visit the [official MCP documentation](https://modelcontextprotocol.io/).

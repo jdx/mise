@@ -1,6 +1,11 @@
-backends = [
-  "github:google/flatbuffers[exe=flatc]",
-  "asdf:TheOpenDictionary/asdf-flatc",
-]
 description = "The main compiler for FlatBuffers is called flatc and is used to convert schema definitions into generated code files for a variety of languages"
 test = { cmd = "flatc --version", expected = "flatc version {{version}}" }
+
+[[backends]]
+full = "github:google/flatbuffers"
+
+[backends.options]
+exe = "flatc"
+
+[[backends]]
+full = "asdf:TheOpenDictionary/asdf-flatc"

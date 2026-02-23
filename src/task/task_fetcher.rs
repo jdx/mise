@@ -15,7 +15,7 @@ impl TaskFetcher {
 
     /// Fetch remote task files, converting remote paths to local cached paths
     pub async fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
-        let no_cache = self.no_cache || Settings::get().task_remote_no_cache.unwrap_or(false);
+        let no_cache = self.no_cache || Settings::get().task.remote_no_cache.unwrap_or(false);
         let task_file_providers = TaskFileProvidersBuilder::new()
             .with_cache(!no_cache)
             .build();

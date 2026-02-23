@@ -9,6 +9,7 @@ _.path = ["./target/debug", "./node_modules/.bin"]
 age = "latest"
 bun = "latest"
 cargo-binstall = "latest"
+communique = "latest"
 "cargo:cargo-edit" = "latest"
 "cargo:cargo-insta" = "latest"
 "cargo:cargo-release" = "latest"

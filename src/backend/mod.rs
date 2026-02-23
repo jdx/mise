@@ -16,6 +16,7 @@ use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
+use crate::path_env::PathEnv;
 use crate::platform::Platform;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{PluginType, VERSION_REGEX};
@@ -30,7 +31,7 @@ use crate::{
     cache::{CacheManager, CacheManagerBuilder},
     plugins::PluginEnum,
 };
-use crate::{dirs, env, file, hash, lock_file, plugins, versions_host};
+use crate::{dirs, env, file, hash, lock_file, versions_host};
 use async_trait::async_trait;
 use backend_type::BackendType;
 use console::style;
@@ -442,7 +443,23 @@ pub trait Backend: Debug + Send + Sync {
             }
             matches
         } else {
-            true // Core plugins and plugins without remote URLs can use versions host
+            // For non-plugin backends (e.g. github:, cargo:), check if the backend matches
+            // the registry's default. When a user aliases a tool to a different backend
+            // (e.g. `php = "github:verzly/php"`), the versions host would return versions
+            // from the registry's default backend which may not match the aliased backend.
+            let full = ba.full();
+            if let Some(rt) = REGISTRY.get(ba.short.as_str()) {
+                let is_registry_backend = rt.backends().iter().any(|b| *b == full);
+                if !is_registry_backend {
+                    trace!(
+                        "Skipping versions host for {} because backend {} is not the registry default",
+                        ba.short, full
+                    );
+                }
+                is_registry_backend
+            } else {
+                true // Not in registry, safe to use versions host
+            }
         };
 
         if Settings::get().offline() {
@@ -546,6 +563,17 @@ pub trait Backend: Debug + Send + Sync {
                 if let Some(install_path) = tv.request.install_path(config)
                     && check_path(&install_path, true)
                 {
+                    // For Prefix requests, install_path finds any installed dir
+                    // matching the prefix (e.g., "1.0.0" for prefix "1"), but if
+                    // the ToolVersion resolved to a different version (e.g., "1.1.0"),
+                    // we must not treat it as installed.
+                    if let ToolRequest::Prefix { .. } = &tv.request
+                        && install_path
+                            .file_name()
+                            .is_some_and(|f| f.to_string_lossy() != tv.version)
+                    {
+                        return check_path(&tv.install_path(), check_symlink);
+                    }
                     return true;
                 }
                 check_path(&tv.install_path(), check_symlink)
@@ -844,6 +872,27 @@ pub trait Backend: Debug + Send + Sync {
         ctx: InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
+        // Check for --locked mode: if enabled and no lockfile URL exists, fail early
+        // Exempt tool stubs from lockfile requirements since they are ephemeral
+        // Also exempt backends that don't support URL locking (e.g., Rust uses rustup)
+        // This must run before the dry-run check so that --locked --dry-run still validates
+        if ctx.locked && !tv.request.source().is_tool_stub() && self.supports_lockfile_url() {
+            let platform_key = self.get_platform_key();
+            let has_lockfile_url = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|p| p.url.as_ref())
+                .is_some();
+            if !has_lockfile_url {
+                bail!(
+                    "No lockfile URL found for {} on platform {} (--locked mode)\n\
+                    hint: Run `mise lock` to generate lockfile URLs, or disable locked mode",
+                    tv.style(),
+                    platform_key
+                );
+            }
+        }
+
         // Handle dry-run mode early to avoid plugin installation
         if ctx.dry_run {
             use crate::ui::progress_report::ProgressIcon;
@@ -878,25 +927,6 @@ pub trait Backend: Debug + Send + Sync {
             ctx.pr.next_operation();
         } else if self.is_version_installed(&ctx.config, &tv, true) {
             return Ok(tv);
-        }
-        // Check for --locked mode: if enabled and no lockfile URL exists, fail early
-        // Exempt tool stubs from lockfile requirements since they are ephemeral
-        // Also exempt backends that don't support URL locking (e.g., Rust uses rustup)
-        if ctx.locked && !tv.request.source().is_tool_stub() && self.supports_lockfile_url() {
-            let platform_key = self.get_platform_key();
-            let has_lockfile_url = tv
-                .lock_platforms
-                .get(&platform_key)
-                .and_then(|p| p.url.as_ref())
-                .is_some();
-            if !has_lockfile_url {
-                bail!(
-                    "No lockfile URL found for {} on platform {} (--locked mode)\n\
-                    hint: Run `mise lock` to generate lockfile URLs, or disable locked mode",
-                    tv.style(),
-                    platform_key
-                );
-            }
         }
 
         // Track the installation asynchronously (fire-and-forget)
@@ -974,8 +1004,17 @@ pub trait Backend: Debug + Send + Sync {
             }
         }
 
+        // Use the backend's list_bin_paths to get the correct binary directories
+        // instead of hardcoding install_path/bin, which may not match the actual
+        // binary location for backends like aqua
+        let bin_paths = self.list_bin_paths(&ctx.config, tv).await?;
+        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        for p in bin_paths {
+            path_env.add(p);
+        }
+
         CmdLineRunner::new(&*env::SHELL)
-            .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
+            .env(&*env::PATH_KEY, path_env.join())
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
             .env("MISE_TOOL_NAME", tv.ba().short.clone())
             .env("MISE_TOOL_VERSION", tv.version.clone())
@@ -1100,6 +1139,16 @@ pub trait Backend: Debug + Send + Sync {
     fn cleanup_install_dirs_on_error(&self, tv: &ToolVersion) {
         if !Settings::get().always_keep_install {
             let _ = remove_all_with_warning(tv.install_path());
+            // Clean up the incomplete marker from cache
+            let _ = file::remove_file(self.incomplete_file_path(tv));
+            // Remove parent installs dir if it's now empty (no other versions present)
+            let installs_path = &self.ba().installs_path;
+            if installs_path.exists()
+                && let Ok(entries) = file::dir_subdirs(installs_path)
+                && entries.is_empty()
+            {
+                let _ = remove_all_with_warning(installs_path);
+            }
             self.cleanup_install_dirs(tv);
         }
     }

@@ -3,16 +3,62 @@ packages:
   - type: github_release
     repo_owner: k1LoW
     repo_name: runn
-    asset: runn_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-    format: tar.gz
     description: runn is a package/tool for running operations following a scenario
-    overrides:
-      - goos: darwin
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.17.0", "v0.58.0", "v0.112.0"]
+        no_asset: true
+      - version_constraint: Version == "v0.0.1"
+        asset: runbk_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: zip
-    supported_envs:
-      - linux/amd64
-      - darwin
-    checksum:
-      type: github_release
-      asset: checksums.txt
-      algorithm: sha256
+        files:
+          - name: runbk
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.59.4")
+        asset: runn_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.75.3")
+        asset: runn_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: runn_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            format: zip

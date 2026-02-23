@@ -7,7 +7,6 @@ use std::sync::LazyLock as Lazy;
 
 use crate::config::Config;
 use crate::config::env_directive::EnvResults;
-use crate::registry::REGISTRY;
 use crate::toolset::Toolset;
 use crate::uv;
 use itertools::Itertools;
@@ -38,22 +37,7 @@ impl Toolset {
             return entry.clone();
         }
 
-        installed.sort_by(|(a, _), (b, _)| {
-            let id_a = a.id();
-            let id_b = b.id();
-
-            if let Some(tool_a) = REGISTRY.get(id_a)
-                && tool_a.overrides.contains(&id_b)
-            {
-                return std::cmp::Ordering::Less;
-            }
-            if let Some(tool_b) = REGISTRY.get(id_b)
-                && tool_b.overrides.contains(&id_a)
-            {
-                return std::cmp::Ordering::Greater;
-            }
-            std::cmp::Ordering::Equal
-        });
+        Self::sort_by_overrides(&mut installed).unwrap();
 
         let mut paths: Vec<PathBuf> = Vec::new();
         for (p, tv) in installed {

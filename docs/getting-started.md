@@ -288,7 +288,7 @@ mise exec github:BurntSushi/ripgrep -- rg --version
 
 # or if mise is activated in your shell
 mise use --global github:BurntSushi/ripgrep
-ripgrep --version
+rg --version
 ```
 
 See [Backends](/dev-tools/backends/) for more ecosystems and details.

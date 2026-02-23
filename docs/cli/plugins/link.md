@@ -14,12 +14,12 @@ This is used for developing a plugin.
 ### `<NAME>`
 
 The name of the plugin
-e.g.: node, ruby
+e.g.: cmake, poetry
 
 ### `[DIR]`
 
 The local path to the plugin
-e.g.: ./mise-node
+e.g.: ./vfox-cmake
 
 ## Flags
 
@@ -30,9 +30,9 @@ Overwrite existing plugin
 Examples:
 
 ```
-# essentially just `ln -s ./mise-node ~/.local/share/mise/plugins/node`
-$ mise plugins link node ./mise-node
+# essentially just `ln -s ./vfox-cmake ~/.local/share/mise/plugins/cmake`
+$ mise plugins link cmake ./vfox-cmake
 
-# infer plugin name as "node"
-$ mise plugins link ./mise-node
+# infer plugin name as "cmake"
+$ mise plugins link ./vfox-cmake
 ```

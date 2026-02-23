@@ -33,14 +33,14 @@ run = "echo 'task from nested config'"
 TOML
 
 # Create tasks in the CUSTOM include path (specified in nested config)
-# Includes are resolved relative to the config file's parent directory,
-# so for .config/mise/config.toml, custom-tasks is at .config/mise/custom-tasks
-mkdir -p projects/nested-config/.config/mise/custom-tasks
-cat <<'SCRIPT' >projects/nested-config/.config/mise/custom-tasks/custom-task
+# Includes are resolved relative to the config root (projects/nested-config/),
+# so for .config/mise/config.toml, custom-tasks is at projects/nested-config/custom-tasks
+mkdir -p projects/nested-config/custom-tasks
+cat <<'SCRIPT' >projects/nested-config/custom-tasks/custom-task
 #!/usr/bin/env bash
 echo "task from custom includes"
 SCRIPT
-chmod +x projects/nested-config/.config/mise/custom-tasks/custom-task
+chmod +x projects/nested-config/custom-tasks/custom-task
 
 # Create tasks in the DEFAULT include path (.mise/tasks)
 # These should NOT be loaded because the nested config exists
@@ -75,40 +75,41 @@ mkdir -p projects/nested-default/.config/mise
 
 cat <<'TOML' >projects/nested-default/.config/mise/config.toml
 # Nested config WITHOUT custom includes - should use default includes
-# Default includes are resolved relative to config file's parent (.config/mise/)
+# Default includes are resolved relative to the config root (projects/nested-default/)
 
 [tasks.config-task2]
 run = "echo 'task from nested-default config'"
 TOML
 
-# Create tasks in the DEFAULT include path, relative to the config file's parent
-# For .config/mise/config.toml, the default ".mise/tasks" resolves to .config/mise/.mise/tasks
-mkdir -p projects/nested-default/.config/mise/.mise/tasks
-cat <<'SCRIPT' >projects/nested-default/.config/mise/.mise/tasks/default-include-task
+# Create tasks in the DEFAULT include path, relative to the config root
+# For .config/mise/config.toml with config_root=projects/nested-default/,
+# the default ".mise/tasks" resolves to projects/nested-default/.mise/tasks
+mkdir -p projects/nested-default/.mise/tasks
+cat <<'SCRIPT' >projects/nested-default/.mise/tasks/default-include-task
 #!/usr/bin/env bash
 echo "task from default includes in nested config"
 SCRIPT
-chmod +x projects/nested-default/.config/mise/.mise/tasks/default-include-task
+chmod +x projects/nested-default/.mise/tasks/default-include-task
 
-# Also create tasks in the project-root-relative .mise/tasks
-# These should NOT be loaded (default includes are relative to config file, not project root)
-mkdir -p projects/nested-default/.mise/tasks
-cat <<'SCRIPT' >projects/nested-default/.mise/tasks/wrong-location-task
+# Also create tasks at the config-file-parent-relative path (.config/mise/.mise/tasks)
+# These should NOT be loaded (default includes are relative to config root, not config file parent)
+mkdir -p projects/nested-default/.config/mise/.mise/tasks
+cat <<'SCRIPT' >projects/nested-default/.config/mise/.mise/tasks/wrong-location-task
 #!/usr/bin/env bash
 echo "task from wrong location - should NOT appear"
 SCRIPT
-chmod +x projects/nested-default/.mise/tasks/wrong-location-task
+chmod +x projects/nested-default/.config/mise/.mise/tasks/wrong-location-task
 
 # Test 5: Tasks from nested config using default includes should work
 assert_contains "mise tasks --all" "//projects/nested-default:config-task2"
 assert_contains "mise run '//projects/nested-default:config-task2'" "task from nested-default config"
 
-# Test 6: Tasks from default include path (relative to config file) should be loaded
+# Test 6: Tasks from default include path (relative to config root) should be loaded
 assert_contains "mise tasks --all" "//projects/nested-default:default-include-task"
 assert_contains "mise run '//projects/nested-default:default-include-task'" "task from default includes in nested config"
 
-# Test 7: Tasks from project-root-relative .mise/tasks should NOT be loaded
-# (because the nested config is detected and includes are relative to config file location)
+# Test 7: Tasks from config-file-parent-relative .mise/tasks should NOT be loaded
+# (because includes are relative to config root, not config file location)
 assert_not_contains "mise tasks --all" "//projects/nested-default:wrong-location-task"
 
 # ============================================================================
@@ -120,7 +121,7 @@ mkdir -p projects/mise-dir/.mise
 
 cat <<'TOML' >projects/mise-dir/.mise/config.toml
 # 1-level nested config at .mise/config.toml
-# Custom includes pointing to "tasks" (relative to config parent .mise/)
+# Custom includes pointing to "tasks" (relative to config root projects/mise-dir/)
 [task_config]
 includes = ["tasks"]
 
@@ -128,32 +129,33 @@ includes = ["tasks"]
 run = "echo 'task from .mise/config.toml'"
 TOML
 
-# Create tasks in the config-relative include path (.mise/tasks)
-# This is "tasks" relative to config parent (.mise/)
-mkdir -p projects/mise-dir/.mise/tasks
-cat <<'SCRIPT' >projects/mise-dir/.mise/tasks/config-relative-task
+# Create tasks in the config-root-relative include path (projects/mise-dir/tasks)
+# This is "tasks" relative to config root (projects/mise-dir/)
+mkdir -p projects/mise-dir/tasks
+cat <<'SCRIPT' >projects/mise-dir/tasks/config-relative-task
 #!/usr/bin/env bash
 echo "task from config-relative include"
 SCRIPT
-chmod +x projects/mise-dir/.mise/tasks/config-relative-task
+chmod +x projects/mise-dir/tasks/config-relative-task
 
-# Create tasks in the subdir-relative default path (mise-tasks at project root)
-mkdir -p projects/mise-dir/mise-tasks
-cat <<'SCRIPT' >projects/mise-dir/mise-tasks/fallback-task
+# Create tasks in the config-file-parent-relative path (.mise/tasks)
+# These should NOT be loaded (includes resolve from config root, not config file parent)
+mkdir -p projects/mise-dir/.mise/tasks
+cat <<'SCRIPT' >projects/mise-dir/.mise/tasks/fallback-task
 #!/usr/bin/env bash
 echo "task from fallback - should NOT appear"
 SCRIPT
-chmod +x projects/mise-dir/mise-tasks/fallback-task
+chmod +x projects/mise-dir/.mise/tasks/fallback-task
 
 # Test 8: Tasks from 1-level nested config should be discovered
 assert_contains "mise tasks --all" "//projects/mise-dir:mise-dir-task"
 assert_contains "mise run '//projects/mise-dir:mise-dir-task'" "task from .mise/config.toml"
 
-# Test 9: Tasks from config-relative includes should be loaded
+# Test 9: Tasks from config-root-relative includes should be loaded
 assert_contains "mise tasks --all" "//projects/mise-dir:config-relative-task"
 assert_contains "mise run '//projects/mise-dir:config-relative-task'" "task from config-relative include"
 
-# Test 10: Tasks from subdir-relative fallback path should NOT be loaded
+# Test 10: Tasks from config-file-parent-relative path should NOT be loaded
 assert_not_contains "mise tasks --all" "//projects/mise-dir:fallback-task"
 
 # ============================================================================

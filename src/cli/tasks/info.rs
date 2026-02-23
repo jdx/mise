@@ -8,6 +8,7 @@ use crate::config::Config;
 use crate::file::display_path;
 use crate::task::Task;
 use crate::task::task_fetcher::TaskFetcher;
+use crate::task::task_source_checker::task_cwd;
 use crate::ui::info;
 
 /// Get information about a task
@@ -93,7 +94,8 @@ impl TasksInfo {
         if !task.sources.is_empty() {
             info::inline_section("Sources", task.sources.join(", "))?;
         }
-        let outputs = task.outputs.paths(task);
+        let root = task_cwd(task, config).await?;
+        let outputs = task.outputs.paths(task, &root);
         if !outputs.is_empty() {
             info::inline_section("Outputs", outputs.join(", "))?;
         }

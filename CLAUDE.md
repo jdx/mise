@@ -113,8 +113,9 @@ All commit messages and PR titles MUST follow conventional commit format:
 - `registry:` - Any changes to `registry/` (no scope needed, use for both new tools and fixes)
 
 **Scopes:**
-- For command-specific changes, use the command name: `install`, `activate`, `use`, `run`, `exec`, etc.
+- For command-specific changes, use the command name: `install`, `activate`, `use`, `exec`, etc.
 - For subsystem changes: `config`, `backend`, `env`, `task`, `vfox`, `python`, `github`, `release`, `completions`, `http`, `schema`, `doctor`, `shim`, `core`, `deps`, `ci`
+- Use `task` (not `run`) for task-related changes, even if the code lives in `src/cli/run.rs` or `src/cmd.rs`
 
 **Description Style:**
 - Use lowercase after the colon

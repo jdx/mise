@@ -244,12 +244,20 @@ impl HookEnv {
                 // (after the original PATH entries) to preserve their intended position.
                 // This prevents paths appended after `mise activate` in shell rc from
                 // being moved to the front of PATH.
+                //
+                // Also collect orig paths in their current order to preserve any
+                // reordering done after activation (e.g., by ~/.zlogin which runs
+                // after ~/.zshrc where mise activate is typically placed).
                 let mut pre = Vec::new();
                 let mut post_user = Vec::new();
+                let mut orig_reordered = Vec::new();
                 let mut seen_orig = false;
+                let mut seen_in_current: HashSet<&PathBuf> = HashSet::new();
                 for path in &current_paths {
                     if orig_set.contains(path) {
                         seen_orig = true;
+                        orig_reordered.push(path.clone());
+                        seen_in_current.insert(path);
                         continue;
                     }
 
@@ -266,8 +274,15 @@ impl HookEnv {
                     }
                 }
 
-                // Use the original PATH directly as "post" to ensure it's preserved exactly
-                (pre, orig_paths, post_user)
+                // Append any orig paths that are no longer in current PATH
+                // (to avoid losing paths that may have been temporarily removed)
+                for path in &orig_paths {
+                    if !seen_in_current.contains(path) {
+                        orig_reordered.push(path.clone());
+                    }
+                }
+
+                (pre, orig_reordered, post_user)
             }
             _ => (vec![], current_paths, vec![]),
         };

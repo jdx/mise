@@ -2,7 +2,10 @@ description = "CodeQL CLI"
 test = { cmd = "codeql --version", expected = "CodeQL command-line toolchain release {{version}}" }
 
 [[backends]]
-full = "github:github/codeql-cli-binaries[bin_path=codeql]"
+full = "github:github/codeql-cli-binaries"
+
+[backends.options]
+bin_path = "codeql"
 
 [backends.options.platforms.macos-x64]
 asset_pattern = "codeql-osx64.zip"

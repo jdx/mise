@@ -14,12 +14,17 @@ The MCP server provides access to:
 - Task definitions and execution
 - Environment variables
 - Configuration information
+- Task execution via the run_task tool
 
 Resources available:
 - mise://tools - List all tools (use ?include_inactive=true to include inactive tools)
 - mise://tasks - List all tasks with their configurations
 - mise://env - List all environment variables
 - mise://config - Show configuration files and project root
+
+Tools available:
+- install_tool - Install a tool with an optional version (not yet implemented)
+- run_task - Execute a mise task with optional arguments
 
 Note: This is primarily intended for integration with AI assistants like Claude,
 Cursor, or other tools that support the Model Context Protocol.
@@ -35,7 +40,10 @@ $ mise mcp
   "mcpServers": {
     "mise": {
       "command": "mise",
-      "args": ["mcp"]
+      "args": ["mcp"],
+      "env": {
+        "MISE_EXPERIMENTAL": "1"
+      }
     }
   }
 }
@@ -49,4 +57,9 @@ $ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion
 - mise://tasks - List all tasks
 - mise://env - List environment variables
 - mise://config - Show configuration info
+
+# Tools available:
+- install_tool - Install a tool (not yet implemented)
+- run_task - Execute a mise task with optional arguments
+  Example: {"task": "build", "args": ["--verbose"]}
 ```

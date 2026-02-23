@@ -1,3 +1,8 @@
-backends = ["github:signadot/cli[exe=signadot]"]
 description = "Command-line interface for Signadot"
 test = { cmd = "signadot --version", expected = "signadot version v{{version}}" }
+
+[[backends]]
+full = "github:signadot/cli"
+
+[backends.options]
+exe = "signadot"

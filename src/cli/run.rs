@@ -84,7 +84,7 @@ pub struct Run {
 
     /// Print directly to stdout/stderr instead of by line
     /// Defaults to true if --jobs == 1
-    /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
+    /// Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
     #[clap(
         long,
         short,
@@ -118,7 +118,7 @@ pub struct Run {
 
     /// Print stdout/stderr by line, prefixed with the task's label
     /// Defaults to true if --jobs > 1
-    /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
+    /// Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
     #[clap(
         long,
         short,
@@ -279,21 +279,8 @@ impl Run {
         };
         let _ = ts.install_missing_versions(&mut config, &opts).await?;
 
-        // Run auto-enabled prepare steps (unless --no-prepare)
-        if !self.no_prepare {
-            let env = ts.env_with_path(&config).await?;
-            let engine = PrepareEngine::new(&config)?;
-            engine
-                .run(PrepareOptions {
-                    auto_only: true, // Only run providers with auto=true
-                    env,
-                    ..Default::default()
-                })
-                .await?;
-        }
-
         if !self.skip_deps {
-            self.skip_deps = Settings::get().task_skip_depends;
+            self.skip_deps = Settings::get().task.skip_depends;
         }
 
         time!("run init");
@@ -314,6 +301,31 @@ impl Run {
             }
         }
         time!("run get_task_lists");
+
+        // Run auto-enabled prepare steps (unless --no-prepare)
+        // This runs after task resolution so we can discover prepare providers
+        // from monorepo subdirectory configs referenced by the resolved tasks.
+        if !self.no_prepare {
+            let env = ts.env_with_path(&config).await?;
+            let mut engine = PrepareEngine::new(&config)?;
+
+            // Collect subdirectory config files from resolved tasks
+            let subdir_configs: Vec<_> = task_list
+                .iter()
+                .filter_map(|task| task.cf.clone())
+                .collect();
+            if !subdir_configs.is_empty() {
+                engine.add_config_files(subdir_configs);
+            }
+
+            engine
+                .run(PrepareOptions {
+                    auto_only: true, // Only run providers with auto=true
+                    env,
+                    ..Default::default()
+                })
+                .await?;
+        }
 
         // Apply global timeout for entire run if configured
         let timeout = if let Some(timeout_str) = &self.timeout {
@@ -409,16 +421,20 @@ impl Run {
         ctx: crate::task::task_scheduler::SpawnContext,
     ) -> Result<()> {
         // If we're already stopping due to a previous failure and not in
-        // continue-on-error mode, do not launch this task. Ensure we remove
-        // it from the dependency graph so the scheduler can make progress.
+        // continue-on-error mode, do not launch this task unless it's a
+        // post-dependency (cleanup task that should run even on failure).
         if this.is_stopping() && !this.continue_on_error {
-            trace!(
-                "aborting spawn before start (not continue-on-error): {} {}",
-                task.name,
-                task.args.join(" ")
-            );
-            deps_for_remove.lock().await.remove(&task);
-            return Ok(());
+            let mut deps = deps_for_remove.lock().await;
+            if !deps.is_runnable_post_dep(&task) {
+                trace!(
+                    "aborting spawn before start (not continue-on-error): {} {}",
+                    task.name,
+                    task.args.join(" ")
+                );
+                deps.remove(&task);
+                return Ok(());
+            }
+            drop(deps);
         }
         let needs_permit = task_needs_permit(&task);
         let permit_opt = if needs_permit {
@@ -430,18 +446,22 @@ impl Run {
                 wait_start.elapsed().as_millis()
             );
             // If a failure occurred while we were waiting for a permit and we're not
-            // in continue-on-error mode, skip launching this task. This prevents
-            // subsequently queued tasks (e.g., from CLI ":::" groups) from running
-            // after the first failure when --jobs=1 and ensures immediate stop.
+            // in continue-on-error mode, skip launching this task unless it's a
+            // post-dependency (cleanup task). This prevents subsequently queued
+            // tasks from running after failure, while still allowing cleanup.
             if this.is_stopping() && !this.continue_on_error {
-                trace!(
-                    "aborting spawn after failure (not continue-on-error): {} {}",
-                    task.name,
-                    task.args.join(" ")
-                );
-                // Remove from deps so the scheduler can drain and not hang
-                deps_for_remove.lock().await.remove(&task);
-                return Ok(());
+                let mut deps = deps_for_remove.lock().await;
+                if !deps.is_runnable_post_dep(&task) {
+                    trace!(
+                        "aborting spawn after failure (not continue-on-error): {} {}",
+                        task.name,
+                        task.args.join(" ")
+                    );
+                    // Remove from deps so the scheduler can drain and not hang
+                    deps.remove(&task);
+                    return Ok(());
+                }
+                drop(deps);
             }
             p
         } else {
@@ -474,6 +494,11 @@ impl Run {
                     };
                 }
                 this.add_failed_task(task.clone(), status);
+            }
+            if let Some(oh) = &this.output_handler
+                && oh.output(None) == TaskOutput::KeepOrder
+            {
+                oh.keep_order_state.lock().unwrap().on_task_finished(&task);
             }
             deps_for_remove.lock().await.remove(&task);
             trace!("deps removed: {} {}", task.name, task.args.join(" "));

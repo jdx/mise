@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# Test that core:python generates lockfile URLs from python-build-standalone
+export MISE_LOCKFILE=1
+
+detect_platform
+
+cat <<EOF >mise.toml
+[tools]
+python = "3.13.5"
+EOF
+
+rm -f mise.lock
+
+output=$(mise lock --platform "$MISE_PLATFORM" 2>&1)
+assert_contains "echo '$output'" "Processing 1 tool(s)"
+
+# Verify lockfile has URL and checksum for python
+assert_contains "cat mise.lock" "\"platforms.$MISE_PLATFORM\""
+assert_contains "cat mise.lock" "github.com/astral-sh/python-build-standalone/releases/download"
+assert_contains "cat mise.lock" "sha256:"
+
+echo "Lockfile content:"
+cat mise.lock
+
+rm -f mise.lock mise.toml
+
+echo "Python lockfile URL test passed!"

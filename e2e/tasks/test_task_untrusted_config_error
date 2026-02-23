@@ -18,7 +18,7 @@ EOF
 # 2. Show a clear "config not trusted" error (not "no tasks defined")
 #
 # This test verifies we don't get the misleading "no tasks defined" error
-output=$(mise run make 2>&1 || true)
+output=$(MISE_YES=0 mise run make 2>&1 || true)
 
 # The error should mention "trust" or "untrusted", not just "no tasks defined"
 if echo "$output" | grep -q "no tasks defined.*Are you in a project directory"; then

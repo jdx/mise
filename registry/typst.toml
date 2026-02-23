@@ -1,5 +1,6 @@
 backends = [
   "aqua:typst/typst",
+  "github:typst/typst",
   "asdf:stephane-klein/asdf-typst",
   "cargo:typst-cli",
 ]

@@ -1,2 +1,10 @@
-backends = ["github:GAM-team/GAM[exe=gam]", "asdf:offbyone/asdf-gam"]
 description = "command line management for Google Workspace"
+
+[[backends]]
+full = "github:GAM-team/GAM"
+
+[backends.options]
+exe = "gam"
+
+[[backends]]
+full = "asdf:offbyone/asdf-gam"

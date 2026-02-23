@@ -217,7 +217,25 @@ impl Watch {
         for (k, v) in ts.env_with_path(&config).await? {
             cmd = cmd.env(k, v);
         }
-        cmd.run()?;
+
+        // Save terminal state before running watchexec, because --clear=reset
+        // sends a full terminal reset (RIS) which can corrupt terminal settings
+        // (e.g. disabling echo) if watchexec is interrupted with Ctrl+C.
+        #[cfg(unix)]
+        let saved_termios = nix::sys::termios::tcgetattr(std::io::stdin()).ok();
+
+        let result = cmd.run();
+
+        #[cfg(unix)]
+        if let Some(termios) = saved_termios {
+            let _ = nix::sys::termios::tcsetattr(
+                std::io::stdin(),
+                nix::sys::termios::SetArg::TCSANOW,
+                &termios,
+            );
+        }
+
+        result?;
         Ok(())
     }
 
@@ -1103,13 +1121,13 @@ pub struct WatchexecArgs {
     //
     // /// Print stdout/stderr by line, prefixed with the tasks's label
     // /// Defaults to true if --jobs > 1
-    // /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
+    // /// Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
     // #[clap(long, short, verbatim_doc_comment, overrides_with = "interleave")]
     // pub prefix: bool,
     //
     // /// Print directly to stdout/stderr instead of by line
     // /// Defaults to true if --jobs == 1
-    // /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
+    // /// Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
     // #[clap(long, short, verbatim_doc_comment, overrides_with = "prefix")]
     // pub interleave: bool,
     //

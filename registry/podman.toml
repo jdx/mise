@@ -1,5 +1,10 @@
-backends = [
-  "github:containers/podman[matching=podman-remote]",
-  "asdf:tvon/asdf-podman",
-]
 description = "Podman: A tool for managing OCI containers and pods"
+
+[[backends]]
+full = "github:containers/podman"
+
+[backends.options]
+matching = "podman-remote"
+
+[[backends]]
+full = "asdf:tvon/asdf-podman"

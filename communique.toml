@@ -1,0 +1,4 @@
+context = "mise is a polyglot runtime manager (like asdf, nvm, pyenv, etc), environment manager, and task runner."
+
+[defaults]
+emoji = false

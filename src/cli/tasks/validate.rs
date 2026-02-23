@@ -508,7 +508,7 @@ impl TasksValidate {
         let mut issues = Vec::new();
 
         // Validate output patterns if they exist
-        let paths = task.outputs.paths(task);
+        let paths = task.outputs.patterns();
         for path in paths {
             // Try to compile as glob pattern
             if let Err(e) = globset::GlobBuilder::new(&path).build() {

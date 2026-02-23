@@ -1,5 +1,6 @@
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
+
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::args::BackendArg;
@@ -577,10 +578,10 @@ impl Backend for AquaBackend {
             None => vec![v.as_str()],
         };
 
-        // Get package with version for the target platform
-        let pkg = AQUA_REGISTRY
-            .package_with_version(&self.id, &versions)
-            .await?;
+        // Get package and apply version/overrides directly for the target platform.
+        // Using package_with_version() here would apply overrides for the current host
+        // platform first, which can leak host-specific overrides into cross-platform lock.
+        let pkg = AQUA_REGISTRY.package(&self.id).await?;
         let pkg = pkg.with_version(&versions, target_os, target_arch);
 
         // Apply version prefix if present
@@ -717,9 +718,14 @@ impl AquaBackend {
                 .github_release_url(pkg, v)
                 .await
                 .map(|(url, digest)| (url, true, digest)),
-            AquaPackageType::GithubArchive | AquaPackageType::GithubContent => {
-                Ok((self.github_archive_url(pkg, v), false, None))
+            AquaPackageType::GithubContent => {
+                if pkg.path.is_some() {
+                    Ok((self.github_content_url(pkg, v), false, None))
+                } else {
+                    bail!("github_content package requires `path`")
+                }
             }
+            AquaPackageType::GithubArchive => Ok((self.github_archive_url(pkg, v), false, None)),
             AquaPackageType::Http => pkg.url(v, os(), arch()).map(|url| (url, false, None)),
             ref t => bail!("unsupported aqua package type: {t}"),
         }
@@ -765,6 +771,12 @@ impl AquaBackend {
     fn github_archive_url(&self, pkg: &AquaPackage, v: &str) -> String {
         let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         format!("https://github.com/{gh_id}/archive/refs/tags/{v}.tar.gz")
+    }
+
+    fn github_content_url(&self, pkg: &AquaPackage, v: &str) -> String {
+        let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+        let path = pkg.path.as_deref().unwrap();
+        format!("https://raw.githubusercontent.com/{gh_id}/{v}/{path}")
     }
 
     /// Fetch checksum from a checksum file without downloading the actual tarball.
@@ -1407,7 +1419,7 @@ impl AquaBackend {
         let first_bin_path = bin_paths
             .first()
             .expect("at least one bin path should exist");
-        let mut tar_opts = TarOptions {
+        let tar_opts = TarOptions {
             pr: Some(ctx.pr.as_ref()),
             ..TarOptions::new(TarFormat::from_ext(format))
         };
@@ -1415,8 +1427,9 @@ impl AquaBackend {
         if let AquaPackageType::GithubArchive = pkg.r#type {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
         } else if let AquaPackageType::GithubContent = pkg.r#type {
-            tar_opts.strip_components = 1;
-            file::untar(&tarball_path, &install_path, &tar_opts)?;
+            file::create_dir_all(&install_path)?;
+            file::copy(&tarball_path, first_bin_path)?;
+            make_executable = true;
         } else if format == "raw" {
             file::create_dir_all(&install_path)?;
             file::copy(&tarball_path, first_bin_path)?;

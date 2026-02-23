@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 
-# Test that raw tasks get interleave output even when task_output=prefix is set
-# This ensures raw=true takes priority over task_output setting
+# Test that raw tasks get interleave output even when task.output=prefix is set
+# This ensures raw=true takes priority over task.output setting
 
 cat <<EOF >mise.toml
 [settings]
-task_output = "prefix"
+task.output = "prefix"
 
 [tasks.normal]
 run = 'echo normal task'

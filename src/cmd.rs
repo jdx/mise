@@ -8,6 +8,9 @@ use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
 use crate::redactions::Redactor;
 use color_eyre::Result;
 use duct::{Expression, IntoExecutablePath};
@@ -138,9 +141,13 @@ impl<'a> CmdLineRunner<'a> {
         let pids = RUNNING_PIDS.lock().unwrap();
         for pid in pids.iter() {
             let pid = *pid as i32;
-            trace!("{signal}: {pid}");
-            if let Err(e) = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), signal) {
-                debug!("Failed to kill cmd {pid}: {e}");
+            let nix_pid = nix::unistd::Pid::from_raw(pid);
+            trace!("{signal}: pgid {pid}");
+            if nix::sys::signal::killpg(nix_pid, signal).is_err() {
+                trace!("killpg failed for {pid}, falling back to kill");
+                if let Err(e) = nix::sys::signal::kill(nix_pid, signal) {
+                    debug!("Failed to kill cmd {pid}: {e}");
+                }
             }
         }
     }
@@ -241,13 +248,6 @@ impl<'a> CmdLineRunner<'a> {
         None
     }
 
-    pub fn opt_arg<S: AsRef<OsStr>>(mut self, arg: Option<S>) -> Self {
-        if let Some(arg) = arg {
-            self.cmd.arg(arg);
-        }
-        self
-    }
-
     pub fn opt_args<S: AsRef<OsStr>>(mut self, arg: &str, values: Option<Vec<S>>) -> Self {
         if let Some(values) = values {
             for value in values {
@@ -305,6 +305,25 @@ impl<'a> CmdLineRunner<'a> {
             drop(read_lock);
             let _write_lock = RAW_LOCK.write().unwrap();
             return self.execute_raw();
+        }
+        #[cfg(unix)]
+        unsafe {
+            self.cmd.pre_exec(|| {
+                // Don't create a new process group when stdin is a TTY.
+                // Interactive tools (e.g. Tilt) need to stay in the terminal's
+                // foreground process group; moving them to a new one triggers
+                // SIGTTIN and hangs them.
+                // Use BorrowedFd::borrow_raw rather than std::io::stdin() —
+                // pre_exec runs post-fork where OnceLock/malloc are not safe.
+                let stdin = std::os::fd::BorrowedFd::borrow_raw(0);
+                if !std::io::IsTerminal::is_terminal(&stdin) {
+                    let _ = nix::unistd::setpgid(
+                        nix::unistd::Pid::from_raw(0),
+                        nix::unistd::Pid::from_raw(0),
+                    );
+                }
+                Ok(())
+            });
         }
         let mut cp = self
             .spawn_with_etxtbsy_retry()
@@ -377,12 +396,12 @@ impl<'a> CmdLineRunner<'a> {
                 ChildProcessOutput::Stdout(line) => {
                     let line = self.redactor.redact(&line);
                     self.on_stdout(line.clone());
-                    combined_output.push(line);
+                    combined_output.push((line, OutputSource::Stdout));
                 }
                 ChildProcessOutput::Stderr(line) => {
                     let line = self.redactor.redact(&line);
                     self.on_stderr(line.clone());
-                    combined_output.push(line);
+                    combined_output.push((line, OutputSource::Stderr));
                 }
                 ChildProcessOutput::ExitStatus(s) => {
                     RUNNING_PIDS.lock().unwrap().remove(&id);
@@ -390,11 +409,11 @@ impl<'a> CmdLineRunner<'a> {
                 }
                 #[cfg(not(any(test, windows)))]
                 ChildProcessOutput::Signal(sig) => {
-                    if sig != SIGINT {
-                        debug!("Received signal {sig}, {id}");
-                        let pid = nix::unistd::Pid::from_raw(id as i32);
-                        let sig = nix::sys::signal::Signal::try_from(sig).unwrap();
-                        nix::sys::signal::kill(pid, sig)?;
+                    debug!("Received signal {sig}, forwarding to pgid {id}");
+                    let pgid = nix::unistd::Pid::from_raw(id as i32);
+                    let sig = nix::sys::signal::Signal::try_from(sig).unwrap();
+                    if nix::sys::signal::killpg(pgid, sig).is_err() {
+                        let _ = nix::sys::signal::kill(pgid, sig);
                     }
                 }
             }
@@ -403,7 +422,7 @@ impl<'a> CmdLineRunner<'a> {
         let status = status.unwrap();
 
         if !status.success() {
-            self.on_error(combined_output.join("\n"), status)?;
+            self.on_error(combined_output, status)?;
         }
 
         Ok(())
@@ -413,7 +432,7 @@ impl<'a> CmdLineRunner<'a> {
         let status = self.spawn_with_etxtbsy_retry()?.wait()?;
         match status.success() {
             true => Ok(()),
-            false => self.on_error(String::new(), status),
+            false => self.on_error(vec![], status),
         }
     }
 
@@ -491,15 +510,27 @@ impl<'a> CmdLineRunner<'a> {
         }
     }
 
-    fn on_error(&self, output: String, status: ExitStatus) -> Result<()> {
+    fn on_error(&self, output: Vec<(String, OutputSource)>, status: ExitStatus) -> Result<()> {
         match self
             .pr
             .or(self.pr_arc.as_ref().map(|arc| arc.as_ref().as_ref()))
         {
             Some(pr) => {
                 error!("{} failed", self.get_program());
-                if !Settings::get().verbose && !output.trim().is_empty() {
-                    pr.println(output);
+                if self.on_stdout.is_none() {
+                    // Stdout was hidden behind the progress indicator
+                    // (pr.set_message) so replay it on failure. Only replay
+                    // stdout — stderr was already printed during execution
+                    // via pr.println.
+                    let stdout_only: String = output
+                        .into_iter()
+                        .filter(|(_, source)| matches!(source, OutputSource::Stdout))
+                        .map(|(line, _)| line)
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if !stdout_only.trim().is_empty() {
+                        pr.println(stdout_only);
+                    }
                 }
             }
             None => {
@@ -533,6 +564,13 @@ impl Debug for CmdLineRunner<'_> {
         let args = self.get_args().join(" ");
         write!(f, "{} {args}", self.get_program())
     }
+}
+
+/// Tracks whether an output line came from stdout or stderr,
+/// so on_error can decide which lines need replaying.
+enum OutputSource {
+    Stdout,
+    Stderr,
 }
 
 enum ChildProcessOutput {

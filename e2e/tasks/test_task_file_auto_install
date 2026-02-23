@@ -11,7 +11,7 @@ cat <<EOF >mise.toml
 tiny = "1"
 
 [settings]
-task_run_auto_install = true
+task.run_auto_install = true
 EOF
 
 mkdir -p mise-tasks

@@ -1748,7 +1748,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "new_plugin",
               description:
-                "The name of the plugin to install\ne.g.: node, ruby\nCan specify multiple plugins: `mise plugins install node ruby python`",
+                "The name of the plugin to install\ne.g.: cmake, poetry\nCan specify multiple plugins: `mise plugins install cmake poetry`",
               isOptional: true,
               generators: completionGeneratorTemplate(`mise plugins --all`),
               debounce: true,
@@ -1773,11 +1773,11 @@ const completionSpec: Fig.Spec = {
           args: [
             {
               name: "name",
-              description: "The name of the plugin\ne.g.: node, ruby",
+              description: "The name of the plugin\ne.g.: cmake, poetry",
             },
             {
               name: "dir",
-              description: "The local path to the plugin\ne.g.: ./mise-node",
+              description: "The local path to the plugin\ne.g.: ./vfox-cmake",
               isOptional: true,
               template: "folders",
             },
@@ -1790,7 +1790,7 @@ const completionSpec: Fig.Spec = {
             {
               name: ["-u", "--urls"],
               description:
-                "Show the git url for each plugin\ne.g.: https://github.com/asdf-vm/asdf-nodejs.git",
+                "Show the git url for each plugin\ne.g.: https://github.com/mise-plugins/vfox-cmake.git",
               isRepeatable: false,
             },
           ],
@@ -1871,7 +1871,7 @@ const completionSpec: Fig.Spec = {
         {
           name: ["-u", "--urls"],
           description:
-            "Show the git url for each plugin\ne.g.: https://github.com/asdf-vm/asdf-nodejs.git",
+            "Show the git url for each plugin\ne.g.: https://github.com/mise-plugins/vfox-cmake.git",
           isRepeatable: false,
         },
         {

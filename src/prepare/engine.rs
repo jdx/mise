@@ -1,10 +1,13 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use eyre::Result;
+use filetime::FileTime;
 
 use crate::cmd::CmdLineRunner;
+use crate::config::config_file::ConfigFile;
 use crate::config::{Config, Settings};
 use crate::parallel;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -51,6 +54,14 @@ pub enum PrepareStepResult {
 #[derive(Debug)]
 pub struct PrepareResult {
     pub steps: Vec<PrepareStepResult>,
+}
+
+/// A prepare job ready to be executed
+struct PrepareJob {
+    id: String,
+    cmd: super::PrepareCommand,
+    outputs: Vec<PathBuf>,
+    touch: bool,
 }
 
 impl PrepareResult {
@@ -125,67 +136,10 @@ impl PrepareEngine {
                     continue;
                 }
 
-                let provider: Box<dyn PrepareProvider> = if BUILTIN_PROVIDERS.contains(&id.as_str())
+                if let Some(provider) =
+                    Self::build_provider(id, &config_root, provider_config.clone())
+                    && provider.is_applicable()
                 {
-                    // Built-in provider with specialized implementation
-                    match id.as_str() {
-                        // Node.js package managers
-                        "npm" => Box::new(NpmPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        "yarn" => Box::new(YarnPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        "pnpm" => Box::new(PnpmPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        "bun" => Box::new(BunPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        // Go
-                        "go" => Box::new(GoPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        // Python
-                        "pip" => Box::new(PipPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        "poetry" => Box::new(PoetryPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        "uv" => Box::new(UvPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        // Ruby
-                        "bundler" => Box::new(BundlerPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        // PHP
-                        "composer" => Box::new(ComposerPrepareProvider::new(
-                            &config_root,
-                            provider_config.clone(),
-                        )),
-                        _ => continue, // Skip unimplemented built-ins
-                    }
-                } else {
-                    // Custom provider
-                    Box::new(CustomPrepareProvider::new(
-                        id.clone(),
-                        provider_config.clone(),
-                        config_root.clone(),
-                    ))
-                };
-
-                if provider.is_applicable() {
                     providers.push(provider);
                 }
             }
@@ -195,6 +149,105 @@ impl PrepareEngine {
         providers.retain(|p| !disabled.contains(&p.id().to_string()));
 
         Ok(providers)
+    }
+
+    /// Build a provider from its ID, config root, and configuration
+    fn build_provider(
+        id: &str,
+        config_root: &Path,
+        provider_config: super::rule::PrepareProviderConfig,
+    ) -> Option<Box<dyn PrepareProvider>> {
+        if BUILTIN_PROVIDERS.contains(&id) {
+            match id {
+                "npm" => Some(Box::new(NpmPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "yarn" => Some(Box::new(YarnPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "pnpm" => Some(Box::new(PnpmPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "bun" => Some(Box::new(BunPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "go" => Some(Box::new(GoPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "pip" => Some(Box::new(PipPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "poetry" => Some(Box::new(PoetryPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "uv" => Some(Box::new(UvPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "bundler" => Some(Box::new(BundlerPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "composer" => Some(Box::new(ComposerPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                _ => None,
+            }
+        } else {
+            Some(Box::new(CustomPrepareProvider::new(
+                id.to_string(),
+                provider_config,
+                config_root,
+            )))
+        }
+    }
+
+    /// Add providers from additional config files (e.g., monorepo subdirectory configs).
+    ///
+    /// Unlike `discover_providers`, this does NOT filter by project root, since these
+    /// configs are intentionally from different directories (monorepo subdirectories).
+    pub fn add_config_files(
+        &mut self,
+        config_files: impl IntoIterator<Item = Arc<dyn ConfigFile>>,
+    ) {
+        let mut seen_ids: HashSet<String> =
+            self.providers.iter().map(|p| p.id().to_string()).collect();
+        let mut disabled: Vec<String> = vec![];
+
+        for cf in config_files {
+            let Some(prepare_config) = cf.prepare_config() else {
+                continue;
+            };
+
+            disabled.extend(prepare_config.disable.iter().cloned());
+            let config_root = cf.config_root();
+
+            for (id, provider_config) in &prepare_config.providers {
+                if !seen_ids.insert(id.clone()) {
+                    continue;
+                }
+
+                if let Some(provider) =
+                    Self::build_provider(id, &config_root, provider_config.clone())
+                    && provider.is_applicable()
+                {
+                    self.providers.push(provider);
+                }
+            }
+        }
+
+        if !disabled.is_empty() {
+            self.providers
+                .retain(|p| !disabled.contains(&p.id().to_string()));
+        }
     }
 
     /// List all discovered providers
@@ -217,8 +270,8 @@ impl PrepareEngine {
     pub async fn run(&self, opts: PrepareOptions) -> Result<PrepareResult> {
         let mut results = vec![];
 
-        // Collect providers that need to run with their commands and outputs
-        let mut to_run: Vec<(String, super::PrepareCommand, Vec<PathBuf>)> = vec![];
+        // Collect providers that need to run
+        let mut to_run: Vec<PrepareJob> = vec![];
 
         for provider in &self.providers {
             let id = provider.id().to_string();
@@ -253,12 +306,18 @@ impl PrepareEngine {
             if !is_fresh {
                 let cmd = provider.prepare_command()?;
                 let outputs = provider.outputs();
+                let touch = provider.touch_outputs();
 
                 if opts.dry_run {
                     // Just record that it would run, let CLI handle output
                     results.push(PrepareStepResult::WouldRun(id));
                 } else {
-                    to_run.push((id, cmd, outputs));
+                    to_run.push(PrepareJob {
+                        id,
+                        cmd,
+                        outputs,
+                        touch,
+                    });
                 }
             } else {
                 trace!("prepare step {} is fresh, skipping", id);
@@ -271,31 +330,35 @@ impl PrepareEngine {
             let mpr = MultiProgressReport::get();
             let toolset_env = opts.env.clone();
 
-            // Include all data in the tuple so closure doesn't capture anything
+            // Include mpr/env in the tuple so closure doesn't capture anything
             let to_run_with_context: Vec<_> = to_run
                 .into_iter()
-                .map(|(id, cmd, outputs)| (id, cmd, outputs, mpr.clone(), toolset_env.clone()))
+                .map(|job| (job, mpr.clone(), toolset_env.clone()))
                 .collect();
 
-            let run_results = parallel::parallel(
-                to_run_with_context,
-                |(id, cmd, outputs, mpr, toolset_env)| async move {
-                    let pr = mpr.add(&cmd.description);
-                    match Self::execute_prepare_static(&cmd, &toolset_env) {
+            let run_results =
+                parallel::parallel(to_run_with_context, |(job, mpr, toolset_env)| async move {
+                    let pr = mpr.add(&job.cmd.description);
+                    match Self::execute_prepare_static(&job.cmd, &toolset_env) {
                         Ok(()) => {
-                            pr.finish_with_message(format!("{} done", cmd.description));
+                            if job.touch {
+                                Self::touch_outputs(&job.outputs);
+                            }
+                            pr.finish_with_message(format!("{} done", job.cmd.description));
                             // Return outputs along with result so we can clear stale status
                             // after ALL providers complete successfully
-                            Ok((PrepareStepResult::Ran(id), outputs))
+                            Ok((PrepareStepResult::Ran(job.id), job.outputs))
                         }
                         Err(e) => {
-                            pr.finish_with_message(format!("{} failed: {}", cmd.description, e));
+                            pr.finish_with_message(format!(
+                                "{} failed: {}",
+                                job.cmd.description, e
+                            ));
                             Err(e)
                         }
                     }
-                },
-            )
-            .await?;
+                })
+                .await?;
 
             // All providers completed successfully - now clear stale status for all outputs
             for (step_result, outputs) in run_results {
@@ -358,13 +421,17 @@ impl PrepareEngine {
         Ok(mtimes.into_iter().max())
     }
 
-    /// Recursively find the newest file modification time in a directory
+    /// Recursively find the newest file modification time in a directory.
+    /// The directory's own mtime is always included so that touching the directory
+    /// itself (e.g. via `touch_outputs`) is reflected in freshness checks.
     fn newest_file_in_dir(dir: &Path, max_depth: usize) -> Option<SystemTime> {
-        if max_depth == 0 {
-            return dir.metadata().ok().and_then(|m| m.modified().ok());
-        }
+        // Always seed with the directory's own mtime so that touching the dir
+        // (without modifying its contents) is visible to freshness checks.
+        let mut newest = dir.metadata().ok().and_then(|m| m.modified().ok());
 
-        let mut newest: Option<SystemTime> = None;
+        if max_depth == 0 {
+            return newest;
+        }
 
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
@@ -415,5 +482,17 @@ impl PrepareEngine {
 
         runner.execute()?;
         Ok(())
+    }
+
+    /// Update the mtime of output files/directories to now
+    fn touch_outputs(outputs: &[PathBuf]) {
+        let now = FileTime::now();
+        for path in outputs {
+            if path.exists()
+                && let Err(e) = filetime::set_file_mtime(path, now)
+            {
+                warn!("failed to touch {}: {e}", path.display());
+            }
+        }
     }
 }

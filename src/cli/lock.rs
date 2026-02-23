@@ -1,13 +1,10 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::backend::backend_type::BackendType;
-use crate::backend::conda::CondaBackend;
-use crate::backend::platform_target::PlatformTarget;
 use crate::config::Config;
 use crate::file::display_path;
-use crate::lockfile::{self, CondaPackageInfo, Lockfile, PlatformInfo};
+use crate::lockfile::{self, LockResolutionResult, Lockfile};
 use crate::platform::Platform;
 use crate::toolset::Toolset;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -16,17 +13,6 @@ use console::style;
 use eyre::Result;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
-
-/// Result type for lock task: (short_name, version, backend, platform, info, options, conda_packages)
-type LockTaskResult = (
-    String,
-    String,
-    String,
-    Platform,
-    Option<PlatformInfo>,
-    BTreeMap<String, String>,
-    BTreeMap<String, CondaPackageInfo>,
-);
 
 /// Update lockfile checksums and URLs for all specified platforms
 ///
@@ -163,29 +149,13 @@ impl Lock {
         }
     }
 
-    fn determine_target_platforms(&self, lockfile_path: &PathBuf) -> Result<Vec<Platform>> {
+    fn determine_target_platforms(&self, lockfile_path: &Path) -> Result<Vec<Platform>> {
         if !self.platform.is_empty() {
             // User specified platforms explicitly
             return Platform::parse_multiple(&self.platform);
         }
 
-        // Default: 5 common platforms + existing in lockfile + current platform
-        let mut platforms: BTreeSet<Platform> = Platform::common_platforms().into_iter().collect();
-        platforms.insert(Platform::current());
-
-        // Add any existing platforms from lockfile (only valid ones)
-        if let Ok(lockfile) = Lockfile::read(lockfile_path) {
-            for platform_key in lockfile.all_platform_keys() {
-                if let Ok(p) = Platform::parse(&platform_key) {
-                    // Skip invalid platforms (e.g., tool-specific qualifiers like "wait-for-gh-rate-limit")
-                    if p.validate().is_ok() {
-                        platforms.insert(p);
-                    }
-                }
-            }
-        }
-
-        Ok(platforms.into_iter().collect())
+        Ok(lockfile::determine_target_platforms(lockfile_path))
     }
 
     /// Collect tools that belong to a given lockfile pass (local or non-local).
@@ -342,7 +312,7 @@ impl Lock {
     ) -> Result<Vec<(String, String, bool)>> {
         let jobs = self.jobs.unwrap_or(settings.jobs);
         let semaphore = Arc::new(Semaphore::new(jobs));
-        let mut jset: JoinSet<LockTaskResult> = JoinSet::new();
+        let mut jset: JoinSet<LockResolutionResult> = JoinSet::new();
         let mut results = Vec::new();
 
         let mpr = MultiProgressReport::get();
@@ -375,60 +345,11 @@ impl Lock {
         // Spawn tasks for each tool/platform variant combination
         for (ba, tv, platform) in all_tasks {
             let semaphore = semaphore.clone();
+            let backend = crate::backend::get(&ba);
 
             jset.spawn(async move {
                 let _permit = semaphore.acquire().await;
-                let target = PlatformTarget::new(platform.clone());
-                let backend = crate::backend::get(&ba);
-
-                let (info, options, conda_packages) = if let Some(backend) = backend {
-                    let options = backend.resolve_lockfile_options(&tv.request, &target);
-                    match backend.resolve_lock_info(&tv, &target).await {
-                        Ok(info) => {
-                            // Resolve conda packages only for conda backend
-                            let conda_packages = if backend.get_type() == BackendType::Conda {
-                                let conda_backend = CondaBackend::from_arg(ba.clone());
-                                match conda_backend.resolve_conda_packages(&tv, &target).await {
-                                    Ok(packages) => packages,
-                                    Err(e) => {
-                                        warn!(
-                                            "Failed to resolve conda packages for {} on {}: {}",
-                                            ba.short,
-                                            platform.to_key(),
-                                            e
-                                        );
-                                        BTreeMap::new()
-                                    }
-                                }
-                            } else {
-                                BTreeMap::new()
-                            };
-                            (Some(info), options, conda_packages)
-                        }
-                        Err(e) => {
-                            warn!(
-                                "Failed to resolve {} for {}: {}",
-                                ba.short,
-                                platform.to_key(),
-                                e
-                            );
-                            (None, options, BTreeMap::new())
-                        }
-                    }
-                } else {
-                    warn!("Backend not found for {}", ba.short);
-                    (None, BTreeMap::new(), BTreeMap::new())
-                };
-
-                (
-                    ba.short.clone(),
-                    tv.version.clone(),
-                    ba.full(),
-                    platform,
-                    info,
-                    options,
-                    conda_packages,
-                )
+                lockfile::resolve_tool_lock_info(ba, tv, platform, backend).await
             });
         }
 
@@ -437,25 +358,17 @@ impl Lock {
         while let Some(result) = jset.join_next().await {
             completed += 1;
             match result {
-                Ok((short, version, backend, platform, info, options, conda_packages)) => {
-                    let platform_key = platform.to_key();
+                Ok(resolution) => {
+                    let short = resolution.0.clone();
+                    let version = resolution.1.clone();
+                    let platform_key = resolution.3.to_key();
+                    let ok = resolution.4.is_ok();
+                    if let Err(msg) = &resolution.4 {
+                        debug!("{msg}");
+                    }
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
-                    let ok = info.is_some();
-                    if let Some(info) = info {
-                        lockfile.set_platform_info(
-                            &short,
-                            &version,
-                            Some(&backend),
-                            &options,
-                            &platform_key,
-                            info,
-                        );
-                    }
-                    // Merge conda packages into the lockfile's shared section
-                    for (basename, pkg_info) in conda_packages {
-                        lockfile.set_conda_package(&platform_key, &basename, pkg_info);
-                    }
+                    lockfile::apply_lock_result(lockfile, resolution);
                     results.push((short, platform_key, ok));
                 }
                 Err(e) => {

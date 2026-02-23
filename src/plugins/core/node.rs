@@ -5,6 +5,7 @@ use crate::build_time::built_info;
 use crate::cache::CacheManagerBuilder;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
+use crate::config::settings::DEFAULT_NODE_MIRROR_URL;
 use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
@@ -156,15 +157,27 @@ impl NodePlugin {
     ) -> Result<()> {
         debug!("{:?}: we will fetch the source and compile", self);
         let tarball_name = &opts.source_tarball_name;
-        self.fetch_tarball(
-            ctx,
-            tv,
-            ctx.pr.as_ref(),
-            &opts.source_tarball_url,
-            &opts.source_tarball_path,
-            &opts.version,
-        )
-        .await?;
+        if let Err(err) = self
+            .fetch_tarball(
+                ctx,
+                tv,
+                ctx.pr.as_ref(),
+                &opts.source_tarball_url,
+                &opts.source_tarball_path,
+                &opts.version,
+            )
+            .await
+        {
+            if let Some(reqwest_err) = err.root_cause().downcast_ref::<reqwest::Error>()
+                && reqwest_err.status() == Some(reqwest::StatusCode::NOT_FOUND)
+                && let Ok(Some(msg)) = self
+                    .suggest_available_flavors(&opts.version, &Settings::get())
+                    .await
+            {
+                return Err(eyre::eyre!("{err}\n{msg}"));
+            }
+            return Err(err);
+        }
         ctx.pr.next_operation();
         ctx.pr.set_message(format!("extract {tarball_name}"));
         file::remove_all(&opts.build_dir)?;
@@ -191,6 +204,7 @@ impl NodePlugin {
         local: &Path,
         version: &str,
     ) -> Result<()> {
+        let settings = Settings::get();
         let tarball_name = local.file_name().unwrap().to_string_lossy().to_string();
         if local.exists() {
             pr.set_message(format!("using previously downloaded {tarball_name}"));
@@ -204,7 +218,7 @@ impl NodePlugin {
             .entry(self.get_platform_key())
             .or_default();
         platform_info.url = Some(url.to_string());
-        if *env::MISE_NODE_VERIFY && platform_info.checksum.is_none() {
+        if settings.node.verify && platform_info.checksum.is_none() {
             platform_info.checksum = Some(self.get_checksum(ctx, local, version).await?);
         }
         self.verify_checksum(ctx, tv, local)?;
@@ -212,12 +226,13 @@ impl NodePlugin {
     }
 
     fn sh<'a>(&self, ctx: &'a InstallContext, opts: &BuildOpts) -> eyre::Result<CmdLineRunner<'a>> {
+        let settings = Settings::get();
         let mut cmd = CmdLineRunner::new("sh")
             .prepend_path(opts.path.clone())?
             .with_pr(ctx.pr.as_ref())
             .current_dir(&opts.build_dir)
             .arg("-c");
-        if let Some(cflags) = &*env::MISE_NODE_CFLAGS {
+        if let Some(cflags) = settings.node.cflags() {
             cmd = cmd.env("CFLAGS", cflags);
         }
         Ok(cmd)
@@ -321,7 +336,9 @@ impl NodePlugin {
         tv: &ToolVersion,
         pr: &dyn SingleReport,
     ) -> Result<()> {
-        let body = file::read_to_string(&*env::MISE_NODE_DEFAULT_PACKAGES_FILE).unwrap_or_default();
+        let settings = Settings::get();
+        let default_packages_file = settings.node.default_packages_file();
+        let body = file::read_to_string(&default_packages_file).unwrap_or_default();
         for package in body.lines() {
             let package = package.split('#').next().unwrap_or_default().trim();
             if package.is_empty() {
@@ -397,6 +414,64 @@ impl NodePlugin {
             .join(&format!("v{v}/SHASUMS256.txt"))?;
         Ok(url)
     }
+
+    async fn suggest_available_flavors(
+        &self,
+        v: &str,
+        settings: &Settings,
+    ) -> Result<Option<String>> {
+        let base = settings.node.mirror_url();
+        // If using default mirror, we don't need to suggest anything as it's likely a real 404
+        if base.to_string() == DEFAULT_NODE_MIRROR_URL {
+            return Ok(None);
+        }
+
+        let versions: Vec<NodeVersion> = HTTP_FETCH
+            .json(base.join("index.json")?)
+            .await
+            .unwrap_or_default();
+
+        if let Some(version) = versions.iter().find(|nv| {
+            nv.version == format!("v{v}") || nv.version == v || nv.version == format!("v{v}.")
+        }) {
+            let os = os();
+            let arch = arch(settings);
+            let candidates: Vec<&String> = version
+                .files
+                .iter()
+                .filter(|f| f.starts_with(&format!("{os}-{arch}-")))
+                .collect();
+
+            if !candidates.is_empty() {
+                let mut msg = format!("Could not find node@{v} with the current settings.\n");
+                msg.push_str(&format!(
+                    "However, the following flavors are available on the mirror for {os}-{arch}:\n"
+                ));
+                for candidate in candidates {
+                    // Extract flavor from "linux-x64-musl" -> "musl"
+                    // format is {os}-{arch}-{flavor}
+                    let prefix = format!("{os}-{arch}-");
+                    if let Some(flavor) = candidate.strip_prefix(&prefix) {
+                        msg.push_str(&format!("  - {flavor}\n"));
+                    } else {
+                        msg.push_str(&format!("  - {candidate} (unknown format)\n"));
+                    }
+                }
+                msg.push_str("\nYou can try setting the flavor using:\n");
+                msg.push_str("  mise settings set node.flavor <flavor>\n");
+                return Ok(Some(msg));
+            } else {
+                // Fallback: list all files for that version if no arch match
+                let mut msg = format!("Could not find node@{v} for {os}-{arch}.\n");
+                msg.push_str("Available files for this version on the mirror:\n");
+                for file in &version.files {
+                    msg.push_str(&format!("  - {file}\n"));
+                }
+                return Ok(Some(msg));
+            }
+        }
+        Ok(None)
+    }
 }
 
 #[async_trait]
@@ -422,7 +497,7 @@ impl Backend for NodePlugin {
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let settings = Settings::get();
-        let base = Settings::get().node.mirror_url();
+        let base = settings.node.mirror_url();
         let versions = HTTP_FETCH
             .json::<Vec<NodeVersion>, _>(base.join("index.json")?)
             .await?
@@ -542,7 +617,7 @@ impl Backend for NodePlugin {
         {
             warn!("failed to install default npm packages: {err:#}");
         }
-        if *env::MISE_NODE_COREPACK && self.corepack_path(&tv).exists() {
+        if settings.node.corepack && self.corepack_path(&tv).exists() {
             self.enable_default_corepack_shims(&tv, ctx.pr.as_ref())?;
         }
 
@@ -562,13 +637,14 @@ impl Backend for NodePlugin {
         static CACHE: OnceLock<Arc<Mutex<VersionCacheManager>>> = OnceLock::new();
         CACHE
             .get_or_init(|| {
+                let settings = Settings::get();
                 Mutex::new(
                     CacheManagerBuilder::new(
                         self.ba().cache_path.join("remote_versions.msgpack.z"),
                     )
-                    .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
-                    .with_cache_key(Settings::get().node.mirror_url.clone().unwrap_or_default())
-                    .with_cache_key(Settings::get().node.flavor.clone().unwrap_or_default())
+                    .with_fresh_duration(settings.fetch_remote_versions_cache())
+                    .with_cache_key(settings.node.mirror_url.clone().unwrap_or_default())
+                    .with_cache_key(settings.node.flavor.clone().unwrap_or_default())
                     .build(),
                 )
                 .into()
@@ -745,21 +821,22 @@ impl BuildOpts {
         #[cfg(not(windows))]
         let binary_tarball_name = format!("{slug}.tar.gz");
 
+        let settings = Settings::get();
         Ok(Self {
             version: v.clone(),
             path: ctx.ts.list_paths(&ctx.config).await,
             build_dir: env::MISE_TMP_DIR.join(format!("node-v{v}")),
-            configure_cmd: configure_cmd(&install_path),
-            make_cmd: make_cmd(),
-            make_install_cmd: make_install_cmd(),
+            configure_cmd: settings.node.configure_cmd(&install_path),
+            make_cmd: settings.node.make_cmd(),
+            make_install_cmd: settings.node.make_install_cmd(),
             source_tarball_path: tv.download_path().join(&source_tarball_name),
-            source_tarball_url: Settings::get()
+            source_tarball_url: settings
                 .node
                 .mirror_url()
                 .join(&format!("v{v}/{source_tarball_name}"))?,
             source_tarball_name,
             binary_tarball_path: tv.download_path().join(&binary_tarball_name),
-            binary_tarball_url: Settings::get()
+            binary_tarball_url: settings
                 .node
                 .mirror_url()
                 .join(&format!("v{v}/{binary_tarball_name}"))?,
@@ -767,36 +844,6 @@ impl BuildOpts {
             install_path,
         })
     }
-}
-
-fn configure_cmd(install_path: &Path) -> String {
-    let mut configure_cmd = format!("./configure --prefix={}", install_path.display());
-    if *env::MISE_NODE_NINJA {
-        configure_cmd.push_str(" --ninja");
-    }
-    if let Some(opts) = &*env::MISE_NODE_CONFIGURE_OPTS {
-        configure_cmd.push_str(&format!(" {opts}"));
-    }
-    configure_cmd
-}
-
-fn make_cmd() -> String {
-    let mut make_cmd = env::MISE_NODE_MAKE.to_string();
-    if let Some(concurrency) = *env::MISE_NODE_CONCURRENCY {
-        make_cmd.push_str(&format!(" -j{concurrency}"));
-    }
-    if let Some(opts) = &*env::MISE_NODE_MAKE_OPTS {
-        make_cmd.push_str(&format!(" {opts}"));
-    }
-    make_cmd
-}
-
-fn make_install_cmd() -> String {
-    let mut make_install_cmd = format!("{} install", &*env::MISE_NODE_MAKE);
-    if let Some(opts) = &*env::MISE_NODE_MAKE_INSTALL_OPTS {
-        make_install_cmd.push_str(&format!(" {opts}"));
-    }
-    make_install_cmd
 }
 
 fn os() -> &'static str {

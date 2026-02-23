@@ -1,6 +1,12 @@
-backends = [
-  "github:cross-language-cpp/djinni-generator[bin=djinni,asset_pattern=djinni]",
-  "asdf:cross-language-cpp/asdf-djinni",
-]
 description = "Command-line tool that generates gluecode from a djinni-IDL file"
 test = { cmd = "djinni --version", expected = "djinni generator version {{version}}" }
+
+[[backends]]
+full = "github:cross-language-cpp/djinni-generator"
+
+[backends.options]
+asset_pattern = "djinni"
+bin = "djinni"
+
+[[backends]]
+full = "asdf:cross-language-cpp/asdf-djinni"

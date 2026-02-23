@@ -30,7 +30,7 @@ packages:
         supported_envs:
           - linux/amd64
           - darwin
-      - version_constraint: "true"
+      - version_constraint: semver("<=4.65.1")
         asset: "{{.OS}}.{{.Format}}"
         format: gz
         rosetta2: true
@@ -42,3 +42,10 @@ packages:
           - darwin
           - windows
           - amd64
+      - version_constraint: "true"
+        asset: gitlab-ci-local-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            format: zip

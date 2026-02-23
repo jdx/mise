@@ -47,6 +47,9 @@ pub struct SettingsMeta {
     // pub key: String,
     pub type_: SettingsType,
     pub description: &'static str,
+    pub deprecated: Option<&'static str>,
+    pub deprecated_warn_at: Option<&'static str>,
+    pub deprecated_remove_at: Option<&'static str>,
 }
 
 #[derive(
@@ -71,6 +74,27 @@ pub enum SettingsStatusMissingTools {
     IfOtherVersionsInstalled,
     /// always show the warning if tools are missing
     Always,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    Default,
+    strum::EnumString,
+    strum::Display,
+    PartialEq,
+    Eq,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum NpmPackageManager {
+    #[default]
+    Npm,
+    Bun,
+    Pnpm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -197,6 +221,32 @@ pub struct SettingsFile {
     pub settings: SettingsPartial,
 }
 
+fn warn_deprecated(key: &str) {
+    if let Some(meta) = SETTINGS_META.get(key)
+        && let (Some(msg), Some(warn_at), Some(remove_at)) = (
+            meta.deprecated,
+            meta.deprecated_warn_at,
+            meta.deprecated_remove_at,
+        )
+    {
+        use versions::Versioning;
+        let warn_version = Versioning::new(warn_at).unwrap();
+        let remove_version = Versioning::new(remove_at).unwrap();
+        debug_assert!(
+            *crate::cli::version::V < remove_version,
+            "Deprecated setting [{key}] should have been removed in {remove_at}. Please remove this deprecated setting.",
+        );
+        if *crate::cli::version::V >= warn_version {
+            let id = Box::leak(format!("setting.{key}").into_boxed_str());
+            if crate::output::DEPRECATED.lock().unwrap().insert(id) {
+                warn!(
+                    "deprecated [setting.{key}]: {msg} This will be removed in mise {remove_at}."
+                );
+            }
+        }
+    }
+}
+
 impl Settings {
     pub fn get() -> Arc<Self> {
         Self::try_get().unwrap()
@@ -311,10 +361,51 @@ impl Settings {
 
     /// Sets deprecated settings to new names
     fn set_hidden_configs(&mut self) {
+        // Migrate task_* settings to task.* (must run before auto_install override below)
+        if let Some(v) = self.task_disable_paths.take()
+            && !v.is_empty()
+        {
+            warn_deprecated("task_disable_paths");
+            self.task.disable_paths.extend(v);
+        }
+        if let Some(v) = self.task_output.take() {
+            warn_deprecated("task_output");
+            self.task.output = Some(v);
+        }
+        if let Some(v) = self.task_remote_no_cache {
+            warn_deprecated("task_remote_no_cache");
+            self.task.remote_no_cache = Some(v);
+        }
+        if let Some(v) = self.task_run_auto_install {
+            warn_deprecated("task_run_auto_install");
+            self.task.run_auto_install = v;
+        }
+        if let Some(v) = self.task_show_full_cmd {
+            warn_deprecated("task_show_full_cmd");
+            self.task.show_full_cmd = v;
+        }
+        if let Some(v) = self.task_skip.take()
+            && !v.is_empty()
+        {
+            warn_deprecated("task_skip");
+            self.task.skip.extend(v);
+        }
+        if let Some(v) = self.task_skip_depends {
+            warn_deprecated("task_skip_depends");
+            self.task.skip_depends = v;
+        }
+        if let Some(v) = self.task_timeout.take() {
+            warn_deprecated("task_timeout");
+            self.task.timeout = Some(v);
+        }
+        if let Some(v) = self.task_timings {
+            warn_deprecated("task_timings");
+            self.task.timings = Some(v);
+        }
         if !self.auto_install {
             self.exec_auto_install = false;
             self.not_found_auto_install = false;
-            self.task_run_auto_install = false;
+            self.task.run_auto_install = false;
         }
         if let Some(false) = self.asdf {
             self.disable_backends.push("asdf".to_string());
@@ -359,7 +450,7 @@ impl Settings {
             self.python.venv_auto_create = python_venv_auto_create;
         }
         if self.npm.bun {
-            self.npm.package_manager = "bun".to_string();
+            self.npm.package_manager = NpmPackageManager::Bun;
         }
     }
 
@@ -544,7 +635,8 @@ impl Settings {
     }
 
     pub fn task_timeout_duration(&self) -> Option<Duration> {
-        self.task_timeout
+        self.task
+            .timeout
             .as_ref()
             .and_then(|s| duration::parse_duration(s).ok())
     }
@@ -661,6 +753,90 @@ impl SettingsNode {
             .or(env::var("NODE_BUILD_MIRROR_URL").ok())
             .unwrap_or_else(|| DEFAULT_NODE_MIRROR_URL.to_string());
         Url::parse(&s).unwrap()
+    }
+
+    pub fn ninja(&self) -> bool {
+        self.ninja.unwrap_or_else(|| which::which("ninja").is_ok())
+    }
+
+    pub fn concurrency(&self) -> Option<usize> {
+        self.concurrency
+            .map(|c| std::cmp::max(c, 1) as usize)
+            .or_else(|| {
+                if self.ninja() {
+                    None
+                } else {
+                    Some(num_cpus::get_physical())
+                }
+            })
+    }
+
+    pub fn default_packages_file(&self) -> PathBuf {
+        self.default_packages_file
+            .clone()
+            .or_else(|| {
+                env::var("NODE_DEFAULT_PACKAGES_FILE")
+                    .ok()
+                    .map(PathBuf::from)
+            })
+            .unwrap_or_else(|| {
+                let p = env::HOME.join(".default-nodejs-packages");
+                if p.exists() {
+                    return p;
+                }
+                let p = env::HOME.join(".default-node-packages");
+                if p.exists() {
+                    return p;
+                }
+                env::HOME.join(".default-npm-packages")
+            })
+    }
+
+    pub fn cflags(&self) -> Option<String> {
+        self.cflags.clone().or_else(|| env::var("NODE_CFLAGS").ok())
+    }
+
+    pub fn configure_cmd(&self, install_path: &Path) -> String {
+        let mut configure_cmd = format!("./configure --prefix={}", install_path.display());
+        if self.ninja() {
+            configure_cmd.push_str(" --ninja");
+        }
+        if let Some(opts) = self
+            .configure_opts
+            .clone()
+            .or_else(|| env::var("NODE_CONFIGURE_OPTS").ok())
+        {
+            configure_cmd.push_str(&format!(" {opts}"));
+        }
+        configure_cmd
+    }
+
+    pub fn make_cmd(&self) -> String {
+        let mut make_cmd = self.make.clone().unwrap_or_else(|| "make".into());
+        if let Some(concurrency) = self.concurrency() {
+            make_cmd.push_str(&format!(" -j{concurrency}"));
+        }
+        if let Some(opts) = self
+            .make_opts
+            .clone()
+            .or_else(|| env::var("NODE_MAKE_OPTS").ok())
+        {
+            make_cmd.push_str(&format!(" {opts}"));
+        }
+        make_cmd
+    }
+
+    pub fn make_install_cmd(&self) -> String {
+        let make = self.make.clone().unwrap_or_else(|| "make".into());
+        let mut make_install_cmd = format!("{} install", make);
+        if let Some(opts) = self
+            .make_install_opts
+            .clone()
+            .or_else(|| env::var("NODE_MAKE_INSTALL_OPTS").ok())
+        {
+            make_install_cmd.push_str(&format!(" {opts}"));
+        }
+        make_install_cmd
     }
 }
 
@@ -870,5 +1046,36 @@ mod tests {
                 "settings.toml is not alphabetically sorted at index {i}: found \"{got}\", expected \"{expected}\". Run the sort script or reorder manually."
             );
         }
+    }
+
+    #[test]
+    fn test_settings_node_build_cmds() {
+        let node = SettingsNode::default();
+        let path = Path::new("/tmp/install");
+
+        // Defaults
+        assert!(
+            node.configure_cmd(path)
+                .starts_with("./configure --prefix=/tmp/install")
+        );
+        assert!(node.make_cmd().starts_with("make"));
+        assert_eq!(node.make_install_cmd(), "make install");
+    }
+
+    #[test]
+    fn test_settings_node_build_cmds_with_opts() {
+        let node = SettingsNode {
+            configure_opts: Some("--verbose".to_string()),
+            make_opts: Some("-s".to_string()),
+            make_install_opts: Some("--no-strip".to_string()),
+            make: Some("gmake".to_string()),
+            concurrency: Some(4),
+            ..Default::default()
+        };
+
+        let path = Path::new("/tmp/install");
+        assert!(node.configure_cmd(path).contains("--verbose"));
+        assert!(node.make_cmd().starts_with("gmake -j4 -s"));
+        assert_eq!(node.make_install_cmd(), "gmake install --no-strip");
     }
 }

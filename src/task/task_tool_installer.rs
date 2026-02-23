@@ -184,8 +184,8 @@ impl<'a> TaskToolInstaller<'a> {
             .install_missing_versions(
                 config,
                 &InstallOptions {
-                    missing_args_only: !Settings::get().task_run_auto_install,
-                    skip_auto_install: !Settings::get().task_run_auto_install
+                    missing_args_only: !Settings::get().task.run_auto_install,
+                    skip_auto_install: !Settings::get().task.run_auto_install
                         || !Settings::get().auto_install,
                     ..Default::default()
                 },

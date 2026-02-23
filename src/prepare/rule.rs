@@ -38,6 +38,10 @@ pub struct PrepareProviderConfig {
     pub dir: Option<String>,
     /// Optional description
     pub description: Option<String>,
+    /// Whether to update mtime of output files/dirs after a successful run (default: true)
+    /// This is useful when the prepare command is a no-op (e.g., `uv sync` when all is well)
+    /// so that the outputs appear fresh for subsequent freshness checks.
+    pub touch_outputs: Option<bool>,
 }
 
 impl PrepareProviderConfig {

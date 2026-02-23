@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+
+# === Test 1: mise use auto-locks all platforms ===
+# When using a tool that supports cross-platform resolution (aqua tool),
+# the lockfile should automatically get entries for all 5 common platforms,
+# not just the current one.
+
+cat <<EOF >mise.toml
+[tools]
+"aqua:jqlang/jq" = "1.7.1"
+EOF
+
+touch mise.lock
+mise use "aqua:jqlang/jq@1.7.1"
+
+# Verify all 5 common platforms are in the lockfile (auto-locked)
+assert_contains "cat mise.lock" "platforms.linux-x64"
+assert_contains "cat mise.lock" "platforms.linux-arm64"
+assert_contains "cat mise.lock" "platforms.macos-x64"
+assert_contains "cat mise.lock" "platforms.macos-arm64"
+assert_contains "cat mise.lock" "platforms.windows-x64"
+assert_contains "cat mise.lock" "jqlang/jq"
+
+# === Test 2: subsequent install doesn't modify lockfile ===
+# Simulates another developer running mise install - lockfile should not change
+# because all platforms are already populated.
+
+cp mise.lock mise.lock.before
+mise install
+assert "diff mise.lock mise.lock.before" ""
+
+# === Test 3: mise install auto-locks a newly added tool ===
+
+cat <<EOF >mise.toml
+[tools]
+"aqua:jqlang/jq" = "1.7.1"
+"aqua:mikefarah/yq" = "4.44.6"
+EOF
+
+mise install
+assert_contains "cat mise.lock" "mikefarah/yq"
+assert_contains "cat mise.lock" "platforms.linux-x64"
+
+rm -f mise.toml mise.lock mise.lock.before

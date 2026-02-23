@@ -1,8 +1,14 @@
 aliases = ["bbr"]
-backends = [
-  "github:cloudfoundry-incubator/bosh-backup-and-restore[bin=bosh-backup-and-restore,asset_pattern=bbr-*-{darwin_os}-{amd64_arch}]",
-  "asdf:mise-plugins/tanzu-plug-in-for-asdf",
-]
 description = "BOSH Backup and Restore is a CLI utility for orchestrating the backup and restore of BOSH deployments and BOSH directors"
 os = ["linux", "macos"]
 test = { cmd = "bosh-backup-and-restore version", expected = "bbr version {{version}}" }
+
+[[backends]]
+full = "github:cloudfoundry-incubator/bosh-backup-and-restore"
+
+[backends.options]
+asset_pattern = "bbr-*-{darwin_os}-{amd64_arch}"
+bin = "bosh-backup-and-restore"
+
+[[backends]]
+full = "asdf:mise-plugins/tanzu-plug-in-for-asdf"

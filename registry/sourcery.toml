@@ -1,5 +1,10 @@
-backends = [
-  "github:krzysztofzablocki/Sourcery[exe=bin/sourcery]",
-  "asdf:mise-plugins/mise-sourcery",
-]
 description = "Meta-programming for Swift, stop writing boilerplate code"
+
+[[backends]]
+full = "github:krzysztofzablocki/Sourcery"
+
+[backends.options]
+exe = "bin/sourcery"
+
+[[backends]]
+full = "asdf:mise-plugins/mise-sourcery"

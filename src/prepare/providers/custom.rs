@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use eyre::Result;
 use glob::glob;
@@ -6,20 +6,18 @@ use glob::glob;
 use crate::prepare::rule::PrepareProviderConfig;
 use crate::prepare::{PrepareCommand, PrepareProvider};
 
+use super::ProviderBase;
+
 /// Prepare provider for user-defined custom rules from mise.toml [prepare.*]
 #[derive(Debug)]
 pub struct CustomPrepareProvider {
-    id: String,
-    config: PrepareProviderConfig,
-    project_root: PathBuf,
+    base: ProviderBase,
 }
 
 impl CustomPrepareProvider {
-    pub fn new(id: String, config: PrepareProviderConfig, project_root: PathBuf) -> Self {
+    pub fn new(id: String, config: PrepareProviderConfig, project_root: &Path) -> Self {
         Self {
-            id,
-            config,
-            project_root,
+            base: ProviderBase::new(id, project_root, config),
         }
     }
 
@@ -29,7 +27,7 @@ impl CustomPrepareProvider {
 
         for pattern in patterns {
             let full_pattern = if PathBuf::from(pattern).is_relative() {
-                self.project_root.join(pattern)
+                self.base.project_root.join(pattern)
             } else {
                 PathBuf::from(pattern)
             };
@@ -54,34 +52,31 @@ impl CustomPrepareProvider {
 }
 
 impl PrepareProvider for CustomPrepareProvider {
-    fn id(&self) -> &str {
-        &self.id
+    fn base(&self) -> &ProviderBase {
+        &self.base
     }
 
     fn sources(&self) -> Vec<PathBuf> {
-        self.expand_globs(&self.config.sources)
+        self.expand_globs(&self.base.config.sources)
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        self.expand_globs(&self.config.outputs)
+        self.expand_globs(&self.base.config.outputs)
     }
 
     fn prepare_command(&self) -> Result<PrepareCommand> {
         let run = self
+            .base
             .config
             .run
             .as_ref()
-            .ok_or_else(|| eyre::eyre!("prepare rule {} has no run command", self.id))?;
+            .ok_or_else(|| eyre::eyre!("prepare rule {} has no run command", self.base.id))?;
 
-        PrepareCommand::from_string(run, &self.project_root, &self.config)
+        PrepareCommand::from_string(run, &self.base.project_root, &self.base.config)
     }
 
     fn is_applicable(&self) -> bool {
         // Custom providers require a run command to be applicable
-        self.config.run.is_some()
-    }
-
-    fn is_auto(&self) -> bool {
-        self.config.auto
+        self.base.config.run.is_some()
     }
 }

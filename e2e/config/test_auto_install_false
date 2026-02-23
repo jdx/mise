@@ -29,7 +29,7 @@ cat <<EOF >mise.toml
 dummy = '1.0.0'
 
 [settings]
-task_run_auto_install = false
+task.run_auto_install = false
 
 [tasks.test]
 run = 'dummy --version'

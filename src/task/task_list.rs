@@ -61,9 +61,42 @@ fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
     Ok(())
 }
 
+/// Check if a name is similar to any known CLI subcommands using fuzzy matching
+fn suggest_similar_commands(name: &str) -> Vec<String> {
+    use clap::CommandFactory;
+    let cmd = crate::cli::Cli::command();
+    let matcher = SkimMatcherV2::default().use_cache(true).smart_case();
+    cmd.get_subcommands()
+        .flat_map(|s| std::iter::once(s.get_name()).chain(s.get_all_aliases()))
+        .filter_map(|subcmd| {
+            matcher
+                .fuzzy_match(subcmd, name)
+                .filter(|&score| score > 0)
+                .map(|score| (score, subcmd.to_string()))
+        })
+        .sorted_by_key(|(score, _)| -1 * *score)
+        .take(3)
+        .map(|(_, subcmd)| subcmd)
+        .collect()
+}
+
 /// Show an error when a task is not found, with helpful suggestions
 async fn err_no_task(config: &Config, name: &str) -> Result<()> {
+    // Check early if the name looks like a mistyped CLI subcommand
+    let similar_cmds = suggest_similar_commands(name);
+
     if config.tasks().await.is_ok_and(|t| t.is_empty()) {
+        // If the name matches a CLI subcommand closely, suggest that instead of
+        // the confusing "no tasks defined" message
+        if !similar_cmds.is_empty() {
+            let mut err_msg = format!("unknown command: {}", style::ered(name));
+            err_msg.push_str("\n\nDid you mean:");
+            for cmd_name in &similar_cmds {
+                err_msg.push_str(&format!("\n  mise {cmd_name}"));
+            }
+            bail!(err_msg);
+        }
+
         // Check if there are any untrusted config files in the current directory
         // that might contain tasks
         if let Some(cwd) = &*dirs::CWD {
@@ -146,6 +179,13 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
                     err_msg.push_str(&format!("\n  - {}", task_name));
                 }
             }
+        }
+    }
+
+    if !similar_cmds.is_empty() {
+        err_msg.push_str("\n\nDid you mean the command:");
+        for cmd_name in &similar_cmds {
+            err_msg.push_str(&format!("\n  mise {cmd_name}"));
         }
     }
 
@@ -246,6 +286,7 @@ pub async fn get_task_lists(
     let arg_re = xx::regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#);
     for (t, args) in args {
         // Expand :task pattern to match tasks in current directory's config root
+        let original_name = t.clone();
         let t = crate::task::expand_colon_task_syntax(&t, config)?;
 
         // A path starting with "//" on Windows will be treated as a UNC path by
@@ -296,11 +337,24 @@ pub async fn get_task_lists(
 
         let tasks_with_aliases = crate::task::build_task_ref_map(all_tasks.iter());
 
-        let cur_tasks = tasks_with_aliases
+        let mut cur_tasks = tasks_with_aliases
             .get_matching(&t)?
             .into_iter()
             .cloned()
             .collect_vec();
+        // If the task name was auto-expanded to monorepo syntax (e.g., "hello" -> "//:hello")
+        // but no monorepo task matched, fall back to the original bare name to find global tasks
+        if cur_tasks.is_empty()
+            && t != original_name
+            && !original_name.starts_with("//")
+            && !original_name.starts_with(':')
+        {
+            cur_tasks = tasks_with_aliases
+                .get_matching(&original_name)?
+                .into_iter()
+                .cloned()
+                .collect_vec();
+        }
         if cur_tasks.is_empty() {
             // Check if this is a "default" task (either plain "default" or monorepo syntax like "//:default")
             // For monorepo tasks, ensure it starts with "//" and has exactly one ":" before "default"

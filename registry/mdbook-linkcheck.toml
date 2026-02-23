@@ -1,7 +1,14 @@
-backends = [
-  "github:Michael-F-Bryan/mdbook-linkcheck[bin=mdbook-linkcheck]",
-  "cargo:mdbook-linkcheck",
-  "asdf:mise-plugins/mise-mdbook-linkcheck",
-]
 description = "A backend for `mdbook` which will check your links for you"
 test = { cmd = "mdbook-linkcheck --version", expected = "mdbook-linkcheck {{version}}" }
+
+[[backends]]
+full = "github:Michael-F-Bryan/mdbook-linkcheck"
+
+[backends.options]
+bin = "mdbook-linkcheck"
+
+[[backends]]
+full = "cargo:mdbook-linkcheck"
+
+[[backends]]
+full = "asdf:mise-plugins/mise-mdbook-linkcheck"

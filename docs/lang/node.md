@@ -85,19 +85,3 @@ mise settings node.flavor=glibc-217
 import Settings from '/components/settings.vue';
 </script>
 <Settings child="node" :level="3" />
-
-## Environment Variables
-
-- `MISE_NODE_VERIFY` [bool]: Verify the downloaded assets using GPG. Defaults to `true`.
-- `MISE_NODE_NINJA` [bool]: Use ninja instead of make to compile node. Defaults to `true` if installed.
-- `MISE_NODE_CONCURRENCY` [uint]: How many jobs should be used in compilation. Defaults to half the computer cores
-- `MISE_NODE_DEFAULT_PACKAGES_FILE` [string]: location of default packages file, defaults to `$HOME/.default-npm-packages`
-- `MISE_NODE_CFLAGS` [string]: Additional CFLAGS options (e.g., to override -O3).
-- `MISE_NODE_CONFIGURE_OPTS` [string]: Additional `./configure` options.
-- `MISE_NODE_MAKE_OPTS` [string]: Additional `make` options.
-- `MISE_NODE_MAKE_INSTALL_OPTS` [string]: Additional `make install` options.
-- `MISE_NODE_COREPACK` [bool]: Installs the default corepack shims after installing any node version that ships with [corepack](https://github.com/nodejs/corepack).
-
-::: info
-These environment variables will be migrated to compatible settings in the future.
-:::

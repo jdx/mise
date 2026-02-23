@@ -27,6 +27,8 @@ pub struct MiseEnvResponse {
     pub cacheable: bool,
     /// Files to watch for cache invalidation
     pub watch_files: Vec<PathBuf>,
+    /// Whether the plugin wants its env vars to be redacted
+    pub redact: bool,
 }
 use xx::regex;
 
@@ -88,6 +90,7 @@ impl VfoxPlugin {
             env: result_env,
             cacheable: result.cacheable,
             watch_files: result.watch_files,
+            redact: result.redact,
         }))
     }
 

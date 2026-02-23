@@ -529,12 +529,26 @@ impl Config {
     pub async fn get_tracked_config_files(&self) -> Result<ConfigMap> {
         let mut config_files: ConfigMap = ConfigMap::default();
         for path in Tracker::list_all()?.into_iter() {
+            // Pre-check trust to avoid interactive prompts when loading
+            // tracked configs (e.g., during `mise upgrade`). Only MiseToml files
+            // call trust_check during parsing, but we can't cheaply distinguish
+            // file types here, so we check trust for all files and fall through
+            // to parse for trusted files. Untrusted non-MiseToml files (like
+            // .tool-versions) don't need trust and will parse fine regardless.
+            let trust_root = config_file::config_trust_root(&path);
+            if !config_file::is_trusted(&trust_root) && !config_file::is_trusted(&path) {
+                debug!("skipping untrusted tracked config: {}", display_path(&path));
+                continue;
+            }
             match config_file::parse(&path).await {
                 Ok(cf) => {
                     config_files.insert(path, cf);
                 }
                 Err(err) => {
-                    error!("Error loading config file: {:?}", err);
+                    warn!(
+                        "error loading tracked config file {}: {err:#}",
+                        display_path(&path)
+                    );
                 }
             }
         }
@@ -1066,8 +1080,13 @@ fn is_tool_versions_file(p: &Path) -> bool {
 fn first_config_file(files: &IndexSet<PathBuf>) -> Option<&PathBuf> {
     files
         .iter()
-        .find(|p| !is_tool_versions_file(p))
+        .find(|p| !is_tool_versions_file(p) && !is_conf_d_file(p))
         .or_else(|| files.first())
+}
+
+fn is_conf_d_file(p: &Path) -> bool {
+    p.parent()
+        .is_some_and(|d| d.file_name().is_some_and(|n| n == "conf.d"))
 }
 
 pub fn config_file_from_dir(p: &Path) -> PathBuf {
@@ -1256,10 +1275,13 @@ fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
     files.into_iter().filter(|p| p.is_file()).collect()
 }
 
-/// the top-most global config file or the path to where it should be written to
+/// the preferred global config file to write to, or the path where it should be created.
+/// Uses first_config_file() to pick the lowest-precedence non-local TOML (i.e., config.toml
+/// rather than config.local.toml) so that `mise use -g` writes to config.toml.
+/// See: https://github.com/jdx/mise/discussions/8236
 pub fn global_config_path() -> PathBuf {
-    global_config_files()
-        .last()
+    let files = global_config_files();
+    first_config_file(&files)
         .cloned()
         .or_else(|| env::MISE_GLOBAL_CONFIG_FILE.clone())
         .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
@@ -1653,6 +1675,13 @@ pub async fn rebuild_shims_and_runtime_symlinks(
         lockfile::update_lockfiles(config, ts, new_versions)
             .wrap_err("failed to update lockfiles")?;
     });
+    if !new_versions.is_empty() {
+        measure!("auto-locking platforms", {
+            if let Err(e) = lockfile::auto_lock_new_versions(config, new_versions).await {
+                warn!("failed to auto-lock platforms for new versions: {e}");
+            }
+        });
+    }
 
     Ok(())
 }
@@ -2154,7 +2183,8 @@ async fn load_tasks_includes(
             .filter(|p| file::is_executable(p))
             .filter(|p| {
                 !Settings::get()
-                    .task_disable_paths
+                    .task
+                    .disable_paths
                     .iter()
                     .any(|d| p.starts_with(d))
             })
@@ -2175,7 +2205,7 @@ async fn load_tasks_includes(
 }
 
 async fn resolve_git_url_to_path(git_url: &str) -> Result<PathBuf> {
-    let no_cache = Settings::get().task_remote_no_cache.unwrap_or(false);
+    let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
     let task_file_providers = TaskFileProvidersBuilder::new()
         .with_cache(!no_cache)
         .build();
@@ -2243,13 +2273,13 @@ async fn load_file_tasks(
 
     let mut tasks = vec![];
     let config_root = Arc::new(config_root.to_path_buf());
-    let cf_dir = cf.get_path().parent().unwrap();
+    let cf_root = cf.config_root();
 
     for include in includes {
         let paths = if include.starts_with("git::") {
             vec![resolve_git_url_to_path(&include).await?]
         } else {
-            expand_task_include(cf_dir, &include)
+            expand_task_include(&cf_root, &include)
         };
         for path in paths {
             tasks.extend(load_tasks_includes(config, &path, &config_root).await?);
@@ -2268,9 +2298,8 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBu
         .rev()
         .find_map(|cf| {
             cf.task_config().includes.clone().map(|includes| {
-                // Resolve relative paths from the config file's directory, not the search directory
-                let cf_dir = cf.get_path().parent().unwrap_or(dir);
-                (includes, cf_dir.to_path_buf())
+                // Resolve relative paths from the config root, not the config file's directory
+                (includes, cf.config_root())
             })
         })
         .unwrap_or_else(|| {

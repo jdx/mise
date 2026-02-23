@@ -1,6 +1,11 @@
-backends = [
-  "github:cloudflare/cloudflare-go[exe=flarectl]",
-  "asdf:mise-plugins/asdf-flarectl",
-]
 description = "A CLI application for interacting with a Cloudflare account. Powered by cloudflare-go"
 # test = ["flarectl --version", "flarectl version {{version}}"] # flarectl removed since v4
+
+[[backends]]
+full = "github:cloudflare/cloudflare-go"
+
+[backends.options]
+exe = "flarectl"
+
+[[backends]]
+full = "asdf:mise-plugins/asdf-flarectl"

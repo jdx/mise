@@ -172,7 +172,9 @@ where
 
     // Also try repo@version formats (e.g., tectonic@0.15.0) when no prefix is configured
     // Try both the repo short name and full repo name
+    // Skip this for "latest" since it's a special keyword, not an actual tag
     if version_prefix.is_none()
+        && version != "latest"
         && let Some(full_repo) = repo
     {
         // Try short name first (more common), e.g., "tectonic@0.15.0"

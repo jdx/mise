@@ -4,10 +4,7 @@ use eyre::Result;
 use itertools::sorted;
 
 use crate::{backend, config, dirs, file};
-use crate::{
-    config::Config,
-    env::{NODENV_ROOT, NVM_DIR},
-};
+use crate::{config::Config, config::Settings};
 
 /// Symlinks all tool versions from an external tool into mise
 ///
@@ -80,8 +77,11 @@ impl SyncNode {
 
     async fn run_nvm(&self) -> Result<()> {
         let node = backend::get(&"node".into()).unwrap();
+        let settings = Settings::get();
 
-        let nvm_versions_path = NVM_DIR.join("versions").join("node");
+        let nvm_versions_path = file::replace_path(&settings.node.nvm_dir)
+            .join("versions")
+            .join("node");
         let installed_versions_path = dirs::INSTALLS.join("node");
 
         let removed =
@@ -113,8 +113,9 @@ impl SyncNode {
 
     async fn run_nodenv(&self) -> Result<()> {
         let node = backend::get(&"node".into()).unwrap();
+        let settings = Settings::get();
 
-        let nodenv_versions_path = NODENV_ROOT.join("versions");
+        let nodenv_versions_path = file::replace_path(&settings.node.nodenv_root).join("versions");
         let installed_versions_path = dirs::INSTALLS.join("node");
 
         file::remove_symlinks_with_target_prefix(&installed_versions_path, &nodenv_versions_path)?;
