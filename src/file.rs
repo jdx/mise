@@ -830,16 +830,9 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
         // If dest is a directory, join with the archive filename (minus extension)
         // If dest is not a dir, assume it's the target file path
         let out_path = if dest.is_dir() {
-            let name = archive.file_name().unwrap().to_string_lossy();
-            let name_str: &str = name.as_ref();
-
-            let ext = archive.extension().and_then(|s| s.to_str()).unwrap_or("");
-
-            let name = if name_str.ends_with(ext) && !ext.is_empty() {
-                &name_str[..name_str.len() - ext.len() - 1]
-            } else {
-                name_str
-            };
+            let name = archive
+                .file_stem()
+                .unwrap_or_else(|| archive.file_name().unwrap());
             dest.join(name)
         } else {
             dest.to_path_buf()
@@ -1455,7 +1448,6 @@ mod tests {
     fn test_tar_format_from_file_name() {
         assert_eq!(TarFormat::from_file_name("foo.tar.gz"), TarFormat::TarGz);
         assert_eq!(TarFormat::from_file_name("foo.tgz"), TarFormat::TarGz);
-        assert_eq!(TarFormat::from_file_name("foo.tgz"), TarFormat::TarGz);
         assert_eq!(TarFormat::from_file_name("foo.tar.xz"), TarFormat::TarXz);
         assert_eq!(TarFormat::from_file_name("foo.txz"), TarFormat::TarXz);
         assert_eq!(TarFormat::from_file_name("foo.tar.bz2"), TarFormat::TarBz2);
@@ -1505,6 +1497,43 @@ mod tests {
         assert!(dest_path.exists());
         assert!(dest_path.is_file());
         let content = std::fs::read_to_string(&dest_path).unwrap();
+        assert_eq!(content, "hello world");
+    }
+
+    #[test]
+    fn test_untar_single_file_to_dir() {
+        use flate2::Compression;
+        use flate2::write::GzEncoder;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let src_path = dir.path().join("test_file.gz");
+        let dest_dir = dir.path().join("out_dir");
+        std::fs::create_dir(&dest_dir).unwrap();
+
+        // Create a dummy gzip file
+        let file = File::create(&src_path).unwrap();
+        let mut encoder = GzEncoder::new(file, Compression::default());
+        encoder.write_all(b"hello world").unwrap();
+        encoder.finish().unwrap();
+
+        // untar (decompress) it
+        untar(
+            &src_path,
+            &dest_dir,
+            &TarOptions {
+                pr: None,
+                ..TarOptions::new(TarFormat::Gz)
+            },
+        )
+        .unwrap();
+
+        // Verify output - should be out_dir/test_file
+        let expected_path = dest_dir.join("test_file");
+        assert!(expected_path.exists());
+        assert!(expected_path.is_file());
+        let content = std::fs::read_to_string(&expected_path).unwrap();
         assert_eq!(content, "hello world");
     }
 }
