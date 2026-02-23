@@ -945,10 +945,7 @@ pub trait Backend: Debug + Send + Sync {
         if trimmed.is_empty() {
             return Ok(vec![]);
         }
-        Ok(trimmed
-            .split_whitespace()
-            .map(|s| s.to_string())
-            .collect())
+        Ok(trimmed.split_whitespace().map(|s| s.to_string()).collect())
     }
 
     fn plugin(&self) -> Option<&PluginEnum> {
