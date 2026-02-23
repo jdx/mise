@@ -48,19 +48,15 @@ impl IdiomaticVersionFile {
 
             let versions = match plugin.parse_idiomatic_file(&path).await {
                 Ok(versions) => versions,
-                Err(_) => {
-                    // Plugin has no custom parser or could not parse this file;
-                    // fall back to splitting raw file text by whitespace.
-                    let body = crate::file::read_to_string(&path).unwrap_or_default();
-                    let body = body.trim();
-                    if body.is_empty() {
-                        continue;
-                    }
-                    body.split_whitespace().map(|s| s.to_string()).collect()
+                Err(e) => {
+                    trace!("skipping {} for {}: {}", path.display(), plugin.id(), e);
+                    continue;
                 }
             };
-            for v in versions {
-                add_version(&mut tools, &plugin, &v)?;
+            if !versions.is_empty() {
+                for v in versions {
+                    add_version(&mut tools, &plugin, &v)?;
+                }
             }
         }
 

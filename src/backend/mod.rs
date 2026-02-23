@@ -937,15 +937,18 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     /// Parses an idiomatic version file to extract the version.
-    ///
-    /// - Return `Ok(versions)` with extracted version strings (may be empty if
-    ///   the file was parsed successfully but contained no versions).
-    /// - Return `Err` to signal that this backend has no custom parser for the
-    ///   file, which causes the caller to fall back to raw text parsing.
-    ///
-    /// Backends with custom parsing (e.g. node, vfox) should override this.
-    async fn parse_idiomatic_file(&self, _path: &Path) -> eyre::Result<Vec<String>> {
-        eyre::bail!("no custom parser")
+    /// Default implementation reads the file and treats each whitespace-separated token as a version.
+    /// Override to provide format-specific parsing; return `Err` on real failures so the plugin is skipped.
+    async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
+        let contents = file::read_to_string(path)?;
+        let trimmed = contents.trim();
+        if trimmed.is_empty() {
+            return Ok(vec![]);
+        }
+        Ok(trimmed
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect())
     }
 
     fn plugin(&self) -> Option<&PluginEnum> {
