@@ -1,2 +1,6 @@
-backends = ["vfox:mise-plugins/vfox-dotnet", "asdf:mise-plugins/mise-dotnet"]
+backends = [
+  "core:dotnet",
+  "vfox:mise-plugins/vfox-dotnet",
+  "asdf:mise-plugins/mise-dotnet",
+]
 description = ".NET SDK"

@@ -382,6 +382,17 @@ parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
 
+[dotnet.dotnet_root]
+description = "Path to the shared .NET SDK root directory."
+docs = """
+All .NET SDK versions are installed side-by-side under this directory, matching .NET's native multi-version model.
+
+By default, mise uses `~/.local/share/mise/dotnet-root`. Set this to override the location.
+"""
+env = "MISE_DOTNET_ROOT"
+optional = true
+type = "Path"
+
 [dotnet.package_flags]
 default = []
 description = "Extends dotnet search and install abilities."

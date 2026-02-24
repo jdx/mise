@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+export MISE_DOTNET_ROOT="$MISE_DATA_DIR/dotnet-root"
+
+assert_contains "mise x dotnet@8.0.408 -- dotnet --version" "8.0.408"
+
+# Test global.json idiomatic file support
+mise settings set idiomatic_version_file_enable_tools dotnet
+
+cat <<EOF >global.json
+{
+  "sdk": {
+    "version": "8.0.408"
+  }
+}
+EOF
+
+assert_contains "mise x -- dotnet --version" "8.0.408"

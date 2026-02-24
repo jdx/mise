@@ -607,6 +607,10 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "dotnet_root": {
+              "description": "Path to the shared .NET SDK root directory.",
+              "type": "string"
+            },
             "package_flags": {
               "default": [],
               "description": "Extends dotnet search and install abilities.",
