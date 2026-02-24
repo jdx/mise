@@ -192,7 +192,7 @@ impl CondaBackend {
         }
 
         file::create_dir_all(Self::conda_data_dir())?;
-        let temp = dest.with_extension("tmp");
+        let temp = dest.with_extension(format!("tmp.{}", std::process::id()));
         HTTP.download_file(url, &temp, None).await?;
 
         if !Self::verify_checksum(&temp, checksum)? {
@@ -354,7 +354,7 @@ impl CondaBackend {
     async fn install_from_locked(
         &self,
         ctx: &InstallContext,
-        tv: &ToolVersion,
+        tv: &mut ToolVersion,
         platform_key: &str,
     ) -> Result<()> {
         ctx.pr.set_message("using locked dependencies".to_string());
@@ -407,6 +407,16 @@ impl CondaBackend {
         }
 
         Self::make_bins_executable(&install_path)?;
+
+        // Repopulate tv.conda_packages from lockfile so downstream lockfile update preserves entries
+        for basename in &dep_basenames {
+            if let Some(pkg_info) = lockfile.get_conda_package(platform_key, basename) {
+                tv.conda_packages.insert(
+                    (platform_key.to_string(), basename.clone()),
+                    pkg_info.clone(),
+                );
+            }
+        }
 
         Ok(())
     }
@@ -536,7 +546,8 @@ impl Backend for CondaBackend {
             .is_some();
 
         if has_locked {
-            self.install_from_locked(ctx, &tv, &platform_key).await?;
+            self.install_from_locked(ctx, &mut tv, &platform_key)
+                .await?;
         } else {
             self.install_fresh(ctx, &mut tv, &platform_key).await?;
         }
