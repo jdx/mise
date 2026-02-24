@@ -72,28 +72,25 @@ impl Backend for DotnetPlugin {
 
             for release in &channel_data.releases {
                 // Primary SDK version
-                if let Some(ref sdk) = release.sdk {
-                    if let Some(ref version) = sdk.version {
-                        if seen.insert(version.clone()) {
+                if let Some(ref sdk) = release.sdk
+                    && let Some(ref version) = sdk.version
+                        && seen.insert(version.clone()) {
                             versions.push(VersionInfo {
                                 version: version.clone(),
                                 ..Default::default()
                             });
                         }
-                    }
-                }
 
                 // Additional SDKs
                 if let Some(ref sdks) = release.sdks {
                     for sdk in sdks {
-                        if let Some(ref version) = sdk.version {
-                            if seen.insert(version.clone()) {
+                        if let Some(ref version) = sdk.version
+                            && seen.insert(version.clone()) {
                                 versions.push(VersionInfo {
                                     version: version.clone(),
                                     ..Default::default()
                                 });
                             }
-                        }
                     }
                 }
             }
