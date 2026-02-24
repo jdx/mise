@@ -608,6 +608,19 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "cli_telemetry_optout": {
+              "description": "Set DOTNET_CLI_TELEMETRY_OPTOUT to opt out of .NET CLI telemetry.",
+              "type": "boolean"
+            },
+            "dotnet_root": {
+              "description": "Path to the shared .NET SDK root directory.",
+              "type": "string"
+            },
+            "isolated": {
+              "default": false,
+              "description": "Install each .NET SDK version in its own isolated directory.",
+              "type": "boolean"
+            },
             "package_flags": {
               "default": [],
               "description": "Extends dotnet search and install abilities.",

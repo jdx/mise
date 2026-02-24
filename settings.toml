@@ -382,6 +382,42 @@ parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
 
+[dotnet.cli_telemetry_optout]
+description = "Set DOTNET_CLI_TELEMETRY_OPTOUT to opt out of .NET CLI telemetry."
+docs = """
+When set to true, the `DOTNET_CLI_TELEMETRY_OPTOUT` environment variable is set to `1`,
+disabling .NET CLI telemetry. When set to false, it is set to `0`.
+
+When unset (default), mise does not set the variable and .NET uses its own default behavior.
+"""
+env = "MISE_DOTNET_CLI_TELEMETRY_OPTOUT"
+optional = true
+type = "Bool"
+
+[dotnet.dotnet_root]
+description = "Path to the shared .NET SDK root directory."
+docs = """
+All .NET SDK versions are installed side-by-side under this directory, matching .NET's native multi-version model.
+
+By default, mise uses `~/.local/share/mise/dotnet-root`. Set this to override the location.
+"""
+env = "MISE_DOTNET_ROOT"
+optional = true
+type = "Path"
+
+[dotnet.isolated]
+default = false
+description = "Install each .NET SDK version in its own isolated directory."
+docs = """
+When true, each SDK version is installed in its own directory under mise's installs path,
+like most other tools. `dotnet --list-sdks` will only show the active version.
+
+When false (default), all SDK versions share a single `DOTNET_ROOT` directory and
+`dotnet --list-sdks` shows all installed versions, matching .NET's native side-by-side model.
+"""
+env = "MISE_DOTNET_ISOLATED"
+type = "Bool"
+
 [dotnet.package_flags]
 default = []
 description = "Extends dotnet search and install abilities."
