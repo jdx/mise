@@ -29,6 +29,10 @@ impl DotnetPlugin {
         }
     }
 
+    fn is_isolated() -> bool {
+        Settings::get().dotnet.isolated
+    }
+
     async fn test_dotnet(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message("dotnet --version".into());
         let ts = ctx.config.get_toolset().await?;
@@ -112,8 +116,13 @@ impl Backend for DotnetPlugin {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        let root = dotnet_root();
-        file::create_dir_all(&root)?;
+        let isolated = Self::is_isolated();
+        let install_dir = if isolated {
+            tv.install_path()
+        } else {
+            dotnet_root()
+        };
+        file::create_dir_all(&install_dir)?;
 
         // Download install script to cache
         let script_path = install_script_path();
@@ -131,14 +140,16 @@ impl Backend for DotnetPlugin {
         ctx.pr
             .set_message(format!("Installing .NET SDK {}", tv.version));
         let ts = ctx.config.get_toolset().await?;
-        install_cmd(&script_path, &root, &tv.version)
+        install_cmd(&script_path, &install_dir, &tv.version)
             .with_pr(ctx.pr.as_ref())
             .envs(self.exec_env(&ctx.config, ts, &tv).await?)
             .execute()?;
 
-        // Symlink install_path -> DOTNET_ROOT so mise can track the installation
-        file::remove_all(tv.install_path())?;
-        file::make_symlink(&root, &tv.install_path())?;
+        if !isolated {
+            // Symlink install_path -> DOTNET_ROOT so mise can track the installation
+            file::remove_all(tv.install_path())?;
+            file::make_symlink(&install_dir, &tv.install_path())?;
+        }
 
         self.test_dotnet(ctx, &tv).await?;
 
@@ -151,9 +162,14 @@ impl Backend for DotnetPlugin {
         _pr: &dyn SingleReport,
         tv: &ToolVersion,
     ) -> Result<()> {
-        let sdk_dir = dotnet_root().join("sdk").join(&tv.version);
-        if sdk_dir.exists() {
-            file::remove_all(&sdk_dir)?;
+        if Self::is_isolated() {
+            // Isolated: mise handles removal of install_path by default
+        } else {
+            // Shared: only remove this SDK version from the shared root
+            let sdk_dir = dotnet_root().join("sdk").join(&tv.version);
+            if sdk_dir.exists() {
+                file::remove_all(&sdk_dir)?;
+            }
         }
         Ok(())
     }
@@ -161,27 +177,40 @@ impl Backend for DotnetPlugin {
     async fn list_bin_paths(
         &self,
         _config: &Arc<Config>,
-        _tv: &ToolVersion,
+        tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
-        Ok(vec![dotnet_root()])
+        if Self::is_isolated() {
+            Ok(vec![tv.install_path()])
+        } else {
+            Ok(vec![dotnet_root()])
+        }
     }
 
     async fn exec_env(
         &self,
         _config: &Arc<Config>,
         _ts: &Toolset,
-        _tv: &ToolVersion,
+        tv: &ToolVersion,
     ) -> Result<BTreeMap<String, String>> {
-        let root = dotnet_root();
-        Ok([
+        let root = if Self::is_isolated() {
+            tv.install_path()
+        } else {
+            dotnet_root()
+        };
+        let mut env = BTreeMap::from([
             (
                 "DOTNET_ROOT".to_string(),
                 root.to_string_lossy().to_string(),
             ),
-            ("DOTNET_CLI_TELEMETRY_OPTOUT".to_string(), "1".to_string()),
             ("DOTNET_MULTILEVEL_LOOKUP".to_string(), "0".to_string()),
-        ]
-        .into())
+        ]);
+        if let Some(optout) = Settings::get().dotnet.cli_telemetry_optout {
+            env.insert(
+                "DOTNET_CLI_TELEMETRY_OPTOUT".to_string(),
+                if optout { "1" } else { "0" }.to_string(),
+            );
+        }
+        Ok(env)
     }
 }
 

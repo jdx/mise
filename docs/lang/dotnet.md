@@ -5,7 +5,7 @@ installed side-by-side under a shared `DOTNET_ROOT` directory, matching .NET's n
 This means `dotnet --list-sdks` will see every version you've installed through mise.
 
 Unlike most tools, the SDKs don't live inside `~/.local/share/mise/installs` because they share a
-common root. Mise symlinks the install path to `DOTNET_ROOT` and sets environment variables so the
+common root. mise symlinks the install path to `DOTNET_ROOT` and sets environment variables so the
 correct SDK is picked up.
 
 ::: info
@@ -39,7 +39,7 @@ dotnet --list-sdks
 
 ## `global.json` support
 
-Mise recognises `global.json` as an idiomatic version file. If your project contains a `global.json`
+mise recognises `global.json` as an idiomatic version file. If your project contains a `global.json`
 with an SDK version, mise will automatically use it:
 
 ```json
@@ -56,15 +56,37 @@ Enable idiomatic version file support:
 mise settings set idiomatic_version_file_enable_tools dotnet
 ```
 
+## Isolated Mode
+
+By default, all SDK versions share a single `DOTNET_ROOT` directory. This matches .NET's native
+side-by-side model and means `dotnet --list-sdks` shows every installed version.
+
+If you prefer the traditional mise approach where each version gets its own directory, enable
+isolated mode:
+
+```sh
+mise settings set dotnet.isolated true
+```
+
+In isolated mode each SDK version is installed under `~/.local/share/mise/installs/dotnet/<version>/`,
+just like most other mise-managed tools. `dotnet --list-sdks` will only report the currently active
+version.
+
+|                      | Shared (default)       | Isolated                     |
+| -------------------- | ---------------------- | ---------------------------- |
+| `dotnet --list-sdks` | All installed versions | Active version only          |
+| Install location     | `DOTNET_ROOT`          | `installs/dotnet/<version>/` |
+| Multi-targeting      | Works out of the box   | Requires switching versions  |
+
 ## Environment Variables
 
 The plugin sets the following environment variables:
 
-| Variable                      | Value                        |
-| ----------------------------- | ---------------------------- |
-| `DOTNET_ROOT`                 | Shared SDK install directory |
-| `DOTNET_CLI_TELEMETRY_OPTOUT` | `1`                          |
-| `DOTNET_MULTILEVEL_LOOKUP`    | `0`                          |
+| Variable                      | Value                                                      |
+| ----------------------------- | ---------------------------------------------------------- |
+| `DOTNET_ROOT`                 | Shared SDK install directory (or install path if isolated) |
+| `DOTNET_MULTILEVEL_LOOKUP`    | `0`                                                        |
+| `DOTNET_CLI_TELEMETRY_OPTOUT` | Only set when `dotnet.cli_telemetry_optout` is configured  |
 
 ## Settings
 
