@@ -129,6 +129,16 @@ os-release = "0.1"
 path-absolutize = { version = "3", features = ["unsafe_cache"] }
 petgraph = "0.8"
 rand = "0.9"
+rattler = { version = "0.39", default-features = false }
+rattler_conda_types = { version = "0.43", default-features = false }
+rattler_repodata_gateway = { version = "0.26", default-features = false, features = [
+  "gateway",
+] }
+rattler_solve = { version = "4", default-features = false, features = [
+  "resolvo",
+] }
+rattler_package_streaming = { version = "0.24", default-features = false }
+rattler_virtual_packages = { version = "2", default-features = false }
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = [
   "json",
@@ -233,6 +243,8 @@ default = ["native-tls", "vfox/vendored-lua", "self_update"]
 native-tls = [
   "gix/blocking-http-transport-reqwest-native-tls",
   "reqwest/native-tls",
+  "rattler/native-tls",
+  "rattler_repodata_gateway/native-tls",
   "sigstore-verification/native-tls",
   "ubi/native-tls",
   "vfox/native-tls",
@@ -241,6 +253,8 @@ native-tls = [
 rustls = [
   "gix/blocking-http-transport-reqwest-rust-tls",
   "reqwest/rustls-tls",
+  "rattler/rustls-tls",
+  "rattler_repodata_gateway/rustls-tls",
   "self_update/rustls",
   "sigstore-verification/rustls",
   "ubi/rustls-tls",
@@ -250,6 +264,8 @@ rustls = [
 rustls-native-roots = [
   "gix/blocking-http-transport-reqwest-rust-tls",
   "reqwest/rustls-tls-native-roots",
+  "rattler/rustls-tls",
+  "rattler_repodata_gateway/rustls-tls",
   "self_update/rustls",
   "sigstore-verification/rustls-native-roots",
   "ubi/rustls-tls-native-roots",
