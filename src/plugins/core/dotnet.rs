@@ -5,7 +5,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use eyre::Result;
 use serde_derive::Deserialize;
-use tokio::task::JoinSet;
 use versions::Versioning;
 
 use crate::backend::Backend;
@@ -15,6 +14,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
+use crate::parallel;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, plugins};
@@ -70,24 +70,11 @@ impl Backend for DotnetPlugin {
             .cloned()
             .collect();
 
-        let mut jset: JoinSet<Result<ChannelReleases, ()>> = JoinSet::new();
-        for url in urls {
-            jset.spawn(async move {
-                HTTP_FETCH
-                    .json::<ChannelReleases, _>(&url)
-                    .await
-                    .map_err(|_| ())
-            });
-        }
+        let channels: Vec<ChannelReleases> =
+            parallel::parallel(urls, |url| async move { HTTP_FETCH.json(&url).await }).await?;
 
         let mut versions = std::collections::BTreeSet::new();
-
-        while let Some(result) = jset.join_next().await {
-            let channel_data = match result {
-                Ok(Ok(data)) => data,
-                _ => continue,
-            };
-
+        for channel_data in &channels {
             for release in &channel_data.releases {
                 let sdk_iter = release.sdk.iter();
                 let sdks_iter = release.sdks.iter().flatten();
