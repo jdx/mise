@@ -546,6 +546,10 @@ impl Settings {
         crate::config::config_file::config_root::reset();
     }
 
+    pub fn lockfile_enabled(&self) -> bool {
+        self.lockfile.unwrap_or(true)
+    }
+
     pub fn ensure_experimental(&self, what: &str) -> Result<()> {
         if !self.experimental {
             bail!("{what} is experimental. Enable it with `mise settings experimental=true`");

@@ -871,7 +871,6 @@
           "type": "boolean"
         },
         "lockfile": {
-          "default": true,
           "description": "Create and read lockfiles for tool versions.",
           "type": "boolean"
         },

@@ -516,7 +516,7 @@ fn extract_env_from_config_path(path: &Path) -> Option<String> {
 }
 
 pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersion]) -> Result<()> {
-    if !Settings::get().lockfile || Settings::get().locked {
+    if !Settings::get().lockfile_enabled() || Settings::get().locked {
         return Ok(());
     }
 
@@ -677,7 +677,7 @@ fn determine_target_platforms_from_lockfile(lockfile: Option<&Lockfile>) -> Vec<
 /// so the lockfile is complete and doesn't change when other developers on different
 /// platforms run `mise install`.
 pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersion]) -> Result<()> {
-    if !Settings::get().lockfile || Settings::get().locked || new_versions.is_empty() {
+    if !Settings::get().lockfile_enabled() || Settings::get().locked || new_versions.is_empty() {
         return Ok(());
     }
 
@@ -1067,7 +1067,7 @@ pub fn get_locked_version(
     request_options: &BTreeMap<String, String>,
 ) -> Result<Option<LockfileTool>> {
     let settings = Settings::get();
-    if !settings.lockfile && !settings.locked {
+    if !settings.lockfile_enabled() {
         return Ok(None);
     }
 
@@ -1147,7 +1147,7 @@ pub fn get_locked_version(
 /// This is used for backend discovery where we just need any entry's backend.
 pub fn get_locked_backend(config: &Config, short: &str) -> Option<String> {
     let settings = Settings::get();
-    if !settings.lockfile && !settings.locked {
+    if !settings.lockfile_enabled() {
         return None;
     }
 

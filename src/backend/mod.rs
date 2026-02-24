@@ -876,6 +876,13 @@ pub trait Backend: Debug + Send + Sync {
         // Exempt tool stubs from lockfile requirements since they are ephemeral
         // Also exempt backends that don't support URL locking (e.g., Rust uses rustup)
         // This must run before the dry-run check so that --locked --dry-run still validates
+        let settings = Settings::get();
+        if (ctx.locked || settings.locked) && settings.lockfile == Some(false) {
+            bail!(
+                "locked mode requires lockfile to be enabled\n\
+                hint: Remove `lockfile = false` or set `lockfile = true`, or disable locked mode"
+            );
+        }
         if ctx.locked && !tv.request.source().is_tool_stub() && self.supports_lockfile_url() {
             let platform_key = self.get_platform_key();
             let has_lockfile_url = tv
@@ -1335,7 +1342,7 @@ pub trait Backend: Debug + Send + Sync {
     ) -> Result<()> {
         let settings = Settings::get();
         let filename = file.file_name().unwrap().to_string_lossy().to_string();
-        let lockfile_enabled = settings.lockfile;
+        let lockfile_enabled = settings.lockfile_enabled();
 
         // Get the platform key for this tool and platform
         let platform_key = self.get_platform_key();
@@ -1517,7 +1524,7 @@ pub fn http_install_operation_count(
     if has_checksum_opt {
         count += 1;
     }
-    let lockfile_enabled = settings.lockfile;
+    let lockfile_enabled = settings.lockfile_enabled();
     let has_lockfile_checksum = tv
         .lock_platforms
         .get(platform_key)

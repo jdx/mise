@@ -925,7 +925,6 @@ env = "MISE_LOCKED"
 type = "Bool"
 
 [lockfile]
-default = true
 description = "Create and read lockfiles for tool versions."
 docs = """
 Read/update lockfiles for tool versions. This is useful when you'd like to have loose versions in mise.toml like this:
@@ -950,8 +949,13 @@ The lockfile is named the same as the config file but with `.lock` instead of `.
 - `mise.toml` -> `mise.lock`
 - `mise.local.toml` -> `mise.local.lock`
 - `.config/mise.toml` -> `.config/mise.lock`
+
+When set to `true`, lockfiles are read and written. When set to `false`, lockfiles are explicitly disabled—this
+will cause an error if `locked = true` is also set, since locked mode requires reading lockfiles.
+When unset (the default), lockfiles are enabled (same as `true`) but there is no conflict with `locked` mode.
 """
 env = "MISE_LOCKFILE"
+optional = true
 type = "Bool"
 
 [log_level]
