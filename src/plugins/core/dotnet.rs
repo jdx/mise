@@ -5,6 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use eyre::Result;
 use serde_derive::Deserialize;
+use tokio::task::JoinSet;
 
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
@@ -59,43 +60,45 @@ impl Backend for DotnetPlugin {
             .json("https://builds.dotnet.microsoft.com/dotnet/release-metadata/releases-index.json")
             .await?;
 
+        // Fetch all channel release data in parallel
+        let urls: Vec<String> = index
+            .releases_index
+            .iter()
+            .filter_map(|ch| ch.releases_json.as_ref())
+            .filter(|url| !url.is_empty())
+            .cloned()
+            .collect();
+
+        let mut jset: JoinSet<Result<ChannelReleases, ()>> = JoinSet::new();
+        for url in urls {
+            jset.spawn(async move {
+                HTTP_FETCH
+                    .json::<ChannelReleases, _>(&url)
+                    .await
+                    .map_err(|_| ())
+            });
+        }
+
         let mut versions = Vec::new();
         let mut seen = std::collections::HashSet::new();
 
-        for channel in &index.releases_index {
-            let releases_url = match &channel.releases_json {
-                Some(url) if !url.is_empty() => url,
+        while let Some(result) = jset.join_next().await {
+            let channel_data = match result {
+                Ok(Ok(data)) => data,
                 _ => continue,
             };
 
-            let channel_data: ChannelReleases = match HTTP_FETCH.json(releases_url).await {
-                Ok(data) => data,
-                Err(_) => continue,
-            };
-
             for release in &channel_data.releases {
-                // Primary SDK version
-                if let Some(ref sdk) = release.sdk
-                    && let Some(ref version) = sdk.version
-                    && seen.insert(version.clone())
-                {
-                    versions.push(VersionInfo {
-                        version: version.clone(),
-                        ..Default::default()
-                    });
-                }
-
-                // Additional SDKs
-                if let Some(ref sdks) = release.sdks {
-                    for sdk in sdks {
-                        if let Some(ref version) = sdk.version
-                            && seen.insert(version.clone())
-                        {
-                            versions.push(VersionInfo {
-                                version: version.clone(),
-                                ..Default::default()
-                            });
-                        }
+                let sdk_iter = release.sdk.iter();
+                let sdks_iter = release.sdks.iter().flatten();
+                for sdk in sdk_iter.chain(sdks_iter) {
+                    if let Some(ref version) = sdk.version
+                        && seen.insert(version.clone())
+                    {
+                        versions.push(VersionInfo {
+                            version: version.clone(),
+                            ..Default::default()
+                        });
                     }
                 }
             }
@@ -126,17 +129,15 @@ impl Backend for DotnetPlugin {
         };
         file::create_dir_all(&install_dir)?;
 
-        // Download install script to cache
+        // Download install script (always refresh to pick up upstream fixes)
         let script_path = install_script_path();
-        if !script_path.exists() {
-            file::create_dir_all(script_path.parent().unwrap())?;
-            ctx.pr
-                .set_message("Downloading dotnet-install script".into());
-            HTTP.download_file(install_script_url(), &script_path, Some(ctx.pr.as_ref()))
-                .await?;
-            #[cfg(unix)]
-            file::make_executable(&script_path)?;
-        }
+        file::create_dir_all(script_path.parent().unwrap())?;
+        ctx.pr
+            .set_message("Downloading dotnet-install script".into());
+        HTTP.download_file(install_script_url(), &script_path, Some(ctx.pr.as_ref()))
+            .await?;
+        #[cfg(unix)]
+        file::make_executable(&script_path)?;
 
         // Run install script
         ctx.pr
