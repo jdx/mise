@@ -38,3 +38,26 @@ backend = "aqua:jqlang/jq"
 EOF
 
 assert_contains "mise install --locked --dry-run 2>&1" "would install"
+
+# --- Test 4: locked=true with MISE_LOCKFILE=false still reads lockfile ---
+# This is the key regression: if MISE_LOCKFILE=false overrides lockfile=true,
+# locked mode should still read from the lockfile (locked implies lockfile for reads)
+cat <<EOF >mise.lock
+[[tools.jq]]
+version = "1.7.1"
+backend = "aqua:jqlang/jq"
+"platforms.$PLATFORM" = { url = "https://example.com/jq-1.7.1.tar.gz" }
+EOF
+
+MISE_LOCKFILE=0 assert_contains "mise install --locked --dry-run 2>&1" "would install"
+
+# --- Test 5: locked setting via config with lockfile=false still works ---
+cat <<'EOF' >mise.toml
+[tools]
+jq = "1.7.1"
+[settings]
+locked = true
+lockfile = false
+EOF
+
+assert_contains "mise install --dry-run 2>&1" "would install"

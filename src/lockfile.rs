@@ -1066,7 +1066,8 @@ pub fn get_locked_version(
     prefix: &str,
     request_options: &BTreeMap<String, String>,
 ) -> Result<Option<LockfileTool>> {
-    if !Settings::get().lockfile {
+    let settings = Settings::get();
+    if !settings.lockfile && !settings.locked {
         return Ok(None);
     }
 
@@ -1145,7 +1146,8 @@ pub fn get_locked_version(
 /// Get the backend for a tool from the lockfile, ignoring options.
 /// This is used for backend discovery where we just need any entry's backend.
 pub fn get_locked_backend(config: &Config, short: &str) -> Option<String> {
-    if !Settings::get().lockfile {
+    let settings = Settings::get();
+    if !settings.lockfile && !settings.locked {
         return None;
     }
 
