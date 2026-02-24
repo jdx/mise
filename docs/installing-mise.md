@@ -450,7 +450,6 @@ mise completion bash --include-bash-completion-lib > ~/.local/share/bash-complet
 ```sh [zsh]
 # If you use oh-my-zsh, there is a `mise` plugin. Update your .zshrc file with:
 # plugins=(... mise)
-# This must be after `source $ZSH/oh-my-zsh.sh` line in your .zshrc file.
 
 # Otherwise, look where zsh search for completions with
 echo $fpath | tr ' ' '\n'
