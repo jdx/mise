@@ -25,7 +25,7 @@ use rattler_solve::{
 };
 use rattler_virtual_packages::{VirtualPackageOverrides, VirtualPackages};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -92,9 +92,16 @@ impl CondaBackend {
             .unwrap_or_default()
     }
 
-    /// Flatten gateway RepoData into owned records for the solver
+    /// Flatten gateway RepoData into owned records for the solver, deduplicating
+    /// by URL to avoid DuplicateRecords errors when the same package appears in
+    /// multiple subdir queries (e.g. platform + noarch).
     fn flatten_repodata(repodata: &[RepoData]) -> Vec<RepoDataRecord> {
-        repodata.iter().flat_map(|rd| rd.iter().cloned()).collect()
+        let mut seen = HashSet::new();
+        repodata
+            .iter()
+            .flat_map(|rd| rd.iter().cloned())
+            .filter(|r| seen.insert(r.url.clone()))
+            .collect()
     }
 
     /// Fetch repodata and solve the conda environment for the given specs and platform.
