@@ -80,8 +80,7 @@ impl Backend for DotnetPlugin {
             });
         }
 
-        let mut seen = std::collections::HashSet::new();
-        let mut versions = Vec::new();
+        let mut versions = std::collections::BTreeSet::new();
 
         while let Some(result) = jset.join_next().await {
             let channel_data = match result {
@@ -93,22 +92,20 @@ impl Backend for DotnetPlugin {
                 let sdk_iter = release.sdk.iter();
                 let sdks_iter = release.sdks.iter().flatten();
                 for sdk in sdk_iter.chain(sdks_iter) {
-                    if let Some(ref version) = sdk.version
-                        && seen.insert(version.clone())
-                    {
-                        versions.push(VersionInfo {
-                            version: version.clone(),
-                            ..Default::default()
-                        });
+                    if let Some(ref version) = sdk.version {
+                        versions.insert(SortedVersion(version.clone()));
                     }
                 }
             }
         }
 
-        // Sort by semver so prefix/latest queries resolve deterministically
-        versions.sort_by_cached_key(|v| (Versioning::new(&v.version), v.version.clone()));
-
-        Ok(versions)
+        Ok(versions
+            .into_iter()
+            .map(|v| VersionInfo {
+                version: v.0,
+                ..Default::default()
+            })
+            .collect())
     }
 
     async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
@@ -319,4 +316,23 @@ struct GlobalJson {
 #[derive(Deserialize)]
 struct GlobalJsonSdk {
     version: String,
+}
+
+// --- semver-sorted wrapper for BTreeSet dedup + ordering ---
+
+#[derive(Eq, PartialEq)]
+struct SortedVersion(String);
+
+impl Ord for SortedVersion {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let a = Versioning::new(&self.0);
+        let b = Versioning::new(&other.0);
+        a.cmp(&b).then_with(|| self.0.cmp(&other.0))
+    }
+}
+
+impl PartialOrd for SortedVersion {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
