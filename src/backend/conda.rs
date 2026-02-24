@@ -159,7 +159,7 @@ impl CondaBackend {
     /// Get the filename portion of a package URL
     fn url_filename(url: &url::Url) -> String {
         url.path_segments()
-            .and_then(|s| s.last())
+            .and_then(|mut s| s.next_back())
             .unwrap_or("package")
             .to_string()
     }
@@ -193,7 +193,7 @@ impl CondaBackend {
             return Ok(dest);
         }
 
-        file::create_dir_all(&Self::conda_data_dir())?;
+        file::create_dir_all(Self::conda_data_dir())?;
         HTTP.download_file(&url_str, &dest, None).await?;
         Ok(dest)
     }
@@ -207,7 +207,7 @@ impl CondaBackend {
             return Ok(dest);
         }
 
-        file::create_dir_all(&Self::conda_data_dir())?;
+        file::create_dir_all(Self::conda_data_dir())?;
         HTTP.download_file(&url_str, &dest, None).await?;
         Ok(dest)
     }
