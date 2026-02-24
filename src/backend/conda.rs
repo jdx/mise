@@ -4,13 +4,13 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::Settings;
-use crate::file;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::{self, Lockfile, PlatformInfo};
 use crate::toolset::ToolSource;
 use crate::toolset::ToolVersion;
 use crate::{backend::Backend, dirs, parallel};
+use crate::{file, hash};
 use async_trait::async_trait;
 use eyre::Result;
 use itertools::Itertools;
@@ -169,32 +169,65 @@ impl CondaBackend {
             .map(|h| format!("sha256:{}", hex::encode(h)))
     }
 
+    /// Verify a file's sha256 against an expected "sha256:<hex>" checksum.
+    /// Returns Ok(true) if matches, Ok(false) if mismatches, or Ok(true)
+    /// if no expected checksum is provided (skip verification).
+    fn verify_checksum(path: &std::path::Path, expected: Option<&str>) -> Result<bool> {
+        let Some(expected) = expected else {
+            return Ok(true);
+        };
+        let Some(expected_hex) = expected.strip_prefix("sha256:") else {
+            return Ok(true);
+        };
+        let actual_hex = hash::file_hash_sha256(path, None)?;
+        Ok(actual_hex == expected_hex)
+    }
+
+    /// Download a file to dest with optional checksum verification.
+    /// Uses atomic writes: downloads to a temp file, verifies, then renames.
+    /// If dest already exists and checksum matches, skips download.
+    async fn download_to(url: &str, dest: &std::path::Path, checksum: Option<&str>) -> Result<()> {
+        if dest.exists() && Self::verify_checksum(dest, checksum)? {
+            return Ok(());
+        }
+
+        file::create_dir_all(Self::conda_data_dir())?;
+        let temp = dest.with_extension("tmp");
+        HTTP.download_file(url, &temp, None).await?;
+
+        if !Self::verify_checksum(&temp, checksum)? {
+            let _ = file::remove_all(&temp);
+            let display_checksum = checksum.unwrap_or("unknown");
+            return Err(eyre::eyre!(
+                "checksum mismatch for {}: expected {}",
+                url,
+                display_checksum,
+            ));
+        }
+
+        file::rename(&temp, dest)?;
+        Ok(())
+    }
+
     /// Download a single package archive to the shared conda data dir.
     async fn download_record(record: RepoDataRecord) -> Result<PathBuf> {
         let url_str = record.url.to_string();
         let filename = Self::url_filename(&record.url);
         let dest = Self::conda_data_dir().join(&filename);
+        let checksum = Self::format_sha256(&record);
 
-        if dest.exists() {
-            return Ok(dest);
-        }
-
-        file::create_dir_all(Self::conda_data_dir())?;
-        HTTP.download_file(&url_str, &dest, None).await?;
+        Self::download_to(&url_str, &dest, checksum.as_deref()).await?;
         Ok(dest)
     }
 
-    /// Download a package by raw URL string (for locked installs).
-    async fn download_url(url_str: String) -> Result<PathBuf> {
+    /// Download a package by URL with optional checksum (for locked installs).
+    async fn download_url_with_checksum(
+        (url_str, checksum): (String, Option<String>),
+    ) -> Result<PathBuf> {
         let filename = url_str.rsplit('/').next().unwrap_or("package").to_string();
         let dest = Self::conda_data_dir().join(&filename);
 
-        if dest.exists() {
-            return Ok(dest);
-        }
-
-        file::create_dir_all(Self::conda_data_dir())?;
-        HTTP.download_file(&url_str, &dest, None).await?;
+        Self::download_to(&url_str, &dest, checksum.as_deref()).await?;
         Ok(dest)
     }
 
@@ -336,15 +369,16 @@ impl CondaBackend {
             .as_ref()
             .ok_or_else(|| eyre::eyre!("no URL in lockfile for {}", self.tool_name()))?
             .clone();
+        let main_checksum = platform_info.checksum.clone();
 
         let dep_basenames = platform_info.conda_deps.clone().unwrap_or_default();
         let lockfile = self.read_lockfile_for_tool(tv)?;
 
-        // Collect dep URLs from lockfile (deps first, main last)
-        let mut urls: Vec<String> = vec![];
+        // Collect dep (url, checksum) pairs from lockfile (deps first, main last)
+        let mut downloads: Vec<(String, Option<String>)> = vec![];
         for basename in &dep_basenames {
             if let Some(pkg_info) = lockfile.get_conda_package(platform_key, basename) {
-                urls.push(pkg_info.url.clone());
+                downloads.push((pkg_info.url.clone(), pkg_info.checksum.clone()));
             } else {
                 return Err(eyre::eyre!(
                     "conda package {} not found in lockfile for {}",
@@ -353,11 +387,11 @@ impl CondaBackend {
                 ));
             }
         }
-        urls.push(main_url);
+        downloads.push((main_url, main_checksum));
 
         ctx.pr
-            .set_message(format!("downloading {} packages", urls.len()));
-        let downloaded = parallel::parallel(urls, Self::download_url).await?;
+            .set_message(format!("downloading {} packages", downloads.len()));
+        let downloaded = parallel::parallel(downloads, Self::download_url_with_checksum).await?;
 
         let install_path = tv.install_path();
         file::remove_all(&install_path)?;
