@@ -14,9 +14,10 @@ use crate::{backend::Backend, dirs, parallel};
 use async_trait::async_trait;
 use eyre::Result;
 use itertools::Itertools;
+use rattler::install::{InstallDriver, InstallOptions, link_package};
 use rattler_conda_types::{
     Channel, ChannelConfig, GenericVirtualPackage, MatchSpec, ParseStrictness,
-    Platform as CondaPlatform, RepoDataRecord,
+    Platform as CondaPlatform, RepoDataRecord, prefix::Prefix,
 };
 use rattler_repodata_gateway::{Gateway, RepoData};
 use rattler_solve::{
@@ -29,20 +30,6 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::Arc;
 use versions::Versioning;
-
-// Shared utilities for platform-specific library path fixing
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-#[path = "conda_common.rs"]
-mod conda_common;
-
-// Platform-specific library path fixing modules
-#[cfg(target_os = "linux")]
-#[path = "conda_linux.rs"]
-mod platform;
-
-#[cfg(target_os = "macos")]
-#[path = "conda_macos.rs"]
-mod platform;
 
 /// Conda package info stored in the shared conda-packages section of lockfiles
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -220,6 +207,24 @@ impl CondaBackend {
         Ok(())
     }
 
+    /// Extract a package to a temp dir and link it into the prefix using rattler.
+    ///
+    /// This handles text and binary prefix replacement (replacing conda build
+    /// placeholders with the actual install path), file permissions, and macOS
+    /// code signing — all via rattler's link_package.
+    async fn install_package(
+        archive: &std::path::Path,
+        prefix: &Prefix,
+        driver: &InstallDriver,
+    ) -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        Self::extract_package(archive, temp_dir.path()).await?;
+        link_package(temp_dir.path(), prefix, driver, InstallOptions::default())
+            .await
+            .map_err(|e| eyre::eyre!("failed to link {}: {}", archive.display(), e))?;
+        Ok(())
+    }
+
     fn read_lockfile_for_tool(&self, tv: &ToolVersion) -> Result<Lockfile> {
         match tv.request.source() {
             ToolSource::MiseToml(path) => {
@@ -267,23 +272,19 @@ impl CondaBackend {
             .set_message(format!("downloading {} packages", all_records.len()));
         let downloaded = parallel::parallel(all_records.clone(), Self::download_record).await?;
 
-        // Extract into install dir
+        // Create conda prefix and install driver
         let install_path = tv.install_path();
         file::remove_all(&install_path)?;
         file::create_dir_all(&install_path)?;
+        let prefix = Prefix::create(&install_path)
+            .map_err(|e| eyre::eyre!("failed to create conda prefix: {}", e))?;
+        let driver = InstallDriver::default();
 
         for (record, archive) in all_records.iter().zip(downloaded.iter()) {
             let name = record.package_record.name.as_normalized();
-            ctx.pr.set_message(format!("extracting {name}"));
-            Self::extract_package(archive, &install_path).await?;
+            ctx.pr.set_message(format!("installing {name}"));
+            Self::install_package(archive, &prefix, &driver).await?;
         }
-
-        // Fix library paths
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        platform::fix_library_paths(ctx, &install_path)?;
-
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        conda_common::fix_text_prefixes(&install_path);
 
         Self::make_bins_executable(&install_path)?;
 
@@ -365,18 +366,15 @@ impl CondaBackend {
         let install_path = tv.install_path();
         file::remove_all(&install_path)?;
         file::create_dir_all(&install_path)?;
+        let prefix = Prefix::create(&install_path)
+            .map_err(|e| eyre::eyre!("failed to create conda prefix: {}", e))?;
+        let driver = InstallDriver::default();
 
         for archive in &downloaded {
             let filename = archive.file_name().and_then(|n| n.to_str()).unwrap_or("?");
-            ctx.pr.set_message(format!("extracting {filename}"));
-            Self::extract_package(archive, &install_path).await?;
+            ctx.pr.set_message(format!("installing {filename}"));
+            Self::install_package(archive, &prefix, &driver).await?;
         }
-
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        platform::fix_library_paths(ctx, &install_path)?;
-
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        conda_common::fix_text_prefixes(&install_path);
 
         Self::make_bins_executable(&install_path)?;
 
