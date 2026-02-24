@@ -605,7 +605,12 @@ impl Backend for CondaBackend {
     ) -> Result<Vec<PathBuf>> {
         let install_path = tv.install_path();
         if cfg!(windows) {
-            Ok(vec![install_path.join("Library").join("bin")])
+            // Conda packages on Windows can put binaries in either location
+            // depending on the build variant (MSVC vs MSYS2/MinGW)
+            Ok(vec![
+                install_path.join("Library").join("bin"),
+                install_path.join("bin"),
+            ])
         } else {
             Ok(vec![install_path.join("bin")])
         }
