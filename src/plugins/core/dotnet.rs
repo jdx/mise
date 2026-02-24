@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use eyre::Result;
 use serde_derive::Deserialize;
 use tokio::task::JoinSet;
+use versions::Versioning;
 
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
@@ -79,8 +80,8 @@ impl Backend for DotnetPlugin {
             });
         }
 
-        let mut versions = Vec::new();
         let mut seen = std::collections::HashSet::new();
+        let mut versions = Vec::new();
 
         while let Some(result) = jset.join_next().await {
             let channel_data = match result {
@@ -103,6 +104,9 @@ impl Backend for DotnetPlugin {
                 }
             }
         }
+
+        // Sort by semver so prefix/latest queries resolve deterministically
+        versions.sort_by_cached_key(|v| (Versioning::new(&v.version), v.version.clone()));
 
         Ok(versions)
     }
