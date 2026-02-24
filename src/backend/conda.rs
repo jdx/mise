@@ -23,7 +23,7 @@ use rattler_repodata_gateway::{Gateway, RepoData};
 use rattler_solve::{
     ChannelPriority, SolveStrategy, SolverImpl, SolverTask, resolvo::Solver as ResolvoSolver,
 };
-use rattler_virtual_packages::{VirtualPackage, VirtualPackageOverrides};
+use rattler_virtual_packages::{VirtualPackageOverrides, VirtualPackages};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
@@ -62,7 +62,8 @@ impl CondaBackend {
 
     fn channel(&self) -> Result<Channel> {
         let name = self.channel_name();
-        let config = ChannelConfig::default_with_root_dir(std::path::PathBuf::from("/"));
+        let root_dir = std::env::current_dir().unwrap_or_else(|_| dirs::HOME.to_path_buf());
+        let config = ChannelConfig::default_with_root_dir(root_dir);
         Channel::from_str(&name, &config)
             .map_err(|e| eyre::eyre!("invalid conda channel '{}': {}", name, e))
     }
@@ -85,12 +86,10 @@ impl CondaBackend {
         }
     }
 
-    fn detect_virtual_packages() -> Vec<GenericVirtualPackage> {
-        VirtualPackage::detect(&VirtualPackageOverrides::default())
+    fn detect_virtual_packages(platform: CondaPlatform) -> Vec<GenericVirtualPackage> {
+        VirtualPackages::detect_for_platform(platform, &VirtualPackageOverrides::default())
+            .map(|vp| vp.into_generic_virtual_packages().collect())
             .unwrap_or_default()
-            .into_iter()
-            .map(GenericVirtualPackage::from)
-            .collect()
     }
 
     /// Flatten gateway RepoData into owned records for the solver
@@ -114,7 +113,7 @@ impl CondaBackend {
             .map_err(|e| eyre::eyre!("failed to fetch repodata: {}", e))?;
 
         let flat_records = Self::flatten_repodata(&repodata);
-        let virtual_packages = Self::detect_virtual_packages();
+        let virtual_packages = Self::detect_virtual_packages(platform);
 
         let task = SolverTask {
             available_packages: [flat_records.as_slice()],
@@ -301,11 +300,7 @@ impl CondaBackend {
             .or_default();
         platform_info.url = Some(main_record.url.to_string());
         platform_info.checksum = Self::format_sha256(&main_record);
-        platform_info.conda_deps = if dep_basenames.is_empty() {
-            None
-        } else {
-            Some(dep_basenames.clone())
-        };
+        platform_info.conda_deps = Some(dep_basenames.clone());
 
         // Store dep package info in tv.conda_packages for lockfile update
         for record in &all_records[..n_deps] {
@@ -351,10 +346,11 @@ impl CondaBackend {
             if let Some(pkg_info) = lockfile.get_conda_package(platform_key, basename) {
                 urls.push(pkg_info.url.clone());
             } else {
-                warn!(
+                return Err(eyre::eyre!(
                     "conda package {} not found in lockfile for {}",
-                    basename, platform_key
-                );
+                    basename,
+                    platform_key
+                ));
             }
         }
         urls.push(main_url);
@@ -502,7 +498,7 @@ impl Backend for CondaBackend {
         let has_locked = tv
             .lock_platforms
             .get(&platform_key)
-            .and_then(|p| p.conda_deps.as_ref())
+            .and_then(|p| p.url.as_ref())
             .is_some();
 
         if has_locked {
@@ -562,11 +558,7 @@ impl Backend for CondaBackend {
                 checksum: Self::format_sha256(&main),
                 size: None,
                 url_api: None,
-                conda_deps: if dep_basenames.is_empty() {
-                    None
-                } else {
-                    Some(dep_basenames)
-                },
+                conda_deps: Some(dep_basenames),
             }),
             None => Ok(PlatformInfo::default()),
         }
