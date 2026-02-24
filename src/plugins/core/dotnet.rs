@@ -35,11 +35,10 @@ impl DotnetPlugin {
 
     async fn test_dotnet(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message("dotnet --version".into());
-        let ts = ctx.config.get_toolset().await?;
         CmdLineRunner::new(DOTNET_BIN)
             .with_pr(ctx.pr.as_ref())
             .arg("--version")
-            .envs(self.exec_env(&ctx.config, ts, tv).await?)
+            .envs(self.exec_env(&ctx.config, &ctx.ts, tv).await?)
             .prepend_path(self.list_bin_paths(&ctx.config, tv).await?)?
             .execute()
     }
@@ -112,7 +111,10 @@ impl Backend for DotnetPlugin {
     async fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
         let content = file::read_to_string(path)?;
         let global_json: GlobalJson = serde_json::from_str(&content)?;
-        Ok(global_json.sdk.version)
+        let sdk = global_json
+            .sdk
+            .ok_or_else(|| eyre::eyre!("no sdk.version found in {}", path.display()))?;
+        Ok(sdk.version)
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
@@ -139,10 +141,9 @@ impl Backend for DotnetPlugin {
         // Run install script
         ctx.pr
             .set_message(format!("Installing .NET SDK {}", tv.version));
-        let ts = ctx.config.get_toolset().await?;
         install_cmd(&script_path, &install_dir, &tv.version)
             .with_pr(ctx.pr.as_ref())
-            .envs(self.exec_env(&ctx.config, ts, &tv).await?)
+            .envs(self.exec_env(&ctx.config, &ctx.ts, &tv).await?)
             .execute()?;
 
         if !isolated {
@@ -307,7 +308,7 @@ struct Sdk {
 
 #[derive(Deserialize)]
 struct GlobalJson {
-    sdk: GlobalJsonSdk,
+    sdk: Option<GlobalJsonSdk>,
 }
 
 #[derive(Deserialize)]

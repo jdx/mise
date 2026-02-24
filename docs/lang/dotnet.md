@@ -39,7 +39,7 @@ dotnet --list-sdks
 
 ## `global.json` support
 
-mise recognises `global.json` as an idiomatic version file. If your project contains a `global.json`
+mise recognizes `global.json` as an idiomatic version file. If your project contains a `global.json`
 with an SDK version, mise will automatically use it:
 
 ```json
