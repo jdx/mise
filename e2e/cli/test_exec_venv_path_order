@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# Regression test: `mise x -- tool` should respect PATH order when a
+# virtualenv (or similar) directory is prepended to PATH by mise config.
+# Previously, `which_bin` pre-resolution bypassed PATH entirely for
+# mise-managed tools, so a venv binary would be ignored even though
+# mise itself added it to PATH.
+# See: https://github.com/jdx/mise/discussions/8340
+
+# Create a fake "venv" with a dummy override that prints a distinct marker
+venvdir="$HOME/fake_venv/bin"
+mkdir -p "$venvdir"
+cat >"$venvdir/dummy" <<'SCRIPT'
+#!/bin/sh
+echo VENV_DUMMY
+SCRIPT
+chmod +x "$venvdir/dummy"
+
+# Configure mise with the dummy tool and prepend the venv dir to PATH
+# (this simulates what _.python.venv does)
+cat >mise.toml <<EOF
+[tools]
+dummy = "latest"
+
+[env]
+_.path = ["$venvdir"]
+EOF
+
+mise i
+
+# mise x -- which dummy should find the venv binary first
+assert "mise x -- which dummy" "$venvdir/dummy"
+
+# mise x -- dummy should actually execute the venv binary, not the mise-managed one
+assert "mise x -- dummy" "VENV_DUMMY"
