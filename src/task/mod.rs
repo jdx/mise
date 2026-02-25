@@ -685,17 +685,6 @@ impl Task {
         }
         spec.cmd.usage = spec.cmd.usage();
     }
-
-    pub async fn parse_usage_spec(
-        &self,
-        config: &Arc<Config>,
-        cwd: Option<PathBuf>,
-        env: &EnvMap,
-    ) -> Result<(usage::Spec, Vec<String>)> {
-        self.parse_usage_spec_with_vars(config, cwd, env, None)
-            .await
-    }
-
     pub async fn parse_usage_spec_with_vars(
         &self,
         config: &Arc<Config>,
