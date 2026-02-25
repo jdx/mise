@@ -10,9 +10,6 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, RwLock};
 use std::thread;
 use std::time::Duration;
 
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
-
 use crate::redactions::Redactor;
 use color_eyre::Result;
 use duct::{Expression, IntoExecutablePath};
@@ -174,16 +171,12 @@ impl TimeoutGuard {
             #[cfg(unix)]
             {
                 let pid = nix::unistd::Pid::from_raw(pid as i32);
-                if nix::sys::signal::killpg(pid, nix::sys::signal::Signal::SIGTERM).is_err() {
-                    let _ = nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGTERM);
-                }
+                let _ = nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGTERM);
                 drop(guard);
                 let guard = lock.lock().unwrap();
                 let grace_deadline = std::time::Instant::now() + Duration::from_secs(5);
                 let (_guard, cancelled) = wait_for_cancel_or_deadline(cvar, guard, grace_deadline);
-                if !cancelled
-                    && nix::sys::signal::killpg(pid, nix::sys::signal::Signal::SIGKILL).is_err()
-                {
+                if !cancelled {
                     let _ = nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGKILL);
                 }
             }
@@ -262,13 +255,9 @@ impl<'a> CmdLineRunner<'a> {
         let pids = RUNNING_PIDS.lock().unwrap();
         for pid in pids.iter() {
             let pid = *pid as i32;
-            let nix_pid = nix::unistd::Pid::from_raw(pid);
-            trace!("{signal}: pgid {pid}");
-            if nix::sys::signal::killpg(nix_pid, signal).is_err() {
-                trace!("killpg failed for {pid}, falling back to kill");
-                if let Err(e) = nix::sys::signal::kill(nix_pid, signal) {
-                    debug!("Failed to kill cmd {pid}: {e}");
-                }
+            trace!("{signal}: {pid}");
+            if let Err(e) = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), signal) {
+                debug!("Failed to kill cmd {pid}: {e}");
             }
         }
     }
@@ -432,25 +421,6 @@ impl<'a> CmdLineRunner<'a> {
             let _write_lock = RAW_LOCK.write().unwrap();
             return self.execute_raw();
         }
-        #[cfg(unix)]
-        unsafe {
-            self.cmd.pre_exec(|| {
-                // Don't create a new process group when stdin is a TTY.
-                // Interactive tools (e.g. Tilt) need to stay in the terminal's
-                // foreground process group; moving them to a new one triggers
-                // SIGTTIN and hangs them.
-                // Use BorrowedFd::borrow_raw rather than std::io::stdin() —
-                // pre_exec runs post-fork where OnceLock/malloc are not safe.
-                let stdin = std::os::fd::BorrowedFd::borrow_raw(0);
-                if !std::io::IsTerminal::is_terminal(&stdin) {
-                    let _ = nix::unistd::setpgid(
-                        nix::unistd::Pid::from_raw(0),
-                        nix::unistd::Pid::from_raw(0),
-                    );
-                }
-                Ok(())
-            });
-        }
         let mut cp = self
             .spawn_with_etxtbsy_retry()
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
@@ -538,15 +508,13 @@ impl<'a> CmdLineRunner<'a> {
                 ChildProcessOutput::ExitStatus(s) => {
                     status = Some(s);
                 }
-                // Signal forwarding may send SIGTERM concurrently with TimeoutGuard.
-                // Duplicate signals are harmless: the process is already being terminated.
                 #[cfg(not(any(test, windows)))]
                 ChildProcessOutput::Signal(sig) => {
-                    debug!("Received signal {sig}, forwarding to pgid {id}");
-                    let pgid = nix::unistd::Pid::from_raw(id as i32);
-                    let sig = nix::sys::signal::Signal::try_from(sig).unwrap();
-                    if nix::sys::signal::killpg(pgid, sig).is_err() {
-                        let _ = nix::sys::signal::kill(pgid, sig);
+                    if sig != SIGINT {
+                        debug!("Received signal {sig}, forwarding to {id}");
+                        let pid = nix::unistd::Pid::from_raw(id as i32);
+                        let sig = nix::sys::signal::Signal::try_from(sig).unwrap();
+                        nix::sys::signal::kill(pid, sig)?;
                     }
                 }
             }
