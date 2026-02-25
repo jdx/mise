@@ -14,7 +14,7 @@ use crate::{file, hash};
 use async_trait::async_trait;
 use eyre::Result;
 use itertools::Itertools;
-use rattler::install::{InstallDriver, InstallOptions, link_package};
+use rattler::install::{InstallDriver, InstallOptions, PythonInfo, link_package};
 use rattler_conda_types::{
     Channel, ChannelConfig, GenericVirtualPackage, MatchSpec, ParseStrictness,
     Platform as CondaPlatform, RepoDataRecord, prefix::Prefix,
@@ -255,13 +255,56 @@ impl CondaBackend {
         archive: &std::path::Path,
         prefix: &Prefix,
         driver: &InstallDriver,
+        python_info: Option<PythonInfo>,
     ) -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         Self::extract_package(archive, temp_dir.path()).await?;
-        link_package(temp_dir.path(), prefix, driver, InstallOptions::default())
+        let install_options = InstallOptions {
+            python_info,
+            ..InstallOptions::default()
+        };
+        link_package(temp_dir.path(), prefix, driver, install_options)
             .await
             .map_err(|e| eyre::eyre!("failed to link {}: {}", archive.display(), e))?;
         Ok(())
+    }
+
+    /// Extract PythonInfo from the solved records if a python package is present.
+    /// This is needed to correctly install noarch python packages.
+    fn python_info_from_records(
+        records: &[RepoDataRecord],
+        platform: CondaPlatform,
+    ) -> Option<PythonInfo> {
+        records
+            .iter()
+            .find(|r| r.package_record.name.as_normalized() == "python")
+            .and_then(|r| {
+                PythonInfo::from_version(
+                    r.package_record.version.version(),
+                    r.package_record.python_site_packages_path.as_deref(),
+                    platform,
+                )
+                .ok()
+            })
+    }
+
+    /// Extract PythonInfo from conda package basenames (for locked installs).
+    /// Parses basenames using `ArchiveIdentifier` (`<name>-<version>-<build>` format).
+    fn python_info_from_basenames(
+        basenames: &[String],
+        platform: CondaPlatform,
+    ) -> Option<PythonInfo> {
+        use rattler_conda_types::Version;
+        use rattler_conda_types::package::ArchiveIdentifier;
+        use std::str::FromStr;
+        basenames.iter().find_map(|b| {
+            let id = ArchiveIdentifier::from_str(b).ok()?;
+            if id.name != "python" {
+                return None;
+            }
+            let version = Version::from_str(&id.version).ok()?;
+            PythonInfo::from_version(&version, None, platform).ok()
+        })
     }
 
     fn read_lockfile_for_tool(&self, tv: &ToolVersion) -> Result<Lockfile> {
@@ -306,6 +349,9 @@ impl CondaBackend {
         let mut all_records = dep_records;
         all_records.push(main_record.clone());
 
+        // Extract python info from solved records for noarch python packages
+        let python_info = Self::python_info_from_records(&all_records, CondaPlatform::current());
+
         // Download all in parallel
         ctx.pr
             .set_message(format!("downloading {} packages", all_records.len()));
@@ -322,7 +368,7 @@ impl CondaBackend {
         for (record, archive) in all_records.iter().zip(downloaded.iter()) {
             let name = record.package_record.name.as_normalized();
             ctx.pr.set_message(format!("installing {name}"));
-            Self::install_package(archive, &prefix, &driver).await?;
+            Self::install_package(archive, &prefix, &driver, python_info.clone()).await?;
         }
 
         Self::make_bins_executable(&install_path)?;
@@ -381,6 +427,10 @@ impl CondaBackend {
         let dep_basenames = platform_info.conda_deps.clone().unwrap_or_default();
         let lockfile = self.read_lockfile_for_tool(tv)?;
 
+        // Extract python info from basenames for noarch python packages
+        let python_info =
+            Self::python_info_from_basenames(&dep_basenames, CondaPlatform::current());
+
         // Collect dep (url, checksum) pairs from lockfile (deps first, main last)
         let mut downloads: Vec<(String, Option<String>)> = vec![];
         for basename in &dep_basenames {
@@ -410,7 +460,7 @@ impl CondaBackend {
         for archive in &downloaded {
             let filename = archive.file_name().and_then(|n| n.to_str()).unwrap_or("?");
             ctx.pr.set_message(format!("installing {filename}"));
-            Self::install_package(archive, &prefix, &driver).await?;
+            Self::install_package(archive, &prefix, &driver, python_info.clone()).await?;
         }
 
         Self::make_bins_executable(&install_path)?;
