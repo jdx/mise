@@ -216,7 +216,8 @@ impl TaskExecutor {
 
         if let Some(file) = task.file_path(config).await? {
             let exec_start = std::time::Instant::now();
-            self.exec_file(config, &file, task, &env, &prefix).await?;
+            self.exec_file(config, &file, task, &env, &prefix, extra_vars)
+                .await?;
             trace!(
                 "task {} exec_file took {}ms (total {}ms)",
                 task.name,
@@ -559,12 +560,13 @@ impl TaskExecutor {
         task: &Task,
         env: &BTreeMap<String, String>,
         prefix: &str,
+        extra_vars: Option<IndexMap<String, String>>,
     ) -> Result<()> {
         let mut env = env.clone();
         let command = file.to_string_lossy().to_string();
         let args = task.args.iter().cloned().collect_vec();
         let get_args = || once(command.clone()).chain(args.clone()).collect_vec();
-        self.parse_usage_spec_and_init_env(config, task, &mut env, get_args, None)
+        self.parse_usage_spec_and_init_env(config, task, &mut env, get_args, extra_vars)
             .await?;
 
         // Check confirmation after usage args are parsed

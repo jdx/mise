@@ -715,17 +715,24 @@ impl Task {
             (spec, vec![])
         } else {
             let scripts_only = self.run_script_strings();
-            let mut parser = TaskScriptParser::new(cwd);
-            if let Some(vars) = extra_vars {
-                parser = parser.with_extra_vars(vars);
-            }
-            let (scripts, spec) = parser
+            let (scripts, spec) = Self::make_script_parser(cwd, extra_vars)
                 .parse_run_scripts(config, self, &scripts_only, env)
                 .await?;
             (spec, scripts)
         };
         self.populate_spec_metadata(&mut spec);
         Ok((spec, scripts))
+    }
+
+    fn make_script_parser(
+        cwd: Option<PathBuf>,
+        extra_vars: Option<IndexMap<String, String>>,
+    ) -> TaskScriptParser {
+        let parser = TaskScriptParser::new(cwd);
+        match extra_vars {
+            Some(vars) => parser.with_extra_vars(vars),
+            None => parser,
+        }
     }
 
     /// Parse usage spec for display purposes without expensive environment rendering
@@ -763,11 +770,7 @@ impl Task {
             .await?;
         if has_any_args_defined(&spec) {
             let scripts_only = self.run_script_strings();
-            let mut parser = TaskScriptParser::new(cwd);
-            if let Some(vars) = extra_vars {
-                parser = parser.with_extra_vars(vars);
-            }
-            let scripts = parser
+            let scripts = Self::make_script_parser(cwd, extra_vars)
                 .parse_run_scripts_with_args(config, self, &scripts_only, env, args, &spec)
                 .await?;
             Ok(scripts.into_iter().map(|s| (s, vec![])).collect())

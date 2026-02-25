@@ -12,7 +12,11 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
-type EnvResolutionResult = (BTreeMap<String, String>, Vec<(String, String)>);
+type EnvResolutionResult = (
+    BTreeMap<String, String>,
+    Vec<(String, String)>,
+    Option<IndexMap<String, String>>,
+);
 
 /// Builds toolset and environment context for task execution
 ///
@@ -221,14 +225,13 @@ impl TaskContextBuilder {
                 .env_resolution_cache
                 .read()
                 .expect("env_resolution_cache RwLock poisoned");
-            if let Some(cached_env) = cache.get(&config_path) {
+            if let Some(cached) = cache.get(&config_path) {
                 trace!(
                     "task {} using cached env resolution from {}",
                     task.name,
                     config_path.display()
                 );
-                let (env, task_env) = cached_env.clone();
-                return Ok((env, task_env, None));
+                return Ok(cached.clone());
             }
         }
 
@@ -264,7 +267,7 @@ impl TaskContextBuilder {
                     task.name,
                     config_path.display()
                 );
-                (env.clone(), task_env.clone())
+                (env.clone(), task_env.clone(), resolved_vars.clone())
             });
         }
 
