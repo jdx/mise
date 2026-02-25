@@ -514,7 +514,9 @@ impl<'a> CmdLineRunner<'a> {
                         debug!("Received signal {sig}, forwarding to {id}");
                         let pid = nix::unistd::Pid::from_raw(id as i32);
                         let sig = nix::sys::signal::Signal::try_from(sig).unwrap();
-                        nix::sys::signal::kill(pid, sig)?;
+                        // Ignore errors — the child may have already exited
+                        // (e.g., killed by TimeoutGuard or exited naturally).
+                        let _ = nix::sys::signal::kill(pid, sig);
                     }
                 }
             }
