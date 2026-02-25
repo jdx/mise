@@ -3,16 +3,86 @@ packages:
   - type: github_release
     repo_owner: peco
     repo_name: peco
-    asset: peco_{{.OS}}_{{.Arch}}.{{.Format}}
     description: Simplistic interactive filtering tool
-    supported_envs:
-      - darwin
-      - linux
-      - amd64
-    files:
-      - name: peco
-        src: peco_{{.OS}}_{{.Arch}}/peco
-    format: zip
-    overrides:
-      - goos: linux
-        format: tar.gz
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.5.5"
+        no_asset: true
+      - version_constraint: semver("<= 0.1.9")
+        asset: peco_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: peco
+            src: peco_{{.OS}}_{{.Arch}}/peco
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            files:
+              - name: peco
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.3.5")
+        asset: peco_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: peco
+            src: peco_{{.OS}}_{{.Arch}}/peco
+        replacements:
+          arm64: arm
+        overrides:
+          - goos: linux
+            format: tar.gz
+      - version_constraint: semver("<= 0.5.0")
+        asset: peco_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: peco
+            src: peco_{{.OS}}_{{.Arch}}/peco
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.5.8")
+        asset: peco_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: peco
+            src: peco_{{.OS}}_{{.Arch}}/peco
+        overrides:
+          - goos: linux
+            format: tar.gz
+      - version_constraint: semver("<= 0.5.11")
+        asset: peco_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: peco
+            src: peco_{{.OS}}_{{.Arch}}/peco
+        overrides:
+          - goos: linux
+            format: tar.gz
+      - version_constraint: "true"
+        asset: peco_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz

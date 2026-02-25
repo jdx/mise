@@ -6,16 +6,16 @@ packages:
     description: Kubernetes IDE for managing clusters, resources, and workloads
     link: https://kunobi.ninja
     version_source: github_tag
-    url: https://r2.kunobi.ninja/v{{.Version}}/Kunobi_{{.Version}}_{{.OS}}_{{.Arch}}.AppImage
-    format: raw
+    url: https://r2.kunobi.ninja/v{{.Version}}/Kunobi_{{.Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    format: tar.gz
     replacements:
       amd64: x86_64
     files:
       - name: kunobi
+        src: kunobi/AppRun
     overrides:
       - goos: darwin
         url: https://r2.kunobi.ninja/v{{.Version}}/Kunobi_{{.Version}}_darwin_aarch64.app.tar.gz
-        format: tar.gz
         files:
           - name: kunobi
             src: Kunobi.app/Contents/MacOS/kunobi
