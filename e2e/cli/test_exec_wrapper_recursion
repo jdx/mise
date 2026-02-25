@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# Regression test: a wrapper script that calls `mise x -- tool` should not
+# cause infinite recursion, even when the wrapper directory precedes mise
+# tool paths in the system PATH.
+#
+# This tests the scenario from PR #8276 where e.g. .devcontainer/bin/tool
+# calls `mise x -- tool` and the wrapper sits before the mise install path
+# in the original PATH.
+
+# 1. Install a mise-managed tool
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "latest"
+EOF
+mise i
+
+# 2. Create a wrapper script that calls `mise x -- dummy` (simulating
+#    .devcontainer/bin/dummy or similar)
+wrapperdir="$HOME/wrapper_bin"
+mkdir -p "$wrapperdir"
+cat >"$wrapperdir/dummy" <<WRAPPER
+#!/bin/sh
+exec mise x -- dummy
+WRAPPER
+chmod +x "$wrapperdir/dummy"
+
+# 3. Put the wrapper directory BEFORE everything else in PATH so it would
+#    be found first if mise didn't prepend its tool paths
+export PATH="$wrapperdir:$PATH"
+
+# 4. Run with a timeout to catch infinite recursion (would hang otherwise)
+output="$(timeout 10 mise x -- dummy 2>&1)" || {
+	echo "ERROR: mise x -- dummy timed out or failed (likely infinite recursion)"
+	exit 1
+}
+
+# 5. Should get real dummy output, not hang
+assert_contains "echo '$output'" "This is Dummy"
