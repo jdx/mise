@@ -305,12 +305,18 @@ impl Run {
         // Run auto-enabled prepare steps (unless --no-prepare)
         // This runs after task resolution so we can discover prepare providers
         // from monorepo subdirectory configs referenced by the resolved tasks.
+        // We resolve dependencies first so that transitive tasks from monorepo
+        // subdirectories (e.g. via //...:check glob) are included.
         if !self.no_prepare {
             let env = ts.env_with_path(&config).await?;
             let mut engine = PrepareEngine::new(&config)?;
 
-            // Collect subdirectory config files from resolved tasks
-            let subdir_configs: Vec<_> = task_list
+            // Resolve transitive dependencies to discover all tasks (including
+            // those from monorepo subdirectories referenced via glob patterns)
+            let all_tasks = resolve_depends(&config, task_list.clone()).await?;
+
+            // Collect subdirectory config files from all resolved tasks
+            let subdir_configs: Vec<_> = all_tasks
                 .iter()
                 .filter_map(|task| task.cf.clone())
                 .collect();

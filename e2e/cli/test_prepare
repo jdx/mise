@@ -381,5 +381,20 @@ touch subapp/input.txt
 # Run the task from root using monorepo syntax
 assert_contains "mise run //subapp:check" "SUBAPP_PREPARE_OK"
 
+# Test that prepare steps also run when subtasks are reached via dependencies
+cat >mise.toml <<'EOF'
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["subapp"]
+
+[tasks.check]
+depends = "//...:check"
+EOF
+
+touch subapp/input.txt
+rm -f subapp/deps_marker
+assert_contains "mise run //:check" "SUBAPP_PREPARE_OK"
+
 # Clean up
 rm -rf subapp mise.toml
