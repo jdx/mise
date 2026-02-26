@@ -145,7 +145,7 @@ impl Use {
             .cloned()
             .map(|t| match t.tvr {
                 Some(tvr) => {
-                    if tvr.version() == "latest" {
+                    if tvr.version() == "latest" && !Settings::get().locked {
                         // user specified `@latest` so we should resolve the latest version
                         // TODO: this should only happen on this tool, not all of them
                         resolve_options.latest_versions = true;
