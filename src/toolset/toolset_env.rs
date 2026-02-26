@@ -46,9 +46,7 @@ impl Toolset {
     /// Used during tool installation where tool-dependent env vars
     /// may reference tools that aren't installed yet.
     pub async fn env_with_path_without_tools(&self, config: &Arc<Config>) -> Result<EnvMap> {
-        let (tool_env, add_paths) = self.env(config).await?;
-        let mut env: EnvMap = env::PRISTINE_ENV.clone().into_iter().collect();
-        env.extend(tool_env);
+        let (mut env, add_paths) = self.env(config).await?;
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
         for p in config.path_dirs().await?.clone() {
             path_env.add(p);
