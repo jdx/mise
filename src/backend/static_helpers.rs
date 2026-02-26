@@ -517,21 +517,31 @@ pub fn install_artifact(
         let full_tool_name = tv.ba().tool_name.as_str();
         let tool_name = full_tool_name.rsplit('/').next().unwrap_or(full_tool_name);
 
-        // Determine search directory based on bin_path option (used by both bin= and rename_exe=)
-        let search_dir = if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
-            let bin_path = template_string(&bin_path_template, tv);
-            install_path.join(&bin_path)
-        } else {
-            install_path.clone()
-        };
+        // Determine search directory based on bin_path option
+        let explicit_bin_path = lookup_with_fallback(opts, "bin_path")
+            .map(|t| install_path.join(template_string(&t, tv)));
 
         // Handle bin= option for archives (renames executable to specified name)
+        // bin= values are relative to install_path, so always use install_path or explicit bin_path
         if let Some(bin_name) = lookup_with_fallback(opts, "bin") {
-            rename_executable_in_dir(&search_dir, &bin_name, Some(tool_name))?;
+            let search_dir = explicit_bin_path.as_deref().unwrap_or(&install_path);
+            rename_executable_in_dir(search_dir, &bin_name, Some(tool_name))?;
         }
 
         // Handle rename_exe option for archives
+        // When bin_path is not explicitly set, auto-detect bin/ subdirectory to match
+        // the same logic used by discover_bin_paths() for PATH construction
         if let Some(rename_to) = lookup_with_fallback(opts, "rename_exe") {
+            let search_dir = if let Some(ref dir) = explicit_bin_path {
+                dir.clone()
+            } else {
+                let bin_dir = install_path.join("bin");
+                if bin_dir.is_dir() {
+                    bin_dir
+                } else {
+                    install_path.clone()
+                }
+            };
             rename_executable_in_dir(&search_dir, &rename_to, Some(tool_name))?;
         }
     }

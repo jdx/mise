@@ -393,11 +393,18 @@ impl HttpBackend {
 
         // Handle rename_exe option for archives
         if let Some(rename_to) = get_opt(opts, "rename_exe") {
+            // When bin_path is not explicitly set, auto-detect bin/ subdirectory to match
+            // the same logic used by discover_bin_paths() for PATH construction
             let search_dir = if let Some(bin_path_template) = get_opt(opts, "bin_path") {
                 let bin_path = template_string(&bin_path_template, tv);
                 dest.join(&bin_path)
             } else {
-                dest.to_path_buf()
+                let bin_dir = dest.join("bin");
+                if bin_dir.is_dir() {
+                    bin_dir
+                } else {
+                    dest.to_path_buf()
+                }
             };
             // rsplit('/') always yields at least one element (the full string if no delimiter)
             let tool_name = self.ba.tool_name.rsplit('/').next().unwrap();
