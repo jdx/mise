@@ -882,6 +882,11 @@ impl Backend for RubyPlugin {
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
+        // Windows uses RubyInstaller2 binaries, not source tarballs
+        if target.os_name() == "windows" {
+            return super::ruby_common::resolve_rubyinstaller_lock_info(&tv.version).await;
+        }
+
         // Precompiled binary info if enabled
         if self.should_try_precompiled()
             && let Some(platform) = self.precompiled_platform_for_target(target)

@@ -23,6 +23,7 @@ mod node;
 pub(crate) mod python;
 #[cfg_attr(windows, path = "ruby_windows.rs")]
 mod ruby;
+mod ruby_common;
 mod rust;
 mod swift;
 mod zig;

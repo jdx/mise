@@ -111,11 +111,7 @@ impl RubyPlugin {
     }
 
     async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
-        let arch = arch();
-        let url = format!(
-            "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-{version}-1/rubyinstaller-{version}-1-{arch}.7z",
-            version = tv.version,
-        );
+        let url = super::ruby_common::rubyinstaller_url(&tv.version);
         let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
