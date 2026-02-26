@@ -1,5 +1,33 @@
 # Changelog
 
+## [2026.2.21](https://github.com/jdx/mise/compare/v2026.2.20..v2026.2.21) - 2026-02-26
+
+### 🐛 Bug Fixes
+
+- **(exec)** respect PATH order for virtualenv resolution in mise x by @jdx in [#8342](https://github.com/jdx/mise/pull/8342)
+- **(task)** revert process group changes that cause hangs with nested mise tasks by @jdx in [#8347](https://github.com/jdx/mise/pull/8347)
+- **(task)** resolve vars from subdirectory configs for monorepo tasks by @jdx in [#8343](https://github.com/jdx/mise/pull/8343)
+- **(task)** resolve dependencies before prepare to fix monorepo glob deps by @jdx in [#8353](https://github.com/jdx/mise/pull/8353)
+- python noarch with Conda backend by @wolfv in [#8349](https://github.com/jdx/mise/pull/8349)
+
+### New Contributors
+
+- @wolfv made their first contribution in [#8349](https://github.com/jdx/mise/pull/8349)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`alexhallam/tv`](https://github.com/alexhallam/tv)
+- [`arcanist-sh/hx`](https://github.com/arcanist-sh/hx)
+- [`dathere/qsv`](https://github.com/dathere/qsv)
+
+#### Updated Packages (3)
+
+- [`astral-sh/ruff`](https://github.com/astral-sh/ruff)
+- [`caarlos0/fork-cleaner`](https://github.com/caarlos0/fork-cleaner)
+- [`rhysd/actionlint`](https://github.com/rhysd/actionlint)
+
 ## [2026.2.20](https://github.com/jdx/mise/compare/v2026.2.19..v2026.2.20) - 2026-02-25
 
 ### 🚀 Features

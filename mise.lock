@@ -109,19 +109,19 @@ backend = "aqua:sharkdp/fd"
 "platforms.windows-x64-baseline" = { checksum = "sha256:318aa2a6fa664325933e81fda60d523fff29444129e91ebf0726b5b3bcd8b059", url = "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-x86_64-pc-windows-msvc.zip"}
 
 [[tools.gh]]
-version = "2.87.2"
+version = "2.87.3"
 backend = "aqua:cli/cli"
-"platforms.linux-arm64" = { checksum = "sha256:e37efdd8ec98425f44175040b5037c767bbd49f192aed1de5aabc4b4ea9e22c5", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_linux_arm64.tar.gz"}
-"platforms.linux-arm64-musl" = { checksum = "sha256:e37efdd8ec98425f44175040b5037c767bbd49f192aed1de5aabc4b4ea9e22c5", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_linux_arm64.tar.gz"}
-"platforms.linux-x64" = { checksum = "sha256:18360b2243e3bf9c1457035db45f6400ae4cf957dcc2f674e69717b4e0b14d55", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_linux_amd64.tar.gz"}
-"platforms.linux-x64-baseline" = { checksum = "sha256:18360b2243e3bf9c1457035db45f6400ae4cf957dcc2f674e69717b4e0b14d55", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_linux_amd64.tar.gz"}
-"platforms.linux-x64-musl" = { checksum = "sha256:18360b2243e3bf9c1457035db45f6400ae4cf957dcc2f674e69717b4e0b14d55", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_linux_amd64.tar.gz"}
-"platforms.linux-x64-musl-baseline" = { checksum = "sha256:18360b2243e3bf9c1457035db45f6400ae4cf957dcc2f674e69717b4e0b14d55", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_linux_amd64.tar.gz"}
-"platforms.macos-arm64" = { checksum = "sha256:18d90c7ae5b462d47cc665d4c59de61af1e208edb81a9abee1b5a82c94e91d94", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_macOS_arm64.zip"}
-"platforms.macos-x64" = { checksum = "sha256:5ce4da6da0f29e6aa46e54ea6adb2528243d2bb517a7098e75cca16a5d983d28", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_macOS_amd64.zip"}
-"platforms.macos-x64-baseline" = { checksum = "sha256:5ce4da6da0f29e6aa46e54ea6adb2528243d2bb517a7098e75cca16a5d983d28", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_macOS_amd64.zip"}
-"platforms.windows-x64" = { checksum = "sha256:8483c9f5e5f777e5d7994d5ba3562c5face6ea5046af142b208eb4d6713f7749", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_windows_amd64.zip"}
-"platforms.windows-x64-baseline" = { checksum = "sha256:8483c9f5e5f777e5d7994d5ba3562c5face6ea5046af142b208eb4d6713f7749", url = "https://github.com/cli/cli/releases/download/v2.87.2/gh_2.87.2_windows_amd64.zip"}
+"platforms.linux-arm64" = { checksum = "sha256:5f5d89563bf26751e2173b37e594065504e85b6b781c1f1832d24bf2c2b4554f", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_linux_arm64.tar.gz"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:5f5d89563bf26751e2173b37e594065504e85b6b781c1f1832d24bf2c2b4554f", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_linux_arm64.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:c6e5537631fca45f277ef405ce8751d139b491e9402cc20891a003525a8773b2", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_linux_amd64.tar.gz"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:c6e5537631fca45f277ef405ce8751d139b491e9402cc20891a003525a8773b2", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_linux_amd64.tar.gz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:c6e5537631fca45f277ef405ce8751d139b491e9402cc20891a003525a8773b2", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_linux_amd64.tar.gz"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:c6e5537631fca45f277ef405ce8751d139b491e9402cc20891a003525a8773b2", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_linux_amd64.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:dedfc6f569e9dbc5b92d47dce44acadbdf5b6b7a861510db0c748dfac55002f6", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_macOS_arm64.zip"}
+"platforms.macos-x64" = { checksum = "sha256:7b8d5495fe9689494b1c69559c0d28209bc057bb028008e903ec4b3e19bd8c75", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_macOS_amd64.zip"}
+"platforms.macos-x64-baseline" = { checksum = "sha256:7b8d5495fe9689494b1c69559c0d28209bc057bb028008e903ec4b3e19bd8c75", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_macOS_amd64.zip"}
+"platforms.windows-x64" = { checksum = "sha256:c590bcb488f80a85c8febd5cde27edd68fdd481bd004aaf9adc50dcf1b21c09c", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_windows_amd64.zip"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:c590bcb488f80a85c8febd5cde27edd68fdd481bd004aaf9adc50dcf1b21c09c", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_windows_amd64.zip"}
 
 [[tools.hk]]
 version = "1.36.0"
@@ -167,19 +167,19 @@ backend = "aqua:LuaLS/lua-language-server"
 "platforms.windows-x64-baseline" = { checksum = "sha256:795670a80d35b23e7ecf932ede742609f2267314f2df64054b020698fcc8a892", url = "https://github.com/LuaLS/lua-language-server/releases/download/3.17.1/lua-language-server-3.17.1-win32-x64.zip"}
 
 [[tools.node]]
-version = "24.13.1"
+version = "24.14.0"
 backend = "core:node"
-"platforms.linux-arm64" = { checksum = "sha256:4873459d7c9b28feaa1f0fade9bb9c81cb702670991ff80a51d805325c5e3456", url = "https://nodejs.org/dist/v24.13.1/node-v24.13.1-linux-arm64.tar.gz"}
-"platforms.linux-arm64-musl" = { checksum = "sha256:4873459d7c9b28feaa1f0fade9bb9c81cb702670991ff80a51d805325c5e3456", url = "https://nodejs.org/dist/v24.13.1/node-v24.13.1-linux-arm64.tar.gz"}
-"platforms.linux-x64" = { checksum = "sha256:7ad28fb172a9ab0593f86c1a39e5c268d0d8fc3d6cb0167f455b5655a7a6e2fd", url = "https://nodejs.org/dist/v24.13.1/node-v24.13.1-linux-x64.tar.gz"}
-"platforms.linux-x64-baseline" = { checksum = "sha256:7ad28fb172a9ab0593f86c1a39e5c268d0d8fc3d6cb0167f455b5655a7a6e2fd", url = "https://nodejs.org/dist/v24.13.1/node-v24.13.1-linux-x64.tar.gz"}
-"platforms.linux-x64-musl" = { checksum = "sha256:7ad28fb172a9ab0593f86c1a39e5c268d0d8fc3d6cb0167f455b5655a7a6e2fd", url = "https://nodejs.org/dist/v24.13.1/node-v24.13.1-linux-x64.tar.gz"}
-"platforms.linux-x64-musl-baseline" = { checksum = "sha256:7ad28fb172a9ab0593f86c1a39e5c268d0d8fc3d6cb0167f455b5655a7a6e2fd", url = "https://nodejs.org/dist/v24.13.1/node-v24.13.1-linux-x64.tar.gz"}
-"platforms.macos-arm64" = { checksum = "sha256:8c039d59f2fec6195e4281ad5b0d02b9a940897b4df7b849c6fb48be6787bba6", url = "https://nodejs.org/dist/v24.13.1/node-v24.13.1-darwin-arm64.tar.gz"}
-"platforms.macos-x64" = { checksum = "sha256:527f0578d9812e7dfa225121bda0b1546a6a0e4b5f556295fc8299c272de5fbf", url = "https://nodejs.org/dist/v24.13.1/node-v24.13.1-darwin-x64.tar.gz"}
-"platforms.macos-x64-baseline" = { checksum = "sha256:527f0578d9812e7dfa225121bda0b1546a6a0e4b5f556295fc8299c272de5fbf", url = "https://nodejs.org/dist/v24.13.1/node-v24.13.1-darwin-x64.tar.gz"}
-"platforms.windows-x64" = { checksum = "sha256:fba577c4bb87df04d54dd87bbdaa5a2272f1f99a2acbf9152e1a91b8b5f0b279", url = "https://nodejs.org/dist/v24.13.1/node-v24.13.1-win-x64.zip"}
-"platforms.windows-x64-baseline" = { checksum = "sha256:fba577c4bb87df04d54dd87bbdaa5a2272f1f99a2acbf9152e1a91b8b5f0b279", url = "https://nodejs.org/dist/v24.13.1/node-v24.13.1-win-x64.zip"}
+"platforms.linux-arm64" = { checksum = "sha256:f44740cd218de8127f1c44c41510a3a740fa5c9c8d1cdce1c3bedada79f3cde7", url = "https://nodejs.org/dist/v24.14.0/node-v24.14.0-linux-arm64.tar.gz"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:f44740cd218de8127f1c44c41510a3a740fa5c9c8d1cdce1c3bedada79f3cde7", url = "https://nodejs.org/dist/v24.14.0/node-v24.14.0-linux-arm64.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:dbf5b8665dec15e59e6359a517fefb47b23fdb9152d8def975b9bca3dfc6d355", url = "https://nodejs.org/dist/v24.14.0/node-v24.14.0-linux-x64.tar.gz"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:dbf5b8665dec15e59e6359a517fefb47b23fdb9152d8def975b9bca3dfc6d355", url = "https://nodejs.org/dist/v24.14.0/node-v24.14.0-linux-x64.tar.gz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:dbf5b8665dec15e59e6359a517fefb47b23fdb9152d8def975b9bca3dfc6d355", url = "https://nodejs.org/dist/v24.14.0/node-v24.14.0-linux-x64.tar.gz"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:dbf5b8665dec15e59e6359a517fefb47b23fdb9152d8def975b9bca3dfc6d355", url = "https://nodejs.org/dist/v24.14.0/node-v24.14.0-linux-x64.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:a1a54f46a750d2523d628d924aab61758a51c9dad3e0238beb14141be9615dd3", url = "https://nodejs.org/dist/v24.14.0/node-v24.14.0-darwin-arm64.tar.gz"}
+"platforms.macos-x64" = { checksum = "sha256:f2879eb810e25993a0578e5d878930266fd2eafcffe9f2839b3d8db354d4879e", url = "https://nodejs.org/dist/v24.14.0/node-v24.14.0-darwin-x64.tar.gz"}
+"platforms.macos-x64-baseline" = { checksum = "sha256:f2879eb810e25993a0578e5d878930266fd2eafcffe9f2839b3d8db354d4879e", url = "https://nodejs.org/dist/v24.14.0/node-v24.14.0-darwin-x64.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:313fa40c0d7b18575821de8cb17483031fe07d95de5994f6f435f3b345f85c66", url = "https://nodejs.org/dist/v24.14.0/node-v24.14.0-win-x64.zip"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:313fa40c0d7b18575821de8cb17483031fe07d95de5994f6f435f3b345f85c66", url = "https://nodejs.org/dist/v24.14.0/node-v24.14.0-win-x64.zip"}
 
 [[tools."npm:ajv-cli"]]
 version = "5.0.0"
@@ -269,19 +269,19 @@ backend = "aqua:mvdan/sh"
 "platforms.windows-x64-baseline" = { checksum = "sha256:c8bda517ba1c640ce4a715c0fa665439ddbe4357ba5e9b77b0e51e70e2b9c94b", url = "https://github.com/mvdan/sh/releases/download/v3.12.0/shfmt_v3.12.0_windows_amd64.exe"}
 
 [[tools.sops]]
-version = "3.11.0"
+version = "3.12.1"
 backend = "aqua:getsops/sops"
-"platforms.linux-arm64" = { checksum = "sha256:c71d32f74b3a73ce283affe6ed36e221a8f1476c3d37963f60bd962fb1676681", url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.linux.arm64"}
-"platforms.linux-arm64-musl" = { checksum = "sha256:c71d32f74b3a73ce283affe6ed36e221a8f1476c3d37963f60bd962fb1676681", url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.linux.arm64"}
-"platforms.linux-x64" = { checksum = "sha256:775f1384d55decfad228e7196a3f683791914f92a473f78fc47700531c29dfef", url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.linux.amd64"}
-"platforms.linux-x64-baseline" = { checksum = "sha256:775f1384d55decfad228e7196a3f683791914f92a473f78fc47700531c29dfef", url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.linux.amd64"}
-"platforms.linux-x64-musl" = { checksum = "sha256:775f1384d55decfad228e7196a3f683791914f92a473f78fc47700531c29dfef", url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.linux.amd64"}
-"platforms.linux-x64-musl-baseline" = { checksum = "sha256:775f1384d55decfad228e7196a3f683791914f92a473f78fc47700531c29dfef", url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.linux.amd64"}
-"platforms.macos-arm64" = { checksum = "sha256:45e7562b1f5d022c4d7a4e4c3d1b7b1a7ee6c328356629286cfd18a394b00e7c", url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.darwin.arm64"}
-"platforms.macos-x64" = { checksum = "sha256:c36583e178f7e83b947044b292e106e79615f7725f75cb147045fb0c81953e2b", url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.darwin.amd64"}
-"platforms.macos-x64-baseline" = { checksum = "sha256:c36583e178f7e83b947044b292e106e79615f7725f75cb147045fb0c81953e2b", url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.darwin.amd64"}
-"platforms.windows-x64" = { checksum = "sha256:f3d74d83006954f0d8cf770ad7e5380504270ded5a62f33eb2548ce5461af3b3", url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.amd64.exe"}
-"platforms.windows-x64-baseline" = { checksum = "sha256:f3d74d83006954f0d8cf770ad7e5380504270ded5a62f33eb2548ce5461af3b3", url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.amd64.exe"}
+"platforms.linux-arm64" = { checksum = "sha256:c7904d07bf1fb3ffdc329b0103ce70ff6a884aa7af7931427402bea0c09cc522", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.arm64"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:c7904d07bf1fb3ffdc329b0103ce70ff6a884aa7af7931427402bea0c09cc522", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.arm64"}
+"platforms.linux-x64" = { checksum = "sha256:cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.amd64"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.amd64"}
+"platforms.linux-x64-musl" = { checksum = "sha256:cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.amd64"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.amd64"}
+"platforms.macos-arm64" = { checksum = "sha256:3a23c388e2d7b9beff306f4817d197698b1d9ddf01c10020470c94225435e901", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.darwin.arm64"}
+"platforms.macos-x64" = { checksum = "sha256:d6d296499e08d62325d933e4572fe8b6b9b11d0c08ee00d09b518a2731814c7b", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.darwin.amd64"}
+"platforms.macos-x64-baseline" = { checksum = "sha256:d6d296499e08d62325d933e4572fe8b6b9b11d0c08ee00d09b518a2731814c7b", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.darwin.amd64"}
+"platforms.windows-x64" = { checksum = "sha256:161eff06643ca77cc0585099e0888d04897827162fd62bdb79cc1bcff933330f", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.amd64.exe"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:161eff06643ca77cc0585099e0888d04897827162fd62bdb79cc1bcff933330f", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.amd64.exe"}
 
 [[tools.stylua]]
 version = "2.3.1"
