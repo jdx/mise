@@ -55,7 +55,16 @@ pub struct BackendArg {
 
 impl<A: AsRef<str>> From<A> for BackendArg {
     fn from(s: A) -> Self {
-        let short = unalias_backend(s.as_ref()).to_string();
+        let raw = s.as_ref();
+        if raw.starts_with("pipx:") {
+            deprecated_at!(
+                "2026.8.0",
+                "2027.8.0",
+                "pipx-backend",
+                "The `pipx:` backend prefix is deprecated. Use `uv:` instead."
+            );
+        }
+        let short = unalias_backend(raw).to_string();
         // Check if this is a full backend identifier (e.g., "aqua:oven-sh/bun")
         // If so, treat it as explicit since the user specified the backend
         let explicit = if let Some((prefix, _)) = short.split_once(':') {

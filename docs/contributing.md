@@ -646,7 +646,7 @@ of the full backend specification.
      features
    - **[github](dev-tools/backends/github.md)** - Simple GitHub releases following
      standard conventions
-   - **Language package managers** - `npm`, `pipx`, `cargo`, `gem`, etc. for
+   - **Language package managers** - `npm`, `uv`, `cargo`, `gem`, etc. for
      ecosystem-specific tools
    - **[Core tools](core-tools.md)** - Built-in support for major languages
      (not user-contributed)
@@ -754,7 +754,7 @@ If you need a custom backend:
 
 1. **Discuss with jdx first** in [Discord](https://discord.gg/UBa7pJUN7Z) or by
    creating a [discussion](https://github.com/jdx/mise/discussions)
-2. **Consider if existing backends** (github, aqua, npm, pipx, etc.) can meet your
+2. **Consider if existing backends** (github, aqua, npm, uv, etc.) can meet your
    needs
 3. **Create a plugin** - use the [plugin system](tool-plugin-development.md) to create plugins for private/custom tools without core changes. Start with the [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) for a quick setup
 
@@ -771,7 +771,7 @@ across different installation systems.
 
 - **Core Backends** (`src/backend/core/`) - Built-in language runtimes like
   Node.js, Python, Ruby
-- **Package Manager Backends** (`src/backend/`) - npm, pipx, cargo, gem, go
+- **Package Manager Backends** (`src/backend/`) - npm, uv, cargo, gem, go
   modules
 - **Universal Installers** (`src/backend/`) - github, aqua for GitHub releases and
   package management

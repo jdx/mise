@@ -343,7 +343,7 @@ type = "String"
 
 [disable_backends]
 default = []
-description = "Backends to disable such as `asdf` or `pipx`"
+description = "Backends to disable such as `asdf` or `uv`"
 env = "MISE_DISABLE_BACKENDS"
 parse_env = "list_by_comma"
 rust_type = "Vec<String>"
@@ -841,7 +841,7 @@ Filter tool versions by release date. Supports:
 This is useful for reproducible builds or security purposes where you want to ensure
 you're only installing versions that existed before a certain point in time.
 
-Only affects backends that provide release timestamps (aqua, cargo, npm, pipx, and some core plugins).
+Only affects backends that provide release timestamps (aqua, cargo, npm, uv, and some core plugins).
 Versions without timestamps are included by default.
 
 **Behavior**: This filter only applies when resolving fuzzy version requests like `node@20` or `latest`.
@@ -1252,40 +1252,36 @@ type = "Bool"
 
 [pipx.registry_url]
 default = "https://pypi.org/pypi/{}/json"
+deprecated = "Use uv.registry_url instead."
+deprecated_remove_at = "2027.2.0"
+deprecated_warn_at = "2026.8.0"
 description = "URL to use for pipx registry."
 docs = """
-URL to use for pipx registry.
-
-This is used to fetch the latest version of a package from the pypi registry.
-
-The default is `https://pypi.org/pypi/{}/json` which is the JSON endpoint for the pypi
-registry.
-
-You can also use the HTML endpoint by setting this to `https://pypi.org/simple/{}/`.
+Deprecated. Use `uv.registry_url` instead.
 """
 env = "MISE_PIPX_REGISTRY_URL"
+hide = true
 type = "String"
 
 [pipx.uvx]
 default_docs = "true"
-description = "Use uvx instead of pipx if uv is installed and on PATH."
+deprecated = "Use uv.pipx."
+deprecated_remove_at = "2027.2.0"
+deprecated_warn_at = "2026.8.0"
+description = "Use `uv tool` instead of `pipx` when installing Python CLIs."
 docs = """
-If true, mise will use `uvx` instead of `pipx` if
-[`uv`](https://docs.astral.sh/uv/) is installed and on PATH.
-This makes installing CLIs _much_ faster by using `uv` as the package manager.
-
-You can install it with mise:
-
-```sh
-mise use -g uv
-```
+Deprecated. Use `uv.pipx` instead.
 """
 env = "MISE_PIPX_UVX"
+hide = true
 optional = true
 type = "Bool"
 
 [pipx_uvx]
-description = "Use uvx instead of pipx if uv is installed and on PATH."
+deprecated = "Use uv.pipx."
+deprecated_remove_at = "2027.2.0"
+deprecated_warn_at = "2026.8.0"
+description = "Use `uv tool` instead of `pipx` when installing Python CLIs."
 hide = true
 optional = true
 type = "Bool"
@@ -2086,6 +2082,33 @@ Set to false to opt-out of anonymous statistics collection.
 """
 env = "MISE_USE_VERSIONS_HOST_TRACK"
 type = "Bool"
+
+[uv.pipx]
+default_docs = "false"
+description = "Use `pipx` instead of `uv tool` when installing Python CLIs."
+docs = """
+If true, mise will use `pipx` instead of `uv tool`.
+This requires Python to be installed.
+"""
+env = "MISE_UV_PIPX"
+optional = true
+type = "Bool"
+
+[uv.registry_url]
+default = "https://pypi.org/pypi/{}/json"
+description = "URL to use for the uv tool registry."
+docs = """
+URL to use for the uv tool registry.
+
+This is used to fetch the latest version of a package from the PyPI registry.
+
+The default is `https://pypi.org/pypi/{}/json` which is the JSON endpoint for the PyPI
+registry.
+
+You can also use the HTML endpoint by setting this to `https://pypi.org/simple/{}/`.
+"""
+env = "MISE_UV_REGISTRY_URL"
+type = "String"
 
 [verbose]
 description = "Shows more verbose output such as installation logs when installing tools."

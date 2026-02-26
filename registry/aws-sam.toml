@@ -4,7 +4,7 @@ backends = [
     "linux",
     "macos",
   ], options = { symlink_bins = "true" } },
-  "pipx:aws-sam-cli",
+  "uv:aws-sam-cli",
   "asdf:mise-plugins/mise-pyapp",
 ]
 description = "CLI tool to build, test, debug, and deploy Serverless applications using AWS SAM"

@@ -30,7 +30,7 @@ assert_contains "mise settings --json-extended" "{
       \"java\"
     ],
     \"type\": \"array\",
-    \"description\": \"Backends to disable such as \`asdf\` or \`pipx\`\",
+    \"description\": \"Backends to disable such as \`asdf\` or \`uv\`\",
     \"source\": \"$HOME/workdir/mise.toml\"
   }
 }"

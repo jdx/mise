@@ -573,7 +573,7 @@
         },
         "disable_backends": {
           "default": [],
-          "description": "Backends to disable such as `asdf` or `pipx`",
+          "description": "Backends to disable such as `asdf` or `uv`",
           "type": "array",
           "items": {
             "type": "string"
@@ -1032,17 +1032,20 @@
             "registry_url": {
               "default": "https://pypi.org/pypi/{}/json",
               "description": "URL to use for pipx registry.",
-              "type": "string"
+              "type": "string",
+              "deprecated": true
             },
             "uvx": {
-              "description": "Use uvx instead of pipx if uv is installed and on PATH.",
-              "type": "boolean"
+              "description": "Use `uv tool` instead of `pipx` when installing Python CLIs.",
+              "type": "boolean",
+              "deprecated": true
             }
           }
         },
         "pipx_uvx": {
-          "description": "Use uvx instead of pipx if uv is installed and on PATH.",
-          "type": "boolean"
+          "description": "Use `uv tool` instead of `pipx` when installing Python CLIs.",
+          "type": "boolean",
+          "deprecated": true
         },
         "plugin_autoupdate_last_check_duration": {
           "default": "7d",
@@ -1539,6 +1542,21 @@
           "default": true,
           "description": "Send anonymous download statistics when installing tools.",
           "type": "boolean"
+        },
+        "uv": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "pipx": {
+              "description": "Use `pipx` instead of `uv tool` when installing Python CLIs.",
+              "type": "boolean"
+            },
+            "registry_url": {
+              "default": "https://pypi.org/pypi/{}/json",
+              "description": "URL to use for the uv tool registry.",
+              "type": "string"
+            }
+          }
         },
         "verbose": {
           "description": "Shows more verbose output such as installation logs when installing tools.",

@@ -96,7 +96,7 @@ impl Install {
     ) -> Result<()> {
         let trs = config.get_tool_request_set().await?;
 
-        // Expand wildcards (e.g., "pipx:*") to actual ToolArgs from config
+        // Expand wildcards (e.g., "uv:*") to actual ToolArgs from config
         let mut has_unmatched_wildcard = false;
         let expanded_runtimes: Vec<ToolArg> = runtimes
             .iter()

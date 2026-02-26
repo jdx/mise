@@ -1,6 +1,6 @@
 # Backends
 
-Backends are package managers or ecosystems that mise uses to install [tools](/dev-tools/index.html) and [plugins](/plugins.html). Each backend can install and manage multiple tools from its ecosystem. For example, the `npm` backend can install many different tools like `npm:prettier`, or the `pipx` backend can install tools like `pipx:black`. This allows mise to support a wide variety of tools and languages by leveraging different package managers and their ecosystems.
+Backends are package managers or ecosystems that mise uses to install [tools](/dev-tools/index.html) and [plugins](/plugins.html). Each backend can install and manage multiple tools from its ecosystem. For example, the `npm` backend can install many different tools like `npm:prettier`, or the `uv` backend (formerly `pipx`) can install tools like `uv:black`. This allows mise to support a wide variety of tools and languages by leveraging different package managers and their ecosystems.
 
 When you run the [`mise use`](/cli/use.html) command, mise will determine the appropriate backend to use based on the tool you are trying to manage. The backend will then handle the installation, configuration, and any other necessary steps to ensure the tool is ready to use.
 
@@ -20,7 +20,7 @@ Below is a list of the available backends in mise:
 - [go](/dev-tools/backends/go)
 - [http](/dev-tools/backends/http)
 - [npm](/dev-tools/backends/npm)
-- [pipx](/dev-tools/backends/pipx)
+- [uv](/dev-tools/backends/uv)
 - [s3](/dev-tools/backends/s3) <Badge type="warning" text="experimental" />
 - [spm](/dev-tools/backends/spm) <Badge type="warning" text="experimental" />
 - [ubi](/dev-tools/backends/ubi)

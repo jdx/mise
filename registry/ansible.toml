@@ -2,8 +2,7 @@ description = "ansible python package contains the core runtime and CLI tools, s
 test = { cmd = "ansible --version", expected = "ansible" }
 
 [[backends]]
-full = "pipx:ansible"
+full = "uv:ansible"
 
 [backends.options]
-pipx_args = "--include-deps"
-uvx = false
+uv_tool_args = "--with-executables-from ansible-core,ansible-lint"

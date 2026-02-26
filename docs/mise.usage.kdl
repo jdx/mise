@@ -133,7 +133,7 @@ cmd "backends" help="Manage backends" {
   cargo
   go
   npm
-  pipx
+  uv
   spm
   ubi
 "

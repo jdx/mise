@@ -27,15 +27,15 @@ use versions::Versioning;
 use xx::regex;
 
 #[derive(Debug)]
-pub struct PIPXBackend {
+pub struct UvToolBackend {
     ba: Arc<BackendArg>,
     latest_version_cache: CacheManager<Option<String>>,
 }
 
 #[async_trait]
-impl Backend for PIPXBackend {
+impl Backend for UvToolBackend {
     fn get_type(&self) -> BackendType {
-        BackendType::Pipx
+        BackendType::UvTool
     }
 
     fn ba(&self) -> &Arc<BackendArg> {
@@ -43,11 +43,19 @@ impl Backend for PIPXBackend {
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
-        Ok(vec!["pipx"])
+        if Settings::get().uv.pipx == Some(true) {
+            Ok(vec!["pipx"])
+        } else {
+            Ok(vec!["uv"])
+        }
     }
 
     fn get_optional_dependencies(&self) -> eyre::Result<Vec<&str>> {
-        Ok(vec!["uv"])
+        if Settings::get().uv.pipx == Some(true) {
+            Ok(vec!["uv"])
+        } else {
+            Ok(vec!["pipx"])
+        }
     }
 
     /// Pipx installs packages from PyPI or Git using version specs (e.g., black==24.3.0).
@@ -58,7 +66,7 @@ impl Backend for PIPXBackend {
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         match self.tool_name().parse()? {
-            PipxRequest::Pypi(package) => {
+            UvToolRequest::Pypi(package) => {
                 let registry_url = Self::get_registry_url()?;
                 if registry_url.contains("/json") {
                     debug!("Fetching JSON for {}", package);
@@ -117,7 +125,7 @@ impl Backend for PIPXBackend {
                     Ok(versions)
                 }
             }
-            PipxRequest::Git(url) if url.starts_with("https://github.com/") => {
+            UvToolRequest::Git(url) if url.starts_with("https://github.com/") => {
                 let repo = url.strip_prefix("https://github.com/").unwrap();
                 let data = github::list_releases(repo).await?;
                 Ok(data
@@ -130,7 +138,7 @@ impl Backend for PIPXBackend {
                     })
                     .collect())
             }
-            PipxRequest::Git { .. } => Ok(vec![VersionInfo {
+            UvToolRequest::Git { .. } => Ok(vec![VersionInfo {
                 version: "latest".to_string(),
                 ..Default::default()
             }]),
@@ -143,7 +151,7 @@ impl Backend for PIPXBackend {
             async || {
                 this.latest_version_cache
                     .get_or_try_init_async(async || match this.tool_name().parse()? {
-                        PipxRequest::Pypi(package) => {
+                        UvToolRequest::Pypi(package) => {
                             let registry_url = Self::get_registry_url()?;
                             if registry_url.contains("/json") {
                                 debug!("Fetching JSON for {}", package);
@@ -194,56 +202,63 @@ impl Backend for PIPXBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        // Check if pipx is available (unless uvx is being used)
-        let use_uvx = self.uv_is_installed(&ctx.config).await
-            && Settings::get().pipx.uvx != Some(false)
-            && tv.request.options().get("uvx") != Some(&"false".to_string());
+        let opts = tv.request.options();
+        Self::warn_deprecated_uv_legacy_options(&opts);
 
-        if !use_uvx {
+        // Prefer uv tool when available unless explicitly disabled.
+        let fallback_to_pipx = !self.uv_is_installed(&ctx.config).await
+            || Settings::get().uv.pipx == Some(true)
+            || opts.get("pipx") == Some(&"true".to_string())
+            || opts.get("uvx") == Some(&"false".to_string());
+
+        if fallback_to_pipx {
             self.warn_if_dependency_missing(
                 &ctx.config,
                 "pipx",
-                "To use pipx packages with mise, you need to install pipx first:\n\
-                  mise use pipx@latest\n\n\
-                Alternatively, you can use uv/uvx by installing uv:\n\
-                  mise use uv@latest",
+                "To use Python CLI tools with the uv backend, install uv (recommended) or pipx:\n\
+                  uv (recommended):\n\
+                  mise use uv@latest\n\n\
+                pipx fallback:\n\
+                  mise use pipx@latest\n\
+                  (or set uv_tool = false for this tool)",
             )
             .await;
         }
 
-        let pipx_request = self
+        let uv_tool_request = self
             .tool_name()
-            .parse::<PipxRequest>()?
-            .pipx_request(&tv.version, &tv.request.options());
+            .parse::<UvToolRequest>()?
+            .uv_tool_request(&tv.version, &opts);
 
-        if use_uvx {
+        if !fallback_to_pipx {
             ctx.pr
-                .set_message(format!("uv tool install {pipx_request}"));
-            let mut cmd = Self::uvx_cmd(
+                .set_message(format!("uv tool install {uv_tool_request}"));
+            let mut cmd = Self::uv_tool_cmd(
                 &ctx.config,
-                &["tool", "install", &pipx_request],
+                &["tool", "install", &uv_tool_request],
                 self,
                 &tv,
                 &ctx.ts,
                 ctx.pr.as_ref(),
             )
             .await?;
-            if let Some(args) = tv.request.options().get("uvx_args") {
-                cmd = cmd.args(shell_words::split(args)?);
+            if let Some(args) = Self::uv_tool_args(&opts) {
+                cmd = cmd.args(shell_words::split(&args)?);
             }
             cmd.execute()?;
         } else {
-            ctx.pr.set_message(format!("pipx install {pipx_request}"));
+            ctx.pr
+                .set_message(format!("pipx install {uv_tool_request}"));
             let mut cmd = Self::pipx_cmd(
                 &ctx.config,
-                &["install", &pipx_request],
+                &["install", &uv_tool_request],
                 self,
                 &tv,
                 &ctx.ts,
                 ctx.pr.as_ref(),
             )
             .await?;
-            if let Some(args) = tv.request.options().get("pipx_args") {
+            if let Some(args) = opts.get("pipx_args") {
                 cmd = cmd.args(shell_words::split(args)?);
             }
             cmd.execute()?;
@@ -266,27 +281,43 @@ impl Backend for PIPXBackend {
         let mut result = BTreeMap::new();
 
         // These options affect what gets installed
-        for key in ["extras", "pipx_args", "uvx_args", "uvx"] {
-            if let Some(value) = opts.get(key) {
-                result.insert(key.to_string(), value.clone());
-            }
+        if let Some(value) = opts.get("extras") {
+            result.insert("extras".to_string(), value.clone());
+        }
+        if let Some(value) = opts.get("pipx_args") {
+            result.insert("pipx_args".to_string(), value.clone());
+        }
+        if let Some(value) = opts.get("pipx") {
+            result.insert("pipx".to_string(), value.clone());
+        } else if opts.get("uvx") == Some(&"false".to_string()) {
+            Self::warn_deprecated_uv_legacy_options(&opts);
+            result.insert("pipx".to_string(), "true".to_string());
+        }
+        if let Some(value) = opts.get("uv_tool_args") {
+            result.insert("uv_tool_args".to_string(), value.clone());
+        } else if let Some(value) = opts.get("uvx_args") {
+            Self::warn_deprecated_uv_legacy_options(&opts);
+            result.insert("uv_tool_args".to_string(), value.clone());
         }
 
         result
     }
 }
 
-/// Returns install-time-only option keys for PIPX backend.
+/// Returns install-time-only option keys for the uv tool backend.
 pub fn install_time_option_keys() -> Vec<String> {
     vec![
         "extras".into(),
         "pipx_args".into(),
+        "uv_tool_args".into(),
+        "pipx".into(),
+        // Legacy aliases
         "uvx_args".into(),
         "uvx".into(),
     ]
 }
 
-impl PIPXBackend {
+impl UvToolBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self {
             latest_version_cache: CacheManagerBuilder::new(
@@ -299,7 +330,7 @@ impl PIPXBackend {
     }
 
     fn get_index_url() -> eyre::Result<String> {
-        let registry_url = Settings::get().pipx.registry_url.clone();
+        let registry_url = Settings::get().uv.registry_url.clone();
 
         // Remove {} placeholders and trailing slashes
         let mut url = registry_url
@@ -335,9 +366,9 @@ impl PIPXBackend {
     }
 
     fn get_registry_url() -> eyre::Result<String> {
-        let registry_url = Settings::get().pipx.registry_url.clone();
+        let registry_url = Settings::get().uv.registry_url.clone();
 
-        debug!("Pipx registry URL: {}", registry_url);
+        debug!("Uv tool registry URL: {}", registry_url);
 
         let re = Regex::new(r"^(http|https)://.*\{\}.*$").unwrap();
 
@@ -352,28 +383,28 @@ impl PIPXBackend {
 
     pub async fn reinstall_all(config: &Arc<Config>) -> Result<()> {
         let ts = ToolsetBuilder::new().build(config).await?;
-        let pipx_tools = ts
+        let uv_tools = ts
             .list_installed_versions(config)
             .await?
             .into_iter()
-            .filter(|(b, _tv)| b.ba().backend_type() == BackendType::Pipx)
+            .filter(|(b, _tv)| b.ba().backend_type() == BackendType::UvTool)
             .collect_vec();
-        if Settings::get().pipx.uvx != Some(false) {
-            let pr = MultiProgressReport::get().add("reinstalling pipx tools with uvx");
-            for (b, tv) in pipx_tools {
+        if Settings::get().uv.pipx != Some(true) {
+            let pr = MultiProgressReport::get().add("reinstalling uv tools with uv tool");
+            for (b, tv) in uv_tools {
                 for (cmd, tool) in &[
                     ("uninstall", tv.ba().tool_name.to_string()),
                     ("install", format!("{}=={}", tv.ba().tool_name, tv.version)),
                 ] {
                     let args = &["tool", cmd, tool];
-                    Self::uvx_cmd(config, args, &*b, &tv, &ts, pr.as_ref())
+                    Self::uv_tool_cmd(config, args, &*b, &tv, &ts, pr.as_ref())
                         .await?
                         .execute()?;
                 }
             }
         } else {
-            let pr = MultiProgressReport::get().add("reinstalling pipx tools");
-            for (b, tv) in pipx_tools {
+            let pr = MultiProgressReport::get().add("reinstalling uv tools with pipx");
+            for (b, tv) in uv_tools {
                 let args = &["reinstall", &tv.ba().tool_name];
                 Self::pipx_cmd(config, args, &*b, &tv, &ts, pr.as_ref())
                     .await?
@@ -383,7 +414,7 @@ impl PIPXBackend {
         Ok(())
     }
 
-    async fn uvx_cmd<'a>(
+    async fn uv_tool_cmd<'a>(
         config: &Arc<Config>,
         args: &[&str],
         b: &dyn Backend,
@@ -430,9 +461,44 @@ impl PIPXBackend {
     async fn uv_is_installed(&self, config: &Arc<Config>) -> bool {
         self.dependency_which(config, "uv").await.is_some()
     }
+
+    fn uv_tool_args(opts: &ToolVersionOptions) -> Option<String> {
+        if let Some(args) = opts.get("uv_tool_args") {
+            return Some(args.clone());
+        }
+        if let Some(args) = opts.get("uvx_args") {
+            deprecated_at!(
+                "2026.8.0",
+                "2027.8.0",
+                "uvx-args",
+                "Option `uvx_args` is deprecated; use `uv_tool_args` instead."
+            );
+            return Some(args.clone());
+        }
+        None
+    }
+
+    fn warn_deprecated_uv_legacy_options(opts: &ToolVersionOptions) {
+        if opts.contains_key("uvx") {
+            deprecated_at!(
+                "2026.8.0",
+                "2027.8.0",
+                "uvx-option",
+                "Option `uvx` is deprecated. Use `pipx = true` to force using pipx, otherwise the default is now `uv`."
+            );
+        }
+        if opts.contains_key("uvx_args") {
+            deprecated_at!(
+                "2026.8.0",
+                "2027.8.0",
+                "uvx-args",
+                "Option `uvx_args` is deprecated; use `uv_tool_args` instead."
+            );
+        }
+    }
 }
 
-enum PipxRequest {
+enum UvToolRequest {
     /// git+https://github.com/psf/black.git@24.2.0
     /// psf/black@24.2.0
     Git(String),
@@ -440,7 +506,7 @@ enum PipxRequest {
     Pypi(String),
 }
 
-impl PipxRequest {
+impl UvToolRequest {
     fn extras_from_opts(&self, opts: &ToolVersionOptions) -> String {
         match opts.get("extras") {
             Some(extras) => format!("[{extras}]"),
@@ -448,18 +514,18 @@ impl PipxRequest {
         }
     }
 
-    fn pipx_request(&self, v: &str, opts: &ToolVersionOptions) -> String {
+    fn uv_tool_request(&self, v: &str, opts: &ToolVersionOptions) -> String {
         let extras = self.extras_from_opts(opts);
 
         if v == "latest" {
             match self {
-                PipxRequest::Git(url) => format!("git+{url}.git"),
-                PipxRequest::Pypi(package) => format!("{package}{extras}"),
+                UvToolRequest::Git(url) => format!("git+{url}.git"),
+                UvToolRequest::Pypi(package) => format!("{package}{extras}"),
             }
         } else {
             match self {
-                PipxRequest::Git(url) => format!("git+{url}.git@{v}"),
-                PipxRequest::Pypi(package) => format!("{package}{extras}=={v}"),
+                UvToolRequest::Git(url) => format!("git+{url}.git@{v}"),
+                UvToolRequest::Pypi(package) => format!("{package}{extras}=={v}"),
             }
         }
     }
@@ -481,16 +547,16 @@ struct PypiRelease {
     upload_time: Option<String>,
 }
 
-impl FromStr for PipxRequest {
+impl FromStr for UvToolRequest {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if let Some(cap) = regex!(r"(git\+)(.*)(\.git)").captures(s) {
-            Ok(PipxRequest::Git(cap.get(2).unwrap().as_str().to_string()))
+            Ok(UvToolRequest::Git(cap.get(2).unwrap().as_str().to_string()))
         } else if s.contains('/') {
-            Ok(PipxRequest::Git(format!("https://github.com/{s}")))
+            Ok(UvToolRequest::Git(format!("https://github.com/{s}")))
         } else {
-            Ok(PipxRequest::Pypi(s.to_string()))
+            Ok(UvToolRequest::Pypi(s.to_string()))
         }
     }
 }
@@ -576,7 +642,7 @@ fn fix_venv_python_symlink(install_path: &Path, pkg_name: &str) -> Result<()> {
     // Extract the actual package name (last component after any '/')
     let actual_pkg_name = pkg_name.rsplit('/').next().unwrap_or(pkg_name);
 
-    // Check both possible venv locations: {pkg}/ for uvx, venvs/{pkg}/ for pipx
+    // Check both possible venv locations: {pkg}/ for uv tool, venvs/{pkg}/ for pipx
     let venv_dirs = [
         install_path.join(actual_pkg_name),
         install_path.join("venvs").join(actual_pkg_name),

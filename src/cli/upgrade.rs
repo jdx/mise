@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::backend::pipx::PIPXBackend;
+use crate::backend::uv_tool::UvToolBackend;
 use crate::cli::args::ToolArg;
 use crate::config::{Config, Settings, config_file};
 use crate::duration::parse_into_timestamp;
@@ -302,10 +302,10 @@ impl Upgrade {
         config::rebuild_shims_and_runtime_symlinks(config, ts, &successful_versions).await?;
 
         if successful_versions.iter().any(|v| v.short() == "python") {
-            PIPXBackend::reinstall_all(config)
+            UvToolBackend::reinstall_all(config)
                 .await
                 .unwrap_or_else(|err| {
-                    warn!("failed to reinstall pipx tools: {err}");
+                    warn!("failed to reinstall uv tools: {err}");
                 });
         }
 

@@ -56,12 +56,12 @@ pub mod go;
 pub mod http;
 pub mod jq;
 pub mod npm;
-pub mod pipx;
 pub mod platform_target;
 pub mod s3;
 pub mod spm;
 pub mod static_helpers;
 pub mod ubi;
+pub mod uv_tool;
 pub mod version_list;
 pub mod vfox;
 
@@ -261,7 +261,7 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Gitlab => Some(Arc::new(github::UnifiedGitBackend::from_arg(ba))),
         BackendType::Go => Some(Arc::new(go::GoBackend::from_arg(ba))),
         BackendType::Npm => Some(Arc::new(npm::NPMBackend::from_arg(ba))),
-        BackendType::Pipx => Some(Arc::new(pipx::PIPXBackend::from_arg(ba))),
+        BackendType::UvTool => Some(Arc::new(uv_tool::UvToolBackend::from_arg(ba))),
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
         BackendType::Http => Some(Arc::new(http::HttpBackend::from_arg(ba))),
         BackendType::S3 => Some(Arc::new(s3::S3Backend::from_arg(ba))),
@@ -286,7 +286,7 @@ pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<Stri
         BackendType::Ubi => ubi::install_time_option_keys(),
         BackendType::Cargo => cargo::install_time_option_keys(),
         BackendType::Go => go::install_time_option_keys(),
-        BackendType::Pipx => pipx::install_time_option_keys(),
+        BackendType::UvTool => uv_tool::install_time_option_keys(),
         _ => vec![],
     }
 }

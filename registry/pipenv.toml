@@ -1,4 +1,4 @@
-backends = ["vfox:mise-plugins/vfox-pipenv", "pipx:pipenv"]
+backends = ["vfox:mise-plugins/vfox-pipenv", "uv:pipenv"]
 depends = ["python"]
 description = "Python Development Workflow for Humans"
 test = { cmd = "pipenv --version", expected = "pipenv, version {{version}}" }

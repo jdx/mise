@@ -219,7 +219,7 @@ Note that when you ran `mise use --global node@24`, `mise` updated the global `m
 node = "24"
 ```
 
-## 4. Use tools from backends (npm, pipx, core, aqua, github) {#tool-backends}
+## 4. Use tools from backends (npm, uv, core, aqua, github) {#tool-backends}
 
 ```mermaid
 flowchart LR
@@ -228,7 +228,7 @@ flowchart LR
     aqua
     github
     npm
-    pipx
+    uv
   end
 
   core --> node["core:node"]
@@ -238,8 +238,8 @@ flowchart LR
   github -->ruff["github:astral-sh/ruff"]
   npm --> prettier["npm:prettier"]
   npm --> claude_code["npm:@anthropic-ai/claude-code"]
-  pipx -->black["pipx:black"]
-  pipx -->pycowsay["pipx:pycowsay"]
+  uv -->black["uv:black"]
+  uv -->pycowsay["uv:pycowsay"]
   aqua -->terraform["aqua:hashicorp/terraform"]
 
   subgraph Tools
@@ -269,14 +269,14 @@ mise use --global npm:@anthropic-ai/claude-code
 claude --version
 ```
 
-Install [black](https://github.com/psf/black) with the pipx backend:
+Install [black](https://github.com/psf/black) with the uv backend:
 
 ```sh
 # run black via mise x|exec
-mise exec pipx:black -- black --version
+mise exec uv:black -- black --version
 
 # or if mise is activated in your shell
-mise use --global pipx:black
+mise use --global uv:black
 black --version
 ```
 

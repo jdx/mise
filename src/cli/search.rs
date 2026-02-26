@@ -213,7 +213,7 @@ fn get_backends(backends: Vec<&'static str>) -> Vec<String> {
                 "core" => format!("https://mise.jdx.dev/lang/{slug}.html"),
                 "cargo" => format!("https://crates.io/crates/{slug}"),
                 "go" => format!("https://pkg.go.dev/{slug}"),
-                "pipx" => format!("https://pypi.org/project/{slug}"),
+                "uv" | "pipx" => format!("https://pypi.org/project/{slug}"),
                 "npm" => format!("https://www.npmjs.com/package/{slug}"),
                 _ => format!("https://github.com/{slug}"),
             }

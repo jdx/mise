@@ -180,7 +180,7 @@
 - **cargo**: Rust package installation
 - **npm**: Node.js package installation
 - **gem**: Ruby gem installation
-- **pipx**: Python application installation
+- **uv tool**: Python application installation
 - **go install**: Go binary installation
 
 ### Tool Registries

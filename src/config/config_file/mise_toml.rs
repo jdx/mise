@@ -2336,20 +2336,15 @@ mod tests {
             .expect("ansible should be in tool request set");
         let opts = ansible_requests[0].options();
         assert_eq!(
-            opts.get("uvx").map(|s| s.as_str()),
-            Some("false"),
-            "registry default uvx=false should be preserved with table syntax"
-        );
-        assert_eq!(
-            opts.get("pipx_args").map(|s| s.as_str()),
-            Some("--include-deps"),
-            "registry default pipx_args=--include-deps should be preserved with table syntax"
+            opts.get("uv_tool_args").map(|s| s.as_str()),
+            Some("--with-executables-from ansible-core,ansible-lint"),
+            "registry default uv_tool_args should be preserved with table syntax"
         );
 
         // Also verify that user-provided options override registry defaults
         let cf2 = parse(formatdoc! {r#"
             [tools]
-            ansible = {{ version = "latest", uvx = "true" }}
+            ansible = {{ version = "latest", uv_tool_args = "--custom-arg" }}
         "#});
         let trs2 = cf2.to_tool_request_set().unwrap();
         let ansible2 = trs2
@@ -2360,14 +2355,9 @@ mod tests {
             .expect("ansible should be in tool request set");
         let opts2 = ansible2[0].options();
         assert_eq!(
-            opts2.get("uvx").map(|s| s.as_str()),
-            Some("true"),
-            "user-provided uvx=true should override registry default uvx=false"
-        );
-        assert_eq!(
-            opts2.get("pipx_args").map(|s| s.as_str()),
-            Some("--include-deps"),
-            "non-overridden registry default pipx_args should still be preserved"
+            opts2.get("uv_tool_args").map(|s| s.as_str()),
+            Some("--custom-arg"),
+            "user-provided uv_tool_args should override registry default"
         );
     }
 }

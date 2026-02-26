@@ -33,7 +33,7 @@ In general, the preferred [backend](/dev-tools/backends/) to use for new tools i
 - [aqua](./dev-tools/backends/aqua.html) - offers the most features and security while not requiring plugins
 - [github](./dev-tools/backends/github.html) - for tools that are not available in the aqua registry, but are available on GitHub
 - [gitlab](./dev-tools/backends/gitlab.html) - for tools that are not available in the aqua registry, but are available on GitLab
-- [pipx](./dev-tools/backends/pipx.html) - only for python tools, requires python to be installed but this generally would always be the case for python tools
+- [uv](./dev-tools/backends/uv.html) - only for python tools, requires uv/python to be installed but this generally would always be the case for python tools
 - [npm](./dev-tools/backends/npm.html) - only for node tools, requires node to be installed but this generally would always be the case for node tools
 - [go](./dev-tools/backends/go.html) - only for go tools, requires go to be installed to compile. Because go tools can be distributed as a single binary, aqua/github are definitely preferred.
 - [cargo](./dev-tools/backends/cargo.html) - only for rust tools, requires rust to be installed to compile. Because rust tools can be distributed as a single binary, aqua/github are definitely preferred.
