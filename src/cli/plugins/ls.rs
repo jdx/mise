@@ -38,6 +38,11 @@ pub struct PluginsLs {
     /// List installed plugins
     #[clap(long, verbatim_doc_comment, conflicts_with = "all", hide = true)]
     pub user: bool,
+
+    /// Show plugins with available updates
+    /// Checks the remote for newer versions and only displays plugins that are outdated
+    #[clap(short, long, verbatim_doc_comment)]
+    pub outdated: bool,
 }
 
 impl PluginsLs {
@@ -74,7 +79,49 @@ impl PluginsLs {
             })
             .collect::<BTreeMap<_, _>>();
 
-        if self.urls || self.refs {
+        if self.outdated {
+            let data = plugins
+                .into_iter()
+                .filter_map(|(name, p)| {
+                    if !p.is_installed() {
+                        return None;
+                    }
+                    let local_sha = p.current_sha_short().unwrap_or_else(|e| {
+                        warn!("{name}: {e:?}");
+                        None
+                    })?;
+                    let remote_sha = p.remote_sha().unwrap_or_else(|e| {
+                        warn!("{name}: {e:?}");
+                        None
+                    })?;
+                    if remote_sha.starts_with(&local_sha) {
+                        return None;
+                    }
+                    let remote_url = p.get_remote_url().unwrap_or_else(|e| {
+                        warn!("{name}: {e:?}");
+                        None
+                    });
+                    let abbrev_ref = p.current_abbrev_ref().unwrap_or_else(|e| {
+                        warn!("{name}: {e:?}");
+                        None
+                    });
+                    Some(OutdatedRow {
+                        plugin: name,
+                        url: remote_url.unwrap_or_default(),
+                        ref_: abbrev_ref.unwrap_or_default(),
+                        local: local_sha,
+                        remote: remote_sha[..7].to_string(),
+                    })
+                })
+                .collect::<Vec<_>>();
+            if data.is_empty() {
+                info!("All plugins are up to date");
+            } else {
+                let mut table = Table::new(data);
+                table::default_style(&mut table, false);
+                miseprintln!("{table}");
+            }
+        } else if self.urls || self.refs {
             let data = plugins
                 .into_iter()
                 .map(|(name, p)| {
@@ -123,6 +170,16 @@ struct Row {
     url: String,
     ref_: String,
     sha: String,
+}
+
+#[derive(Tabled)]
+#[tabled(rename_all = "PascalCase")]
+struct OutdatedRow {
+    plugin: String,
+    url: String,
+    ref_: String,
+    local: String,
+    remote: String,
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

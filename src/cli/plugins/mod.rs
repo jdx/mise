@@ -79,6 +79,7 @@ impl Plugins {
             refs: self.refs,
             urls: self.urls,
             user: self.user,
+            outdated: false,
         }));
 
         cmd.run(&config).await

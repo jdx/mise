@@ -286,6 +286,15 @@ impl Git {
         }
     }
 
+    pub fn remote_sha(&self, branch: &str) -> Result<Option<String>> {
+        let output = git_cmd_read!(&self.dir, "ls-remote", "origin", branch)?;
+        Ok(output
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().next())
+            .map(|sha| sha.to_string()))
+    }
+
     pub fn exists(&self) -> bool {
         self.dir.join(".git").is_dir()
     }
