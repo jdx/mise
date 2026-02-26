@@ -25,6 +25,11 @@ pub struct PluginsLs {
     #[clap(short, long, verbatim_doc_comment, conflicts_with = "all", hide = true)]
     pub core: bool,
 
+    /// Show plugins with available updates
+    /// Checks the remote for newer versions and only displays plugins that are outdated
+    #[clap(short, long, verbatim_doc_comment)]
+    pub outdated: bool,
+
     /// Show the git url for each plugin
     /// e.g.: https://github.com/mise-plugins/vfox-cmake.git
     #[clap(short, long, alias = "url", verbatim_doc_comment)]
@@ -38,11 +43,6 @@ pub struct PluginsLs {
     /// List installed plugins
     #[clap(long, verbatim_doc_comment, conflicts_with = "all", hide = true)]
     pub user: bool,
-
-    /// Show plugins with available updates
-    /// Checks the remote for newer versions and only displays plugins that are outdated
-    #[clap(short, long, verbatim_doc_comment)]
-    pub outdated: bool,
 }
 
 impl PluginsLs {
@@ -110,7 +110,7 @@ impl PluginsLs {
                         url: remote_url.unwrap_or_default(),
                         ref_: abbrev_ref.unwrap_or_default(),
                         local: local_sha,
-                        remote: remote_sha[..7].to_string(),
+                        remote: remote_sha.chars().take(7).collect(),
                     })
                 })
                 .collect::<Vec<_>>();
