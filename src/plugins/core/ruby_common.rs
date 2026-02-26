@@ -39,8 +39,8 @@ pub async fn resolve_rubyinstaller_lock_info(version: &str) -> Result<PlatformIn
     let tag = rubyinstaller_tag(version);
     let asset_name = rubyinstaller_asset_name(version);
 
-    if let Ok(release) = github::get_release(RUBYINSTALLER_REPO, &tag).await {
-        if let Some(asset) = release.assets.iter().find(|a| a.name == asset_name) {
+    if let Ok(release) = github::get_release(RUBYINSTALLER_REPO, &tag).await
+        && let Some(asset) = release.assets.iter().find(|a| a.name == asset_name) {
             return Ok(PlatformInfo {
                 url: Some(asset.browser_download_url.clone()),
                 checksum: asset.digest.clone(),
@@ -49,7 +49,6 @@ pub async fn resolve_rubyinstaller_lock_info(version: &str) -> Result<PlatformIn
                 conda_deps: None,
             });
         }
-    }
 
     // Fallback: construct URL without checksum
     Ok(PlatformInfo {
