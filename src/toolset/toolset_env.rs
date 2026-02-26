@@ -26,19 +26,7 @@ impl Toolset {
     /// Used for preinstall hooks where tool-dependent env vars aren't available yet.
     pub async fn full_env_without_tools(&self, config: &Arc<Config>) -> Result<EnvMap> {
         let mut env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
-        let (tool_env, add_paths) = self.env(config).await?;
-        env.extend(tool_env);
-        let mut path_env = PathEnv::from_iter(env::PATH.clone());
-        for p in config.path_dirs().await?.clone() {
-            path_env.add(p);
-        }
-        for p in &add_paths {
-            path_env.add(p.clone());
-        }
-        for p in self.list_paths(config).await {
-            path_env.add(p);
-        }
-        env.insert(PATH_KEY.to_string(), path_env.to_string());
+        env.extend(self.env_with_path_without_tools(config).await?);
         Ok(env)
     }
 
