@@ -168,7 +168,7 @@ impl Backend for NPMBackend {
                     .arg("--linker")
                     .arg("hoisted")
                     .with_pr(ctx.pr.as_ref())
-                    .envs(ctx.ts.env_with_path(&ctx.config).await?)
+                    .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
                     .env("BUN_INSTALL_GLOBAL_DIR", tv.install_path())
                     .env("BUN_INSTALL_BIN", tv.install_path().join("bin"))
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
@@ -193,7 +193,7 @@ impl Backend for NPMBackend {
                     .arg("--global-bin-dir")
                     .arg(&bin_dir)
                     .with_pr(ctx.pr.as_ref())
-                    .envs(ctx.ts.env_with_path(&ctx.config).await?)
+                    .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(
                         self.dependency_toolset(&ctx.config)
@@ -214,7 +214,7 @@ impl Backend for NPMBackend {
                     .arg("--prefix")
                     .arg(tv.install_path())
                     .with_pr(ctx.pr.as_ref())
-                    .envs(ctx.ts.env_with_path(&ctx.config).await?)
+                    .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
                     .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                     .prepend_path(

@@ -42,6 +42,27 @@ impl Toolset {
         Ok(env)
     }
 
+    /// Like env_with_path but skips `tools=true` env directives.
+    /// Used during tool installation where tool-dependent env vars
+    /// may reference tools that aren't installed yet.
+    pub async fn env_with_path_without_tools(&self, config: &Arc<Config>) -> Result<EnvMap> {
+        let (tool_env, add_paths) = self.env(config).await?;
+        let mut env: EnvMap = env::PRISTINE_ENV.clone().into_iter().collect();
+        env.extend(tool_env);
+        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        for p in config.path_dirs().await?.clone() {
+            path_env.add(p);
+        }
+        for p in &add_paths {
+            path_env.add(p.clone());
+        }
+        for p in self.list_paths(config).await {
+            path_env.add(p);
+        }
+        env.insert(PATH_KEY.to_string(), path_env.to_string());
+        Ok(env)
+    }
+
     /// the full mise environment including all tool paths
     pub async fn env_with_path(&self, config: &Arc<Config>) -> Result<EnvMap> {
         // Try to load from cache if enabled

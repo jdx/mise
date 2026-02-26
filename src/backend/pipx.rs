@@ -399,7 +399,7 @@ impl PIPXBackend {
             .env("UV_TOOL_DIR", tv.install_path())
             .env("UV_TOOL_BIN_DIR", tv.install_path().join("bin"))
             .env("UV_INDEX", Self::get_index_url()?)
-            .envs(ts.env_with_path(config).await?)
+            .envs(ts.env_with_path_without_tools(config).await?)
             .prepend_path(ts.list_paths(config).await)?
             .prepend_path(vec![tv.install_path().join("bin")])?
             .prepend_path(b.dependency_toolset(config).await?.list_paths(config).await)
@@ -421,7 +421,7 @@ impl PIPXBackend {
             .env("PIPX_HOME", tv.install_path())
             .env("PIPX_BIN_DIR", tv.install_path().join("bin"))
             .env("PIP_INDEX_URL", Self::get_index_url()?)
-            .envs(ts.env_with_path(config).await?)
+            .envs(ts.env_with_path_without_tools(config).await?)
             .prepend_path(ts.list_paths(config).await)?
             .prepend_path(vec![tv.install_path().join("bin")])?
             .prepend_path(b.dependency_toolset(config).await?.list_paths(config).await)
