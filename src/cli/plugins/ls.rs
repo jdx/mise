@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use tabled::{Table, Tabled};
 
 use crate::config::Config;
+use crate::parallel;
 use crate::plugins::PluginType;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::registry::full_to_url;
@@ -80,23 +81,20 @@ impl PluginsLs {
             .collect::<BTreeMap<_, _>>();
 
         if self.outdated {
-            let data = plugins
+            let installed: Vec<_> = plugins
                 .into_iter()
-                .filter_map(|(name, p)| {
-                    if !p.is_installed() {
-                        return None;
-                    }
+                .filter(|(_, p)| p.is_installed())
+                .collect();
+            let results = parallel::parallel(installed, |(name, p)| async move {
+                tokio::task::spawn_blocking(move || {
                     let local_sha = p.current_sha_short().unwrap_or_else(|e| {
                         warn!("{name}: {e:?}");
                         None
-                    })?;
+                    });
                     let remote_sha = p.remote_sha().unwrap_or_else(|e| {
                         warn!("{name}: {e:?}");
                         None
-                    })?;
-                    if remote_sha.starts_with(&local_sha) {
-                        return None;
-                    }
+                    });
                     let remote_url = p.get_remote_url().unwrap_or_else(|e| {
                         warn!("{name}: {e:?}");
                         None
@@ -105,6 +103,20 @@ impl PluginsLs {
                         warn!("{name}: {e:?}");
                         None
                     });
+                    (name, local_sha, remote_sha, remote_url, abbrev_ref)
+                })
+                .await
+                .map_err(|e| eyre::eyre!(e))
+            })
+            .await?;
+            let mut data: Vec<_> = results
+                .into_iter()
+                .filter_map(|(name, local_sha, remote_sha, remote_url, abbrev_ref)| {
+                    let local_sha = local_sha?;
+                    let remote_sha = remote_sha?;
+                    if remote_sha.starts_with(&local_sha) {
+                        return None;
+                    }
                     Some(OutdatedRow {
                         plugin: name,
                         url: remote_url.unwrap_or_default(),
@@ -113,7 +125,8 @@ impl PluginsLs {
                         remote: remote_sha.chars().take(7).collect(),
                     })
                 })
-                .collect::<Vec<_>>();
+                .collect();
+            data.sort_by(|a, b| a.plugin.cmp(&b.plugin));
             if data.is_empty() {
                 info!("All plugins are up to date");
             } else {
