@@ -14,8 +14,9 @@ run = "sleep 5 && echo 'Task 3 should not appear'"
 EOF
 
 echo "Testing global timeout via CLI flag..."
-if mise run --timeout=3s task1 ::: task2 ::: task3 2>&1; then
-	echo "ERROR: Tasks should have timed out"
+output="$(mise run --timeout=3s task1 ::: task2 ::: task3 2>&1 || true)"
+if [[ $output != *"timed out"* ]]; then
+	echo "ERROR: Expected 'timed out' in output, got: $output"
 	exit 1
 fi
 echo "✓ CLI flag global timeout works"
@@ -35,11 +36,18 @@ run = "sleep 10 && echo 'Should not appear'"
 timeout = "1s"
 EOF
 
-# TODO: Individual task timeouts are not yet implemented
-echo "⚠ Skipping individual task timeout test (not implemented yet)"
+echo "Testing individual task timeout (too_slow should time out)..."
+output="$(mise run too_slow 2>&1 || true)"
+if [[ $output != *"timed out"* ]]; then
+	echo "ERROR: Expected 'timed out' in output, got: $output"
+	exit 1
+fi
+echo "✓ Individual task timeout works"
 
-# TODO: Individual task timeouts are not yet implemented
-echo "⚠ Skipping successful task within timeout test (not implemented yet)"
+echo "Testing task completes within timeout..."
+mise run quick 2>&1
+mise run slow 2>&1
+echo "✓ Tasks within timeout complete successfully"
 
 # Test timeout via environment variable (global)
 cat <<EOF >mise.toml
@@ -51,8 +59,9 @@ run = "sleep 2 && echo 'Task 2'"
 EOF
 
 echo "Testing global timeout via environment variable..."
-if MISE_TASK_TIMEOUT=2s mise run env_test1 ::: env_test2 2>&1; then
-	echo "ERROR: Should have timed out"
+output="$(MISE_TASK_TIMEOUT=2s mise run env_test1 ::: env_test2 2>&1 || true)"
+if [[ $output != *"timed out"* ]]; then
+	echo "ERROR: Expected 'timed out' in output, got: $output"
 	exit 1
 fi
 echo "✓ Environment variable global timeout works"
@@ -68,8 +77,9 @@ run = "sleep 2 && echo 'Parallel 2 done'"
 timeout = "3s"
 EOF
 
-# TODO: Individual task timeouts are not yet implemented
-echo "⚠ Skipping parallel tasks with individual timeouts test (not implemented yet)"
+echo "Testing parallel tasks with individual timeouts..."
+mise run parallel1 ::: parallel2 2>&1
+echo "✓ Parallel tasks with individual timeouts work"
 
 # Test using duration formats
 cat <<EOF >mise.toml
@@ -78,7 +88,34 @@ run = "sleep 1 && echo 'Duration test done'"
 timeout = "2s"
 EOF
 
-# TODO: Individual task timeouts are not yet implemented
-echo "⚠ Skipping duration formats test (not implemented yet)"
+echo "Testing duration format parsing..."
+mise run duration_test 2>&1
+echo "✓ Duration format works"
+
+# Test global timeout + per-task timeout serve distinct purposes
+cat <<EOF >mise.toml
+[settings]
+task_timeout = "10s"
+
+[tasks.quick_task]
+run = "sleep 1 && echo 'Quick done'"
+timeout = "5s"
+
+[tasks.slow_task]
+run = "sleep 8 && echo 'Slow done'"
+timeout = "3s"
+EOF
+
+echo "Testing global + per-task timeout interaction..."
+output="$(mise run quick_task ::: slow_task 2>&1 || true)"
+if [[ $output != *"timed out"* ]]; then
+	echo "ERROR: Expected per-task timeout to fire, got: $output"
+	exit 1
+fi
+if [[ $output != *"Quick done"* ]]; then
+	echo "ERROR: quick_task should have completed, got: $output"
+	exit 1
+fi
+echo "✓ Global + per-task timeout interaction works"
 
 echo "All timeout tests passed!"

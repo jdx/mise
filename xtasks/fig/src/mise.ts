@@ -1788,6 +1788,12 @@ const completionSpec: Fig.Spec = {
           description: "List installed plugins",
           options: [
             {
+              name: ["-o", "--outdated"],
+              description:
+                "Show plugins with available updates\nChecks the remote for newer versions and only displays plugins that are outdated",
+              isRepeatable: false,
+            },
+            {
               name: ["-u", "--urls"],
               description:
                 "Show the git url for each plugin\ne.g.: https://github.com/mise-plugins/vfox-cmake.git",

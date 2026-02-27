@@ -685,12 +685,12 @@ impl Task {
         }
         spec.cmd.usage = spec.cmd.usage();
     }
-
-    pub async fn parse_usage_spec(
+    pub async fn parse_usage_spec_with_vars(
         &self,
         config: &Arc<Config>,
         cwd: Option<PathBuf>,
         env: &EnvMap,
+        extra_vars: Option<IndexMap<String, String>>,
     ) -> Result<(usage::Spec, Vec<String>)> {
         let (mut spec, scripts) = if let Some(file) = self.file_path(config).await? {
             let spec = usage::Spec::parse_script(&file)
@@ -704,13 +704,24 @@ impl Task {
             (spec, vec![])
         } else {
             let scripts_only = self.run_script_strings();
-            let (scripts, spec) = TaskScriptParser::new(cwd)
+            let (scripts, spec) = Self::make_script_parser(cwd, extra_vars)
                 .parse_run_scripts(config, self, &scripts_only, env)
                 .await?;
             (spec, scripts)
         };
         self.populate_spec_metadata(&mut spec);
         Ok((spec, scripts))
+    }
+
+    fn make_script_parser(
+        cwd: Option<PathBuf>,
+        extra_vars: Option<IndexMap<String, String>>,
+    ) -> TaskScriptParser {
+        let parser = TaskScriptParser::new(cwd);
+        match extra_vars {
+            Some(vars) => parser.with_extra_vars(vars),
+            None => parser,
+        }
     }
 
     /// Parse usage spec for display purposes without expensive environment rendering
@@ -741,11 +752,14 @@ impl Task {
         cwd: Option<PathBuf>,
         args: &[String],
         env: &EnvMap,
+        extra_vars: Option<IndexMap<String, String>>,
     ) -> Result<Vec<(String, Vec<String>)>> {
-        let (spec, scripts) = self.parse_usage_spec(config, cwd.clone(), env).await?;
+        let (spec, scripts) = self
+            .parse_usage_spec_with_vars(config, cwd.clone(), env, extra_vars.clone())
+            .await?;
         if has_any_args_defined(&spec) {
             let scripts_only = self.run_script_strings();
-            let scripts = TaskScriptParser::new(cwd)
+            let scripts = Self::make_script_parser(cwd, extra_vars)
                 .parse_run_scripts_with_args(config, self, &scripts_only, env, args, &spec)
                 .await?;
             Ok(scripts.into_iter().map(|s| (s, vec![])).collect())

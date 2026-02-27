@@ -302,15 +302,18 @@ impl Run {
         }
         time!("run get_task_lists");
 
+        // Resolve transitive dependencies once upfront so we can:
+        // 1. Discover prepare providers from monorepo subdirectory configs
+        // 2. Reuse the resolved list for execution (avoiding duplicate work)
+        let resolved_tasks = resolve_depends(&config, task_list).await?;
+
         // Run auto-enabled prepare steps (unless --no-prepare)
-        // This runs after task resolution so we can discover prepare providers
-        // from monorepo subdirectory configs referenced by the resolved tasks.
         if !self.no_prepare {
             let env = ts.env_with_path(&config).await?;
             let mut engine = PrepareEngine::new(&config)?;
 
-            // Collect subdirectory config files from resolved tasks
-            let subdir_configs: Vec<_> = task_list
+            // Collect subdirectory config files from all resolved tasks
+            let subdir_configs: Vec<_> = resolved_tasks
                 .iter()
                 .filter_map(|task| task.cf.clone())
                 .collect();
@@ -335,11 +338,11 @@ impl Run {
         };
 
         if let Some(timeout) = timeout {
-            tokio::time::timeout(timeout, self.parallelize_tasks(config, task_list))
+            tokio::time::timeout(timeout, self.parallelize_tasks(config, resolved_tasks))
                 .await
                 .map_err(|_| eyre!("mise run timed out after {:?}", timeout))??
         } else {
-            self.parallelize_tasks(config, task_list).await?
+            self.parallelize_tasks(config, resolved_tasks).await?
         }
 
         time!("run done");
@@ -513,9 +516,9 @@ impl Run {
     // High-level workflow methods
     // ============================================================================
 
-    /// Prepare tasks: resolve dependencies, fetch remote tasks, create dependency graph
-    async fn prepare_tasks(&mut self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<Deps> {
-        let mut tasks = resolve_depends(config, tasks).await?;
+    /// Prepare tasks: fetch remote tasks and create dependency graph
+    /// Dependencies should already be resolved via resolve_depends() before calling this.
+    async fn prepare_tasks(&mut self, config: &Arc<Config>, mut tasks: Vec<Task>) -> Result<Deps> {
         let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
         fetcher.fetch_tasks(&mut tasks).await?;
         let tasks = Deps::new(config, tasks).await?;

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+mise plugin install tiny https://github.com/mise-plugins/rtx-tiny.git
+
+# freshly installed plugin should not appear as outdated
+assert_not_contains "mise plugins ls --outdated" "tiny"
+
+# verify --outdated flag works without error
+assert_succeed "mise plugins ls --outdated"
+
+# verify -o short flag works
+assert_succeed "mise plugins ls -o"
+
+# simulate outdated plugin by resetting to previous commit
+(cd "$MISE_DATA_DIR/plugins/tiny" && git reset --hard HEAD~1)
+assert_contains "mise plugins ls --outdated" "tiny"

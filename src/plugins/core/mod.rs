@@ -14,6 +14,7 @@ use crate::toolset::ToolVersion;
 
 mod bun;
 mod deno;
+mod dotnet;
 mod elixir;
 mod erlang;
 mod go;
@@ -22,6 +23,7 @@ mod node;
 pub(crate) mod python;
 #[cfg_attr(windows, path = "ruby_windows.rs")]
 mod ruby;
+mod ruby_common;
 mod rust;
 mod swift;
 mod zig;
@@ -30,6 +32,7 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
     let plugins: Vec<Arc<dyn Backend>> = vec![
         Arc::new(bun::BunPlugin::new()),
         Arc::new(deno::DenoPlugin::new()),
+        Arc::new(dotnet::DotnetPlugin::new()),
         Arc::new(elixir::ElixirPlugin::new()),
         Arc::new(erlang::ErlangPlugin::new()),
         Arc::new(go::GoPlugin::new()),

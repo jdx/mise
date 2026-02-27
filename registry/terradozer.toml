@@ -1,2 +1,3 @@
-backends = ["aqua:jckuester/terradozer", "asdf:chessmango/asdf-terradozer"]
+backends = ["github:chenrui333/terradozer"]
 description = "Terraform destroy without configuration files"
+os = ["linux", "macos"]

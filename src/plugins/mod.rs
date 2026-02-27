@@ -98,6 +98,14 @@ impl PluginEnum {
         }
     }
 
+    pub fn remote_sha(&self) -> eyre::Result<Option<String>> {
+        match self {
+            PluginEnum::Asdf(plugin) => plugin.remote_sha(),
+            PluginEnum::Vfox(plugin) => plugin.remote_sha(),
+            PluginEnum::VfoxBackend(plugin) => plugin.remote_sha(),
+        }
+    }
+
     pub fn external_commands(&self) -> eyre::Result<Vec<Command>> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.external_commands(),
@@ -246,6 +254,9 @@ pub trait Plugin: Debug + Send {
     fn set_remote_url(&self, url: String) {}
     fn current_abbrev_ref(&self) -> eyre::Result<Option<String>>;
     fn current_sha_short(&self) -> eyre::Result<Option<String>>;
+    fn remote_sha(&self) -> eyre::Result<Option<String>> {
+        Ok(None)
+    }
     fn is_installed(&self) -> bool {
         true
     }

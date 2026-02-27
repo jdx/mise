@@ -1,7 +1,7 @@
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::config::config_file::ConfigFile;
-use crate::config::env_directive::EnvDirective;
+use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::env;
 use crate::task::Task;
 use crate::task::task_helpers::canonicalize_path;
@@ -12,7 +12,11 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
-type EnvResolutionResult = (BTreeMap<String, String>, Vec<(String, String)>);
+type EnvResolutionResult = (
+    BTreeMap<String, String>,
+    Vec<(String, String)>,
+    Option<IndexMap<String, String>>,
+);
 
 /// Builds toolset and environment context for task execution
 ///
@@ -133,13 +137,19 @@ impl TaskContextBuilder {
 
     /// Resolve environment variables for a task using its config file context
     /// This is used for monorepo tasks to load env vars from subdirectory mise.toml files
+    /// Returns (env, task_env, resolved_vars) where resolved_vars contains vars from the
+    /// task's config hierarchy (for injecting into tera context during script rendering)
     pub async fn resolve_task_env_with_config(
         &self,
         config: &Arc<Config>,
         task: &Task,
         task_cf: &Arc<dyn ConfigFile>,
         ts: &Toolset,
-    ) -> Result<(BTreeMap<String, String>, Vec<(String, String)>)> {
+    ) -> Result<(
+        BTreeMap<String, String>,
+        Vec<(String, String)>,
+        Option<IndexMap<String, String>>,
+    )> {
         // Determine if this is a monorepo task (task config differs from current project root)
         let is_monorepo_task = task_cf.project_root() != config.project_root;
 
@@ -150,27 +160,28 @@ impl TaskContextBuilder {
             .and_then(|dir| config.project_root.as_ref().map(|pr| dir == *pr))
             .unwrap_or(false);
 
+        // Load task config files for monorepo tasks (reused for both vars and env resolution)
+        let task_config_files = if is_monorepo_task && !task_runs_in_cwd {
+            let task_dir = task_cf.get_path().parent().unwrap_or(task_cf.get_path());
+
+            trace!(
+                "Loading config hierarchy for monorepo task {} from {}",
+                task.name,
+                task_dir.display()
+            );
+
+            let config_paths = crate::config::load_config_hierarchy_from_dir(task_dir)?;
+            trace!("Found {} config files in hierarchy", config_paths.len());
+
+            Some(crate::config::load_config_files_from_paths(&config_paths).await?)
+        } else {
+            None
+        };
+
         // Get env entries - load the FULL config hierarchy for monorepo tasks
-        let all_config_env_entries: Vec<(crate::config::env_directive::EnvDirective, PathBuf)> =
-            if is_monorepo_task && !task_runs_in_cwd {
-                // For monorepo tasks that DON'T run in cwd: Load config hierarchy from the task's directory
-                // This includes parent configs AND MISE_ENV-specific configs
-                let task_dir = task_cf.get_path().parent().unwrap_or(task_cf.get_path());
-
-                trace!(
-                    "Loading config hierarchy for monorepo task {} from {}",
-                    task.name,
-                    task_dir.display()
-                );
-
-                // Load all config files in the hierarchy
-                let config_paths = crate::config::load_config_hierarchy_from_dir(task_dir)?;
-                trace!("Found {} config files in hierarchy", config_paths.len());
-
-                let task_config_files =
-                    crate::config::load_config_files_from_paths(&config_paths).await?;
-
-                // Extract env entries from all config files
+        let all_config_env_entries: Vec<(EnvDirective, PathBuf)> =
+            if let Some(ref task_config_files) = task_config_files {
+                // Extract env entries from all config files in the task's hierarchy
                 task_config_files
                     .iter()
                     .rev()
@@ -202,7 +213,8 @@ impl TaskContextBuilder {
         // Check using task_cf entries for compatibility with existing logic
         let task_cf_env_entries = task_cf.env_entries()?;
         if self.should_use_standard_env_resolution(task, task_cf, config, &task_cf_env_entries) {
-            return task.render_env(config, ts).await;
+            let (env, task_env) = task.render_env(config, ts).await?;
+            return Ok((env, task_env, None));
         }
 
         let config_path = canonicalize_path(task_cf.get_path());
@@ -213,18 +225,20 @@ impl TaskContextBuilder {
                 .env_resolution_cache
                 .read()
                 .expect("env_resolution_cache RwLock poisoned");
-            if let Some(cached_env) = cache.get(&config_path) {
+            if let Some(cached) = cache.get(&config_path) {
                 trace!(
                     "task {} using cached env resolution from {}",
                     task.name,
                     config_path.display()
                 );
-                return Ok(cached_env.clone());
+                return Ok(cached.clone());
             }
         }
 
         let mut env = ts.full_env(config).await?;
-        let tera_ctx = self.build_tera_context(task_cf, ts, config).await?;
+        let (tera_ctx, resolved_vars) = self
+            .build_tera_context(task_cf, ts, config, task_config_files.as_ref())
+            .await?;
 
         // Resolve config-level env from ALL config files, not just task_cf
         let config_env_results = self
@@ -253,11 +267,11 @@ impl TaskContextBuilder {
                     task.name,
                     config_path.display()
                 );
-                (env.clone(), task_env.clone())
+                (env.clone(), task_env.clone(), resolved_vars.clone())
             });
         }
 
-        Ok((env, task_env))
+        Ok((env, task_env, resolved_vars))
     }
 
     /// Check if standard env resolution should be used instead of special context
@@ -283,17 +297,59 @@ impl TaskContextBuilder {
     }
 
     /// Build tera context with config_root for monorepo tasks
+    /// If task_config_files is provided, resolves vars from the task's config hierarchy
+    /// and merges them into the tera context so env directives can reference {{ vars.X }}
+    /// Returns (tera_context, resolved_vars) where resolved_vars is Some if task-specific
+    /// vars were resolved (for passing to script rendering)
     async fn build_tera_context(
         &self,
         task_cf: &Arc<dyn ConfigFile>,
         ts: &Toolset,
         config: &Arc<Config>,
-    ) -> Result<tera::Context> {
+        task_config_files: Option<&IndexMap<PathBuf, Arc<dyn ConfigFile>>>,
+    ) -> Result<(tera::Context, Option<IndexMap<String, String>>)> {
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
         if let Some(root) = task_cf.project_root() {
             tera_ctx.insert("config_root", &root);
         }
-        Ok(tera_ctx)
+        let mut resolved_vars = None;
+        // If we have task-specific config files, resolve vars from them
+        if let Some(task_config_files) = task_config_files {
+            let vars_entries: Vec<(EnvDirective, PathBuf)> = task_config_files
+                .iter()
+                .rev()
+                .map(|(source, cf)| {
+                    cf.vars_entries()
+                        .map(|ee| ee.into_iter().map(|e| (e, source.clone())))
+                })
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .collect();
+
+            if !vars_entries.is_empty() {
+                let vars_results = EnvResults::resolve(
+                    config,
+                    tera_ctx.clone(),
+                    &env::PRISTINE_ENV,
+                    vars_entries,
+                    EnvResolveOptions {
+                        vars: true,
+                        tools: ToolsFilter::NonToolsOnly,
+                        warn_on_missing_required: false,
+                    },
+                )
+                .await?;
+                // Merge task vars with existing global vars
+                let mut vars: IndexMap<String, String> = config.vars.clone();
+                for (k, (v, _)) in &vars_results.vars {
+                    vars.insert(k.clone(), v.clone());
+                }
+                tera_ctx.insert("vars", &vars);
+                resolved_vars = Some(vars);
+            }
+        }
+        Ok((tera_ctx, resolved_vars))
     }
 
     /// Build env directives from task-specific env (including inherited env)
@@ -314,8 +370,7 @@ impl TaskContextBuilder {
         tera_ctx: &tera::Context,
         env: &BTreeMap<String, String>,
         directives: Vec<(EnvDirective, PathBuf)>,
-    ) -> Result<crate::config::env_directive::EnvResults> {
-        use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
+    ) -> Result<EnvResults> {
         EnvResults::resolve(
             config,
             tera_ctx.clone(),
@@ -331,10 +386,7 @@ impl TaskContextBuilder {
     }
 
     /// Extract task env from EnvResults (only task-specific directives)
-    fn extract_task_env(
-        &self,
-        task_env_results: &crate::config::env_directive::EnvResults,
-    ) -> Vec<(String, String)> {
+    fn extract_task_env(&self, task_env_results: &EnvResults) -> Vec<(String, String)> {
         task_env_results
             .env
             .iter()
@@ -344,10 +396,7 @@ impl TaskContextBuilder {
 
     /// Apply EnvResults to an environment map
     /// Handles env vars, env_remove, and env_paths (PATH modifications)
-    fn apply_env_results(
-        env: &mut BTreeMap<String, String>,
-        results: &crate::config::env_directive::EnvResults,
-    ) {
+    fn apply_env_results(env: &mut BTreeMap<String, String>, results: &EnvResults) {
         // Apply environment variables
         for (k, (v, _)) in &results.env {
             env.insert(k.clone(), v.clone());
@@ -402,7 +451,7 @@ mod tests {
         let mut env = BTreeMap::new();
         env.insert("EXISTING".to_string(), "value".to_string());
 
-        let mut results = crate::config::env_directive::EnvResults::default();
+        let mut results = EnvResults::default();
         results.env.insert(
             "NEW_VAR".to_string(),
             ("new_value".to_string(), PathBuf::from("/test")),
@@ -420,7 +469,7 @@ mod tests {
         env.insert("TO_REMOVE".to_string(), "value".to_string());
         env.insert("TO_KEEP".to_string(), "value".to_string());
 
-        let mut results = crate::config::env_directive::EnvResults::default();
+        let mut results = EnvResults::default();
         results.env_remove.insert("TO_REMOVE".to_string());
 
         TaskContextBuilder::apply_env_results(&mut env, &results);
@@ -434,7 +483,7 @@ mod tests {
         let mut env = BTreeMap::new();
         env.insert(env::PATH_KEY.to_string(), "/existing/path".to_string());
 
-        let mut results = crate::config::env_directive::EnvResults::default();
+        let mut results = EnvResults::default();
         results
             .env_paths
             .push(PathBuf::from("/new/path").to_path_buf());
@@ -448,7 +497,7 @@ mod tests {
     #[test]
     fn test_extract_task_env() {
         let builder = TaskContextBuilder::new();
-        let mut results = crate::config::env_directive::EnvResults::default();
+        let mut results = EnvResults::default();
         results.env.insert(
             "VAR1".to_string(),
             ("value1".to_string(), PathBuf::from("/test")),

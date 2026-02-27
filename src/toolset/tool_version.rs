@@ -15,7 +15,7 @@ use crate::lockfile::{CondaPackageInfo, LockfileTool, PlatformInfo};
 use crate::toolset::{ToolRequest, ToolVersionOptions, tool_request};
 use console::style;
 use dashmap::DashMap;
-use eyre::Result;
+use eyre::{Result, bail};
 use jiff::Timestamp;
 #[cfg(windows)]
 use path_absolutize::Absolutize;
@@ -209,6 +209,19 @@ impl ToolVersion {
             && let Some(lt) = request.lockfile_resolve_with_prefix(config, &v)?
         {
             return Ok(Self::from_lockfile(request.clone(), lt));
+        }
+        let settings = Settings::get();
+        if settings.locked
+            && opts.use_locked_version
+            && settings.lockfile_enabled()
+            && !has_linked_version(request.ba())
+            && request.source().path().is_some()
+        {
+            bail!(
+                "{}@{} is not in the lockfile\nhint: Run `mise install` without --locked to update the lockfile",
+                request.ba().short,
+                request.version()
+            );
         }
 
         match v.split_once(':') {

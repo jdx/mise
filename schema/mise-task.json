@@ -329,7 +329,8 @@
                 ],
                 "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
               }
-            }
+            },
+            "additionalProperties": false
           },
           {
             "type": "object",

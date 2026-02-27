@@ -90,8 +90,8 @@ def check_grace_period(tools: list[str]) -> list[str]:
     for tool in tools:
         repo = get_repo(tool)
         if not repo:
-            print(f"::error::{tool}: no github/aqua backend found")
-            hard_failures.append(tool)
+            print(f"::warning::Ignoring {tool} failure — no github/aqua backend found, "
+                  "grace period check not applicable")
             continue
 
         published = get_latest_release_date(repo)

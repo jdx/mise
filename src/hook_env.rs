@@ -198,6 +198,18 @@ pub fn should_exit_early_fast() -> bool {
             return false;
         }
     }
+    // Check if any files from [[watch_files]] patterns have been modified
+    for path in &PREV_SESSION.watch_files {
+        if let Ok(metadata) = path.metadata() {
+            if let Ok(modified) = metadata.modified()
+                && mtime_to_millis(modified) > PREV_SESSION.latest_update
+            {
+                return false;
+            }
+        } else if !path.exists() {
+            return false;
+        }
+    }
     // Check if data dir has been modified (new tools installed, etc.)
     // Also check if it's been deleted - this requires a full update
     if !dirs::DATA.exists() {
@@ -338,6 +350,10 @@ pub struct HookEnvSession {
     /// that should be watched for changes.
     #[serde(default)]
     pub tera_files: Vec<PathBuf>,
+    /// Resolved file paths from [[watch_files]] config patterns.
+    /// Stored so the fast-path can detect changes without loading config.
+    #[serde(default)]
+    watch_files: Vec<PathBuf>,
     dir: Option<PathBuf>,
     env_var_hash: String,
     latest_update: u128,
@@ -367,7 +383,8 @@ pub async fn build_session(
     config_paths: IndexSet<PathBuf>,
 ) -> Result<HookEnvSession> {
     let mut max_modtime = UNIX_EPOCH;
-    for cf in get_watch_files(watch_files)? {
+    let resolved_watch_files = get_watch_files(watch_files)?;
+    for cf in &resolved_watch_files {
         if let Ok(Ok(modified)) = cf.metadata().map(|m| m.modified()) {
             max_modtime = std::cmp::max(modified, max_modtime);
         }
@@ -401,6 +418,7 @@ pub async fn build_session(
         env,
         aliases,
         tera_files: config.tera_files.clone(),
+        watch_files: resolved_watch_files.into_iter().collect(),
         loaded_configs,
         loaded_tools,
         config_paths,

@@ -1,5 +1,124 @@
 # Changelog
 
+## [2026.2.22](https://github.com/jdx/mise/compare/v2026.2.21..v2026.2.22) - 2026-02-27
+
+### 🚀 Features
+
+- add `--outdated` flag to `mise plugins ls` by @jdx in [#8360](https://github.com/jdx/mise/pull/8360)
+
+### 🐛 Bug Fixes
+
+- **(github)** resolve rename_exe search dir for archives with bin/ subdirectory by @jdx in [#8358](https://github.com/jdx/mise/pull/8358)
+- **(install)** skip tools=true env directives during backend installation by @jdx in [#8356](https://github.com/jdx/mise/pull/8356)
+- **(ruby)** resolve correct Windows checksums in lockfile by @jdx in [#8357](https://github.com/jdx/mise/pull/8357)
+
+### 📦 Registry
+
+- switch terradozer backend to github fork by @chenrui333 in [#8365](https://github.com/jdx/mise/pull/8365)
+
+### Chore
+
+- **(release)** fix duplicated version prefix in release title by @jdx in [#8359](https://github.com/jdx/mise/pull/8359)
+
+### New Contributors
+
+- @chenrui333 made their first contribution in [#8365](https://github.com/jdx/mise/pull/8365)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`huseyinbabal/taws`](https://github.com/huseyinbabal/taws)
+
+#### Updated Packages (2)
+
+- [`block/goose`](https://github.com/block/goose)
+- [`pre-commit/pre-commit`](https://github.com/pre-commit/pre-commit)
+
+## [2026.2.21](https://github.com/jdx/mise/compare/v2026.2.20..v2026.2.21) - 2026-02-26
+
+### 🐛 Bug Fixes
+
+- **(exec)** respect PATH order for virtualenv resolution in mise x by @jdx in [#8342](https://github.com/jdx/mise/pull/8342)
+- **(task)** revert process group changes that cause hangs with nested mise tasks by @jdx in [#8347](https://github.com/jdx/mise/pull/8347)
+- **(task)** resolve vars from subdirectory configs for monorepo tasks by @jdx in [#8343](https://github.com/jdx/mise/pull/8343)
+- **(task)** resolve dependencies before prepare to fix monorepo glob deps by @jdx in [#8353](https://github.com/jdx/mise/pull/8353)
+- python noarch with Conda backend by @wolfv in [#8349](https://github.com/jdx/mise/pull/8349)
+
+### New Contributors
+
+- @wolfv made their first contribution in [#8349](https://github.com/jdx/mise/pull/8349)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`alexhallam/tv`](https://github.com/alexhallam/tv)
+- [`arcanist-sh/hx`](https://github.com/arcanist-sh/hx)
+- [`dathere/qsv`](https://github.com/dathere/qsv)
+
+#### Updated Packages (3)
+
+- [`astral-sh/ruff`](https://github.com/astral-sh/ruff)
+- [`caarlos0/fork-cleaner`](https://github.com/caarlos0/fork-cleaner)
+- [`rhysd/actionlint`](https://github.com/rhysd/actionlint)
+
+## [2026.2.20](https://github.com/jdx/mise/compare/v2026.2.19..v2026.2.20) - 2026-02-25
+
+### 🚀 Features
+
+- **(conda)** replace custom backend with rattler crates by @jdx in [#8325](https://github.com/jdx/mise/pull/8325)
+- **(task)** enforce per-task timeout configuration by @tvararu in [#8250](https://github.com/jdx/mise/pull/8250)
+- **(vsix)** added vsix archives to http backend by @sosumappu in [#8306](https://github.com/jdx/mise/pull/8306)
+- add core dotnet plugin for .NET SDK management by @jdx in [#8326](https://github.com/jdx/mise/pull/8326)
+
+### 🐛 Bug Fixes
+
+- **(conda)** preserve conda_packages on locked install and fix temp file race by @jdx in [#8335](https://github.com/jdx/mise/pull/8335)
+- **(conda)** deduplicate repodata records to fix solver error on Linux by @jdx in [#8337](https://github.com/jdx/mise/pull/8337)
+- **(env)** include watch_files in fast-path early exit check by @jdx in [#8317](https://github.com/jdx/mise/pull/8317)
+- **(env)** clear fish completions when setting/unsetting shell aliases by @jdx in [#8324](https://github.com/jdx/mise/pull/8324)
+- **(lockfile)** prevent lockfile writes when --locked is set by @jdx in [#8308](https://github.com/jdx/mise/pull/8308)
+- **(lockfile)** prune orphan tool entries on mise lock by @mackwic in [#8265](https://github.com/jdx/mise/pull/8265)
+- **(lockfile)** error on contradictory locked=true + lockfile=false config by @jdx in [#8329](https://github.com/jdx/mise/pull/8329)
+- **(regal)** Update package location by @charlieegan3 in [#8315](https://github.com/jdx/mise/pull/8315)
+- **(release)** strip markdown heading prefix from communique release title by @jdx in [#8303](https://github.com/jdx/mise/pull/8303)
+- **(schema)** enforce additionalProperties constraint for env by @adamliang0 in [#8328](https://github.com/jdx/mise/pull/8328)
+
+### 📚 Documentation
+
+- Remove incorrect oh-my-zsh plugin ordering comment by @bvosk in [#8323](https://github.com/jdx/mise/pull/8323)
+- require AI disclosure on GitHub comments by @jdx in [#8330](https://github.com/jdx/mise/pull/8330)
+
+### 📦 Registry
+
+- add `oxfmt` by @taoufik07 in [#8316](https://github.com/jdx/mise/pull/8316)
+
+### New Contributors
+
+- @adamliang0 made their first contribution in [#8328](https://github.com/jdx/mise/pull/8328)
+- @tvararu made their first contribution in [#8250](https://github.com/jdx/mise/pull/8250)
+- @bvosk made their first contribution in [#8323](https://github.com/jdx/mise/pull/8323)
+- @taoufik07 made their first contribution in [#8316](https://github.com/jdx/mise/pull/8316)
+- @charlieegan3 made their first contribution in [#8315](https://github.com/jdx/mise/pull/8315)
+- @sosumappu made their first contribution in [#8306](https://github.com/jdx/mise/pull/8306)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`Tyrrrz/FFmpegBin`](https://github.com/Tyrrrz/FFmpegBin)
+- [`elixir-lang/expert`](https://github.com/elixir-lang/expert)
+- [`erikjuhani/basalt`](https://github.com/erikjuhani/basalt)
+
+#### Updated Packages (5)
+
+- [`caarlos0/fork-cleaner`](https://github.com/caarlos0/fork-cleaner)
+- [`firecow/gitlab-ci-local`](https://github.com/firecow/gitlab-ci-local)
+- [`jackchuka/mdschema`](https://github.com/jackchuka/mdschema)
+- [`kunobi-ninja/kunobi-releases`](https://github.com/kunobi-ninja/kunobi-releases)
+- [`peco/peco`](https://github.com/peco/peco)
+
 ## [2026.2.19](https://github.com/jdx/mise/compare/v2026.2.18..v2026.2.19) - 2026-02-22
 
 ### 🐛 Bug Fixes

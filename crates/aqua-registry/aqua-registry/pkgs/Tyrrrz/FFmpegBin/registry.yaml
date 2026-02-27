@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Tyrrrz
+    repo_name: FFmpegBin
+    description: Pre-built FFmpeg binaries for every platform
+    files:
+      - name: ffmpeg
+      - name: ffplay
+      - name: ffprobe
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "7.1.1"
+        asset: ffmpeg-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: arm64
+            checksum:
+              type: github_release
+              asset: ffmpeg-{{.OS}}-{{.Arch}}.sha256
+              algorithm: sha256
+      - version_constraint: semver("<= 7.1.0")
+        asset: ffmpeg-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: "true"
+        asset: ffmpeg-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x64
+          darwin: osx

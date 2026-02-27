@@ -1,6 +1,7 @@
 use crate::cli::args::ToolArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
+use crate::duration;
 use crate::file::{display_path, is_executable};
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
@@ -12,6 +13,7 @@ use crate::toolset::env_cache::CachedEnv;
 use crate::ui::{style, time};
 use duct::IntoExecutablePath;
 use eyre::{Report, Result, ensure, eyre};
+use indexmap::IndexMap;
 use itertools::Itertools;
 #[cfg(unix)]
 use nix::errno::Errno;
@@ -161,13 +163,15 @@ impl TaskExecutor {
         let env_render_start = std::time::Instant::now();
 
         // Build environment - either from task's config file context or standard way
-        let (mut env, task_env) = if let Some(task_cf) = task_cf {
+        // extra_vars contains resolved vars from the task's config hierarchy (for monorepo tasks)
+        let (mut env, task_env, extra_vars) = if let Some(task_cf) = task_cf {
             self.context_builder
                 .resolve_task_env_with_config(config, task, task_cf, &ts)
                 .await?
         } else {
             // Fallback to standard behavior
-            task.render_env(config, &ts).await?
+            let (env, task_env) = task.render_env(config, &ts).await?;
+            (env, task_env, None)
         };
 
         trace!(
@@ -212,7 +216,8 @@ impl TaskExecutor {
 
         if let Some(file) = task.file_path(config).await? {
             let exec_start = std::time::Instant::now();
-            self.exec_file(config, &file, task, &env, &prefix).await?;
+            self.exec_file(config, &file, task, &env, &prefix, extra_vars)
+                .await?;
             trace!(
                 "task {} exec_file took {}ms (total {}ms)",
                 task.name,
@@ -221,7 +226,13 @@ impl TaskExecutor {
             );
         } else {
             let rendered_run_scripts = task
-                .render_run_scripts_with_args(config, self.cd.clone(), &task.args, &env)
+                .render_run_scripts_with_args(
+                    config,
+                    self.cd.clone(),
+                    &task.args,
+                    &env,
+                    extra_vars.clone(),
+                )
                 .await?;
 
             let get_args = || {
@@ -231,7 +242,7 @@ impl TaskExecutor {
                     .cloned()
                     .collect()
             };
-            self.parse_usage_spec_and_init_env(config, task, &mut env, get_args)
+            self.parse_usage_spec_and_init_env(config, task, &mut env, get_args, extra_vars)
                 .await?;
 
             // Check confirmation after usage args are parsed
@@ -549,12 +560,13 @@ impl TaskExecutor {
         task: &Task,
         env: &BTreeMap<String, String>,
         prefix: &str,
+        extra_vars: Option<IndexMap<String, String>>,
     ) -> Result<()> {
         let mut env = env.clone();
         let command = file.to_string_lossy().to_string();
         let args = task.args.iter().cloned().collect_vec();
         let get_args = || once(command.clone()).chain(args.clone()).collect_vec();
-        self.parse_usage_spec_and_init_env(config, task, &mut env, get_args)
+        self.parse_usage_spec_and_init_env(config, task, &mut env, get_args, extra_vars)
             .await?;
 
         // Check confirmation after usage args are parsed
@@ -768,6 +780,19 @@ impl TaskExecutor {
         if self.dry_run {
             return Ok(());
         }
+        let effective_timeout =
+            task.timeout
+                .as_ref()
+                .and_then(|s| match duration::parse_duration(s) {
+                    Ok(d) => Some(d),
+                    Err(e) => {
+                        warn!("invalid timeout {:?} for task {}: {e}", s, task.name);
+                        None
+                    }
+                });
+        if let Some(timeout) = effective_timeout {
+            cmd = cmd.with_timeout(timeout);
+        }
         cmd.execute()?;
         trace!("{prefix} exited successfully");
         Ok(())
@@ -828,8 +853,11 @@ impl TaskExecutor {
         task: &Task,
         env: &mut BTreeMap<String, String>,
         get_args: impl Fn() -> Vec<String>,
+        extra_vars: Option<IndexMap<String, String>>,
     ) -> Result<()> {
-        let (spec, _) = task.parse_usage_spec(config, self.cd.clone(), env).await?;
+        let (spec, _) = task
+            .parse_usage_spec_with_vars(config, self.cd.clone(), env, extra_vars)
+            .await?;
         if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
             let args: Vec<String> = get_args();
             trace!("Parsing usage spec for {:?}", args);

@@ -1,4 +1,4 @@
-FROM fedora:43@sha256:6cd815d862109208adf6040ea13391fe6aeb87a9dc80735c2ab07083fdf5e03a
+FROM fedora:43@sha256:781b7642e8bf256e9cf75d2aa58d86f5cc695fd2df113517614e181a5eee9138
 LABEL maintainer="jdx"
 
 RUN dnf install -y rpm-build rpm-sign ruby ruby-devel gcc \

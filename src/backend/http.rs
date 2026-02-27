@@ -403,11 +403,18 @@ impl HttpBackend {
 
         // Handle rename_exe option for archives
         if let Some(rename_to) = get_opt(opts, "rename_exe") {
+            // When bin_path is not explicitly set, auto-detect bin/ subdirectory to match
+            // the same logic used by discover_bin_paths() for PATH construction
             let search_dir = if let Some(bin_path_template) = get_opt(opts, "bin_path") {
                 let bin_path = template_string(&bin_path_template, tv);
                 dest.join(&bin_path)
             } else {
-                dest.to_path_buf()
+                let bin_dir = dest.join("bin");
+                if bin_dir.is_dir() {
+                    bin_dir
+                } else {
+                    dest.to_path_buf()
+                }
             };
             // rsplit('/') always yields at least one element (the full string if no delimiter)
             let tool_name = self.ba.tool_name.rsplit('/').next().unwrap();
@@ -522,7 +529,7 @@ impl HttpBackend {
     ) -> Result<()> {
         let settings = Settings::get();
         let filename = file_path.file_name().unwrap().to_string_lossy();
-        let lockfile_enabled = settings.lockfile;
+        let lockfile_enabled = settings.lockfile_enabled();
 
         let platform_key = self.get_platform_key();
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
@@ -662,7 +669,7 @@ impl Backend for HttpBackend {
 
         // For lockfile checksum verification
         let settings = Settings::get();
-        let lockfile_enabled = settings.lockfile;
+        let lockfile_enabled = settings.lockfile_enabled();
         let has_lockfile_checksum = tv
             .lock_platforms
             .get(&platform_key)

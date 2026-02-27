@@ -177,6 +177,14 @@ impl Plugin for VfoxPlugin {
         self.repo().current_sha_short().map(Some)
     }
 
+    fn remote_sha(&self) -> eyre::Result<Option<String>> {
+        if !self.plugin_path.exists() {
+            return Ok(None);
+        }
+        let branch = self.repo().current_branch()?;
+        self.repo().remote_sha(&branch)
+    }
+
     fn is_installed(&self) -> bool {
         // Embedded plugins are always "installed"
         self.is_embedded() || self.plugin_path.exists()

@@ -38,3 +38,65 @@ backend = "aqua:jqlang/jq"
 EOF
 
 assert_contains "mise install --locked --dry-run 2>&1" "would install"
+
+# --- Test 4: locked=true with MISE_LOCKFILE=false errors (contradictory config) ---
+cat <<EOF >mise.lock
+[[tools.jq]]
+version = "1.7.1"
+backend = "aqua:jqlang/jq"
+"platforms.$PLATFORM" = { url = "https://example.com/jq-1.7.1.tar.gz" }
+EOF
+
+MISE_LOCKFILE=0 assert_fail_contains "mise install --locked --dry-run 2>&1" "locked mode requires lockfile to be enabled"
+
+# --- Test 5: locked setting via config with lockfile=false errors ---
+# Unset MISE_LOCKFILE so the env var doesn't override the config file setting
+unset MISE_LOCKFILE
+
+cat <<'EOF' >mise.toml
+[tools]
+jq = "1.7.1"
+[settings]
+locked = true
+lockfile = false
+EOF
+
+assert_fail_contains "mise install --dry-run 2>&1" "locked mode requires lockfile to be enabled"
+
+# --- Test 6: locked=true with lockfile unset (not in config) works fine ---
+cat <<'EOF' >mise.toml
+[tools]
+jq = "1.7.1"
+[settings]
+locked = true
+EOF
+
+cat <<EOF >mise.lock
+[[tools.jq]]
+version = "1.7.1"
+backend = "aqua:jqlang/jq"
+"platforms.$PLATFORM" = { url = "https://example.com/jq-1.7.1.tar.gz" }
+EOF
+
+assert_contains "mise install --dry-run 2>&1" "would install"
+
+# --- Test 7: mise lock refuses to run in --locked mode ---
+export MISE_LOCKFILE=1
+
+cat <<'EOF' >mise.toml
+[tools]
+jq = "1.7.1"
+EOF
+
+cat <<EOF >mise.lock
+[[tools.jq]]
+version = "1.7.1"
+backend = "aqua:jqlang/jq"
+"platforms.$PLATFORM" = { url = "https://example.com/jq-1.7.1.tar.gz" }
+EOF
+
+assert_fail_contains "mise lock --locked 2>&1" "mise lock is disabled in --locked mode"
+MISE_LOCKED=1 assert_fail_contains "mise lock 2>&1" "mise lock is disabled in --locked mode"
+
+# Restore for any subsequent tests
+export MISE_LOCKFILE=1

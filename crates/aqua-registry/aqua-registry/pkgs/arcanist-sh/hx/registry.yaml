@@ -1,8 +1,10 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
 packages:
   - type: github_release
-    repo_owner: raskell-io
+    repo_owner: arcanist-sh
     repo_name: hx
+    aliases:
+      - name: raskell-io/hx
     description: An extremely fast Haskell package and project manager, written in Rust
     version_constraint: "false"
     version_overrides:

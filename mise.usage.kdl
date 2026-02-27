@@ -617,6 +617,7 @@ cmd plugins help="Manage plugins" {
         after_long_help "Examples:\n\n    $ mise plugins ls\n    cmake\n    poetry\n\n    $ mise plugins ls --urls\n    cmake     https://github.com/mise-plugins/vfox-cmake.git\n    poetry    https://github.com/mise-plugins/vfox-poetry.git\n"
         flag "-a --all" help="List all available remote plugins\nSame as `mise plugins ls-remote`" hide=#true
         flag "-c --core" help="The built-in plugins only\nNormally these are not shown" hide=#true
+        flag "-o --outdated" help="Show plugins with available updates\nChecks the remote for newer versions and only displays plugins that are outdated"
         flag "-u --urls" help="Show the git url for each plugin\ne.g.: https://github.com/mise-plugins/vfox-cmake.git"
         flag --refs help="Show the git refs for each plugin\ne.g.: main 1234abc" hide=#true
         flag --user help="List installed plugins" hide=#true

@@ -29,6 +29,16 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: semver("<= 1.7.10")
+        asset: actionlint_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: actionlint_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: actionlint_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -39,3 +49,5 @@ packages:
         overrides:
           - goos: windows
             format: zip
+        github_artifact_attestations:
+          signer_workflow: rhysd/actionlint/.github/workflows/release.yaml

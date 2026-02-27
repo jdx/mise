@@ -5,15 +5,15 @@ packages:
     repo_name: gitlab-ci-local
     description: Tired of pushing to test your .gitlab-ci.yml
     version_constraint: "false"
-    files:
-      - name: "gitlab-ci-local"
-        src: "{{.AssetWithoutExt}}"
     version_overrides:
       - version_constraint: semver("<= 4.9.0")
         asset: "{{.OS}}.{{.Format}}"
         format: gz
         rosetta2: true
         windows_arm_emulation: true
+        files:
+          - name: gitlab-ci-local
+            src: "{{.AssetWithoutExt}}"
         replacements:
           darwin: macos
           windows: win
@@ -25,6 +25,9 @@ packages:
         asset: "{{.OS}}.{{.Format}}"
         format: gz
         rosetta2: true
+        files:
+          - name: gitlab-ci-local
+            src: "{{.AssetWithoutExt}}"
         replacements:
           darwin: macos
         supported_envs:
@@ -35,6 +38,9 @@ packages:
         format: gz
         rosetta2: true
         windows_arm_emulation: true
+        files:
+          - name: gitlab-ci-local
+            src: "{{.AssetWithoutExt}}"
         replacements:
           darwin: macos
           windows: win
