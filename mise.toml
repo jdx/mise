@@ -26,7 +26,6 @@ stylua = "latest"
 "npm:prettier" = "3"
 "npm:ajv-cli" = "latest"
 pkl = "latest"
-pre-commit = "latest"
 #"python" = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
 "ripgrep" = "latest"
 "shellcheck" = "latest"
