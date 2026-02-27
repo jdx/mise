@@ -724,7 +724,7 @@ pub enum TarFormat {
     Zst,
     #[strum(serialize = "tar")]
     Tar,
-    #[strum(serialize = "zip")]
+    #[strum(serialize = "zip", serialize = "vsix")]
     Zip,
     #[strum(serialize = "7z")]
     SevenZip,
@@ -1456,6 +1456,7 @@ mod tests {
         assert_eq!(TarFormat::from_file_name("foo.tzst"), TarFormat::TarZst);
         assert_eq!(TarFormat::from_file_name("foo.tar"), TarFormat::Tar);
         assert_eq!(TarFormat::from_file_name("foo.zip"), TarFormat::Zip);
+        assert_eq!(TarFormat::from_file_name("foo.vsix"), TarFormat::Zip);
         assert_eq!(TarFormat::from_file_name("foo.7z"), TarFormat::SevenZip);
         assert_eq!(TarFormat::from_file_name("foo.gz"), TarFormat::Gz);
         assert_eq!(TarFormat::from_file_name("foo.xz"), TarFormat::Xz);
