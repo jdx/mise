@@ -461,6 +461,15 @@ impl Backend for AquaBackend {
         }
         self.install(ctx, &tv, &pkg, &v, &filename)?;
 
+        // Clear any cached bin paths so they are recomputed now that installation is complete.
+        // Without this, a stale cache (e.g. computed before extraction finished) could persist
+        // and cause the tool's PATH entry to be missing.
+        self.bin_path_caches.remove(&tv.version);
+        let cache_path = tv.cache_path().join("bin_paths.msgpack.z");
+        if cache_path.exists() {
+            let _ = file::remove_file(&cache_path);
+        }
+
         Ok(tv)
     }
 
