@@ -5,5 +5,11 @@ test = { cmd = "porter version", expected = "porter v{{version}}" }
 full = "github:getporter/porter"
 
 [backends.options]
-asset_pattern = "porter-{{ os(macos='darwin') }}-{{ arch(x64='amd64') }}"
+asset_pattern = "porter-{{ os(macos='darwin') }}-{{ arch(x64='amd64') }}{% if os() == 'windows' %}.exe{% endif %}"
 bin = "porter"
+
+[backends.options.platforms.windows-x64]
+bin = "porter.exe"
+
+[backends.options.platforms.windows-arm64]
+bin = "porter.exe"
