@@ -937,9 +937,24 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     /// Parses an idiomatic version file to extract the version.
+    ///
+    /// This handles special files like `package.json` which are parsed natively to avoid
+    /// every backend needing to implement `package.json` support. For other files, it
+    /// delegates to `_parse_idiomatic_file`.
+    async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
+        if path.file_name().is_some_and(|f| f == "package.json") {
+            return crate::config::config_file::idiomatic_version::package_json::parse(
+                path,
+                self.id(),
+            );
+        }
+        self._parse_idiomatic_file(path).await
+    }
+
+    /// Backend-specific implementation for `parse_idiomatic_file`.
     /// Default implementation reads the file and treats each whitespace-separated token as a version.
     /// Override to provide format-specific parsing; return `Err` on real failures so the plugin is skipped.
-    async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
+    async fn _parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
         let contents = file::read_to_string(path)?;
         let trimmed = contents.trim();
         if trimmed.is_empty() {

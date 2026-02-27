@@ -326,7 +326,7 @@ impl Backend for AsdfBackend {
             .cloned()
     }
 
-    async fn parse_idiomatic_file(&self, idiomatic_file: &Path) -> Result<Vec<String>> {
+    async fn _parse_idiomatic_file(&self, idiomatic_file: &Path) -> Result<Vec<String>> {
         if let Some(cached) = self.fetch_cached_idiomatic_file(idiomatic_file)? {
             return Ok(cached.split_whitespace().map(|s| s.to_string()).collect());
         }

@@ -178,7 +178,7 @@ impl Backend for VfoxBackend {
         Ok(metadata.legacy_filenames)
     }
 
-    async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
+    async fn _parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
         let (vfox, _log_rx) = self.plugin.vfox();
         let response = vfox.parse_legacy_file(&self.pathname, path).await?;
         if let Some(version) = response.version {

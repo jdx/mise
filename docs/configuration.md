@@ -420,6 +420,7 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 | bun        | `.bun-version`, `package.json`            |
 | crystal    | `.crystal-version`                        |
 | deno       | `.deno-version`, `package.json`           |
+| dotnet     | `global.json`                             |
 | elixir     | `.exenv-version`                          |
 | go         | `.go-version`                             |
 | java       | `.java-version`, `.sdkmanrc`              |

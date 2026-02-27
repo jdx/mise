@@ -120,7 +120,7 @@ impl Backend for RustPlugin {
         Ok(vec!["rust-toolchain.toml".into()])
     }
 
-    async fn parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
+    async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
         let rt = parse_idiomatic_file(path)?;
         Ok(vec![rt.channel])
     }

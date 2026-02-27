@@ -778,7 +778,7 @@ impl Backend for RubyPlugin {
         Ok(vec![".ruby-version".into(), "Gemfile".into()])
     }
 
-    async fn parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
+    async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
         let v = match path.file_name() {
             Some(name) if name == "Gemfile" => parse_gemfile(&file::read_to_string(path)?),
             _ => {

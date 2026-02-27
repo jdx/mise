@@ -391,7 +391,7 @@ impl Backend for JavaPlugin {
         Ok(vec![".java-version".into(), ".sdkmanrc".into()])
     }
 
-    async fn parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
+    async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
         let contents = file::read_to_string(path)?;
         if path.file_name() == Some(".sdkmanrc".as_ref()) {
             let version = contents

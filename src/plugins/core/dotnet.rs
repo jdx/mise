@@ -95,17 +95,17 @@ impl Backend for DotnetPlugin {
             .collect())
     }
 
-    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn _idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(vec!["global.json".into()])
     }
 
-    async fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
+    async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
         let content = file::read_to_string(path)?;
         let global_json: GlobalJson = serde_json::from_str(&content)?;
         let sdk = global_json
             .sdk
             .ok_or_else(|| eyre::eyre!("no sdk.version found in {}", path.display()))?;
-        Ok(sdk.version)
+        Ok(vec![sdk.version])
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
