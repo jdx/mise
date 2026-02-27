@@ -9,6 +9,17 @@ packages:
       - version_constraint: semver("< 1.0.0")
         error_message: |
           Please use a version later than v1.0.
+      - version_constraint: semver("<= 1.25.0")
+        asset: goose-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.bz2
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux
+          - darwin
       - version_constraint: "true"
         asset: goose-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.bz2
@@ -20,3 +31,5 @@ packages:
         supported_envs:
           - linux
           - darwin
+        github_artifact_attestations:
+          signer_workflow: block/goose/.github/workflows/release.yml

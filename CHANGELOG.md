@@ -1,5 +1,40 @@
 # Changelog
 
+## [2026.2.22](https://github.com/jdx/mise/compare/v2026.2.21..v2026.2.22) - 2026-02-27
+
+### 🚀 Features
+
+- add `--outdated` flag to `mise plugins ls` by @jdx in [#8360](https://github.com/jdx/mise/pull/8360)
+
+### 🐛 Bug Fixes
+
+- **(github)** resolve rename_exe search dir for archives with bin/ subdirectory by @jdx in [#8358](https://github.com/jdx/mise/pull/8358)
+- **(install)** skip tools=true env directives during backend installation by @jdx in [#8356](https://github.com/jdx/mise/pull/8356)
+- **(ruby)** resolve correct Windows checksums in lockfile by @jdx in [#8357](https://github.com/jdx/mise/pull/8357)
+
+### 📦 Registry
+
+- switch terradozer backend to github fork by @chenrui333 in [#8365](https://github.com/jdx/mise/pull/8365)
+
+### Chore
+
+- **(release)** fix duplicated version prefix in release title by @jdx in [#8359](https://github.com/jdx/mise/pull/8359)
+
+### New Contributors
+
+- @chenrui333 made their first contribution in [#8365](https://github.com/jdx/mise/pull/8365)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`huseyinbabal/taws`](https://github.com/huseyinbabal/taws)
+
+#### Updated Packages (2)
+
+- [`block/goose`](https://github.com/block/goose)
+- [`pre-commit/pre-commit`](https://github.com/pre-commit/pre-commit)
+
 ## [2026.2.21](https://github.com/jdx/mise/compare/v2026.2.20..v2026.2.21) - 2026-02-26
 
 ### 🐛 Bug Fixes

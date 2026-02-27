@@ -9,7 +9,7 @@
 
 name: mise
 title: mise-en-place
-version: "2026.2.21"
+version: "2026.2.22"
 summary: The front-end to your dev env
 description: |
   mise-en-place is a command line tool to manage your development environment.
