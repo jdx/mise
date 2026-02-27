@@ -1,0 +1,9 @@
+description = "CNAB bundle authoring and management tool"
+test = { cmd = "porter version", expected = "porter v{{version}}" }
+
+[[backends]]
+full = "github:getporter/porter"
+
+[backends.options]
+asset_pattern = "porter-{{ os(macos='darwin') }}-{{ arch(x64='amd64') }}"
+bin = "porter"
