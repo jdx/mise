@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+
+# Test running tasks as hooks (run field)
+cat <<EOF >mise.toml
+[tasks.setup]
+run = "echo SETUP-TASK"
+
+[tasks.cleanup]
+run = "echo CLEANUP-TASK"
+
+[[hooks.pre_task]]
+run = "setup"
+task = "deploy"
+
+[[hooks.post_task]]
+run = "cleanup"
+task = "deploy"
+
+[tasks.deploy]
+run = "echo DEPLOY"
+EOF
+
+assert_contains "mise run deploy 2>&1" "SETUP-TASK"
+assert_contains "mise run deploy 2>&1" "DEPLOY"
+assert_contains "mise run deploy 2>&1" "CLEANUP-TASK"
+
+# Test that running the hook task directly doesn't trigger hooks
+assert_not_contains "mise run setup 2>&1" "SETUP-TASK.*SETUP-TASK"
+
+# Test mixing script and run hooks
+cat <<EOF >mise.toml
+[tasks.notify]
+run = "echo NOTIFICATION-SENT"
+
+[[hooks.pre_task]]
+script = "echo preparing..."
+task = "build"
+
+[[hooks.post_task]]
+run = "notify"
+task = "build"
+
+[tasks.build]
+run = "echo BUILD"
+EOF
+
+output=$(mise run build 2>&1)
+assert_contains "echo '$output'" "preparing..."
+assert_contains "echo '$output'" "BUILD"
+assert_contains "echo '$output'" "NOTIFICATION-SENT"
+
+# Test that MISE_NO_HOOKS prevents recursive hook execution
+cat <<EOF >mise.toml
+[tasks.helper]
+run = "echo HELPER-TASK-OUTPUT"
+
+[[hooks.pre_task]]
+run = "helper"
+task = "deploy"
+
+# If recursion happens, this hook would trigger when running "helper"
+[[hooks.pre_task]]
+script = "echo RECURSIVE-HOOK-TRIGGERED"
+task = "helper"
+
+[tasks.deploy]
+run = "echo DEPLOY"
+EOF
+
+output=$(mise run deploy 2>&1)
+# Should contain HELPER from hook but not trigger hooks recursively
+assert_contains "echo '$output'" "HELPER-TASK-OUTPUT"
+assert_contains "echo '$output'" "DEPLOY"
+# Should NOT see the recursive hook
+assert_not_contains "echo '$output'" "RECURSIVE-HOOK-TRIGGERED"
+
+# Test hook with task that has dependencies
+cat <<EOF >mise.toml
+[tasks.prebuild]
+run = "echo PREBUILD"
+
+[tasks.build]
+depends = ["prebuild"]
+run = "echo BUILD"
+
+[[hooks.pre_task]]
+script = "echo HOOK-BEFORE-BUILD"
+task = "build"
+
+[[hooks.post_task]]
+script = "echo HOOK-AFTER-BUILD"
+task = "build"
+EOF
+
+output=$(mise run build 2>&1)
+# Pre-task hook should run before the task (after its dependencies)
+assert_contains "echo '$output'" "PREBUILD"
+assert_contains "echo '$output'" "HOOK-BEFORE-BUILD"
+assert_contains "echo '$output'" "BUILD"
+assert_contains "echo '$output'" "HOOK-AFTER-BUILD"
+
+# Hooks should not run for dependency tasks
+assert_not_contains "echo '$output'" "HOOK.*PREBUILD"

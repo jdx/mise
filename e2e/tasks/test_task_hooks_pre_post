@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+
+# Test basic pre_task and post_task hooks with scripts
+cat <<EOF >mise.toml
+[hooks]
+pre_task = "echo PRE-TASK-ALL"
+post_task = "echo POST-TASK-ALL"
+
+[tasks.build]
+run = "echo BUILD"
+[tasks.test]
+run = "echo TEST"
+EOF
+
+# Pre/post hooks should run for all tasks
+assert_contains "mise run build 2>&1" "PRE-TASK-ALL"
+assert_contains "mise run build 2>&1" "BUILD"
+assert_contains "mise run build 2>&1" "POST-TASK-ALL"
+
+assert_contains "mise run test 2>&1" "PRE-TASK-ALL"
+assert_contains "mise run test 2>&1" "TEST"
+assert_contains "mise run test 2>&1" "POST-TASK-ALL"
+
+# Test task-specific hooks with exact match
+cat <<EOF >mise.toml
+[[hooks.pre_task]]
+script = "echo PRE-BUILD"
+task = "build"
+
+[[hooks.post_task]]
+script = "echo POST-BUILD"
+task = "build"
+
+[tasks.build]
+run = "echo BUILD"
+[tasks.test]
+run = "echo TEST"
+EOF
+
+assert_contains "mise run build 2>&1" "PRE-BUILD"
+assert_contains "mise run build 2>&1" "BUILD"
+assert_contains "mise run build 2>&1" "POST-BUILD"
+
+# Hook should not run for other tasks
+assert_not_contains "mise run test 2>&1" "PRE-BUILD"
+assert_not_contains "mise run test 2>&1" "POST-BUILD"
+
+# Test glob pattern matching
+cat <<EOF >mise.toml
+[[hooks.pre_task]]
+script = "echo PRE-DEPLOY"
+task = "deploy:*"
+
+[[hooks.post_task]]
+script = "echo POST-DEPLOY"
+task = "deploy:*"
+
+[tasks."deploy:staging"]
+run = "echo STAGING"
+[tasks."deploy:prod"]
+run = "echo PROD"
+[tasks.test]
+run = "echo TEST"
+EOF
+
+assert_contains "mise run deploy:staging 2>&1" "PRE-DEPLOY"
+assert_contains "mise run deploy:staging 2>&1" "STAGING"
+assert_contains "mise run deploy:staging 2>&1" "POST-DEPLOY"
+
+assert_contains "mise run deploy:prod 2>&1" "PRE-DEPLOY"
+assert_contains "mise run deploy:prod 2>&1" "PROD"
+assert_contains "mise run deploy:prod 2>&1" "POST-DEPLOY"
+
+assert_not_contains "mise run test 2>&1" "PRE-DEPLOY"
+assert_not_contains "mise run test 2>&1" "POST-DEPLOY"
+
+# Test multiple hooks for the same task
+cat <<EOF >mise.toml
+[[hooks.pre_task]]
+script = "echo SETUP-1"
+task = "build"
+
+[[hooks.pre_task]]
+script = "echo SETUP-2"
+task = "build"
+
+[[hooks.post_task]]
+script = "echo CLEANUP-1"
+task = "build"
+
+[[hooks.post_task]]
+script = "echo CLEANUP-2"
+task = "build"
+
+[tasks.build]
+run = "echo BUILD"
+EOF
+
+output=$(mise run build 2>&1)
+assert_contains "echo '$output'" "SETUP-1"
+assert_contains "echo '$output'" "SETUP-2"
+assert_contains "echo '$output'" "BUILD"
+assert_contains "echo '$output'" "CLEANUP-1"
+assert_contains "echo '$output'" "CLEANUP-2"

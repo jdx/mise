@@ -839,7 +839,12 @@ impl ConfigFile for MiseToml {
             .map(|(hook_type, def)| {
                 let mut hooks = def.clone().into_hooks(*hook_type);
                 for hook in hooks.iter_mut() {
-                    hook.script = self.parse_template(&hook.script)?;
+                    if let Some(script) = &hook.script {
+                        hook.script = Some(self.parse_template(script)?);
+                    }
+                    if let Some(run) = &hook.run {
+                        hook.run = Some(self.parse_template(run)?);
+                    }
                     if let Some(shell) = &hook.shell {
                         hook.shell = Some(self.parse_template(shell)?);
                     }

@@ -1,7 +1,8 @@
 # Hooks <Badge type="warning" text="experimental" />
 
 You can have mise automatically execute scripts during a `mise activate` session. You cannot use these
-without the `mise activate` shell hook installed in your shell—except the `preinstall` and `postinstall` hooks.
+without the `mise activate` shell hook installed in your shell—except the `preinstall`, `postinstall`,
+`pre_task`, and `post_task` hooks.
 The configuration goes into `mise.toml`.
 
 ## CD hook
@@ -51,6 +52,60 @@ echo "Installed: $MISE_INSTALLED_TOOLS"
 '''
 ```
 
+## Pre-task/post-task hooks
+
+These hooks run before and after task execution (respectively). Unlike shell lifecycle hooks, these do not require `mise activate`—they run during `mise run`.
+
+```toml
+[hooks]
+# Run before every task
+pre_task = "echo 'about to run a task'"
+# Run after every task
+post_task = "echo 'task finished'"
+```
+
+### Targeting specific tasks
+
+You can target specific tasks using the `task` field. Glob patterns are supported:
+
+```toml
+# Run only before the "deploy" task
+[[hooks.pre_task]]
+script = "echo 'preparing environment...'"
+task = "deploy"
+
+# Run after any task in the "build" namespace
+[[hooks.post_task]]
+script = "echo 'build step done'"
+task = "build:*"
+```
+
+### Running a task as a hook
+
+Instead of a shell script, you can use the `run` field to execute another mise task as a hook:
+
+```toml
+# Run the "setup" task before every "test" task
+[[hooks.pre_task]]
+run = "setup"
+task = "test"
+
+# Run "notify" after any deploy task
+[[hooks.post_task]]
+run = "notify"
+task = "deploy:*"
+```
+
+::: tip
+This is especially useful with [remote tasks](/tasks/remote-tasks)—you can define hooks in your local `mise.toml` that run before or after shared remote tasks without modifying the original task definitions.
+:::
+
+### Environment variables
+
+Pre-task and post-task hooks are executed with the task's environment and working directory. In addition to the [standard hook environment variables](#hook-execution), the following is also available:
+
+- `MISE_TASK_NAME`: The name of the task being executed.
+
 ## Tool-level postinstall
 
 Individual tools can define their own postinstall scripts using the `postinstall` option. These run immediately after each tool is installed (before other tools in the same session are installed):
@@ -87,8 +142,10 @@ Hooks are executed with the following environment variables set:
 
 - `MISE_ORIGINAL_CWD`: The directory that the user is in.
 - `MISE_PROJECT_ROOT`: The root directory of the project.
-- `MISE_PREVIOUS_DIR`: The directory that the user was in before the directory change (only if a directory change occurred).
+- `MISE_CONFIG_ROOT`: The root directory of the config file that defined the hook.
+- `MISE_PREVIOUS_DIR`: The directory that the user was in before the directory change (only for `enter`/`leave`/`cd` hooks).
 - `MISE_INSTALLED_TOOLS`: A JSON array of tools that were installed (only for `postinstall` hooks).
+- `MISE_TASK_NAME`: The name of the task being executed (only for `pre_task`/`post_task` hooks).
 
 ## Shell hooks
 

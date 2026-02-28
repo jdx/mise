@@ -2087,27 +2087,43 @@
             "additionalProperties": false,
             "properties": {
               "script": {
-                "description": "script to run",
+                "description": "shell script to execute (mutually exclusive with 'run')",
+                "type": "string"
+              },
+              "run": {
+                "description": "mise task name to run instead of a script (mutually exclusive with 'script')",
                 "type": "string"
               },
               "shell": {
                 "description": "specify the shell to run the script inside of",
+                "type": "string"
+              },
+              "task": {
+                "description": "task name filter for pre_task/post_task hooks, supports glob patterns (e.g., \"build:*\")",
                 "type": "string"
               }
             },
             "type": "object"
           },
           {
-            "description": "scripts to run",
+            "description": "hooks to run",
             "items": {
               "additionalProperties": false,
               "properties": {
                 "script": {
-                  "description": "script to run",
+                  "description": "shell script to execute (mutually exclusive with 'run')",
+                  "type": "string"
+                },
+                "run": {
+                  "description": "mise task name to run instead of a script (mutually exclusive with 'script')",
                   "type": "string"
                 },
                 "shell": {
                   "description": "specify the shell to run the script inside of",
+                  "type": "string"
+                },
+                "task": {
+                  "description": "task name filter for pre_task/post_task hooks, supports glob patterns (e.g., \"build:*\")",
                   "type": "string"
                 }
               },

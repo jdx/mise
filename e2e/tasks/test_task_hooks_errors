@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+# Test hook failure propagation
+cat <<EOF >mise.toml
+[[hooks.pre_task]]
+script = "exit 1"
+task = "deploy"
+
+[tasks.deploy]
+run = "echo DEPLOY"
+EOF
+
+# Task should not run if pre_task hook fails
+output=$(mise run deploy 2>&1 || true)
+if [[ $output == *"DEPLOY"* ]]; then
+	echo "Task ran despite pre_task hook failure"
+	exit 1
+fi
+
+# Test post_task hook failure
+cat <<EOF >mise.toml
+[[hooks.post_task]]
+script = "exit 1"
+task = "deploy"
+
+[tasks.deploy]
+run = "echo DEPLOY"
+EOF
+
+# Task runs but overall command fails
+output=$(mise run deploy 2>&1 || true)
+assert_contains "echo '$output'" "DEPLOY"
+
+# Test MISE_NO_HOOKS env var
+cat <<EOF >mise.toml
+[[hooks.pre_task]]
+script = "echo PRE-HOOK"
+
+[[hooks.post_task]]
+script = "echo POST-HOOK"
+
+[tasks.test]
+run = "echo TEST"
+EOF
+
+# Hooks should not run when MISE_NO_HOOKS=1
+output=$(MISE_NO_HOOKS=1 mise run test 2>&1)
+assert_not_contains "echo '$output'" "PRE-HOOK"
+assert_not_contains "echo '$output'" "POST-HOOK"
+assert_contains "echo '$output'" "TEST"
+
+# Test that hooks don't run for no_hooks setting
+cat <<EOF >mise.toml
+[settings]
+experimental = true
+no_hooks = true
+
+[[hooks.pre_task]]
+script = "echo PRE-HOOK"
+
+[tasks.test]
+run = "echo TEST"
+EOF
+
+assert_not_contains "mise run test 2>&1" "PRE-HOOK"
+assert_contains "mise run test 2>&1" "TEST"

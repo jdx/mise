@@ -3,6 +3,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::duration;
 use crate::file::{display_path, is_executable};
+use crate::hooks::{self, Hooks};
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
@@ -214,6 +215,10 @@ impl TaskExecutor {
 
         let timer = std::time::Instant::now();
 
+        // Run pre_task hooks before task execution
+        let task_dir = task_cwd(task, config).await?;
+        hooks::run_task_hooks(config, Hooks::PreTask, &task.name, &env, &task_dir).await?;
+
         if let Some(file) = task.file_path(config).await? {
             let exec_start = std::time::Instant::now();
             self.exec_file(config, &file, task, &env, &prefix, extra_vars)
@@ -265,6 +270,9 @@ impl TaskExecutor {
                 total_start.elapsed().as_millis()
             );
         }
+
+        // Run post_task hooks after task execution
+        hooks::run_task_hooks(config, Hooks::PostTask, &task.name, &env, &task_dir).await?;
 
         if self.task_timings()
             && (task.file.as_ref().is_some() || !task.run_script_strings().is_empty())

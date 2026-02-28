@@ -144,6 +144,7 @@ export default withMermaid(
             { text: "File Tasks", link: "/tasks/file-tasks" },
             { text: "Task Arguments", link: "/tasks/task-arguments" },
             { text: "Task Configuration", link: "/tasks/task-configuration" },
+            { text: "Remote Tasks", link: "/tasks/remote-tasks" },
             { text: "Task Templates", link: "/tasks/templates" },
             { text: "Monorepo Tasks", link: "/tasks/monorepo" },
           ],

@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+# Test that MISE_TASK_NAME is set in task hooks
+cat <<EOF >mise.toml
+[[hooks.pre_task]]
+script = 'echo "PRE: \$MISE_TASK_NAME"'
+
+[[hooks.post_task]]
+script = 'echo "POST: \$MISE_TASK_NAME"'
+
+[tasks.deploy]
+run = "echo DEPLOY"
+EOF
+
+assert_contains "mise run deploy 2>&1" "PRE: deploy"
+assert_contains "mise run deploy 2>&1" "POST: deploy"
+
+# Test that hooks receive task environment
+cat <<EOF >mise.toml
+[[hooks.pre_task]]
+script = 'echo "PRE ENV: \$MY_VAR"'
+task = "build"
+
+[tasks.build]
+env = { MY_VAR = "test-value" }
+run = 'echo "BUILD: \$MY_VAR"'
+EOF
+
+assert_contains "mise run build 2>&1" 'PRE ENV: test-value'
+assert_contains "mise run build 2>&1" 'BUILD: test-value'
+
+# Test that hooks run in task directory
+cat <<EOF >mise.toml
+[[hooks.pre_task]]
+script = 'pwd > /tmp/hook_dir.txt'
+task = "build"
+
+[tasks.build]
+dir = "{{cwd}}"
+run = 'pwd > /tmp/task_dir.txt'
+EOF
+
+mise run build >/dev/null 2>&1
+pre_dir=$(cat /tmp/hook_dir.txt)
+build_dir=$(cat /tmp/task_dir.txt)
+# Both should be the same working directory
+if [ "$pre_dir" != "$build_dir" ]; then
+	echo "Hook directory ($pre_dir) doesn't match task directory ($build_dir)"
+	exit 1
+fi
+rm -f /tmp/hook_dir.txt /tmp/task_dir.txt
+
+# Test MISE_PROJECT_ROOT and MISE_CONFIG_ROOT
+cat <<EOF >mise.toml
+[[hooks.pre_task]]
+script = '''
+echo "PROJECT_ROOT: \$MISE_PROJECT_ROOT"
+echo "CONFIG_ROOT: \$MISE_CONFIG_ROOT"
+'''
+
+[tasks.check]
+run = "echo CHECK"
+EOF
+
+output=$(mise run check 2>&1)
+assert_contains "echo '$output'" "PROJECT_ROOT:"
+assert_contains "echo '$output'" "CONFIG_ROOT:"
+
+# Test MISE_ORIGINAL_CWD
+cat <<EOF >mise.toml
+[[hooks.pre_task]]
+script = 'echo "ORIGINAL_CWD: \$MISE_ORIGINAL_CWD"'
+
+[tasks.test]
+run = "echo TEST"
+EOF
+
+assert_contains "mise run test 2>&1" "ORIGINAL_CWD:"
