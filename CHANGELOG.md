@@ -1,5 +1,37 @@
 # Changelog
 
+## [2026.2.23](https://github.com/jdx/mise/compare/v2026.2.22..v2026.2.23) - 2026-02-28
+
+### 🚀 Features
+
+- **(backend-plugin)** pass options to vfox backend plugins by @Attempt3035 in [#8369](https://github.com/jdx/mise/pull/8369)
+
+### 🐛 Bug Fixes
+
+- **(install)** prevent --locked mode from modifying or bypassing lockfile by @jdx in [#8362](https://github.com/jdx/mise/pull/8362)
+- **(install)** clear aqua bin_paths cache after install to prevent stale PATH by @jdx in [#8374](https://github.com/jdx/mise/pull/8374)
+- **(task)** prevent broken pipe panic and race condition in remote git task cache by @vmaleze in [#8375](https://github.com/jdx/mise/pull/8375)
+
+### 📦️ Dependency Updates
+
+- update docker/build-push-action digest to 10e90e3 by @renovate[bot] in [#8367](https://github.com/jdx/mise/pull/8367)
+- update fedora:43 docker digest to 781b764 by @renovate[bot] in [#8368](https://github.com/jdx/mise/pull/8368)
+
+### 📦 Registry
+
+- add porter ([github:getporter/porter](https://github.com/getporter/porter)) by @lbergnehr in [#8380](https://github.com/jdx/mise/pull/8380)
+- add entire ([aqua:entireio/cli](https://github.com/entireio/cli)) by @TyceHerrman in [#8378](https://github.com/jdx/mise/pull/8378)
+- add topgrade ([aqua:topgrade-rs/topgrade](https://github.com/topgrade-rs/topgrade)) by @TyceHerrman in [#8377](https://github.com/jdx/mise/pull/8377)
+
+### Chore
+
+- remove pre-commit config and tool dependency by @jdx in [#8373](https://github.com/jdx/mise/pull/8373)
+
+### New Contributors
+
+- @Attempt3035 made their first contribution in [#8369](https://github.com/jdx/mise/pull/8369)
+- @lbergnehr made their first contribution in [#8380](https://github.com/jdx/mise/pull/8380)
+
 ## [2026.2.22](https://github.com/jdx/mise/compare/v2026.2.21..v2026.2.22) - 2026-02-27
 
 ### 🚀 Features
