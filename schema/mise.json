@@ -1108,11 +1108,6 @@
                 "type": "string"
               }
             },
-            "venv_auto_create": {
-              "description": "Automatically create virtualenvs for python tools.",
-              "type": "boolean",
-              "deprecated": true
-            },
             "venv_create_args": {
               "description": "Arguments to pass to python when creating a venv. (not used for uv venv creation)",
               "type": "array",
@@ -1159,11 +1154,6 @@
         "python_pyenv_repo": {
           "description": "URL to fetch pyenv from for compiling python.",
           "type": "string",
-          "deprecated": true
-        },
-        "python_venv_auto_create": {
-          "description": "Automatically create virtualenvs for python tools.",
-          "type": "boolean",
           "deprecated": true
         },
         "python_venv_stdlib": {

@@ -1408,13 +1408,6 @@ parse_env = "list_by_colon"
 rust_type = "Vec<String>"
 type = "ListString"
 
-[python.venv_auto_create]
-deprecated = "Use env._python.venv instead."
-description = "Automatically create virtualenvs for python tools."
-env = "MISE_PYTHON_VENV_AUTO_CREATE"
-hide = true
-type = "Bool"
-
 [python.venv_create_args]
 description = "Arguments to pass to python when creating a venv. (not used for uv venv creation)"
 env = "MISE_PYTHON_VENV_CREATE_ARGS"
@@ -1476,13 +1469,6 @@ description = "URL to fetch pyenv from for compiling python."
 hide = true
 optional = true
 type = "String"
-
-[python_venv_auto_create]
-deprecated = "Use env._python.venv instead."
-description = "Automatically create virtualenvs for python tools."
-hide = true
-optional = true
-type = "Bool"
 
 [python_venv_stdlib]
 deprecated = "Use python.venv_stdlib instead."

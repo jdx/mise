@@ -446,9 +446,6 @@ impl Settings {
         if let Some(python_venv_stdlib) = self.python_venv_stdlib {
             self.python.venv_stdlib = python_venv_stdlib;
         }
-        if let Some(python_venv_auto_create) = self.python_venv_auto_create {
-            self.python.venv_auto_create = python_venv_auto_create;
-        }
         if self.npm.bun {
             self.npm.package_manager = NpmPackageManager::Bun;
         }
@@ -524,18 +521,8 @@ impl Settings {
     }
 
     pub fn hidden_configs() -> &'static HashSet<&'static str> {
-        static HIDDEN_CONFIGS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
-            [
-                "ci",
-                "cd",
-                "debug",
-                "env_file",
-                "trace",
-                "log_level",
-                "python_venv_auto_create",
-            ]
-            .into()
-        });
+        static HIDDEN_CONFIGS: Lazy<HashSet<&'static str>> =
+            Lazy::new(|| ["ci", "cd", "debug", "env_file", "trace", "log_level"].into());
         &HIDDEN_CONFIGS
     }
 

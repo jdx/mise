@@ -389,7 +389,6 @@ impl PythonPlugin {
         &self,
         config: &Arc<Config>,
         tv: &ToolVersion,
-        pr: Option<&dyn SingleReport>,
     ) -> eyre::Result<Option<PathBuf>> {
         if let Some(virtualenv) = tv.request.options().get("virtualenv") {
             if !Settings::get().experimental {
@@ -406,26 +405,13 @@ impl PythonPlugin {
                 }
             }
             if !virtualenv.exists() {
-                if Settings::get().python.venv_auto_create {
-                    info!("setting up virtualenv at: {}", virtualenv.display());
-                    let mut cmd = CmdLineRunner::new(python_path(tv))
-                        .arg("-m")
-                        .arg("venv")
-                        .arg(&virtualenv)
-                        .envs(config.env().await?);
-                    if let Some(pr) = pr {
-                        cmd = cmd.with_pr(pr);
-                    }
-                    cmd.execute()?;
-                } else {
-                    warn!(
-                        "no venv found at: {p}\n\n\
-                        To create a virtualenv manually, run:\n\
-                        python -m venv {p}",
-                        p = display_path(&virtualenv)
-                    );
-                    return Ok(None);
-                }
+                warn!(
+                    "no venv found at: {p}\n\n\
+                    To create a virtualenv manually, run:\n\
+                    python -m venv {p}",
+                    p = display_path(&virtualenv)
+                );
+                return Ok(None);
             }
             // TODO: enable when it is more reliable
             // self.check_venv_python(&virtualenv, tv)?;
@@ -565,10 +551,7 @@ impl Backend for PythonPlugin {
             self.install_compiled(ctx, &tv).await?;
         }
         self.test_python(&ctx.config, &tv, ctx.pr.as_ref()).await?;
-        if let Err(e) = self
-            .get_virtualenv(&ctx.config, &tv, Some(ctx.pr.as_ref()))
-            .await
-        {
+        if let Err(e) = self.get_virtualenv(&ctx.config, &tv).await {
             warn!("failed to get virtualenv: {e:#}");
         }
         if let Some(default_file) = &Settings::get().python.default_packages_file {
@@ -599,7 +582,7 @@ impl Backend for PythonPlugin {
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
         let mut hm = BTreeMap::new();
-        match self.get_virtualenv(config, tv, None).await {
+        match self.get_virtualenv(config, tv).await {
             Err(e) => warn!("failed to get virtualenv: {e}"),
             Ok(Some(virtualenv)) => {
                 let bin = virtualenv.join("bin");

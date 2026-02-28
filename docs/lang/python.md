@@ -77,7 +77,7 @@ If you have installed `uv` (for example, with `mise use -g uv@latest`), `mise` w
 
 Note that `uv` does not include `pip` by default (as `uv` provides `uv pip` instead). If you need the `pip` package, add the `uv_create_args = ['--seed']` option.
 
-If you are still using the legacy `python.uv_venv_auto = true` setting (deprecated), mise will also export `UV_PYTHON`,
+If you are still using the legacy `python.uv_venv_auto = true` value (deprecated in favor of `"source"` or `"create|source"`), mise will also export `UV_PYTHON`,
 which forces `uv` to use `mise`'s selected python version.
 
 See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for more examples.
