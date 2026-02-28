@@ -175,10 +175,22 @@ impl BackendArg {
                 bail!("{plugin_name} is not a valid plugin name");
             }
         } else {
+            // Check if the tool is in the registry but has no available backends
+            if let Some(rt) = REGISTRY.get(self.short.as_str()) {
+                if rt.backends().is_empty() && !rt.backends.is_empty() {
+                    let all_backends: Vec<&str> = rt.backends.iter().map(|rb| rb.full).collect();
+                    bail!(
+                        "{self} is in the mise tool registry but none of its backends ({}) are supported on this platform",
+                        all_backends.join(", ")
+                    );
+                }
+            }
+
             let registry_shorts: Vec<&str> = REGISTRY.keys().copied().collect();
             let mut suggestions: Vec<String> =
                 xx::suggest::similar_n_with_threshold(&self.short, &registry_shorts, 3, 0.8)
                     .into_iter()
+                    .filter(|s| *s != self.short)
                     .map(|s| s.to_string())
                     .collect();
 
