@@ -10,7 +10,7 @@ use crate::file::TarOptions;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
-use crate::path::{Path, PathBuf, PathExt};
+use crate::path::{Path, PathBuf};
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
 use crate::toolset::ToolVersion;
@@ -24,7 +24,6 @@ use crate::{
 use crate::{backend::Backend, config::Config};
 use crate::{env, file, github, minisign};
 use async_trait::async_trait;
-use dashmap::DashMap;
 use eyre::{ContextCompat, Result, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -38,7 +37,6 @@ pub struct AquaBackend {
     ba: Arc<BackendArg>,
     id: String,
     version_tags_cache: CacheManager<Vec<(String, String)>>,
-    bin_path_caches: DashMap<String, CacheManager<Vec<PathBuf>>>,
 }
 
 #[async_trait]
@@ -461,15 +459,6 @@ impl Backend for AquaBackend {
         }
         self.install(ctx, &tv, &pkg, &v, &filename)?;
 
-        // Clear any cached bin paths so they are recomputed now that installation is complete.
-        // Without this, a stale cache (e.g. computed before extraction finished) could persist
-        // and cause the tool's PATH entry to be missing.
-        self.bin_path_caches.remove(&tv.version);
-        let cache_path = tv.cache_path().join("bin_paths.msgpack.z");
-        if cache_path.exists() {
-            let _ = file::remove_file(&cache_path);
-        }
-
         Ok(tv)
     }
 
@@ -482,42 +471,20 @@ impl Backend for AquaBackend {
             return Ok(vec![tv.install_path().join(".mise-bins")]);
         }
 
-        let cache = self
-            .bin_path_caches
-            .entry(tv.version.clone())
-            .or_insert_with(|| {
-                CacheManagerBuilder::new(tv.cache_path().join("bin_paths.msgpack.z"))
-                    .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
-                    .build()
-            });
         let install_path = tv.install_path();
-        let paths = cache
-            .get_or_try_init_async(async || {
-                // TODO: align this logic with the one in `install_version_`
-                let pkg = AQUA_REGISTRY
-                    .package_with_version(&self.id, &[&tv.version])
-                    .await?;
+        let pkg = AQUA_REGISTRY
+            .package_with_version(&self.id, &[&tv.version])
+            .await?;
 
-                let srcs = self.srcs(&pkg, tv)?;
-                let paths = if srcs.is_empty() {
-                    vec![install_path.clone()]
-                } else {
-                    srcs.iter()
-                        .map(|(_, dst)| dst.parent().unwrap().to_path_buf())
-                        .collect()
-                };
-                Ok(paths
-                    .into_iter()
-                    .unique()
-                    .filter(|p| p.exists())
-                    .map(|p| p.strip_prefix(&install_path).unwrap().to_path_buf())
-                    .collect())
-            })
-            .await?
-            .iter()
-            .map(|p| p.mount(&install_path))
-            .collect();
-        Ok(paths)
+        let srcs = self.srcs(&pkg, tv)?;
+        let paths: Vec<PathBuf> = if srcs.is_empty() {
+            vec![install_path.clone()]
+        } else {
+            srcs.iter()
+                .map(|(_, dst)| dst.parent().unwrap().to_path_buf())
+                .collect()
+        };
+        Ok(paths.into_iter().unique().filter(|p| p.exists()).collect())
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
@@ -678,7 +645,6 @@ impl AquaBackend {
             version_tags_cache: CacheManagerBuilder::new(cache_path.join("version_tags.msgpack.z"))
                 .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .build(),
-            bin_path_caches: Default::default(),
         }
     }
 
