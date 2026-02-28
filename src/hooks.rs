@@ -256,9 +256,20 @@ async fn execute(
     Settings::get().ensure_experimental("hooks")?;
     let shell = Settings::get().default_inline_shell()?;
 
-    let tera_ctx = ts.tera_ctx(config).await?;
+    // Preinstall hooks skip `tools=true` env directives since the tools
+    // providing those env vars aren't installed yet (fixes #6162)
+    let (tera_ctx, mut env) = if hook.hook == Hooks::Preinstall {
+        let env = ts.full_env_without_tools(config).await?;
+        let mut ctx = config.tera_ctx.clone();
+        ctx.insert("env", &env);
+        (ctx, env)
+    } else {
+        let ctx = ts.tera_ctx(config).await?.clone();
+        let env = ts.full_env(config).await?;
+        (ctx, env)
+    };
     let mut tera = get_tera(Some(root));
-    let rendered_script = tera.render_str(&hook.script, tera_ctx)?;
+    let rendered_script = tera.render_str(&hook.script, &tera_ctx)?;
 
     let args = shell
         .iter()
@@ -266,13 +277,6 @@ async fn execute(
         .map(|s| s.as_str())
         .chain(once(rendered_script.as_str()))
         .collect_vec();
-    // Preinstall hooks skip `tools=true` env directives since the tools
-    // providing those env vars aren't installed yet (fixes #6162)
-    let mut env = if hook.hook == Hooks::Preinstall {
-        ts.full_env_without_tools(config).await?
-    } else {
-        ts.full_env(config).await?
-    };
     if let Some(cwd) = dirs::CWD.as_ref() {
         env.insert(
             "MISE_ORIGINAL_CWD".to_string(),
