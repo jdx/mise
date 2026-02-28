@@ -84,21 +84,16 @@ impl FileInfo {
         let file_name = effective_path.file_name().unwrap().to_string_lossy();
         let format = file::TarFormat::from_file_name(&file_name);
 
-        let extension = if file_name.ends_with(".tar.gz") {
-            "tar.gz".to_string()
-        } else if file_name.ends_with(".tar.xz") {
-            "tar.xz".to_string()
-        } else if file_name.ends_with(".tar.bz2") {
-            "tar.bz2".to_string()
-        } else if file_name.ends_with(".tar.zst") {
-            "tar.zst".to_string()
-        } else {
-            effective_path
-                .extension()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_string()
-        };
+        let extension = format
+            .extension()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| {
+                effective_path
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_string()
+            });
 
         let is_compressed_binary = !format.is_archive() && format != file::TarFormat::Raw;
 

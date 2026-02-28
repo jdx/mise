@@ -769,6 +769,23 @@ impl TarFormat {
             }
         }
     }
+
+    pub fn extension(&self) -> Option<&'static str> {
+        match self {
+            TarFormat::TarGz => Some("tar.gz"),
+            TarFormat::Gz => Some("gz"),
+            TarFormat::TarXz => Some("tar.xz"),
+            TarFormat::Xz => Some("xz"),
+            TarFormat::TarBz2 => Some("tar.bz2"),
+            TarFormat::Bz2 => Some("bz2"),
+            TarFormat::TarZst => Some("tar.zst"),
+            TarFormat::Zst => Some("zst"),
+            TarFormat::Tar => Some("tar"),
+            TarFormat::Zip => Some("zip"),
+            TarFormat::SevenZip => Some("7z"),
+            TarFormat::Raw => None,
+        }
+    }
 }
 
 pub struct TarOptions<'a> {
