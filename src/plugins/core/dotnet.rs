@@ -105,6 +105,9 @@ impl Backend for DotnetPlugin {
         let sdk = global_json
             .sdk
             .ok_or_else(|| eyre::eyre!("no sdk.version found in {}", path.display()))?;
+        if sdk.version.is_empty() {
+            return Ok(vec![]);
+        }
         Ok(vec![sdk.version])
     }
 

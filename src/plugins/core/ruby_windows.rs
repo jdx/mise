@@ -194,6 +194,9 @@ impl Backend for RubyPlugin {
                     .to_string()
             }
         };
+        if v.is_empty() {
+            return Ok(vec![]);
+        }
         Ok(vec![v])
     }
 

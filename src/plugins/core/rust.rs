@@ -122,6 +122,9 @@ impl Backend for RustPlugin {
 
     async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
         let rt = parse_idiomatic_file(path)?;
+        if rt.channel.is_empty() {
+            return Ok(vec![]);
+        }
         Ok(vec![rt.channel])
     }
 

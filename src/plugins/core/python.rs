@@ -579,6 +579,18 @@ impl Backend for PythonPlugin {
         ])
     }
 
+    async fn _parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
+        let contents = file::read_to_string(path)?;
+        let normalized = crate::backend::normalize_idiomatic_contents(&contents);
+        if normalized.is_empty() {
+            return Ok(vec![]);
+        }
+        Ok(normalized
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect())
+    }
+
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         if cfg!(windows) || Settings::get().python.compile != Some(true) {
             self.install_precompiled(ctx, &tv).await?;
