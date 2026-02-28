@@ -1,5 +1,14 @@
 # Changelog
 
+## [2026.2.24](https://github.com/jdx/mise/compare/v2026.2.23..v2026.2.24) - 2026-02-28
+
+### 🐛 Bug Fixes
+
+- **(aqua)** remove unnecessary bin_paths disk cache by @jdx in [#8383](https://github.com/jdx/mise/pull/8383)
+- **(hooks)** render tera templates and fix output masking by @jdx in [#8385](https://github.com/jdx/mise/pull/8385)
+- **(install)** improve error when registry tool has no supported backends by @jdx in [#8388](https://github.com/jdx/mise/pull/8388)
+- **(python)** remove deprecated venv_auto_create setting by @jdx in [#8384](https://github.com/jdx/mise/pull/8384)
+
 ## [2026.2.23](https://github.com/jdx/mise/compare/v2026.2.22..v2026.2.23) - 2026-02-28
 
 ### 🚀 Features
