@@ -19,11 +19,11 @@ use async_trait::async_trait;
 use eyre::Result;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use versions::Versioning;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use versions::Versioning;
 
 // Constants
 const HTTP_TARBALLS_DIR: &str = "http-tarballs";
