@@ -180,7 +180,7 @@ impl BackendArg {
                 if rt.backends().is_empty() && !rt.backends.is_empty() {
                     let all_backends: Vec<&str> = rt.backends.iter().map(|rb| rb.full).collect();
                     bail!(
-                        "{self} is in the mise tool registry but none of its backends ({}) are supported on this platform",
+                        "{self} is in the mise tool registry but none of its backends ({}) are supported in the current configuration",
                         all_backends.join(", ")
                     );
                 }
