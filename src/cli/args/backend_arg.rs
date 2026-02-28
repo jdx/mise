@@ -177,13 +177,15 @@ impl BackendArg {
         } else {
             // Check if the tool is in the registry but has no available backends
             if let Some(rt) = REGISTRY.get(self.short.as_str())
-                && rt.backends().is_empty() && !rt.backends.is_empty() {
-                    let all_backends: Vec<&str> = rt.backends.iter().map(|rb| rb.full).collect();
-                    bail!(
-                        "{self} is in the mise tool registry but none of its backends ({}) are supported in the current configuration",
-                        all_backends.join(", ")
-                    );
-                }
+                && rt.backends().is_empty()
+                && !rt.backends.is_empty()
+            {
+                let all_backends: Vec<&str> = rt.backends.iter().map(|rb| rb.full).collect();
+                bail!(
+                    "{self} is in the mise tool registry but none of its backends ({}) are supported in the current configuration",
+                    all_backends.join(", ")
+                );
+            }
 
             let registry_shorts: Vec<&str> = REGISTRY.keys().copied().collect();
             let mut suggestions: Vec<String> =
