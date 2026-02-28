@@ -17,7 +17,9 @@ use crate::ui::progress_report::SingleReport;
 use crate::{dirs, file, hash};
 use async_trait::async_trait;
 use eyre::Result;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use versions::Versioning;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -619,6 +621,7 @@ impl Backend for HttpBackend {
                 version: v,
                 ..Default::default()
             })
+            .sorted_by_cached_key(|v| Versioning::new(&v.version))
             .collect())
     }
 
