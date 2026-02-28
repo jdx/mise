@@ -190,6 +190,11 @@ impl Toolset {
             }
         }
 
+        // Finish the global footer before running hooks so output isn't masked
+        if !opts.dry_run {
+            mpr.footer_finish();
+        }
+
         // Skip hooks in dry-run mode
         if !opts.dry_run {
             // Run post-install hook with installed tools info
@@ -212,11 +217,6 @@ impl Toolset {
                 Some(&installed_tools),
             )
             .await;
-        }
-
-        // Finish the global footer
-        if !opts.dry_run {
-            mpr.footer_finish();
         }
 
         // Return appropriate result
