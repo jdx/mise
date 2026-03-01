@@ -559,11 +559,7 @@ impl PrepareEngine {
             }
         }
 
-        let results = Arc::try_unwrap(results)
-            .map_err(|_| eyre::eyre!("failed to unwrap Arc for prepare results"))?
-            .into_inner()
-            .map_err(|e| eyre::eyre!("prepare results mutex was poisoned: {e}"))?;
-        Ok(results)
+        Ok(Arc::try_unwrap(results).unwrap().into_inner().unwrap())
     }
 
     /// Check if outputs are newer than sources (stateless mtime comparison)
