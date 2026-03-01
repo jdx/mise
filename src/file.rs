@@ -656,6 +656,19 @@ pub fn which_non_pristine<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     _which(name, &env::PATH_NON_PRISTINE)
 }
 
+/// returns the first executable in PATH, excluding the mise shim directory
+/// use this for internal tool lookups to avoid recursive shim invocations
+/// (shims call `mise exec`, which would re-enter the same code path)
+pub fn which_no_shims<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
+    let shim_dir = &*dirs::SHIMS;
+    let paths: Vec<PathBuf> = env::PATH_NON_PRISTINE
+        .iter()
+        .filter(|p| p.as_path() != *shim_dir)
+        .cloned()
+        .collect();
+    _which(name, &paths)
+}
+
 fn _which<P: AsRef<Path>>(name: P, paths: &[PathBuf]) -> Option<PathBuf> {
     let name = name.as_ref();
     paths.iter().find_map(|path| {

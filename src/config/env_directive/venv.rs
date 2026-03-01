@@ -5,7 +5,7 @@ use crate::config::config_file::trust_check;
 use crate::config::env_directive::EnvResults;
 use crate::config::{Config, Settings};
 use crate::env_diff::EnvMap;
-use crate::file::{display_path, which_non_pristine};
+use crate::file::{display_path, which_no_shims};
 use crate::lock_file::LockFile;
 use crate::toolset::Toolset;
 use crate::{backend, plugins};
@@ -139,7 +139,7 @@ pub(crate) async fn create_python_venv(
     let uv_bin = ts
         .which_bin(config, "uv")
         .await
-        .or_else(|| which_non_pristine("uv"));
+        .or_else(|| which_no_shims("uv"));
 
     if require_uv && uv_bin.is_none() {
         warn_once!(
