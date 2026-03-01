@@ -171,13 +171,6 @@ impl Backend for VfoxBackend {
         Some(&self.plugin_enum)
     }
 
-    async fn idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
-        let (vfox, _log_rx) = self.plugin.vfox();
-
-        let metadata = vfox.metadata(&self.pathname).await?;
-        Ok(metadata.legacy_filenames)
-    }
-
     async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<String> {
         let (vfox, _log_rx) = self.plugin.vfox();
         let response = vfox.parse_legacy_file(&self.pathname, path).await?;
