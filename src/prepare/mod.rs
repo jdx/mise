@@ -12,6 +12,7 @@ pub use engine::{PrepareEngine, PrepareOptions, PrepareStepResult};
 pub use rule::PrepareConfig;
 
 mod engine;
+pub(crate) mod prepare_deps;
 pub mod providers;
 mod rule;
 
@@ -94,6 +95,11 @@ pub trait PrepareProvider: Debug + Send + Sync {
     /// Whether to update mtime of output files/dirs after a successful run
     fn touch_outputs(&self) -> bool {
         self.base().touch_outputs()
+    }
+
+    /// Other prepare providers that must complete before this one runs
+    fn depends(&self) -> Vec<String> {
+        self.base().config.depends.clone()
     }
 }
 

@@ -42,6 +42,9 @@ pub struct PrepareProviderConfig {
     /// This is useful when the prepare command is a no-op (e.g., `uv sync` when all is well)
     /// so that the outputs appear fresh for subsequent freshness checks.
     pub touch_outputs: Option<bool>,
+    /// Other prepare providers that must complete before this one runs
+    #[serde(default)]
+    pub depends: Vec<String>,
 }
 
 impl PrepareProviderConfig {

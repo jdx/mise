@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+
+# Test prepare dependency ordering
+# Verifies that prepare providers with `depends` run in the correct order
+
+# Create source files so providers are stale
+touch schema.graphql
+touch requirements.txt
+
+cat >mise.toml <<'EOF'
+[prepare.step-a]
+run = "bash -c 'echo STEP-A >> prepare.log'"
+sources = ["schema.graphql"]
+outputs = ["gen-a"]
+description = "step-a"
+
+[prepare.step-b]
+run = "bash -c 'echo STEP-B >> prepare.log'"
+sources = ["requirements.txt"]
+outputs = ["gen-b"]
+depends = ["step-a"]
+description = "step-b"
+
+[prepare.step-c]
+run = "bash -c 'echo STEP-C >> prepare.log'"
+sources = ["requirements.txt"]
+outputs = ["gen-c"]
+depends = ["step-b"]
+description = "step-c"
+EOF
+
+# Force run to ensure all steps execute
+mise prepare --force 2>&1
+
+# Verify all steps ran and in dependency order (a before b before c)
+assert "cat prepare.log" "STEP-A
+STEP-B
+STEP-C"
+
+# Clean up for next test
+rm -f prepare.log
+
+# Test that independent steps can still run in parallel alongside deps
+cat >mise.toml <<'EOF'
+[prepare.dep-first]
+run = "bash -c 'echo DEP-FIRST >> prepare2.log'"
+sources = ["schema.graphql"]
+outputs = ["gen-dep-first"]
+description = "dep-first"
+
+[prepare.dep-second]
+run = "bash -c 'echo DEP-SECOND >> prepare2.log'"
+sources = ["requirements.txt"]
+outputs = ["gen-dep-second"]
+depends = ["dep-first"]
+description = "dep-second"
+
+[prepare.independent]
+run = "bash -c 'echo INDEPENDENT >> prepare2.log'"
+sources = ["schema.graphql"]
+outputs = ["gen-independent"]
+description = "independent"
+EOF
+
+mise prepare --force 2>&1
+
+# dep-first must appear before dep-second
+output=$(cat prepare2.log)
+assert_contains "echo '$output'" "DEP-FIRST"
+assert_contains "echo '$output'" "DEP-SECOND"
+assert_contains "echo '$output'" "INDEPENDENT"
+
+# Verify dep-first is before dep-second in the log
+dep_first_line=$(grep -n "DEP-FIRST" prepare2.log | head -1 | cut -d: -f1)
+dep_second_line=$(grep -n "DEP-SECOND" prepare2.log | head -1 | cut -d: -f1)
+if [[ $dep_first_line -ge $dep_second_line ]]; then
+	echo "ERROR: DEP-FIRST (line $dep_first_line) should appear before DEP-SECOND (line $dep_second_line)"
+	exit 1
+fi
+
+rm -f prepare2.log
+
+# Test dry-run with depends shows what would run
+assert_contains "mise prepare --dry-run" "dep-first"

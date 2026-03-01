@@ -2184,6 +2184,13 @@
         "description": {
           "type": "string",
           "description": "Description shown in output"
+        },
+        "depends": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Other prepare providers that must complete before this one runs"
         }
       },
       "additionalProperties": false,
