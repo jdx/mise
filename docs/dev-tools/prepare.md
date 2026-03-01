@@ -97,6 +97,7 @@ run = "npx prisma generate"
 | `dir`           | string   | Working directory for the command                                               |
 | `description`   | string   | Description shown in output                                                     |
 | `touch_outputs` | bool     | Touch output mtimes after a successful run so they appear fresh (default: true) |
+| `depends`       | string[] | Other provider names that must complete before this one runs                    |
 
 ## Freshness Checking
 
@@ -170,10 +171,35 @@ mise prepare --only npm --only codegen
 mise prepare --skip npm
 ```
 
+## Dependencies
+
+Providers can declare dependencies on other providers using the `depends` field. A provider
+will wait for all its dependencies to complete successfully before running.
+
+```toml
+[prepare.uv]
+auto = true
+
+[prepare.ansible-galaxy]
+auto = true
+depends = ["uv"]
+run = "ansible-galaxy install -f requirements.yml"
+sources = ["requirements.yml"]
+outputs = [".galaxy-installed"]
+```
+
+In this example, `ansible-galaxy` will wait for `uv` to finish before starting.
+
+Providers without `depends` run in parallel as before. If a dependency fails, all providers
+that depend on it are skipped. Circular dependencies are detected and the affected providers
+are skipped with a warning.
+
 ## Parallel Execution
 
 Prepare providers run in parallel, respecting the `jobs` setting for concurrency limits.
 This speeds up preparation when multiple providers need to run (e.g., both npm and pip).
+Providers with `depends` will wait for their dependencies to complete before starting,
+while independent providers run concurrently.
 
 ```toml
 [settings]
@@ -193,14 +219,17 @@ auto = true
 
 [prepare.prisma]
 auto = true
+depends = ["npm"]  # needs node_modules first
 sources = ["prisma/schema.prisma"]
 outputs = ["node_modules/.prisma/"]
 run = "npx prisma generate"
 
 [prepare.frontend-codegen]
+depends = ["npm"]  # needs node_modules first
 sources = ["schema.graphql", "codegen.ts"]
 outputs = ["src/generated/"]
 run = "npm run codegen"
 ```
 
-Running `mise prep` will check all four providers and run any that are stale, in parallel.
+Running `mise prep` will install npm and poetry dependencies in parallel, then run prisma
+and frontend-codegen (also in parallel, since they only depend on npm, not each other).
