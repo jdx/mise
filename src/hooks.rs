@@ -222,13 +222,6 @@ pub async fn run_one_hook_with_context(
                 _ => {}
             }
         }
-        if h.task_name.is_some() && h.shell.is_some() {
-            warn!(
-                "{hook} hook in {} has both task and shell set, skipping",
-                root.display()
-            );
-            continue;
-        }
         if h.task_name.is_some() {
             if let Err(e) = execute_task(config, ts, root, h, installed_tools).await {
                 warn!("{hook} hook in {} failed: {e}", root.display());

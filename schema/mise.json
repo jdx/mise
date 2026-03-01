@@ -2066,14 +2066,6 @@
             "type": "string"
           },
           {
-            "description": "script to run",
-            "items": {
-              "description": "script to run",
-              "type": "string"
-            },
-            "type": "array"
-          },
-          {
             "additionalProperties": false,
             "properties": {
               "script": {
@@ -2161,7 +2153,8 @@
               "type": "string"
             }
           }
-        }
+        },
+        "oneOf": [{ "required": ["run"] }, { "required": ["task"] }]
       }
     },
     "prepare_provider": {

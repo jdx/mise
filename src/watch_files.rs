@@ -42,6 +42,9 @@ pub async fn execute_runs(config: &Arc<Config>, ts: &Toolset) {
                 continue;
             }
             Ok(files) => {
+                if wf.task.is_some() && wf.run.is_some() {
+                    warn!("watch_file hook has both run and task set, using task");
+                }
                 let result = if let Some(task_name) = &wf.task {
                     execute_task(config, ts, &root, task_name, files).await
                 } else if let Some(run) = &wf.run {
