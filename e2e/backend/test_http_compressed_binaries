@@ -39,7 +39,14 @@ fi
 # Start a simple HTTP server
 echo "Starting HTTP server on port $HTTP_PORT..."
 cd "$TEST_DIR"
-python3 -m http.server $HTTP_PORT --bind 127.0.0.1 >/dev/null 2>&1 &
+# Prefer the system Python for reliability in CI/local envs.
+# Some Homebrew Python versions can hang in this scenario under isolated env.
+if [ -x /usr/bin/python3 ]; then
+	PYTHON_HTTP_SERVER="/usr/bin/python3"
+else
+	PYTHON_HTTP_SERVER="$(command -v python3)"
+fi
+"$PYTHON_HTTP_SERVER" -m http.server $HTTP_PORT --bind 127.0.0.1 >/dev/null 2>&1 &
 SERVER_PID=$!
 
 # Go back to original directory
@@ -47,6 +54,14 @@ cd -
 
 # Wait for server to start
 sleep 2
+
+# Ensure local loopback requests bypass any system proxy configuration.
+LOCAL_NO_PROXY="127.0.0.1,localhost,::1"
+export NO_PROXY="${NO_PROXY:+$NO_PROXY,}$LOCAL_NO_PROXY"
+export no_proxy="${no_proxy:+$no_proxy,}$LOCAL_NO_PROXY"
+
+# Fail fast with a clear message if the local server is not reachable.
+assert_succeed "curl -fsS --max-time 5 http://127.0.0.1:$HTTP_PORT/test-tool-linux-x64.gz >/dev/null"
 
 # Test with different compressed formats
 echo "Testing .gz compressed binary..."
