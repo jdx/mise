@@ -6,6 +6,32 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source-path=SCRIPTDIR
 source "$SCRIPT_DIR/style.sh"
 
+resolve_mise_bin() {
+	if [[ -n ${MISE_E2E_BIN:-} ]]; then
+		printf '%s\n' "$MISE_E2E_BIN"
+		return
+	fi
+	local candidate="${CARGO_TARGET_DIR:-$ROOT/target}/debug/mise"
+	if [[ -x $candidate ]]; then
+		printf '%s\n' "$candidate"
+		return
+	fi
+	command -v mise
+}
+
+Mise_wait_for_gh_rate_limit() {
+	local mise_bin="$1"
+	# Allow explicit opt-out for local/dev runs.
+	if [[ ${E2E_WAIT_FOR_GH_RATE_LIMIT:-1} != 1 ]]; then
+		return 0
+	fi
+	if "$mise_bin" which wait-for-gh-rate-limit >/dev/null 2>&1; then
+		"$mise_bin" x -- wait-for-gh-rate-limit
+	else
+		warn "wait-for-gh-rate-limit not available; skipping rate-limit wait"
+	fi
+}
+
 # Check for .release-skip-e2e and skip all tests if version matches
 RELEASE_SKIP_FILE="$ROOT/.release-skip-e2e"
 VERSION="$(. "$ROOT/scripts/get-version.sh" | tr -d '\n')"
@@ -40,6 +66,7 @@ while IFS= read -r line; do
 done < <(list_test_files "test_*" | grep -v "_slow$")
 popd
 FILES=("${FAST_FILES[@]}" "${SLOW_FILES[@]}")
+MISE_BIN="$(resolve_mise_bin)"
 test_count=0
 skipped_count=0
 status=0
@@ -65,7 +92,7 @@ for index in "${!FILES[@]}"; do
 		continue
 	fi
 
-	mise x -- wait-for-gh-rate-limit
+	Mise_wait_for_gh_rate_limit "$MISE_BIN"
 	# Actually run the test
 	"$ROOT/e2e/run_test" "$TEST_NAME" # fail fast for now
 	# if ! "$ROOT/e2e/run_test" "$TEST_NAME"; then
