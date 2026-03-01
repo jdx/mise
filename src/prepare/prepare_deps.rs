@@ -181,13 +181,14 @@ impl PrepareDeps {
         // Any node that cannot reach a leaf is in a cycle - block it
         for idx in self.graph.node_indices() {
             if !can_reach_leaf.contains(&idx)
-                && let Some(id) = self.graph.node_weight(idx) {
-                    warn!(
-                        "prepare provider '{}' is part of a dependency cycle, skipping",
-                        id
-                    );
-                    self.blocked.insert(id.clone());
-                }
+                && let Some(id) = self.graph.node_weight(idx)
+            {
+                warn!(
+                    "prepare provider '{}' is part of a dependency cycle, skipping",
+                    id
+                );
+                self.blocked.insert(id.clone());
+            }
         }
     }
 
