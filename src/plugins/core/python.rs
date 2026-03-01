@@ -629,8 +629,9 @@ impl Backend for PythonPlugin {
             opts.insert("compile".to_string(), "true".to_string());
         }
 
-        // Only include precompiled options if not compiling and if set
-        if !compile && is_current_platform {
+        // Include precompiled options for all platforms to avoid splitting
+        // lockfile entries between host and non-host platforms (#8390)
+        if !compile {
             if let Some(arch) = settings.python.precompiled_arch.clone() {
                 opts.insert("precompiled_arch".to_string(), arch);
             }

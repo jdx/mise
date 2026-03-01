@@ -701,8 +701,9 @@ impl Backend for NodePlugin {
             opts.insert("compile".to_string(), "true".to_string());
         }
 
-        // Flavor affects which binary variant is downloaded (only if set)
-        if is_current_platform && let Some(flavor) = settings.node.flavor.clone() {
+        // Flavor affects which binary variant is downloaded
+        // Apply to all platforms to avoid splitting lockfile entries (#8390)
+        if let Some(flavor) = settings.node.flavor.clone() {
             opts.insert("flavor".to_string(), flavor);
         }
 
