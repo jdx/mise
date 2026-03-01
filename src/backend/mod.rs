@@ -298,7 +298,7 @@ pub(crate) fn normalize_idiomatic_contents(contents: &str) -> String {
         .lines()
         .filter_map(|line| {
             let trimmed = line.trim();
-            
+
             // Skip empty lines or lines that are entirely comments
             if trimmed.is_empty() || trimmed.starts_with('#') {
                 return None;
@@ -339,14 +339,21 @@ mod tests {
     fn test_normalize_idiomatic_contents() {
         assert_eq!(normalize_idiomatic_contents("tool # and a comment"), "tool");
         assert_eq!(normalize_idiomatic_contents("tool#tag"), "tool#tag");
-        assert_eq!(normalize_idiomatic_contents("tool#tag # comment"), "tool#tag");
-        assert_eq!(normalize_idiomatic_contents("   # full line comment"), "");
-        assert_eq!(normalize_idiomatic_contents("3.12.3\n3.11.11"), "3.12.3\n3.11.11");
-        assert_eq!(normalize_idiomatic_contents("3.12.3 # inline\n# comment\n3.11.11"), "3.12.3\n3.11.11");
         assert_eq!(
-            normalize_idiomatic_contents(
-                "# full line comment\n3.14.2 # inline comment\n   \n\n"
-            ),
+            normalize_idiomatic_contents("tool#tag # comment"),
+            "tool#tag"
+        );
+        assert_eq!(normalize_idiomatic_contents("   # full line comment"), "");
+        assert_eq!(
+            normalize_idiomatic_contents("3.12.3\n3.11.11"),
+            "3.12.3\n3.11.11"
+        );
+        assert_eq!(
+            normalize_idiomatic_contents("3.12.3 # inline\n# comment\n3.11.11"),
+            "3.12.3\n3.11.11"
+        );
+        assert_eq!(
+            normalize_idiomatic_contents("# full line comment\n3.14.2 # inline comment\n   \n\n"),
             "3.14.2"
         );
     }
