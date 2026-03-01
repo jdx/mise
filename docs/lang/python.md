@@ -77,8 +77,28 @@ If you have installed `uv` (for example, with `mise use -g uv@latest`), `mise` w
 
 Note that `uv` does not include `pip` by default (as `uv` provides `uv pip` instead). If you need the `pip` package, add the `uv_create_args = ['--seed']` option.
 
-If you are still using the legacy `python.uv_venv_auto = true` value (deprecated in favor of `"source"` or `"create|source"`), mise will also export `UV_PYTHON`,
-which forces `uv` to use `mise`'s selected python version.
+:::warning
+The `true` value for `python.uv_venv_auto` is considered legacy and will be deprecated in a
+future release (planned for mise 2026.7). Prefer `"source"` or `"create|source"` instead.
+Note: the `python.uv_venv_auto` **setting** itself is not going away — only the `true` value is
+being phased out.
+:::
+
+One difference between the legacy `true` value and the newer string values is that `true` also
+exports `UV_PYTHON` (set to just the Python version number). This tells `uv` which Python version
+to use, but does not guarantee that `uv` uses the specific interpreter managed by `mise` — `uv`
+may fall back to a system or self-managed Python of the same version.
+
+To strictly ensure `uv` uses `mise`'s managed Python interpreter, set `UV_PYTHON` to the actual
+install path instead:
+
+```toml
+[tools]
+python = "3.12"
+
+[env]
+UV_PYTHON = { value = "{{ tools.python.path }}", tools = true }
+```
 
 See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for more examples.
 
