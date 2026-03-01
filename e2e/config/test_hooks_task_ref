@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# Test task references in hooks
+# Verifies that hooks can reference mise tasks instead of inline scripts
+
+cat <<'EOF' >mise.toml
+[tools]
+dummy = 'latest'
+
+[tasks.setup]
+run = 'echo TASK-SETUP-RAN'
+
+[tasks.teardown]
+run = 'echo TASK-TEARDOWN-RAN'
+
+[hooks]
+enter = { task = "setup" }
+leave = { task = "teardown" }
+preinstall = { task = "setup" }
+EOF
+
+# Test preinstall hook with task reference
+assert_contains "mise i 2>&1" "TASK-SETUP-RAN"
+
+eval "$(mise hook-env)"
+
+# Leave directory should trigger task
+cd ~ || exit 1
+assert_contains "mise hook-env 2>&1" "TASK-TEARDOWN-RAN"
+eval "$(mise hook-env)"
+
+# Enter directory should trigger task
+cd ~/workdir || exit 1
+assert_contains "mise hook-env 2>&1" "TASK-SETUP-RAN"
+eval "$(mise hook-env)"
+
+# Test array of hooks mixing scripts and task references
+cat <<'EOF' >mise.toml
+[tasks.my-task]
+run = 'echo MIXED-TASK-RAN'
+
+[hooks]
+enter = ["echo MIXED-SCRIPT-RAN", { task = "my-task" }]
+EOF
+
+cd ~ || exit 1
+eval "$(mise hook-env)"
+cd ~/workdir || exit 1
+output=$(mise hook-env 2>&1)
+assert_contains "echo '$output'" "MIXED-SCRIPT-RAN"
+assert_contains "echo '$output'" "MIXED-TASK-RAN"
