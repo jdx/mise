@@ -125,7 +125,7 @@ impl Backend for UnifiedGitBackend {
             }
         }
 
-        // Check for GitHub Attestations (assets with .sigstore.json or .sigstore extension)
+        // Check for GitHub artifact Attestations (assets with .sigstore.json or .sigstore extension)
         if let Some(release) = latest_release {
             let has_attestations = release.assets.iter().any(|a| {
                 let name = a.name.to_lowercase();
@@ -1058,7 +1058,7 @@ impl UnifiedGitBackend {
         Ok(())
     }
 
-    /// Verify artifact using GitHub attestations or SLSA provenance.
+    /// Verify artifact using GitHub artifact attestations or SLSA provenance.
     /// Tries attestations first, falls back to SLSA if no attestations found.
     /// If verification is attempted and fails, it's a hard error.
     async fn verify_attestations_or_slsa(
@@ -1074,7 +1074,7 @@ impl UnifiedGitBackend {
             return Ok(());
         }
 
-        // Try GitHub attestations first (if enabled globally and for github backend)
+        // Try GitHub artifact attestations first (if enabled globally and for github backend)
         if settings.github_attestations && settings.github.github_attestations {
             match self
                 .try_verify_github_attestations(ctx, tv, file_path)
@@ -1084,17 +1084,17 @@ impl UnifiedGitBackend {
                 Ok(false) => {
                     // Attestations exist but verification failed - hard error
                     return Err(eyre::eyre!(
-                        "GitHub attestations verification failed for {tv}"
+                        "GitHub artifact attestations verification failed for {tv}"
                     ));
                 }
                 Err(VerificationStatus::NoAttestations) => {
                     // No attestations - fall through to try SLSA
-                    debug!("No GitHub attestations found for {tv}, trying SLSA");
+                    debug!("No GitHub artifact attestations found for {tv}, trying SLSA");
                 }
                 Err(VerificationStatus::Error(e)) => {
                     // Error during verification - hard error
                     return Err(eyre::eyre!(
-                        "GitHub attestations verification error for {tv}: {e}"
+                        "GitHub artifact attestations verification error for {tv}: {e}"
                     ));
                 }
             }
@@ -1122,7 +1122,7 @@ impl UnifiedGitBackend {
         Ok(())
     }
 
-    /// Try to verify GitHub attestations. Returns:
+    /// Try to verify GitHub artifact attestations. Returns:
     /// - Ok(true) if attestations exist and verified successfully
     /// - Ok(false) if attestations exist but verification failed
     /// - Err(NoAttestations) if no attestations found
@@ -1133,7 +1133,7 @@ impl UnifiedGitBackend {
         tv: &ToolVersion,
         file_path: &std::path::Path,
     ) -> std::result::Result<bool, VerificationStatus> {
-        ctx.pr.set_message("verify GitHub attestations".to_string());
+        ctx.pr.set_message("verify GitHub artifact attestations".to_string());
 
         // Parse owner/repo from the repo string
         let repo = self.repo();
@@ -1157,8 +1157,8 @@ impl UnifiedGitBackend {
             Ok(verified) => {
                 if verified {
                     ctx.pr
-                        .set_message("✓ GitHub attestations verified".to_string());
-                    debug!("GitHub attestations verified successfully for {tv}");
+                        .set_message("✓ GitHub artifact attestations verified".to_string());
+                    debug!("GitHub artifact attestations verified successfully for {tv}");
                 }
                 Ok(verified)
             }

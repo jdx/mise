@@ -128,7 +128,7 @@ Don't do this inside of scripts because mise may add a command in a future versi
 
 ## Software verification
 
-mise provides **native software verification** for aqua tools without requiring external dependencies. For aqua tools, Cosign/Minisign signatures, SLSA provenance, and GitHub attestations are verified automatically using mise's built-in implementation.
+mise provides **native software verification** for aqua tools without requiring external dependencies. For aqua tools, Cosign/Minisign signatures, SLSA provenance, and GitHub artifact attestations are verified automatically using mise's built-in implementation.
 
 For other verification needs (like GPG), you can install additional tools:
 

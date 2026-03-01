@@ -86,7 +86,7 @@ GitHub Artifact Attestations provide cryptographic proof that artifacts were bui
 **Configuration:**
 
 ```bash
-# Enable/disable GitHub attestations verification (default: true)
+# Enable/disable GitHub artifact attestations verification (default: true)
 export MISE_AQUA_GITHUB_ATTESTATIONS=true
 ```
 
@@ -146,7 +146,7 @@ During tool installation, mise will:
 
 ```
 ✓ Downloaded cli/cli v2.50.0
-✓ GitHub attestations verified
+✓ GitHub artifact attestations verified
 ✓ Tool installed successfully
 ```
 

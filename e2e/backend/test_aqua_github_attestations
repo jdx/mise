@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# Test native GitHub attestations verification for aqua packages
+# Test native GitHub artifact attestations verification for aqua packages
 
 set -euo pipefail
 
 export MISE_EXPERIMENTAL=1
 export MISE_AQUA_GITHUB_ATTESTATIONS=true
 
-echo "=== Testing Native GitHub Attestations Verification ==="
+echo "=== Testing Native GitHub Artifact Attestations Verification ==="
 
 # Test: Install goreleaser which has GitHub artifact attestations configured (v2.7.0+)
-echo "Installing goreleaser with native GitHub attestations verification..."
+echo "Installing goreleaser with native GitHub artifact attestations verification..."
 
 # Capture the installation output to verify the native verification is being used
 output=$(mise install aqua:goreleaser/goreleaser@latest 2>&1)
 echo "$output"
 
-# Verify the native GitHub attestations verification was used
-if echo "$output" | grep -q "verify GitHub attestations"; then
-	echo "✅ Native GitHub attestations verification was used"
+# Verify the native GitHub artifact attestations verification was used
+if echo "$output" | grep -q "verify GitHub artifact attestations"; then
+	echo "✅ Native GitHub artifact attestations verification was used"
 else
-	echo "❌ ERROR: GitHub attestations verification message not found in output"
+	echo "❌ ERROR: GitHub artifact attestations verification message not found in output"
 	echo "Output was:"
 	echo "$output"
 	exit 1
@@ -35,4 +35,4 @@ else
 fi
 
 echo ""
-echo "=== Native GitHub Attestations Verification Test Passed ✓ ==="
+echo "=== Native GitHub Artifact Attestations Verification Test Passed ✓ ==="

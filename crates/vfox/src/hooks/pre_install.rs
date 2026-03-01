@@ -77,7 +77,7 @@ impl FromLua for PreInstallAttestation {
     fn from_lua(value: Value, _: &Lua) -> std::result::Result<Self, LuaError> {
         match value {
             Value::Table(table) => {
-                validate_github_attestation_params(&table)?;
+                validate_github_artifact_attestation_params(&table)?;
                 validate_cosign_attestation_params(&table)?;
                 validate_slsa_attestation_params(&table)?;
 
@@ -103,17 +103,17 @@ impl FromLua for PreInstallAttestation {
     }
 }
 
-/// Validates that if one of the GitHub attestation parameters are set, the other requisite
+/// Validates that if one of the GitHub artifact attestation parameters are set, the other requisite
 /// parameters are also set.
 ///
 /// `github_repo` requires `github_owner` and vice versa, and `github_signer_workflow` requires
 /// both aforementioned parameters.
-fn validate_github_attestation_params(table: &Table) -> std::result::Result<(), LuaError> {
+fn validate_github_artifact_attestation_params(table: &Table) -> std::result::Result<(), LuaError> {
     if table.contains_key("github_owner")? && !table.contains_key("github_repo")? {
         return Err(LuaError::FromLuaConversionError {
             from: "table",
             to: "PreInstallAttestation".into(),
-            message: Some("github_owner requires github_repo for attestation".to_string()),
+            message: Some("github_owner requires github_repo for artifact attestation".to_string()),
         });
     }
 
@@ -121,7 +121,7 @@ fn validate_github_attestation_params(table: &Table) -> std::result::Result<(), 
         return Err(LuaError::FromLuaConversionError {
             from: "table",
             to: "PreInstallAttestation".into(),
-            message: Some("github_repo requires github_owner for attestation".to_string()),
+            message: Some("github_repo requires github_owner for artifact attestation".to_string()),
         });
     }
 
@@ -132,7 +132,7 @@ fn validate_github_attestation_params(table: &Table) -> std::result::Result<(), 
             from: "table",
             to: "PreInstallAttestation".into(),
             message: Some(
-                "github_signer_workflow requires github_owner and github_repo for attestation"
+                "github_signer_workflow requires github_owner and github_repo for artifact attestation"
                     .to_string(),
             ),
         });

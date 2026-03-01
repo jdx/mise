@@ -363,7 +363,7 @@ impl Vfox {
             {
                 let token = std::env::var("MISE_GITHUB_TOKEN")
                     .or_else(|_| std::env::var("GITHUB_TOKEN"))
-                    .or(Err("GitHub attestation verification requires either the MISE_GITHUB_TOKEN or GITHUB_TOKEN environment variable set"))?;
+                    .or(Err("GitHub artifact attestation verification requires either the MISE_GITHUB_TOKEN or GITHUB_TOKEN environment variable set"))?;
                 sigstore_verification::verify_github_attestation(
                     file,
                     owner.as_str(),

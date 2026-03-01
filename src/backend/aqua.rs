@@ -134,7 +134,7 @@ impl Backend for AquaBackend {
             features.push(SecurityFeature::Checksum { algorithm });
         }
 
-        // GitHub Attestations - check registry config OR actual release assets
+        // GitHub Artifact Attestations - check registry config OR actual release assets
         let has_attestations_config = all_pkgs.iter().any(|p| {
             p.github_artifact_attestations
                 .as_ref()
@@ -920,7 +920,7 @@ impl AquaBackend {
     ) -> Result<()> {
         self.verify_slsa(ctx, tv, pkg, v, filename).await?;
         self.verify_minisign(ctx, tv, pkg, v, filename).await?;
-        self.verify_github_attestations(ctx, tv, pkg, v, filename)
+        self.verify_github_artifact_attestations(ctx, tv, pkg, v, filename)
             .await?;
 
         let download_path = tv.download_path();
@@ -1116,7 +1116,7 @@ impl AquaBackend {
         Ok(())
     }
 
-    async fn verify_github_attestations(
+    async fn verify_github_artifact_attestations(
         &self,
         ctx: &InstallContext,
         tv: &ToolVersion,
@@ -1127,17 +1127,17 @@ impl AquaBackend {
         // Check if attestations are enabled via global and aqua-specific settings
         let settings = Settings::get();
         if !settings.github_attestations || !settings.aqua.github_attestations {
-            debug!("GitHub attestations verification disabled");
+            debug!("GitHub artifact attestations verification disabled");
             return Ok(());
         }
 
         if let Some(github_attestations) = &pkg.github_artifact_attestations {
             if github_attestations.enabled == Some(false) {
-                debug!("GitHub attestations verification is disabled for {tv}");
+                debug!("GitHub artifact attestations verification is disabled for {tv}");
                 return Ok(());
             }
 
-            ctx.pr.set_message("verify GitHub attestations".to_string());
+            ctx.pr.set_message("verify GitHub artifact attestations".to_string());
 
             let artifact_path = tv.download_path().join(filename);
 
@@ -1158,22 +1158,22 @@ impl AquaBackend {
             {
                 Ok(true) => {
                     ctx.pr
-                        .set_message("✓ GitHub attestations verified".to_string());
-                    debug!("GitHub attestations verified successfully for {tv}");
+                        .set_message("✓ GitHub artifact attestations verified".to_string());
+                    debug!("GitHub artifact attestations verified successfully for {tv}");
                 }
                 Ok(false) => {
                     return Err(eyre!(
-                        "GitHub attestations verification returned false for {tv}"
+                        "GitHub artifact attestations verification returned false for {tv}"
                     ));
                 }
                 Err(sigstore_verification::AttestationError::NoAttestations) => {
                     return Err(eyre!(
-                        "No GitHub attestations found for {tv}, but attestations are expected per aqua registry configuration"
+                        "No GitHub artifact attestations found for {tv}, but they are expected per aqua registry configuration"
                     ));
                 }
                 Err(e) => {
                     return Err(eyre!(
-                        "GitHub attestations verification failed for {tv}: {e}"
+                        "GitHub artifact attestations verification failed for {tv}: {e}"
                     ));
                 }
             }
