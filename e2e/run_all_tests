@@ -17,15 +17,27 @@ if [[ -f $RELEASE_SKIP_FILE ]]; then
 fi
 
 pushd e2e
+# List test files with a portable fallback chain.
+list_test_files() {
+	local pattern="$1"
+	if command -v fd >/dev/null 2>&1; then
+		fd -tf -g "$pattern" | sort
+	elif command -v rg >/dev/null 2>&1; then
+		rg --files -g "$pattern" | sort
+	else
+		find . -type f -name "$pattern" | sed 's#^\./##' | sort
+	fi
+}
+
 # Avoid mapfile that is not available on bash 3.2 for compatibility with macOS
 SLOW_FILES=()
 while IFS= read -r line; do
 	SLOW_FILES+=("$line")
-done < <(fd -tf -g "test_*_slow" | sort)
+done < <(list_test_files "test_*_slow")
 FAST_FILES=()
 while IFS= read -r line; do
 	FAST_FILES+=("$line")
-done < <(fd -tf -g "test_*" | grep -v "_slow$" | sort)
+done < <(list_test_files "test_*" | grep -v "_slow$")
 popd
 FILES=("${FAST_FILES[@]}" "${SLOW_FILES[@]}")
 test_count=0
