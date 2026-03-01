@@ -1137,7 +1137,8 @@ impl AquaBackend {
                 return Ok(());
             }
 
-            ctx.pr.set_message("verify GitHub artifact attestations".to_string());
+            ctx.pr
+                .set_message("verify GitHub artifact attestations".to_string());
 
             let artifact_path = tv.download_path().join(filename);
 

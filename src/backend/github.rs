@@ -1133,7 +1133,8 @@ impl UnifiedGitBackend {
         tv: &ToolVersion,
         file_path: &std::path::Path,
     ) -> std::result::Result<bool, VerificationStatus> {
-        ctx.pr.set_message("verify GitHub artifact attestations".to_string());
+        ctx.pr
+            .set_message("verify GitHub artifact attestations".to_string());
 
         // Parse owner/repo from the repo string
         let repo = self.repo();

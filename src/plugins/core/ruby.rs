@@ -672,7 +672,8 @@ impl RubyPlugin {
             }
         };
 
-        ctx.pr.set_message("verify GitHub artifact attestations".to_string());
+        ctx.pr
+            .set_message("verify GitHub artifact attestations".to_string());
 
         match sigstore_verification::verify_github_attestation(
             tarball_path,
