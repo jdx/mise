@@ -67,15 +67,49 @@ Tool-level postinstall scripts receive the following environment variables:
 - `MISE_TOOL_VERSION`: The version that was installed (e.g., "20.10.0", "3.12.0")
 - `MISE_TOOL_INSTALL_PATH`: The path where the tool was installed
 
+## Task hooks
+
+Instead of inline scripts, hooks can reference mise tasks. The task is executed as a subprocess
+via `mise run`, so it reuses the full task system including dependencies, environment variables,
+and file-based task definitions.
+
+```toml
+[tasks.setup]
+run = "echo 'setting up project'"
+depends = ["install-deps"]
+
+[hooks]
+enter = { task = "setup" }
+```
+
+You can mix task references with inline scripts in arrays:
+
+```toml
+[hooks]
+enter = ["echo 'entering project'", { task = "setup" }]
+```
+
+Task hooks work with all hook types (`enter`, `leave`, `cd`, `preinstall`, `postinstall`).
+
 ## Watch files hook
 
-While using `mise activate` you can have mise watch files for changes and execute a script when a file changes.
+While using `mise activate` you can have mise watch files for changes and execute a script or task when a file changes.
 
-```bash
+```toml
 [[watch_files]]
 patterns = ["src/**/*.rs"]
 run = "cargo fmt"
 ```
+
+You can also reference a mise task instead of an inline script:
+
+```toml
+[[watch_files]]
+patterns = ["uv.lock"]
+task = "sync-deps"
+```
+
+Each `[[watch_files]]` entry should have either `run` or `task`, but not both.
 
 This hook will have the following environment variables set:
 
