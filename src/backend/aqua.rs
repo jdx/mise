@@ -10,7 +10,7 @@ use crate::file::TarOptions;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
-use crate::path::{Path, PathBuf};
+use crate::path::{Path, PathBuf, PathExt};
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
 use crate::toolset::ToolVersion;
@@ -472,19 +472,38 @@ impl Backend for AquaBackend {
         }
 
         let install_path = tv.install_path();
-        let pkg = AQUA_REGISTRY
-            .package_with_version(&self.id, &[&tv.version])
-            .await?;
+        let cache: CacheManager<Vec<PathBuf>> =
+            CacheManagerBuilder::new(tv.cache_path().join("bin_paths.msgpack.z"))
+                .with_fresh_file(install_path.clone())
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+                .build();
 
-        let srcs = self.srcs(&pkg, tv)?;
-        let paths: Vec<PathBuf> = if srcs.is_empty() {
-            vec![install_path.clone()]
-        } else {
-            srcs.iter()
-                .map(|(_, dst)| dst.parent().unwrap().to_path_buf())
-                .collect()
-        };
-        Ok(paths.into_iter().unique().filter(|p| p.exists()).collect())
+        let paths = cache
+            .get_or_try_init_async(async || {
+                let pkg = AQUA_REGISTRY
+                    .package_with_version(&self.id, &[&tv.version])
+                    .await?;
+
+                let srcs = self.srcs(&pkg, tv)?;
+                let paths = if srcs.is_empty() {
+                    vec![install_path.clone()]
+                } else {
+                    srcs.iter()
+                        .map(|(_, dst)| dst.parent().unwrap().to_path_buf())
+                        .collect()
+                };
+                Ok(paths
+                    .into_iter()
+                    .unique()
+                    .filter(|p| p.exists())
+                    .map(|p| p.strip_prefix(&install_path).unwrap().to_path_buf())
+                    .collect())
+            })
+            .await?
+            .iter()
+            .map(|p| p.mount(&install_path))
+            .collect();
+        Ok(paths)
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
