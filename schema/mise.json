@@ -2154,7 +2154,14 @@
             }
           }
         },
-        "oneOf": [{ "required": ["run"] }, { "required": ["task"] }]
+        "oneOf": [
+          {
+            "required": ["run"]
+          },
+          {
+            "required": ["task"]
+          }
+        ]
       }
     },
     "prepare_provider": {
