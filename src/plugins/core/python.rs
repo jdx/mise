@@ -191,14 +191,12 @@ impl PythonPlugin {
                         } else {
                             1
                         }
+                    } else if name.contains("install_only_stripped") {
+                        0
+                    } else if name.contains("install_only") {
+                        1
                     } else {
-                        if name.contains("install_only_stripped") {
-                            0
-                        } else if name.contains("install_only") {
-                            1
-                        } else {
-                            2
-                        }
+                        2
                     };
                     (v, rc, -date, install_type)
                 };
