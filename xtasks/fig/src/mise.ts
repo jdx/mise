@@ -1924,13 +1924,17 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: "--explain",
-          description: "Show why a specific provider is fresh or stale",
+          description:
+            "Show why a provider is fresh or stale (requires a provider argument)",
           isRepeatable: false,
-          args: {
-            name: "explain",
-          },
         },
       ],
+      args: {
+        name: "provider",
+        description:
+          "Provider to operate on (runs only this provider, or use with --explain)",
+        isOptional: true,
+      },
     },
     {
       name: "prune",

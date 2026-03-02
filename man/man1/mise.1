@@ -1659,7 +1659,7 @@ if needed.
 Providers with `auto = true` are automatically invoked before `mise x` and `mise run`
 unless skipped with the \-\-no\-prepare flag.
 .PP
-\fBUsage:\fR mise prepare [OPTIONS]
+\fBUsage:\fR mise prepare [OPTIONS] [<PROVIDER>]
 .PP
 \fBOptions:\fR
 .PP
@@ -1679,8 +1679,13 @@ Run specific prepare rule(s) only
 \fB\-\-skip\fR \fI<SKIP>\fR
 Skip specific prepare rule(s)
 .TP
-\fB\-\-explain\fR \fI<EXPLAIN>\fR
-Show why a specific provider is fresh or stale
+\fB\-\-explain\fR
+Show why a provider is fresh or stale (requires a provider argument)
+\fBArguments:\fR
+.PP
+.TP
+\fB<PROVIDER>\fR
+Provider to operate on (runs only this provider, or use with \-\-explain)
 .SH "MISE PRUNE"
 Delete unused versions of tools
 
