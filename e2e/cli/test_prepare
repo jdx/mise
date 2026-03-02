@@ -293,7 +293,7 @@ touch src_input.txt
 
 # Test --explain with missing output (stale)
 rm -rf out_dir
-mise prepare --explain explain_test >.explain_out 2>&1 || true
+mise prepare explain_test --explain >.explain_out 2>&1 || true
 assert_contains "cat .explain_out" "Provider: explain_test"
 assert_contains "cat .explain_out" "Auto: yes"
 assert_contains "cat .explain_out" "Sources:"
@@ -305,12 +305,12 @@ assert_contains "cat .explain_out" "stale"
 mkdir -p out_dir
 touch -t 202301010000 src_input.txt
 touch -t 202401010000 out_dir
-mise prepare --explain explain_test >.explain_out 2>&1
+mise prepare explain_test --explain >.explain_out 2>&1
 assert_contains "cat .explain_out" "Provider: explain_test"
 assert_contains "cat .explain_out" "fresh"
 
 # Test --explain with unknown provider
-mise prepare --explain nonexistent >.explain_out 2>&1 || true
+mise prepare nonexistent --explain >.explain_out 2>&1 || true
 assert_contains "cat .explain_out" "not found"
 
 rm -rf src_input.txt out_dir mise.toml .explain_out

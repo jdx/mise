@@ -154,6 +154,12 @@ status.show_prepare_stale = false
 # Run all applicable prepare steps
 mise prepare
 
+# Run only a specific provider
+mise prepare npm
+
+# Show why a provider is fresh or stale
+mise prepare npm --explain
+
 # Show what would run without executing
 mise prepare --dry-run
 
@@ -163,14 +169,8 @@ mise prepare --force
 # List available prepare providers
 mise prepare --list
 
-# Run only specific providers
-mise prepare --only npm --only codegen
-
 # Skip specific providers
 mise prepare --skip npm
-
-# Show why a provider is fresh or stale
-mise prepare --explain npm
 ```
 
 ## Parallel Execution

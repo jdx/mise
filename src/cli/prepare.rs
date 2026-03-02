@@ -16,6 +16,9 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "prep", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Prepare {
+    /// Provider to operate on (runs only this provider, or use with --explain)
+    pub provider: Option<String>,
+
     /// Force run all prepare steps even if outputs are fresh
     #[clap(long, short)]
     pub force: bool,
@@ -36,9 +39,9 @@ pub struct Prepare {
     #[clap(long)]
     pub skip: Option<Vec<String>>,
 
-    /// Show why a specific provider is fresh or stale
+    /// Show why a provider is fresh or stale (requires a provider argument)
     #[clap(long)]
-    pub explain: Option<String>,
+    pub explain: bool,
 }
 
 impl Prepare {
@@ -51,7 +54,10 @@ impl Prepare {
             return Ok(());
         }
 
-        if let Some(ref provider_id) = self.explain {
+        if self.explain {
+            let Some(ref provider_id) = self.provider else {
+                bail!("--explain requires a provider argument, e.g.: mise prepare npm --explain");
+            };
             return self.explain_provider(&engine, provider_id);
         }
 
@@ -67,10 +73,23 @@ impl Prepare {
         // Get toolset environment with PATH
         let env = ts.env_with_path(&config).await?;
 
+        // If a provider is specified as a positional arg, treat it like --only
+        let only = match (&self.provider, &self.only) {
+            (Some(p), None) => Some(vec![p.clone()]),
+            (Some(p), Some(list)) => {
+                let mut combined = list.clone();
+                if !combined.contains(p) {
+                    combined.push(p.clone());
+                }
+                Some(combined)
+            }
+            (None, only) => only.clone(),
+        };
+
         let opts = PrepareOptions {
             dry_run: self.dry_run,
             force: self.force,
-            only: self.only,
+            only,
             skip: self.skip.unwrap_or_default(),
             env,
             ..Default::default()
@@ -194,12 +213,12 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise prepare</bold>              # Run all applicable prepare steps
+    $ <bold>mise prepare npm</bold>          # Run only npm prepare
+    $ <bold>mise prepare npm --explain</bold> # Show why npm is fresh or stale
     $ <bold>mise prepare --dry-run</bold>    # Show what would run without executing
     $ <bold>mise prepare --force</bold>      # Force run even if outputs are fresh
     $ <bold>mise prepare --list</bold>       # List available prepare providers
-    $ <bold>mise prepare --only npm</bold>   # Run only npm prepare
     $ <bold>mise prepare --skip npm</bold>   # Skip npm prepare
-    $ <bold>mise prepare --explain npm</bold> # Show why npm is fresh or stale
 
 <bold><underline>Configuration:</underline></bold>
 
