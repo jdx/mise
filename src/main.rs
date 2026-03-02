@@ -36,6 +36,7 @@ pub(crate) mod build_time;
 mod cache;
 mod cli;
 mod config;
+pub(crate) mod deps_graph;
 mod direnv;
 mod dirs;
 pub(crate) mod duration;

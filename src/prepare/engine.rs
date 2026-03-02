@@ -411,6 +411,7 @@ impl PrepareEngine {
     ) -> Result<Vec<StepOutput>> {
         let mpr = MultiProgressReport::get();
         let results: Arc<Mutex<Vec<StepOutput>>> = Arc::new(Mutex::new(vec![]));
+        let errors: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(vec![]));
 
         // Build jobs map for lookup
         let running_ids: HashSet<String> = to_run.iter().map(|j| j.id.clone()).collect();
@@ -479,6 +480,7 @@ impl PrepareEngine {
                         }
                         Ok(Err((id, e))) => {
                             warn!("prepare provider '{}' failed: {}", id, e);
+                            errors.lock().unwrap().push((id.clone(), e.to_string()));
                             results.lock().unwrap().push((PrepareStepResult::Failed(id.clone()), vec![]));
                             deps.lock().unwrap().complete_failure(&id);
                             // Block dependents with Skipped results
@@ -566,6 +568,7 @@ impl PrepareEngine {
                 }
                 Ok(Err((id, e))) => {
                     warn!("prepare provider '{}' failed: {}", id, e);
+                    errors.lock().unwrap().push((id.clone(), e.to_string()));
                     results
                         .lock()
                         .unwrap()
@@ -578,18 +581,14 @@ impl PrepareEngine {
         }
 
         let results = Arc::try_unwrap(results).unwrap().into_inner().unwrap();
-        let failed: Vec<_> = results
-            .iter()
-            .filter_map(|(r, _)| match r {
-                PrepareStepResult::Failed(id) => Some(id.as_str()),
-                _ => None,
-            })
-            .collect();
-        if !failed.is_empty() {
-            return Err(eyre::eyre!(
-                "prepare providers failed: {}",
-                failed.join(", ")
-            ));
+        let errors = Arc::try_unwrap(errors).unwrap().into_inner().unwrap();
+        if !errors.is_empty() {
+            let details = errors
+                .iter()
+                .map(|(id, msg)| format!("  {id}: {msg}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            return Err(eyre::eyre!("prepare providers failed:\n{details}"));
         }
         Ok(results)
     }
