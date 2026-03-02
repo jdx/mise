@@ -20,8 +20,8 @@ use super::PrepareProvider;
 use super::prepare_deps::PrepareDeps;
 use super::providers::{
     BunPrepareProvider, BundlerPrepareProvider, ComposerPrepareProvider, CustomPrepareProvider,
-    GoPrepareProvider, NpmPrepareProvider, PipPrepareProvider, PnpmPrepareProvider,
-    PoetryPrepareProvider, UvPrepareProvider, YarnPrepareProvider,
+    GitSubmodulePrepareProvider, GoPrepareProvider, NpmPrepareProvider, PipPrepareProvider,
+    PnpmPrepareProvider, PoetryPrepareProvider, UvPrepareProvider, YarnPrepareProvider,
 };
 use super::rule::BUILTIN_PROVIDERS;
 
@@ -204,6 +204,10 @@ impl PrepareEngine {
                     provider_config,
                 ))),
                 "composer" => Some(Box::new(ComposerPrepareProvider::new(
+                    config_root,
+                    provider_config,
+                ))),
+                "git-submodule" => Some(Box::new(GitSubmodulePrepareProvider::new(
                     config_root,
                     provider_config,
                 ))),
