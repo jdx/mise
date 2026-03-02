@@ -1892,11 +1892,6 @@ const completionSpec: Fig.Spec = {
       description: "[experimental] Ensure project dependencies are ready",
       options: [
         {
-          name: ["-n", "--dry-run"],
-          description: "Only check if prepare is needed, don't run commands",
-          isRepeatable: false,
-        },
-        {
           name: "--explain",
           description:
             "Show why a provider is fresh or stale (requires a provider argument)",
@@ -1905,6 +1900,11 @@ const completionSpec: Fig.Spec = {
         {
           name: ["-f", "--force"],
           description: "Force run all prepare steps even if outputs are fresh",
+          isRepeatable: false,
+        },
+        {
+          name: ["-n", "--dry-run"],
+          description: "Only check if prepare is needed, don't run commands",
           isRepeatable: false,
         },
         {
