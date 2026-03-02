@@ -35,6 +35,10 @@ pub struct Prepare {
     /// Skip specific prepare rule(s)
     #[clap(long)]
     pub skip: Option<Vec<String>>,
+
+    /// Show why a specific provider is fresh or stale
+    #[clap(long)]
+    pub explain: Option<String>,
 }
 
 impl Prepare {
@@ -45,6 +49,10 @@ impl Prepare {
         if self.list {
             self.list_providers(&engine)?;
             return Ok(());
+        }
+
+        if let Some(ref provider_id) = self.explain {
+            return self.explain_provider(&engine, provider_id);
         }
 
         // Build and install toolset so tools like npm are available
@@ -95,6 +103,62 @@ impl Prepare {
         Ok(())
     }
 
+    fn explain_provider(&self, engine: &PrepareEngine, provider_id: &str) -> Result<()> {
+        let Some(provider) = engine.find_provider(provider_id) else {
+            miseprintln!("Provider '{}' not found", provider_id);
+            miseprintln!("");
+            miseprintln!("Available providers:");
+            for p in engine.list_providers() {
+                miseprintln!("  {}", p.id());
+            }
+            std::process::exit(1);
+        };
+
+        let freshness = engine.check_provider_freshness(provider)?;
+
+        // Header
+        miseprintln!("Provider: {}", provider.id());
+        miseprintln!("Auto: {}", if provider.is_auto() { "yes" } else { "no" });
+
+        // Sources
+        let sources = provider.sources();
+        miseprintln!("Sources:");
+        for source in &sources {
+            let exists = source.exists();
+            let marker = if exists { "+" } else { "-" };
+            miseprintln!("  {} {}", marker, source.display());
+        }
+
+        // Outputs
+        let outputs = provider.outputs();
+        miseprintln!("Outputs:");
+        for output in &outputs {
+            let exists = output.exists();
+            let marker = if exists { "+" } else { "-" };
+            miseprintln!("  {} {}", marker, output.display());
+        }
+
+        // Command
+        if let Ok(cmd) = provider.prepare_command() {
+            miseprintln!("Command: {} {}", cmd.program, cmd.args.join(" "));
+        }
+
+        // Verdict
+        miseprintln!("");
+        if freshness.is_fresh() {
+            miseprintln!("Status: fresh ({})", freshness.reason());
+        } else {
+            miseprintln!("Status: stale ({})", freshness.reason());
+        }
+
+        // Exit code: 0 if fresh, 1 if stale
+        if !freshness.is_fresh() {
+            std::process::exit(1);
+        }
+
+        Ok(())
+    }
+
     fn list_providers(&self, engine: &PrepareEngine) -> Result<()> {
         let providers = engine.list_providers();
 
@@ -136,6 +200,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise prepare --list</bold>       # List available prepare providers
     $ <bold>mise prepare --only npm</bold>   # Run only npm prepare
     $ <bold>mise prepare --skip npm</bold>   # Skip npm prepare
+    $ <bold>mise prepare --explain npm</bold> # Show why npm is fresh or stale
 
 <bold><underline>Configuration:</underline></bold>
 

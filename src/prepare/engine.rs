@@ -296,6 +296,22 @@ impl PrepareEngine {
         self.providers.iter().map(|p| p.as_ref()).collect()
     }
 
+    /// Find a specific provider by ID
+    pub fn find_provider(&self, id: &str) -> Option<&dyn PrepareProvider> {
+        self.providers
+            .iter()
+            .find(|p| p.id() == id)
+            .map(|p| p.as_ref())
+    }
+
+    /// Check freshness for a specific provider (public API for --why)
+    pub fn check_provider_freshness(
+        &self,
+        provider: &dyn PrepareProvider,
+    ) -> Result<FreshnessResult> {
+        self.check_freshness(provider)
+    }
+
     /// Check if any auto-enabled provider has stale outputs (without running)
     /// Returns the IDs and reasons of stale providers
     pub fn check_staleness(&self) -> Vec<(&str, String)> {
@@ -475,8 +491,8 @@ impl PrepareEngine {
                 )))
             }
             (Some(_), Some(_)) => Ok(FreshnessResult::Fresh),
-            (_, None) => Ok(FreshnessResult::Stale(
-                "could not determine modification time of outputs".to_string(),
+            (_, None) => Ok(FreshnessResult::OutputsMissing(
+                "outputs do not exist".to_string(),
             )),
             (None, _) => Ok(FreshnessResult::NoSources),
         }
