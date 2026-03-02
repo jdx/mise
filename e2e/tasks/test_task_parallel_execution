@@ -93,9 +93,15 @@ for test_run in {1..3}; do
 	echo "Task execution log:"
 	cat "$temp_log" | sort
 
-	# Parse start times to check if tasks started concurrently
-	mapfile -t start_times < <(grep "start" "$temp_log" | awk '{print $1}' | sort -n)
-	mapfile -t end_times < <(grep "end" "$temp_log" | awk '{print $1}' | sort -n)
+	# Parse start/end times using bash3-compatible arrays (mapfile is bash4+).
+	start_times=()
+	while IFS= read -r ts; do
+		start_times+=("$ts")
+	done < <(grep "start" "$temp_log" | awk '{print $1}' | sort -n)
+	end_times=()
+	while IFS= read -r ts; do
+		end_times+=("$ts")
+	done < <(grep "end" "$temp_log" | awk '{print $1}' | sort -n)
 
 	echo "Analyzing task start times..."
 
