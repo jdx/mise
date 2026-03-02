@@ -73,7 +73,7 @@ impl SwiftPlugin {
                     .path()
                     .to_path_buf()
             };
-            CmdLineRunner::new("pkgutil")
+            CmdLineRunner::new(pkgutil_path())
                 .arg("--expand-full")
                 .arg(tarball_path)
                 .arg(&tmp)
@@ -149,6 +149,51 @@ impl SwiftPlugin {
 
     fn gpg<'a>(&self, ctx: &'a InstallContext) -> CmdLineRunner<'a> {
         CmdLineRunner::new("gpg").with_pr(ctx.pr.as_ref())
+    }
+}
+
+#[cfg(macos)]
+fn pkgutil_path() -> PathBuf {
+    resolve_pkgutil_path(file::which("pkgutil"))
+}
+
+#[cfg(macos)]
+fn resolve_pkgutil_path(which_result: Option<PathBuf>) -> PathBuf {
+    if let Some(path) = which_result {
+        return path;
+    }
+    let fallback = PathBuf::from("/usr/sbin/pkgutil");
+    if file::is_executable(&fallback) {
+        fallback
+    } else {
+        PathBuf::from("pkgutil")
+    }
+}
+
+#[cfg(all(test, macos))]
+mod tests {
+    use super::resolve_pkgutil_path;
+    use crate::file;
+    use std::path::PathBuf;
+
+    #[test]
+    fn resolve_pkgutil_path_prefers_discovered_path() {
+        let discovered = PathBuf::from("/tmp/custom/pkgutil");
+        assert_eq!(
+            resolve_pkgutil_path(Some(discovered.clone())),
+            discovered
+        );
+    }
+
+    #[test]
+    fn resolve_pkgutil_path_falls_back_to_system_location() {
+        let resolved = resolve_pkgutil_path(None);
+        let fallback = PathBuf::from("/usr/sbin/pkgutil");
+        if file::is_executable(&fallback) {
+            assert_eq!(resolved, fallback);
+        } else {
+            assert_eq!(resolved, PathBuf::from("pkgutil"));
+        }
     }
 }
 
