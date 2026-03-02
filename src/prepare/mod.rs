@@ -115,8 +115,12 @@ pub fn notify_if_stale(config: &Arc<Config>) {
 
     let stale = engine.check_staleness();
     if !stale.is_empty() {
-        let providers = stale.join(", ");
-        warn!("prepare: {providers} may need update, run `mise prep`");
+        let providers: Vec<String> = stale
+            .iter()
+            .map(|(id, reason)| format!("{id} ({reason})"))
+            .collect();
+        let summary = providers.join(", ");
+        warn!("prepare: {summary} — run `mise prep`");
     }
 }
 

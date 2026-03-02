@@ -37,13 +37,50 @@ pub struct PrepareOptions {
     pub auto_only: bool,
 }
 
+/// Result of a freshness check with human-readable reason
+#[derive(Debug, Clone)]
+pub enum FreshnessResult {
+    /// Outputs are up to date
+    Fresh,
+    /// No outputs defined — always run
+    NoOutputs,
+    /// Output was created this session (e.g., auto-created venv)
+    SessionStale(String),
+    /// Some output files/dirs don't exist yet
+    OutputsMissing(String),
+    /// Sources are newer than outputs
+    Stale(String),
+    /// No sources exist — consider fresh
+    NoSources,
+    /// Forced by user request
+    Forced,
+}
+
+impl FreshnessResult {
+    pub fn is_fresh(&self) -> bool {
+        matches!(self, FreshnessResult::Fresh | FreshnessResult::NoSources)
+    }
+
+    pub fn reason(&self) -> &str {
+        match self {
+            FreshnessResult::Fresh => "up to date",
+            FreshnessResult::NoOutputs => "no outputs defined",
+            FreshnessResult::SessionStale(r) => r,
+            FreshnessResult::OutputsMissing(r) => r,
+            FreshnessResult::Stale(r) => r,
+            FreshnessResult::NoSources => "no sources",
+            FreshnessResult::Forced => "forced",
+        }
+    }
+}
+
 /// Result of a prepare step
 #[derive(Debug)]
 pub enum PrepareStepResult {
     /// Step ran successfully
     Ran(String),
-    /// Step would have run (dry-run mode)
-    WouldRun(String),
+    /// Step would have run (dry-run mode) — (id, reason)
+    WouldRun(String, String),
     /// Step was skipped because outputs are fresh
     Fresh(String),
     /// Step was skipped by user request
@@ -70,7 +107,7 @@ impl PrepareResult {
         self.steps.iter().any(|s| {
             matches!(
                 s,
-                PrepareStepResult::Ran(_) | PrepareStepResult::WouldRun(_)
+                PrepareStepResult::Ran(_) | PrepareStepResult::WouldRun(_, _)
             )
         })
     }
@@ -260,13 +297,18 @@ impl PrepareEngine {
     }
 
     /// Check if any auto-enabled provider has stale outputs (without running)
-    /// Returns the IDs of stale providers
-    pub fn check_staleness(&self) -> Vec<&str> {
+    /// Returns the IDs and reasons of stale providers
+    pub fn check_staleness(&self) -> Vec<(&str, String)> {
         self.providers
             .iter()
             .filter(|p| p.is_auto())
-            .filter(|p| !self.check_freshness(p.as_ref()).unwrap_or(true))
-            .map(|p| p.id())
+            .filter_map(|p| {
+                let result = self.check_freshness(p.as_ref());
+                match result {
+                    Ok(r) if !r.is_fresh() => Some((p.id(), r.reason().to_string())),
+                    _ => None,
+                }
+            })
             .collect()
     }
 
@@ -301,20 +343,21 @@ impl PrepareEngine {
                 continue;
             }
 
-            let is_fresh = if opts.force {
-                false
+            let freshness = if opts.force {
+                FreshnessResult::Forced
             } else {
                 self.check_freshness(provider.as_ref())?
             };
 
-            if !is_fresh {
+            if !freshness.is_fresh() {
+                let reason = freshness.reason().to_string();
                 let cmd = provider.prepare_command()?;
                 let outputs = provider.outputs();
                 let touch = provider.touch_outputs();
 
                 if opts.dry_run {
                     // Just record that it would run, let CLI handle output
-                    results.push(PrepareStepResult::WouldRun(id));
+                    results.push(PrepareStepResult::WouldRun(id, reason));
                 } else {
                     to_run.push(PrepareJob {
                         id,
@@ -377,32 +420,65 @@ impl PrepareEngine {
     }
 
     /// Check if outputs are newer than sources (stateless mtime comparison)
-    fn check_freshness(&self, provider: &dyn PrepareProvider) -> Result<bool> {
+    /// Returns a FreshnessResult with a human-readable reason
+    fn check_freshness(&self, provider: &dyn PrepareProvider) -> Result<FreshnessResult> {
         let sources = provider.sources();
         let outputs = provider.outputs();
 
         if outputs.is_empty() {
-            return Ok(false); // No outputs defined, always run to be safe
+            return Ok(FreshnessResult::NoOutputs);
         }
 
         // Check if any output was created this session (before prepare ran)
         // This handles the case where venv is auto-created but packages aren't installed yet
         for output in &outputs {
             if super::is_output_stale(output) {
-                return Ok(false); // Created this session, needs prepare
+                return Ok(FreshnessResult::SessionStale(format!(
+                    "{} created this session",
+                    output.display()
+                )));
             }
         }
 
-        // Note: empty sources is handled below - last_modified([]) returns None,
-        // and if outputs don't exist either, (_, None) takes precedence → stale
+        // Check for missing outputs
+        for output in &outputs {
+            if !output.exists() {
+                return Ok(FreshnessResult::OutputsMissing(format!(
+                    "{} does not exist",
+                    output.display()
+                )));
+            }
+        }
 
         let sources_mtime = Self::last_modified(&sources)?;
         let outputs_mtime = Self::last_modified(&outputs)?;
 
         match (sources_mtime, outputs_mtime) {
-            (Some(src), Some(out)) => Ok(src <= out), // Fresh if outputs newer or equal to sources
-            (_, None) => Ok(false), // No outputs exist, not fresh (takes precedence)
-            (None, _) => Ok(true),  // No sources exist, consider fresh
+            (Some(src), Some(out)) if src > out => {
+                // Find which source is newest to provide a helpful reason
+                let newest_source = sources
+                    .iter()
+                    .filter(|p| p.exists())
+                    .filter_map(|p| {
+                        let mtime = if p.is_dir() {
+                            Self::newest_file_in_dir(p, 3)
+                        } else {
+                            p.metadata().ok().and_then(|m| m.modified().ok())
+                        };
+                        mtime.map(|m| (p, m))
+                    })
+                    .max_by_key(|(_, m)| *m)
+                    .map(|(p, _)| p.display().to_string())
+                    .unwrap_or_else(|| "sources".to_string());
+                Ok(FreshnessResult::Stale(format!(
+                    "{newest_source} is newer than outputs"
+                )))
+            }
+            (Some(_), Some(_)) => Ok(FreshnessResult::Fresh),
+            (_, None) => Ok(FreshnessResult::OutputsMissing(
+                "outputs do not exist".to_string(),
+            )),
+            (None, _) => Ok(FreshnessResult::NoSources),
         }
     }
 

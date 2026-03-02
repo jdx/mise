@@ -256,9 +256,10 @@ cat >requirements.txt <<'EOF'
 requests==2.31.0
 EOF
 
-# Test 1: No output directory exists → should be stale
+# Test 1: No output directory exists → should be stale with reason
 rm -rf .venv
 assert_contains "mise prepare --dry-run" "custom_venv"
+assert_contains "mise prepare --dry-run" "does not exist"
 
 # Test 2: Output exists and is newer than sources → should be fresh
 # Use explicit timestamps: source=2023, output=2024
@@ -269,10 +270,11 @@ touch -t 202401010000 .venv            # Set directory mtime too (mkdir sets it 
 # In dry-run mode, fresh providers produce no output, so check provider name is absent
 assert_not_contains "mise prepare --dry-run" "custom_venv"
 
-# Test 3: Sources updated after output → should be stale
+# Test 3: Sources updated after output → should be stale with reason
 # source=2025 (newer than output=2024)
 touch -t 202501010000 requirements.txt # Jan 1, 2025
 assert_contains "mise prepare --dry-run" "custom_venv"
+assert_contains "mise prepare --dry-run" "is newer than outputs"
 
 # Clean up
 rm -rf .venv requirements.txt

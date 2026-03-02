@@ -76,8 +76,8 @@ impl Prepare {
                 PrepareStepResult::Ran(id) => {
                     miseprintln!("Prepared: {}", id);
                 }
-                PrepareStepResult::WouldRun(id) => {
-                    miseprintln!("[dry-run] Would prepare: {}", id);
+                PrepareStepResult::WouldRun(id, reason) => {
+                    miseprintln!("[dry-run] Would prepare: {} ({})", id, reason);
                 }
                 PrepareStepResult::Fresh(id) => {
                     debug!("Fresh: {}", id);
