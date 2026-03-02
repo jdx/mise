@@ -33,7 +33,9 @@ impl GitSubmodulePrepareProvider {
                 let line = line.trim();
                 if let Some(value) = line.strip_prefix("path") {
                     let value = value.trim_start();
-                    value.strip_prefix('=').map(|value| self.base.project_root.join(value.trim()))
+                    value
+                        .strip_prefix('=')
+                        .map(|value| self.base.project_root.join(value.trim()))
                 } else {
                     None
                 }
