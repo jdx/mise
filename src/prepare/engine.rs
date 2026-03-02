@@ -396,8 +396,8 @@ impl PrepareEngine {
 
             // Save content hashes for all successfully ran providers
             for step in &results {
-                if let PrepareStepResult::Ran(id) = step {
-                    if let Some(provider) = self.providers.iter().find(|p| p.id() == id) {
+                if let PrepareStepResult::Ran(id) = step
+                    && let Some(provider) = self.providers.iter().find(|p| p.id() == id) {
                         let project_root = &provider.base().project_root;
                         let sources = provider.sources();
                         if let Ok(hashes) = state::hash_sources(&sources, project_root) {
@@ -408,13 +408,11 @@ impl PrepareEngine {
                             }
                         }
                     }
-                }
             }
         }
 
         Ok(PrepareResult { steps: results })
     }
-
 
     /// Simple parallel execution (no dependency ordering)
     async fn run_parallel(
