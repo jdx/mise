@@ -37,6 +37,10 @@ Run specific prepare rule(s) only
 
 Skip specific prepare rule(s)
 
+### `--explain <EXPLAIN>`
+
+Show why a specific provider is fresh or stale
+
 Examples:
 
 ```
@@ -46,6 +50,7 @@ mise prepare --force      # Force run even if outputs are fresh
 mise prepare --list       # List available prepare providers
 mise prepare --only npm   # Run only npm prepare
 mise prepare --skip npm   # Skip npm prepare
+mise prepare --explain npm # Show why npm is fresh or stale
 ```
 
 Configuration:

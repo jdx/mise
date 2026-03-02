@@ -168,6 +168,9 @@ mise prepare --only npm --only codegen
 
 # Skip specific providers
 mise prepare --skip npm
+
+# Show why a provider is fresh or stale
+mise prepare --explain npm
 ```
 
 ## Parallel Execution
