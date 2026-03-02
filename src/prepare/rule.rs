@@ -49,6 +49,8 @@ pub struct PrepareProviderConfig {
     /// Other prepare providers that must complete before this one runs
     #[serde(default)]
     pub depends: Vec<String>,
+    /// Timeout in seconds for the run command (0 or absent = no timeout)
+    pub timeout: Option<u64>,
 }
 
 impl PrepareProviderConfig {
