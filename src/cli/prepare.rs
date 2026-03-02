@@ -85,6 +85,9 @@ impl Prepare {
                 PrepareStepResult::Skipped(id) => {
                     debug!("Skipped: {}", id);
                 }
+                PrepareStepResult::Failed(id) => {
+                    miseprintln!("Failed: {}", id);
+                }
             }
         }
 

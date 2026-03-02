@@ -50,6 +50,8 @@ pub enum PrepareStepResult {
     Fresh(String),
     /// Step was skipped by user request
     Skipped(String),
+    /// Step failed
+    Failed(String),
 }
 
 /// Result of running all prepare steps
@@ -477,6 +479,7 @@ impl PrepareEngine {
                         }
                         Ok(Err((id, e))) => {
                             warn!("prepare provider '{}' failed: {}", id, e);
+                            results.lock().unwrap().push((PrepareStepResult::Failed(id.clone()), vec![]));
                             deps.lock().unwrap().complete_failure(&id);
                             // Block dependents with Skipped results
                             let blocked = deps.lock().unwrap().blocked_providers();
@@ -552,6 +555,10 @@ impl PrepareEngine {
                 }
                 Ok(Err((id, e))) => {
                     warn!("prepare provider '{}' failed: {}", id, e);
+                    results
+                        .lock()
+                        .unwrap()
+                        .push((PrepareStepResult::Failed(id), vec![]));
                 }
                 Err(e) => {
                     warn!("prepare task panicked: {e}");
@@ -559,7 +566,21 @@ impl PrepareEngine {
             }
         }
 
-        Ok(Arc::try_unwrap(results).unwrap().into_inner().unwrap())
+        let results = Arc::try_unwrap(results).unwrap().into_inner().unwrap();
+        let failed: Vec<_> = results
+            .iter()
+            .filter_map(|(r, _)| match r {
+                PrepareStepResult::Failed(id) => Some(id.as_str()),
+                _ => None,
+            })
+            .collect();
+        if !failed.is_empty() {
+            return Err(eyre::eyre!(
+                "prepare providers failed: {}",
+                failed.join(", ")
+            ));
+        }
+        Ok(results)
     }
 
     /// Check if outputs are newer than sources (stateless mtime comparison)
