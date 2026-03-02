@@ -397,17 +397,18 @@ impl PrepareEngine {
             // Save content hashes for all successfully ran providers
             for step in &results {
                 if let PrepareStepResult::Ran(id) = step
-                    && let Some(provider) = self.providers.iter().find(|p| p.id() == id) {
-                        let project_root = &provider.base().project_root;
-                        let sources = provider.sources();
-                        if let Ok(hashes) = state::hash_sources(&sources, project_root) {
-                            let mut st = PrepareState::load(project_root);
-                            st.set_hashes(id, hashes);
-                            if let Err(e) = st.save(project_root) {
-                                warn!("failed to save prepare state: {e}");
-                            }
+                    && let Some(provider) = self.providers.iter().find(|p| p.id() == id)
+                {
+                    let project_root = &provider.base().project_root;
+                    let sources = provider.sources();
+                    if let Ok(hashes) = state::hash_sources(&sources, project_root) {
+                        let mut st = PrepareState::load(project_root);
+                        st.set_hashes(id, hashes);
+                        if let Err(e) = st.save(project_root) {
+                            warn!("failed to save prepare state: {e}");
                         }
                     }
+                }
             }
         }
 
