@@ -497,7 +497,9 @@ impl PrepareEngine {
                             }
                         }
                         Err(e) => {
-                            warn!("prepare task panicked: {e}");
+                            // Should not happen: panics are caught inside the task.
+                            // This would only fire on task cancellation.
+                            warn!("prepare task join error: {e}");
                         }
                     }
                 }
@@ -519,12 +521,14 @@ impl PrepareEngine {
 
                     join_set.spawn(async move {
                         let pr = mpr.add(&job.cmd.description);
-                        let result = Self::execute_prepare_static(&job.cmd, &toolset_env);
+                        let id = job.id;
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            Self::execute_prepare_static(&job.cmd, &toolset_env)
+                        }));
                         drop(permit);
 
-                        let id = job.id;
                         match result {
-                            Ok(()) => {
+                            Ok(Ok(())) => {
                                 if job.touch {
                                     Self::touch_outputs(&job.outputs);
                                 }
@@ -532,12 +536,19 @@ impl PrepareEngine {
                                 let step = PrepareStepResult::Ran(id.clone());
                                 Ok((id, step, job.outputs))
                             }
-                            Err(e) => {
+                            Ok(Err(e)) => {
                                 pr.finish_with_message(format!(
                                     "{} failed: {}",
                                     job.cmd.description, e
                                 ));
                                 Err((id, e))
+                            }
+                            Err(_) => {
+                                pr.finish_with_message(format!(
+                                    "{} panicked",
+                                    job.cmd.description
+                                ));
+                                Err((id, eyre::eyre!("task panicked")))
                             }
                         }
                     });
@@ -561,7 +572,7 @@ impl PrepareEngine {
                         .push((PrepareStepResult::Failed(id), vec![]));
                 }
                 Err(e) => {
-                    warn!("prepare task panicked: {e}");
+                    warn!("prepare task join error: {e}");
                 }
             }
         }
