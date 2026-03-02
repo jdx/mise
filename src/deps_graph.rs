@@ -291,6 +291,7 @@ where
 mod tests {
     use super::*;
 
+    #[allow(clippy::ptr_arg)]
     fn string_key(s: &String) -> String {
         s.clone()
     }
