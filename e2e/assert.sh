@@ -61,10 +61,10 @@ parse_timeout_seconds() {
 		echo "${duration%s}"
 		;;
 	*m)
-		echo $(( ${duration%m} * 60 ))
+		echo $((${duration%m} * 60))
 		;;
 	*h)
-		echo $(( ${duration%h} * 3600 ))
+		echo $((${duration%h} * 3600))
 		;;
 	*)
 		echo "$duration"
