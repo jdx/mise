@@ -1922,6 +1922,14 @@ const completionSpec: Fig.Spec = {
             name: "skip",
           },
         },
+        {
+          name: "--explain",
+          description: "Show why a specific provider is fresh or stale",
+          isRepeatable: false,
+          args: {
+            name: "explain",
+          },
+        },
       ],
     },
     {
