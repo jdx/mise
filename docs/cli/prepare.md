@@ -23,10 +23,6 @@ Provider to operate on (runs only this provider, or use with --explain)
 
 ## Flags
 
-### `-n --dry-run`
-
-Only check if prepare is needed, don't run commands
-
 ### `--explain`
 
 Show why a provider is fresh or stale (requires a provider argument)
@@ -34,6 +30,10 @@ Show why a provider is fresh or stale (requires a provider argument)
 ### `-f --force`
 
 Force run all prepare steps even if outputs are fresh
+
+### `-n --dry-run`
+
+Only check if prepare is needed, don't run commands
 
 ### `--list`
 

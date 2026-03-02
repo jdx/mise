@@ -19,10 +19,6 @@ pub struct Prepare {
     /// Provider to operate on (runs only this provider, or use with --explain)
     pub provider: Option<String>,
 
-    /// Only check if prepare is needed, don't run commands
-    #[clap(long, short = 'n')]
-    pub dry_run: bool,
-
     /// Show why a provider is fresh or stale (requires a provider argument)
     #[clap(long)]
     pub explain: bool,
@@ -30,6 +26,10 @@ pub struct Prepare {
     /// Force run all prepare steps even if outputs are fresh
     #[clap(long, short)]
     pub force: bool,
+
+    /// Only check if prepare is needed, don't run commands
+    #[clap(long, short = 'n')]
+    pub dry_run: bool,
 
     /// Show what prepare steps are available
     #[clap(long)]
