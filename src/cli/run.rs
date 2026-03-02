@@ -476,9 +476,13 @@ impl Run {
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let in_flight_c = ctx.in_flight.clone();
         trace!("running task: {task}");
+        // Mark task as executed synchronously before spawning so that the
+        // scheduler's failure-cleanup path (which checks is_runnable_post_dep)
+        // always sees the parent in `executed` — avoiding a race where a
+        // concurrent task fails between spawn and first poll.
+        deps_for_remove.lock().await.mark_executed(&task);
         ctx.jset.lock().await.spawn(async move {
             let _permit = permit_opt;
-            deps_for_remove.lock().await.mark_executed(&task);
             let result = this
                 .run_task_sched(&task, &ctx.config, ctx.sched_tx.clone())
                 .await;
