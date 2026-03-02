@@ -15,6 +15,43 @@ mod engine;
 pub(crate) mod prepare_deps;
 pub mod providers;
 mod rule;
+pub mod state;
+
+/// Result of a freshness check for a prepare provider
+#[derive(Debug, Clone)]
+pub enum FreshnessResult {
+    /// Outputs are up to date with sources
+    Fresh,
+    /// Provider has no outputs defined, always run to be safe
+    NoOutputs,
+    /// One or more output paths don't exist
+    OutputsMissing,
+    /// Sources have changed since last successful run
+    Stale(String),
+    /// Provider has no sources, consider fresh
+    NoSources,
+    /// Force flag was used
+    Forced,
+}
+
+impl FreshnessResult {
+    /// Returns true if the provider should be considered fresh (no work needed)
+    pub fn is_fresh(&self) -> bool {
+        matches!(self, FreshnessResult::Fresh | FreshnessResult::NoSources)
+    }
+
+    /// Human-readable reason string for display
+    pub fn reason(&self) -> &str {
+        match self {
+            FreshnessResult::Fresh => "outputs are up to date",
+            FreshnessResult::NoOutputs => "no outputs defined",
+            FreshnessResult::OutputsMissing => "outputs missing",
+            FreshnessResult::Stale(reason) => reason,
+            FreshnessResult::NoSources => "no sources to check",
+            FreshnessResult::Forced => "forced",
+        }
+    }
+}
 
 /// A command to execute for preparation
 #[derive(Debug, Clone)]

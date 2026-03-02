@@ -242,7 +242,7 @@ assert_contains "mise prepare --list" "composer"
 assert_contains "mise prepare --list" "composer.lock"
 assert_contains "mise prepare --dry-run" "composer"
 
-# Test freshness detection with output directories
+# Test freshness detection with content hashing
 rm -f composer.lock composer.json
 
 cat >mise.toml <<'EOF'
@@ -256,28 +256,25 @@ cat >requirements.txt <<'EOF'
 requests==2.31.0
 EOF
 
-# Test 1: No output directory exists → should be stale with reason
-rm -rf .venv
+# Test 1: No output directory exists → should be stale (outputs missing)
+rm -rf .venv .mise
 assert_contains "mise prepare --dry-run" "custom_venv"
-assert_contains "mise prepare --dry-run" "does not exist"
+assert_contains "mise prepare --dry-run" "outputs missing"
 
-# Test 2: Output exists and is newer than sources → should be fresh
-# Use explicit timestamps: source=2023, output=2024
+# Test 2: Run prepare to establish state, then check freshness
 mkdir -p .venv
-touch -t 202301010000 requirements.txt # Jan 1, 2023
-touch -t 202401010000 .venv/pyvenv.cfg # Jan 1, 2024 (newer)
-touch -t 202401010000 .venv            # Set directory mtime too (mkdir sets it to NOW)
-# In dry-run mode, fresh providers produce no output, so check provider name is absent
+assert_contains "mise prepare --only custom_venv" "Prepared: custom_venv"
+
+# Second run: sources unchanged, should be fresh (content hashes match)
 assert_not_contains "mise prepare --dry-run" "custom_venv"
 
-# Test 3: Sources updated after output → should be stale with reason
-# source=2025 (newer than output=2024)
-touch -t 202501010000 requirements.txt # Jan 1, 2025
+# Test 3: Change source content → should be stale
+echo "flask==3.0.0" >>requirements.txt
 assert_contains "mise prepare --dry-run" "custom_venv"
-assert_contains "mise prepare --dry-run" "is newer than outputs"
+assert_contains "mise prepare --dry-run" "requirements.txt changed"
 
 # Clean up
-rm -rf .venv requirements.txt
+rm -rf .venv requirements.txt .mise
 rm -f composer.lock composer.json package.json mise.toml schema.graphql
 
 # Test --explain flag
@@ -315,47 +312,31 @@ assert_contains "cat .explain_out" "not found"
 
 rm -rf src_input.txt out_dir mise.toml .explain_out
 
-# Test touch_outputs: after a successful run, output mtime should be updated
+# Test content-hash freshness: after a successful run, state is saved and provider is fresh
 cat >mise.toml <<'EOF'
-[prepare.touch_test]
+[prepare.hash_test]
 sources = ["src_file.txt"]
 outputs = ["out_dir"]
-run = "echo TOUCH_RAN"
+run = "echo HASH_RAN"
 EOF
 
-touch src_file.txt
+echo "original content" >src_file.txt
 mkdir -p out_dir
-# Make source newer than output so provider is stale
-touch -t 202501010000 out_dir
-touch -t 202601010000 src_file.txt
 
-# First run: should execute (stale)
-assert_contains "mise prepare --only touch_test" "Prepared: touch_test"
+# First run: should execute (no previous state)
+assert_contains "mise prepare --only hash_test" "Prepared: hash_test"
 
-# Second run: outputs should now be fresh (mtime was touched after first run)
-assert_contains "mise prepare --only touch_test" "up to date"
+# Second run: sources unchanged, should be fresh (hashes saved in state)
+assert_contains "mise prepare --only hash_test" "up to date"
 
-# Test touch_outputs = false: output mtime should NOT be updated
-cat >mise.toml <<'EOF'
-[prepare.notouch_test]
-sources = ["src_file.txt"]
-outputs = ["out_dir"]
-run = "echo NOTOUCH_RAN"
-touch_outputs = false
-EOF
+# Modify source content → should be stale again
+echo "modified content" >src_file.txt
+assert_contains "mise prepare --only hash_test" "Prepared: hash_test"
 
-# Make source newer than output so provider is stale
-touch -t 202501010000 out_dir
-touch -t 202601010000 src_file.txt
+# Third run after re-prepare: fresh again
+assert_contains "mise prepare --only hash_test" "up to date"
 
-# First run: should execute (stale)
-assert_contains "mise prepare --only notouch_test" "Prepared: notouch_test"
-
-# Second run: should still be stale since we didn't touch outputs
-# (the "echo" command doesn't modify out_dir, and we disabled mtime update)
-assert_contains "mise prepare --only notouch_test" "Prepared: notouch_test"
-
-rm -rf src_file.txt out_dir
+rm -rf src_file.txt out_dir .mise
 
 # Test timeout: a command that exceeds its timeout should fail
 cat >mise.toml <<'EOF'
@@ -409,7 +390,7 @@ assert_not_contains "mise prepare --list" "custom_sub"
 )
 
 # Clean up previous test
-rm -rf subproject root_input.txt root_output.txt mise.toml
+rm -rf subproject root_input.txt root_output.txt mise.toml .mise
 
 # Test that monorepo subdirectory prepare steps run when using //subdir:task from root
 export MISE_EXPERIMENTAL=1
@@ -454,7 +435,7 @@ rm -f subapp/deps_marker
 assert_contains "mise run //:check" "SUBAPP_PREPARE_OK"
 
 # Clean up
-rm -rf subapp mise.toml
+rm -rf subapp mise.toml .mise
 
 # Test git-submodule provider
 cat >.gitmodules <<'EOF'
@@ -483,4 +464,4 @@ EOF
 assert_not_contains "mise prepare --list" "git-submodule"
 
 # Clean up
-rm -f .gitmodules mise.toml
+rm -f .gitmodules mise.toml .mise

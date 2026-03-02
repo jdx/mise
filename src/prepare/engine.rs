@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::SystemTime;
 
 use eyre::Result;
 use filetime::FileTime;
@@ -16,7 +15,6 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 type StepOutput = (PrepareStepResult, Vec<PathBuf>);
 type JobOutput = Result<(String, PrepareStepResult, Vec<PathBuf>), (String, eyre::Report)>;
 
-use super::PrepareProvider;
 use super::prepare_deps::PrepareDeps;
 use super::providers::{
     BunPrepareProvider, BundlerPrepareProvider, ComposerPrepareProvider, CustomPrepareProvider,
@@ -24,6 +22,8 @@ use super::providers::{
     PnpmPrepareProvider, PoetryPrepareProvider, UvPrepareProvider, YarnPrepareProvider,
 };
 use super::rule::BUILTIN_PROVIDERS;
+use super::state::{self, PrepareState};
+use super::{FreshnessResult, PrepareProvider};
 
 /// Options for running prepare steps
 #[derive(Debug, Default)]
@@ -42,49 +42,12 @@ pub struct PrepareOptions {
     pub auto_only: bool,
 }
 
-/// Result of a freshness check with human-readable reason
-#[derive(Debug, Clone)]
-pub enum FreshnessResult {
-    /// Outputs are up to date
-    Fresh,
-    /// No outputs defined — always run
-    NoOutputs,
-    /// Output was created this session (e.g., auto-created venv)
-    SessionStale(String),
-    /// Some output files/dirs don't exist yet
-    OutputsMissing(String),
-    /// Sources are newer than outputs
-    Stale(String),
-    /// No sources exist — consider fresh
-    NoSources,
-    /// Forced by user request
-    Forced,
-}
-
-impl FreshnessResult {
-    pub fn is_fresh(&self) -> bool {
-        matches!(self, FreshnessResult::Fresh | FreshnessResult::NoSources)
-    }
-
-    pub fn reason(&self) -> &str {
-        match self {
-            FreshnessResult::Fresh => "up to date",
-            FreshnessResult::NoOutputs => "no outputs defined",
-            FreshnessResult::SessionStale(r) => r,
-            FreshnessResult::OutputsMissing(r) => r,
-            FreshnessResult::Stale(r) => r,
-            FreshnessResult::NoSources => "no sources",
-            FreshnessResult::Forced => "forced",
-        }
-    }
-}
-
 /// Result of a prepare step
 #[derive(Debug)]
 pub enum PrepareStepResult {
     /// Step ran successfully
     Ran(String),
-    /// Step would have run (dry-run mode) — (id, reason)
+    /// Step would have run (dry-run mode), with reason why it's stale
     WouldRun(String, String),
     /// Step was skipped because outputs are fresh
     Fresh(String),
@@ -380,15 +343,14 @@ impl PrepareEngine {
             };
 
             if !freshness.is_fresh() {
-                let reason = freshness.reason().to_string();
                 let cmd = provider.prepare_command()?;
                 let outputs = provider.outputs();
                 let touch = provider.touch_outputs();
                 let depends = provider.depends();
                 let timeout = provider.timeout();
+                let reason = freshness.reason().to_string();
 
                 if opts.dry_run {
-                    // Just record that it would run, let CLI handle output
                     results.push(PrepareStepResult::WouldRun(id, reason));
                 } else {
                     to_run.push(PrepareJob {
@@ -431,10 +393,28 @@ impl PrepareEngine {
                     results.push(step_result);
                 }
             }
+
+            // Save content hashes for all successfully ran providers
+            for step in &results {
+                if let PrepareStepResult::Ran(id) = step {
+                    if let Some(provider) = self.providers.iter().find(|p| p.id() == id) {
+                        let project_root = &provider.base().project_root;
+                        let sources = provider.sources();
+                        if let Ok(hashes) = state::hash_sources(&sources, project_root) {
+                            let mut st = PrepareState::load(project_root);
+                            st.set_hashes(id, hashes);
+                            if let Err(e) = st.save(project_root) {
+                                warn!("failed to save prepare state: {e}");
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         Ok(PrepareResult { steps: results })
     }
+
 
     /// Simple parallel execution (no dependency ordering)
     async fn run_parallel(
@@ -673,9 +653,12 @@ impl PrepareEngine {
         Ok(results)
     }
 
-    /// Check if outputs are newer than sources (stateless mtime comparison)
-    /// Returns a FreshnessResult with a human-readable reason
-    fn check_freshness(&self, provider: &dyn PrepareProvider) -> Result<FreshnessResult> {
+    /// Check if a provider's outputs are fresh relative to its sources.
+    ///
+    /// Uses blake3 content hashing with persistent state. On first run (no stored
+    /// hashes), the provider is always considered stale. Session-based stale
+    /// tracking (venv auto-creation) is always checked first.
+    pub fn check_freshness(&self, provider: &dyn PrepareProvider) -> Result<FreshnessResult> {
         let sources = provider.sources();
         let outputs = provider.outputs();
 
@@ -684,105 +667,59 @@ impl PrepareEngine {
         }
 
         // Check if any output was created this session (before prepare ran)
-        // This handles the case where venv is auto-created but packages aren't installed yet
         for output in &outputs {
             if super::is_output_stale(output) {
-                return Ok(FreshnessResult::SessionStale(format!(
-                    "{} created this session",
-                    output.display()
-                )));
+                return Ok(FreshnessResult::Stale(
+                    "output created this session".to_string(),
+                ));
             }
         }
 
-        // Check for missing outputs
+        // Check if any output is missing
         for output in &outputs {
             if !output.exists() {
-                return Ok(FreshnessResult::OutputsMissing(format!(
-                    "{} does not exist",
-                    output.display()
-                )));
+                return Ok(FreshnessResult::OutputsMissing);
             }
         }
 
-        let sources_mtime = Self::last_modified(&sources)?;
-        let outputs_mtime = Self::last_modified(&outputs)?;
-
-        match (sources_mtime, outputs_mtime) {
-            (Some(src), Some(out)) if src > out => {
-                // Find which source is newest to provide a helpful reason
-                let newest_source = sources
-                    .iter()
-                    .filter(|p| p.exists())
-                    .filter_map(|p| {
-                        let mtime = if p.is_dir() {
-                            Self::newest_file_in_dir(p, 3)
-                        } else {
-                            p.metadata().ok().and_then(|m| m.modified().ok())
-                        };
-                        mtime.map(|m| (p, m))
-                    })
-                    .max_by_key(|(_, m)| *m)
-                    .map(|(p, _)| p.display().to_string())
-                    .unwrap_or_else(|| "sources".to_string());
-                Ok(FreshnessResult::Stale(format!(
-                    "{newest_source} is newer than outputs"
-                )))
-            }
-            (Some(_), Some(_)) => Ok(FreshnessResult::Fresh),
-            (_, None) => Ok(FreshnessResult::Stale(
-                "could not determine modification time of outputs".to_string(),
-            )),
-            (None, _) => Ok(FreshnessResult::NoSources),
+        if sources.is_empty() {
+            return Ok(FreshnessResult::NoSources);
         }
-    }
 
-    /// Get the most recent modification time from a list of paths
-    /// For directories, recursively finds the newest file within (up to 3 levels deep)
-    fn last_modified(paths: &[PathBuf]) -> Result<Option<SystemTime>> {
-        let mut mtimes: Vec<SystemTime> = vec![];
+        // Use content-hash comparison via persistent state
+        let project_root = &provider.base().project_root;
+        let st = PrepareState::load(project_root);
+        let provider_id = provider.id();
 
-        for path in paths.iter().filter(|p| p.exists()) {
-            if path.is_dir() {
-                // For directories, find the newest file within (limited depth for performance)
-                if let Some(mtime) = Self::newest_file_in_dir(path, 3) {
-                    mtimes.push(mtime);
+        let current_hashes = state::hash_sources(&sources, project_root)?;
+
+        match st.get_hashes(provider_id) {
+            Some(stored_hashes) => {
+                // Check for changed files
+                for (path, hash) in &current_hashes {
+                    match stored_hashes.get(path.as_str()) {
+                        Some(stored_hash) if stored_hash == hash => {}
+                        Some(_) => {
+                            return Ok(FreshnessResult::Stale(format!("{path} changed")));
+                        }
+                        None => {
+                            return Ok(FreshnessResult::Stale(format!("{path} added")));
+                        }
+                    }
                 }
-            } else if let Some(mtime) = path.metadata().ok().and_then(|m| m.modified().ok()) {
-                mtimes.push(mtime);
-            }
-        }
-
-        Ok(mtimes.into_iter().max())
-    }
-
-    /// Recursively find the newest file modification time in a directory.
-    /// The directory's own mtime is always included so that touching the directory
-    /// itself (e.g. via `touch_outputs`) is reflected in freshness checks.
-    fn newest_file_in_dir(dir: &Path, max_depth: usize) -> Option<SystemTime> {
-        // Always seed with the directory's own mtime so that touching the dir
-        // (without modifying its contents) is visible to freshness checks.
-        let mut newest = dir.metadata().ok().and_then(|m| m.modified().ok());
-
-        if max_depth == 0 {
-            return newest;
-        }
-
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let mtime = if path.is_dir() {
-                    Self::newest_file_in_dir(&path, max_depth - 1)
-                } else {
-                    path.metadata().ok().and_then(|m| m.modified().ok())
-                };
-
-                if let Some(t) = mtime {
-                    newest = Some(newest.map_or(t, |n| n.max(t)));
+                // Check for removed files
+                for path in stored_hashes.keys() {
+                    if !current_hashes.contains_key(path) {
+                        return Ok(FreshnessResult::Stale(format!("{path} removed")));
+                    }
                 }
+                Ok(FreshnessResult::Fresh)
+            }
+            None => {
+                // No stored state — first run, consider stale
+                Ok(FreshnessResult::Stale("no previous state".to_string()))
             }
         }
-
-        newest
     }
 
     /// Execute a prepare command (static version for parallel execution)
