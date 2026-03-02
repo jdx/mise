@@ -38,7 +38,7 @@ impl GitSubmodulePrepareProvider {
                 if line.starts_with('#') || line.starts_with(';') {
                     return None;
                 }
-                if line.starts_with("[submodule") {
+                if line.starts_with("[submodule ") || line.starts_with("[submodule\"") {
                     in_submodule_section = true;
                     return None;
                 }
