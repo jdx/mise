@@ -1169,10 +1169,6 @@ default = "npm"
 description = "Package manager to use for installing npm packages."
 docs = """
 Package manager to use for installing npm packages.
-Can be one of:
-- `npm` (default)
-- `bun`
-- `pnpm`
 """
 enum = ["npm", "bun", "pnpm"]
 env = "MISE_NPM_PACKAGE_MANAGER"
