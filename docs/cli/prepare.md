@@ -23,6 +23,14 @@ Provider to operate on (runs only this provider, or use with --explain)
 
 ## Flags
 
+### `-n --dry-run`
+
+Only check if prepare is needed, don't run commands
+
+### `--explain`
+
+Show why a provider is fresh or stale (requires a provider argument)
+
 ### `-f --force`
 
 Force run all prepare steps even if outputs are fresh
@@ -31,10 +39,6 @@ Force run all prepare steps even if outputs are fresh
 
 Show what prepare steps are available
 
-### `-n --dry-run`
-
-Only check if prepare is needed, don't run commands
-
 ### `--only… <ONLY>`
 
 Run specific prepare rule(s) only
@@ -42,10 +46,6 @@ Run specific prepare rule(s) only
 ### `--skip… <SKIP>`
 
 Skip specific prepare rule(s)
-
-### `--explain`
-
-Show why a provider is fresh or stale (requires a provider argument)
 
 Examples:
 
