@@ -184,10 +184,7 @@ mod tests {
     #[test]
     fn resolve_pkgutil_path_prefers_discovered_path() {
         let discovered = PathBuf::from("/tmp/custom/pkgutil");
-        assert_eq!(
-            resolve_pkgutil_path(Some(discovered.clone())),
-            discovered
-        );
+        assert_eq!(resolve_pkgutil_path(Some(discovered.clone())), discovered);
     }
 
     #[test]
