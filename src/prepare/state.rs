@@ -25,8 +25,17 @@ impl PrepareState {
             return Self::default();
         }
         match file::read_to_string(&path) {
-            Ok(contents) => toml::from_str(&contents).unwrap_or_default(),
-            Err(_) => Self::default(),
+            Ok(contents) => match toml::from_str(&contents) {
+                Ok(state) => state,
+                Err(e) => {
+                    warn!("failed to parse {}: {e}", path.display());
+                    Self::default()
+                }
+            },
+            Err(e) => {
+                warn!("failed to read {}: {e}", path.display());
+                Self::default()
+            }
         }
     }
 
