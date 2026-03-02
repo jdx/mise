@@ -47,7 +47,7 @@ while true; do
 		exit "$install_status"
 	fi
 
-	if [[ "$install_output" != *"HTTP status server error (5"* && "$install_output" != *"HTTP status client error (429"* ]]; then
+	if [[ $install_output != *"HTTP status server error (5"* && $install_output != *"HTTP status client error (429"* ]]; then
 		printf '%s\n' "$install_output" >&2
 		exit "$install_status"
 	fi
