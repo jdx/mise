@@ -21,16 +21,34 @@ impl GitSubmodulePrepareProvider {
     }
 
     /// Parse submodule paths from .gitmodules file
+    ///
+    /// Handles INI-style sections and comments. Only extracts `path` values
+    /// from `[submodule "..."]` sections.
     fn submodule_paths(&self) -> Vec<PathBuf> {
         let gitmodules = self.base.project_root.join(".gitmodules");
         let Ok(content) = std::fs::read_to_string(&gitmodules) else {
             return vec![];
         };
 
+        let mut in_submodule_section = false;
         content
             .lines()
             .filter_map(|line| {
                 let line = line.trim();
+                if line.starts_with('#') || line.starts_with(';') {
+                    return None;
+                }
+                if line.starts_with("[submodule ") || line.starts_with("[submodule\"") {
+                    in_submodule_section = true;
+                    return None;
+                }
+                if line.starts_with('[') {
+                    in_submodule_section = false;
+                    return None;
+                }
+                if !in_submodule_section {
+                    return None;
+                }
                 if let Some(value) = line.strip_prefix("path") {
                     let value = value.trim_start();
                     value

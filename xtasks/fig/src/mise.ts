@@ -1892,18 +1892,24 @@ const completionSpec: Fig.Spec = {
       description: "[experimental] Ensure project dependencies are ready",
       options: [
         {
+          name: "--explain",
+          description:
+            "Show why a provider is fresh or stale (requires a provider argument)",
+          isRepeatable: false,
+        },
+        {
           name: ["-f", "--force"],
           description: "Force run all prepare steps even if outputs are fresh",
           isRepeatable: false,
         },
         {
-          name: "--list",
-          description: "Show what prepare steps are available",
+          name: ["-n", "--dry-run"],
+          description: "Only check if prepare is needed, don't run commands",
           isRepeatable: false,
         },
         {
-          name: ["-n", "--dry-run"],
-          description: "Only check if prepare is needed, don't run commands",
+          name: "--list",
+          description: "Show what prepare steps are available",
           isRepeatable: false,
         },
         {
@@ -1923,6 +1929,12 @@ const completionSpec: Fig.Spec = {
           },
         },
       ],
+      args: {
+        name: "provider",
+        description:
+          "Provider to operate on (runs only this provider, or use with --explain)",
+        isOptional: true,
+      },
     },
     {
       name: "prune",

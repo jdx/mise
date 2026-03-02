@@ -280,6 +280,41 @@ assert_contains "mise prepare --dry-run" "is newer than outputs"
 rm -rf .venv requirements.txt
 rm -f composer.lock composer.json package.json mise.toml schema.graphql
 
+# Test --explain flag
+cat >mise.toml <<'EOF'
+[prepare.explain_test]
+auto = true
+sources = ["src_input.txt"]
+outputs = ["out_dir"]
+run = "echo explain_ran"
+EOF
+
+touch src_input.txt
+
+# Test --explain with missing output (stale)
+rm -rf out_dir
+mise prepare explain_test --explain >.explain_out 2>&1 || true
+assert_contains "cat .explain_out" "Provider: explain_test"
+assert_contains "cat .explain_out" "Auto: yes"
+assert_contains "cat .explain_out" "Sources:"
+assert_contains "cat .explain_out" "Outputs:"
+assert_contains "cat .explain_out" "Command: echo explain_ran"
+assert_contains "cat .explain_out" "stale"
+
+# Test --explain with fresh output
+mkdir -p out_dir
+touch -t 202301010000 src_input.txt
+touch -t 202401010000 out_dir
+mise prepare explain_test --explain >.explain_out 2>&1
+assert_contains "cat .explain_out" "Provider: explain_test"
+assert_contains "cat .explain_out" "fresh"
+
+# Test --explain with unknown provider
+mise prepare nonexistent --explain >.explain_out 2>&1 || true
+assert_contains "cat .explain_out" "not found"
+
+rm -rf src_input.txt out_dir mise.toml .explain_out
+
 # Test touch_outputs: after a successful run, output mtime should be updated
 cat >mise.toml <<'EOF'
 [prepare.touch_test]

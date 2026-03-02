@@ -305,6 +305,22 @@ impl PrepareEngine {
         self.providers.iter().map(|p| p.as_ref()).collect()
     }
 
+    /// Find a specific provider by ID
+    pub fn find_provider(&self, id: &str) -> Option<&dyn PrepareProvider> {
+        self.providers
+            .iter()
+            .find(|p| p.id() == id)
+            .map(|p| p.as_ref())
+    }
+
+    /// Check freshness for a specific provider (public API for --explain)
+    pub fn check_provider_freshness(
+        &self,
+        provider: &dyn PrepareProvider,
+    ) -> Result<FreshnessResult> {
+        self.check_freshness(provider)
+    }
+
     /// Check if any auto-enabled provider has stale outputs (without running)
     /// Returns the IDs and reasons of stale providers
     pub fn check_staleness(&self) -> Vec<(&str, String)> {
