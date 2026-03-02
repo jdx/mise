@@ -826,7 +826,16 @@ impl ConfigFile for MiseToml {
                         .iter()
                         .map(|p| self.parse_template(p))
                         .collect::<eyre::Result<Vec<String>>>()?,
-                    run: self.parse_template(&wf.run)?,
+                    run: wf
+                        .run
+                        .as_ref()
+                        .map(|r| self.parse_template(r))
+                        .transpose()?,
+                    task: wf
+                        .task
+                        .as_ref()
+                        .map(|t| self.parse_template(t))
+                        .transpose()?,
                 })
             })
             .collect()
@@ -842,6 +851,9 @@ impl ConfigFile for MiseToml {
                     hook.script = self.parse_template(&hook.script)?;
                     if let Some(shell) = &hook.shell {
                         hook.shell = Some(self.parse_template(shell)?);
+                    }
+                    if let Some(task_name) = &hook.task_name {
+                        hook.task_name = Some(self.parse_template(task_name)?);
                     }
                 }
                 eyre::Ok(hooks)

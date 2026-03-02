@@ -485,6 +485,14 @@ e2e_args = '--headless'
 run = './scripts/test-e2e.sh {{vars.e2e_args}}'
 ```
 
+Tasks can also define task-local vars that override config vars for that task:
+
+```mise-toml
+[tasks.test]
+vars = { e2e_args = "--headed" }
+run = './scripts/test-e2e.sh {{vars.e2e_args}}'
+```
+
 Like most configuration in mise, vars can be defined across several files. So for example, you could
 put some vars in your global mise config `~/.config/mise/config.toml`, use them in a task at
 `~/src/work/myproject/mise.toml`. You can also override those vars in "later" config files such
@@ -532,6 +540,7 @@ task3 = "echo task3"
 
 [task4]
 run = "echo task4"
+vars = { target = "linux" }
 ```
 
 :::
@@ -616,7 +625,10 @@ passed as environment variables to the scripts. They are defined in the `vars` s
 e2e_args = '--headless'
 [tasks.test]
 run = './scripts/test-e2e.sh {{vars.e2e_args}}'
+vars = { e2e_args = '--headed' }
 ```
+
+The task-level `vars` override any config-level vars with the same name. In the example above, `e2e_args` resolves to `'--headed'` instead of the config-level `'--headless'`.
 
 Like `[env]`, vars can also be read in as a file:
 

@@ -25,3 +25,26 @@ vars.foo = "bar"
 vars.bar = "bar: {{vars.foo}}"
 EOF
 assert "mise run a" "foo: bar: bar"
+
+# Per-task vars override config-level vars
+cat <<EOF >mise.toml
+[vars]
+greeting = "hello"
+name = "world"
+
+[tasks.a]
+run = "echo {{vars.greeting}} {{vars.name}}"
+vars = { greeting = "hi" }
+EOF
+assert "mise run a" "hi world"
+
+# Per-task var templates can reference base (config-level) vars
+cat <<EOF >mise.toml
+[vars]
+base = "base_value"
+
+[tasks.a]
+run = "echo {{vars.derived}}"
+vars = { derived = "derived from {{vars.base}}" }
+EOF
+assert "mise run a" "derived from base_value"

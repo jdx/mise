@@ -81,17 +81,21 @@ impl FileInfo {
             file_path.to_path_buf()
         };
 
-        let extension = effective_path
-            .extension()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_string();
-
-        let format = file::TarFormat::from_ext(&extension);
-
         let file_name = effective_path.file_name().unwrap().to_string_lossy();
-        let is_compressed_binary = !file_name.contains(".tar")
-            && matches!(extension.as_str(), "gz" | "xz" | "bz2" | "zst");
+        let format = file::TarFormat::from_file_name(&file_name);
+
+        let extension = format
+            .extension()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| {
+                effective_path
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_string()
+            });
+
+        let is_compressed_binary = !format.is_archive() && format != file::TarFormat::Raw;
 
         Self {
             effective_path,
@@ -325,13 +329,14 @@ impl HttpBackend {
             pr.set_message(format!("extract {}", file_info.file_name()));
         }
 
-        match file_info.extension.as_str() {
-            "gz" => file::un_gz(file_path, &dest_file)?,
-            "xz" => file::un_xz(file_path, &dest_file)?,
-            "bz2" => file::un_bz2(file_path, &dest_file)?,
-            "zst" => file::un_zst(file_path, &dest_file)?,
-            _ => unreachable!(),
-        }
+        file::untar(
+            file_path,
+            &dest_file,
+            &file::TarOptions {
+                pr,
+                ..file::TarOptions::new(file_info.format)
+            },
+        )?;
 
         file::make_executable(&dest_file)?;
         Ok(ExtractionType::RawFile { filename })

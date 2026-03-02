@@ -26,7 +26,7 @@ pub async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> &'static Option<Venv
             let venv_path = uv_root.join(".venv");
             if !venv_path.exists() {
                 if uv_auto.should_create() {
-                    if let Err(err) = create_python_venv(
+                    match create_python_venv(
                         config,
                         ts,
                         &venv_path,
@@ -38,13 +38,16 @@ pub async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> &'static Option<Venv
                     )
                     .await
                     {
-                        warn_once!(
-                            "uv venv creation failed at: {p}\n\n{err}",
-                            p = display_path(&venv_path)
-                        );
-                        return None;
+                        Ok(true) => {}            // venv created successfully, fall through to load it
+                        Ok(false) => return None, // uv not available, venv not created
+                        Err(err) => {
+                            warn_once!(
+                                "uv venv creation failed at: {p}\n\n{err}",
+                                p = display_path(&venv_path)
+                            );
+                            return None;
+                        }
                     }
-                    // venv created successfully, fall through to load it
                 } else {
                     if !prepare_uv_enabled(config, &uv_root) {
                         warn_once!(

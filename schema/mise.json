@@ -1729,6 +1729,9 @@
             "env": {
               "$ref": "#/$defs/env"
             },
+            "vars": {
+              "$ref": "#/$defs/vars"
+            },
             "tools": {
               "description": "tools to install/activate before running this task",
               "additionalProperties": {
@@ -2066,14 +2069,6 @@
             "type": "string"
           },
           {
-            "description": "script to run",
-            "items": {
-              "description": "script to run",
-              "type": "string"
-            },
-            "type": "array"
-          },
-          {
             "additionalProperties": false,
             "properties": {
               "script": {
@@ -2088,20 +2083,50 @@
             "type": "object"
           },
           {
-            "description": "scripts to run",
+            "additionalProperties": false,
+            "properties": {
+              "task": {
+                "description": "mise task to run",
+                "type": "string"
+              }
+            },
+            "required": ["task"],
+            "type": "object"
+          },
+          {
+            "description": "scripts/tasks to run",
             "items": {
-              "additionalProperties": false,
-              "properties": {
-                "script": {
+              "oneOf": [
+                {
                   "description": "script to run",
                   "type": "string"
                 },
-                "shell": {
-                  "description": "specify the shell to run the script inside of",
-                  "type": "string"
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "script": {
+                      "description": "script to run",
+                      "type": "string"
+                    },
+                    "shell": {
+                      "description": "specify the shell to run the script inside of",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "task": {
+                      "description": "mise task to run",
+                      "type": "string"
+                    }
+                  },
+                  "required": ["task"],
+                  "type": "object"
                 }
-              },
-              "type": "object"
+              ]
             },
             "type": "array"
           }
@@ -2120,6 +2145,10 @@
             "type": "string",
             "description": "script to run when file changes"
           },
+          "task": {
+            "type": "string",
+            "description": "mise task to run when file changes"
+          },
           "patterns": {
             "type": "array",
             "description": "patterns to watch for",
@@ -2127,7 +2156,15 @@
               "type": "string"
             }
           }
-        }
+        },
+        "oneOf": [
+          {
+            "required": ["run"]
+          },
+          {
+            "required": ["task"]
+          }
+        ]
       }
     },
     "prepare_provider": {
@@ -2298,6 +2335,9 @@
         },
         "env": {
           "$ref": "#/$defs/env"
+        },
+        "vars": {
+          "$ref": "#/$defs/vars"
         },
         "tools": {
           "description": "tools to install/activate before running this task",
@@ -2563,6 +2603,9 @@
         },
         "env": {
           "$ref": "#/$defs/env"
+        },
+        "vars": {
+          "$ref": "#/$defs/vars"
         },
         "tools": {
           "description": "tools to install/activate before running this task",

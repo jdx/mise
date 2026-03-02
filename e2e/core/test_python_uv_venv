@@ -5,7 +5,7 @@ set -euo pipefail
 export MISE_EXPERIMENTAL=1
 
 # Test uv is used for manually defined venv
-cat >.mise.toml <<EOF
+cat >mise.toml <<EOF
 [env._.python]
 venv = {path = "my_venv", create=true}
 
@@ -25,7 +25,7 @@ assert_not_contains "ls $PWD/my_venv/" "include" # stdlib virtual venv has an "i
 rm -rf .venv
 rm -f uv.lock
 
-cat >.mise.toml <<EOF
+cat >mise.toml <<EOF
 [tools]
 python = "3.12.3"
 uv = "0.5.4"
@@ -51,7 +51,7 @@ assert_not_contains "mise env -s bash" "UV_PYTHON"
 # Test "create|source" mode - creates venv if missing, sources it
 rm -rf .venv
 
-cat >.mise.toml <<EOF
+cat >mise.toml <<EOF
 [tools]
 python = "3.12.3"
 uv = "0.5.4"
@@ -70,7 +70,7 @@ assert_not_contains "mise env -s bash" "UV_PYTHON"
 # this will be deprecated in future releases
 rm -rf .venv
 
-cat >.mise.toml <<EOF
+cat >mise.toml <<EOF
 [tools]
 python = "3.12.3"
 uv = "0.5.4"
@@ -88,7 +88,7 @@ assert_contains "mise env -s bash" "UV_PYTHON"
 # Test boolean parsing from env vars - "true","1", "yes",  should all work
 rm -rf .venv
 
-cat >.mise.toml <<EOF
+cat >mise.toml <<EOF
 [tools]
 python = "3.12.3"
 uv = "0.5.4"
@@ -105,9 +105,35 @@ MISE_PYTHON_UV_VENV_AUTO=false assert_not_contains "mise env -s bash" "VIRTUAL_E
 MISE_PYTHON_UV_VENV_AUTO=no assert_not_contains "mise env -s bash" "VIRTUAL_ENV"
 MISE_PYTHON_UV_VENV_AUTO=0 assert_not_contains "mise env -s bash" "VIRTUAL_ENV"
 
+# Test shim exclusion: the mise uv shim must NOT be called internally when creating
+# a venv via uv_venv_auto — doing so would trigger `mise exec`, which re-enters
+# env resolution and causes infinite subprocess recursion.
+rm -rf .venv uv.lock
+mkdir -p "$MISE_DATA_DIR/shims"
+rm -f "$MISE_DATA_DIR/shims/uv"
+cat >"$MISE_DATA_DIR/shims/uv" <<'SHIM'
+#!/bin/bash
+echo "ERROR: mise uv shim was invoked during venv creation" >&2
+exit 99
+SHIM
+chmod +x "$MISE_DATA_DIR/shims/uv"
+ORIG_PATH="$PATH"
+export PATH="$MISE_DATA_DIR/shims:$PATH"
+cat >mise.toml <<EOF
+[settings]
+python.uv_venv_auto = "create|source"
+EOF
+touch uv.lock
+# which_no_shims() skips $MISE_DATA_DIR/shims, so the fake shim is never called;
+# since no real uv is available either, venv creation is silently skipped.
+output=$(mise env -s bash 2>&1 || true)
+assert_not_contains "printf '%s' \"$output\"" "ERROR: mise uv shim was invoked during venv creation"
+rm -f "$MISE_DATA_DIR/shims/uv" uv.lock
+export PATH="$ORIG_PATH"
+
 ## Allows opt-out uv's venv
 #mkdir -p subdir
-#cat >subdir/.mise.toml <<EOF
+#cat >subdir/mise.toml <<EOF
 #[env._.python]
 #venv = {path = "my_subvenv", create=true}
 #[tools]
@@ -125,7 +151,7 @@ MISE_PYTHON_UV_VENV_AUTO=0 assert_not_contains "mise env -s bash" "VIRTUAL_ENV"
 #assert_contains "ls $PWD/my_subvenv/" "include" # stdlib virtual venv has an "include" folder while uv doesn't
 #
 #cd .. || exit 1
-#cat >.mise.toml <<EOF
+#cat >mise.toml <<EOF
 #[tools]
 #python = "3.12.3"
 #uv = "0.5.4"

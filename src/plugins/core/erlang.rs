@@ -141,10 +141,8 @@ impl ErlangPlugin {
             &tarball_path,
             &tv.download_path(),
             &TarOptions {
-                strip_components: 0,
                 pr: Some(ctx.pr.as_ref()),
-                format: file::TarFormat::TarGz,
-                ..Default::default()
+                ..TarOptions::new(file::TarFormat::TarGz)
             },
         )?;
 
@@ -228,10 +226,8 @@ impl ErlangPlugin {
             &tarball_path,
             &tv.install_path(),
             &TarOptions {
-                strip_components: 0,
                 pr: Some(ctx.pr.as_ref()),
-                format: file::TarFormat::TarGz,
-                ..Default::default()
+                ..TarOptions::new(file::TarFormat::TarGz)
             },
         )?;
         Ok(Some(tv))

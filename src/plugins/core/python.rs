@@ -6,7 +6,7 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
-use crate::file::{TarOptions, display_path};
+use crate::file::{TarFormat, TarOptions, display_path};
 use crate::git::{CloneOptions, Git};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -177,12 +177,21 @@ impl PythonPlugin {
                 let mut raw = String::new();
                 decoder.read_to_string(&mut raw)?;
                 let platform = python_precompiled_platform();
+                let flavor = settings.python.precompiled_flavor.clone();
                 // order by version, whether it is a release candidate, date, and in the preferred order of install types
                 let rank = |v: &str, date: &str, name: &str| {
                     let rc = if regex!(r"rc\d+$").is_match(v) { 0 } else { 1 };
                     let v = Versioning::new(v);
                     let date = date.parse::<i64>().unwrap_or_default();
-                    let install_type = if name.contains("install_only_stripped") {
+                    let install_type = if let Some(ref flavor) = flavor {
+                        // When flavor is set, prefer exact match
+                        let name_without_ext = name.trim_end_matches(".tar.gz");
+                        if name_without_ext.ends_with(flavor.as_str()) {
+                            0
+                        } else {
+                            1
+                        }
+                    } else if name.contains("install_only_stripped") {
                         0
                     } else if name.contains("install_only") {
                         1
@@ -284,7 +293,7 @@ impl PythonPlugin {
             &TarOptions {
                 strip_components: 1,
                 pr: Some(ctx.pr.as_ref()),
-                ..Default::default()
+                ..TarOptions::new(TarFormat::from_file_name(filename))
             },
         )?;
         if !install.join("bin").exists() {
@@ -452,13 +461,26 @@ impl PythonPlugin {
     /// Fetch the best precompiled release for a specific version and platform target.
     /// Unlike `fetch_precompiled_remote_versions` which uses compile-time cfg!() macros,
     /// this takes a PlatformTarget to support cross-platform lockfile generation.
+    /// Respects precompiled_arch, precompiled_os, and precompiled_flavor settings
+    /// when the target matches the current platform.
     async fn fetch_precompiled_for_target(
         &self,
         version: &str,
         target: &PlatformTarget,
     ) -> eyre::Result<Option<(String, String)>> {
-        let arch = python_arch_for_target(target);
-        let os = python_os_for_target(target);
+        let settings = Settings::get();
+
+        // Use settings-aware arch/os for the current platform,
+        // target-based defaults for other platforms
+        let (arch, os) = if target.is_current() {
+            (python_arch(&settings).to_string(), python_os(&settings))
+        } else {
+            (
+                python_arch_for_target(target).to_string(),
+                python_os_for_target(target).to_string(),
+            )
+        };
+
         let platform = format!("{arch}-{os}");
         let url_path = format!("python-precompiled-{arch}-{os}.gz");
         let rsp = HTTP_FETCH
@@ -467,8 +489,10 @@ impl PythonPlugin {
         let mut decoder = GzDecoder::new(rsp.as_ref());
         let mut raw = String::new();
         decoder.read_to_string(&mut raw)?;
-        // Find all entries matching this version, then pick the best one:
-        // prefer install_only_stripped > install_only > other, then most recent date
+
+        let flavor = settings.python.precompiled_flavor.clone();
+
+        // Find all entries matching this version, then pick the best one
         let result = raw
             .lines()
             .filter(|v| v.contains(&platform))
@@ -485,12 +509,23 @@ impl PythonPlugin {
             })
             .filter(|(v, _, _)| v == version)
             .min_by_key(|(_, date, name)| {
-                let install_type = if name.contains("install_only_stripped") {
-                    0
-                } else if name.contains("install_only") {
-                    1
+                let install_type = if let Some(ref flavor) = flavor {
+                    // When flavor is set, prefer exact match
+                    let name_without_ext = name.trim_end_matches(".tar.gz");
+                    if name_without_ext.ends_with(flavor.as_str()) {
+                        0
+                    } else {
+                        1
+                    }
                 } else {
-                    2
+                    // Default: prefer install_only_stripped > install_only > other
+                    if name.contains("install_only_stripped") {
+                        0
+                    } else if name.contains("install_only") {
+                        1
+                    } else {
+                        2
+                    }
                 };
                 let date = date.parse::<i64>().unwrap_or_default();
                 (install_type, -date)
@@ -629,8 +664,9 @@ impl Backend for PythonPlugin {
             opts.insert("compile".to_string(), "true".to_string());
         }
 
-        // Only include precompiled options if not compiling and if set
-        if !compile && is_current_platform {
+        // Include precompiled options for all platforms to avoid splitting
+        // lockfile entries between host and non-host platforms (#8390)
+        if !compile {
             if let Some(arch) = settings.python.precompiled_arch.clone() {
                 opts.insert("precompiled_arch".to_string(), arch);
             }

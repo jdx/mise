@@ -116,10 +116,9 @@ impl NodePlugin {
                     &opts.binary_tarball_path,
                     &opts.install_path,
                     &TarOptions {
-                        format: TarFormat::TarGz,
                         strip_components: 1,
                         pr: Some(ctx.pr.as_ref()),
-                        ..Default::default()
+                        ..TarOptions::new(TarFormat::TarGz)
                     },
                 )?;
                 Ok(())
@@ -188,9 +187,8 @@ impl NodePlugin {
             &opts.source_tarball_path,
             opts.build_dir.parent().unwrap(),
             &TarOptions {
-                format: TarFormat::TarGz,
                 pr: Some(ctx.pr.as_ref()),
-                ..Default::default()
+                ..TarOptions::new(TarFormat::TarGz)
             },
         )?;
         self.exec_configure(ctx, opts)?;
@@ -701,8 +699,9 @@ impl Backend for NodePlugin {
             opts.insert("compile".to_string(), "true".to_string());
         }
 
-        // Flavor affects which binary variant is downloaded (only if set)
-        if is_current_platform && let Some(flavor) = settings.node.flavor.clone() {
+        // Flavor affects which binary variant is downloaded
+        // Apply to all platforms to avoid splitting lockfile entries (#8390)
+        if let Some(flavor) = settings.node.flavor.clone() {
             opts.insert("flavor".to_string(), flavor);
         }
 
