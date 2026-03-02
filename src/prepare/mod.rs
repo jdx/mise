@@ -104,11 +104,15 @@ pub trait PrepareProvider: Debug + Send + Sync {
 
     /// Timeout duration for this provider's run command
     fn timeout(&self) -> Option<std::time::Duration> {
-        self.base()
-            .config
-            .timeout
-            .as_deref()
-            .and_then(|t| crate::duration::parse_duration(t).ok())
+        self.base().config.timeout.as_deref().and_then(|t| {
+            match crate::duration::parse_duration(t) {
+                Ok(d) => Some(d),
+                Err(err) => {
+                    warn!("prepare: {}: invalid timeout {t:?}: {err}", self.id());
+                    None
+                }
+            }
+        })
     }
 }
 
