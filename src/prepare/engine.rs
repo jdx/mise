@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use eyre::Result;
@@ -414,8 +414,8 @@ impl PrepareEngine {
         toolset_env: &BTreeMap<String, String>,
     ) -> Result<Vec<StepOutput>> {
         let mpr = MultiProgressReport::get();
-        let results: Arc<Mutex<Vec<StepOutput>>> = Arc::new(Mutex::new(vec![]));
-        let errors: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(vec![]));
+        let mut results: Vec<StepOutput> = vec![];
+        let mut errors: Vec<(String, String)> = vec![];
 
         // Build jobs map for lookup
         let running_ids: HashSet<String> = to_run.iter().map(|j| j.id.clone()).collect();
@@ -459,17 +459,15 @@ impl PrepareEngine {
                 blocked_id
             );
             if let Some(job) = jobs.remove(&blocked_id) {
-                results
-                    .lock()
-                    .unwrap()
-                    .push((PrepareStepResult::Skipped(job.id), vec![]));
+                results.push((PrepareStepResult::Skipped(job.id), vec![]));
             }
         }
 
         let mut rx = deps.subscribe();
-        let deps = Arc::new(Mutex::new(deps));
         let semaphore = Arc::new(Semaphore::new(Settings::get().jobs));
         let mut join_set: JoinSet<JobOutput> = JoinSet::new();
+        // Track which tokio task ID maps to which provider ID for JoinError recovery
+        let mut inflight: HashMap<tokio::task::Id, String> = HashMap::new();
 
         loop {
             tokio::select! {
@@ -479,33 +477,45 @@ impl PrepareEngine {
                 Some(join_result) = join_set.join_next() => {
                     match join_result {
                         Ok(Ok((id, step_result, outputs))) => {
-                            results.lock().unwrap().push((step_result, outputs));
-                            deps.lock().unwrap().complete_success(&id);
+                            inflight.retain(|_, v| v != &id);
+                            results.push((step_result, outputs));
+                            deps.complete_success(&id);
                         }
                         Ok(Err((id, e))) => {
+                            inflight.retain(|_, v| v != &id);
                             warn!("prepare provider '{}' failed: {}", id, e);
-                            errors.lock().unwrap().push((id.clone(), e.to_string()));
-                            results.lock().unwrap().push((PrepareStepResult::Failed(id.clone()), vec![]));
-                            deps.lock().unwrap().complete_failure(&id);
-                            // Block dependents with Skipped results
-                            let blocked = deps.lock().unwrap().blocked_providers();
-                            for blocked_id in blocked {
+                            errors.push((id.clone(), e.to_string()));
+                            results.push((PrepareStepResult::Failed(id.clone()), vec![]));
+                            deps.complete_failure(&id);
+                            for blocked_id in deps.blocked_providers() {
                                 if let Some(job) = jobs.remove(&blocked_id) {
                                     warn!(
                                         "prepare provider '{}' skipped due to failed dependency",
                                         job.id
                                     );
-                                    results
-                                        .lock()
-                                        .unwrap()
-                                        .push((PrepareStepResult::Skipped(job.id), vec![]));
+                                    results.push((PrepareStepResult::Skipped(job.id), vec![]));
                                 }
                             }
                         }
                         Err(e) => {
-                            // Should not happen: panics are caught inside the task.
-                            // This would only fire on task cancellation.
-                            warn!("prepare task join error: {e}");
+                            // JoinError — task panicked or was cancelled
+                            if let Some(id) = inflight.remove(&e.id()) {
+                                warn!("prepare provider '{}' panicked: {}", id, e);
+                                errors.push((id.clone(), e.to_string()));
+                                results.push((PrepareStepResult::Failed(id.clone()), vec![]));
+                                deps.complete_failure(&id);
+                                for blocked_id in deps.blocked_providers() {
+                                    if let Some(job) = jobs.remove(&blocked_id) {
+                                        warn!(
+                                            "prepare provider '{}' skipped due to failed dependency",
+                                            job.id
+                                        );
+                                        results.push((PrepareStepResult::Skipped(job.id), vec![]));
+                                    }
+                                }
+                            } else {
+                                warn!("prepare task join error (unknown task): {e}");
+                            }
                         }
                     }
                 }
@@ -525,7 +535,7 @@ impl PrepareEngine {
                     let mpr = mpr.clone();
                     let toolset_env = toolset_env.clone();
 
-                    join_set.spawn(async move {
+                    let handle = join_set.spawn(async move {
                         let pr = mpr.add(&job.cmd.description);
                         let id = job.id;
                         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -558,6 +568,7 @@ impl PrepareEngine {
                             }
                         }
                     });
+                    inflight.insert(handle.id(), id);
                 }
 
                 else => break,
@@ -567,25 +578,28 @@ impl PrepareEngine {
         // Wait for remaining in-flight tasks
         while let Some(join_result) = join_set.join_next().await {
             match join_result {
-                Ok(Ok((_id, step_result, outputs))) => {
-                    results.lock().unwrap().push((step_result, outputs));
+                Ok(Ok((id, step_result, outputs))) => {
+                    inflight.retain(|_, v| v != &id);
+                    results.push((step_result, outputs));
                 }
                 Ok(Err((id, e))) => {
+                    inflight.retain(|_, v| v != &id);
                     warn!("prepare provider '{}' failed: {}", id, e);
-                    errors.lock().unwrap().push((id.clone(), e.to_string()));
-                    results
-                        .lock()
-                        .unwrap()
-                        .push((PrepareStepResult::Failed(id), vec![]));
+                    errors.push((id.clone(), e.to_string()));
+                    results.push((PrepareStepResult::Failed(id), vec![]));
                 }
                 Err(e) => {
-                    warn!("prepare task join error: {e}");
+                    if let Some(id) = inflight.remove(&e.id()) {
+                        warn!("prepare provider '{}' panicked: {}", id, e);
+                        errors.push((id.clone(), e.to_string()));
+                        results.push((PrepareStepResult::Failed(id), vec![]));
+                    } else {
+                        warn!("prepare task join error (unknown task): {e}");
+                    }
                 }
             }
         }
 
-        let results = Arc::try_unwrap(results).unwrap().into_inner().unwrap();
-        let errors = Arc::try_unwrap(errors).unwrap().into_inner().unwrap();
         if !errors.is_empty() {
             let details = errors
                 .iter()

@@ -58,11 +58,6 @@ impl PrepareDeps {
         self.inner.complete_failure(&id.to_string());
     }
 
-    /// Returns whether all providers have been processed.
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
-    }
-
     /// Returns the list of blocked provider IDs.
     pub fn blocked_providers(&self) -> Vec<String> {
         self.inner.blocked_keys()
@@ -75,8 +70,7 @@ mod tests {
 
     #[test]
     fn test_empty_graph() {
-        let deps = PrepareDeps::new(&[]).unwrap();
-        assert!(deps.is_empty());
+        let _deps = PrepareDeps::new(&[]).unwrap();
     }
 
     #[test]

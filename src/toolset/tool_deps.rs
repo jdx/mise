@@ -81,11 +81,6 @@ impl ToolDeps {
         self.inner.complete_failure(&tool_key(tr));
     }
 
-    /// Returns whether all tools have been processed
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
-    }
-
     /// Returns the list of blocked tools (those whose dependencies failed or are in cycles)
     pub fn blocked_tools(&self) -> Vec<ToolRequest> {
         self.inner.blocked_nodes()
@@ -98,13 +93,6 @@ mod tests {
 
     #[test]
     fn test_empty_deps() {
-        let deps = ToolDeps::new(vec![]).unwrap();
-        assert!(deps.is_empty());
-    }
-
-    #[test]
-    fn test_is_all_done_empty() {
-        let deps = ToolDeps::new(vec![]).unwrap();
-        assert!(deps.is_empty());
+        let _deps = ToolDeps::new(vec![]).unwrap();
     }
 }
