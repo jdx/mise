@@ -1,4 +1,3 @@
-use crate::cli::version::VERSION;
 use crate::config::config_file::mise_toml::EnvList;
 use crate::config::config_file::toml::{TrackingTomlParser, deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
@@ -306,25 +305,7 @@ impl Task {
         let info = file::read_to_string(path)?
             .lines()
             .filter_map(|line| {
-                debug_assert!(
-                    !VERSION.starts_with("2026.3"),
-                    "remove old syntax `# mise`"
-                );
-                if let Some(captures) =
-                    regex!(r"^(?:#|//|::)(?:MISE| ?\[MISE\]) ([a-z0-9_.-]+=[^\n]+)$").captures(line)
-                {
-                    Some(captures)
-                } else if let Some(captures) = regex!(r"^(?:#|//) mise ([a-z0-9_.-]+=[^\n]+)$")
-                    .captures(line)
-                {
-                    deprecated!(
-                        "file_task_headers_old_syntax",
-                        "The `# mise ...` syntax for task headers is deprecated and will be removed in mise 2026.3.0. Use the new `#MISE ...` syntax instead."
-                    );
-                    Some(captures)
-                } else {
-                    None
-                }
+                regex!(r"^(?:#|//|::)(?:MISE| ?\[MISE\]) ([a-z0-9_.-]+=[^\n]+)$").captures(line)
             })
             .map(|captures| captures.extract().1)
             .map(|[toml]| {
