@@ -50,24 +50,21 @@ run_with_timeout() {
 
 parse_timeout_seconds() {
 	local duration="$1"
+	if [[ ! $duration =~ ^[0-9]+[smh]?$ ]]; then
+		return 1
+	fi
 	case "$duration" in
-	'' | -*)
-		return 1
-		;;
-	*[!0-9smh])
-		return 1
-		;;
 	*s)
 		echo "${duration%s}"
 		;;
 	*m)
-		echo $((${duration%m} * 60))
+		echo $((10#${duration%m} * 60))
 		;;
 	*h)
-		echo $((${duration%h} * 3600))
+		echo $((10#${duration%h} * 3600))
 		;;
 	*)
-		echo "$duration"
+		echo $((10#$duration))
 		;;
 	esac
 }

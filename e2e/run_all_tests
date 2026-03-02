@@ -16,10 +16,15 @@ resolve_mise_bin() {
 		printf '%s\n' "$candidate"
 		return
 	fi
-	command -v mise
+	local mise_path
+	if ! mise_path="$(command -v mise 2>/dev/null)"; then
+		err "Could not find 'mise' in PATH and no local debug build was found. Set MISE_E2E_BIN or build/install mise."
+		return 1
+	fi
+	printf '%s\n' "$mise_path"
 }
 
-Mise_wait_for_gh_rate_limit() {
+mise_wait_for_gh_rate_limit() {
 	local mise_bin="$1"
 	# Allow explicit opt-out for local/dev runs.
 	if [[ ${E2E_WAIT_FOR_GH_RATE_LIMIT:-1} != 1 ]]; then
@@ -92,7 +97,7 @@ for index in "${!FILES[@]}"; do
 		continue
 	fi
 
-	Mise_wait_for_gh_rate_limit "$MISE_BIN"
+	mise_wait_for_gh_rate_limit "$MISE_BIN"
 	# Actually run the test
 	"$ROOT/e2e/run_test" "$TEST_NAME" # fail fast for now
 	# if ! "$ROOT/e2e/run_test" "$TEST_NAME"; then
