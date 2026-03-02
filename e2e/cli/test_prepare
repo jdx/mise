@@ -298,10 +298,9 @@ assert_contains "cat .explain_out" "Outputs:"
 assert_contains "cat .explain_out" "Command: echo explain_ran"
 assert_contains "cat .explain_out" "stale"
 
-# Test --explain with fresh output
+# Test --explain with fresh output (run prepare first to establish state)
 mkdir -p out_dir
-touch -t 202301010000 src_input.txt
-touch -t 202401010000 out_dir
+mise prepare --only explain_test >/dev/null 2>&1 || true
 mise prepare explain_test --explain >.explain_out 2>&1
 assert_contains "cat .explain_out" "Provider: explain_test"
 assert_contains "cat .explain_out" "fresh"
