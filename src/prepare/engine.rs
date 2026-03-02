@@ -265,7 +265,7 @@ impl PrepareEngine {
         self.providers
             .iter()
             .filter(|p| p.is_auto())
-            .filter(|p| !self.check_freshness(p.as_ref()).unwrap_or(true))
+            .filter(|p| !self.check_freshness(p.as_ref()).unwrap_or(false))
             .map(|p| p.id())
             .collect()
     }
