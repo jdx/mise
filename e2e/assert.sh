@@ -8,6 +8,92 @@ fail() {
 	exit 1
 }
 
+# Portable timeout helper for e2e tests.
+# Uses system timeout/gtimeout when available, otherwise falls back to a
+# shell implementation that returns 124 on timeout.
+run_with_timeout() {
+	local seconds="$1"
+	shift
+
+	local output_file
+	output_file="$(mktemp)"
+
+	("$@" >"$output_file" 2>&1) &
+	local cmd_pid=$!
+	local elapsed=0
+	local timed_out=0
+
+	while kill -0 "$cmd_pid" 2>/dev/null; do
+		if ((elapsed >= seconds * 10)); then
+			timed_out=1
+			kill -TERM "$cmd_pid" 2>/dev/null || true
+			sleep 0.2
+			kill -KILL "$cmd_pid" 2>/dev/null || true
+			wait "$cmd_pid" 2>/dev/null || true
+			break
+		fi
+		sleep 0.1
+		elapsed=$((elapsed + 1))
+	done
+
+	local status=0
+	if ((timed_out == 1)); then
+		status=124
+	else
+		wait "$cmd_pid" || status=$?
+	fi
+
+	cat "$output_file"
+	rm -f "$output_file"
+	return "$status"
+}
+
+parse_timeout_seconds() {
+	local duration="$1"
+	case "$duration" in
+	'' | -*)
+		return 1
+		;;
+	*[!0-9smh])
+		return 1
+		;;
+	*s)
+		echo "${duration%s}"
+		;;
+	*m)
+		echo $(( ${duration%m} * 60 ))
+		;;
+	*h)
+		echo $(( ${duration%h} * 3600 ))
+		;;
+	*)
+		echo "$duration"
+		;;
+	esac
+}
+
+timeout() {
+	if type -P timeout >/dev/null 2>&1; then
+		command timeout "$@"
+		return $?
+	fi
+	if type -P gtimeout >/dev/null 2>&1; then
+		command gtimeout "$@"
+		return $?
+	fi
+	if [[ $# -lt 2 ]]; then
+		echo "timeout fallback requires DURATION and COMMAND" >&2
+		return 125
+	fi
+	local seconds
+	seconds="$(parse_timeout_seconds "$1")" || {
+		echo "unsupported timeout duration: $1" >&2
+		return 125
+	}
+	shift
+	run_with_timeout "$seconds" "$@"
+}
+
 # Safeguard against running the test directly, which would execute in the actual user home
 [[ -n ${TEST_NAME:-} ]] || fail "tests should be called using run_test"
 
