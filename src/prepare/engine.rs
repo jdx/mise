@@ -13,6 +13,9 @@ use crate::config::config_file::ConfigFile;
 use crate::config::{Config, Settings};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
+type StepOutput = (PrepareStepResult, Vec<PathBuf>);
+type JobOutput = Result<(String, PrepareStepResult, Vec<PathBuf>), (String, eyre::Report)>;
+
 use super::PrepareProvider;
 use super::prepare_deps::PrepareDeps;
 use super::providers::{
@@ -405,10 +408,9 @@ impl PrepareEngine {
         to_run: Vec<PrepareJob>,
         satisfied_ids: &HashSet<String>,
         toolset_env: &BTreeMap<String, String>,
-    ) -> Result<Vec<(PrepareStepResult, Vec<PathBuf>)>> {
+    ) -> Result<Vec<StepOutput>> {
         let mpr = MultiProgressReport::get();
-        let results: Arc<Mutex<Vec<(PrepareStepResult, Vec<PathBuf>)>>> =
-            Arc::new(Mutex::new(vec![]));
+        let results: Arc<Mutex<Vec<StepOutput>>> = Arc::new(Mutex::new(vec![]));
 
         // Build jobs map for lookup
         let running_ids: HashSet<String> = to_run.iter().map(|j| j.id.clone()).collect();
@@ -462,9 +464,7 @@ impl PrepareEngine {
         let mut rx = deps.subscribe();
         let deps = Arc::new(Mutex::new(deps));
         let semaphore = Arc::new(Semaphore::new(Settings::get().jobs));
-        let mut join_set: JoinSet<
-            Result<(String, PrepareStepResult, Vec<PathBuf>), (String, eyre::Report)>,
-        > = JoinSet::new();
+        let mut join_set: JoinSet<JobOutput> = JoinSet::new();
 
         loop {
             tokio::select! {
