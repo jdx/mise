@@ -108,7 +108,7 @@ pub trait PrepareProvider: Debug + Send + Sync {
             .config
             .timeout
             .filter(|&t| t > 0)
-            .map(|t| std::time::Duration::from_secs(t))
+            .map(std::time::Duration::from_secs)
     }
 }
 
