@@ -449,6 +449,12 @@ fn should_try_https_fallback(url: &Url) -> bool {
 }
 
 fn is_local_or_private_ipv4(ip: Ipv4Addr) -> bool {
+    let octets = ip.octets();
+    let is_this_network = octets[0] == 0;
+    let is_shared_cgnat = octets[0] == 100 && (64..=127).contains(&octets[1]); // 100.64.0.0/10
+    let is_benchmarking = octets[0] == 198 && (18..=19).contains(&octets[1]); // 198.18.0.0/15
+    let is_reserved = octets[0] >= 240; // 240.0.0.0/4
+
     ip.is_loopback()
         || ip.is_private()
         || ip.is_link_local()
@@ -456,14 +462,21 @@ fn is_local_or_private_ipv4(ip: Ipv4Addr) -> bool {
         || ip.is_documentation()
         || ip.is_unspecified()
         || ip.is_multicast()
+        || is_this_network
+        || is_shared_cgnat
+        || is_benchmarking
+        || is_reserved
 }
 
 fn is_local_or_private_ipv6(ip: Ipv6Addr) -> bool {
+    let is_site_local = (ip.segments()[0] & 0xffc0) == 0xfec0; // fec0::/10 (deprecated site-local)
+
     ip.is_loopback()
         || ip.is_unique_local()
         || ip.is_unicast_link_local()
         || ip.is_unspecified()
         || ip.is_multicast()
+        || is_site_local
 }
 
 fn github_headers(url: &Url) -> HeaderMap {
@@ -902,8 +915,17 @@ mod tests {
         let private_v4 = Url::parse("http://10.0.0.1/test.txt").unwrap();
         assert!(!should_try_https_fallback(&private_v4));
 
+        let shared_v4 = Url::parse("http://100.64.0.1/test.txt").unwrap();
+        assert!(!should_try_https_fallback(&shared_v4));
+
+        let benchmarking_v4 = Url::parse("http://198.18.0.1/test.txt").unwrap();
+        assert!(!should_try_https_fallback(&benchmarking_v4));
+
         let private_v6 = Url::parse("http://[fd00::1]/test.txt").unwrap();
         assert!(!should_try_https_fallback(&private_v6));
+
+        let site_local_v6 = Url::parse("http://[fec0::1]/test.txt").unwrap();
+        assert!(!should_try_https_fallback(&site_local_v6));
     }
 
     #[test]
