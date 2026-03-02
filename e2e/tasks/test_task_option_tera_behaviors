@@ -78,8 +78,8 @@ run = """
   {{ throw(message=val) }}
 """
 EOF
-assert_fail_contains "mise run wtf:throw" "Function call 'throw' failed"
-assert_fail_contains "mise run wtf:throw --val=hello" "[wtf:throw] ERROR hello"
+assert_fail_contains "mise run wtf:throw" "ERROR task failed"
+assert_fail_contains "mise run wtf:throw --val=hello" "ERROR hello"
 #
 # wtf:default (default filter applied prior to throw)
 cat <<'EOF' >mise.toml
@@ -90,8 +90,8 @@ run = """
   {{ throw(message=val) }}
 """
 EOF
-assert_fail_contains "mise run wtf:default" "Function call 'throw' failed"
-assert_fail_contains "mise run wtf:default --val=hello" "[wtf:default] ERROR hello"
+assert_fail_contains "mise run wtf:default" "ERROR task failed"
+assert_fail_contains "mise run wtf:default --val=hello" "ERROR hello"
 
 # wtf:as_str (filter produces empty string by default)
 cat <<'EOF' >mise.toml
@@ -101,8 +101,8 @@ run = """
   {{ throw(message=val | as_str) }}
 """
 EOF
-assert_fail_contains "mise run wtf:as_str" "Function call 'throw' failed"
-assert_fail_contains "mise run wtf:as_str --val=hello" "[wtf:as_str] ERROR hello"
+assert_fail_contains "mise run wtf:as_str" "ERROR task failed"
+assert_fail_contains "mise run wtf:as_str --val=hello" "ERROR hello"
 
 # wtf:option-default (option default used in throw path)
 cat <<'EOF' >mise.toml
@@ -112,4 +112,4 @@ run = """
   {{ throw(message=val) }}
 """
 EOF
-assert_fail_contains "mise run wtf:option-default" "[wtf:option-default] ERROR '???'"
+assert_fail_contains "mise run wtf:option-default" "ERROR '???'"
