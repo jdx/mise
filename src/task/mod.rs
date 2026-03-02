@@ -313,7 +313,7 @@ impl Task {
         let info = file::read_to_string(path)?
             .lines()
             .filter_map(|line| {
-                regex!(r"^(?:#|//|::)(?:MISE| ?\[MISE\]) ([a-z0-9_.-]+=[^\n]+)$").captures(line)
+                regex!(r#"^(?:#|//|::)(?:MISE| ?\[MISE\]) ([\w":/.-]+=[^\n]+)$"#).captures(line)
             })
             .map(|captures| captures.extract().1)
             .map(|[toml]| {
