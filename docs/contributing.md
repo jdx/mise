@@ -32,8 +32,7 @@ so make sure before you start working on something it won't be a wasted effort.
 
 1. **Disable mise during development**: If you use mise in your shell, disable
    it when running tests to avoid conflicts
-2. **Use dev container**: Docker setup available (currently needs fixing)
-3. **Test specific features**: Use `cargo test test_name` for targeted testing
+2. **Test specific features**: Use `cargo test test_name` for targeted testing
 4. **Update snapshots**: Use `mise run snapshots` when changing test outputs
 5. **Rate limiting**: Set `MISE_GITHUB_TOKEN` to avoid GitHub API rate limits
    during development
@@ -362,28 +361,6 @@ Use `mise tasks` to see all available development tasks:
 Shouldn't require anything special I'm aware of, but `mise run build` is a good
 sanity check to run and make sure it's all working.
 
-## Dev Container
-
-::: danger
-The docker setup quit working and since I don't use it I haven't bothered to
-fix it. For now you'll need to run outside of docker or you can try to fix the
-docker setup.
-:::
-
-There is a docker setup that makes development with mise easier. It is
-especially helpful for running the E2E tests.
-Here's some example ways to use it:
-
-```sh
-mise run docker:cargo build
-mise run docker:cargo test
-mise run docker:mise --help # run `mise --help` in the dev container
-# run the e2e tests inside of the docker container
-mise run docker:mise run test:e2e
-# shortcut for `mise run docker:mise run test:e2e`
-mise run docker:e2e
-```
-
 ## Pre-commit Hooks & Code Quality
 
 mise uses [hk](https://hk.jdx.dev) as its git hook manager for
@@ -468,8 +445,7 @@ hk check --files="src/**/*.rs"
 
 ## Running the CLI
 
-Even if using the devcontainer, it's a good idea to create a shim to make it
-easy to launch mise. I use the following shim in `~/.local/bin/@mise`:
+I use the following shim in `~/.local/bin/@mise`:
 
 ```sh
 #!/bin/sh
@@ -484,7 +460,6 @@ Then if that is in PATH just use `@mise` to run mise by compiling it on the fly.
 
 ```sh
 @mise --help
-@mise run docker:e2e
 eval "$(@mise activate zsh)"
 @mise activate fish | source
 ```
