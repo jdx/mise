@@ -22,12 +22,40 @@ cat >.mise.toml <<EOF
 [tools]
 python = "3.12.3"
 pipx = "1.5.0"
-uv = "0.5.5"
+"github:astral-sh/uv" = "0.5.5"
 "pipx:mkdocs" = "1.6.0"
 EOF
 
-# Install the tools
-mise install
+# Install the tools.
+# GitHub-backed downloads occasionally return transient 5xx statuses.
+# Retry a few times when that happens to avoid flaky e2e failures.
+attempt=1
+max_attempts=3
+while true; do
+	set +e
+	install_output="$(mise install 2>&1)"
+	install_status=$?
+	set -e
+
+	if [[ $install_status -eq 0 ]]; then
+		printf '%s\n' "$install_output"
+		break
+	fi
+
+	if [[ $attempt -ge $max_attempts ]]; then
+		printf '%s\n' "$install_output" >&2
+		exit "$install_status"
+	fi
+
+	if [[ "$install_output" != *"HTTP status server error (5"* && "$install_output" != *"HTTP status client error (429"* ]]; then
+		printf '%s\n' "$install_output" >&2
+		exit "$install_status"
+	fi
+
+	printf 'retrying mise install after transient HTTP error (%d/%d)\n' "$attempt" "$max_attempts" >&2
+	sleep $((attempt * 2))
+	attempt=$((attempt + 1))
+done
 
 # Assert that mkdocs 1.6.0 has been installed with pipx
 # (mkdocs conveniently returns its installation path in with --version)

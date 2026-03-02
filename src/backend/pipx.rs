@@ -361,15 +361,11 @@ impl PIPXBackend {
         if Settings::get().pipx.uvx != Some(false) {
             let pr = MultiProgressReport::get().add("reinstalling pipx tools with uvx");
             for (b, tv) in pipx_tools {
-                for (cmd, tool) in &[
-                    ("uninstall", tv.ba().tool_name.to_string()),
-                    ("install", format!("{}=={}", tv.ba().tool_name, tv.version)),
-                ] {
-                    let args = &["tool", cmd, tool];
-                    Self::uvx_cmd(config, args, &*b, &tv, &ts, pr.as_ref())
-                        .await?
-                        .execute()?;
-                }
+                let args = uvx_reinstall_command_args(&tv.ba().tool_name, &tv.version);
+                let args = args.iter().map(|s| s.as_str()).collect_vec();
+                Self::uvx_cmd(config, &args, &*b, &tv, &ts, pr.as_ref())
+                    .await?
+                    .execute()?;
             }
         } else {
             let pr = MultiProgressReport::get().add("reinstalling pipx tools");
@@ -430,6 +426,16 @@ impl PIPXBackend {
     async fn uv_is_installed(&self, config: &Arc<Config>) -> bool {
         self.dependency_which(config, "uv").await.is_some()
     }
+}
+
+fn uvx_reinstall_command_args(tool_name: &str, version: &str) -> Vec<String> {
+    vec![
+        "tool".into(),
+        "install".into(),
+        "--reinstall".into(),
+        "--force".into(),
+        format!("{tool_name}=={version}"),
+    ]
 }
 
 enum PipxRequest {
@@ -638,4 +644,23 @@ fn fix_venv_python_symlink(install_path: &Path, pkg_name: &str) -> Result<()> {
 #[cfg(not(unix))]
 fn fix_venv_python_symlink(_install_path: &Path, _pkg_name: &str) -> Result<()> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::uvx_reinstall_command_args;
+
+    #[test]
+    fn uvx_reinstall_command_uses_reinstall_flag() {
+        assert_eq!(
+            uvx_reinstall_command_args("mkdocs", "1.6.0"),
+            vec![
+                "tool".to_string(),
+                "install".to_string(),
+                "--reinstall".to_string(),
+                "--force".to_string(),
+                "mkdocs==1.6.0".to_string(),
+            ]
+        );
+    }
 }
