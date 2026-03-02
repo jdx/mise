@@ -304,7 +304,7 @@ impl PrepareEngine {
             .map(|p| p.as_ref())
     }
 
-    /// Check freshness for a specific provider (public API for --why)
+    /// Check freshness for a specific provider (public API for --explain)
     pub fn check_provider_freshness(
         &self,
         provider: &dyn PrepareProvider,
@@ -491,8 +491,8 @@ impl PrepareEngine {
                 )))
             }
             (Some(_), Some(_)) => Ok(FreshnessResult::Fresh),
-            (_, None) => Ok(FreshnessResult::OutputsMissing(
-                "outputs do not exist".to_string(),
+            (_, None) => Ok(FreshnessResult::Stale(
+                "could not determine modification time of outputs".to_string(),
             )),
             (None, _) => Ok(FreshnessResult::NoSources),
         }

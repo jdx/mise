@@ -1,4 +1,4 @@
-use eyre::Result;
+use eyre::{Result, bail};
 
 use crate::config::Config;
 use crate::prepare::{PrepareEngine, PrepareOptions, PrepareStepResult};
@@ -105,13 +105,13 @@ impl Prepare {
 
     fn explain_provider(&self, engine: &PrepareEngine, provider_id: &str) -> Result<()> {
         let Some(provider) = engine.find_provider(provider_id) else {
-            miseprintln!("Provider '{}' not found", provider_id);
-            miseprintln!("");
-            miseprintln!("Available providers:");
-            for p in engine.list_providers() {
-                miseprintln!("  {}", p.id());
-            }
-            std::process::exit(1);
+            let available = engine
+                .list_providers()
+                .iter()
+                .map(|p| format!("  {}", p.id()))
+                .collect::<Vec<_>>()
+                .join("\n");
+            bail!("Provider '{provider_id}' not found.\n\nAvailable providers:\n{available}");
         };
 
         let freshness = engine.check_provider_freshness(provider)?;
@@ -151,9 +151,8 @@ impl Prepare {
             miseprintln!("Status: stale ({})", freshness.reason());
         }
 
-        // Exit code: 0 if fresh, 1 if stale
         if !freshness.is_fresh() {
-            std::process::exit(1);
+            bail!("provider '{}' is stale", provider.id());
         }
 
         Ok(())
