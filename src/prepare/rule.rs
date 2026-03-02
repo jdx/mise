@@ -4,13 +4,17 @@ use serde::{Deserialize, Serialize};
 
 /// List of built-in provider names that have specialized implementations
 pub const BUILTIN_PROVIDERS: &[&str] = &[
-    "npm", "yarn", "pnpm", "bun",      // Node.js
-    "go",       // Go
-    "pip",      // Python (requirements.txt)
-    "poetry",   // Python (poetry)
-    "uv",       // Python (uv)
-    "bundler",  // Ruby
-    "composer", // PHP
+    "npm",
+    "yarn",
+    "pnpm",
+    "bun",           // Node.js
+    "go",            // Go
+    "pip",           // Python (requirements.txt)
+    "poetry",        // Python (poetry)
+    "uv",            // Python (uv)
+    "bundler",       // Ruby
+    "composer",      // PHP
+    "git-submodule", // Git
 ];
 
 /// Configuration for a prepare provider (both built-in and custom)

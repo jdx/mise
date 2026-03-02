@@ -398,3 +398,32 @@ assert_contains "mise run //:check" "SUBAPP_PREPARE_OK"
 
 # Clean up
 rm -rf subapp mise.toml
+
+# Test git-submodule provider
+cat >.gitmodules <<'EOF'
+[submodule "libs/foo"]
+	path = libs/foo
+	url = https://example.com/foo.git
+[submodule "libs/bar"]
+	path = libs/bar
+	url = https://example.com/bar.git
+EOF
+
+cat >mise.toml <<'EOF'
+[prepare.git-submodule]
+EOF
+
+assert_contains "mise prepare --list" "git-submodule"
+assert_contains "mise prepare --list" ".gitmodules"
+assert_contains "mise prepare --list" "libs/foo"
+assert_contains "mise prepare --list" "libs/bar"
+
+# Test that empty .gitmodules is not applicable
+echo -n "" >.gitmodules
+cat >mise.toml <<'EOF'
+[prepare.git-submodule]
+EOF
+assert_not_contains "mise prepare --list" "git-submodule"
+
+# Clean up
+rm -f .gitmodules mise.toml

@@ -223,6 +223,13 @@ pub fn detect_applicable_providers(project_root: &Path) -> Vec<String> {
                 default_config.clone(),
             )),
         ),
+        (
+            "git-submodule",
+            Box::new(GitSubmodulePrepareProvider::new(
+                project_root,
+                default_config.clone(),
+            )),
+        ),
     ];
 
     for (name, provider) in checks {
