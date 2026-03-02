@@ -107,8 +107,8 @@ pub trait PrepareProvider: Debug + Send + Sync {
         self.base()
             .config
             .timeout
-            .filter(|&t| t > 0)
-            .map(std::time::Duration::from_secs)
+            .as_deref()
+            .and_then(|t| crate::duration::parse_duration(t).ok())
     }
 }
 

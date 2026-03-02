@@ -2235,9 +2235,8 @@
           "description": "Whether to update mtime of output files/dirs after a successful run"
         },
         "timeout": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Timeout in seconds for the run command (0 or absent = no timeout)"
+          "type": "string",
+          "description": "Timeout for the run command (e.g., \"30s\", \"5m\", \"1h\")"
         }
       },
       "additionalProperties": false,

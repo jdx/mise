@@ -328,7 +328,7 @@ cat >mise.toml <<'EOF'
 sources = ["src_file.txt"]
 outputs = ["out_dir"]
 run = "sleep 30"
-timeout = 2
+timeout = "2s"
 EOF
 
 touch src_file.txt

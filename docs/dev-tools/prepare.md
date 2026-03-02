@@ -98,7 +98,7 @@ run = "npx prisma generate"
 | `description`   | string   | Description shown in output                                                     |
 | `touch_outputs` | bool     | Touch output mtimes after a successful run so they appear fresh (default: true) |
 | `depends`       | string[] | Other provider names that must complete before this one runs                    |
-| `timeout`       | u64      | Timeout in seconds for the run command (default: no timeout)                    |
+| `timeout`       | string   | Timeout for the run command, e.g., `"30s"`, `"5m"` (default: no timeout)        |
 
 ## Freshness Checking
 
