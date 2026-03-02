@@ -1621,8 +1621,8 @@ echo "hello world"
         fs::write(
             &task_path,
             r#"#!/bin/bash
-# mise description="test task"
-# mise env={invalid=toml=here}
+#MISE description="test task"
+#MISE env={invalid=toml=here}
 echo "hello world"
 "#,
         )
