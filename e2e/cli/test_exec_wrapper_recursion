@@ -30,7 +30,38 @@ chmod +x "$wrapperdir/dummy"
 export PATH="$wrapperdir:$PATH"
 
 # 4. Run with a timeout to catch infinite recursion (would hang otherwise)
-output="$(timeout 10 mise x -- dummy 2>&1)" || {
+run_with_timeout() {
+	local seconds="$1"
+	shift
+	local output_file
+	output_file="$(mktemp)"
+
+	("$@" >"$output_file" 2>&1) &
+	local cmd_pid=$!
+	local elapsed=0
+
+	while kill -0 "$cmd_pid" 2>/dev/null; do
+		if ((elapsed >= seconds * 10)); then
+			kill -TERM "$cmd_pid" 2>/dev/null || true
+			sleep 0.2
+			kill -KILL "$cmd_pid" 2>/dev/null || true
+			wait "$cmd_pid" 2>/dev/null || true
+			cat "$output_file"
+			rm -f "$output_file"
+			return 124
+		fi
+		sleep 0.1
+		elapsed=$((elapsed + 1))
+	done
+
+	local status=0
+	wait "$cmd_pid" || status=$?
+	cat "$output_file"
+	rm -f "$output_file"
+	return "$status"
+}
+
+output="$(run_with_timeout 10 mise x -- dummy)" || {
 	echo "ERROR: mise x -- dummy timed out or failed (likely infinite recursion)"
 	exit 1
 }
