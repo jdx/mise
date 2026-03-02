@@ -6,7 +6,7 @@ test = { cmd = "julia --version", expected = "julia version" }
 full = "http:julia"
 
 [backends.options]
-version_expr = 'sortVersions(filter(keys(fromJSON(body)), # matches "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z\\.-]+)?$"))'
+version_expr = 'sortVersions(filter(keys(fromJSON(body)), {# matches "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z\\.-]+)?$"}))'
 version_list_url = "https://julialang-s3.julialang.org/bin/versions.json"
 
 [backends.options.platforms.macos-x64]
