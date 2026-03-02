@@ -1,27 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Repro for discussion #6255: CLI groups with ::: and jobs=1
+# Repro for discussion #6255: CLI groups with ::: and jobs=1.
+# This test validates stop-on-failure semantics without relying on task order.
 
 cat <<EOF >mise.toml
-[tasks.one]
-run = "echo one"
+[tasks.a_fail]
+run = "echo a_fail; exit 1"
 
-[tasks.two]
-run = "echo two; exit 1"
+[tasks.b_ok]
+run = "echo b_ok"
 
-[tasks.three]
-run = "echo three"
+[tasks.c_ok]
+run = "echo c_ok"
 
-[tasks.four]
-run = "echo four"
+[tasks.d_ok]
+run = "echo d_ok"
 
-[tasks.five]
-run = "echo five"
+[tasks.e_ok]
+run = "echo e_ok"
 EOF
 
 # Without --continue-on-error, with --jobs 1, we should stop after the first failure
-output=$(mise run --jobs 1 one ::: two ::: three ::: four ::: five 2>&1) && exit_code=0 || exit_code=$?
+output=$(mise run --jobs 1 a_fail ::: b_ok ::: c_ok ::: d_ok ::: e_ok 2>&1) && exit_code=0 || exit_code=$?
 
 if [ "$exit_code" -eq 0 ]; then
 	echo "Expected non-zero exit code without --continue-on-error"
@@ -29,26 +30,22 @@ if [ "$exit_code" -eq 0 ]; then
 	exit 1
 fi
 
-if ! echo "$output" | grep -q "^one$"; then
-	echo "Expected to see output from task one"
+if ! echo "$output" | grep -q "^a_fail$"; then
+	echo "Expected to see output from failing task a_fail"
 	echo "$output"
 	exit 1
 fi
 
-if ! echo "$output" | grep -q "^two$"; then
-	echo "Expected to see output from failing task two"
-	echo "$output"
-	exit 1
-fi
-
-if echo "$output" | grep -q "^three$"; then
-	echo "Did not expect task three to run without --continue-on-error"
-	echo "$output"
-	exit 1
-fi
+for t in b_ok c_ok d_ok e_ok; do
+	if echo "$output" | grep -q "^$t$"; then
+		echo "Did not expect task $t to run without --continue-on-error"
+		echo "$output"
+		exit 1
+	fi
+done
 
 # With --continue-on-error, all tasks should run, but exit non-zero
-output=$(mise run --continue-on-error --jobs 1 one ::: two ::: three ::: four ::: five 2>&1) && exit_code=0 || exit_code=$?
+output=$(mise run --continue-on-error --jobs 1 a_fail ::: b_ok ::: c_ok ::: d_ok ::: e_ok 2>&1) && exit_code=0 || exit_code=$?
 
 if [ "$exit_code" -eq 0 ]; then
 	echo "Expected non-zero exit code with --continue-on-error if a task fails"
@@ -56,7 +53,7 @@ if [ "$exit_code" -eq 0 ]; then
 	exit 1
 fi
 
-for t in one two three four five; do
+for t in a_fail b_ok c_ok d_ok e_ok; do
 	if ! echo "$output" | grep -q "^$t$"; then
 		echo "Expected to see output from task $t with --continue-on-error"
 		echo "$output"
