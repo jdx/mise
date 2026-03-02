@@ -2228,6 +2228,16 @@
             "type": "string"
           },
           "description": "Other prepare providers that must complete before this one runs"
+        },
+        "touch_outputs": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to update mtime of output files/dirs after a successful run"
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Timeout in seconds for the run command (0 or absent = no timeout)"
         }
       },
       "additionalProperties": false,
