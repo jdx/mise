@@ -18,6 +18,7 @@ pub struct Deps {
     pub graph: DiGraph<Task, ()>,
     sent: HashSet<TaskKey>, // tasks that have already started so should not run again
     removed: HashSet<TaskKey>, // tasks that have already finished to track if we are in an infinitve loop
+    executed: HashSet<TaskKey>, // tasks that actually began executing (not just scheduled)
     post_dep_parents: HashMap<TaskKey, HashSet<TaskKey>>, // maps each post-dep to its parent tasks
     tx: mpsc::UnboundedSender<Option<Task>>,
     // not clone, notify waiters via tx None
@@ -88,11 +89,13 @@ impl Deps {
         let (tx, _) = mpsc::unbounded_channel();
         let sent = HashSet::new();
         let removed = HashSet::new();
+        let executed = HashSet::new();
         Ok(Self {
             graph,
             tx,
             sent,
             removed,
+            executed,
             post_dep_parents,
         })
     }
@@ -140,14 +143,21 @@ impl Deps {
     }
 
     /// Check if a post-dep task should actually run: it must be a post-dependency
-    /// AND its parent must have been scheduled.
-    /// Returns false for non-post-dep tasks or post-deps whose parent was never started.
+    /// AND its parent must have actually started executing (not just been scheduled).
+    /// Returns false for non-post-dep tasks or post-deps whose parent was never executed.
     pub fn is_runnable_post_dep(&self, task: &Task) -> bool {
         let key = task_key(task);
         match self.post_dep_parents.get(&key) {
-            Some(parent_keys) => parent_keys.iter().any(|pk| self.sent.contains(pk)),
+            Some(parent_keys) => parent_keys.iter().any(|pk| self.executed.contains(pk)),
             None => false,
         }
+    }
+
+    /// Mark a task as having actually started execution.
+    /// This is distinct from being scheduled (sent) — a task may be scheduled as a
+    /// graph leaf but then skipped because an earlier task failed.
+    pub fn mark_executed(&mut self, task: &Task) {
+        self.executed.insert(task_key(task));
     }
 
     /// Remove multiple tasks from the graph in a batch, emitting leaves only once at the end.
