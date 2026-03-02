@@ -157,6 +157,11 @@ fn pkgutil_path() -> PathBuf {
     resolve_pkgutil_path(file::which("pkgutil"))
 }
 
+#[cfg(not(macos))]
+fn pkgutil_path() -> PathBuf {
+    PathBuf::from("pkgutil")
+}
+
 #[cfg(macos)]
 fn resolve_pkgutil_path(which_result: Option<PathBuf>) -> PathBuf {
     if let Some(path) = which_result {
