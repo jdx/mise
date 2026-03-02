@@ -478,6 +478,7 @@ impl Run {
         trace!("running task: {task}");
         ctx.jset.lock().await.spawn(async move {
             let _permit = permit_opt;
+            deps_for_remove.lock().await.mark_executed(&task);
             let result = this
                 .run_task_sched(&task, &ctx.config, ctx.sched_tx.clone())
                 .await;
