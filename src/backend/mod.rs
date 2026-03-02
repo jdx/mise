@@ -956,11 +956,14 @@ pub trait Backend: Debug + Send + Sync {
     /// Override to provide format-specific parsing; return `Err` on real failures so the plugin is skipped.
     async fn _parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
         let contents = file::read_to_string(path)?;
-        let trimmed = contents.trim();
-        if trimmed.is_empty() {
+        let normalized = normalize_idiomatic_contents(&contents);
+        if normalized.is_empty() {
             return Ok(vec![]);
         }
-        Ok(trimmed.split_whitespace().map(|s| s.to_string()).collect())
+        Ok(normalized
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect())
     }
 
     fn plugin(&self) -> Option<&PluginEnum> {
