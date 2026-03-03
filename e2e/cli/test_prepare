@@ -464,3 +464,31 @@ assert_not_contains "mise prepare --list" "git-submodule"
 
 # Clean up
 rm -f .gitmodules mise.toml .mise
+
+# Test tera template rendering in prepare.env
+cat >mise.toml <<'EOF'
+[env]
+MY_TEMPLATE_VAR = "hello_from_env"
+
+[prepare.env_tera]
+sources = ["tera_input.txt"]
+outputs = ["tera_output.txt"]
+run = "bash -c 'echo $RENDERED_VAR > tera_output.txt'"
+
+[prepare.env_tera.env]
+RENDERED_VAR = "{{env.MY_TEMPLATE_VAR}}"
+PLAIN_VAR = "no_template"
+EOF
+
+touch tera_input.txt
+
+# Prepare should run successfully
+assert_contains "mise prepare --only env_tera" "env_tera"
+
+# The output file should contain the rendered value, not the raw template
+assert_contains "cat tera_output.txt" "hello_from_env"
+assert_not_contains "cat tera_output.txt" "{{env.MY_TEMPLATE_VAR}}"
+
+# Clean up
+rm -f tera_input.txt tera_output.txt mise.toml
+rm -rf .mise

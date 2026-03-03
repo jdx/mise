@@ -10,6 +10,7 @@ use tokio::task::JoinSet;
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::ConfigFile;
 use crate::config::{Config, Settings};
+use crate::tera::{BASE_CONTEXT, get_tera};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 type StepOutput = (PrepareStepResult, Vec<PathBuf>);
@@ -747,8 +748,24 @@ impl PrepareEngine {
         }
 
         // Apply command-specific environment (can override toolset env)
+        // Render tera templates in env values (e.g., "{{env.baz}}")
+        let mut tera_ctx = BASE_CONTEXT.clone();
+        // Merge toolset env (which includes [env] directives) into tera context
+        // so templates like "{{env.MY_VAR}}" can resolve config-defined vars
+        let mut env_map = crate::env::PRISTINE_ENV.clone();
+        env_map.extend(toolset_env.iter().map(|(k, v)| (k.clone(), v.clone())));
+        tera_ctx.insert("env", &env_map);
+        let mut tera = get_tera(cmd.cwd.as_deref());
         for (k, v) in &cmd.env {
-            runner = runner.env(k, v);
+            let rendered = if v.contains("{{") || v.contains("{%") || v.contains("{#") {
+                tera.render_str(v, &tera_ctx).unwrap_or_else(|e| {
+                    warn!("failed to render template for prepare env {k}: {e}");
+                    v.clone()
+                })
+            } else {
+                v.clone()
+            };
+            runner = runner.env(k, &rendered);
         }
 
         // Use raw output for better UX during dependency installation
