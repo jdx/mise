@@ -174,6 +174,10 @@ bin = "mytool"  # Rename from mytool-linux-x86_64 to mytool
 When downloading single binaries (not archives), mise automatically removes OS/arch suffixes from the filename. For example, `mytool-linux-x86_64` becomes `mytool` automatically. Use the `bin` option only when you need a specific custom name.
 :::
 
+::: info
+On Windows, executable extensions (`.exe`, `.bat`, `.cmd`) are automatically preserved when renaming.
+:::
+
 ### `rename_exe`
 
 Rename the executable after extraction from an archive. This is useful when the archive contains a binary with a platform-specific name that you want to rename:
@@ -187,6 +191,10 @@ rename_exe = "mytool"  # Rename the extracted binary to mytool
 
 ::: tip
 Use `rename_exe` for archives where the binary inside has a different name than desired. Use `bin` for single binary downloads (non-archives).
+:::
+
+::: info
+On Windows, executable extensions (`.exe`, `.bat`, `.cmd`) are automatically preserved when renaming.
 :::
 
 ### `bin_path`
