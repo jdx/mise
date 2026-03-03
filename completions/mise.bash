@@ -9,9 +9,9 @@ _mise() {
 
 	local cur prev words cword was_split comp_args
     _comp_initialize -n : -- "$@" || return
-    local spec_file="${TMPDIR:-/tmp}/usage__usage_spec_mise_2026_2_24.spec"
+    local spec_file="${TMPDIR:-/tmp}/usage__usage_spec_mise_2026_3_0.spec"
     if [[ ! -f "$spec_file" ]]; then
-        mise usage > "$spec_file"
+        mise usage >| "$spec_file"
     fi
     # shellcheck disable=SC2207
 	_comp_compgen -- -W "$(command usage complete-word --shell bash -f "$spec_file" --cword="$cword" -- "${words[@]}")"

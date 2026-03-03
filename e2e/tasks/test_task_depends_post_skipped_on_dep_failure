@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# Test that depends_post does NOT run when a pre-dependency (depends) fails
+# and the main task never executes.
+# Regression test for https://github.com/jdx/mise/discussions/8425
+cat <<EOF >mise.toml
+[tasks.check]
+run = "echo check-failed && exit 1"
+
+[tasks.cleanup]
+run = "echo cleanup-should-not-run"
+
+[tasks.deploy]
+depends = ["check"]
+depends_post = ["cleanup"]
+run = "echo deploying"
+EOF
+
+# "check" fails -> "deploy" never runs -> "cleanup" (depends_post) should NOT run
+output="$(MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 mise run deploy 2>&1)" || true
+if [[ $output == *"cleanup-should-not-run"* ]]; then
+	fail "depends_post ran even though pre-dependency failed and main task never executed"
+fi
+if [[ $output == *"deploying"* ]]; then
+	fail "main task ran even though pre-dependency failed"
+fi
+assert_contains "echo '$output'" "check-failed"
+ok "depends_post correctly skipped when pre-dependency fails"
+
+# Verify depends_post DOES run when the main task itself fails (not a pre-dep)
+cat <<EOF >mise.toml
+[tasks.cleanup]
+run = "echo cleanup-ran"
+
+[tasks.deploy]
+depends_post = ["cleanup"]
+run = "echo deploying && exit 1"
+EOF
+
+output="$(MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 mise run deploy 2>&1)" || true
+assert_contains "echo '$output'" "cleanup-ran"
+ok "depends_post correctly runs when main task itself fails"

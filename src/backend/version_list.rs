@@ -385,4 +385,18 @@ mod tests {
         assert!(versions.contains(&"0.2.0".to_string()));
         assert!(versions.contains(&"1.0.0".to_string()));
     }
+
+    #[test]
+    fn test_parse_with_version_expr_filter_keys_with_regex() {
+        // Test version_expr with filter + # matches for Julia-style JSON (keys with non-version entries)
+        let content = r#"{"1.0.0":{},"1.1.0":{},"nightly":{},"latest":{},"1.2.0-rc1":{}}"#;
+        let versions = parse_version_list(
+            content,
+            None,
+            None,
+            Some(r#"sortVersions(filter(keys(fromJSON(body)), {# matches "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z\\.-]+)?$"}))"#),
+        )
+        .unwrap();
+        assert_eq!(versions, vec!["1.0.0", "1.1.0", "1.2.0-rc1"]);
+    }
 }

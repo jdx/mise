@@ -1,5 +1,40 @@
 # Changelog
 
+## [2026.3.0](https://github.com/jdx/mise/compare/v2026.2.24..v2026.3.0) - 2026-03-02
+
+### 🚀 Features
+
+- **(hooks)** add task references to hooks and watch_files by @jdx in [#8400](https://github.com/jdx/mise/pull/8400)
+- **(prepare)** add git-submodule built-in provider by @jdx in [#8407](https://github.com/jdx/mise/pull/8407)
+- **(prepare)** add human-readable stale reasons to prepare output by @jdx in [#8408](https://github.com/jdx/mise/pull/8408)
+- **(prepare)** add dependency ordering to prepare steps by @jdx in [#8401](https://github.com/jdx/mise/pull/8401)
+- **(prepare)** add --explain flag for provider diagnostics by @jdx in [#8409](https://github.com/jdx/mise/pull/8409)
+- **(prepare)** add per-provider timeout support by @jdx in [#8405](https://github.com/jdx/mise/pull/8405)
+- **(prepare)** add blake3 content-hash freshness checking by @jdx in [#8404](https://github.com/jdx/mise/pull/8404)
+- **(tasks)** monorepo vars and per-task vars by @halms in [#8248](https://github.com/jdx/mise/pull/8248)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** restore bin_paths disk cache with fresh_file invalidation by @jdx in [#8398](https://github.com/jdx/mise/pull/8398)
+- **(idiomatic)** use generic parser for idiomatic files by @risu729 in [#8171](https://github.com/jdx/mise/pull/8171)
+- **(install)** apply precompiled options to all platforms in lockfile by @jdx in [#8396](https://github.com/jdx/mise/pull/8396)
+- **(install)** normalize "v" prefix when matching lockfile versions by @jdx in [#8413](https://github.com/jdx/mise/pull/8413)
+- **(prepare)** improve git submodule parser and fix check_staleness error handling by @jdx in [#8412](https://github.com/jdx/mise/pull/8412)
+- **(python)** respect precompiled settings in lock file generation by @jdx in [#8399](https://github.com/jdx/mise/pull/8399)
+- **(python)** clarify uv_venv_auto docs + prevent uv shim recursion in venv creation by @halms in [#8402](https://github.com/jdx/mise/pull/8402)
+- **(task)** remove deprecated `# mise` task header syntax by @jdx in [#8403](https://github.com/jdx/mise/pull/8403)
+- **(vfox)** avoid eager metadata loading during config file detection by @jdx in [#8397](https://github.com/jdx/mise/pull/8397)
+- clarify GitHub attestations to be artifact ones by @scop in [#8394](https://github.com/jdx/mise/pull/8394)
+- ignore comments in idiomatic version files by @iloveitaly in [#7682](https://github.com/jdx/mise/pull/7682)
+
+### 🚜 Refactor
+
+- unify archive detection by @risu729 in [#8137](https://github.com/jdx/mise/pull/8137)
+
+### 📚 Documentation
+
+- remove duplicated docs for npm.package_manager by @risu729 in [#8414](https://github.com/jdx/mise/pull/8414)
+
 ## [2026.2.24](https://github.com/jdx/mise/compare/v2026.2.23..v2026.2.24) - 2026-02-28
 
 ### 🐛 Bug Fixes
