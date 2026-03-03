@@ -25,6 +25,71 @@ running b
 running c
 running all
 running z"
+# test that task.output config setting works the same as MISE_TASK_OUTPUT env var
+cat <<EOF >mise.toml
+[settings]
+task.output = "silent"
+[tasks.a]
+run = 'echo running a'
+[tasks.b]
+depends = 'a'
+run = 'echo running b'
+[tasks.c]
+depends = ['b']
+run = 'echo running c'
+[tasks.all]
+depends = ['a', 'b', 'c']
+depends_post = 'z'
+run = 'echo running all'
+[tasks.d]
+run = 'echo running d'
+[tasks.z]
+run = 'echo running z'
+EOF
+assert_empty "mise run all" ""
+cat <<EOF >mise.toml
+[settings]
+task.output = "quiet"
+[tasks.a]
+run = 'echo running a'
+[tasks.b]
+depends = 'a'
+run = 'echo running b'
+[tasks.c]
+depends = ['b']
+run = 'echo running c'
+[tasks.all]
+depends = ['a', 'b', 'c']
+depends_post = 'z'
+run = 'echo running all'
+[tasks.d]
+run = 'echo running d'
+[tasks.z]
+run = 'echo running z'
+EOF
+assert "mise run all" "running a
+running b
+running c
+running all
+running z"
+cat <<EOF >mise.toml
+[tasks.a]
+run = 'echo running a'
+[tasks.b]
+depends = 'a'
+run = 'echo running b'
+[tasks.c]
+depends = ['b']
+run = 'echo running c'
+[tasks.all]
+depends = ['a', 'b', 'c']
+depends_post = 'z'
+run = 'echo running all'
+[tasks.d]
+run = 'echo running d'
+[tasks.z]
+run = 'echo running z'
+EOF
 MISE_TASK_OUTPUT=interleave assert "mise run all" "running a
 running b
 running c
