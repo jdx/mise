@@ -6,12 +6,14 @@ use crate::config::Config;
 use crate::duration;
 use crate::file;
 use crate::task::Task;
+use crate::task::task_execution_plan::{format_declaration_location, task_declaration_ref};
 use crate::task::task_fetcher::TaskFetcher;
-use crate::ui::style;
+use crate::task::task_resolution_diagnostic::{
+    DEFAULT_AVAILABLE_TASKS_PREVIEW_LIMIT, ResolutionScope,
+};
 use console::style as console_style;
 use eyre::{Result, eyre};
 use indexmap::IndexMap;
-use itertools::Itertools;
 use serde::Serialize;
 
 /// Validate tasks for common errors and issues
@@ -54,6 +56,8 @@ struct ValidationResults {
     tasks_validated: usize,
     errors: usize,
     warnings: usize,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    task_declarations: BTreeMap<String, String>,
     issues: Vec<ValidationIssue>,
 }
 
@@ -102,6 +106,15 @@ impl TasksValidate {
                 .iter()
                 .filter(|i| i.severity == Severity::Warning)
                 .count(),
+            task_declarations: tasks
+                .iter()
+                .map(|task| {
+                    (
+                        task.name.clone(),
+                        format_declaration_location(&task_declaration_ref(task)),
+                    )
+                })
+                .collect(),
             issues,
         };
 
@@ -144,11 +157,15 @@ impl TasksValidate {
             {
                 Some(task) => tasks.push(task),
                 None => {
-                    return Err(eyre!(
-                        "Task '{}' not found. Available tasks: {}",
-                        name,
-                        all_tasks.keys().map(style::ecyan).join(", ")
-                    ));
+                    let mut lines = vec![format!("Task '{}' not found.", name)];
+                    let scope = ResolutionScope::from_tasks(all_tasks.values());
+                    scope.append_to_with_name(
+                        &mut lines,
+                        DEFAULT_AVAILABLE_TASKS_PREVIEW_LIMIT,
+                        |task_name| crate::ui::style::ecyan(task_name).to_string(),
+                    );
+
+                    return Err(eyre!(lines.join("\n")));
                 }
             }
         }
@@ -195,6 +212,9 @@ impl TasksValidate {
 
         // 11. Validate run entries
         issues.extend(self.validate_run_entries(task, all_tasks));
+
+        // 12. Validate interactive contract
+        issues.extend(self.validate_interactive_contract(task));
 
         issues
     }
@@ -601,6 +621,20 @@ impl TasksValidate {
         issues
     }
 
+    fn validate_interactive_contract(&self, task: &Task) -> Vec<ValidationIssue> {
+        if let Some(details) = task.interactive_validation_error() {
+            vec![ValidationIssue {
+                task: task.name.clone(),
+                severity: Severity::Error,
+                category: "invalid-interactive".to_string(),
+                message: "Invalid interactive task configuration".to_string(),
+                details: Some(details),
+            }]
+        } else {
+            vec![]
+        }
+    }
+
     fn output_json(&self, results: &ValidationResults) -> Result<()> {
         let json = serde_json::to_string_pretty(results)?;
         miseprintln!("{}", json);
@@ -659,11 +693,21 @@ impl TasksValidate {
 
         // Print issues grouped by task
         for (task_name, task_issues) in issues_by_task {
-            miseprintln!(
-                "{} {}",
-                console_style("Task:").bold(),
-                console_style(&task_name).cyan()
-            );
+            let declaration = results.task_declarations.get(&task_name);
+            let task_label = match declaration {
+                Some(location) => format!(
+                    "{} {} ({})",
+                    console_style("Task:").bold(),
+                    console_style(&task_name).cyan(),
+                    console_style(location).dim()
+                ),
+                None => format!(
+                    "{} {}",
+                    console_style("Task:").bold(),
+                    console_style(&task_name).cyan()
+                ),
+            };
+            miseprintln!("{task_label}");
 
             for issue in task_issues {
                 let severity_icon = match issue.severity {

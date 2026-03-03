@@ -4,24 +4,24 @@ set -euo pipefail
 # Repro for discussion #6255: CLI groups with ::: and jobs=1
 
 cat <<EOF >mise.toml
+[tasks.fail]
+run = "echo fail; exit 1"
+
 [tasks.one]
 run = "echo one"
 
 [tasks.two]
-run = "echo two; exit 1"
+run = "echo two"
 
 [tasks.three]
 run = "echo three"
 
 [tasks.four]
 run = "echo four"
-
-[tasks.five]
-run = "echo five"
 EOF
 
 # Without --continue-on-error, with --jobs 1, we should stop after the first failure
-output=$(mise run --jobs 1 one ::: two ::: three ::: four ::: five 2>&1) && exit_code=0 || exit_code=$?
+output=$(mise run --jobs 1 fail ::: one ::: two ::: three ::: four 2>&1) && exit_code=0 || exit_code=$?
 
 if [ "$exit_code" -eq 0 ]; then
 	echo "Expected non-zero exit code without --continue-on-error"
@@ -29,26 +29,22 @@ if [ "$exit_code" -eq 0 ]; then
 	exit 1
 fi
 
-if ! echo "$output" | grep -q "^one$"; then
-	echo "Expected to see output from task one"
+if ! echo "$output" | grep -q "^fail$"; then
+	echo "Expected to see output from failing task"
 	echo "$output"
 	exit 1
 fi
 
-if ! echo "$output" | grep -q "^two$"; then
-	echo "Expected to see output from failing task two"
-	echo "$output"
-	exit 1
-fi
-
-if echo "$output" | grep -q "^three$"; then
-	echo "Did not expect task three to run without --continue-on-error"
-	echo "$output"
-	exit 1
-fi
+for t in one two three four; do
+	if echo "$output" | grep -q "^$t$"; then
+		echo "Did not expect task $t to run without --continue-on-error"
+		echo "$output"
+		exit 1
+	fi
+done
 
 # With --continue-on-error, all tasks should run, but exit non-zero
-output=$(mise run --continue-on-error --jobs 1 one ::: two ::: three ::: four ::: five 2>&1) && exit_code=0 || exit_code=$?
+output=$(mise run --continue-on-error --jobs 1 fail ::: one ::: two ::: three ::: four 2>&1) && exit_code=0 || exit_code=$?
 
 if [ "$exit_code" -eq 0 ]; then
 	echo "Expected non-zero exit code with --continue-on-error if a task fails"
@@ -56,7 +52,7 @@ if [ "$exit_code" -eq 0 ]; then
 	exit 1
 fi
 
-for t in one two three four five; do
+for t in fail one two three four; do
 	if ! echo "$output" | grep -q "^$t$"; then
 		echo "Expected to see output from task $t with --continue-on-error"
 		echo "$output"

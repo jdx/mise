@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cat <<EOF >mise.toml
+[tasks.build]
+run = "echo build"
+
+[tasks.test]
+depends = ["build"]
+run = "echo test"
+
+[tasks.app]
+depends = ["test"]
+run = "echo app"
+EOF
+
+assert_succeed "MISE_TRACE=1 mise run app > run.out 2> trace.log"
+
+assert_contains "cat run.out" "build"
+assert_contains "cat run.out" "test"
+assert_contains "cat run.out" "app"
+
+assert_contains "cat trace.log" "scheduler received: build"
+assert_contains "cat trace.log" "scheduler received: test"
+assert_contains "cat trace.log" "scheduler received: app"
+
+assert_contains "cat trace.log" "[stage 1/3, kind=parallel, plan=sha256:"
+assert_contains "cat trace.log" "[stage 2/3, kind=parallel, plan=sha256:"
+assert_contains "cat trace.log" "[stage 3/3, kind=parallel, plan=sha256:"

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# MatrixRef: V06,V11 global pre-run validation / C7,C8
+cat <<EOF2 >mise.toml
+[tasks.ok]
+run = "echo ok"
+
+[tasks.bad_orchestrator]
+interactive = true
+run = [{ task = "ok" }]
+
+[tasks.bad_silent]
+interactive = true
+silent = "stdout"
+run = "echo bad"
+
+[tasks.root]
+depends = ["bad_orchestrator", "bad_silent"]
+run = "echo root"
+EOF2
+
+assert_fail_contains "mise run --plan root" "pre-run validation failed"
+# shellcheck disable=SC2016 # backticks are expected literally in error message assertions
+assert_fail_contains "mise run --plan root" 'invalid task `bad_orchestrator`'
+assert_fail_contains "mise run --plan root" "interactive=true is only allowed on runtime tasks"
+# shellcheck disable=SC2016 # backticks are expected literally in error message assertions
+assert_fail_contains "mise run --plan root" 'invalid task `bad_silent`'
+assert_fail_contains "mise run --plan root" 'interactive=true is incompatible with silent=true|"stdout"|"stderr"'

@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# MatrixRef: V04,V05,V07,V08,V10,V11,V12,V13,V14,I01,I02,I03,C01 / C7,C8,C9,C15
+cat <<EOF >mise.toml
+[task_templates.runtime_template]
+interactive = true
+
+[tasks.runtime_ok]
+extends = "runtime_template"
+run = "echo ok"
+
+[tasks.mixed_ok]
+interactive = true
+run = ["echo mixed", { task = "runtime_ok" }]
+
+[tasks.raw_ok]
+interactive = true
+raw = true
+run = "echo raw"
+
+[tasks.orchestrator_bad]
+interactive = true
+run = [{ task = "runtime_ok" }]
+
+[tasks.silent_bad]
+interactive = true
+silent = "stdout"
+run = "echo bad"
+
+[tasks.silent_true_bad]
+interactive = true
+silent = true
+run = "echo bad"
+
+[tasks.silent_stderr_bad]
+interactive = true
+silent = "stderr"
+run = "echo bad"
+
+[tasks.override_false]
+extends = "runtime_template"
+interactive = false
+run = "echo override"
+EOF
+
+assert_succeed "mise run --dry-run runtime_ok"
+assert_contains "mise tasks info runtime_ok --json" '"interactive": true'
+assert_contains "mise tasks info override_false --json" '"interactive": false'
+assert_contains "mise tasks ls --json | jq -r '.[] | select(.name==\"raw_ok\") | .interactive'" "true"
+
+assert_fail_contains "mise run orchestrator_bad" "interactive=true is only allowed on runtime tasks"
+assert_fail_contains "mise run silent_bad" 'interactive=true is incompatible with silent=true|"stdout"|"stderr"'
+assert_fail_contains "mise run silent_true_bad" 'interactive=true is incompatible with silent=true|"stdout"|"stderr"'
+assert_fail_contains "mise run silent_stderr_bad" 'interactive=true is incompatible with silent=true|"stdout"|"stderr"'
+assert_fail_contains "mise tasks validate --json" '"invalid-interactive"'
+
+# MatrixRef: V04 / C15
+cat <<EOF >mise.toml
+[tasks.invalid_type]
+interactive = "yes"
+run = "echo nope"
+EOF
+assert_fail_contains "mise tasks ls --json" "invalid type"
+
+# MatrixRef: I01,I02 / C15
+assert "jq -r '.\"\$defs\".task.oneOf[2].properties.interactive.type' \"$ROOT/schema/mise.json\"" "boolean"
+assert "jq -r '.\"\$defs\".task.oneOf[2].properties.interactive.type' \"$ROOT/schema/mise-task.json\"" "boolean"

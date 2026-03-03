@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# MatrixRef: R04 / C16
 # Test that raw tasks get interleave output even when task.output=prefix is set
 # This ensures raw=true takes priority over task.output setting
 

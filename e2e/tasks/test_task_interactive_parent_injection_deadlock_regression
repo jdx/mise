@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+require_cmd expect
+
+run_expect_with_input() {
+	local cmd="$1"
+	local prompt_re="$2"
+	local input="$3"
+	expect "$TEST_ROOT/helpers/scripts/interactive_expect.tcl" with-input "$cmd" "$prompt_re" "$input"
+}
+
+# RegressionRef: STATIC-008
+# Goal: interactive parent tasks that inject sub-tasks must not deadlock.
+# Expected behavior (target): injected sub-task(s) execute after parent interactive step.
+
+cat <<'EOF' >mise.toml
+[tasks.child_runtime]
+run = 'echo CHILD_RUNTIME_OK'
+
+[tasks.parent_runtime_child]
+interactive = true
+run = [
+  'printf "PARENT1_PROMPT>" >&2; read -r line; echo "PARENT1:$line"',
+  { task = "child_runtime" }
+]
+EOF
+
+out="$(run_expect_with_input "mise run --timeout=3s parent_runtime_child" "PARENT1_PROMPT>" "ok1" 2>&1)" || {
+	echo "$out"
+	fail "STATIC-008: parent interactive -> runtime child deadlocked"
+}
+[[ $out == *"PARENT1:ok1"* ]] || fail "STATIC-008: parent interactive output missing (runtime child path): $out"
+[[ $out == *"CHILD_RUNTIME_OK"* ]] || fail "STATIC-008: injected runtime child did not execute: $out"
+[[ $out != *"timed out after"* ]] || fail "STATIC-008: timeout indicates deadlock (runtime child path): $out"
+
+cat <<'EOF' >mise.toml
+[tasks.child_interactive]
+interactive = true
+run = 'printf "CHILD2_PROMPT>" >&2; read -r line; echo "CHILD2:$line"'
+
+[tasks.parent_interactive_child]
+interactive = true
+run = [
+  'printf "PARENT2_PROMPT>" >&2; read -r line; echo "PARENT2:$line"',
+  { task = "child_interactive" }
+]
+EOF
+
+out="$(
+	expect <<'EOF' 2>&1
+set timeout 40
+spawn bash -lc "mise run --timeout=4s parent_interactive_child"
+expect "PARENT2_PROMPT>"
+send -- "ok2\r"
+expect "CHILD2_PROMPT>"
+send -- "ok3\r"
+expect eof
+set ws [wait]
+if {[llength $ws] >= 4} {
+    exit [lindex $ws 3]
+}
+exit 1
+EOF
+)" || {
+	echo "$out"
+	fail "STATIC-008: parent interactive -> interactive child deadlocked"
+}
+[[ $out == *"PARENT2:ok2"* ]] || fail "STATIC-008: parent interactive output missing (interactive child path): $out"
+[[ $out == *"CHILD2:ok3"* ]] || fail "STATIC-008: injected interactive child did not execute: $out"
+[[ $out != *"timed out after"* ]] || fail "STATIC-008: timeout indicates deadlock (interactive child path): $out"

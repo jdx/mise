@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# MatrixRef: S13,N01 / C17
+cat <<EOF >mise.toml
+[tasks.ask]
+interactive = true
+run = "echo ask"
+EOF
+
+assert_fail_contains "mise run ask" "require a TTY on stdin"

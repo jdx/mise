@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# MatrixRef: R03 / C16
+cat <<'EOF' >mise.toml
+[tasks.a]
+run = 'echo "A_NON_INTERACTIVE"'
+
+[tasks.b]
+run = 'echo "B_NON_INTERACTIVE"'
+EOF
+
+assert_contains "MISE_TASK_OUTPUT=replacing mise run a ::: b 2>&1" "A_NON_INTERACTIVE"
+assert_contains "MISE_TASK_OUTPUT=replacing mise run a ::: b 2>&1" "B_NON_INTERACTIVE"
+assert_contains "MISE_TASK_OUTPUT=timed mise run a ::: b 2>&1" "A_NON_INTERACTIVE"
+assert_contains "MISE_TASK_OUTPUT=timed mise run a ::: b 2>&1" "B_NON_INTERACTIVE"

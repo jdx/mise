@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# MatrixRef: cycle pre-run validation / C11,C13
+cat <<EOF2 >mise.toml
+[tasks.a]
+wait_for = ["b"]
+run = "echo a"
+
+[tasks.b]
+wait_for = ["a"]
+run = "echo b"
+EOF2
+
+assert_fail_contains "mise run --plan a ::: b" "pre-run validation failed"
+assert_fail_contains "mise run --plan a ::: b" "circular dependency detected in static DAG: a -> b -> a"

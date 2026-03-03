@@ -1,31 +1,32 @@
 use crate::cli::args::ToolArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings, env_directive::EnvDirective};
+use crate::config::{Config, Settings};
 use crate::duration;
 use crate::file::{display_path, is_executable};
 use crate::task::task_context_builder::TaskContextBuilder;
-use crate::task::task_list::split_task_spec;
+use crate::task::task_execution_plan::{ExecutionPlan, PlanContextIndex};
+use crate::task::task_helpers::{task_is_static_join_noop, task_logical_name};
+use crate::task::task_io_policy::{InteractiveStream, build_task_io_policy};
 use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::task_source_checker::{save_checksum, sources_are_fresh, task_cwd};
-use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
+use crate::task::{FailedTasks, Task};
 use crate::toolset::env_cache::CachedEnv;
 use crate::ui::{style, time};
 use duct::IntoExecutablePath;
-use eyre::{Report, Result, ensure, eyre};
+use eyre::{Report, Result, bail, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 #[cfg(unix)]
 use nix::errno::Errno;
 use std::collections::BTreeMap;
+use std::io::IsTerminal;
 use std::iter::once;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, SystemTime};
-use tokio::sync::Mutex;
-use tokio::sync::{mpsc, oneshot};
 use xx::file;
 
 /// Configuration for TaskExecutor
@@ -35,9 +36,7 @@ pub struct TaskExecutorConfig {
     pub shell: Option<String>,
     pub tool: Vec<ToolArg>,
     pub timings: bool,
-    pub continue_on_error: bool,
     pub dry_run: bool,
-    pub skip_deps: bool,
 }
 
 /// Executes tasks with proper context, environment, and output handling
@@ -52,9 +51,9 @@ pub struct TaskExecutor {
     pub shell: Option<String>,
     pub tool: Vec<ToolArg>,
     pub timings: bool,
-    pub continue_on_error: bool,
     pub dry_run: bool,
-    pub skip_deps: bool,
+
+    plan_context: PlanContextIndex,
 }
 
 impl TaskExecutor {
@@ -62,7 +61,12 @@ impl TaskExecutor {
         context_builder: TaskContextBuilder,
         output_handler: OutputHandler,
         config: TaskExecutorConfig,
+        execution_plan: Option<&ExecutionPlan>,
+        plan_hash: Option<String>,
     ) -> Self {
+        let plan_context = execution_plan
+            .map(|plan| PlanContextIndex::from_plan(plan, plan_hash.clone()))
+            .unwrap_or_default();
         Self {
             context_builder,
             output_handler,
@@ -72,9 +76,8 @@ impl TaskExecutor {
             shell: config.shell,
             tool: config.tool,
             timings: config.timings,
-            continue_on_error: config.continue_on_error,
             dry_run: config.dry_run,
-            skip_deps: config.skip_deps,
+            plan_context,
         }
     }
 
@@ -113,15 +116,12 @@ impl TaskExecutor {
             )
     }
 
-    pub async fn run_task_sched(
-        &self,
-        task: &Task,
-        config: &Arc<Config>,
-        sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
-    ) -> Result<()> {
+    pub async fn run_task_sched(&self, task: &Task, config: &Arc<Config>) -> Result<()> {
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
-        if Settings::get().task.skip.contains(&task.name) {
+        if Settings::get().task.skip.contains(&task.name)
+            || Settings::get().task.skip.contains(task_logical_name(task))
+        {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "skipping task");
             }
@@ -131,6 +131,10 @@ impl TaskExecutor {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "sources up-to-date, skipping");
             }
+            return Ok(());
+        }
+        if task_is_static_join_noop(task) {
+            trace!("skipping static join noop task {}", task.name);
             return Ok(());
         }
 
@@ -164,7 +168,7 @@ impl TaskExecutor {
 
         // Build environment - either from task's config file context or standard way
         // extra_vars contains resolved vars from the task's config hierarchy (for monorepo tasks)
-        let (mut env, task_env, extra_vars) = if let Some(task_cf) = task_cf {
+        let (mut env, _task_env, extra_vars) = if let Some(task_cf) = task_cf {
             self.context_builder
                 .resolve_task_env_with_config(config, task, task_cf, &ts)
                 .await?
@@ -192,7 +196,7 @@ impl TaskExecutor {
         if let Some(root) = config.project_root.clone().or(task.config_root.clone()) {
             env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
         }
-        env.insert("MISE_TASK_NAME".into(), task.name.clone());
+        env.insert("MISE_TASK_NAME".into(), task_logical_name(task).to_string());
         let task_file = task
             .file_path(config)
             .await?
@@ -204,6 +208,7 @@ impl TaskExecutor {
         if let Some(config_root) = &task.config_root {
             env.insert("MISE_CONFIG_ROOT".into(), config_root.display().to_string());
         }
+        self.inject_plan_context_env(task, &mut env);
 
         // Ensure cache key exists for task subprocesses for nested mise invocations
         // This matches exec.rs behavior - enables caching for subprocesses
@@ -249,15 +254,8 @@ impl TaskExecutor {
             self.check_confirmation(config, task, &env).await?;
 
             let exec_start = std::time::Instant::now();
-            self.exec_task_run_entries(
-                config,
-                task,
-                (&env, &task_env),
-                &prefix,
-                rendered_run_scripts,
-                sched_tx,
-            )
-            .await?;
+            self.exec_task_run_entries(task, &env, &prefix, rendered_run_scripts)
+                .await?;
             trace!(
                 "task {} exec_task_run_entries took {}ms (total {}ms)",
                 task.name,
@@ -283,14 +281,11 @@ impl TaskExecutor {
 
     async fn exec_task_run_entries(
         &self,
-        config: &Arc<Config>,
         task: &Task,
-        full_env: (&BTreeMap<String, String>, &[(String, String)]),
+        env: &BTreeMap<String, String>,
         prefix: &str,
         rendered_scripts: Vec<(String, Vec<String>)>,
-        sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
     ) -> Result<()> {
-        let (env, task_env) = full_env;
         use crate::task::RunEntry;
         let mut script_iter = rendered_scripts.into_iter();
         for entry in task.run() {
@@ -301,165 +296,27 @@ impl TaskExecutor {
                     }
                 }
                 RunEntry::SingleTask { task: spec } => {
-                    let resolved_spec = crate::task::resolve_task_pattern(spec, Some(task));
-                    self.inject_and_wait(config, &[resolved_spec], task_env, sched_tx.clone())
-                        .await?;
+                    let declaration = self.task_declaration_location(task);
+                    bail!(
+                        "internal static DAG error: unresolved run task reference `{}` in `{}` ({}){}",
+                        spec,
+                        task.name,
+                        declaration,
+                        self.task_plan_stage_suffix(task)
+                    );
                 }
                 RunEntry::TaskGroup { tasks } => {
-                    let resolved_tasks: Vec<String> = tasks
-                        .iter()
-                        .map(|t| crate::task::resolve_task_pattern(t, Some(task)))
-                        .collect();
-                    self.inject_and_wait(config, &resolved_tasks, task_env, sched_tx.clone())
-                        .await?;
+                    let declaration = self.task_declaration_location(task);
+                    bail!(
+                        "internal static DAG error: unresolved run task group [{}] in `{}` ({}){}",
+                        tasks.join(", "),
+                        task.name,
+                        declaration,
+                        self.task_plan_stage_suffix(task)
+                    );
                 }
             }
         }
-        Ok(())
-    }
-
-    async fn inject_and_wait(
-        &self,
-        config: &Arc<Config>,
-        specs: &[String],
-        task_env: &[(String, String)],
-        sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
-    ) -> Result<()> {
-        use crate::task::TaskLoadContext;
-        trace!("inject start: {}", specs.join(", "));
-        // Build tasks list from specs
-        // Create a TaskLoadContext from the specs to ensure project tasks are loaded
-        let ctx = TaskLoadContext::from_patterns(specs.iter().map(|s| {
-            let (name, _) = split_task_spec(s);
-            name
-        }));
-        let tasks = config.tasks_with_context(Some(&ctx)).await?;
-        let tasks_map: BTreeMap<String, Task> = tasks
-            .iter()
-            .flat_map(|(_, t)| {
-                t.aliases
-                    .iter()
-                    .map(|a| (a.to_string(), t.clone()))
-                    .chain(once((t.name.clone(), t.clone())))
-                    .collect::<Vec<_>>()
-            })
-            .collect();
-        let mut to_run: Vec<Task> = vec![];
-        for spec in specs {
-            let (name, args) = split_task_spec(spec);
-            let matches = tasks_map.get_matching(name)?;
-            ensure!(!matches.is_empty(), "task not found: {}", name);
-            for t in matches {
-                let mut t = (*t).clone();
-                t.args = args.clone();
-                if self.skip_deps {
-                    t.depends.clear();
-                    t.depends_post.clear();
-                    t.wait_for.clear();
-                }
-                to_run.push(t);
-            }
-        }
-        let sub_deps = Deps::new(config, to_run).await?;
-        let sub_deps = Arc::new(Mutex::new(sub_deps));
-
-        // Pump subgraph into scheduler and signal completion via oneshot when done
-        let (done_tx, mut done_rx) = oneshot::channel::<()>();
-        let task_env_directives: Vec<EnvDirective> =
-            task_env.iter().cloned().map(Into::into).collect();
-        {
-            let sub_deps_clone = sub_deps.clone();
-            let sched_tx = sched_tx.clone();
-            // forward initial leaves synchronously
-            {
-                let mut rx = sub_deps_clone.lock().await.subscribe();
-                let mut any = false;
-                loop {
-                    match rx.try_recv() {
-                        Ok(Some(task)) => {
-                            any = true;
-                            let task = task.derive_env(&task_env_directives);
-                            trace!("inject initial leaf: {} {}", task.name, task.args.join(" "));
-                            let _ = sched_tx.send((task, sub_deps_clone.clone()));
-                        }
-                        Ok(None) => {
-                            trace!("inject initial done");
-                            break;
-                        }
-                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
-                            break;
-                        }
-                        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
-                            break;
-                        }
-                    }
-                }
-                if !any {
-                    trace!("inject had no initial leaves");
-                }
-            }
-            // then forward remaining leaves asynchronously
-            tokio::spawn(async move {
-                let mut rx = sub_deps_clone.lock().await.subscribe();
-                while let Some(msg) = rx.recv().await {
-                    match msg {
-                        Some(task) => {
-                            trace!(
-                                "inject leaf scheduled: {} {}",
-                                task.name,
-                                task.args.join(" ")
-                            );
-                            let task = task.derive_env(&task_env_directives);
-                            let _ = sched_tx.send((task, sub_deps_clone.clone()));
-                        }
-                        None => {
-                            let _ = done_tx.send(());
-                            trace!("inject complete");
-                            break;
-                        }
-                    }
-                }
-            });
-        }
-
-        // Wait for completion with a check for early stopping
-        loop {
-            // Check if we should stop early due to failure
-            if self.is_stopping() && !self.continue_on_error {
-                trace!("inject_and_wait: stopping early due to failure");
-                // Clean up the dependency graph to ensure completion
-                let mut deps = sub_deps.lock().await;
-                let tasks_to_remove: Vec<Task> = deps.all().cloned().collect();
-                for task in tasks_to_remove {
-                    deps.remove(&task);
-                }
-                drop(deps);
-                // Give a short time for the spawned task to finish cleanly
-                let _ = tokio::time::timeout(Duration::from_millis(100), done_rx).await;
-                return Err(eyre!("task sequence aborted due to failure"));
-            }
-
-            // Try to receive the done signal with a short timeout
-            match tokio::time::timeout(Duration::from_millis(100), &mut done_rx).await {
-                Ok(Ok(())) => {
-                    trace!("inject_and_wait: received done signal");
-                    break;
-                }
-                Ok(Err(e)) => {
-                    return Err(eyre!(e));
-                }
-                Err(_) => {
-                    // Timeout, check again if we should stop
-                    continue;
-                }
-            }
-        }
-
-        // Final check if we failed during the execution
-        if self.is_stopping() && !self.continue_on_error {
-            return Err(eyre!("task sequence aborted due to failure"));
-        }
-
         Ok(())
     }
 
@@ -639,13 +496,33 @@ impl TaskExecutor {
         let config = Config::get().await?;
         let program = program.to_executable();
         let redactions = config.redactions();
-        let raw = self.raw(Some(task));
+        let io_policy = build_task_io_policy(
+            task,
+            self.raw(Some(task)),
+            self.dry_run,
+            std::io::stdin().is_terminal(),
+            !redactions.is_empty(),
+        )
+        .map_err(|msg| eyre!(msg))?;
         let mut cmd = CmdLineRunner::new(program.clone())
             .args(args)
             .envs(env)
             .redact(redactions.deref().clone())
-            .raw(raw);
-        if raw && !redactions.is_empty() {
+            .raw(io_policy.raw);
+        if io_policy.warn_interactive_raw_redundant {
+            hint!(
+                "interactive_raw_redundant",
+                "task has interactive=true and raw=true; raw is redundant because interactive already implies passthrough I/O",
+                ""
+            );
+        }
+        if io_policy.warn_interactive_redactions {
+            hint!(
+                "interactive_redactions",
+                "interactive passthrough does not support live line-by-line redactions; output may include unredacted values",
+                ""
+            );
+        } else if io_policy.warn_raw_redactions {
             hint!(
                 "raw_redactions",
                 "--raw will prevent mise from being able to use redactions",
@@ -654,112 +531,124 @@ impl TaskExecutor {
         }
         let output = self.output(Some(task));
         cmd.with_pass_signals();
-        match output {
-            TaskOutput::Prefix => {
-                if !task.silent.suppresses_stdout() {
-                    cmd = cmd.with_on_stdout(|line| {
-                        if console::colors_enabled() {
-                            prefix_println!(prefix, "{line}\x1b[0m");
-                        } else {
-                            prefix_println!(prefix, "{line}");
-                        }
-                    });
-                } else {
-                    cmd = cmd.stdout(Stdio::null());
-                }
-                if !task.silent.suppresses_stderr() {
-                    cmd = cmd.with_on_stderr(|line| {
-                        if console::colors_enabled() {
-                            self.eprint(task, prefix, &format!("{line}\x1b[0m"));
-                        } else {
-                            self.eprint(task, prefix, &line);
-                        }
-                    });
-                } else {
-                    cmd = cmd.stderr(Stdio::null());
-                }
-            }
-            TaskOutput::KeepOrder => {
-                if !task.silent.suppresses_stdout() {
-                    let state = self.output_handler.keep_order_state.clone();
-                    let task_clone = task.clone();
-                    let prefix_str = prefix.to_string();
-                    cmd = cmd.with_on_stdout(move |line| {
-                        state
-                            .lock()
-                            .unwrap()
-                            .on_stdout(&task_clone, prefix_str.clone(), line);
-                    });
-                } else {
-                    cmd = cmd.stdout(Stdio::null());
-                }
-                if !task.silent.suppresses_stderr() {
-                    let state = self.output_handler.keep_order_state.clone();
-                    let task_clone = task.clone();
-                    let prefix_str = prefix.to_string();
-                    cmd = cmd.with_on_stderr(move |line| {
-                        state
-                            .lock()
-                            .unwrap()
-                            .on_stderr(&task_clone, prefix_str.clone(), line);
-                    });
-                } else {
-                    cmd = cmd.stderr(Stdio::null());
-                }
-            }
-            TaskOutput::Replacing => {
-                // Replacing mode shows a progress indicator unless both streams are suppressed
-                if task.silent.suppresses_stdout() {
-                    cmd = cmd.stdout(Stdio::null());
-                }
-                if task.silent.suppresses_stderr() {
-                    cmd = cmd.stderr(Stdio::null());
-                }
-                // Show progress indicator except when both streams are fully suppressed
-                if !task.silent.suppresses_both() {
-                    let pr = self.output_handler.task_prs.get(task).unwrap().clone();
-                    cmd = cmd.with_pr_arc(pr);
-                }
-            }
-            TaskOutput::Timed => {
-                if !task.silent.suppresses_stdout() {
-                    let timed_outputs = self.output_handler.timed_outputs.clone();
-                    cmd = cmd.with_on_stdout(move |line| {
-                        timed_outputs
-                            .lock()
-                            .unwrap()
-                            .insert(prefix.to_string(), (SystemTime::now(), line));
-                    });
-                } else {
-                    cmd = cmd.stdout(Stdio::null());
-                }
-                if !task.silent.suppresses_stderr() {
-                    cmd = cmd.with_on_stderr(|line| {
-                        if console::colors_enabled() {
-                            self.eprint(task, prefix, &format!("{line}\x1b[0m"));
-                        } else {
-                            self.eprint(task, prefix, &line);
-                        }
-                    });
-                } else {
-                    cmd = cmd.stderr(Stdio::null());
-                }
-            }
-            TaskOutput::Silent => {
-                cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
-            }
-            TaskOutput::Quiet | TaskOutput::Interleave => {
-                if raw || redactions.is_empty() {
-                    cmd = cmd.stdin(Stdio::inherit());
+        if io_policy.passthrough_stdio {
+            cmd = cmd.stdin(Stdio::inherit());
+            cmd = match io_policy.stdout {
+                InteractiveStream::Inherit => cmd.stdout(Stdio::inherit()),
+                InteractiveStream::Null => cmd.stdout(Stdio::null()),
+            };
+            cmd = match io_policy.stderr {
+                InteractiveStream::Inherit => cmd.stderr(Stdio::inherit()),
+                InteractiveStream::Null => cmd.stderr(Stdio::null()),
+            };
+        } else {
+            match output {
+                TaskOutput::Prefix => {
                     if !task.silent.suppresses_stdout() {
-                        cmd = cmd.stdout(Stdio::inherit());
+                        cmd = cmd.with_on_stdout(|line| {
+                            if console::colors_enabled() {
+                                prefix_println!(prefix, "{line}\x1b[0m");
+                            } else {
+                                prefix_println!(prefix, "{line}");
+                            }
+                        });
                     } else {
                         cmd = cmd.stdout(Stdio::null());
                     }
                     if !task.silent.suppresses_stderr() {
-                        cmd = cmd.stderr(Stdio::inherit());
+                        cmd = cmd.with_on_stderr(|line| {
+                            if console::colors_enabled() {
+                                self.eprint(task, prefix, &format!("{line}\x1b[0m"));
+                            } else {
+                                self.eprint(task, prefix, &line);
+                            }
+                        });
                     } else {
                         cmd = cmd.stderr(Stdio::null());
+                    }
+                }
+                TaskOutput::KeepOrder => {
+                    if !task.silent.suppresses_stdout() {
+                        let state = self.output_handler.keep_order_state.clone();
+                        let task_clone = task.clone();
+                        let prefix_str = prefix.to_string();
+                        cmd = cmd.with_on_stdout(move |line| {
+                            state
+                                .lock()
+                                .unwrap()
+                                .on_stdout(&task_clone, prefix_str.clone(), line);
+                        });
+                    } else {
+                        cmd = cmd.stdout(Stdio::null());
+                    }
+                    if !task.silent.suppresses_stderr() {
+                        let state = self.output_handler.keep_order_state.clone();
+                        let task_clone = task.clone();
+                        let prefix_str = prefix.to_string();
+                        cmd = cmd.with_on_stderr(move |line| {
+                            state
+                                .lock()
+                                .unwrap()
+                                .on_stderr(&task_clone, prefix_str.clone(), line);
+                        });
+                    } else {
+                        cmd = cmd.stderr(Stdio::null());
+                    }
+                }
+                TaskOutput::Replacing => {
+                    // Replacing mode shows a progress indicator unless both streams are suppressed
+                    if task.silent.suppresses_stdout() {
+                        cmd = cmd.stdout(Stdio::null());
+                    }
+                    if task.silent.suppresses_stderr() {
+                        cmd = cmd.stderr(Stdio::null());
+                    }
+                    // Show progress indicator except when both streams are fully suppressed
+                    if !task.silent.suppresses_both() {
+                        let pr = self.output_handler.task_prs.get(task).unwrap().clone();
+                        cmd = cmd.with_pr_arc(pr);
+                    }
+                }
+                TaskOutput::Timed => {
+                    if !task.silent.suppresses_stdout() {
+                        let timed_outputs = self.output_handler.timed_outputs.clone();
+                        cmd = cmd.with_on_stdout(move |line| {
+                            timed_outputs
+                                .lock()
+                                .unwrap()
+                                .insert(prefix.to_string(), (SystemTime::now(), line));
+                        });
+                    } else {
+                        cmd = cmd.stdout(Stdio::null());
+                    }
+                    if !task.silent.suppresses_stderr() {
+                        cmd = cmd.with_on_stderr(|line| {
+                            if console::colors_enabled() {
+                                self.eprint(task, prefix, &format!("{line}\x1b[0m"));
+                            } else {
+                                self.eprint(task, prefix, &line);
+                            }
+                        });
+                    } else {
+                        cmd = cmd.stderr(Stdio::null());
+                    }
+                }
+                TaskOutput::Silent => {
+                    cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
+                }
+                TaskOutput::Quiet | TaskOutput::Interleave => {
+                    if io_policy.raw || redactions.is_empty() {
+                        cmd = cmd.stdin(Stdio::inherit());
+                        if !task.silent.suppresses_stdout() {
+                            cmd = cmd.stdout(Stdio::inherit());
+                        } else {
+                            cmd = cmd.stdout(Stdio::null());
+                        }
+                        if !task.silent.suppresses_stderr() {
+                            cmd = cmd.stderr(Stdio::inherit());
+                        } else {
+                            cmd = cmd.stderr(Stdio::null());
+                        }
                     }
                 }
             }
@@ -793,7 +682,28 @@ impl TaskExecutor {
         if let Some(timeout) = effective_timeout {
             cmd = cmd.with_timeout(timeout);
         }
-        cmd.execute()?;
+
+        // Interactive passthrough tasks can mutate terminal settings (e.g. `stty -echo`).
+        // Capture and restore the tty state around command execution.
+        #[cfg(unix)]
+        let saved_termios = if io_policy.interactive && std::io::stdin().is_terminal() {
+            nix::sys::termios::tcgetattr(std::io::stdin()).ok()
+        } else {
+            None
+        };
+
+        let exec_result = cmd.execute();
+
+        #[cfg(unix)]
+        if let Some(termios) = saved_termios {
+            let _ = nix::sys::termios::tcsetattr(
+                std::io::stdin(),
+                nix::sys::termios::SetArg::TCSANOW,
+                &termios,
+            );
+        }
+
+        exec_result?;
         trace!("{prefix} exited successfully");
         Ok(())
     }
@@ -878,6 +788,18 @@ impl TaskExecutor {
 
         Ok(())
     }
+
+    fn task_declaration_location(&self, task: &Task) -> String {
+        self.plan_context.declaration_for_task(task)
+    }
+
+    fn task_plan_stage_suffix(&self, task: &Task) -> String {
+        self.plan_context.stage_suffix_for_task(task)
+    }
+
+    fn inject_plan_context_env(&self, task: &Task, env: &mut BTreeMap<String, String>) {
+        self.plan_context.inject_env_for_task(task, env);
+    }
 }
 
 /// Check if a file can be executed directly by the OS without a shell wrapper.
@@ -930,4 +852,154 @@ fn shell_from_shebang(path: &Path) -> Option<Vec<String>> {
     };
     let args: Vec<String> = parts.map(|s| s.to_string()).collect();
     Some(once(shell.to_string()).chain(args).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::task::task_execution_plan::{ExecutionStage, PlannedTask, TaskDeclarationRef};
+    use crate::task::task_identity::TaskIdentity;
+    use crate::task::task_output_handler::OutputHandlerConfig;
+    use crate::task::{RunEntry, TaskOutput};
+
+    fn test_output_handler() -> OutputHandler {
+        OutputHandler::new(OutputHandlerConfig {
+            prefix: false,
+            interleave: false,
+            output: Some(TaskOutput::Prefix),
+            silent: false,
+            quiet: false,
+            raw: false,
+            is_linear: false,
+            jobs: Some(4),
+        })
+    }
+
+    fn test_executor(execution_plan: Option<&ExecutionPlan>) -> TaskExecutor {
+        TaskExecutor::new(
+            TaskContextBuilder::new(),
+            test_output_handler(),
+            TaskExecutorConfig {
+                force: false,
+                cd: None,
+                shell: None,
+                tool: vec![],
+                timings: false,
+                dry_run: false,
+            },
+            execution_plan,
+            None,
+        )
+    }
+
+    #[tokio::test]
+    async fn test_exec_task_run_entries_uses_planned_declaration_and_stage_context() {
+        let task = Task {
+            name: "demo_path".to_string(),
+            config_source: "/tmp/fallback.toml".into(),
+            run: vec![RunEntry::SingleTask {
+                task: "missing-task".to_string(),
+            }],
+            ..Default::default()
+        };
+        let plan = ExecutionPlan {
+            stages: vec![ExecutionStage::parallel(vec![PlannedTask {
+                identity: TaskIdentity::from_task(&task),
+                runtime: true,
+                interactive: false,
+                declaration: TaskDeclarationRef {
+                    source: "/tmp/mise.toml".to_string(),
+                    line: Some(34),
+                },
+            }])],
+        };
+        let executor = test_executor(Some(&plan));
+
+        let err = executor
+            .exec_task_run_entries(&task, &BTreeMap::new(), "[demo_path]", vec![])
+            .await
+            .unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("/tmp/mise.toml:34"));
+        assert!(message.contains("stage 1/1, kind=parallel"));
+    }
+
+    #[tokio::test]
+    async fn test_exec_task_run_entries_falls_back_to_task_declaration_without_plan_context() {
+        let task = Task {
+            name: "demo_path".to_string(),
+            config_source: "/tmp/fallback.toml".into(),
+            run: vec![RunEntry::SingleTask {
+                task: "missing-task".to_string(),
+            }],
+            ..Default::default()
+        };
+        let executor = test_executor(None);
+
+        let err = executor
+            .exec_task_run_entries(&task, &BTreeMap::new(), "[demo_path]", vec![])
+            .await
+            .unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("/tmp/fallback.toml"));
+        assert!(!message.contains("stage 1/1"));
+    }
+
+    #[test]
+    fn test_inject_plan_context_env_sets_stage_and_hash_metadata() {
+        let task = Task {
+            name: "demo_path".to_string(),
+            ..Default::default()
+        };
+        let plan = ExecutionPlan {
+            stages: vec![ExecutionStage::parallel(vec![PlannedTask {
+                identity: TaskIdentity::from_task(&task),
+                runtime: true,
+                interactive: false,
+                declaration: TaskDeclarationRef {
+                    source: "/tmp/mise.toml".to_string(),
+                    line: Some(34),
+                },
+            }])],
+        };
+        let executor = TaskExecutor::new(
+            TaskContextBuilder::new(),
+            test_output_handler(),
+            TaskExecutorConfig {
+                force: false,
+                cd: None,
+                shell: None,
+                tool: vec![],
+                timings: false,
+                dry_run: false,
+            },
+            Some(&plan),
+            Some("sha256:test".to_string()),
+        );
+        let mut env = BTreeMap::new();
+        executor.inject_plan_context_env(&task, &mut env);
+
+        assert_eq!(env.get("MISE_TASK_STAGE_INDEX"), Some(&"1".to_string()));
+        assert_eq!(env.get("MISE_TASK_STAGE_COUNT"), Some(&"1".to_string()));
+        assert_eq!(
+            env.get("MISE_TASK_STAGE_KIND"),
+            Some(&"parallel".to_string())
+        );
+        assert_eq!(
+            env.get("MISE_TASK_PLAN_HASH"),
+            Some(&"sha256:test".to_string())
+        );
+    }
+
+    #[test]
+    fn test_inject_plan_context_env_is_noop_without_planned_context() {
+        let task = Task {
+            name: "demo_path".to_string(),
+            ..Default::default()
+        };
+        let executor = test_executor(None);
+        let mut env = BTreeMap::new();
+        executor.inject_plan_context_env(&task, &mut env);
+        assert!(env.is_empty());
+    }
 }

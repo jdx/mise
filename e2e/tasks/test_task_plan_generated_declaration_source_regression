@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# RegressionRef: STATIC-014
+# Goal: generated static subgraph tasks in --plan=json should keep source mapping.
+# Expected behavior (target):
+# - generated internal tasks are present
+# - no generated internal task uses declaration.source = "<generated>"
+# - root/wrapper barrier start tasks map to declaration line of their source task
+
+cat <<'EOF2' >mise.toml
+[tasks.child]
+run = "echo child"
+
+[tasks.wrapper]
+run = [{ task = "child" }, "echo wrapper_tail"]
+
+[tasks.root]
+run = [{ task = "wrapper" }]
+EOF2
+
+assert_succeed "mise run --plan=json root > plan.json"
+
+assert "cat plan.json | jq -r '[.stages[].tasks[] | select(.identity.name | startswith(\"__mise_static::\"))] | length > 0'" "true"
+assert "cat plan.json | jq -r '[.stages[].tasks[] | select(.identity.name | startswith(\"__mise_static::\")) | .declaration.source == \"<generated>\"] | any'" "false"
+assert "cat plan.json | jq -r 'first(.stages[].tasks[] | select(.identity.name | test(\"__mise_static::root::__barrier_start__::\")) | .declaration.line)'" "7"
+assert "cat plan.json | jq -r 'first(.stages[].tasks[] | select(.identity.name | test(\"__mise_static::root::__mise_static::wrapper::__barrier_start__::\")) | .declaration.line)'" "4"
+
+assert_succeed "mise run --plan root > plan.out"
+assert_contains "cat plan.out" "┌─ group: root"
+assert_contains "cat plan.out" "┌─ group: root/wrapper"
+assert_contains "cat plan.out" "└─ group: root"
+assert_not_contains "cat plan.out" "barrier-start"
+assert_not_contains "cat plan.out" "barrier-end"

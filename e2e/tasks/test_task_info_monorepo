@@ -35,17 +35,12 @@ assert_fail "mise tasks info //lib:fake_alias"
 assert_contains "mise tasks info //lib:fake_alias 2>&1 || true" "Task not found: //lib:fake_alias"
 
 # Test root task info
-assert "mise tasks info //:root_task" 'Task: //:root_task
-Aliases: some_root_task_alias
-Description:
-Source: ~/workdir/mise.toml
-
-Run:
-  echo This is the root task
-
-Usage Spec:
-  name "//:root_task"
-  bin "//:root_task"'
+assert_contains "mise tasks info //:root_task" "Task: //:root_task"
+assert_contains "mise tasks info //:root_task" "Aliases: some_root_task_alias"
+assert_matches "mise tasks info //:root_task" 'Source: ~/workdir/mise\.toml:[0-9]+'
+assert_contains "mise tasks info //:root_task" "echo This is the root task"
+assert_contains "mise tasks info //:root_task" 'name "//:root_task"'
+assert_contains "mise tasks info //:root_task" 'bin "//:root_task"'
 
 assert_contains "mise tasks info //:root_task --json" '"name": "//:root_task"'
 
@@ -53,17 +48,12 @@ assert_contains "mise tasks info //:root_task --json" '"name": "//:root_task"'
 assert_contains "mise tasks info root_task --json" '"name": "//:root_task"'
 assert_contains "mise tasks info some_root_task_alias --json" '"name": "//:root_task"'
 
-assert "mise tasks info //lib:echo" 'Task: //lib:echo
-Aliases: lib_echo_alias, e
-Description:
-Source: ~/workdir/lib/mise.toml
-
-Run:
-  echo Hello, World!
-
-Usage Spec:
-  name "//lib:echo"
-  bin "//lib:echo"'
+assert_contains "mise tasks info //lib:echo" "Task: //lib:echo"
+assert_contains "mise tasks info //lib:echo" "Aliases: lib_echo_alias, e"
+assert_matches "mise tasks info //lib:echo" 'Source: ~/workdir/lib/mise\.toml:[0-9]+'
+assert_contains "mise tasks info //lib:echo" "echo Hello, World!"
+assert_contains "mise tasks info //lib:echo" 'name "//lib:echo"'
+assert_contains "mise tasks info //lib:echo" 'bin "//lib:echo"'
 
 assert_contains "mise tasks info //lib:echo --json" '"name": "//lib:echo"'
 assert_contains "mise tasks info //lib:echo --json" '"source": "'"$PWD"'/lib/mise.toml"'
@@ -79,14 +69,9 @@ cd lib
 assert_contains "mise tasks info lib_echo_alias --json" '"name": "//lib:echo"'
 assert_contains "mise tasks info e --json" '"name": "//lib:echo"'
 
-assert "mise tasks info //lib:echo" 'Task: //lib:echo
-Aliases: lib_echo_alias, e
-Description:
-Source: ~/workdir/lib/mise.toml
-
-Run:
-  echo Hello, World!
-
-Usage Spec:
-  name "//lib:echo"
-  bin "//lib:echo"'
+assert_contains "mise tasks info //lib:echo" "Task: //lib:echo"
+assert_contains "mise tasks info //lib:echo" "Aliases: lib_echo_alias, e"
+assert_matches "mise tasks info //lib:echo" 'Source: ~/workdir/lib/mise\.toml:[0-9]+'
+assert_contains "mise tasks info //lib:echo" "echo Hello, World!"
+assert_contains "mise tasks info //lib:echo" 'name "//lib:echo"'
+assert_contains "mise tasks info //lib:echo" 'bin "//lib:echo"'

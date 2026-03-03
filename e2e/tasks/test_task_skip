@@ -1,12 +1,20 @@
 #!/usr/bin/env bash
 
+# MatrixRef: R06 / C16
 cat <<EOF >mise.toml
 tasks.a = "echo running a"
 tasks.b = "echo running b"
 tasks.c = "echo running c"
 tasks.all.run = "echo testing!"
 tasks.all.depends = ["a", "b", "c"]
+tasks.child = "echo CHILD_RAN"
+tasks.wrapper.run = [{ task = "child" }]
 EOF
 
 assert_contains "mise run all" "running b"
 MISE_TASK_SKIP=b assert_not_contains "mise run all" "running b"
+
+# RegressionRef: STATIC-006
+# Ensure task.skip still applies to statically-fused run-subgraph tasks.
+assert_contains "mise run wrapper" "CHILD_RAN"
+MISE_TASK_SKIP=child assert_not_contains "mise run wrapper" "CHILD_RAN"

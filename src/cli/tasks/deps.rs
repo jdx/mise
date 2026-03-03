@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
 use crate::config::Config;
+use crate::task::task_resolution_diagnostic::{
+    DEFAULT_AVAILABLE_TASKS_PREVIEW_LIMIT, append_resolution_sections_with_name,
+    available_tasks_from_tasks, config_files_from_tasks,
+};
 use crate::task::{Deps, GetMatchingExt, Task, build_task_ref_map};
 use crate::ui::style::{self};
 use crate::ui::tree::print_tree;
 use console::style;
 use eyre::{Result, eyre};
-use itertools::Itertools;
 use petgraph::dot::Dot;
 
 /// Display a tree visualization of a dependency graph
@@ -190,13 +193,20 @@ impl TasksDeps {
         t: &str,
         all_tasks: &std::collections::BTreeMap<String, Task>,
     ) -> eyre::Report {
-        let task_names = all_tasks
-            .values()
-            .map(|v| v.display_name.clone())
-            .map(style::ecyan)
-            .join(", ");
+        let config_files = config_files_from_tasks(all_tasks.values());
+        let available = available_tasks_from_tasks(all_tasks.values());
+
         let t = style(&t).yellow().for_stderr();
-        eyre!("no tasks named `{t}` found. Available tasks: {task_names}")
+        let mut lines = vec![format!("no tasks named `{t}` found")];
+        append_resolution_sections_with_name(
+            &mut lines,
+            &config_files,
+            &available,
+            DEFAULT_AVAILABLE_TASKS_PREVIEW_LIMIT,
+            |name| style::ecyan(name).to_string(),
+        );
+
+        eyre!(lines.join("\n"))
     }
 }
 

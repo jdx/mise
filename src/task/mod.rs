@@ -3,6 +3,9 @@ use crate::config::config_file::toml::{TrackingTomlParser, deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{self, Config};
 use crate::path_env::PathEnv;
+use crate::task::task_resolution_diagnostic::{
+    DEFAULT_AVAILABLE_TASKS_PREVIEW_LIMIT, ResolutionScope,
+};
 use crate::task::task_script_parser::TaskScriptParser;
 use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;
@@ -44,19 +47,29 @@ pub type FailedTasks = Arc<std::sync::Mutex<Vec<(Task, Option<i32>)>>>;
 mod deps;
 pub mod task_context_builder;
 mod task_dep;
+pub mod task_descriptor;
+pub mod task_execution_plan;
 pub mod task_executor;
 pub mod task_fetcher;
 pub mod task_file_providers;
 pub mod task_helpers;
+pub mod task_identity;
+pub mod task_interactive_contract;
+pub mod task_io_policy;
 pub mod task_list;
 mod task_load_context;
 pub mod task_output;
 pub mod task_output_handler;
+pub mod task_plan_analysis;
+pub mod task_plan_bundle;
+pub mod task_planner;
+pub mod task_resolution_diagnostic;
 pub mod task_results_display;
 pub mod task_scheduler;
 mod task_script_parser;
 pub mod task_source_checker;
 pub mod task_sources;
+pub mod task_spawn_decision;
 pub mod task_template;
 pub mod task_tool_installer;
 
@@ -68,6 +81,7 @@ pub use task_template::TaskTemplate;
 use crate::config::config_file::ConfigFile;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
+use crate::task::task_identity::TaskIdentity;
 use crate::toolset::Toolset;
 use crate::ui::style;
 pub use deps::Deps;
@@ -246,6 +260,8 @@ pub struct Task {
     #[serde(default)]
     pub raw: bool,
     #[serde(default)]
+    pub interactive: Option<bool>,
+    #[serde(default)]
     pub sources: Vec<String>,
     #[serde(default)]
     pub outputs: TaskOutputs,
@@ -380,6 +396,7 @@ impl Task {
         task.dir = p.parse_str("dir");
         task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
         task.raw = p.parse_bool("raw").unwrap_or_default();
+        task.interactive = p.parse_bool("interactive");
         task.sources = p.parse_array("sources").unwrap_or_default();
         task.outputs = p.get_raw("outputs").map(|to| to.into()).unwrap_or_default();
         task.file = Some(path.to_path_buf());
@@ -533,6 +550,14 @@ impl Task {
                 _ => None,
             })
             .collect()
+    }
+
+    pub fn is_interactive(&self) -> bool {
+        self.interactive.unwrap_or(false)
+    }
+
+    pub fn interactive_validation_error(&self) -> Option<String> {
+        crate::task::task_interactive_contract::interactive_validation_error(self)
     }
 
     pub fn all_depends(&self, tasks: &BTreeMap<String, Task>) -> Result<Vec<Task>> {
@@ -1193,7 +1218,16 @@ fn match_tasks_with_context(
         })
         .collect::<Result<Vec<_>>>()?;
     if matches.is_empty() {
-        let mut err_msg = format!("task not found: {}", td.task);
+        let mut lines = vec![format!("task not found: {}", td.task)];
+
+        if let Some(parent) = parent_task {
+            lines.push(String::new());
+            lines.push("Dependency path:".to_string());
+            lines.push(format!("  {} -> {}", parent.display_name, td.task));
+        }
+
+        let scope = ResolutionScope::from_tasks(tasks.values().copied());
+        scope.append_to(&mut lines, DEFAULT_AVAILABLE_TASKS_PREVIEW_LIMIT);
 
         // In monorepo mode, suggest similar tasks using fuzzy matching
         if resolved_pattern.starts_with("//") {
@@ -1211,14 +1245,15 @@ fn match_tasks_with_context(
                 .collect();
 
             if !similar.is_empty() {
-                err_msg.push_str("\n\nDid you mean one of these?");
+                lines.push(String::new());
+                lines.push("Did you mean one of these?".to_string());
                 for task_name in similar {
-                    err_msg.push_str(&format!("\n  - {}", task_name));
+                    lines.push(format!("  - {task_name}"));
                 }
             }
         }
 
-        return Err(eyre!(err_msg));
+        return Err(eyre!(lines.join("\n")));
     };
 
     Ok(matches)
@@ -1245,6 +1280,7 @@ impl Default for Task {
             hide: false,
             global: false,
             raw: false,
+            interactive: None,
             sources: vec![],
             outputs: Default::default(),
             raw_outputs: Default::default(),
@@ -1294,48 +1330,22 @@ impl PartialOrd for Task {
     }
 }
 
-/// Extract sorted env key-value pairs from task's own env (not inherited_env)
-/// Used for consistent comparison/hashing of task identity
-fn env_key(task: &Task) -> Vec<(&String, &String)> {
-    task.env
-        .0
-        .iter()
-        .filter_map(|d| match d {
-            EnvDirective::Val(k, v, _) => Some((k, v)),
-            _ => None,
-        })
-        .sorted()
-        .collect()
-}
-
 impl Ord for Task {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.name.cmp(&other.name) {
-            Ordering::Equal => match self.args.cmp(&other.args) {
-                Ordering::Equal => env_key(self).cmp(&env_key(other)),
-                o => o,
-            },
-            o => o,
-        }
+        TaskIdentity::from_task(self).cmp(&TaskIdentity::from_task(other))
     }
 }
 
 impl Hash for Task {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
-        self.args.iter().for_each(|arg| arg.hash(state));
-        // Include task's own env (not inherited_env) for deduplication
-        for (k, v) in env_key(self) {
-            k.hash(state);
-            v.hash(state);
-        }
+        TaskIdentity::from_task(self).hash(state);
     }
 }
 
 impl Eq for Task {}
 impl PartialEq for Task {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.args == other.args && env_key(self) == env_key(other)
+        TaskIdentity::from_task(self) == TaskIdentity::from_task(other)
     }
 }
 
@@ -1555,7 +1565,7 @@ mod tests {
     use std::path::Path;
     use std::sync::Mutex;
 
-    use crate::task::Task;
+    use crate::task::{RunEntry, Silent, Task};
     use crate::{config::Config, dirs};
     use pretty_assertions::assert_eq;
 
@@ -2249,6 +2259,7 @@ echo "hello world"
     #[tokio::test]
     #[cfg(unix)]
     async fn test_parses_all_fields() {
+        // MatrixRef: V03 / C15
         use std::fs;
         use tempfile::tempdir;
 
@@ -2269,6 +2280,7 @@ echo "hello world"
 #MISE dir="/some/dir"
 #MISE hide=true
 #MISE raw=true
+#MISE interactive=true
 #MISE sources=["src1.txt", "src2.txt"]
 #MISE outputs=["out1.txt"]
 #MISE shell="bash -c"
@@ -2294,6 +2306,7 @@ echo "test"
         assert_eq!(task.dir, Some("/some/dir".to_string()));
         assert_eq!(task.hide, true);
         assert_eq!(task.raw, true);
+        assert!(task.is_interactive());
         assert_eq!(task.sources, vec!["src1.txt", "src2.txt"]);
         assert_eq!(task.shell, Some("bash -c".to_string()));
         assert_eq!(task.quiet, true);
@@ -2448,5 +2461,162 @@ echo "test"
         // Bare name "test" should still match the "test" task (implicit wildcard)
         let matches = tasks.get_matching("test").unwrap();
         assert!(matches.contains(&&"test".to_string()));
+    }
+
+    #[test]
+    fn test_interactive_validation_runtime_task_ok() {
+        // MatrixRef: V10 / C7
+        let task = Task {
+            interactive: Some(true),
+            run: vec![RunEntry::Script("echo hi".to_string())],
+            ..Default::default()
+        };
+        assert!(task.interactive_validation_error().is_none());
+    }
+
+    #[test]
+    fn test_interactive_validation_rejects_orchestrator_only() {
+        // MatrixRef: V11 / C7
+        let task = Task {
+            interactive: Some(true),
+            run: vec![RunEntry::SingleTask {
+                task: "build".to_string(),
+            }],
+            ..Default::default()
+        };
+        assert!(
+            task.interactive_validation_error()
+                .unwrap()
+                .contains("only allowed on runtime tasks")
+        );
+    }
+
+    #[test]
+    fn test_interactive_validation_rejects_silent() {
+        // MatrixRef: V05-V07 / C8
+        let task = Task {
+            interactive: Some(true),
+            run: vec![RunEntry::Script("echo hi".to_string())],
+            silent: Silent::Stdout,
+            ..Default::default()
+        };
+        assert!(
+            task.interactive_validation_error()
+                .unwrap()
+                .contains("incompatible with silent")
+        );
+    }
+
+    #[test]
+    fn test_interactive_validation_rejects_silent_bool_true() {
+        // MatrixRef: V05 / C8
+        let task = Task {
+            interactive: Some(true),
+            run: vec![RunEntry::Script("echo hi".to_string())],
+            silent: Silent::Bool(true),
+            ..Default::default()
+        };
+        assert!(
+            task.interactive_validation_error()
+                .unwrap()
+                .contains("incompatible with silent")
+        );
+    }
+
+    #[test]
+    fn test_interactive_validation_rejects_silent_stderr() {
+        // MatrixRef: V07 / C8
+        let task = Task {
+            interactive: Some(true),
+            run: vec![RunEntry::Script("echo hi".to_string())],
+            silent: Silent::Stderr,
+            ..Default::default()
+        };
+        assert!(
+            task.interactive_validation_error()
+                .unwrap()
+                .contains("incompatible with silent")
+        );
+    }
+
+    #[test]
+    fn test_interactive_validation_allows_mixed_runtime_task() {
+        // MatrixRef: V12 / C7
+        let task = Task {
+            interactive: Some(true),
+            run: vec![
+                RunEntry::Script("echo hi".to_string()),
+                RunEntry::SingleTask {
+                    task: "build".to_string(),
+                },
+            ],
+            ..Default::default()
+        };
+        assert!(task.interactive_validation_error().is_none());
+    }
+
+    #[test]
+    fn test_task_deserialize_rejects_invalid_interactive_type() {
+        // MatrixRef: V04 / C15
+        let task_toml = r#"
+description = "bad"
+interactive = "yes"
+run = "echo hi"
+"#;
+        let err = toml::from_str::<Task>(task_toml).unwrap_err().to_string();
+        assert!(err.contains("invalid type"), "{err}");
+    }
+
+    #[test]
+    fn test_task_deserialize_accepts_interactive_true() {
+        // MatrixRef: V01 / C15
+        let task_toml = r#"
+description = "ok"
+interactive = true
+run = "echo hi"
+"#;
+        let task = toml::from_str::<Task>(task_toml).expect("task should deserialize");
+        assert!(task.is_interactive());
+    }
+
+    #[test]
+    fn test_schema_mise_json_exposes_interactive_boolean() {
+        // MatrixRef: I01 / C15
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schema/mise.json");
+        let schema: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap())
+                .expect("schema/mise.json should parse");
+        let pointers = [
+            "/$defs/task/oneOf/2/properties/interactive/type",
+            "/$defs/task_props/properties/interactive/type",
+        ];
+        assert!(
+            pointers
+                .iter()
+                .filter_map(|p| schema.pointer(p))
+                .any(|v| v == "boolean"),
+            "interactive:boolean not found in schema/mise.json"
+        );
+    }
+
+    #[test]
+    fn test_schema_mise_task_json_exposes_interactive_boolean() {
+        // MatrixRef: I02 / C15
+        let path =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schema/mise-task.json");
+        let schema: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap())
+                .expect("schema/mise-task.json should parse");
+        let pointers = [
+            "/$defs/task/oneOf/2/properties/interactive/type",
+            "/$defs/task_template/properties/interactive/type",
+        ];
+        assert!(
+            pointers
+                .iter()
+                .filter_map(|p| schema.pointer(p))
+                .any(|v| v == "boolean"),
+            "interactive:boolean not found in schema/mise-task.json"
+        );
     }
 }

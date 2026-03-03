@@ -253,6 +253,14 @@ impl OutputHandler {
 
     /// Determine the output mode for a task
     pub fn output(&self, task: Option<&Task>) -> TaskOutput {
+        // Interactive tasks always run in passthrough mode to preserve TTY semantics.
+        // MatrixRef: S01-S08 / C2,C6,C9
+        if let Some(task_ref) = task
+            && task_ref.is_interactive()
+        {
+            return TaskOutput::Interleave;
+        }
+
         // Check for full silent mode (both streams)
         // Only Silent::Bool(true) means completely silent, not Silent::Stdout or Silent::Stderr
         if let Some(task_ref) = task
@@ -348,5 +356,69 @@ impl OutputHandler {
         } else {
             self.jobs.unwrap_or(Settings::get().jobs)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::task::RunEntry;
+
+    fn interactive_task() -> Task {
+        Task {
+            interactive: Some(true),
+            run: vec![RunEntry::Script("echo hi".to_string())],
+            ..Default::default()
+        }
+    }
+
+    fn handler_with_output(output: Option<TaskOutput>) -> OutputHandler {
+        OutputHandler::new(OutputHandlerConfig {
+            prefix: false,
+            interleave: false,
+            output,
+            silent: false,
+            quiet: false,
+            raw: false,
+            is_linear: false,
+            jobs: Some(4),
+        })
+    }
+
+    #[test]
+    fn test_interactive_forces_interleave_across_structured_output_modes() {
+        // MatrixRef: S01-S06 / C2,C6
+        let task = interactive_task();
+        for mode in [
+            TaskOutput::Prefix,
+            TaskOutput::KeepOrder,
+            TaskOutput::Replacing,
+            TaskOutput::Timed,
+            TaskOutput::Interleave,
+            TaskOutput::Quiet,
+        ] {
+            let handler = handler_with_output(Some(mode));
+            assert_eq!(handler.output(Some(&task)), TaskOutput::Interleave);
+        }
+    }
+
+    #[test]
+    fn test_interactive_forces_interleave_when_raw_and_output_are_both_forced() {
+        // MatrixRef: S07,S08,S14,C01,C02 / C2,C6,C9,C15
+        let mut task = interactive_task();
+        task.raw = true;
+
+        // Simulates explicit output policy (CLI/env/settings already resolved by Run).
+        let handler = OutputHandler::new(OutputHandlerConfig {
+            prefix: false,
+            interleave: false,
+            output: Some(TaskOutput::Timed),
+            silent: false,
+            quiet: false,
+            raw: true,
+            is_linear: false,
+            jobs: Some(4),
+        });
+        assert_eq!(handler.output(Some(&task)), TaskOutput::Interleave);
     }
 }

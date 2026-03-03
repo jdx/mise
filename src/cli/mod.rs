@@ -651,6 +651,8 @@ impl Cli {
                         cd: self.cd,
                         continue_on_error: self.continue_on_error,
                         dry_run: self.dry_run,
+                        plan: None,
+                        changed: vec![],
                         force: self.force,
                         interleave: self.interleave,
                         is_linear: false,

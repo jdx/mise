@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+require_cmd expect
+
+run_expect_with_input() {
+	local cmd="$1"
+	local prompt_re="$2"
+	local input="$3"
+	expect "$TEST_ROOT/helpers/scripts/interactive_expect.tcl" with-input "$cmd" "$prompt_re" "$input"
+}
+
+# RegressionRef: STATIC-005
+# Goal: a mixed runtime task injecting an interactive task must not deadlock.
+# Expected behavior (target): prompt is reached and run completes without timeout.
+
+cat <<'EOF' >mise.toml
+[tasks.ask]
+interactive = true
+run = 'printf "ASK_PROMPT>" >&2; read -r line; echo "ASK:$line"'
+
+[tasks.wrapper]
+run = ['echo BEFORE_INJECT', { task = "ask" }]
+EOF
+
+out="$(run_expect_with_input "mise run --timeout=3s wrapper" "ASK_PROMPT>" "ok" 2>&1)" || {
+	echo "$out"
+	fail "STATIC-005: mixed runtime injection deadlocked before interactive prompt"
+}
+[[ $out == *"BEFORE_INJECT"* ]] || fail "STATIC-005: wrapper runtime script did not execute: $out"
+[[ $out == *"ASK:ok"* ]] || fail "STATIC-005: interactive child did not receive user input: $out"
+[[ $out != *"timed out after"* ]] || fail "STATIC-005: run timed out, indicating barrier deadlock: $out"

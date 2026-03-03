@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
 
 # Test MCP protocol interactions in more detail
+# MatrixRef: I05 / C15,C16
 export MISE_EXPERIMENTAL=1
 
 # Create a test environment with tools, tasks and env vars
 cat >mise.toml <<EOF
-[tools]
-node = "20.11.0"
-python = "3.12"
-
 [env]
 TEST_MCP_VAR = "test_value"
 PROJECT_ENV = "development"
@@ -34,6 +31,10 @@ quiet = true
 run = "echo 'Linting code'"
 description = "Run linters"
 usage = "lint [files...]"
+
+[tasks.prompt]
+interactive = true
+run = "echo 'Prompt placeholder'"
 EOF
 
 echo "Testing MCP server startup and error handling..."
@@ -232,6 +233,73 @@ def test_install_tool_stub(proc):
     return 0
 
 
+def test_resources_tasks_include_interactive(proc):
+    send(proc, {"jsonrpc": "2.0", "id": 7, "method": "resources/list", "params": {}})
+    resp = recv(proc)
+    if not resp or "result" not in resp:
+        print(f"ERROR: Bad resources/list response: {resp}")
+        return 1
+    resources = resp["result"]["resources"]
+    task_resource = next((r for r in resources if r.get("uri") == "mise://tasks"), None)
+    assert task_resource is not None, f"mise://tasks not found in resources: {resources}"
+
+    send(proc, {
+        "jsonrpc": "2.0",
+        "id": 8,
+        "method": "resources/read",
+        "params": {"uri": "mise://tasks"},
+    })
+    resp = recv(proc)
+    if not resp or "result" not in resp:
+        print(f"ERROR: Bad resources/read response: {resp}")
+        return 1
+    contents = resp["result"]["contents"]
+    assert contents, f"resources/read returned no contents: {resp}"
+    tasks = json.loads(contents[0]["text"])
+    prompt = next((t for t in tasks if t["name"] == "prompt"), None)
+    assert prompt is not None, f"prompt task not found in tasks resource: {tasks}"
+    assert prompt["interactive"] is True, f"interactive missing/false in MCP task payload: {prompt}"
+    print("✓ resources/read mise://tasks exposes interactive=true")
+    return 0
+
+
+def test_resources_plan_explain(proc):
+    send(proc, {"jsonrpc": "2.0", "id": 9, "method": "resources/list", "params": {}})
+    resp = recv(proc)
+    if not resp or "result" not in resp:
+        print(f"ERROR: Bad resources/list response: {resp}")
+        return 1
+
+    resources = resp["result"]["resources"]
+    plan_resource = next((r for r in resources if r.get("uri") == "mise://plan"), None)
+    assert plan_resource is not None, f"mise://plan not found in resources: {resources}"
+
+    send(proc, {
+        "jsonrpc": "2.0",
+        "id": 10,
+        "method": "resources/read",
+        "params": {"uri": "mise://plan?tasks=build&changed=src/main.ts&format=explain"},
+    })
+    resp = recv(proc, timeout=30.0)
+    if not resp or "result" not in resp:
+        print(f"ERROR: Bad resources/read response for mise://plan: {resp}")
+        return 1
+
+    contents = resp["result"]["contents"]
+    assert contents, f"resources/read mise://plan returned no contents: {resp}"
+    text = contents[0]["text"]
+    assert "Execution plan (MCP explain)" in text, f"missing explain header: {text}"
+    assert "Requested task specs: build" in text, f"missing task spec summary: {text}"
+    assert "Plan hash: sha256:" in text, f"missing plan hash summary: {text}"
+    assert "Detailed explain (shared run renderer):" in text, f"missing shared explain marker: {text}"
+    assert "Plan:" in text, f"missing shared plan section: {text}"
+    assert "Stages:" in text, f"missing shared stage section: {text}"
+    assert "Scheduler Contention:" in text, f"missing shared contention section: {text}"
+    assert "Change Impact:" in text, f"missing shared change-impact section: {text}"
+    print("✓ resources/read mise://plan?format=explain returns explain text payload")
+    return 0
+
+
 def main():
     mise_path = find_mise()
     if not mise_path:
@@ -255,6 +323,8 @@ def main():
             ("run_task with args", test_run_task_with_args),
             ("run_task unknown task", test_run_task_unknown),
             ("install_tool stub", test_install_tool_stub),
+            ("resources/read tasks interactive", test_resources_tasks_include_interactive),
+            ("resources/read plan explain", test_resources_plan_explain),
         ]
         for name, test_fn in tests:
             print(f"\n--- {name} ---")

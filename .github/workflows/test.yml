@@ -171,6 +171,7 @@ jobs:
             bison \
             build-essential \
             direnv \
+            expect \
             fd-find \
             fish \
             pipx \

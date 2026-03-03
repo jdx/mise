@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# RegressionRef: STATIC-003
+# Goal: --plan --changed impact analysis should honor task dir when matching sources.
+# Expected behavior (target): changed file under task dir matches source glob.
+
+cat <<'EOF2' >mise.toml
+[tasks.pkg_build]
+dir = "pkg"
+sources = ["src/**/*.ts"]
+run = "echo PKG_BUILD"
+
+[tasks.root]
+depends = ["pkg_build"]
+run = "echo ROOT"
+EOF2
+
+mkdir -p pkg/src
+cat <<'EOF2' >pkg/src/main.ts
+console.log('changed')
+EOF2
+
+assert_succeed "mise run --plan=json --changed=pkg/src/main.ts root > plan.json"
+assert "cat plan.json | jq -r '.diagnostics.change_impact.directly_matched | length'" "1"
+assert "cat plan.json | jq -r '.diagnostics.change_impact.directly_matched[0].task.name'" "pkg_build"

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# RegressionRef: STATIC-016
+# Goal: declaration line lookup must ignore TOML multiline string contents.
+# Expected behavior (target): task `b` maps to its real declaration line.
+
+cat <<'EOF2' >mise.toml
+[tasks.a]
+run = '''
+[tasks.b]
+echo fake
+'''
+
+[tasks.b]
+run = "echo real"
+
+[tasks.root]
+depends = ["b"]
+run = "echo root"
+EOF2
+
+assert_succeed "mise run --plan root > plan.out"
+assert_contains "cat plan.out" "b [declared at"
+assert_contains "cat plan.out" "mise.toml:7"
+assert_not_contains "cat plan.out" "mise.toml:3"

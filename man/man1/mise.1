@@ -1828,6 +1828,13 @@ Configure with `jobs` config or `MISE_JOBS` env var
 \fB\-n, \-\-dry\-run\fR
 Don't actually run the task(s), just print them in order of execution
 .TP
+\fB\-\-changed\fR \fI<PATH>\fR
+Changed files to analyze impact against task sources in `\-\-plan` mode
+
+Can be provided multiple times:
+\- `\-\-changed=src/main.ts`
+\- `\-\-changed=src/a.ts \-\-changed=src/b.ts`
+.TP
 \fB\-o, \-\-output\fR \fI<OUTPUT>\fR
 Change how tasks information is output when running tasks
 
@@ -1878,6 +1885,22 @@ Skip automatic dependency preparation
 Hides elapsed time after each task completes
 
 Default to always hide with `MISE_TASK_TIMINGS=0`
+.TP
+\fB\-\-plan\fR \fI<PLAN>\fR
+Print the static execution plan and exit without executing tasks
+
+Optional formats:
+\- `summary` (default)
+\- `json`
+\- `explain`
+
+Plan output includes each task declaration reference (`source:line`) to
+make static DAG tracking easier across large monorepos.
+
+Examples:
+\- `\-\-plan`
+\- `\-\-plan=json`
+\- `\-\-plan=explain`
 .TP
 \fB\-\-skip\-deps\fR
 Run only the specified tasks skipping all dependencies
@@ -2556,6 +2579,13 @@ Configure with `jobs` config or `MISE_JOBS` env var
 \fB\-n, \-\-dry\-run\fR
 Don't actually run the task(s), just print them in order of execution
 .TP
+\fB\-\-changed\fR \fI<PATH>\fR
+Changed files to analyze impact against task sources in `\-\-plan` mode
+
+Can be provided multiple times:
+\- `\-\-changed=src/main.ts`
+\- `\-\-changed=src/a.ts \-\-changed=src/b.ts`
+.TP
 \fB\-o, \-\-output\fR \fI<OUTPUT>\fR
 Change how tasks information is output when running tasks
 
@@ -2606,6 +2636,22 @@ Skip automatic dependency preparation
 Hides elapsed time after each task completes
 
 Default to always hide with `MISE_TASK_TIMINGS=0`
+.TP
+\fB\-\-plan\fR \fI<PLAN>\fR
+Print the static execution plan and exit without executing tasks
+
+Optional formats:
+\- `summary` (default)
+\- `json`
+\- `explain`
+
+Plan output includes each task declaration reference (`source:line`) to
+make static DAG tracking easier across large monorepos.
+
+Examples:
+\- `\-\-plan`
+\- `\-\-plan=json`
+\- `\-\-plan=explain`
 .TP
 \fB\-\-skip\-deps\fR
 Run only the specified tasks skipping all dependencies

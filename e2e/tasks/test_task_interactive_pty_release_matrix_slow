@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+require_cmd expect
+
+run_expect_with_input() {
+	local cmd="$1"
+	local prompt_re="$2"
+	local input="$3"
+	expect "$TEST_ROOT/helpers/scripts/interactive_expect.tcl" with-input "$cmd" "$prompt_re" "$input"
+}
+
+run_expect_ctrl_c_after() {
+	local cmd="$1"
+	local pattern="$2"
+	expect "$TEST_ROOT/helpers/scripts/interactive_expect.tcl" ctrl-c-after "$cmd" "$pattern"
+}
+
+run_expect_wait() {
+	local cmd="$1"
+	expect "$TEST_ROOT/helpers/scripts/interactive_expect.tcl" wait-eof "$cmd"
+}
+
+# MatrixRef: F11,F03,F08,G03 / C12,C13
+cat <<'EOF' >mise.toml
+[tasks.ask_timeout]
+interactive = true
+run = 'sleep 5'
+
+[tasks.ask_ok]
+interactive = true
+run = 'printf "OK_PROMPT>" >&2; read -r line; echo "OK:$line"'
+EOF
+out="$(run_expect_wait "mise run --timeout=1s ask_timeout" 2>&1)" && exit_code=0 || exit_code=$?
+[[ $exit_code -ne 0 ]] || fail "timeout scenario expected non-zero exit"
+[[ $out == *"timed out"* ]] || fail "timeout scenario missing timeout message: $out"
+
+out="$(run_expect_with_input "mise run ask_ok" "OK_PROMPT>" "after-timeout" 2>&1)" || {
+	echo "$out"
+	fail "run after timeout should not be blocked"
+}
+[[ $out == *"OK:after-timeout"* ]] || fail "post-timeout interactive run failed: $out"
+
+# MatrixRef: F12,F04,F09,G04 / C12,C13
+cat <<'EOF' >mise.toml
+[tasks.ask_sigint]
+interactive = true
+run = 'printf "INT_PROMPT>" >&2; read -r line; echo "INT:$line"'
+
+[tasks.ask_ok]
+interactive = true
+run = 'printf "OK_PROMPT>" >&2; read -r line; echo "OK:$line"'
+EOF
+out="$(run_expect_ctrl_c_after "mise run ask_sigint" "INT_PROMPT>" 2>&1)" && exit_code=0 || exit_code=$?
+[[ $exit_code -ne 0 ]] || fail "SIGINT scenario expected non-zero exit"
+
+out="$(run_expect_with_input "mise run ask_ok" "OK_PROMPT>" "after-sigint" 2>&1)" || {
+	echo "$out"
+	fail "run after SIGINT should not be blocked"
+}
+[[ $out == *"OK:after-sigint"* ]] || fail "post-SIGINT interactive run failed: $out"
+
+# MatrixRef: G01,G02,F13 / C12,C13
+cat <<'EOF' >mise.toml
+[tasks.runtime_hold]
+run = 'echo HOLDING_RUNTIME; sleep 5'
+
+[tasks.wait_int]
+interactive = true
+run = 'printf "WAIT_PROMPT>" >&2; read -r line; echo "WAIT:$line"'
+
+[tasks.ask_ok]
+interactive = true
+run = 'printf "OK_PROMPT>" >&2; read -r line; echo "OK:$line"'
+EOF
+out="$(run_expect_ctrl_c_after "mise run runtime_hold ::: wait_int" "HOLDING_RUNTIME" 2>&1)" && exit_code=0 || exit_code=$?
+[[ $exit_code -ne 0 ]] || fail "SIGINT during barrier wait expected non-zero exit"
+
+out="$(run_expect_ctrl_c_after "mise run --jobs=1 runtime_hold ::: wait_int" "HOLDING_RUNTIME" 2>&1)" && exit_code=0 || exit_code=$?
+[[ $exit_code -ne 0 ]] || fail "SIGINT during permit wait expected non-zero exit"
+
+out="$(run_expect_with_input "mise run ask_ok" "OK_PROMPT>" "after-waits" 2>&1)" || {
+	echo "$out"
+	fail "run after wait-state SIGINT should not be blocked"
+}
+[[ $out == *"OK:after-waits"* ]] || fail "post-wait-state SIGINT run failed: $out"
+
+# MatrixRef: L01,F02,F06,F10 / C12
+cat <<'EOF' >mise.toml
+[tasks.bad_file]
+interactive = true
+file = "does-not-exist.sh"
+
+[tasks.ask_ok]
+interactive = true
+run = 'printf "OK_PROMPT>" >&2; read -r line; echo "OK:$line"'
+EOF
+out="$(run_expect_wait "mise run bad_file" 2>&1)" && exit_code=0 || exit_code=$?
+[[ $exit_code -ne 0 ]] || fail "ENOENT launch scenario expected non-zero exit"
+[[ $out == *"No such file"* || $out == *"not found"* ]] || fail "ENOENT message missing: $out"
+
+out="$(run_expect_with_input "mise run ask_ok" "OK_PROMPT>" "after-enoent" 2>&1)" || {
+	echo "$out"
+	fail "run after ENOENT should not be blocked"
+}
+[[ $out == *"OK:after-enoent"* ]] || fail "post-ENOENT run failed: $out"
+
+# MatrixRef: L02,F07 / C12
+cat <<'EOF' >mise.toml
+[tasks.bad_dir]
+interactive = true
+dir = "./definitely-missing-dir"
+run = 'echo BAD_DIR_SHOULD_NOT_RUN'
+
+[tasks.ask_ok]
+interactive = true
+run = 'printf "OK_PROMPT>" >&2; read -r line; echo "OK:$line"'
+EOF
+out="$(run_expect_wait "mise run bad_dir" 2>&1)" && exit_code=0 || exit_code=$?
+[[ $exit_code -ne 0 ]] || fail "invalid cwd scenario expected non-zero exit"
+
+out="$(run_expect_with_input "mise run ask_ok" "OK_PROMPT>" "after-baddir" 2>&1)" || {
+	echo "$out"
+	fail "run after invalid cwd should not be blocked"
+}
+[[ $out == *"OK:after-baddir"* ]] || fail "post-invalid-cwd run failed: $out"
+
+# MatrixRef: L03 / C12
+cat <<'EOF' >mise.toml
+[tasks.bad_usage]
+interactive = true
+usage = "arg <name>"
+run = 'echo SHOULD_NOT_RUN'
+
+[tasks.ask_ok]
+interactive = true
+run = 'printf "OK_PROMPT>" >&2; read -r line; echo "OK:$line"'
+EOF
+out="$(run_expect_wait "mise run bad_usage" 2>&1)" && exit_code=0 || exit_code=$?
+[[ $exit_code -ne 0 ]] || fail "usage parse scenario expected non-zero exit"
+[[ $out == *"required"* || $out == *"Usage"* || $out == *"usage"* ]] || fail "expected usage parse failure message: $out"
+
+out="$(run_expect_with_input "mise run ask_ok" "OK_PROMPT>" "after-usage" 2>&1)" || {
+	echo "$out"
+	fail "run after usage parse failure should not be blocked"
+}
+[[ $out == *"OK:after-usage"* ]] || fail "post-usage-parse run failed: $out"
+
+# MatrixRef: C03 / C12
+cat <<'EOF' >mise.toml
+[tasks.ask_confirm]
+interactive = true
+confirm = "Proceed interactive?"
+run = 'printf "CONFIRM_PROMPT>" >&2; read -r line; echo "CONFIRM:$line"'
+
+[tasks.ask_ok]
+interactive = true
+run = 'printf "OK_PROMPT>" >&2; read -r line; echo "OK:$line"'
+EOF
+out="$(
+	MISE_YES=0 expect <<'EOF' 2>&1
+set timeout 30
+spawn bash -lc "mise run ask_confirm"
+expect -re "Proceed interactive\\?"
+send -- "n\r"
+expect eof
+set ws [wait]
+if {[llength $ws] >= 4} {
+    exit [lindex $ws 3]
+}
+exit 1
+EOF
+)" && exit_code=0 || exit_code=$?
+[[ $exit_code -ne 0 ]] || fail "confirm refusal expected non-zero exit"
+[[ $out == *"aborted by user"* || $out == *"Aborted"* ]] || fail "confirm refusal output missing: $out"
+
+out="$(run_expect_with_input "mise run ask_ok" "OK_PROMPT>" "after-confirm" 2>&1)" || {
+	echo "$out"
+	fail "run after confirm refusal should not be blocked"
+}
+[[ $out == *"OK:after-confirm"* ]] || fail "post-confirm-refusal run failed: $out"
+
+# MatrixRef: F05 / C12
+cat <<'EOF' >mise.toml
+[tasks.ask_sigterm]
+interactive = true
+run = 'printf "TERM_PROMPT>" >&2; read -r line; echo "TERM:$line"'
+
+[tasks.ask_ok]
+interactive = true
+run = 'printf "OK_PROMPT>" >&2; read -r line; echo "OK:$line"'
+EOF
+out="$(
+	expect <<'EOF' 2>&1
+set timeout 30
+spawn bash -lc "mise run ask_sigterm"
+expect "TERM_PROMPT>"
+set child [exp_pid]
+exec kill -TERM $child
+expect eof
+set ws [wait]
+if {[llength $ws] >= 4} {
+    exit [lindex $ws 3]
+}
+exit 1
+EOF
+)" && exit_code=0 || exit_code=$?
+
+out="$(run_expect_with_input "mise run ask_ok" "OK_PROMPT>" "after-sigterm" 2>&1)" || {
+	echo "$out"
+	fail "run after SIGTERM should not be blocked"
+}
+[[ $out == *"OK:after-sigterm"* ]] || fail "post-SIGTERM run failed: $out"

@@ -17,8 +17,13 @@ label. By printing line-by-line we avoid interleaving output from parallel execu
 
 To just print stdout/stderr directly, use `--interleave`, the `task.output` setting, or `MISE_TASK_OUTPUT=interleave`.
 
-Stdin is not read by default. To enable this, set `raw = true` on the task that needs it. This will prevent
-it running in parallel with any other task—a RWMutex will get a write lock in this case. This also prevents redactions applied to the output.
+Stdin is not read by default.
+
+- For prompt-style tasks that need an interactive terminal, set `interactive = true`. Interactive tasks
+  inherit stdin/stdout/stderr directly from your terminal, run with a global runtime barrier (no runtime
+  overlap while an interactive task is active), and fail fast when stdin is not a TTY.
+- For non-interactive passthrough I/O, set `raw = true`. This keeps direct stdio for that task but does
+  not add the interactive runtime barrier. Redactions are not applied in raw passthrough mode.
 
 Extra arguments will be passed to the task, for example, if we want to run in release mode:
 

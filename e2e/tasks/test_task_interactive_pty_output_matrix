@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+require_cmd expect
+
+run_expect_with_input() {
+	local cmd="$1"
+	local prompt_re="$2"
+	local input="$3"
+	expect "$TEST_ROOT/helpers/scripts/interactive_expect.tcl" with-input "$cmd" "$prompt_re" "$input"
+}
+
+# MatrixRef: S01,S02,S03,S04,S05,S06,S07,S08,S09,S11,S12,S14,C02,E01,E05,E06,E07,E08,E09,P01 / C2,C6,C9,C14,C15
+cat <<'EOF' >mise.toml
+redactions = ["SECRET"]
+
+[env]
+SECRET = "super-secret"
+
+[tasks.ask]
+interactive = true
+run = 'printf "PROMPT_ERR>" >&2; read -r line; echo "OUT:$line"'
+
+[tasks.ask_raw]
+interactive = true
+raw = true
+run = 'printf "PROMPT_ERR>" >&2; read -r line; echo "RAW_OUT:$line"'
+
+[tasks.ask_redact]
+interactive = true
+run = 'printf "PROMPT_ERR>" >&2; read -r line; echo "SECRET:$SECRET:$line"'
+
+[tasks.ask_color]
+interactive = true
+run = 'printf "PROMPT_ERR>" >&2; read -r line; printf "\033[31mCOLOR:%s\033[0m\n" "$line"'
+EOF
+
+for mode in prefix keep-order replacing timed interleave quiet; do
+	out="$(run_expect_with_input "MISE_TASK_OUTPUT=$mode mise run ask" "PROMPT_ERR>" "mode-$mode" 2>&1)" || {
+		echo "$out"
+		fail "interactive task failed in output mode '$mode'"
+	}
+	[[ $out == *"OUT:mode-$mode"* ]] || fail "missing interactive output in mode '$mode': $out"
+	[[ $out != *"[ask] OUT:mode-$mode"* ]] || fail "interactive output was line-prefixed in mode '$mode': $out"
+done
+
+# MatrixRef: S07,S08 / C2,C9
+out="$(run_expect_with_input "MISE_RAW=1 MISE_TASK_OUTPUT=prefix mise run ask_raw" "PROMPT_ERR>" "raw-mode" 2>&1)" || {
+	echo "$out"
+	fail "interactive raw task failed"
+}
+[[ $out == *"RAW_OUT:raw-mode"* ]] || fail "missing interactive raw output: $out"
+[[ $out != *"[ask_raw] RAW_OUT:raw-mode"* ]] || fail "interactive raw output was prefixed: $out"
+
+# MatrixRef: S14,C02 / C2,C6,C15
+out="$(run_expect_with_input "MISE_TASK_OUTPUT=timed mise run -o prefix ask" "PROMPT_ERR>" "priority" 2>&1)" || {
+	echo "$out"
+	fail "interactive output priority test failed"
+}
+[[ $out == *"OUT:priority"* ]] || fail "missing priority interactive output: $out"
+[[ $out != *"[ask] OUT:priority"* ]] || fail "interactive output priority broken (prefix applied): $out"
+
+# MatrixRef: S09 / C14
+out="$(run_expect_with_input "mise run ask_redact" "PROMPT_ERR>" "redact" 2>&1)" || {
+	echo "$out"
+	fail "interactive redaction warning test failed"
+}
+[[ $out == *"SECRET:super-secret:redact"* ]] || fail "interactive passthrough output not observed: $out"
+[[ -f "$MISE_STATE_DIR/hints/interactive_redactions" ]] || fail "missing interactive redaction hint marker in $MISE_STATE_DIR/hints"
+
+# MatrixRef: S12 / C6
+out="$(run_expect_with_input "NO_COLOR=1 mise run ask_color" "PROMPT_ERR>" "nocolor" 2>&1)" || {
+	echo "$out"
+	fail "interactive color-off run failed"
+}
+[[ $out == *"COLOR:nocolor"* ]] || fail "missing color-off payload: $out"
+
+out="$(run_expect_with_input "mise run ask_color" "PROMPT_ERR>" "color" 2>&1)" || {
+	echo "$out"
+	fail "interactive color-on run failed"
+}
+[[ $out == *"COLOR:color"* ]] || fail "missing color-on payload: $out"

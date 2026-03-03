@@ -2,11 +2,12 @@ use std::sync::Arc;
 
 use eyre::{Result, bail};
 use itertools::Itertools;
-use serde_json::json;
 
 use crate::config::Config;
 use crate::file::display_path;
 use crate::task::Task;
+use crate::task::task_descriptor::{TaskDescriptorOptions, task_descriptor_json};
+use crate::task::task_execution_plan::{format_declaration_location, task_declaration_ref};
 use crate::task::task_fetcher::TaskFetcher;
 use crate::task::task_source_checker::task_cwd;
 use crate::ui::info;
@@ -66,18 +67,22 @@ impl TasksInfo {
     }
 
     async fn display(&self, config: &Arc<Config>, task: &Task) -> Result<()> {
+        let declaration = task_declaration_ref(task);
         info::inline_section("Task", &task.display_name)?;
         if !task.aliases.is_empty() {
             info::inline_section("Aliases", task.aliases.join(", "))?;
         }
         info::inline_section("Description", &task.description)?;
-        info::inline_section("Source", display_path(&task.config_source))?;
+        info::inline_section("Source", format_declaration_location(&declaration))?;
         let mut properties = vec![];
         if task.hide {
             properties.push("hide");
         }
         if task.raw {
             properties.push("raw");
+        }
+        if task.is_interactive() {
+            properties.push("interactive");
         }
         if !properties.is_empty() {
             info::inline_section("Properties", properties.join(", "))?;
@@ -125,28 +130,12 @@ impl TasksInfo {
 
     async fn display_json(&self, config: &Arc<Config>, task: &Task) -> Result<()> {
         let spec = task.parse_usage_spec_for_display(config).await?;
-        let o = json!({
-            "name": task.display_name,
-            "aliases": task.aliases,
-            "description": task.description,
-            "source": task.config_source,
-            "depends": task.depends,
-            "depends_post": task.depends_post,
-            "wait_for": task.wait_for,
-            "env": task.env.0.iter().map(|d| d.to_string()).collect::<Vec<_>>(),
-            "dir": task.dir,
-            "hide": task.hide,
-            "raw": task.raw,
-            "sources": task.sources,
-            "outputs": task.outputs,
-            "shell": task.shell,
-            "quiet": task.quiet,
-            "silent": task.silent,
-            "tools": task.tools,
-            "run": task.run(),
-            "file": task.file,
-            "usage_spec": spec,
-        });
+        let options = TaskDescriptorOptions {
+            include_file: true,
+            usage_spec: Some(serde_json::to_value(spec)?),
+            ..Default::default()
+        };
+        let o = task_descriptor_json(task, &options);
         miseprintln!("{}", serde_json::to_string_pretty(&o)?);
         Ok(())
     }
@@ -172,6 +161,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
       "dir": null,
       "hide": false,
       "raw": false,
+      "interactive": false,
       "sources": [],
       "outputs": [],
       "run": [

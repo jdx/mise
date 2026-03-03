@@ -3,12 +3,13 @@ use std::sync::Arc;
 use crate::config::Config;
 use crate::file::display_rel_path;
 use crate::task::Task;
+use crate::task::task_descriptor::{TaskDescriptorOptions, task_descriptor_json};
+use crate::task::task_execution_plan::{format_declaration_location, task_declaration_ref};
 use crate::task::task_fetcher::TaskFetcher;
 use crate::ui::table::MiseTable;
 use comfy_table::{Attribute, Cell, Row};
 use eyre::Result;
 use itertools::Itertools;
-use serde_json::json;
 
 /// List available tasks to execute
 /// These may be included from the config file or from the project's .mise/tasks directory
@@ -178,31 +179,16 @@ impl TasksLs {
         let array_items = tasks
             .into_iter()
             .map(|task| {
-                json!({
-                  "name": task.display_name,
-                  "aliases": task.aliases,
-                  "description": task.description,
-                  "source": task.config_source,
-                  "depends": task.depends,
-                  "depends_post": task.depends_post,
-                  "wait_for": task.wait_for,
-                  "env": task.env.0.iter().map(|d| d.to_string()).collect::<Vec<_>>(),
-                  "dir": task.dir,
-                  "hide": task.hide,
-                  "global": task.global,
-                  "raw": task.raw,
-                  "sources": task.sources,
-                  "outputs": task.outputs,
-                  "shell": task.shell,
-                  "quiet": task.quiet,
-                  "silent": task.silent,
-                  "tools": task.tools,
-                  "usage": task.usage,
-                  "timeout": task.timeout,
-                  "run": task.run_script_strings(),
-                  "args": task.args,
-                  "file": task.file
-                })
+                let options = TaskDescriptorOptions {
+                    include_global: true,
+                    include_usage: true,
+                    include_timeout: true,
+                    include_args: true,
+                    include_file: true,
+                    use_run_script_strings: true,
+                    ..Default::default()
+                };
+                task_descriptor_json(&task, &options)
             })
             .collect::<serde_json::Value>();
         miseprintln!("{}", serde_json::to_string_pretty(&array_items)?);
@@ -227,10 +213,22 @@ impl TasksLs {
         let mut row = vec![Cell::new(&task.display_name).add_attribute(Attribute::Bold)];
         if self.extended {
             row.push(Cell::new(task.aliases.join(", ")));
-            row.push(Cell::new(display_rel_path(&task.config_source)));
+            row.push(Cell::new(format_task_source(task)));
         }
         row.push(Cell::new(&task.description).add_attribute(Attribute::Dim));
         row.into()
+    }
+}
+
+fn format_task_source(task: &Task) -> String {
+    let declaration = task_declaration_ref(task);
+    if task.config_source.as_os_str().is_empty() {
+        return format_declaration_location(&declaration);
+    }
+    let source = display_rel_path(&task.config_source).to_string();
+    match declaration.line {
+        Some(line) => format!("{source}:{line}"),
+        None => source,
     }
 }
 

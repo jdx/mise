@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# RegressionRef: STATIC-009
+# Goal: mixed runtime tasks that inject runtime sub-tasks must not deadlock at --jobs=1.
+# Expected behavior (target): child runtime task executes and run completes.
+
+cat <<'EOF' >mise.toml
+[tasks.child]
+run = 'echo CHILD_OK'
+
+[tasks.wrapper]
+run = ['echo BEFORE', { task = "child" }]
+EOF
+
+out="$(mise run --jobs=1 --timeout=3s wrapper 2>&1)" && exit_code=0 || exit_code=$?
+[[ $exit_code -eq 0 ]] || fail "STATIC-009: jobs=1 mixed runtime injection deadlocked or failed: $out"
+[[ $out == *"BEFORE"* ]] || fail "STATIC-009: parent runtime step did not execute: $out"
+[[ $out == *"CHILD_OK"* ]] || fail "STATIC-009: injected runtime child did not execute: $out"
+[[ $out != *"timed out after"* ]] || fail "STATIC-009: timeout indicates permit deadlock at jobs=1: $out"

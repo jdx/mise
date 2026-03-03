@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cat <<EOF >mise.toml
+[tasks.alpha]
+run = "echo alpha"
+
+[tasks.beta]
+run = "echo beta"
+EOF
+
+# run: unknown task should include resolution context and declaration locations
+assert_succeed "mise run missing-task > run_missing.err 2>&1 || true"
+assert_contains "cat run_missing.err" "no task missing-task found"
+assert_contains "cat run_missing.err" "Config files loaded for task resolution (1):"
+assert_contains "cat run_missing.err" "Available tasks (2):"
+assert_contains "cat run_missing.err" "alpha (~/workdir/mise.toml:1)"
+assert_contains "cat run_missing.err" "beta (~/workdir/mise.toml:4)"
+
+# tasks deps: unknown task should include resolution context and declaration locations
+assert_succeed "mise tasks deps missing-task > deps_missing.err 2>&1 || true"
+# shellcheck disable=SC2016 # backticks are expected literally in diagnostics assertions
+assert_contains "cat deps_missing.err" 'no tasks named `missing-task` found'
+assert_contains "cat deps_missing.err" "Config files loaded for task resolution (1):"
+assert_contains "cat deps_missing.err" "Available tasks (2):"
+assert_contains "cat deps_missing.err" "alpha (~/workdir/mise.toml:1)"
+assert_contains "cat deps_missing.err" "beta (~/workdir/mise.toml:4)"
+
+# tasks validate: unknown selected task should include resolution context and declaration locations
+assert_succeed "mise tasks validate missing-task > validate_missing.err 2>&1 || true"
+assert_contains "cat validate_missing.err" "Task 'missing-task' not found."
+assert_contains "cat validate_missing.err" "Config files loaded for task resolution (1):"
+assert_contains "cat validate_missing.err" "Available tasks (2):"
+assert_contains "cat validate_missing.err" "alpha (~/workdir/mise.toml:1)"
+assert_contains "cat validate_missing.err" "beta (~/workdir/mise.toml:4)"

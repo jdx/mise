@@ -38,6 +38,7 @@ $ mise tasks info test --json
   "dir": null,
   "hide": false,
   "raw": false,
+  "interactive": false,
   "sources": [],
   "outputs": [],
   "run": [

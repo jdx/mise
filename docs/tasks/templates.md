@@ -63,6 +63,7 @@ When a task extends a template, fields are merged according to these rules:
 | `sources`, `outputs`                    | Local overrides completely                                  |
 | `description`, `shell`, `timeout`, etc. | Local overrides template (if set)                           |
 | `quiet`, `hide`, `raw`                  | Not carried over (must be set explicitly in task)           |
+| `interactive`                           | Inherited from template unless explicitly set on the task   |
 
 ### Example: Deep Merge for Tools
 

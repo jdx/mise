@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cat <<EOF >mise.toml
+[tasks.build]
+run = "echo build"
+
+[tasks.prompt]
+interactive = true
+run = "read -r x"
+
+[tasks.app]
+depends = ["build", "prompt"]
+run = "echo app"
+EOF
+
+assert_succeed "mise run --plan app > plan_summary.out"
+assert_contains "cat plan_summary.out" "Execution plan: 3 stage(s)"
+assert_contains "cat plan_summary.out" "Config files used (1):"
+assert_contains "cat plan_summary.out" "stage number is execution order"
+assert_contains "cat plan_summary.out" "sha256:"
+assert_contains "cat plan_summary.out" "1. [task] build [declared at"
+assert_contains "cat plan_summary.out" "2. [interactive] prompt [declared at"
+assert_contains "cat plan_summary.out" "3. [task] app [declared at"
+assert_contains "cat plan_summary.out" "mise.toml:1"
+assert_contains "cat plan_summary.out" "mise.toml:4"
+assert_contains "cat plan_summary.out" "mise.toml:8"
+
+assert_succeed "mise run --plan=json app > plan.json"
+assert "cat plan.json | jq -r '.format_version'" "1"
+assert "cat plan.json | jq -r '.kind'" "static-dag"
+assert_contains "cat plan.json" '"plan_hash": "sha256:'
+assert_contains "cat plan.json" '"hash": "sha256:'
+assert_contains "cat plan.json" '"declaration": {'
+assert "cat plan.json | jq -r '.stages[0].tasks[0].declaration.line'" "1"
+assert "cat plan.json | jq -r '.summary.interactive_tasks'" "1"
+
+assert_succeed "mise run --plan=explain app > plan_explain.out"
+assert_contains "cat plan_explain.out" "Plan: valid (static)"
+assert_contains "cat plan_explain.out" "Hash: sha256:"
+assert_contains "cat plan_explain.out" "Config files used (1):"
+assert_contains "cat plan_explain.out" "Stage 2 [blocking (interactive)]"
+assert_contains "cat plan_explain.out" "interactive exclusivity: this stage blocks concurrent runtime starts"
+assert_contains "cat plan_explain.out" "Determinism: stable topological stages"
+assert_contains "cat plan_explain.out" "Scheduler Contention:"
+assert_contains "cat plan_explain.out" "- [task] build"
+assert_contains "cat plan_explain.out" "- [interactive] prompt"
+assert_contains "cat plan_explain.out" "- [task] app"
+assert_not_contains "cat plan_explain.out" "build [declared at"
+assert_not_contains "cat plan_explain.out" "prompt [declared at"
+assert_not_contains "cat plan_explain.out" "app [declared at"
+assert_contains "cat plan_explain.out" "mise.toml:1"
+assert_contains "cat plan_explain.out" "mise.toml:4"
+assert_contains "cat plan_explain.out" "mise.toml:8"
+assert_contains "cat plan_explain.out" "runtime=true (spawns a user process)"
+assert_contains "cat plan_explain.out" "interactive=true (global exclusive barrier for runtime tasks)"
+
+# --plan should not require a TTY because nothing is executed.
+assert_succeed "printf '' | mise run --plan prompt >/dev/null"
+
+# MatrixRef: impact/contention diagnostics / C10,C11
+cat <<EOF >mise.toml
+[tasks.build_a]
+sources = ["src/a.ts"]
+run = "echo build_a"
+
+[tasks.build_b]
+sources = ["src/b.ts"]
+run = "echo build_b"
+
+[tasks.ask1]
+interactive = true
+run = "read -r x"
+
+[tasks.ask2]
+interactive = true
+depends = ["build_a"]
+run = "read -r y"
+
+[tasks.root]
+depends = ["build_a", "build_b", "ask1", "ask2"]
+run = "echo root"
+EOF
+
+mkdir -p src
+echo "a" >src/a.ts
+echo "b" >src/b.ts
+
+assert_succeed "mise run --plan=explain --jobs=1 --changed=src/a.ts root > plan_explain_changed.out"
+assert_contains "cat plan_explain_changed.out" "Scheduler Contention:"
+assert_contains "cat plan_explain_changed.out" "jobs=1 limits runtime parallelism"
+assert_contains "cat plan_explain_changed.out" "Change Impact:"
+assert_contains "cat plan_explain_changed.out" "direct: build_a"
+assert_contains "cat plan_explain_changed.out" "impacted_tasks=ask2, build_a, root"
+
+assert_succeed "mise run --plan=json --jobs=1 --changed=src/a.ts root > plan_changed.json"
+assert "cat plan_changed.json | jq -r '.diagnostics.change_impact.directly_matched[0].task.name'" "build_a"
+assert "cat plan_changed.json | jq -r '.diagnostics.contention.interactive_stage_count'" "2"

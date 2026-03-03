@@ -5,6 +5,7 @@ use crate::cmd;
 use crate::config::Config;
 use crate::env;
 use crate::exit::exit;
+use crate::task::task_list::resolve_depends;
 use crate::toolset::ToolsetBuilder;
 use clap::{CommandFactory, ValueEnum, ValueHint};
 use console::style;
@@ -83,6 +84,11 @@ impl Watch {
             bail!("No tasks specified");
         }
         let tasks = crate::task::task_list::get_task_lists(&config, &args, false, false).await?;
+        let watch_scope_tasks = if self.skip_deps {
+            tasks.clone()
+        } else {
+            resolve_depends(&config, tasks.clone()).await?
+        };
         let mut args = vec![];
         if let Some(delay_run) = self.watchexec.delay_run {
             args.push("--delay-run".to_string());
@@ -180,9 +186,10 @@ impl Watch {
             args.push(watch_file.to_string_lossy().to_string());
         }
         let globs = if self.glob.is_empty() {
-            tasks
+            watch_scope_tasks
                 .iter()
                 .flat_map(|t| t.sources.clone())
+                .unique()
                 .collect::<Vec<_>>()
         } else {
             self.glob.clone()

@@ -1,4 +1,7 @@
 use crate::exit;
+use crate::task::task_execution_plan::{
+    ExecutionPlan, PlanContextIndex, execution_stage_kind_label,
+};
 use crate::task::task_output::TaskOutput;
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::{FailedTasks, Task};
@@ -10,6 +13,7 @@ pub struct TaskResultsDisplay {
     failed_tasks: FailedTasks,
     continue_on_error: bool,
     show_timings: bool,
+    plan_context: PlanContextIndex,
 }
 
 impl TaskResultsDisplay {
@@ -18,12 +22,15 @@ impl TaskResultsDisplay {
         failed_tasks: FailedTasks,
         continue_on_error: bool,
         show_timings: bool,
+        execution_plan: ExecutionPlan,
     ) -> Self {
+        let plan_context = PlanContextIndex::from_plan(&execution_plan, None);
         Self {
             output_handler,
             failed_tasks,
             continue_on_error,
             show_timings,
+            plan_context,
         }
     }
 
@@ -73,7 +80,15 @@ impl TaskResultsDisplay {
             let status_str = status
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "unknown".to_string());
-            self.eprint(task, &prefix, &format!("exited with status {}", status_str));
+            self.eprint(
+                task,
+                &prefix,
+                &format!(
+                    "exited with status {}{}",
+                    status_str,
+                    self.failure_context_suffix(task)
+                ),
+            );
         }
     }
 
@@ -84,10 +99,27 @@ impl TaskResultsDisplay {
             self.eprint(
                 task,
                 &prefix,
-                &format!("{} task failed", style::ered("ERROR")),
+                &format!(
+                    "{} task failed{}",
+                    style::ered("ERROR"),
+                    self.failure_context_suffix(task)
+                ),
             );
             exit(status.unwrap_or(1));
         }
+    }
+
+    fn failure_context_suffix(&self, task: &Task) -> String {
+        let Some(context) = self.plan_context.context_for_task(task) else {
+            return String::new();
+        };
+        format!(
+            " [stage {}/{} {}, declared at {}]",
+            context.stage_index,
+            self.plan_context.stage_count(),
+            execution_stage_kind_label(context.stage_kind),
+            self.plan_context.declaration_for_task(task)
+        )
     }
 
     /// Print error message for a task

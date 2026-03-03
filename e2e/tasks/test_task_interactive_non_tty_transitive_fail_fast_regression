@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# RegressionRef: STATIC-006
+# Goal: non-TTY fail-fast must include interactive tasks reachable only through injected subgraphs.
+# Expected behavior (target): explicit TTY error before any runtime side effects.
+
+cat <<'EOF' >mise.toml
+[tasks.ask]
+interactive = true
+run = "echo ASK_RAN > ask.marker"
+
+[tasks.mid]
+depends = ["ask"]
+run = "echo MID_RAN > mid.marker"
+
+[tasks.wrapper]
+run = ["echo BEFORE_INJECT > before.marker", { task = "mid" }]
+EOF
+
+out="$(mise run --timeout=3s wrapper </dev/null 2>&1)" && exit_code=0 || exit_code=$?
+[[ $exit_code -ne 0 ]] || fail "STATIC-006: expected non-TTY run to fail"
+[[ $out == *"TTY on stdin"* ]] || fail "STATIC-006: missing explicit non-TTY interactive error: $out"
+[[ $out != *"timed out after"* ]] || fail "STATIC-006: got timeout instead of fail-fast non-TTY error: $out"
+[[ ! -f before.marker ]] || fail "STATIC-006: fail-fast violated; wrapper runtime script executed"
+[[ ! -f mid.marker ]] || fail "STATIC-006: fail-fast violated; transitive runtime task executed"

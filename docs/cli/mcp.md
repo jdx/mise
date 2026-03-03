@@ -19,6 +19,7 @@ The MCP server provides access to:
 Resources available:
 - mise://tools - List all tools (use ?include_inactive=true to include inactive tools)
 - mise://tasks - List all tasks with their configurations
+- mise://plan - Build static execution plan (?tasks=build,test&changed=src/main.ts)
 - mise://env - List all environment variables
 - mise://config - Show configuration files and project root
 

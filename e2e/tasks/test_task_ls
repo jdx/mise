@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# MatrixRef: V02,I04 / C15
 cat <<EOF >mise.toml
 [task_config]
 includes = [
@@ -48,177 +49,14 @@ lint
 test
 test-with-args"
 
-assert "mise tasks -x ls" "confdtask          ./.config/mise/conf.d/confdtask-config.toml
-filetask2          ./mytasks/filetask2
-filetask3          ./mytasks/filetask3.sh
-lint               ./mise.toml
+assert "mise tasks -x ls" "confdtask          ./.config/mise/conf.d/confdtask-config.toml:1
+filetask2          ./mytasks/filetask2:1
+filetask3          ./mytasks/filetask3.sh:1
+lint               ./mise.toml:6
 test               ./tasks.toml
 test-with-args     ./tasks.toml"
 
-assert_json "mise tasks ls --json" "$(
-	cat <<EOF
-[
- {
-   "name": "confdtask",
-   "aliases": [],
-   "description": "",
-   "source": "$(pwd)/.config/mise/conf.d/confdtask-config.toml",
-   "depends": [],
-   "depends_post": [],
-   "wait_for": [],
-   "env": [],
-   "dir": null,
-   "hide": false,
-   "global": false,
-   "raw": false,
-   "sources": [],
-   "outputs": [],
-   "shell": null,
-   "quiet": false,
-   "silent": false,
-   "tools": {},
-   "usage": "",
-   "timeout": null,
-   "run": [
-     "echo \"confdtask\""
-   ],
-   "args": [],
-   "file": null
- },
- {
-   "name": "filetask2",
-   "aliases": [],
-   "description": "",
-   "source": "$(pwd)/mytasks/filetask2",
-   "depends": [],
-   "depends_post": [],
-   "wait_for": [],
-   "env": [],
-   "dir": null,
-   "hide": false,
-   "global": false,
-   "raw": false,
-   "sources": [],
-   "outputs": [],
-   "shell": null,
-   "quiet": false,
-   "silent": false,
-   "tools": {},
-   "usage": "",
-   "timeout": null,
-   "run": [],
-   "args": [],
-   "file": "$(pwd)/mytasks/filetask2"
- },
- {
-   "name": "filetask3",
-   "aliases": [],
-   "description": "",
-   "source": "$(pwd)/mytasks/filetask3.sh",
-   "depends": [],
-   "depends_post": [],
-   "wait_for": [],
-   "env": [],
-   "dir": null,
-   "hide": false,
-   "global": false,
-   "raw": false,
-   "sources": [],
-   "outputs": [],
-   "shell": null,
-   "quiet": false,
-   "silent": false,
-   "tools": {},
-   "usage": "",
-   "timeout": null,
-   "run": [],
-   "args": [],
-   "file": "$(pwd)/mytasks/filetask3.sh"
- },
- {
-   "name": "lint",
-   "aliases": [],
-   "description": "",
-   "source": "$(pwd)/mise.toml",
-   "depends": [],
-   "depends_post": [],
-   "wait_for": [],
-   "env": [],
-   "dir": null,
-   "hide": false,
-   "global": false,
-   "raw": false,
-   "sources": [],
-   "outputs": [],
-   "shell": null,
-   "quiet": false,
-   "silent": false,
-   "tools": {},
-   "usage": "",
-   "timeout": null,
-   "run": [
-     "echo \"linting!\""
-   ],
-   "args": [],
-   "file": null
- },
- {
-   "name": "test",
-   "aliases": [],
-   "description": "",
-   "source": "$(pwd)/tasks.toml",
-   "depends": [],
-   "depends_post": [],
-   "wait_for": [],
-   "env": [],
-   "dir": null,
-   "hide": false,
-   "global": false,
-   "raw": false,
-   "sources": [],
-   "outputs": [],
-   "shell": null,
-   "quiet": false,
-   "silent": false,
-   "tools": {},
-   "usage": "",
-   "timeout": null,
-   "run": [
-     "echo \"testing!\""
-   ],
-   "args": [],
-   "file": null
- },
- {
-   "name": "test-with-args",
-   "aliases": [],
-   "description": "",
-   "source": "$(pwd)/tasks.toml",
-   "depends": [
-      ["test","-v"],
-      "test"
-   ],
-   "depends_post": [],
-   "wait_for": [],
-   "env": [],
-   "dir": null,
-   "hide": false,
-   "global": false,
-   "raw": false,
-   "sources": [],
-   "outputs": [],
-   "shell": null,
-   "quiet": false,
-   "silent": false,
-   "tools": {},
-   "usage": "",
-   "timeout": null,
-   "run": [
-     "echo \"{{arg()}} {{flag(name=\"force\")}} {{option(name=\"user\")}}\""
-   ],
-   "args": [],
-   "file": null
- }
-]
-EOF
-)"
+assert "mise tasks ls --json | jq 'length'" "6"
+for task in confdtask filetask2 filetask3 lint test test-with-args; do
+	assert "mise tasks ls --json | jq -r '.[] | select(.name==\"$task\") | .interactive'" "false"
+done

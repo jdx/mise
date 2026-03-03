@@ -1,0 +1,251 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+require_cmd expect
+require_cmd python3
+
+run_expect_with_input() {
+	local cmd="$1"
+	local prompt_re="$2"
+	local input="$3"
+	expect "$TEST_ROOT/helpers/scripts/interactive_expect.tcl" with-input "$cmd" "$prompt_re" "$input"
+}
+
+run_expect_no_prompt() {
+	local cmd="$1"
+	local forbidden_prompt_re="$2"
+	expect "$TEST_ROOT/helpers/scripts/interactive_expect.tcl" no-prompt "$cmd" "$forbidden_prompt_re"
+}
+
+ts_of() {
+	local key="$1"
+	local file="$2"
+	awk -v k="$key" '$1 == k {print $2; exit}' "$file"
+}
+
+cat >stamp <<'EOF'
+#!/usr/bin/env python3
+import time
+print(int(time.time() * 1000))
+EOF
+chmod +x stamp
+
+# MatrixRef: B01,B07,B13 / C1,C11
+cat <<'EOF' >mise.toml
+[tasks.a_runtime]
+run = 'echo "RUNTIME_START $(./stamp)" >> timeline.log; sleep 1; echo "RUNTIME_END $(./stamp)" >> timeline.log'
+
+[tasks.z_interactive]
+interactive = true
+run = 'echo "INTERACTIVE_START $(./stamp)" >> timeline.log; printf "INT_PROMPT>" >&2; read -r line; echo "INT:$line"; echo "INTERACTIVE_END $(./stamp)" >> timeline.log'
+EOF
+out="$(run_expect_with_input "MISE_JOBS=8 mise run z_interactive ::: a_runtime" "INT_PROMPT>" "b01" 2>&1)" || {
+	echo "$out"
+	fail "B01/B07 run failed"
+}
+runtime_end="$(ts_of RUNTIME_END timeline.log)"
+interactive_start="$(ts_of INTERACTIVE_START timeline.log)"
+[[ -n $runtime_end && -n $interactive_start ]] || fail "missing timeline markers for B01/B07"
+((interactive_start >= runtime_end)) || fail "interactive started before runtime completed (B01/B07): $(cat timeline.log)"
+
+# MatrixRef: B08 / C1,C11
+cat <<'EOF' >mise.toml
+[tasks.gate]
+run = 'echo "GATE_END $(./stamp)" >> timeline.log'
+
+[tasks.a_interactive]
+interactive = true
+depends = ["gate"]
+run = 'echo "INTERACTIVE_START $(./stamp)" >> timeline.log; printf "INT_PROMPT>" >&2; read -r line; echo "INT:$line"; echo "INTERACTIVE_END $(./stamp)" >> timeline.log'
+
+[tasks.z_late]
+depends = ["gate"]
+run = 'echo "LATE_START $(./stamp)" >> timeline.log; sleep 1; echo "LATE_END $(./stamp)" >> timeline.log'
+EOF
+rm -f timeline.log
+out="$(run_expect_with_input "mise run a_interactive ::: z_late" "INT_PROMPT>" "b08" 2>&1)" || {
+	echo "$out"
+	fail "B08 run failed"
+}
+interactive_end="$(ts_of INTERACTIVE_END timeline.log)"
+interactive_start="$(ts_of INTERACTIVE_START timeline.log)"
+late_start="$(ts_of LATE_START timeline.log)"
+late_end="$(ts_of LATE_END timeline.log)"
+[[ -n $interactive_start && -n $interactive_end && -n $late_start && -n $late_end ]] || fail "missing timeline markers for B08"
+# Runtime may be scheduled either before or after interactive (runtime-first tie-break),
+# but must never overlap while interactive is active.
+((late_end <= interactive_start || late_start >= interactive_end)) || fail "runtime overlapped interactive window (B08): $(cat timeline.log)"
+
+# MatrixRef: B03 / C4
+cat <<'EOF' >mise.toml
+[tasks.cleanup]
+run = 'echo "CLEANUP $(./stamp)" >> timeline.log; echo CLEANUP_RAN'
+
+[tasks.ask_post]
+interactive = true
+depends_post = ["cleanup"]
+run = 'printf "POST_PROMPT>" >&2; read -r line; echo "ASK:$line"; echo "ASK_END $(./stamp)" >> timeline.log'
+EOF
+rm -f timeline.log
+out="$(run_expect_with_input "mise run ask_post" "POST_PROMPT>" "post" 2>&1)" || {
+	echo "$out"
+	fail "B03 run failed"
+}
+ask_end="$(ts_of ASK_END timeline.log)"
+cleanup_ts="$(ts_of CLEANUP timeline.log)"
+[[ -n $ask_end && -n $cleanup_ts ]] || fail "missing timeline markers for B03"
+((cleanup_ts >= ask_end)) || fail "depends_post ran before interactive finished (B03): $(cat timeline.log)"
+
+# MatrixRef: B04 / C1,C3
+cat <<'EOF' >mise.toml
+[tasks.prep]
+run = 'echo "PREP_END $(./stamp)" >> timeline.log'
+
+[tasks.wait_interactive]
+interactive = true
+wait_for = ["prep"]
+run = 'echo "WAIT_INT_START $(./stamp)" >> timeline.log; printf "WAIT_PROMPT>" >&2; read -r line; echo "WAIT:$line"'
+EOF
+rm -f timeline.log
+out="$(run_expect_with_input "mise run prep ::: wait_interactive" "WAIT_PROMPT>" "wait" 2>&1)" || {
+	echo "$out"
+	fail "B04 run failed"
+}
+prep_end="$(ts_of PREP_END timeline.log)"
+wait_start="$(ts_of WAIT_INT_START timeline.log)"
+[[ -n $prep_end && -n $wait_start ]] || fail "missing timeline markers for B04"
+((wait_start >= prep_end)) || fail "wait_for ordering violated (B04): $(cat timeline.log)"
+
+# MatrixRef: B05,B06,E10 / C1,C10
+cat <<'EOF' >mise.toml
+[tasks.a_inter]
+interactive = true
+run = 'echo "A_START $(./stamp)" >> order.log; printf "A_PROMPT>" >&2; read -r line; echo "A:$line"'
+
+[tasks.b_inter]
+interactive = true
+run = 'echo "B_START $(./stamp)" >> order.log; printf "B_PROMPT>" >&2; read -r line; echo "B:$line"'
+EOF
+rm -f order.log
+out="$(
+	expect <<'EOF' 2>&1
+set timeout 40
+spawn bash -lc "mise run b_inter ::: a_inter"
+expect "A_PROMPT>"
+send -- "first\r"
+expect "B_PROMPT>"
+send -- "second\r"
+expect eof
+set ws [wait]
+if {[llength $ws] >= 4} {
+    exit [lindex $ws 3]
+}
+exit 1
+EOF
+)" || {
+	echo "$out"
+	fail "B05/B06/E10 run failed"
+}
+first_marker="$(awk 'NR==1 {print $1}' order.log)"
+second_marker="$(awk 'NR==2 {print $1}' order.log)"
+[[ $first_marker == "A_START" && $second_marker == "B_START" ]] || fail "interactive order not deterministic (B05/B06): $(cat order.log)"
+[[ $out == *"A:first"* && $out == *"B:second"* ]] || fail "interactive routing failed (E10): $out"
+
+# MatrixRef: B11 / C1
+cat <<'EOF' >mise.toml
+[tasks.dep]
+run = 'echo DEP_RAN'
+
+[tasks.ask_skip]
+interactive = true
+depends = ["dep"]
+run = 'printf "SKIP_PROMPT>" >&2; read -r line; echo "SKIP:$line"'
+EOF
+out="$(run_expect_with_input "mise run --skip-deps ask_skip" "SKIP_PROMPT>" "skip" 2>&1)" || {
+	echo "$out"
+	fail "B11 run failed"
+}
+[[ $out == *"SKIP:skip"* ]] || fail "interactive task did not run with --skip-deps (B11): $out"
+[[ $out != *"DEP_RAN"* ]] || fail "dependency executed with --skip-deps (B11): $out"
+
+# MatrixRef: B12 / C13,C16
+out="$(run_expect_with_input "mise run --jobs=1 ask_skip" "SKIP_PROMPT>" "jobs1" 2>&1)" || {
+	echo "$out"
+	fail "B12 run failed"
+}
+[[ $out == *"SKIP:jobs1"* ]] || fail "jobs=1 interactive output missing (B12): $out"
+
+# MatrixRef: B14,E12 / C5,C13
+cat <<'EOF' >mise.toml
+[tasks.fail_first]
+run = 'echo FAIL_FIRST && exit 1'
+
+[tasks.ask_blocked]
+interactive = true
+depends = ["fail_first"]
+run = 'printf "SHOULD_NOT_PROMPT>" >&2; read -r line; echo "BLOCKED:$line"'
+EOF
+out="$(run_expect_no_prompt "mise run ask_blocked" "SHOULD_NOT_PROMPT>" 2>&1)" && exit_code=0 || exit_code=$?
+[[ $exit_code -ne 0 ]] || fail "B14 expected failure but got success"
+[[ $out == *"FAIL_FIRST"* ]] || fail "missing upstream failure output in B14: $out"
+[[ $out != *"SHOULD_NOT_PROMPT>"* ]] || fail "interactive launched after upstream failure (B14): $out"
+
+# MatrixRef: B15 / C5
+cat <<'EOF' >mise.toml
+[tasks.fail_parallel]
+run = 'echo FAIL_PARALLEL && exit 1'
+
+[tasks.ask_continue]
+interactive = true
+run = 'printf "CONT_PROMPT>" >&2; read -r line; echo "CONT:$line"'
+EOF
+out="$(run_expect_with_input "mise run --continue-on-error fail_parallel ::: ask_continue" "CONT_PROMPT>" "continue" 2>&1)" && exit_code=0 || exit_code=$?
+[[ $exit_code -ne 0 ]] || fail "B15 expected non-zero exit because one task fails"
+[[ $out == *"CONT:continue"* ]] || fail "interactive task did not run with --continue-on-error (B15): $out"
+
+# MatrixRef: B16,B17,B18,F14 / C4,C5,C13
+cat <<'EOF' >mise.toml
+[tasks.cleanup]
+run = 'echo CLEANUP_AFTER_FAIL'
+
+[tasks.ask_fail]
+interactive = true
+depends_post = ["cleanup"]
+run = 'printf "FAIL_PROMPT>" >&2; read -r line; echo "ASK_FAIL:$line"; exit 1'
+
+[tasks.after]
+run = 'echo AFTER_RAN'
+
+[tasks.seq]
+run = [{ task = "ask_fail" }, { task = "after" }]
+EOF
+out="$(run_expect_with_input "mise run seq" "FAIL_PROMPT>" "stop" 2>&1)" && exit_code=0 || exit_code=$?
+[[ $exit_code -ne 0 ]] || fail "B16 expected non-zero exit"
+[[ $out == *"CLEANUP_AFTER_FAIL"* ]] || fail "depends_post did not run on interactive failure (B18): $out"
+[[ $out != *"AFTER_RAN"* ]] || fail "sequence continued despite failure without --continue-on-error (B16): $out"
+
+out="$(run_expect_with_input "mise run --continue-on-error seq" "FAIL_PROMPT>" "cont" 2>&1)" && exit_code=0 || exit_code=$?
+[[ $exit_code -ne 0 ]] || fail "B17 expected non-zero exit when one task fails"
+[[ $out == *"AFTER_RAN"* ]] || fail "sequence did not continue with --continue-on-error (B17): $out"
+
+# MatrixRef: B09,B10,E11 / C1,C11
+cat <<'EOF' >mise.toml
+[tasks.sub_interactive]
+interactive = true
+run = 'echo "SUB_INT_START $(./stamp)" >> timeline.log; printf "SUB_PROMPT>" >&2; read -r line; echo "SUB:$line"'
+
+[tasks.sub_parent]
+run = [{ task = "sub_interactive" }]
+
+[tasks.external_rt]
+run = 'echo "EXTERNAL_START $(./stamp)" >> timeline.log; sleep 1; echo "EXTERNAL_END $(./stamp)" >> timeline.log'
+EOF
+rm -f timeline.log
+out="$(run_expect_with_input "mise run sub_parent ::: external_rt" "SUB_PROMPT>" "sub" 2>&1)" || {
+	echo "$out"
+	fail "B09/B10 run failed"
+}
+external_end="$(ts_of EXTERNAL_END timeline.log)"
+sub_start="$(ts_of SUB_INT_START timeline.log)"
+[[ -n $external_end && -n $sub_start ]] || fail "missing timeline markers for B09/B10"
+((sub_start >= external_end)) || fail "subgraph interactive bypassed global barrier (B09/B10): $(cat timeline.log)"

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+require_cmd expect
+
+run_expect_wait() {
+	local cmd="$1"
+	expect "$TEST_ROOT/helpers/scripts/interactive_expect.tcl" wait-eof "$cmd"
+}
+
+# RegressionRef: STATIC-004
+# Goal: injected tasks must still enforce interactive contract validation (C7/C8).
+# Expected behavior (target): invalid injected tasks fail before task body side effects.
+
+cat <<'EOF' >mise.toml
+[tasks.bad_silent]
+interactive = true
+silent = "stdout"
+run = 'echo BAD_SILENT > silent.marker'
+
+[tasks.inner]
+run = 'echo INNER_OK > orch.marker'
+
+[tasks.bad_orchestrator]
+interactive = true
+run = [{ task = "inner" }]
+
+[tasks.wrapper_silent]
+run = [{ task = "bad_silent" }]
+
+[tasks.wrapper_orchestrator]
+run = [{ task = "bad_orchestrator" }]
+EOF
+
+out="$(run_expect_wait "mise run wrapper_silent" 2>&1)" && exit_code=0 || exit_code=$?
+[[ $exit_code -ne 0 ]] || fail "STATIC-004: expected wrapper_silent to fail validation"
+[[ $out == *"interactive=true is incompatible with silent=true|\"stdout\"|\"stderr\""* ]] || fail "STATIC-004: missing interactive+silent validation error: $out"
+[[ ! -f silent.marker ]] || fail "STATIC-004: invalid injected silent task executed task body"
+
+out="$(run_expect_wait "mise run wrapper_orchestrator" 2>&1)" && exit_code=0 || exit_code=$?
+[[ $exit_code -ne 0 ]] || fail "STATIC-004: expected wrapper_orchestrator to fail validation"
+[[ $out == *"interactive=true is only allowed on runtime tasks"* ]] || fail "STATIC-004: missing interactive orchestrator validation error: $out"
+[[ ! -f orch.marker ]] || fail "STATIC-004: invalid injected orchestrator task executed task body"

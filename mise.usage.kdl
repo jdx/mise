@@ -564,7 +564,7 @@ cmd ls-remote help="List runtime versions available for install." {
     arg "[PREFIX]" help="The version prefix to use when querying the latest version\nsame as the first argument after the \"@\"" required=#false
 }
 cmd mcp help="[experimental] Run Model Context Protocol (MCP) server" {
-    long_help "[experimental] Run Model Context Protocol (MCP) server\n\nThis command starts an MCP server that exposes mise functionality\nto AI assistants over stdin/stdout using JSON-RPC protocol.\n\nThe MCP server provides access to:\n- Installed and available tools\n- Task definitions and execution\n- Environment variables\n- Configuration information\n- Task execution via the run_task tool\n\nResources available:\n- mise://tools - List all tools (use ?include_inactive=true to include inactive tools)\n- mise://tasks - List all tasks with their configurations\n- mise://env - List all environment variables\n- mise://config - Show configuration files and project root\n\nTools available:\n- install_tool - Install a tool with an optional version (not yet implemented)\n- run_task - Execute a mise task with optional arguments\n\nNote: This is primarily intended for integration with AI assistants like Claude,\nCursor, or other tools that support the Model Context Protocol."
+    long_help "[experimental] Run Model Context Protocol (MCP) server\n\nThis command starts an MCP server that exposes mise functionality\nto AI assistants over stdin/stdout using JSON-RPC protocol.\n\nThe MCP server provides access to:\n- Installed and available tools\n- Task definitions and execution\n- Environment variables\n- Configuration information\n- Task execution via the run_task tool\n\nResources available:\n- mise://tools - List all tools (use ?include_inactive=true to include inactive tools)\n- mise://tasks - List all tasks with their configurations\n- mise://plan - Build static execution plan (?tasks=build,test&changed=src/main.ts)\n- mise://env - List all environment variables\n- mise://config - Show configuration files and project root\n\nTools available:\n- install_tool - Install a tool with an optional version (not yet implemented)\n- run_task - Execute a mise task with optional arguments\n\nNote: This is primarily intended for integration with AI assistants like Claude,\nCursor, or other tools that support the Model Context Protocol."
     after_long_help "Examples:\n\n    # Start the MCP server (typically used by AI assistant tools)\n    $ mise mcp\n\n    # Example integration with Claude Desktop (add to claude_desktop_config.json):\n    {\n      \"mcpServers\": {\n        \"mise\": {\n          \"command\": \"mise\",\n          \"args\": [\"mcp\"],\n          \"env\": {\n            \"MISE_EXPERIMENTAL\": \"1\"\n          }\n        }\n      }\n    }\n\n    # Interactive testing with JSON-RPC commands:\n    $ echo '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0\"}}}' | mise mcp\n\n    # Resources you can query:\n    - mise://tools - List active tools\n    - mise://tools?include_inactive=true - List all installed tools\n    - mise://tasks - List all tasks\n    - mise://env - List environment variables\n    - mise://config - Show configuration info\n\n    # Tools available:\n    - install_tool - Install a tool (not yet implemented)\n    - run_task - Execute a mise task with optional arguments\n      Example: {\"task\": \"build\", \"args\": [\"--verbose\"]}\n"
 }
 cmd outdated help="Shows outdated tool versions" {
@@ -694,7 +694,7 @@ cmd reshim help="Creates new shims based on bin paths from currently installed t
 cmd run restart_token=::: help="Run task(s)" {
     alias r
     long_help "Run task(s)\n\nThis command will run a task, or multiple tasks in parallel.\nTasks may have dependencies on other tasks or on source files.\nIf source is configured on a task, it will only run if the source\nfiles have changed.\n\nTasks can be defined in mise.toml or as standalone scripts.\nIn mise.toml, tasks take this form:\n\n    [tasks.build]\n    run = \"npm run build\"\n    sources = [\"src/**/*.ts\"]\n    outputs = [\"dist/**/*.js\"]\n\nAlternatively, tasks can be defined as standalone scripts.\nThese must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or\n`.config/mise/tasks`.\nThe name of the script will be the name of the tasks.\n\n    $ cat .mise/tasks/build<<EOF\n    #!/usr/bin/env bash\n    npm run build\n    EOF\n    $ mise run build"
-    after_long_help "Examples:\n\n    # Runs the \"lint\" tasks. This needs to either be defined in mise.toml\n    # or as a standalone script. See the project README for more information.\n    $ mise run lint\n\n    # Forces the \"build\" tasks to run even if its sources are up-to-date.\n    $ mise run --force build\n\n    # Run \"test\" with stdin/stdout/stderr all connected to the current terminal.\n    # This forces `--jobs=1` to prevent interleaving of output.\n    $ mise run --raw test\n\n    # Runs the \"lint\", \"test\", and \"check\" tasks in parallel.\n    $ mise run lint ::: test ::: check\n\n    # Execute multiple tasks each with their own arguments.\n    $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2\n"
+    after_long_help "Examples:\n\n    # Runs the \"lint\" tasks. This needs to either be defined in mise.toml\n    # or as a standalone script. See the project README for more information.\n    $ mise run lint\n\n    # Forces the \"build\" tasks to run even if its sources are up-to-date.\n    $ mise run --force build\n\n    # Run \"test\" with stdin/stdout/stderr all connected to the current terminal.\n    # This forces `--jobs=1` to prevent interleaving of output.\n    $ mise run --raw test\n\n    # Runs the \"lint\", \"test\", and \"check\" tasks in parallel.\n    $ mise run lint ::: test ::: check\n\n    # Execute multiple tasks each with their own arguments.\n    $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2\n\n    # Print the static execution plan without running tasks.\n    $ mise run --plan test\n    $ mise run --plan=json test\n    $ mise run --plan=explain test\n    $ mise run --plan=explain --changed=src/main.ts test\n"
     flag "-c --continue-on-error" help="Continue running tasks even if one fails"
     flag "-C --cd" help="Change to this directory before executing the command" {
         arg <CD>
@@ -705,6 +705,10 @@ cmd run restart_token=::: help="Run task(s)" {
         arg <JOBS>
     }
     flag "-n --dry-run" help="Don't actually run the task(s), just print them in order of execution"
+    flag --changed help="Changed files to analyze impact against task sources in `--plan` mode" var=#true {
+        long_help "Changed files to analyze impact against task sources in `--plan` mode\n\nCan be provided multiple times:\n- `--changed=src/main.ts`\n- `--changed=src/a.ts --changed=src/b.ts`"
+        arg <PATH>
+    }
     flag "-o --output" help="Change how tasks information is output when running tasks" {
         long_help "Change how tasks information is output when running tasks\n\n- `prefix` - Print stdout/stderr by line, prefixed with the task's label\n- `interleave` - Print directly to stdout/stderr instead of by line\n- `replacing` - Stdout is replaced each time, stderr is printed as is\n- `timed` - Only show stdout lines if they are displayed for more than 1 second\n- `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output\n- `quiet` - Don't show extra output\n- `silent` - Don't show any output including stdout and stderr from the task except for errors"
         arg <OUTPUT>
@@ -725,6 +729,12 @@ cmd run restart_token=::: help="Run task(s)" {
     flag --no-prepare help="Skip automatic dependency preparation"
     flag --no-timings help="Hides elapsed time after each task completes" {
         long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
+    }
+    flag --plan help="Print the static execution plan and exit without executing tasks" {
+        long_help "Print the static execution plan and exit without executing tasks\n\nOptional formats:\n- `summary` (default)\n- `json`\n- `explain`\n\nPlan output includes each task declaration reference (`source:line`) to\nmake static DAG tracking easier across large monorepos.\n\nExamples:\n- `--plan`\n- `--plan=json`\n- `--plan=explain`"
+        arg <PLAN> {
+            choices summary json explain
+        }
     }
     flag --skip-deps help="Run only the specified tasks skipping all dependencies"
     flag --timeout help="Timeout for the task to complete\ne.g.: 30s, 5m" {
@@ -976,7 +986,7 @@ cmd tasks help="Manage tasks" {
         arg <TASK> help="Task to edit"
     }
     cmd info help="Get information about a task" {
-        after_long_help "Examples:\n\n    $ mise tasks info\n    Name: test\n    Aliases: t\n    Description: Test the application\n    Source: ~/src/myproj/mise.toml\n\n    $ mise tasks info test --json\n    {\n      \"name\": \"test\",\n      \"aliases\": \"t\",\n      \"description\": \"Test the application\",\n      \"source\": \"~/src/myproj/mise.toml\",\n      \"depends\": [],\n      \"env\": {},\n      \"dir\": null,\n      \"hide\": false,\n      \"raw\": false,\n      \"sources\": [],\n      \"outputs\": [],\n      \"run\": [\n        \"echo \\\"testing!\\\"\"\n      ],\n      \"file\": null,\n      \"usage_spec\": {}\n    }\n"
+        after_long_help "Examples:\n\n    $ mise tasks info\n    Name: test\n    Aliases: t\n    Description: Test the application\n    Source: ~/src/myproj/mise.toml\n\n    $ mise tasks info test --json\n    {\n      \"name\": \"test\",\n      \"aliases\": \"t\",\n      \"description\": \"Test the application\",\n      \"source\": \"~/src/myproj/mise.toml\",\n      \"depends\": [],\n      \"env\": {},\n      \"dir\": null,\n      \"hide\": false,\n      \"raw\": false,\n      \"interactive\": false,\n      \"sources\": [],\n      \"outputs\": [],\n      \"run\": [\n        \"echo \\\"testing!\\\"\"\n      ],\n      \"file\": null,\n      \"usage_spec\": {}\n    }\n"
         flag "-J --json" help="Output in JSON format"
         arg <TASK> help="Name of the task to get information about"
     }
@@ -1006,7 +1016,7 @@ cmd tasks help="Manage tasks" {
     cmd run restart_token=::: help="Run task(s)" {
         alias r
         long_help "Run task(s)\n\nThis command will run a task, or multiple tasks in parallel.\nTasks may have dependencies on other tasks or on source files.\nIf source is configured on a task, it will only run if the source\nfiles have changed.\n\nTasks can be defined in mise.toml or as standalone scripts.\nIn mise.toml, tasks take this form:\n\n    [tasks.build]\n    run = \"npm run build\"\n    sources = [\"src/**/*.ts\"]\n    outputs = [\"dist/**/*.js\"]\n\nAlternatively, tasks can be defined as standalone scripts.\nThese must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or\n`.config/mise/tasks`.\nThe name of the script will be the name of the tasks.\n\n    $ cat .mise/tasks/build<<EOF\n    #!/usr/bin/env bash\n    npm run build\n    EOF\n    $ mise run build"
-        after_long_help "Examples:\n\n    # Runs the \"lint\" tasks. This needs to either be defined in mise.toml\n    # or as a standalone script. See the project README for more information.\n    $ mise run lint\n\n    # Forces the \"build\" tasks to run even if its sources are up-to-date.\n    $ mise run --force build\n\n    # Run \"test\" with stdin/stdout/stderr all connected to the current terminal.\n    # This forces `--jobs=1` to prevent interleaving of output.\n    $ mise run --raw test\n\n    # Runs the \"lint\", \"test\", and \"check\" tasks in parallel.\n    $ mise run lint ::: test ::: check\n\n    # Execute multiple tasks each with their own arguments.\n    $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2\n"
+        after_long_help "Examples:\n\n    # Runs the \"lint\" tasks. This needs to either be defined in mise.toml\n    # or as a standalone script. See the project README for more information.\n    $ mise run lint\n\n    # Forces the \"build\" tasks to run even if its sources are up-to-date.\n    $ mise run --force build\n\n    # Run \"test\" with stdin/stdout/stderr all connected to the current terminal.\n    # This forces `--jobs=1` to prevent interleaving of output.\n    $ mise run --raw test\n\n    # Runs the \"lint\", \"test\", and \"check\" tasks in parallel.\n    $ mise run lint ::: test ::: check\n\n    # Execute multiple tasks each with their own arguments.\n    $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2\n\n    # Print the static execution plan without running tasks.\n    $ mise run --plan test\n    $ mise run --plan=json test\n    $ mise run --plan=explain test\n    $ mise run --plan=explain --changed=src/main.ts test\n"
         flag "-c --continue-on-error" help="Continue running tasks even if one fails"
         flag "-C --cd" help="Change to this directory before executing the command" {
             arg <CD>
@@ -1017,6 +1027,10 @@ cmd tasks help="Manage tasks" {
             arg <JOBS>
         }
         flag "-n --dry-run" help="Don't actually run the task(s), just print them in order of execution"
+        flag --changed help="Changed files to analyze impact against task sources in `--plan` mode" var=#true {
+            long_help "Changed files to analyze impact against task sources in `--plan` mode\n\nCan be provided multiple times:\n- `--changed=src/main.ts`\n- `--changed=src/a.ts --changed=src/b.ts`"
+            arg <PATH>
+        }
         flag "-o --output" help="Change how tasks information is output when running tasks" {
             long_help "Change how tasks information is output when running tasks\n\n- `prefix` - Print stdout/stderr by line, prefixed with the task's label\n- `interleave` - Print directly to stdout/stderr instead of by line\n- `replacing` - Stdout is replaced each time, stderr is printed as is\n- `timed` - Only show stdout lines if they are displayed for more than 1 second\n- `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output\n- `quiet` - Don't show extra output\n- `silent` - Don't show any output including stdout and stderr from the task except for errors"
             arg <OUTPUT>
@@ -1037,6 +1051,12 @@ cmd tasks help="Manage tasks" {
         flag --no-prepare help="Skip automatic dependency preparation"
         flag --no-timings help="Hides elapsed time after each task completes" {
             long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
+        }
+        flag --plan help="Print the static execution plan and exit without executing tasks" {
+            long_help "Print the static execution plan and exit without executing tasks\n\nOptional formats:\n- `summary` (default)\n- `json`\n- `explain`\n\nPlan output includes each task declaration reference (`source:line`) to\nmake static DAG tracking easier across large monorepos.\n\nExamples:\n- `--plan`\n- `--plan=json`\n- `--plan=explain`"
+            arg <PLAN> {
+                choices summary json explain
+            }
         }
         flag --skip-deps help="Run only the specified tasks skipping all dependencies"
         flag --timeout help="Timeout for the task to complete\ne.g.: 30s, 5m" {

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# RegressionRef: STATIC-002
+# Goal: fail-fast non-TTY detection should cover interactive tasks injected at runtime.
+# Expected behavior (target): command fails before any task body executes.
+
+cat <<'EOF2' >mise.toml
+[tasks.ask]
+interactive = true
+run = 'printf "ASK_PROMPT>" >&2; read -r line; echo "ASK:$line"'
+
+[tasks.seq]
+run = ['echo BEFORE_INJECT', { task = "ask" }]
+EOF2
+
+out="$(mise run --timeout=2s seq </dev/null 2>&1)" && exit_code=0 || exit_code=$?
+[[ $exit_code -ne 0 ]] || fail "STATIC-002: expected non-zero exit for non-TTY interactive injection"
+
+# Expected fail-fast: no task body should run before TTY contract error is reported.
+[[ $out != *"BEFORE_INJECT"* ]] || fail "STATIC-002: injected interactive was not rejected pre-run (observed task output before failure): $out"

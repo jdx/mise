@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# RegressionRef: STATIC-001
+# Goal: planned static order should match runtime order when both leaves are ready.
+# Expected behavior (target): runtime-ready leaves execute before interactive leaves.
+
+require_cmd expect
+require_cmd python3
+
+run_expect_with_input() {
+	local cmd="$1"
+	local prompt_re="$2"
+	local input="$3"
+	expect "$TEST_ROOT/helpers/scripts/interactive_expect.tcl" with-input "$cmd" "$prompt_re" "$input"
+}
+
+ts_of() {
+	local key="$1"
+	local file="$2"
+	awk -v k="$key" '$1 == k {print $2; exit}' "$file"
+}
+
+cat >stamp <<'EOF2'
+#!/usr/bin/env python3
+import time
+print(int(time.time() * 1000))
+EOF2
+chmod +x stamp
+
+cat <<'EOF2' >mise.toml
+[tasks.a_interactive]
+interactive = true
+run = 'echo "INTERACTIVE_START $(./stamp)" >> timeline.log; printf "ALIGN_PROMPT>" >&2; read -r line; echo "INTERACTIVE_END $(./stamp)" >> timeline.log; echo "A:$line"'
+
+[tasks.z_runtime]
+run = 'echo "RUNTIME_START $(./stamp)" >> timeline.log; sleep 1; echo "RUNTIME_END $(./stamp)" >> timeline.log; echo Z_DONE'
+
+[tasks.root]
+depends = ["a_interactive", "z_runtime"]
+run = 'echo ROOT_DONE'
+EOF2
+
+assert_succeed "mise run --plan root > plan.out"
+assert_contains "cat plan.out" "1. [task] z_runtime [declared at"
+assert_contains "cat plan.out" "2. [interactive] a_interactive [declared at"
+
+rm -f timeline.log
+out="$(run_expect_with_input "MISE_JOBS=8 mise run root" "ALIGN_PROMPT>" "ok" 2>&1)" || {
+	echo "$out"
+	fail "runtime execution failed"
+}
+
+runtime_end="$(ts_of RUNTIME_END timeline.log)"
+interactive_start="$(ts_of INTERACTIVE_START timeline.log)"
+[[ -n $runtime_end && -n $interactive_start ]] || fail "missing timeline markers: $(cat timeline.log)"
+
+# Expected static-DAG behavior: interactive starts only after runtime leaves completed.
+((interactive_start >= runtime_end)) || fail "STATIC-001: execution diverges from static plan (interactive started before runtime completed). timeline=$(cat timeline.log)"

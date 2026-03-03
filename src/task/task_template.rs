@@ -32,6 +32,8 @@ pub struct TaskTemplate {
     #[serde(default)]
     pub raw: Option<bool>,
     #[serde(default)]
+    pub interactive: Option<bool>,
+    #[serde(default)]
     pub sources: Vec<String>,
     #[serde(default)]
     pub outputs: TaskOutputs,
@@ -152,6 +154,12 @@ impl Task {
         // where a task explicitly sets `quiet = false` but gets overridden by a template's
         // `quiet = true`. Users must explicitly set these in their task if needed.
 
+        // interactive is tri-state in Task (Option<bool>) to preserve inheritance/override
+        // semantics across templates.
+        if self.interactive.is_none() {
+            self.interactive = template.interactive;
+        }
+
         // silent: use template only if local is Off (Silent is an enum, so we can distinguish)
         if matches!(self.silent, Silent::Off)
             && let Some(ref silent) = template.silent
@@ -213,6 +221,33 @@ mod tests {
         // Template run should be used when local is empty
         assert_eq!(task.run.len(), 1);
         assert!(matches!(&task.run[0], RunEntry::Script(s) if s == "template command"));
+    }
+
+    #[test]
+    fn test_merge_template_interactive_inherited() {
+        // MatrixRef: V13 / C15
+        let mut task = Task::default();
+        let template = TaskTemplate {
+            interactive: Some(true),
+            ..Default::default()
+        };
+        task.merge_template(&template);
+        assert_eq!(task.interactive, Some(true));
+    }
+
+    #[test]
+    fn test_merge_template_interactive_override() {
+        // MatrixRef: V14 / C15
+        let mut task = Task {
+            interactive: Some(false),
+            ..Default::default()
+        };
+        let template = TaskTemplate {
+            interactive: Some(true),
+            ..Default::default()
+        };
+        task.merge_template(&template);
+        assert_eq!(task.interactive, Some(false));
     }
 
     #[test]

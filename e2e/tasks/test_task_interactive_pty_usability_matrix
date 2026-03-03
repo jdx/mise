@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+require_cmd expect
+
+run_expect_with_input() {
+	local cmd="$1"
+	local prompt_re="$2"
+	local input="$3"
+	expect "$TEST_ROOT/helpers/scripts/interactive_expect.tcl" with-input "$cmd" "$prompt_re" "$input"
+}
+
+# MatrixRef: E02 / C2,C3
+cat <<'EOF' >mise.toml
+[tasks.dep]
+run = 'echo DEP_ONE'
+
+[tasks.one_dep_interactive]
+interactive = true
+depends = ["dep"]
+run = 'printf "ONE_PROMPT>" >&2; read -r line; echo "ONE:$line"'
+EOF
+out="$(run_expect_with_input "mise run one_dep_interactive" "ONE_PROMPT>" "one" 2>&1)" || {
+	echo "$out"
+	fail "one-dep interactive scenario failed"
+}
+[[ $out == *"DEP_ONE"* && $out == *"ONE:one"* ]] || fail "one-dep interactive ordering/output mismatch: $out"
+
+# MatrixRef: E03 / C2,C3
+cat <<'EOF' >mise.toml
+[tasks.dep_a]
+run = 'echo DEP_A'
+[tasks.dep_b]
+run = 'echo DEP_B'
+
+[tasks.two_dep_interactive]
+interactive = true
+depends = ["dep_a", "dep_b"]
+run = 'printf "TWO_PROMPT>" >&2; read -r line; echo "TWO:$line"'
+EOF
+out="$(run_expect_with_input "mise run two_dep_interactive" "TWO_PROMPT>" "two" 2>&1)" || {
+	echo "$out"
+	fail "two-dep interactive scenario failed"
+}
+[[ $out == *"DEP_A"* && $out == *"DEP_B"* && $out == *"TWO:two"* ]] || fail "two-dep interactive ordering/output mismatch: $out"
+
+# MatrixRef: E04,B02 / C1,C2,C3,C6
+cat <<'EOF' >mise.toml
+[tasks.dep1]
+run = 'echo DEP1'
+[tasks.dep2]
+run = 'echo DEP2'
+[tasks.dep3]
+run = 'echo DEP3'
+[tasks.dep4]
+run = 'echo DEP4'
+[tasks.dep5]
+run = 'echo DEP5'
+
+[tasks.fanout_interactive]
+interactive = true
+depends = ["dep1", "dep2", "dep3", "dep4", "dep5"]
+run = 'printf "FANOUT_PROMPT>" >&2; read -r line; echo "FANOUT:$line"'
+EOF
+out="$(run_expect_with_input "mise run fanout_interactive" "FANOUT_PROMPT>" "fan" 2>&1)" || {
+	echo "$out"
+	fail "fan-out interactive scenario failed"
+}
+for dep in DEP1 DEP2 DEP3 DEP4 DEP5; do
+	[[ $out == *"$dep"* ]] || fail "missing fan-out dependency output '$dep': $out"
+done
+[[ $out == *"FANOUT:fan"* ]] || fail "missing fan-out interactive output: $out"
+
+# MatrixRef: P02 / C13,C17
+cat <<'EOF' >mise.toml
+[tasks.eof_interactive]
+interactive = true
+run = 'printf "EOF_PROMPT>" >&2; if ! read -r line; then echo EOF_SEEN; fi; echo EOF_DONE'
+EOF
+out="$(
+	expect <<'EOF' 2>&1
+set timeout 20
+spawn bash -lc "mise run eof_interactive"
+expect "EOF_PROMPT>"
+send -- "\004"
+expect eof
+set ws [wait]
+if {[llength $ws] >= 4} {
+    exit [lindex $ws 3]
+}
+exit 1
+EOF
+)" || {
+	echo "$out"
+	fail "EOF interactive scenario failed"
+}
+[[ $out == *"EOF_SEEN"* && $out == *"EOF_DONE"* ]] || fail "EOF path did not complete cleanly: $out"
+
+# MatrixRef: P03,C18 / C18
+cat <<'EOF' >mise.toml
+[tasks.term_interactive]
+interactive = true
+run = 'stty -echo; printf "TERM_PROMPT>" >&2; read -r line; echo "TERM:$line"'
+EOF
+out="$(
+	expect <<'EOF' 2>&1
+set timeout 30
+spawn bash -lc "mise run term_interactive"
+expect "TERM_PROMPT>"
+send -- "restore\r"
+expect eof
+set ws [wait]
+if {[llength $ws] < 4 || [lindex $ws 3] != 0} {
+    exit 1
+}
+
+spawn bash -lc "stty -a"
+expect {
+    -re {(^|[[:space:]])echo([[:space:]]|$)} {}
+    timeout {exit 1}
+}
+expect eof
+exit 0
+EOF
+)" || {
+	echo "$out"
+	fail "terminal restore scenario failed"
+}
+[[ $out == *"TERM:restore"* ]] || fail "interactive terminal test did not execute task body: $out"

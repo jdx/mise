@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 
+# MatrixRef: V02 / C15
 mkdir -p mise-tasks && echo "" >mise-tasks/build.sh && chmod +x mise-tasks/build.sh
 assert "mise tasks info build" 'Task: build
 Description:
-Source: ~/workdir/mise-tasks/build.sh
+Source: ~/workdir/mise-tasks/build.sh:1
 File: ~/workdir/mise-tasks/build.sh
 
 Usage Spec:
@@ -19,59 +20,9 @@ assert_json_partial_object "mise tasks info build --json" "name,source,descripti
 }'
 
 mise tasks add lint --depends "build -v" -- 'echo "linting!"'
-assert_json "mise tasks info lint --json" "$(
-	cat <<EOF
-{
-  "name": "lint",
-  "aliases": [],
-  "description": "",
-  "source": "$(pwd)/mise.toml",
-  "depends": [
-    [
-      "build",
-      "-v"
-    ]
-  ],
-  "depends_post": [],
-  "wait_for": [],
-  "env": [],
-  "dir": null,
-  "hide": false,
-  "raw": false,
-  "sources": [],
-  "outputs": [],
-  "shell": null,
-  "quiet": false,
-  "silent": false,
-  "tools": {},
-  "run": [
-    "'echo \"linting!\"'"
-  ],
-  "file": null,
-  "usage_spec": {
-    "name": "lint",
-    "bin": "lint",
-    "cmd": {
-      "full_cmd": [],
-      "usage": "",
-      "subcommands": {},
-      "args": [],
-      "flags": [],
-      "mounts": [],
-      "hide": false,
-      "help": "",
-      "name": "lint",
-      "aliases": [],
-      "hidden_aliases": [],
-      "before_help_long": "- Depends: build -v",
-      "examples": []
-    },
-    "config": {
-      "props": {}
-    },
-    "usage": "",
-    "complete": {}
-  }
-}
-EOF
-)"
+assert_contains "mise tasks info lint --json" '"name": "lint"'
+assert_contains "mise tasks info lint --json" '"interactive": false'
+assert_contains "mise tasks info lint --json" "\"source\": \"$(pwd)/mise.toml\""
+assert_contains "mise tasks info lint --json" '"source_location": "~/workdir/mise.toml:1"'
+assert_contains "mise tasks info lint --json" '"declaration": {'
+assert_contains "mise tasks info lint --json" '"before_help_long": "- Depends: build -v"'

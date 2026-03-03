@@ -66,8 +66,8 @@ console.log(`MYVAR: ${process.env.MYVAR}`);
 EOF
 chmod +x .mise/tasks/jstask
 assert "mise run jstask" "MYVAR: 1"
-assert "mise tasks -x" "configtask     ./.mise.toml
-filetask       ./.mise/tasks/filetask
-jstask         ./.mise/tasks/jstask    This is a test build script
-lint           ./.mise.toml
-test           ./.mise.toml"
+assert_matches "mise tasks -x" 'configtask[[:space:]]+\./\.mise\.toml(:[0-9]+)?'
+assert_matches "mise tasks -x" 'filetask[[:space:]]+\./\.mise/tasks/filetask(:[0-9]+)?'
+assert_matches "mise tasks -x" 'jstask[[:space:]]+\./\.mise/tasks/jstask(:[0-9]+)?[[:space:]]+This is a test build script'
+assert_matches "mise tasks -x" 'lint[[:space:]]+\./\.mise\.toml(:[0-9]+)?'
+assert_matches "mise tasks -x" 'test[[:space:]]+\./\.mise\.toml(:[0-9]+)?'

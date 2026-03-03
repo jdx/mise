@@ -1,5 +1,9 @@
 use crate::config::{self, Config, Settings};
 use crate::file::display_path;
+use crate::task::task_resolution_diagnostic::{
+    DEFAULT_AVAILABLE_TASKS_PREVIEW_LIMIT, append_resolution_sections, available_tasks_from_tasks,
+    config_files_from_tasks,
+};
 use crate::task::{
     GetMatchingExt, Task, TaskLoadContext, extract_monorepo_path, resolve_task_pattern,
 };
@@ -187,6 +191,19 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
         for cmd_name in &similar_cmds {
             err_msg.push_str(&format!("\n  mise {cmd_name}"));
         }
+    }
+
+    if let Ok(all_tasks) = config.tasks().await {
+        let config_files = config_files_from_tasks(all_tasks.values());
+        let available = available_tasks_from_tasks(all_tasks.values());
+        let mut lines = vec![err_msg];
+        append_resolution_sections(
+            &mut lines,
+            &config_files,
+            &available,
+            DEFAULT_AVAILABLE_TASKS_PREVIEW_LIMIT,
+        );
+        err_msg = lines.join("\n");
     }
 
     bail!(err_msg);

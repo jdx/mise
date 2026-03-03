@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# RegressionRef: STATIC-015
+# Goal: user tasks named "start"/"end" in a static subgraph must not be interpreted
+# as a virtual barrier task in --plan summary output.
+# Expected behavior (target): user tasks appear as normal planned tasks.
+
+cat <<'EOF2' >mise.toml
+[tasks.start]
+run = "echo user-start"
+
+[tasks.end]
+run = "echo user-end"
+
+[tasks.wrap]
+run = [{ tasks = ["start", "end"] }]
+EOF2
+
+assert_succeed "mise run --plan wrap > plan.out"
+assert_contains "cat plan.out" "┌─ group: wrap"
+assert_contains "cat plan.out" "wrap/start"
+assert_contains "cat plan.out" "wrap/end"
+assert_contains "cat plan.out" "mise.toml:1"
+assert_contains "cat plan.out" "mise.toml:4"
+assert_contains "cat plan.out" "└─ group: wrap"
+assert_not_contains "cat plan.out" "│  ┌─ group: wrap"
+assert_not_contains "cat plan.out" "│  └─ group: wrap"

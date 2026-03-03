@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# RegressionRef: STATIC-011
+# Goal: plan declaration references should resolve to sub-config lines for monorepo-prefixed tasks.
+
+export MISE_EXPERIMENTAL=1
+
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/app"]
+TOML
+
+mkdir -p packages/app
+cat <<'TOML' >packages/app/mise.toml
+[tasks.build]
+run = "echo build"
+TOML
+
+assert_succeed "mise run --plan //packages/app:build > plan.out"
+assert_contains "cat plan.out" "[task] //packages/app:build [declared at"
+assert_contains "cat plan.out" "packages/app/mise.toml:1"
+
+assert_succeed "mise run --plan=json //packages/app:build > plan.json"
+assert "cat plan.json | jq -r '.stages[0].tasks[0].declaration.line'" "1"
+assert_contains "cat plan.json" "packages/app/mise.toml"

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# RegressionRef: STATIC-010
+# Goal: static plan validation must include statically known injected sub-task definitions.
+# Expected behavior (target): --plan fails when injected sub-task violates interactive contract.
+
+cat <<'EOF' >mise.toml
+[tasks.bad_silent]
+interactive = true
+silent = "stdout"
+run = 'echo BAD_SILENT'
+
+[tasks.wrapper]
+run = [{ task = "bad_silent" }]
+EOF
+
+out="$(mise run --plan wrapper 2>&1)" && exit_code=0 || exit_code=$?
+[[ $exit_code -ne 0 ]] || fail "STATIC-010: expected --plan to fail on invalid injected interactive sub-task"
+[[ $out == *"pre-run validation failed"* ]] || fail "STATIC-010: missing pre-run validation failure in --plan output: $out"
+[[ $out == *"interactive=true is incompatible with silent=true|\"stdout\"|\"stderr\""* ]] || fail "STATIC-010: missing interactive validation reason in --plan output: $out"

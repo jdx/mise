@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+require_cmd expect
+
+# MatrixRef: X01,X02,X03,X04,X05,X06,T01,T02 / C1,C2,C6,C10,C11,C12,C13
+if [[ ${MISE_RUN_SOAK:-0} != 1 ]]; then
+	echo "Skipping soak matrix (set MISE_RUN_SOAK=1 to enable)"
+	exit 0
+fi
+
+cat <<'EOF' >mise.toml
+[tasks.rt1]
+run = 'echo RT1_START; sleep 0.1; echo RT1_END'
+
+[tasks.rt2]
+run = 'echo RT2_START; sleep 0.1; echo RT2_END'
+
+[tasks.a_inter]
+interactive = true
+run = 'printf "A_PROMPT>" >&2; read -r line; echo "A:$line"'
+
+[tasks.b_inter]
+interactive = true
+run = 'printf "B_PROMPT>" >&2; read -r line; echo "B:$line"'
+
+[tasks.sub_inter]
+interactive = true
+run = 'printf "SUB_PROMPT>" >&2; read -r line; echo "SUB:$line"'
+
+[tasks.sub_parent]
+run = [{ task = "sub_inter" }]
+EOF
+
+for i in $(seq 1 30); do
+	out="$(
+		expect <<'EOF' 2>&1
+set timeout 30
+spawn bash -lc "mise run rt1 ::: rt2 ::: b_inter ::: a_inter"
+expect "A_PROMPT>"
+send -- "sa\r"
+expect "B_PROMPT>"
+send -- "sb\r"
+expect eof
+set ws [wait]
+if {[llength $ws] >= 4} {
+    exit [lindex $ws 3]
+}
+exit 1
+EOF
+	)" || {
+		echo "$out"
+		fail "soak interactive ordering failed at iteration $i"
+	}
+	[[ $out == *"A:sa"* && $out == *"B:sb"* ]] || fail "soak prompt routing failed at iteration $i: $out"
+done
+
+for i in $(seq 1 10); do
+	out="$(
+		expect <<'EOF' 2>&1
+set timeout 30
+spawn bash -lc "mise run --timeout=1s a_inter ::: rt1 ::: rt2"
+expect "A_PROMPT>"
+send -- "\003"
+expect eof
+set ws [wait]
+if {[llength $ws] >= 4} {
+    exit [lindex $ws 3]
+}
+exit 1
+EOF
+	)" && exit_code=0 || exit_code=$?
+	[[ $exit_code -ne 0 ]] || fail "soak SIGINT iteration $i expected non-zero exit"
+done
+
+for i in $(seq 1 20); do
+	out="$(
+		expect <<'EOF' 2>&1
+set timeout 30
+spawn bash -lc "mise run sub_parent ::: rt1"
+expect "SUB_PROMPT>"
+send -- "sub\r"
+expect eof
+set ws [wait]
+if {[llength $ws] >= 4} {
+    exit [lindex $ws 3]
+}
+exit 1
+EOF
+	)" || {
+		echo "$out"
+		fail "soak subgraph exclusivity failed at iteration $i"
+	}
+	[[ $out == *"SUB:sub"* ]] || fail "soak subgraph prompt routing failed at iteration $i: $out"
+done

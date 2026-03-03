@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+require_cmd expect
+
+# RegressionRef: STATIC-007
+# Goal: interactive tasks must restore terminal state for the caller shell (C18).
+# Expected behavior (target): terminal remains in echo mode after task completion.
+
+cat <<'EOF' >mise.toml
+[tasks.term_mutates_tty]
+interactive = true
+run = 'stty -echo; stty -a >/dev/null; echo TERM_DONE'
+EOF
+
+out="$(
+	expect <<'EOF' 2>&1
+set timeout 30
+spawn bash -lc "mise run term_mutates_tty; echo AFTER_MARKER; stty -a"
+expect "TERM_DONE"
+expect "AFTER_MARKER"
+expect {
+    -re {(^|[[:space:]])echo([[:space:]]|$)} { exit 0 }
+    -re {(^|[[:space:]])-echo([[:space:]]|$)} { exit 99 }
+    timeout { exit 2 }
+}
+EOF
+)" && exit_code=0 || exit_code=$?
+
+[[ $exit_code -eq 0 ]] || fail "STATIC-007: terminal state not restored after interactive task: $out"

@@ -1,5 +1,12 @@
 use crate::Result;
-use crate::config::Config;
+use crate::cli::run::render_execution_plan_explain;
+use crate::config::{Config, Settings};
+use crate::task::task_descriptor::{TaskDescriptorOptions, task_descriptor_json};
+use crate::task::task_execution_plan::ExecutionPlan;
+use crate::task::task_plan_analysis::{ChangeImpact, ContentionAnalysis, cycle_path_label};
+use crate::task::task_plan_bundle::{
+    PlanBuildRequest, build_execution_plan_bundle, join_task_specs_for_cli,
+};
 use clap::Parser;
 use rmcp::{
     RoleServer, ServiceExt,
@@ -37,6 +44,7 @@ use std::collections::HashMap;
 /// Resources available:
 /// - mise://tools - List all tools (use ?include_inactive=true to include inactive tools)
 /// - mise://tasks - List all tasks with their configurations
+/// - mise://plan - Build static execution plan (?tasks=build,test&changed=src/main.ts)
 /// - mise://env - List all environment variables
 /// - mise://config - Show configuration files and project root
 ///
@@ -192,6 +200,7 @@ impl ServerHandler for MiseServer {
         let resources = vec![
             RawResource::new("mise://tools", "Installed Tools".to_string()).no_annotation(),
             RawResource::new("mise://tasks", "Available Tasks".to_string()).no_annotation(),
+            RawResource::new("mise://plan", "Static Execution Plan".to_string()).no_annotation(),
             RawResource::new("mise://env", "Environment Variables".to_string()).no_annotation(),
             RawResource::new("mise://config", "Configuration".to_string()).no_annotation(),
         ];
@@ -313,34 +322,127 @@ impl ServerHandler for MiseServer {
                     data: None,
                 })?;
 
-                let task_list: Vec<_> = tasks.iter().map(|(name, task)| {
-                    json!({
-                        "name": name,
-                        "description": task.description.clone(),
-                        "aliases": task.aliases,
-                        "source": task.config_source.to_string_lossy(),
-                        "depends": task.depends.iter().map(|d| d.task.clone()).collect::<Vec<_>>(),
-                        "depends_post": task.depends_post.iter().map(|d| d.task.clone()).collect::<Vec<_>>(),
-                        "wait_for": task.wait_for.iter().map(|d| d.task.clone()).collect::<Vec<_>>(),
-                        "env": json!({}), // EnvList is not directly iterable, keeping empty for now
-                        "dir": task.dir.clone(),
-                        "hide": task.hide,
-                        "raw": task.raw,
-                        "sources": task.sources.clone(),
-                        "outputs": task.outputs.clone(),
-                        "shell": task.shell.clone(),
-                        "quiet": task.quiet,
-                        "silent": task.silent,
-                        "tools": task.tools.clone(),
-                        "run": task.run_script_strings(),
-                        "usage": task.usage.clone(),
+                let task_list: Vec<_> = tasks
+                    .iter()
+                    .map(|(name, task)| {
+                        let options = TaskDescriptorOptions {
+                            include_usage: true,
+                            use_run_script_strings: true,
+                            ..Default::default()
+                        };
+                        let mut descriptor = task_descriptor_json(task, &options);
+                        if let Value::Object(ref mut map) = descriptor {
+                            map.insert("name".to_string(), json!(name));
+                        }
+                        descriptor
                     })
-                }).collect();
+                    .collect();
 
                 let text = serde_json::to_string_pretty(&task_list).unwrap();
                 let contents = vec![ResourceContents::TextResourceContents {
                     uri: params.uri.clone(),
                     mime_type: Some("application/json".to_string()),
+                    text,
+                }];
+
+                Ok(ReadResourceResult { contents })
+            }
+            ("mise", Some("plan")) => {
+                let config = Config::get().await.map_err(|e| ErrorData {
+                    code: ErrorCode::INTERNAL_ERROR,
+                    message: Cow::Owned(format!("Failed to load config: {e}")),
+                    data: None,
+                })?;
+
+                let task_specs = parse_list_query(&url, &["tasks", "task"]);
+                let changed = parse_list_query(&url, &["changed"]);
+                let format = parse_plan_output_format(&url);
+
+                let args = if task_specs.is_empty() {
+                    vec![]
+                } else {
+                    join_task_specs_for_cli(&task_specs)
+                };
+
+                let jobs = Settings::get().jobs;
+                let bundle = build_execution_plan_bundle(
+                    &config,
+                    PlanBuildRequest {
+                        requested_task_specs: task_specs.clone(),
+                        cli_args: args.clone(),
+                        changed_files: changed.clone(),
+                        jobs,
+                        task_list_with_context: false,
+                        task_list_skip_deps: false,
+                        deps_skip_deps: false,
+                        fetch_remote: true,
+                        no_cache: false,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|e| ErrorData {
+                    code: ErrorCode::INTERNAL_ERROR,
+                    message: Cow::Owned(format!("Failed to build execution plan bundle: {e}")),
+                    data: None,
+                })?;
+                if let Some(cycle) = &bundle.cycle {
+                    return Err(ErrorData {
+                        code: ErrorCode::INTERNAL_ERROR,
+                        message: Cow::Owned(format!(
+                            "Failed to build execution plan: circular dependency detected in static DAG: {}",
+                            cycle_path_label(cycle)
+                        )),
+                        data: None,
+                    });
+                }
+                let plan = bundle.plan.ok_or_else(|| ErrorData {
+                    code: ErrorCode::INTERNAL_ERROR,
+                    message: Cow::Owned("Failed to build execution plan".to_string()),
+                    data: None,
+                })?;
+                let config_files = bundle.config_files.clone();
+                let plan_hash = bundle
+                    .plan_hash
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string());
+                let change_impact = bundle.change_impact.clone();
+                let contention = bundle.contention.clone().unwrap_or_default();
+
+                let plan_payload = json!({
+                    "requested_task_specs": bundle.requested_task_specs,
+                    "resolved_cli_args": bundle.resolved_cli_args,
+                    "changed_files": changed,
+                    "jobs": jobs,
+                    "plan_hash": plan_hash,
+                    "config_files": config_files,
+                    "plan": plan,
+                    "change_impact": change_impact,
+                    "contention": contention,
+                });
+
+                let (text, mime_type) = match format {
+                    PlanOutputFormat::Json => (
+                        serde_json::to_string_pretty(&plan_payload).unwrap(),
+                        "application/json".to_string(),
+                    ),
+                    PlanOutputFormat::Explain => (
+                        render_plan_explain(
+                            &task_specs,
+                            &args,
+                            jobs,
+                            &plan_hash,
+                            &config_files,
+                            &plan,
+                            &change_impact,
+                            &contention,
+                        ),
+                        "text/plain".to_string(),
+                    ),
+                };
+                let contents = vec![ResourceContents::TextResourceContents {
+                    uri: params.uri.clone(),
+                    mime_type: Some(mime_type),
                     text,
                 }];
 
@@ -421,6 +523,150 @@ impl ServerHandler for MiseServer {
         let tool_call_context =
             rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
         self.tool_router.call(tool_call_context).await
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlanOutputFormat {
+    Json,
+    Explain,
+}
+
+fn parse_list_query(url: &url::Url, keys: &[&str]) -> Vec<String> {
+    let mut values = Vec::new();
+    for (key, value) in url.query_pairs() {
+        if !keys.iter().any(|k| *k == key) {
+            continue;
+        }
+        values.extend(
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(ToString::to_string),
+        );
+    }
+    values
+}
+
+fn parse_plan_output_format(url: &url::Url) -> PlanOutputFormat {
+    let value = url
+        .query_pairs()
+        .find(|(k, _)| k == "format")
+        .map(|(_, v)| v.to_ascii_lowercase())
+        .unwrap_or_else(|| "json".to_string());
+    match value.as_str() {
+        "explain" => PlanOutputFormat::Explain,
+        _ => PlanOutputFormat::Json,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_plan_explain(
+    requested_task_specs: &[String],
+    resolved_cli_args: &[String],
+    jobs: usize,
+    plan_hash: &str,
+    config_files: &[String],
+    plan: &ExecutionPlan,
+    change_impact: &ChangeImpact,
+    contention: &ContentionAnalysis,
+) -> String {
+    let mut lines = vec![
+        "Execution plan (MCP explain)".to_string(),
+        format!(
+            "Requested task specs: {}",
+            if requested_task_specs.is_empty() {
+                "<default>".to_string()
+            } else {
+                requested_task_specs.join(", ")
+            }
+        ),
+        format!(
+            "Resolved CLI args: {}",
+            if resolved_cli_args.is_empty() {
+                "<none>".to_string()
+            } else {
+                resolved_cli_args.join(" ")
+            }
+        ),
+        format!("Jobs: {jobs}"),
+        format!("Plan hash: {plan_hash}"),
+    ];
+
+    lines.push(String::new());
+    if !config_files.is_empty() {
+        lines.push(format!("Config files ({})", config_files.len()));
+        for cf in config_files {
+            lines.push(format!("  - {cf}"));
+        }
+    } else {
+        lines.push("Config files (0)".to_string());
+        lines.push("  (none)".to_string());
+    }
+
+    lines.push(String::new());
+    lines.push("Detailed explain (shared run renderer):".to_string());
+    match render_execution_plan_explain(plan, change_impact, contention) {
+        Ok(explain) => lines.push(explain),
+        Err(err) => lines.push(format!("failed to render plan explain output: {err}")),
+    }
+    lines.join("\n")
+}
+
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod tests {
+    use super::*;
+    use crate::task::task_execution_plan::{ExecutionStage, PlannedTask, TaskDeclarationRef};
+    use crate::task::task_identity::TaskIdentity;
+
+    #[test]
+    fn test_parse_plan_output_format_defaults_to_json() {
+        let url = url::Url::parse("mise://plan").unwrap();
+        assert_eq!(parse_plan_output_format(&url), PlanOutputFormat::Json);
+    }
+
+    #[test]
+    fn test_parse_plan_output_format_explain() {
+        let url = url::Url::parse("mise://plan?format=explain").unwrap();
+        assert_eq!(parse_plan_output_format(&url), PlanOutputFormat::Explain);
+    }
+
+    #[test]
+    fn test_render_plan_explain_uses_shared_run_renderer() {
+        let plan = ExecutionPlan {
+            stages: vec![ExecutionStage::parallel(vec![PlannedTask {
+                identity: TaskIdentity {
+                    name: "build".to_string(),
+                    args: vec![],
+                    env: vec![],
+                },
+                runtime: true,
+                interactive: false,
+                declaration: TaskDeclarationRef {
+                    source: "/tmp/mise.toml".to_string(),
+                    line: Some(3),
+                },
+            }])],
+        };
+
+        let explain = render_plan_explain(
+            &["build".to_string()],
+            &["build".to_string()],
+            4,
+            "sha256:test",
+            &["/tmp/mise.toml".to_string()],
+            &plan,
+            &ChangeImpact::default(),
+            &ContentionAnalysis::default(),
+        );
+
+        assert!(explain.contains("Execution plan (MCP explain)"));
+        assert!(explain.contains("Plan hash: sha256:test"));
+        assert!(explain.contains("Detailed explain (shared run renderer):"));
+        assert!(explain.contains("Plan:"));
+        assert!(explain.contains("Stage 1"));
     }
 }
 

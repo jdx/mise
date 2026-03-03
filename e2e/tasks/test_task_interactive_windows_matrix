@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# MatrixRef: W01,W02,W03,W04,W05,W06 / C2,C6,C12,C13,C16
+case "$(uname -s)" in
+MINGW* | MSYS* | CYGWIN*) ;;
+*)
+	echo "Skipping Windows-only interactive matrix"
+	exit 0
+	;;
+esac
+
+require_cmd expect
+
+if ! command -v pwsh >/dev/null 2>&1; then
+	echo "Skipping pwsh-specific assertions: pwsh not found"
+	HAS_PWSH=0
+else
+	HAS_PWSH=1
+fi
+
+cat <<'EOF' >mise.toml
+[tasks.win_cmd]
+interactive = true
+run_windows = 'echo CMD_PROMPT^> & set /p INPUT= & echo CMD:%INPUT%'
+
+[tasks.win_pwsh]
+interactive = true
+shell = "pwsh -NoProfile -Command"
+run_windows = '$Host.UI.Write("PS_PROMPT>"); $line = Read-Host; Write-Output "PS:$line"'
+
+[tasks.win_wait]
+interactive = true
+run_windows = 'echo WAIT_PROMPT^> & set /p INPUT='
+
+[tasks.win_paths]
+run_windows = 'echo WIN_PATH_OK'
+EOF
+
+out="$(
+	expect <<'EOF' 2>&1
+set timeout 30
+spawn bash -lc "mise run win_cmd"
+expect "CMD_PROMPT>"
+send -- "cmdline\r"
+expect "CMD:cmdline"
+expect eof
+set ws [wait]
+if {[llength $ws] >= 4} {
+    exit [lindex $ws 3]
+}
+exit 1
+EOF
+)" || {
+	echo "$out"
+	fail "Windows CMD interactive scenario failed"
+}
+[[ $out == *"CMD:cmdline"* ]] || fail "missing CMD interactive output: $out"
+
+if [[ $HAS_PWSH -eq 1 ]]; then
+	out="$(
+		expect <<'EOF' 2>&1
+set timeout 30
+spawn bash -lc "mise run win_pwsh"
+expect "PS_PROMPT>"
+send -- "psline\r"
+expect "PS:psline"
+expect eof
+set ws [wait]
+if {[llength $ws] >= 4} {
+    exit [lindex $ws 3]
+}
+exit 1
+EOF
+	)" || {
+		echo "$out"
+		fail "Windows pwsh interactive scenario failed"
+	}
+	[[ $out == *"PS:psline"* ]] || fail "missing pwsh interactive output: $out"
+fi
+
+out="$(
+	expect <<'EOF' 2>&1
+set timeout 30
+spawn bash -lc "mise run win_wait"
+expect "WAIT_PROMPT>"
+send -- "\003"
+expect eof
+set ws [wait]
+if {[llength $ws] >= 4} {
+    exit [lindex $ws 3]
+}
+exit 1
+EOF
+)" && exit_code=0 || exit_code=$?
+[[ $exit_code -ne 0 ]] || fail "Windows Ctrl-C scenario expected non-zero exit"
+
+assert_contains "mise run win_paths" "WIN_PATH_OK"

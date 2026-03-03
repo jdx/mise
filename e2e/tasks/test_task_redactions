@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# MatrixRef: S10 / C14,C16
 cat <<EOF >mise.toml
 redactions = ["SECRET"]
 [env]

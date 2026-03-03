@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# RegressionRef: STATIC-007
+# Ensure statically-fused subgraph tasks expose logical task names in MISE_TASK_NAME.
+
+cat <<'EOF' >mise.toml
+[tasks.child]
+run = 'echo "NAME:$MISE_TASK_NAME"'
+
+[tasks.wrapper]
+run = [{ task = "child" }]
+EOF
+
+assert_contains "mise run wrapper" "NAME:child"

@@ -2055,6 +2055,16 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--changed",
+          description:
+            "Changed files to analyze impact against task sources in `--plan` mode",
+          isRepeatable: true,
+          args: {
+            name: "path",
+            template: "filepaths",
+          },
+        },
+        {
           name: ["-o", "--output"],
           description:
             "Change how tasks information is output when running tasks",
@@ -2118,6 +2128,16 @@ const completionSpec: Fig.Spec = {
           name: "--no-timings",
           description: "Hides elapsed time after each task completes",
           isRepeatable: false,
+        },
+        {
+          name: "--plan",
+          description:
+            "Print the static execution plan and exit without executing tasks",
+          isRepeatable: false,
+          args: {
+            name: "plan",
+            suggestions: ["summary", "json", "explain"],
+          },
         },
         {
           name: "--skip-deps",
@@ -2890,6 +2910,16 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
+              name: "--changed",
+              description:
+                "Changed files to analyze impact against task sources in `--plan` mode",
+              isRepeatable: true,
+              args: {
+                name: "path",
+                template: "filepaths",
+              },
+            },
+            {
               name: ["-o", "--output"],
               description:
                 "Change how tasks information is output when running tasks",
@@ -2953,6 +2983,16 @@ const completionSpec: Fig.Spec = {
               name: "--no-timings",
               description: "Hides elapsed time after each task completes",
               isRepeatable: false,
+            },
+            {
+              name: "--plan",
+              description:
+                "Print the static execution plan and exit without executing tasks",
+              isRepeatable: false,
+              args: {
+                name: "plan",
+                suggestions: ["summary", "json", "explain"],
+              },
             },
             {
               name: "--skip-deps",
