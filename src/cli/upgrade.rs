@@ -7,7 +7,7 @@ use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
-    InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder,
+    ConfigScope, InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder,
     get_versions_needed_by_tracked_configs,
 };
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -78,6 +78,13 @@ pub struct Upgrade {
     #[clap(long, verbatim_doc_comment)]
     dry_run_code: bool,
 
+    /// Only upgrade tools defined in local config files
+    ///
+    /// This will only upgrade tools that are defined in project-local mise.toml and
+    /// will skip tools defined in the global config (~/.config/mise/config.toml).
+    #[clap(long, verbatim_doc_comment)]
+    local: bool,
+
     /// Directly pipe stdin/stdout/stderr from plugin to user
     /// Sets --jobs=1
     #[clap(long, overrides_with = "jobs")]
@@ -91,8 +98,14 @@ impl Upgrade {
 
     pub async fn run(self) -> Result<()> {
         let mut config = Config::get().await?;
+        let scope = if self.local {
+            ConfigScope::LocalOnly
+        } else {
+            ConfigScope::All
+        };
         let ts = ToolsetBuilder::new()
             .with_args(&self.tool)
+            .with_scope(scope)
             .build(&config)
             .await?;
         // Compute before_date once to ensure consistency when using relative durations
@@ -142,8 +155,14 @@ impl Upgrade {
         before_date: Option<Timestamp>,
     ) -> Result<()> {
         let mpr = MultiProgressReport::get();
+        let scope = if self.local {
+            ConfigScope::LocalOnly
+        } else {
+            ConfigScope::All
+        };
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
+            .with_scope(scope)
             .build(config)
             .await?;
 
@@ -407,5 +426,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     # Show a multiselect menu to choose which tools to upgrade
     $ <bold>mise upgrade --interactive</bold>
+
+    # Only upgrade tools defined in local mise.toml, not global ones
+    $ <bold>mise upgrade --local</bold>
 "#
 );
