@@ -16,5 +16,29 @@ assert_not_contains "mise ls --installed dummy" "1.1.0"
 assert "mise outdated dummy" "dummy  1  1.0.0  1.1.0 ~/workdir/.tool-versions"
 assert "mise outdated dummy --bump" "dummy  1  1.0.0  2  2.0.0 ~/workdir/.tool-versions"
 
+# Test: --local should only show outdated tools from local config, not global
+cat <<EOF >mise.toml
+[tools]
+dummy = "1"
+EOF
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[tools]
+tiny = "1"
+EOF
+mise uninstall dummy tiny --all
+mise install dummy@1.0.0 tiny@1.0.0
+# --local should only show dummy (local), not tiny (global)
+assert_contains "mise outdated --local" "dummy"
+assert_not_contains "mise outdated --local" "tiny"
+# without --local, both should appear
+assert_contains "mise outdated" "dummy"
+assert_contains "mise outdated" "tiny"
+rm -f .tool-versions
+rm -f "$MISE_CONFIG_DIR/config.toml"
+
+echo 'dummy 1' >.tool-versions
+mise uninstall dummy --all
+mise install dummy@1.0.0
+
 assert "mise outdated dummy --json | jq -r '.dummy.latest'" "1.1.0"
 assert "mise outdated dummy --bump --json | jq -r '.dummy.latest'" "2.0.0"
