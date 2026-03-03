@@ -1,0 +1,3 @@
+backends = ["aqua:tinygo-org/tinygo"]
+description = "Go compiler for small places. Microcontrollers, WebAssembly (WASM/WASI), and command-line tools. Based on LLVM"
+test = { cmd = "tinygo version", expected = "tinygo version {{version}}" }
