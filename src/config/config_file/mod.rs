@@ -250,7 +250,7 @@ async fn init(path: &Path) -> Arc<dyn ConfigFile> {
         Some(ConfigFileType::IdiomaticVersion(backends)) => Arc::new(
             IdiomaticVersionFile::parse(path.to_path_buf(), backends)
                 .await
-                .unwrap(),
+                .expect("failed to parse idiomatic version file"),
         ),
         _ => panic!("Unknown config file type: {}", path.display()),
     }
