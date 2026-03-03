@@ -67,6 +67,13 @@ Like --dry-run but exits with code 1 if there are outdated tools
 
 This is useful for scripts to check if tools need to be upgraded.
 
+### `--local`
+
+Only upgrade tools defined in local config files
+
+This will only upgrade tools that are defined in project-local mise.toml and
+will skip tools defined in the global config (~/.config/mise/config.toml).
+
 ### `--raw`
 
 Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
@@ -97,4 +104,7 @@ $ mise upgrade --exclude go
 
 # Show a multiselect menu to choose which tools to upgrade
 $ mise upgrade --interactive
+
+# Only upgrade tools defined in local mise.toml, not global ones
+$ mise upgrade --local
 ```

@@ -11,6 +11,12 @@ Test Aqua configuration with fish shell
 
 Build the project
 
+## `build:musl`
+
+- **Usage**: `build:musl`
+
+Build for musl via cross
+
 ## `ci`
 
 - Depends: format, build, test

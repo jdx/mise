@@ -1696,6 +1696,11 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--local",
+          description: "Only show outdated tools defined in local config files",
+          isRepeatable: false,
+        },
+        {
           name: "--no-header",
           description: "Don't show table header",
           isRepeatable: false,
@@ -3379,6 +3384,11 @@ const completionSpec: Fig.Spec = {
           name: "--dry-run-code",
           description:
             "Like --dry-run but exits with code 1 if there are outdated tools",
+          isRepeatable: false,
+        },
+        {
+          name: "--local",
+          description: "Only upgrade tools defined in local config files",
           isRepeatable: false,
         },
         {

@@ -569,10 +569,13 @@ cmd mcp help="[experimental] Run Model Context Protocol (MCP) server" {
 }
 cmd outdated help="Shows outdated tool versions" {
     long_help "Shows outdated tool versions\n\nSee `mise upgrade` to upgrade these versions."
-    after_long_help "Examples:\n\n    $ mise outdated\n    Plugin  Requested  Current  Latest\n    python  3.11       3.11.0   3.11.1\n    node    20         20.0.0   20.1.0\n\n    $ mise outdated node\n    Plugin  Requested  Current  Latest\n    node    20         20.0.0   20.1.0\n\n    $ mise outdated --json\n    {\"python\": {\"requested\": \"3.11\", \"current\": \"3.11.0\", \"latest\": \"3.11.1\"}, ...}\n"
+    after_long_help "Examples:\n\n    $ mise outdated\n    Plugin  Requested  Current  Latest\n    python  3.11       3.11.0   3.11.1\n    node    20         20.0.0   20.1.0\n\n    $ mise outdated node\n    Plugin  Requested  Current  Latest\n    node    20         20.0.0   20.1.0\n\n    $ mise outdated --json\n    {\"python\": {\"requested\": \"3.11\", \"current\": \"3.11.0\", \"latest\": \"3.11.1\"}, ...}\n\n    $ mise outdated --local\n    Plugin  Requested  Current  Latest\n    node    20         20.0.0   20.1.0\n"
     flag "-J --json" help="Output in JSON format"
     flag "-l --bump" help="Compares against the latest versions available, not what matches the current config" {
         long_help "Compares against the latest versions available, not what matches the current config\n\nFor example, if you have `node = \"20\"` in your config by default `mise outdated` will only\nshow other 20.x versions, not 21.x or 22.x versions.\n\nUsing this flag, if there are 21.x or newer versions it will display those instead of 20.x."
+    }
+    flag --local help="Only show outdated tools defined in local config files" {
+        long_help "Only show outdated tools defined in local config files\n\nThis will only show tools that are defined in project-local mise.toml and\nwill skip tools defined in the global config (~/.config/mise/config.toml)."
     }
     flag --no-header help="Don't show table header"
     arg "[TOOL@VERSION]…" help="Tool(s) to show outdated versions for\ne.g.: node@20 python@3.10\nIf not specified, all tools in global and local configs will be shown" required=#false var=#true
@@ -1131,7 +1134,7 @@ cmd unuse help="Removes installed tool versions from mise.toml" {
 cmd upgrade help="Upgrades outdated tools" {
     alias up
     long_help "Upgrades outdated tools\n\nBy default, this keeps the range specified in mise.toml. So if you have node@20 set, it will\nupgrade to the latest 20.x.x version available. See the `--bump` flag to use the latest version\nand bump the version in mise.toml.\n\nThis will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile"
-    after_long_help "Examples:\n\n    # Upgrades node to the latest version matching the range in mise.toml\n    $ mise upgrade node\n\n    # Upgrades node to the latest version and bumps the version in mise.toml\n    $ mise upgrade node --bump\n\n    # Upgrades all tools to the latest versions\n    $ mise upgrade\n\n    # Upgrades all tools to the latest versions and bumps the version in mise.toml\n    $ mise upgrade --bump\n\n    # Just print what would be done, don't actually do it\n    $ mise upgrade --dry-run\n\n    # Upgrades node and python to the latest versions\n    $ mise upgrade node python\n\n    # Upgrade all tools except go\n    $ mise upgrade --exclude go\n\n    # Show a multiselect menu to choose which tools to upgrade\n    $ mise upgrade --interactive\n"
+    after_long_help "Examples:\n\n    # Upgrades node to the latest version matching the range in mise.toml\n    $ mise upgrade node\n\n    # Upgrades node to the latest version and bumps the version in mise.toml\n    $ mise upgrade node --bump\n\n    # Upgrades all tools to the latest versions\n    $ mise upgrade\n\n    # Upgrades all tools to the latest versions and bumps the version in mise.toml\n    $ mise upgrade --bump\n\n    # Just print what would be done, don't actually do it\n    $ mise upgrade --dry-run\n\n    # Upgrades node and python to the latest versions\n    $ mise upgrade node python\n\n    # Upgrade all tools except go\n    $ mise upgrade --exclude go\n\n    # Show a multiselect menu to choose which tools to upgrade\n    $ mise upgrade --interactive\n\n    # Only upgrade tools defined in local mise.toml, not global ones\n    $ mise upgrade --local\n"
     flag "-i --interactive" help="Display multiselect menu to choose which tools to upgrade"
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg <JOBS>
@@ -1149,6 +1152,9 @@ cmd upgrade help="Upgrades outdated tools" {
     }
     flag --dry-run-code help="Like --dry-run but exits with code 1 if there are outdated tools" {
         long_help "Like --dry-run but exits with code 1 if there are outdated tools\n\nThis is useful for scripts to check if tools need to be upgraded."
+    }
+    flag --local help="Only upgrade tools defined in local config files" {
+        long_help "Only upgrade tools defined in local config files\n\nThis will only upgrade tools that are defined in project-local mise.toml and\nwill skip tools defined in the global config (~/.config/mise/config.toml)."
     }
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
     arg "[INSTALLED_TOOL@VERSION]…" help="Tool(s) to upgrade\ne.g.: node@20 python@3.10\nIf not specified, all current tools will be upgraded" required=#false var=#true
