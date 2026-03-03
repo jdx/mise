@@ -1,9 +1,8 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use eyre::Result;
 
-use crate::backend::{self, Backend, BackendList};
+use crate::backend::BackendList;
 use crate::cli::args::BackendArg;
 use crate::config::config_file::ConfigFile;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
@@ -19,6 +18,8 @@ pub struct IdiomaticVersionFile {
 }
 
 impl IdiomaticVersionFile {
+    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn init(path: PathBuf) -> Self {
         Self {
             path,
@@ -47,26 +48,11 @@ impl IdiomaticVersionFile {
 
         Ok(Self { tools, path })
     }
-
-    pub async fn from_file(path: &Path) -> Result<Self> {
-        trace!("parsing idiomatic version: {}", path.display());
-        let file_name = path.file_name().unwrap().to_string_lossy().to_string();
-        let mut tools: Vec<Arc<dyn Backend>> = vec![];
-        for b in backend::list().into_iter() {
-            if b.idiomatic_filenames()
-                .await
-                .is_ok_and(|f| f.contains(&file_name))
-            {
-                tools.push(b);
-            }
-        }
-        Self::parse(path.to_path_buf(), tools).await
-    }
 }
 
 impl ConfigFile for IdiomaticVersionFile {
     fn config_type(&self) -> ConfigFileType {
-        ConfigFileType::IdiomaticVersion
+        ConfigFileType::IdiomaticVersion(vec![])
     }
 
     fn get_path(&self) -> &Path {

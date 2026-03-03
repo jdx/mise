@@ -23,7 +23,10 @@ use crate::task::{Task, TaskTemplate};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, Toolset};
 use crate::ui::{prompt, style};
 use crate::watch_files::WatchFile;
-use crate::{backend, config, dirs, env, file, hash};
+use crate::{
+    backend::{self, Backend},
+    config, dirs, env, file, hash,
+};
 use eyre::{Result, eyre};
 use idiomatic_version::IdiomaticVersionFile;
 use indexmap::IndexMap;
@@ -45,7 +48,7 @@ pub mod tool_versions;
 pub enum ConfigFileType {
     MiseToml,
     ToolVersions,
-    IdiomaticVersion,
+    IdiomaticVersion(Vec<Arc<dyn Backend>>),
 }
 
 pub trait ConfigFile: Debug + Send + Sync {
@@ -244,9 +247,11 @@ async fn init(path: &Path) -> Arc<dyn ConfigFile> {
     match detect_config_file_type(path).await {
         Some(ConfigFileType::MiseToml) => Arc::new(MiseToml::init(path)),
         Some(ConfigFileType::ToolVersions) => Arc::new(ToolVersions::init(path)),
-        Some(ConfigFileType::IdiomaticVersion) => {
-            Arc::new(IdiomaticVersionFile::init(path.to_path_buf()))
-        }
+        Some(ConfigFileType::IdiomaticVersion(backends)) => Arc::new(
+            IdiomaticVersionFile::parse(path.to_path_buf(), backends)
+                .await
+                .expect("failed to parse idiomatic version file"),
+        ),
         _ => panic!("Unknown config file type: {}", path.display()),
     }
 }
@@ -273,9 +278,9 @@ pub async fn parse(path: &Path) -> Result<Arc<dyn ConfigFile>> {
     match detect_config_file_type(path).await {
         Some(ConfigFileType::MiseToml) => Ok(Arc::new(MiseToml::from_file(path)?)),
         Some(ConfigFileType::ToolVersions) => Ok(Arc::new(ToolVersions::from_file(path)?)),
-        Some(ConfigFileType::IdiomaticVersion) => {
-            Ok(Arc::new(IdiomaticVersionFile::from_file(path).await?))
-        }
+        Some(ConfigFileType::IdiomaticVersion(backends)) => Ok(Arc::new(
+            IdiomaticVersionFile::parse(path.to_path_buf(), backends).await?,
+        )),
         #[allow(clippy::box_default)]
         _ => Ok(Arc::new(MiseToml::default())),
     }
@@ -514,15 +519,20 @@ fn trust_file_hash(path: &Path) -> eyre::Result<bool> {
     Ok(hash == actual)
 }
 
-async fn filename_is_idiomatic(file_name: String) -> bool {
+async fn filename_is_idiomatic(file_name: String) -> Option<Vec<Arc<dyn Backend>>> {
+    let mut backends = vec![];
     for b in backend::list() {
         match b.idiomatic_filenames().await {
-            Ok(filenames) if filenames.contains(&file_name) => return true,
+            Ok(filenames) if filenames.contains(&file_name) => backends.push(b),
             Err(e) => debug!("idiomatic_filenames failed for {}: {:?}", b, e),
             _ => {}
         }
     }
-    false
+    if backends.is_empty() {
+        None
+    } else {
+        Some(backends)
+    }
 }
 
 async fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
@@ -542,9 +552,15 @@ async fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
         }
         f if env::MISE_OVERRIDE_CONFIG_FILENAMES.contains(f) => Some(ConfigFileType::MiseToml),
         f if env::MISE_DEFAULT_CONFIG_FILENAME.as_str() == f => Some(ConfigFileType::MiseToml),
-        f if filename_is_idiomatic(f.to_string()).await => Some(ConfigFileType::IdiomaticVersion),
-        f if f.ends_with(".toml") => Some(ConfigFileType::MiseToml),
-        _ => None,
+        f => {
+            if let Some(backends) = filename_is_idiomatic(f.to_string()).await {
+                Some(ConfigFileType::IdiomaticVersion(backends))
+            } else if f.ends_with(".toml") {
+                Some(ConfigFileType::MiseToml)
+            } else {
+                None
+            }
+        }
     }
 }
 
@@ -585,14 +601,14 @@ mod tests {
     #[tokio::test]
     async fn test_detect_config_file_type() {
         env::set_var("MISE_EXPERIMENTAL", "true");
-        assert_eq!(
+        assert!(matches!(
             detect_config_file_type(Path::new("/foo/bar/.nvmrc")).await,
-            Some(ConfigFileType::IdiomaticVersion)
-        );
-        assert_eq!(
+            Some(ConfigFileType::IdiomaticVersion(_))
+        ));
+        assert!(matches!(
             detect_config_file_type(Path::new("/foo/bar/.ruby-version")).await,
-            Some(ConfigFileType::IdiomaticVersion)
-        );
+            Some(ConfigFileType::IdiomaticVersion(_))
+        ));
         assert_eq!(
             detect_config_file_type(Path::new("/foo/bar/.test-tool-versions")).await,
             Some(ConfigFileType::ToolVersions)
@@ -601,9 +617,9 @@ mod tests {
             detect_config_file_type(Path::new("/foo/bar/mise.toml")).await,
             Some(ConfigFileType::MiseToml)
         );
-        assert_eq!(
+        assert!(matches!(
             detect_config_file_type(Path::new("/foo/bar/rust-toolchain.toml")).await,
-            Some(ConfigFileType::IdiomaticVersion)
-        );
+            Some(ConfigFileType::IdiomaticVersion(_))
+        ));
     }
 }
