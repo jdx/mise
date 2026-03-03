@@ -107,7 +107,7 @@ impl ToolsetBuilder {
 
     fn load_runtime_env(&self, ts: &mut Toolset, env: EnvMap) -> eyre::Result<()> {
         if self.scope == ConfigScope::LocalOnly {
-            // Environment variables are not project-local, skip them
+            // --local excludes env-based tool versions (MISE_*_VERSION).
             return Ok(());
         }
         for (k, v) in env {
