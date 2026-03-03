@@ -1,0 +1,497 @@
+#!/usr/bin/env bash
+
+# Matrix refs:
+# - B02/B03/B04/B07/B08/B09/B10/B11/B12/B13/B14/B15/B16/B17/B18
+# - O1/O5/O7
+# - Contract: C1/C3/C4/C5/C10/C11/C13
+# Applicability: common
+
+set -euo pipefail
+require_cmd python3
+
+run_in_pty_with_input() {
+	python3 - "$@" <<'PY'
+import os
+import pty
+import select
+import subprocess
+import sys
+import time
+
+cmd = sys.argv[1:]
+master_fd, slave_fd = pty.openpty()
+proc = subprocess.Popen(
+    cmd,
+    stdin=slave_fd,
+    stdout=slave_fd,
+    stderr=slave_fd,
+    close_fds=True,
+)
+os.close(slave_fd)
+
+input_data = os.environ.get("PTY_INPUT", "")
+if input_data:
+    time.sleep(0.10)
+    os.write(master_fd, input_data.encode())
+
+timeout_s = float(os.environ.get("PTY_TIMEOUT", "20"))
+start = time.time()
+output = bytearray()
+while True:
+    if time.time() - start > timeout_s:
+        proc.kill()
+        os.close(master_fd)
+        sys.stdout.buffer.write(bytes(output).replace(b"\r\n", b"\n"))
+        sys.stderr.write(f"\nPTY timeout after {timeout_s}s\n")
+        sys.exit(124)
+    ready, _, _ = select.select([master_fd], [], [], 0.2)
+    if ready:
+        try:
+            chunk = os.read(master_fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        output.extend(chunk)
+    if proc.poll() is not None and not ready:
+        break
+
+os.close(master_fd)
+status = proc.wait()
+sys.stdout.buffer.write(bytes(output).replace(b"\r\n", b"\n"))
+sys.exit(status)
+PY
+}
+export -f run_in_pty_with_input
+
+assert_order() {
+	local file="$1"
+	local before="$2"
+	local after="$3"
+	local before_line
+	local after_line
+	before_line="$(grep -n "^${before}$" "$file" | head -n1 | cut -d: -f1)"
+	after_line="$(grep -n "^${after}$" "$file" | head -n1 | cut -d: -f1)"
+	if [[ -z $before_line || -z $after_line || $before_line -ge $after_line ]]; then
+		echo "Order assertion failed: '$before' must appear before '$after'"
+		cat "$file"
+		exit 1
+	fi
+}
+
+trace=$(mktemp)
+lock_dir="$(mktemp -u)"
+trap 'rm -f "$trace"; rmdir "$lock_dir" 2>/dev/null || true' EXIT
+
+# Matrix: B02/B03 + O1 (C1/C3/C4/C11)
+cat <<'EOF' >mise.toml
+[tasks.dep-a]
+run = '''
+if [ -d "$LOCK_DIR" ]; then echo "overlap dep-a" >> "$TRACE_FILE"; fi
+echo "dep-a:start" >> "$TRACE_FILE"
+sleep 0.05
+echo "dep-a:end" >> "$TRACE_FILE"
+'''
+
+[tasks.dep-b]
+run = '''
+if [ -d "$LOCK_DIR" ]; then echo "overlap dep-b" >> "$TRACE_FILE"; fi
+echo "dep-b:start" >> "$TRACE_FILE"
+sleep 0.05
+echo "dep-b:end" >> "$TRACE_FILE"
+'''
+
+[tasks.post]
+run = '''
+if [ -d "$LOCK_DIR" ]; then echo "overlap post" >> "$TRACE_FILE"; fi
+echo "post:start" >> "$TRACE_FILE"
+sleep 0.02
+echo "post:end" >> "$TRACE_FILE"
+'''
+
+[tasks.main]
+depends = ["dep-a", "dep-b"]
+depends_post = ["post"]
+interactive = true
+run = '''
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  echo "overlap main" >> "$TRACE_FILE"
+  exit 90
+fi
+echo "main:start" >> "$TRACE_FILE"
+printf "main> "
+read value
+echo "main:$value"
+sleep 0.08
+echo "main:end" >> "$TRACE_FILE"
+rmdir "$LOCK_DIR"
+'''
+EOF
+
+: >"$trace"
+out="$(
+	TRACE_FILE="$trace" LOCK_DIR="$lock_dir" PTY_INPUT=$'hello\n' \
+		run_in_pty_with_input mise run main
+)"
+if [[ $out != *"main:hello"* ]]; then
+	fail "expected interactive input to reach main task"
+fi
+assert_order "$trace" "dep-a:end" "main:start"
+assert_order "$trace" "dep-b:end" "main:start"
+assert_order "$trace" "main:end" "post:start"
+if grep -q '^overlap ' "$trace"; then
+	fail "overlap detected around interactive barrier"
+fi
+
+# Matrix: B04 (C1/C3)
+cat <<'EOF' >mise.toml
+[tasks.main]
+interactive = true
+run = '''
+echo "main:start" >> "$TRACE_FILE"
+printf "main> "
+read value
+echo "main:$value"
+sleep 0.06
+echo "main:end" >> "$TRACE_FILE"
+'''
+
+[tasks.waiter]
+wait_for = ["main"]
+run = '''
+echo "waiter:start" >> "$TRACE_FILE"
+echo waiter
+'''
+EOF
+
+: >"$trace"
+out="$(
+	TRACE_FILE="$trace" PTY_INPUT=$'ok\n' \
+		run_in_pty_with_input mise run main ::: waiter
+)"
+if [[ $out != *"main:ok"* ]] || [[ $out != *"waiter"* ]]; then
+	fail "expected main + waiter outputs"
+fi
+assert_order "$trace" "main:end" "waiter:start"
+
+# Matrix: B07 (C1/C11)
+cat <<'EOF' >mise.toml
+[tasks.a-runtime]
+run = '''
+echo "a-runtime:start" >> "$TRACE_FILE"
+sleep 0.12
+echo "a-runtime:end" >> "$TRACE_FILE"
+'''
+
+[tasks.z-interactive]
+interactive = true
+run = '''
+echo "z-interactive:start" >> "$TRACE_FILE"
+printf "z> "
+read value
+echo "z:$value"
+echo "z-interactive:end" >> "$TRACE_FILE"
+'''
+EOF
+
+: >"$trace"
+out="$(
+	TRACE_FILE="$trace" PTY_INPUT=$'zv\n' \
+		run_in_pty_with_input mise run a-runtime ::: z-interactive
+)"
+if [[ $out != *"z:zv"* ]]; then
+	fail "interactive did not receive input in B07 scenario"
+fi
+assert_order "$trace" "a-runtime:end" "z-interactive:start"
+
+# Matrix: B08 (C1/C11)
+cat <<'EOF' >mise.toml
+[tasks.a-interactive]
+interactive = true
+run = '''
+echo "a-interactive:start" >> "$TRACE_FILE"
+printf "a> "
+read value
+echo "a:$value"
+sleep 0.14
+echo "a-interactive:end" >> "$TRACE_FILE"
+'''
+
+[tasks.prep]
+run = '''
+echo "prep:start" >> "$TRACE_FILE"
+sleep 0.02
+echo "prep:end" >> "$TRACE_FILE"
+'''
+
+[tasks.z-ready]
+depends = ["prep"]
+run = '''
+echo "z-ready:start" >> "$TRACE_FILE"
+echo z-ready
+'''
+EOF
+
+: >"$trace"
+out="$(
+	TRACE_FILE="$trace" PTY_INPUT=$'aa\n' \
+		run_in_pty_with_input mise run a-interactive ::: z-ready
+)"
+if [[ $out != *"z-ready"* ]]; then
+	fail "expected z-ready output in B08 scenario"
+fi
+assert_order "$trace" "a-interactive:end" "prep:start"
+assert_order "$trace" "prep:end" "z-ready:start"
+
+# Matrix: B09/B10 + O1 (C1/C11)
+cat <<'EOF' >mise.toml
+[tasks.inner-int]
+interactive = true
+run = '''
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  echo "overlap inner-int" >> "$TRACE_FILE"
+  exit 91
+fi
+echo "inner-int:start" >> "$TRACE_FILE"
+printf "ii> "
+read value
+echo "ii:$value"
+sleep 0.10
+echo "inner-int:end" >> "$TRACE_FILE"
+rmdir "$LOCK_DIR"
+'''
+
+[tasks.inner-worker]
+run = '''
+if [ -d "$LOCK_DIR" ]; then echo "overlap inner-worker" >> "$TRACE_FILE"; fi
+echo "inner-worker:start" >> "$TRACE_FILE"
+echo inner-worker
+'''
+
+[tasks.outer]
+run = [{ task = "inner-int" }, { task = "inner-worker" }]
+
+[tasks.ext-worker]
+run = '''
+if [ -d "$LOCK_DIR" ]; then echo "overlap ext-worker" >> "$TRACE_FILE"; fi
+echo "ext-worker:start" >> "$TRACE_FILE"
+echo ext-worker
+'''
+
+[tasks.external-int]
+interactive = true
+run = '''
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  echo "overlap external-int" >> "$TRACE_FILE"
+  exit 92
+fi
+echo "external-int:start" >> "$TRACE_FILE"
+printf "ei> "
+read value
+echo "ei:$value"
+sleep 0.10
+echo "external-int:end" >> "$TRACE_FILE"
+rmdir "$LOCK_DIR"
+'''
+
+[tasks.inner-worker2]
+run = '''
+if [ -d "$LOCK_DIR" ]; then echo "overlap inner-worker2" >> "$TRACE_FILE"; fi
+echo "inner-worker2:start" >> "$TRACE_FILE"
+echo inner-worker2
+'''
+
+[tasks.outer2]
+run = [{ task = "inner-worker2" }]
+EOF
+
+: >"$trace"
+out="$(
+	TRACE_FILE="$trace" LOCK_DIR="$lock_dir" PTY_INPUT=$'x\n' \
+		run_in_pty_with_input mise run outer ::: ext-worker
+)"
+if [[ $out != *"ii:x"* ]]; then
+	fail "expected input to reach inner interactive task"
+fi
+if grep -q '^overlap ' "$trace"; then
+	fail "B09 overlap detected"
+fi
+
+: >"$trace"
+out="$(
+	TRACE_FILE="$trace" LOCK_DIR="$lock_dir" PTY_INPUT=$'y\n' \
+		run_in_pty_with_input mise run external-int ::: outer2
+)"
+if [[ $out != *"ei:y"* ]] || [[ $out != *"inner-worker2"* ]]; then
+	fail "expected outputs for external-int + outer2"
+fi
+if grep -q '^overlap ' "$trace"; then
+	fail "B10 overlap detected"
+fi
+
+# Matrix: B11 (C1)
+cat <<'EOF' >mise.toml
+[tasks.dep]
+run = "echo dep-should-not-run"
+
+[tasks.int-skip]
+interactive = true
+depends = ["dep"]
+run = '''
+printf "skip> "
+read value
+echo "skip:$value"
+'''
+EOF
+out="$(
+	PTY_INPUT=$'s\n' run_in_pty_with_input mise run --skip-deps int-skip
+)"
+if [[ $out != *"skip:s"* ]]; then
+	fail "interactive task did not run with --skip-deps"
+fi
+if [[ $out == *"dep-should-not-run"* ]]; then
+	fail "dependency unexpectedly ran with --skip-deps"
+fi
+
+# Matrix: B12 (C13/C16)
+cat <<'EOF' >mise.toml
+[tasks.int-j1]
+interactive = true
+run = '''
+printf "j1> "
+read value
+echo "j1:$value"
+'''
+
+[tasks.worker-j1]
+run = "echo worker-j1"
+EOF
+out="$(
+	PTY_INPUT=$'j\n' run_in_pty_with_input mise run --jobs=1 int-j1 ::: worker-j1
+)"
+if [[ $out != *"j1:j"* ]] || [[ $out != *"worker-j1"* ]]; then
+	fail "jobs=1 scenario failed"
+fi
+
+# Matrix: B13 + O1 (C1)
+cat <<'EOF' >mise.toml
+[tasks.int-hot]
+interactive = true
+run = '''
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  echo "overlap int-hot" >> "$TRACE_FILE"
+  exit 93
+fi
+echo "int-hot:start" >> "$TRACE_FILE"
+printf "hot> "
+read value
+echo "hot:$value"
+sleep 0.10
+echo "int-hot:end" >> "$TRACE_FILE"
+rmdir "$LOCK_DIR"
+'''
+
+[tasks.w1]
+run = 'if [ -d "$LOCK_DIR" ]; then echo "overlap w1" >> "$TRACE_FILE"; fi; echo w1'
+[tasks.w2]
+run = 'if [ -d "$LOCK_DIR" ]; then echo "overlap w2" >> "$TRACE_FILE"; fi; echo w2'
+[tasks.w3]
+run = 'if [ -d "$LOCK_DIR" ]; then echo "overlap w3" >> "$TRACE_FILE"; fi; echo w3'
+[tasks.w4]
+run = 'if [ -d "$LOCK_DIR" ]; then echo "overlap w4" >> "$TRACE_FILE"; fi; echo w4'
+[tasks.w5]
+run = 'if [ -d "$LOCK_DIR" ]; then echo "overlap w5" >> "$TRACE_FILE"; fi; echo w5'
+EOF
+
+: >"$trace"
+out="$(
+	TRACE_FILE="$trace" LOCK_DIR="$lock_dir" PTY_INPUT=$'h\n' \
+		run_in_pty_with_input mise run --jobs=8 int-hot ::: w1 ::: w2 ::: w3 ::: w4 ::: w5
+)"
+if [[ $out != *"hot:h"* ]]; then
+	fail "interactive input routing failed in contention scenario"
+fi
+if grep -q '^overlap ' "$trace"; then
+	fail "B13 overlap detected under contention"
+fi
+
+# Matrix: B14/B15 (C5)
+cat <<'EOF' >mise.toml
+[tasks.a-fail]
+run = "echo fail-first && exit 12"
+
+[tasks.z-late-int]
+interactive = true
+run = '''
+echo "late-int:start" >> "$TRACE_FILE"
+printf "late> "
+read value
+echo "late:$value"
+'''
+EOF
+
+: >"$trace"
+set +e
+out="$(TRACE_FILE="$trace" PTY_INPUT=$'late\n' run_in_pty_with_input mise run a-fail ::: z-late-int 2>&1)"
+status=$?
+set -e
+if [[ $status -eq 0 ]]; then
+	fail "expected failure when continue_on_error=false"
+fi
+if grep -q '^late-int:start$' "$trace"; then
+	fail "interactive task should not start when earlier failure stops run"
+fi
+
+: >"$trace"
+set +e
+out="$(TRACE_FILE="$trace" PTY_INPUT=$'late\n' run_in_pty_with_input mise run -c a-fail ::: z-late-int 2>&1)"
+status=$?
+set -e
+if ! grep -q '^late-int:start$' "$trace"; then
+	fail "interactive task should run with --continue-on-error"
+fi
+if [[ $out != *"late:late"* ]]; then
+	fail "expected interactive output with --continue-on-error"
+fi
+# Status can be non-zero due failing task; this is acceptable for this scenario.
+
+# Matrix: B16/B17/B18 + O7 (C4/C5/C13)
+cat <<'EOF' >mise.toml
+[tasks.cleanup]
+run = 'echo "cleanup:start" >> "$TRACE_FILE"; echo cleanup'
+
+[tasks.a-interactive-fail]
+interactive = true
+depends_post = ["cleanup"]
+run = '''
+echo "a-interactive-fail:start" >> "$TRACE_FILE"
+printf "ifail> "
+read value
+echo "ifail:$value"
+exit 33
+'''
+
+[tasks.z-after]
+run = 'echo "z-after:start" >> "$TRACE_FILE"; echo z-after'
+EOF
+
+: >"$trace"
+set +e
+out="$(TRACE_FILE="$trace" PTY_INPUT=$'boom\n' PTY_TIMEOUT=12 run_in_pty_with_input mise run a-interactive-fail ::: z-after 2>&1)"
+status=$?
+set -e
+if [[ $status -eq 0 ]]; then
+	fail "expected failure for interactive failing task"
+fi
+assert_contains "cat '$trace'" "cleanup:start"
+if grep -q '^z-after:start$' "$trace"; then
+	fail "z-after should not run when continue_on_error=false"
+fi
+
+: >"$trace"
+set +e
+out="$(TRACE_FILE="$trace" PTY_INPUT=$'boom\n' PTY_TIMEOUT=12 run_in_pty_with_input mise run -c a-interactive-fail ::: z-after 2>&1)"
+status=$?
+set -e
+assert_contains "cat '$trace'" "cleanup:start"
+assert_contains "cat '$trace'" "z-after:start"

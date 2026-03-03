@@ -196,6 +196,9 @@ impl TasksValidate {
         // 11. Validate run entries
         issues.extend(self.validate_run_entries(task, all_tasks));
 
+        // 12. Validate interactive configuration constraints
+        issues.extend(self.validate_interactive(task));
+
         issues
     }
 
@@ -599,6 +602,19 @@ impl TasksValidate {
         }
 
         issues
+    }
+
+    fn validate_interactive(&self, task: &Task) -> Vec<ValidationIssue> {
+        if let Err(err) = crate::task::task_helpers::validate_interactive_config(task) {
+            return vec![ValidationIssue {
+                task: task.name.clone(),
+                severity: Severity::Error,
+                category: "interactive-config".to_string(),
+                message: "Invalid interactive task configuration".to_string(),
+                details: Some(err.to_string()),
+            }];
+        }
+        vec![]
     }
 
     fn output_json(&self, results: &ValidationResults) -> Result<()> {

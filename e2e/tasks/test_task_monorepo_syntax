@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Test basic monorepo task syntax (//pkg:task addressing)
 # These tests verify the fundamental task addressing works, not inheritance
+# Matrix refs:
+# - R07
+# - Contract: C16
 export MISE_EXPERIMENTAL=1
 
 # Create monorepo root config with tasks

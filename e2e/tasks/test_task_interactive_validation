@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+
+# Matrix refs:
+# - V01/V02/V05/V06/V07/V08/V09/V10/V11/V12 (C7/C8/C9/C15)
+# - V13/V14 (C15)
+# - S13/N01 (C17)
+# Applicability: common
+
+set -euo pipefail
+
+cat <<'SCRIPT' >runtime-file.sh
+#!/usr/bin/env bash
+echo "runtime file"
+SCRIPT
+chmod +x runtime-file.sh
+
+cat <<EOF2 >mise.toml
+[tasks.runtime-run]
+run = "echo runtime"
+interactive = true
+
+[tasks.runtime-file]
+file = "./runtime-file.sh"
+interactive = true
+
+[tasks.pure-orchestrator]
+run = [{ task = "runtime-run" }]
+interactive = true
+
+[tasks.silent-bool]
+run = "echo bad"
+interactive = true
+silent = true
+
+[tasks.silent-stdout]
+run = "echo bad"
+interactive = true
+silent = "stdout"
+
+[tasks.silent-stderr]
+run = "echo bad"
+interactive = true
+silent = "stderr"
+
+[tasks.raw-ok]
+run = "echo raw"
+interactive = true
+raw = true
+
+[tasks.mixed-ok]
+run = ["echo local", { task = "runtime-run" }]
+interactive = true
+
+[tasks.default-false]
+run = "echo default"
+EOF2
+
+# Matrix: V09/V10/V12 (C7)
+assert_contains "mise tasks validate runtime-run" "validated successfully"
+assert_contains "mise tasks validate runtime-file" "validated successfully"
+assert_contains "mise tasks validate mixed-ok" "validated successfully"
+
+# Matrix: V01/V02 (C15)
+assert_contains "mise tasks info runtime-run --json" '"interactive": true'
+assert_contains "mise tasks info default-false --json" '"interactive": false'
+
+# Matrix: V08 (C9)
+assert_contains "mise tasks validate raw-ok" "validated successfully"
+
+# Matrix: V11 (C7)
+assert_contains "mise tasks validate pure-orchestrator 2>&1 || true" "interactive-config"
+assert_contains "mise tasks validate pure-orchestrator 2>&1 || true" "not a runtime task"
+
+# Matrix: V05/V06/V07 (C8)
+assert_contains "mise tasks validate silent-bool 2>&1 || true" "interactive-config"
+assert_contains "mise tasks validate silent-stdout 2>&1 || true" "interactive-config"
+assert_contains "mise tasks validate silent-stderr 2>&1 || true" "interactive-config"
+
+# Matrix: V13/V14 (C15)
+cat <<EOF2 >mise.toml
+[task_templates.interactive-template]
+interactive = true
+run = "echo from-template"
+
+[tasks.inherited-interactive]
+extends = "interactive-template"
+
+[tasks.overridden-interactive]
+extends = "interactive-template"
+interactive = false
+run = "echo override"
+EOF2
+
+assert_contains "MISE_EXPERIMENTAL=1 mise tasks info inherited-interactive --json" '"interactive": true'
+assert_contains "MISE_EXPERIMENTAL=1 mise tasks info overridden-interactive --json" '"interactive": false'
+
+# Matrix: S13/N01 (C17)
+cat <<EOF2 >mise.toml
+[tasks.non-tty-fail]
+run = "echo should-not-run"
+interactive = true
+EOF2
+
+assert_fail_contains "mise run non-tty-fail" "stdin is not a TTY"
+
+rm -f runtime-file.sh

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# Matrix refs:
+# - V05/V06/V07 (C8)
+# - Contract: C8
+# Applicability: dynamic
+#
+# Regression:
+# interactive=true is incompatible with silent=*, including when task is
+# reached via injected subgraph execution.
+
+set -euo pipefail
+
+cat <<'EOF' >mise.toml
+[tasks.parent]
+run = [{ task = "child-interactive-silent" }]
+
+[tasks.child-interactive-silent]
+interactive = true
+silent = true
+run = "echo should-not-run"
+EOF
+
+assert_fail_contains "mise run parent" 'incompatible with silent=true|"stdout"|"stderr"'

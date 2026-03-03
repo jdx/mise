@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+
+# Matrix refs:
+# - B01/B10 (C1/C11)
+# - V12 (C7)
+# - Contract: C1, C7, C10, C11
+# Applicability: common
+#
+# Regression:
+# interactive mixed task (script + {task}) must still enforce global runtime
+# exclusivity against unrelated ready runtime tasks while its owned subgraph runs.
+
+set -euo pipefail
+require_cmd python3
+
+run_in_pty() {
+	python3 - "$@" <<'PY'
+import os
+import pty
+import select
+import subprocess
+import sys
+import time
+
+cmd = sys.argv[1:]
+master_fd, slave_fd = pty.openpty()
+proc = subprocess.Popen(
+    cmd,
+    stdin=slave_fd,
+    stdout=slave_fd,
+    stderr=slave_fd,
+    close_fds=True,
+)
+os.close(slave_fd)
+
+timeout_s = float(os.environ.get("PTY_TIMEOUT", "20"))
+start = time.time()
+output = bytearray()
+while True:
+    if time.time() - start > timeout_s:
+        proc.kill()
+        os.close(master_fd)
+        sys.stdout.buffer.write(bytes(output).replace(b"\r\n", b"\n"))
+        sys.stderr.write(f"\nPTY timeout after {timeout_s}s\n")
+        sys.exit(124)
+    ready, _, _ = select.select([master_fd], [], [], 0.2)
+    if ready:
+        try:
+            chunk = os.read(master_fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        output.extend(chunk)
+    if proc.poll() is not None and not ready:
+        break
+
+os.close(master_fd)
+status = proc.wait()
+sys.stdout.buffer.write(bytes(output).replace(b"\r\n", b"\n"))
+sys.exit(status)
+PY
+}
+export -f run_in_pty
+
+trace_file=$(mktemp)
+lock_dir="$(mktemp -u)"
+trap 'rm -f "$trace_file"; rmdir "$lock_dir" 2>/dev/null || true' EXIT
+
+cat <<'EOF' >mise.toml
+[tasks.mixed]
+interactive = true
+run = [
+'''
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  echo "overlap mixed-script" >> "$TRACE_FILE"
+  exit 91
+fi
+echo "mixed-script:start" >> "$TRACE_FILE"
+sleep 0.15
+echo "mixed-script:end" >> "$TRACE_FILE"
+rmdir "$LOCK_DIR"
+''',
+{ task = "child" },
+]
+
+[tasks.child]
+run = '''
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  echo "overlap child" >> "$TRACE_FILE"
+  exit 92
+fi
+echo "child:start" >> "$TRACE_FILE"
+sleep 0.15
+echo "child:end" >> "$TRACE_FILE"
+rmdir "$LOCK_DIR"
+'''
+
+[tasks.other]
+run = '''
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  echo "overlap other" >> "$TRACE_FILE"
+  exit 93
+fi
+echo "other:start" >> "$TRACE_FILE"
+sleep 0.15
+echo "other:end" >> "$TRACE_FILE"
+rmdir "$LOCK_DIR"
+'''
+EOF
+
+set +e
+out="$(
+	LOCK_DIR="$lock_dir" TRACE_FILE="$trace_file" PTY_TIMEOUT=12 \
+		run_in_pty mise run --jobs=2 mixed ::: other 2>&1
+)"
+status=$?
+set -e
+if [[ $status -eq 124 ]]; then
+	fail "run deadlocked (mixed interactive barrier vs injected child): $out"
+fi
+if [[ $status -ne 0 ]]; then
+	fail "expected successful run (status=$status): $out"
+fi
+
+if grep -q 'overlap' "$trace_file"; then
+	fail "runtime overlap detected"
+fi
+
+assert "cat '$trace_file'" "mixed-script:start
+mixed-script:end
+child:start
+child:end
+other:start
+other:end"

@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+
+# Matrix: I05 (C15, C16)
+
+set -euo pipefail
+
+cat >mise.toml <<EOF2
+[tasks.interactive-task]
+run = "echo interactive"
+interactive = true
+
+[tasks.normal-task]
+run = "echo normal"
+EOF2
+
+python3 - <<'PY'
+import json
+import os
+import select
+import subprocess
+import sys
+
+
+def send(proc, msg):
+    proc.stdin.write((json.dumps(msg) + "\n").encode())
+    proc.stdin.flush()
+
+
+def recv(proc, timeout=5.0):
+    ready, _, _ = select.select([proc.stdout], [], [], timeout)
+    if not ready:
+        return None
+    line = proc.stdout.readline().decode().strip()
+    if not line:
+        return None
+    return json.loads(line)
+
+
+proc = subprocess.Popen(
+    ["mise", "mcp"],
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    env={**dict(os.environ), "MISE_EXPERIMENTAL": "1"},
+)
+
+try:
+    send(proc, {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "test-client", "version": "1.0.0"},
+        },
+    })
+    init_resp = recv(proc)
+    assert init_resp and "result" in init_resp, f"bad initialize response: {init_resp}"
+
+    send(proc, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+    send(proc, {"jsonrpc": "2.0", "id": 2, "method": "resources/list", "params": {}})
+    list_resp = recv(proc)
+    assert list_resp and "result" in list_resp, f"bad resources/list response: {list_resp}"
+    resources = list_resp["result"]["resources"]
+    assert any(r.get("uri") == "mise://tasks" for r in resources), "mise://tasks missing"
+
+    send(
+        proc,
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "resources/read",
+            "params": {"uri": "mise://tasks"},
+        },
+    )
+    read_resp = recv(proc)
+    assert read_resp and "result" in read_resp, f"bad resources/read response: {read_resp}"
+    contents = read_resp["result"]["contents"]
+    assert contents, "resources/read returned no contents"
+    tasks = json.loads(contents[0]["text"])
+
+    interactive_task = next((t for t in tasks if t.get("name") == "interactive-task"), None)
+    assert interactive_task is not None, "interactive-task missing from mise://tasks"
+    assert interactive_task.get("interactive") is True, f"interactive flag missing/false: {interactive_task}"
+
+    normal_task = next((t for t in tasks if t.get("name") == "normal-task"), None)
+    assert normal_task is not None, "normal-task missing from mise://tasks"
+    assert normal_task.get("interactive") is False, f"normal task interactive flag wrong: {normal_task}"
+
+    print("MCP tasks resource exposes interactive field correctly")
+except Exception as e:
+    print(f"FAIL: {e}")
+    sys.exit(1)
+finally:
+    proc.terminate()
+    try:
+        proc.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+PY

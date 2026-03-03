@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Regression: failure reports must remain user-facing and actionable.
+cat <<'TOML' >mise.toml
+[tasks.parent]
+run = [{ task = "child" }]
+
+[tasks.child]
+run = "bash -lc 'echo child-running; exit 7'"
+TOML
+
+set +e
+output="$(mise run parent 2>&1)"
+status=$?
+set -e
+
+if [[ $status -ne 7 ]]; then
+	echo "expected exit code 7, got $status"
+	echo "$output"
+	exit 1
+fi
+
+if ! grep -Fq 'Task Failure Report:' <<<"$output"; then
+	echo "missing task failure header"
+	echo "$output"
+	exit 1
+fi
+
+if ! grep -Fq '  Failed Task:' <<<"$output"; then
+	echo "missing structured failed_task section"
+	echo "$output"
+	exit 1
+fi
+
+if ! grep -Fq '  Failure:' <<<"$output"; then
+	echo "missing structured failure section"
+	echo "$output"
+	exit 1
+fi
+
+if ! grep -Fq 'Name: child' <<<"$output"; then
+	echo "missing failed task name"
+	echo "$output"
+	exit 1
+fi
+
+# shellcheck disable=SC2016
+if ! grep -Eq 'Reason: .*`child`' <<<"$output"; then
+	echo "missing user-facing reason"
+	echo "$output"
+	exit 1
+fi
+
+if ! grep -Fq "Command: bash -lc 'echo child-running; exit 7'" <<<"$output"; then
+	echo "missing failed command"
+	echo "$output"
+	exit 1
+fi
+
+if ! grep -Fq 'Exit Code: 7' <<<"$output"; then
+	echo "missing exit code"
+	echo "$output"
+	exit 1
+fi
+
+if ! grep -Fq 'Task Path:' <<<"$output"; then
+	echo "missing task_path section"
+	echo "$output"
+	exit 1
+fi
+
+if ! grep -Eq -- '- Task: child \(.*/mise.toml:4\)' <<<"$output"; then
+	echo "missing task_path frame with mise.toml line"
+	echo "$output"
+	exit 1
+fi
+
+if grep -Fq 'scheduler.task_execution_failed' <<<"$output"; then
+	echo "internal scheduler stage should not be exposed"
+	echo "$output"
+	exit 1
+fi
+
+if grep -Fq 'executor.exec_program' <<<"$output"; then
+	echo "internal executor stage should not be exposed"
+	echo "$output"
+	exit 1
+fi

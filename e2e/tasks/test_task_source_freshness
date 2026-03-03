@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# Matrix refs:
+# - R06
+# - Contract: C16
+
 # Test warning for missing outputs after task execution
 cat <<EOF >mise.toml
 [tasks.nooutput]

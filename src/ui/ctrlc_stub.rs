@@ -4,5 +4,11 @@ pub fn init() {}
 
 pub fn exit_on_ctrl_c(_do_exit: bool) {}
 
+pub fn was_interrupted() -> bool {
+    false
+}
+
+pub fn clear_interrupt() {}
+
 /// ensures cursor is displayed on ctrl-c
 pub fn show_cursor_after_ctrl_c() {}

@@ -6,12 +6,14 @@ use console::Term;
 
 static EXIT: AtomicBool = AtomicBool::new(true);
 static SHOW_CURSOR: AtomicBool = AtomicBool::new(false);
+static INTERRUPTED: AtomicBool = AtomicBool::new(false);
 // static HANDLERS: OnceCell<Vec<Box<dyn Fn() + Send + Sync + 'static>>> = OnceCell::new();
 
 pub fn init() {
     tokio::spawn(async move {
         loop {
             tokio::signal::ctrl_c().await.unwrap();
+            INTERRUPTED.store(true, Ordering::Relaxed);
             if SHOW_CURSOR.load(Ordering::Relaxed) {
                 let _ = Term::stderr().show_cursor();
             }
@@ -26,6 +28,14 @@ pub fn init() {
 
 pub fn exit_on_ctrl_c(do_exit: bool) {
     EXIT.store(do_exit, Ordering::Relaxed);
+}
+
+pub fn was_interrupted() -> bool {
+    INTERRUPTED.load(Ordering::Relaxed)
+}
+
+pub fn clear_interrupt() {
+    INTERRUPTED.store(false, Ordering::Relaxed);
 }
 
 /// ensures cursor is displayed on ctrl-c

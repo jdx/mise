@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+
+# Regression: runtime mixed parent waiting on injected interactive child must not deadlock.
+# Matrix refs: B07/B09/B10/B12 (C1/C11/C13) + O6
+# Applicability: dynamic
+set -euo pipefail
+require_cmd python3
+
+run_in_pty_with_input() {
+	python3 - "$@" <<'PY'
+import os
+import pty
+import select
+import subprocess
+import sys
+import time
+
+cmd = sys.argv[1:]
+master_fd, slave_fd = pty.openpty()
+proc = subprocess.Popen(
+    cmd,
+    stdin=slave_fd,
+    stdout=slave_fd,
+    stderr=slave_fd,
+    close_fds=True,
+)
+os.close(slave_fd)
+
+input_data = os.environ.get("PTY_INPUT", "")
+if input_data:
+    time.sleep(0.20)
+    os.write(master_fd, input_data.encode())
+
+timeout_s = float(os.environ.get("PTY_TIMEOUT", "20"))
+start = time.time()
+output = bytearray()
+while True:
+    if time.time() - start > timeout_s:
+        proc.kill()
+        os.close(master_fd)
+        sys.stdout.buffer.write(bytes(output).replace(b"\r\n", b"\n"))
+        sys.stderr.write(f"\nPTY timeout after {timeout_s}s\n")
+        sys.exit(124)
+    ready, _, _ = select.select([master_fd], [], [], 0.2)
+    if ready:
+        try:
+            chunk = os.read(master_fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        output.extend(chunk)
+
+    if proc.poll() is not None and not ready:
+        break
+
+os.close(master_fd)
+status = proc.wait()
+sys.stdout.buffer.write(bytes(output).replace(b"\r\n", b"\n"))
+sys.exit(status)
+PY
+}
+export -f run_in_pty_with_input
+
+cat <<'TOML' >mise.toml
+[tasks.setup]
+run = "echo setup"
+
+[tasks.build_backend]
+depends = ["setup"]
+run = "echo backend"
+
+[tasks.build_frontend]
+depends = ["setup"]
+run = "echo frontend"
+
+[tasks.smoke_interactive]
+interactive = true
+run = 'printf "PROMPT>" >&2; read -r x; echo "SMOKE:$x"'
+
+[tasks.qa_suite]
+run = [
+  "echo QA_PRE",
+  { tasks = ["build_backend", "build_frontend"] },
+  { task = "smoke_interactive" },
+  "echo QA_POST"
+]
+
+[tasks.package]
+run = "echo package"
+
+[tasks.publish_all]
+run = [
+  { task = "package" },
+  "echo publish"
+]
+
+[tasks.release]
+run = [
+  { task = "qa_suite" },
+  { task = "publish_all" }
+]
+TOML
+
+set +e
+out="$(PTY_INPUT=$'go\n' PTY_TIMEOUT=12 run_in_pty_with_input mise run release 2>&1)"
+status=$?
+set -e
+
+if [[ $status -eq 124 ]]; then
+	fail "release deadlocked waiting on injected interactive child: $out"
+fi
+if [[ $status -ne 0 ]]; then
+	fail "expected release to complete (status=$status): $out"
+fi
+if [[ $out != *"SMOKE:go"* ]]; then
+	fail "interactive input was not consumed by smoke_interactive"
+fi
+if [[ $out != *"QA_POST"* ]]; then
+	fail "parent runtime did not resume after interactive child"
+fi
+if [[ $out != *"publish"* ]]; then
+	fail "release flow did not continue after qa_suite"
+fi

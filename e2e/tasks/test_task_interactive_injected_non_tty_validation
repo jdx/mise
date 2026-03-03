@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# Matrix refs:
+# - S13/N01 (C17)
+# - Contract: C17
+# Applicability: dynamic
+#
+# Regression:
+# interactive=true must fail fast on non-TTY stdin, including for tasks
+# reached through injected subgraphs ({task}/{tasks}).
+
+set -euo pipefail
+
+cat <<'EOF' >mise.toml
+[tasks.parent]
+run = [{ task = "child-interactive" }]
+
+[tasks.child-interactive]
+interactive = true
+run = "echo should-not-run"
+EOF
+
+assert_fail_contains "mise run parent" "stdin is not a TTY"

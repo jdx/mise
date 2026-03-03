@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# Matrix refs:
+# - V11 (C7)
+# - Contract: C7, C15
+# Applicability: dynamic
+#
+# Regression:
+# interactive=true on a pure orchestrator should always fail validation,
+# including when that orchestrator is reached via an injected subgraph.
+
+set -euo pipefail
+
+cat <<'EOF' >mise.toml
+[tasks.parent]
+run = [{ task = "child-orchestrator" }]
+
+[tasks.child-orchestrator]
+interactive = true
+run = [{ task = "leaf" }]
+
+[tasks.leaf]
+run = "echo leaf-should-not-run"
+EOF
+
+assert_fail_contains "mise run parent" "not a runtime task"

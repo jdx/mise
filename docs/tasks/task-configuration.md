@@ -260,6 +260,30 @@ this that no other tasks are running at the same time.
 In the future we could have a property like `single = true` or something that prevents multiple tasks
 from running at the same time. If that sounds useful, search/file a ticket.
 
+### `interactive`
+
+- **Type**: `bool`
+- **Default**: `false`
+
+Runs the task in interactive passthrough mode. `stdin`, `stdout`, and `stderr` are always inherited
+from your terminal for that task, regardless of structured output mode settings.
+
+Use this for prompts, REPLs, password input, and other live terminal interaction.
+
+```mise-toml
+[tasks.login]
+interactive = true
+run = "my-cli login"
+```
+
+`interactive=true` is only valid on runtime tasks (tasks that execute a script/file command).
+It is not valid on pure orchestration tasks that only use `{ task = "..." }` / `{ tasks = [...] }`.
+
+It is also incompatible with `silent=true`, `silent="stdout"`, and `silent="stderr"`.
+`raw=true` can be combined with `interactive=true` but is redundant.
+
+If `stdin` is not a TTY, interactive tasks fail fast with a clear error message.
+
 ### `sources`
 
 - **Type**: `string | string[]`

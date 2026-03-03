@@ -2,6 +2,9 @@
 
 # Test that raw tasks get interleave output even when task.output=prefix is set
 # This ensures raw=true takes priority over task.output setting
+# Matrix refs:
+# - R04
+# - Contract: C16
 
 cat <<EOF >mise.toml
 [settings]

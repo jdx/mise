@@ -1768,9 +1768,12 @@ impl<'de> de::Deserialize<'de> for Tasks {
                             where
                                 M: de::MapAccess<'de>,
                             {
-                                let t = de::Deserialize::deserialize(
+                                let raw: toml::Value = de::Deserialize::deserialize(
                                     de::value::MapAccessDeserializer::new(map),
                                 )?;
+                                let mut t: Task =
+                                    raw.clone().try_into().map_err(de::Error::custom)?;
+                                t.interactive_explicit = raw.get("interactive").is_some();
                                 Ok(TaskDef(t))
                             }
                         }
@@ -2381,5 +2384,61 @@ mod tests {
             Some("--include-deps"),
             "non-overridden registry default pipx_args should still be preserved"
         );
+    }
+
+    #[test]
+    fn test_task_toml_interactive_true_parses() {
+        // Matrix: V01 (C15)
+        let cf = parse(
+            r#"
+            [tasks.ask]
+            run = "echo hi"
+            interactive = true
+            "#
+            .to_string(),
+        );
+        let task = cf
+            .tasks()
+            .into_iter()
+            .find(|t| t.name == "ask")
+            .expect("task ask should exist");
+        assert!(task.interactive);
+        assert!(task.interactive_explicit);
+    }
+
+    #[test]
+    fn test_schema_mise_json_exposes_interactive_boolean() {
+        // Matrix: I01 (C15)
+        let schema_path =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schema/mise.json");
+        let schema = std::fs::read_to_string(schema_path).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&schema).unwrap();
+        assert!(json_has_interactive_boolean(&v));
+    }
+
+    #[test]
+    fn test_schema_mise_task_json_exposes_interactive_boolean() {
+        // Matrix: I02 (C15)
+        let schema_path =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schema/mise-task.json");
+        let schema = std::fs::read_to_string(schema_path).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&schema).unwrap();
+        assert!(json_has_interactive_boolean(&v));
+    }
+
+    fn json_has_interactive_boolean(v: &serde_json::Value) -> bool {
+        match v {
+            serde_json::Value::Object(map) => {
+                if let Some(interactive) = map.get("interactive")
+                    && interactive.get("type")
+                        == Some(&serde_json::Value::String("boolean".to_string()))
+                {
+                    return true;
+                }
+                map.values().any(json_has_interactive_boolean)
+            }
+            serde_json::Value::Array(items) => items.iter().any(json_has_interactive_boolean),
+            _ => false,
+        }
     }
 }

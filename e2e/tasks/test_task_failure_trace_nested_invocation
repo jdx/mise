@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Regression: nested task failures should explain who called whom.
+cat <<'TOML' >mise.toml
+[tasks.root]
+run = [{ task = "group" }]
+
+[tasks.group]
+run = [{ task = "missing-task" }]
+TOML
+
+set +e
+output="$(mise run root 2>&1)"
+status=$?
+set -e
+
+if [[ $status -ne 1 ]]; then
+	echo "expected exit code 1, got $status"
+	echo "$output"
+	exit 1
+fi
+
+if [[ "$(grep -c 'Task Failure Report:' <<<"$output")" -ne 1 ]]; then
+	echo "expected exactly one task failure report"
+	echo "$output"
+	exit 1
+fi
+
+if ! grep -Fq 'Name: group' <<<"$output"; then
+	echo "missing failing task name"
+	echo "$output"
+	exit 1
+fi
+
+if ! grep -Fq 'Details:' <<<"$output" || ! grep -Fq 'task not found: missing-task' <<<"$output"; then
+	echo "missing concrete error details"
+	echo "$output"
+	exit 1
+fi
+
+if ! grep -Fq -- '- Task: missing-task (<unknown>)' <<<"$output"; then
+	echo "missing nested missing-task frame"
+	echo "$output"
+	exit 1
+fi
+
+# shellcheck disable=SC2016
+if ! grep -Fq 'Why: called by `group` via run entry { task = "missing-task" }' <<<"$output"; then
+	echo "missing invocation reason in task path"
+	echo "$output"
+	exit 1
+fi

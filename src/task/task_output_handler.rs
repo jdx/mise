@@ -6,7 +6,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use indexmap::IndexMap;
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 /// A single line of output, tagged by stream.
 pub enum KeepOrderLine {
@@ -170,6 +170,81 @@ fn print_stderr(prefix: &str, line: &str) {
     }
 }
 
+/// Buffered line for prefix mode debounce flushing.
+enum PrefixLine {
+    Stdout(String, String), // (prefix, line)
+    Stderr(String, String), // (prefix, line)
+}
+
+/// Per-task buffered lines and first-enqueue timestamp for prefix mode.
+struct PrefixTaskBuffer {
+    lines: Vec<PrefixLine>,
+    first_pending_at: Instant,
+}
+
+/// State for debounced prefix output flushing.
+struct PrefixDebounceState {
+    buffers: IndexMap<Task, PrefixTaskBuffer>,
+}
+
+impl PrefixDebounceState {
+    fn new() -> Self {
+        Self {
+            buffers: IndexMap::new(),
+        }
+    }
+
+    fn on_stdout(&mut self, task: &Task, prefix: String, line: String) {
+        self.push(task, PrefixLine::Stdout(prefix, line));
+    }
+
+    fn on_stderr(&mut self, task: &Task, prefix: String, line: String) {
+        self.push(task, PrefixLine::Stderr(prefix, line));
+    }
+
+    fn push(&mut self, task: &Task, line: PrefixLine) {
+        let now = Instant::now();
+        let buffer = self
+            .buffers
+            .entry(task.clone())
+            .or_insert_with(|| PrefixTaskBuffer {
+                lines: Vec::new(),
+                first_pending_at: now,
+            });
+        if buffer.lines.is_empty() {
+            buffer.first_pending_at = now;
+        }
+        buffer.lines.push(line);
+    }
+
+    fn drain_ready(&mut self, debounce: Duration, force: bool) -> Vec<PrefixLine> {
+        let now = Instant::now();
+        let mut drained = Vec::new();
+        let mut pending = IndexMap::new();
+
+        for (task, mut buffer) in std::mem::take(&mut self.buffers) {
+            let due = force
+                || (!buffer.lines.is_empty()
+                    && now.duration_since(buffer.first_pending_at) >= debounce);
+            if due {
+                drained.append(&mut buffer.lines);
+            } else {
+                pending.insert(task, buffer);
+            }
+        }
+
+        self.buffers = pending;
+        drained
+    }
+
+    fn drain_task(&mut self, task: &Task) -> Vec<PrefixLine> {
+        self.buffers
+            .shift_remove(task)
+            .map(|mut buffer| std::mem::take(&mut buffer.lines))
+            .unwrap_or_default()
+    }
+}
+
 /// Configuration for OutputHandler
 pub struct OutputHandlerConfig {
     pub prefix: bool,
@@ -182,10 +257,13 @@ pub struct OutputHandlerConfig {
     pub jobs: Option<usize>,
 }
 
+type TaskProgressReports = Arc<Mutex<IndexMap<Task, Arc<Box<dyn SingleReport>>>>>;
+
 /// Handles task output routing, formatting, and display
 pub struct OutputHandler {
     pub keep_order_state: Arc<Mutex<KeepOrderState>>,
-    pub task_prs: IndexMap<Task, Arc<Box<dyn SingleReport>>>,
+    prefix_debounce_state: Arc<Mutex<PrefixDebounceState>>,
+    task_prs: TaskProgressReports,
     pub timed_outputs: Arc<Mutex<IndexMap<String, (SystemTime, String)>>>,
 
     // Configuration from CLI args
@@ -203,6 +281,7 @@ impl Clone for OutputHandler {
     fn clone(&self) -> Self {
         Self {
             keep_order_state: self.keep_order_state.clone(),
+            prefix_debounce_state: self.prefix_debounce_state.clone(),
             task_prs: self.task_prs.clone(),
             timed_outputs: self.timed_outputs.clone(),
             prefix: self.prefix,
@@ -221,7 +300,8 @@ impl OutputHandler {
     pub fn new(config: OutputHandlerConfig) -> Self {
         Self {
             keep_order_state: Arc::new(Mutex::new(KeepOrderState::new())),
-            task_prs: IndexMap::new(),
+            prefix_debounce_state: Arc::new(Mutex::new(PrefixDebounceState::new())),
+            task_prs: Arc::new(Mutex::new(IndexMap::new())),
             timed_outputs: Arc::new(Mutex::new(IndexMap::new())),
             prefix: config.prefix,
             interleave: config.interleave,
@@ -244,15 +324,30 @@ impl OutputHandler {
                 }
             }
             TaskOutput::Replacing => {
-                let pr = MultiProgressReport::get().add(&task.estyled_prefix());
-                self.task_prs.insert(task.clone(), Arc::new(pr));
+                // Ensure replacing-mode tasks always have a progress report, including
+                // tasks discovered later through injected subgraphs.
+                let _ = self.replacing_report(task);
             }
             _ => {}
         }
     }
 
+    pub fn replacing_report(&self, task: &Task) -> Arc<Box<dyn SingleReport>> {
+        let mut task_prs = self.task_prs.lock().unwrap();
+        task_prs
+            .entry(task.clone())
+            .or_insert_with(|| Arc::new(MultiProgressReport::get().add(&task.estyled_prefix())))
+            .clone()
+    }
+
     /// Determine the output mode for a task
     pub fn output(&self, task: Option<&Task>) -> TaskOutput {
+        if let Some(task_ref) = task
+            && task_ref.interactive
+        {
+            return TaskOutput::Interleave;
+        }
+
         // Check for full silent mode (both streams)
         // Only Silent::Bool(true) means completely silent, not Silent::Stdout or Silent::Stderr
         if let Some(task_ref) = task
@@ -304,6 +399,9 @@ impl OutputHandler {
     /// For keep-order mode, routes through the streaming state so messages
     /// stay ordered with the task's stdout/stderr.
     pub fn eprint(&self, task: &Task, prefix: &str, line: &str) {
+        // In prefix mode, metadata/error messages are printed immediately.
+        // Flush this task's pending debounced lines first to preserve ordering.
+        self.flush_prefix_task(task);
         match self.output(Some(task)) {
             TaskOutput::KeepOrder => {
                 self.keep_order_state.lock().unwrap().on_stderr(
@@ -313,11 +411,66 @@ impl OutputHandler {
                 );
             }
             TaskOutput::Replacing => {
-                let pr = self.task_prs.get(task).unwrap().clone();
+                let pr = self.replacing_report(task);
                 pr.set_message(format!("{prefix} {line}"));
             }
             _ => {
                 prefix_eprintln!(prefix, "{line}");
+            }
+        }
+    }
+
+    pub fn on_prefix_stdout(&self, task: &Task, prefix: String, line: String) {
+        self.prefix_debounce_state
+            .lock()
+            .unwrap()
+            .on_stdout(task, prefix, line);
+    }
+
+    pub fn on_prefix_stderr(&self, task: &Task, prefix: String, line: String) {
+        self.prefix_debounce_state
+            .lock()
+            .unwrap()
+            .on_stderr(task, prefix, line);
+    }
+
+    pub fn flush_prefix_debounced(&self, debounce: Duration) {
+        if self.output(None) != TaskOutput::Prefix {
+            return;
+        }
+        let lines = self
+            .prefix_debounce_state
+            .lock()
+            .unwrap()
+            .drain_ready(debounce, false);
+        Self::print_prefix_lines(lines);
+    }
+
+    pub fn flush_prefix_all(&self) {
+        if self.output(None) != TaskOutput::Prefix {
+            return;
+        }
+        let lines = self
+            .prefix_debounce_state
+            .lock()
+            .unwrap()
+            .drain_ready(Duration::ZERO, true);
+        Self::print_prefix_lines(lines);
+    }
+
+    pub fn flush_prefix_task(&self, task: &Task) {
+        if self.output(Some(task)) != TaskOutput::Prefix {
+            return;
+        }
+        let lines = self.prefix_debounce_state.lock().unwrap().drain_task(task);
+        Self::print_prefix_lines(lines);
+    }
+
+    fn print_prefix_lines(lines: Vec<PrefixLine>) {
+        for line in lines {
+            match line {
+                PrefixLine::Stdout(prefix, line) => print_stdout(&prefix, &line),
+                PrefixLine::Stderr(prefix, line) => print_stderr(&prefix, &line),
             }
         }
     }
@@ -352,5 +505,235 @@ impl OutputHandler {
         } else {
             self.jobs.unwrap_or(Settings::get().jobs)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{OutputHandler, OutputHandlerConfig, PrefixDebounceState, PrefixLine};
+    use crate::task::Task;
+    use crate::task::task_output::TaskOutput;
+    use std::time::Duration;
+
+    #[test]
+    fn defaults_to_interleave_for_linear_graphs() {
+        let handler = OutputHandler::new(OutputHandlerConfig {
+            prefix: false,
+            interleave: false,
+            output: None,
+            silent: false,
+            quiet: false,
+            raw: false,
+            is_linear: true,
+            jobs: Some(8),
+        });
+
+        assert_eq!(handler.output(None), TaskOutput::Interleave);
+    }
+
+    #[test]
+    fn defaults_to_prefix_for_non_linear_graphs_with_parallel_jobs() {
+        // Matrix: R05 (C16)
+        let handler = OutputHandler::new(OutputHandlerConfig {
+            prefix: false,
+            interleave: false,
+            output: None,
+            silent: false,
+            quiet: false,
+            raw: false,
+            is_linear: false,
+            jobs: Some(8),
+        });
+
+        // Non-linear graphs with multiple jobs default to prefix output.
+        assert_eq!(handler.output(None), TaskOutput::Prefix);
+    }
+
+    #[test]
+    fn single_job_forces_interleave_even_for_non_linear_graphs() {
+        let handler = OutputHandler::new(OutputHandlerConfig {
+            prefix: false,
+            interleave: false,
+            output: None,
+            silent: false,
+            quiet: false,
+            raw: false,
+            is_linear: false,
+            jobs: Some(1),
+        });
+
+        assert_eq!(handler.output(None), TaskOutput::Interleave);
+    }
+
+    #[test]
+    fn explicit_prefix_output_overrides_linear_default() {
+        let handler = OutputHandler::new(OutputHandlerConfig {
+            prefix: false,
+            interleave: false,
+            output: Some(TaskOutput::Prefix),
+            silent: false,
+            quiet: false,
+            raw: false,
+            is_linear: true,
+            jobs: Some(8),
+        });
+
+        // Explicitly requested prefix output must override the linear-graph default.
+        assert_eq!(handler.output(None), TaskOutput::Prefix);
+    }
+
+    #[test]
+    fn interactive_task_forces_interleave_output() {
+        // Matrix: S11/S14 (C2, C6)
+        let handler = OutputHandler::new(OutputHandlerConfig {
+            prefix: false,
+            interleave: false,
+            output: Some(TaskOutput::Prefix),
+            silent: false,
+            quiet: false,
+            raw: false,
+            is_linear: false,
+            jobs: Some(8),
+        });
+        let task = Task {
+            interactive: true,
+            ..task("interactive")
+        };
+        assert_eq!(handler.output(Some(&task)), TaskOutput::Interleave);
+    }
+
+    #[test]
+    fn interactive_task_overrides_explicit_structured_output_setting() {
+        // Matrix: C02 (C6, C15)
+        for output in [
+            TaskOutput::Prefix,
+            TaskOutput::KeepOrder,
+            TaskOutput::Replacing,
+            TaskOutput::Timed,
+        ] {
+            let handler = OutputHandler::new(OutputHandlerConfig {
+                prefix: false,
+                interleave: false,
+                output: Some(output),
+                silent: false,
+                quiet: false,
+                raw: false,
+                is_linear: false,
+                jobs: Some(8),
+            });
+            let task = Task {
+                interactive: true,
+                ..task("interactive")
+            };
+            assert_eq!(handler.output(Some(&task)), TaskOutput::Interleave);
+        }
+    }
+
+    fn task(name: &str) -> Task {
+        Task {
+            name: name.to_string(),
+            display_name: name.to_string(),
+            ..Task::default()
+        }
+    }
+
+    #[test]
+    fn prefix_debounce_delays_flush_until_debounce_elapsed() {
+        let mut state = PrefixDebounceState::new();
+        let task = task("t1");
+        state.on_stdout(&task, "t1".to_string(), "line-1".to_string());
+
+        let pending = state.drain_ready(Duration::from_secs(60), false);
+        assert!(pending.is_empty());
+
+        let drained = state.drain_ready(Duration::ZERO, false);
+        assert_eq!(drained.len(), 1);
+        assert!(matches!(
+            &drained[0],
+            PrefixLine::Stdout(prefix, line) if prefix == "t1" && line == "line-1"
+        ));
+    }
+
+    #[test]
+    fn prefix_debounce_force_flushes_all_buffers_in_task_order() {
+        let mut state = PrefixDebounceState::new();
+        let t1 = task("t1");
+        let t2 = task("t2");
+
+        state.on_stdout(&t1, "t1".to_string(), "a".to_string());
+        state.on_stderr(&t1, "t1".to_string(), "b".to_string());
+        state.on_stdout(&t2, "t2".to_string(), "c".to_string());
+
+        let drained = state.drain_ready(Duration::from_secs(60), true);
+        assert_eq!(drained.len(), 3);
+        assert!(matches!(
+            &drained[0],
+            PrefixLine::Stdout(prefix, line) if prefix == "t1" && line == "a"
+        ));
+        assert!(matches!(
+            &drained[1],
+            PrefixLine::Stderr(prefix, line) if prefix == "t1" && line == "b"
+        ));
+        assert!(matches!(
+            &drained[2],
+            PrefixLine::Stdout(prefix, line) if prefix == "t2" && line == "c"
+        ));
+    }
+
+    #[test]
+    fn eprint_flushes_pending_prefix_buffers_before_printing_metadata() {
+        let handler = OutputHandler::new(OutputHandlerConfig {
+            prefix: false,
+            interleave: false,
+            output: Some(TaskOutput::Prefix),
+            silent: false,
+            quiet: false,
+            raw: false,
+            is_linear: false,
+            jobs: Some(8),
+        });
+        let task = task("t1");
+        handler.on_prefix_stdout(&task, "t1".to_string(), "line-1".to_string());
+        assert_eq!(
+            handler.prefix_debounce_state.lock().unwrap().buffers.len(),
+            1
+        );
+
+        handler.eprint(&task, "t1", "metadata");
+        assert!(
+            handler
+                .prefix_debounce_state
+                .lock()
+                .unwrap()
+                .buffers
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn eprint_flushes_only_current_task_prefix_buffer() {
+        let handler = OutputHandler::new(OutputHandlerConfig {
+            prefix: false,
+            interleave: false,
+            output: Some(TaskOutput::Prefix),
+            silent: false,
+            quiet: false,
+            raw: false,
+            is_linear: false,
+            jobs: Some(8),
+        });
+        let t1 = task("t1");
+        let t2 = task("t2");
+        handler.on_prefix_stdout(&t1, "t1".to_string(), "line-1".to_string());
+        handler.on_prefix_stdout(&t2, "t2".to_string(), "line-2".to_string());
+        assert_eq!(
+            handler.prefix_debounce_state.lock().unwrap().buffers.len(),
+            2
+        );
+
+        handler.eprint(&t1, "t1", "metadata");
+        let guard = handler.prefix_debounce_state.lock().unwrap();
+        assert!(!guard.buffers.contains_key(&t1));
+        assert!(guard.buffers.contains_key(&t2));
     }
 }

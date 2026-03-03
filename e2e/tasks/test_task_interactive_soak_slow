@@ -1,0 +1,225 @@
+#!/usr/bin/env bash
+
+# Matrix refs:
+# - X01/X02/X03/X04/X05/X06
+# - T01/T02
+# - O1/O5/O7
+# - Contract: C1/C2/C6/C10/C11/C12/C13
+# Applicability: common
+
+set -euo pipefail
+require_cmd python3
+
+run_in_pty() {
+	python3 - "$@" <<'PY'
+import os
+import pty
+import select
+import signal
+import subprocess
+import sys
+import time
+
+cmd = sys.argv[1:]
+master_fd, slave_fd = pty.openpty()
+proc = subprocess.Popen(
+    cmd,
+    stdin=slave_fd,
+    stdout=slave_fd,
+    stderr=slave_fd,
+    close_fds=True,
+)
+os.close(slave_fd)
+
+input_data = os.environ.get("PTY_INPUT", "")
+if input_data:
+    time.sleep(0.08)
+    os.write(master_fd, input_data.encode())
+
+signal_name = os.environ.get("PTY_SIGNAL", "")
+signal_after = float(os.environ.get("PTY_SIGNAL_AFTER", "0"))
+timeout_s = float(os.environ.get("PTY_TIMEOUT", "20"))
+start = time.time()
+output = bytearray()
+sent = False
+while True:
+    elapsed = time.time() - start
+    if signal_name and not sent and elapsed >= signal_after:
+        os.kill(proc.pid, getattr(signal, signal_name))
+        sent = True
+    if elapsed > timeout_s:
+        proc.kill()
+        os.close(master_fd)
+        sys.stdout.buffer.write(bytes(output).replace(b"\r\n", b"\n"))
+        sys.stderr.write(f"\nPTY timeout after {timeout_s}s\n")
+        sys.exit(124)
+    ready, _, _ = select.select([master_fd], [], [], 0.2)
+    if ready:
+        try:
+            chunk = os.read(master_fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        output.extend(chunk)
+    if proc.poll() is not None and not ready:
+        break
+
+os.close(master_fd)
+status = proc.wait()
+sys.stdout.buffer.write(bytes(output).replace(b"\r\n", b"\n"))
+sys.exit(status)
+PY
+}
+export -f run_in_pty
+
+trace=$(mktemp)
+lock_dir="$(mktemp -u)"
+trap 'rm -f "$trace"; rmdir "$lock_dir" 2>/dev/null || true' EXIT
+
+cat <<'EOF' >mise.toml
+[tasks.ia]
+interactive = true
+run = '''
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  echo "overlap ia" >> "$TRACE_FILE"
+  exit 81
+fi
+echo "ia:start" >> "$TRACE_FILE"
+printf "ia> "
+read value
+echo "ia:$value"
+sleep 0.02
+echo "ia:end" >> "$TRACE_FILE"
+rmdir "$LOCK_DIR"
+'''
+
+[tasks.ib]
+interactive = true
+run = '''
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  echo "overlap ib" >> "$TRACE_FILE"
+  exit 82
+fi
+echo "ib:start" >> "$TRACE_FILE"
+printf "ib> "
+read value
+echo "ib:$value"
+sleep 0.02
+echo "ib:end" >> "$TRACE_FILE"
+rmdir "$LOCK_DIR"
+'''
+
+[tasks.w1]
+run = 'if [ -d "$LOCK_DIR" ]; then echo "overlap w1" >> "$TRACE_FILE"; fi; echo w1'
+[tasks.w2]
+run = 'if [ -d "$LOCK_DIR" ]; then echo "overlap w2" >> "$TRACE_FILE"; fi; echo w2'
+[tasks.w3]
+run = 'if [ -d "$LOCK_DIR" ]; then echo "overlap w3" >> "$TRACE_FILE"; fi; echo w3'
+[tasks.w4]
+run = 'if [ -d "$LOCK_DIR" ]; then echo "overlap w4" >> "$TRACE_FILE"; fi; echo w4'
+[tasks.w5]
+run = 'if [ -d "$LOCK_DIR" ]; then echo "overlap w5" >> "$TRACE_FILE"; fi; echo w5'
+
+[tasks.long-int]
+interactive = true
+run = '''
+echo "long-int:start" >> "$TRACE_FILE"
+sleep 3
+echo "long-int:end" >> "$TRACE_FILE"
+'''
+
+[tasks.noisy]
+run = '''
+for i in $(seq 1 200); do
+  echo "noisy:$i"
+done
+'''
+
+[tasks.sub-a]
+run = [{ task = "ia" }, { task = "w1" }]
+[tasks.sub-b]
+run = [{ task = "ib" }, { task = "w2" }]
+
+[tasks.probe]
+run = "echo probe-ok"
+EOF
+
+# Matrix: X01/X02/X06 + O1/O5 (C1/C10/C13)
+for _ in $(seq 1 40); do
+	: >"$trace"
+	out="$(
+		TRACE_FILE="$trace" LOCK_DIR="$lock_dir" PTY_INPUT=$'one\ntwo\n' \
+			run_in_pty mise run --jobs=32 ia ::: w1 ::: w2 ::: w3 ::: w4 ::: w5 ::: ib
+	)"
+	if [[ $out != *"ia:one"* ]] || [[ $out != *"ib:two"* ]]; then
+		fail "sequential interactive input routing failed under contention soak"
+	fi
+	if grep -q '^overlap ' "$trace"; then
+		fail "overlap detected in soak contention run"
+	fi
+	ia_line="$(grep -n '^ia:start$' "$trace" | head -n1 | cut -d: -f1)"
+	ib_line="$(grep -n '^ib:start$' "$trace" | head -n1 | cut -d: -f1)"
+	if [[ -z $ia_line || -z $ib_line || $ia_line -ge $ib_line ]]; then
+		fail "deterministic interactive order inversion detected"
+	fi
+done
+
+# Matrix: X03 + O7 (C12/C13)
+for _ in $(seq 1 20); do
+	set +e
+	TRACE_FILE="$trace" PTY_TIMEOUT=8 run_in_pty mise run --timeout=500ms long-int >/tmp/mise_int_soak_timeout.out 2>&1
+	status=$?
+	set -e
+	if [[ $status -eq 0 ]]; then
+		fail "expected timeout in repeated timeout soak scenario"
+	fi
+	assert "mise run probe" "probe-ok"
+done
+
+# Matrix: X04 + O7 (C12/C13)
+for _ in $(seq 1 20); do
+	set +e
+	TRACE_FILE="$trace" PTY_SIGNAL=SIGINT PTY_SIGNAL_AFTER=0.25 PTY_TIMEOUT=8 run_in_pty mise run long-int >/tmp/mise_int_soak_sigint.out 2>&1
+	status=$?
+	set -e
+	if [[ $status -eq 0 ]]; then
+		fail "expected SIGINT interruption in repeated signal soak scenario"
+	fi
+	assert "mise run probe" "probe-ok"
+done
+
+# Matrix: X05 + O6 (C2/C6)
+out="$(
+	TRACE_FILE="$trace" LOCK_DIR="$lock_dir" PTY_INPUT=$'noise\n' \
+		run_in_pty mise run ia ::: noisy
+)"
+if [[ $out != *"ia:noise"* ]]; then
+	fail "interactive prompt usability degraded under high output load"
+fi
+
+# Matrix: T01 (C10/C13) - starvation check
+for _ in $(seq 1 25); do
+	out="$(
+		TRACE_FILE="$trace" LOCK_DIR="$lock_dir" PTY_INPUT=$'s1\ns2\n' \
+			run_in_pty mise run --jobs=32 w1 ::: w2 ::: w3 ::: ia ::: w4 ::: w5 ::: ib
+	)"
+	if [[ $out != *"ia:s1"* ]] || [[ $out != *"ib:s2"* ]]; then
+		fail "interactive starvation detected under repeated mixed load"
+	fi
+done
+
+# Matrix: T02 + O1 (C1/C11/C13)
+for _ in $(seq 1 25); do
+	: >"$trace"
+	out="$(
+		TRACE_FILE="$trace" LOCK_DIR="$lock_dir" PTY_INPUT=$'sa\nsb\n' \
+			run_in_pty mise run --jobs=32 sub-a ::: sub-b ::: w3 ::: w4
+	)"
+	if [[ $out != *"ia:sa"* ]] || [[ $out != *"ib:sb"* ]]; then
+		fail "interactive subgraph input routing failed"
+	fi
+	if grep -q '^overlap ' "$trace"; then
+		fail "overlap detected with multiple subgraphs"
+	fi
+done

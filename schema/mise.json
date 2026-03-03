@@ -1833,6 +1833,11 @@
               "description": "directly connect task to stdin/stdout/stderr",
               "type": "boolean"
             },
+            "interactive": {
+              "default": false,
+              "description": "run this task exclusively with terminal stdin/stdout/stderr passthrough",
+              "type": "boolean"
+            },
             "run": {
               "oneOf": [
                 {
@@ -2449,6 +2454,11 @@
           "description": "directly connect task to stdin/stdout/stderr",
           "type": "boolean"
         },
+        "interactive": {
+          "default": false,
+          "description": "run this task exclusively with terminal stdin/stdout/stderr passthrough",
+          "type": "boolean"
+        },
         "run": {
           "oneOf": [
             {
@@ -2715,6 +2725,11 @@
         "raw": {
           "default": false,
           "description": "directly connect task to stdin/stdout/stderr",
+          "type": "boolean"
+        },
+        "interactive": {
+          "default": false,
+          "description": "run this task exclusively with terminal stdin/stdout/stderr passthrough",
           "type": "boolean"
         },
         "run": {

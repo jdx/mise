@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# Matrix refs:
+# - I01/I02/I03/I04
+# - Contract: C15
+# Applicability: common
+
+set -euo pipefail
+require_cmd jq
+
+# Matrix: I01 (C15)
+assert_contains \
+	"jq -r '.. | objects | .interactive? | .type? // empty' \"$ROOT/schema/mise.json\" | tr '\n' ' '" \
+	"boolean"
+
+# Matrix: I02 (C15)
+assert_contains \
+	"jq -r '.. | objects | .interactive? | .type? // empty' \"$ROOT/schema/mise-task.json\" | tr '\n' ' '" \
+	"boolean"
+
+# Matrix: I03/I04 (C15)
+cat <<'EOF' >mise.toml
+[tasks.alpha]
+run = "echo alpha"
+
+[tasks.beta]
+interactive = true
+run = "echo beta"
+EOF
+
+assert_contains "mise tasks info beta --json" '"interactive": true'
+assert_contains "mise tasks ls --json" '"name": "alpha"'
+assert_contains "mise tasks ls --json" '"name": "beta"'
+assert_contains "mise tasks ls --json" '"interactive": false'
+assert_contains "mise tasks ls --json" '"interactive": true'

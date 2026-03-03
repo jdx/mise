@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+
+# Matrix refs:
+# - B01/B05/B06 (C1/C10/C11)
+# - E10 (C1/C10)
+# - O1/O5/O6
+# Applicability: common
+
+set -euo pipefail
+require_cmd python3
+
+run_in_pty_with_input() {
+	python3 - "$@" <<'PY'
+import os
+import pty
+import select
+import subprocess
+import sys
+import time
+
+cmd = sys.argv[1:]
+master_fd, slave_fd = pty.openpty()
+proc = subprocess.Popen(
+    cmd,
+    stdin=slave_fd,
+    stdout=slave_fd,
+    stderr=slave_fd,
+    close_fds=True,
+)
+os.close(slave_fd)
+
+input_data = os.environ.get("PTY_INPUT", "")
+if input_data:
+    # Pre-buffer input so sequential interactive prompts can consume it in order.
+    time.sleep(0.15)
+    os.write(master_fd, input_data.encode())
+
+timeout_s = float(os.environ.get("PTY_TIMEOUT", "20"))
+start = time.time()
+output = bytearray()
+while True:
+    if time.time() - start > timeout_s:
+        proc.kill()
+        os.close(master_fd)
+        sys.stdout.buffer.write(bytes(output).replace(b"\r\n", b"\n"))
+        sys.stderr.write(f"\nPTY timeout after {timeout_s}s\n")
+        sys.exit(124)
+    ready, _, _ = select.select([master_fd], [], [], 0.2)
+    if ready:
+        try:
+            chunk = os.read(master_fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        output.extend(chunk)
+    if proc.poll() is not None and not ready:
+        break
+
+os.close(master_fd)
+status = proc.wait()
+sys.stdout.buffer.write(bytes(output).replace(b"\r\n", b"\n"))
+sys.exit(status)
+PY
+}
+export -f run_in_pty_with_input
+
+trace_one=$(mktemp)
+trace_two=$(mktemp)
+trace_three=$(mktemp)
+lock_dir_one="$(mktemp -u)"
+lock_dir_two="$(mktemp -u)"
+trap 'rm -f "$trace_one" "$trace_two" "$trace_three"; rmdir "$lock_dir_one" "$lock_dir_two" 2>/dev/null || true' EXIT
+
+cat <<'EOF2' >mise.toml
+[tasks.interactive-a]
+interactive = true
+run = '''
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  echo "overlap interactive-a" >> "$TRACE_FILE"
+  exit 90
+fi
+echo "interactive-a:start" >> "$TRACE_FILE"
+printf "ia> "
+read value
+echo "ia:$value"
+sleep 0.2
+echo "interactive-a:end" >> "$TRACE_FILE"
+rmdir "$LOCK_DIR"
+'''
+
+[tasks.interactive-b]
+interactive = true
+run = '''
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  echo "overlap interactive-b" >> "$TRACE_FILE"
+  exit 91
+fi
+echo "interactive-b:start" >> "$TRACE_FILE"
+printf "ib> "
+read value
+echo "ib:$value"
+sleep 0.2
+echo "interactive-b:end" >> "$TRACE_FILE"
+rmdir "$LOCK_DIR"
+'''
+
+[tasks.worker]
+run = '''
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  echo "overlap worker" >> "$TRACE_FILE"
+  exit 92
+fi
+echo "worker:start" >> "$TRACE_FILE"
+sleep 0.1
+echo "worker:end" >> "$TRACE_FILE"
+rmdir "$LOCK_DIR"
+'''
+
+[tasks.mixed-interactive]
+interactive = true
+run = [
+'''
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  echo "overlap mixed-interactive" >> "$TRACE_FILE"
+  exit 93
+fi
+echo "mixed-interactive:start" >> "$TRACE_FILE"
+echo "mixed-script"
+sleep 0.1
+echo "mixed-interactive:end" >> "$TRACE_FILE"
+rmdir "$LOCK_DIR"
+''',
+{ task = "worker" },
+]
+
+[tasks.det-interactive]
+interactive = true
+run = 'echo "det-interactive:start" >> "$TRACE_FILE"'
+
+[tasks.det-worker]
+run = 'echo "det-worker:start" >> "$TRACE_FILE"'
+EOF2
+
+# Matrix: B01 (C1/C11) + O1
+output_one="$(
+	LOCK_DIR="$lock_dir_one" TRACE_FILE="$trace_one" PTY_INPUT=$'hello\n' \
+		run_in_pty_with_input mise run interactive-a ::: worker
+)"
+
+if [[ $output_one != *"ia:hello"* ]]; then
+	fail "expected interactive input to reach interactive-a"
+fi
+
+if grep -q 'overlap' "$trace_one"; then
+	fail "runtime overlap detected while interactive task active"
+fi
+
+assert "cat '$trace_one'" "interactive-a:start
+interactive-a:end
+worker:start
+worker:end"
+
+# Matrix: B05/B06 + E10 (C1/C10) + O5/O6
+for _ in 1 2 3; do
+	: >"$trace_two"
+	output_two="$(
+		LOCK_DIR="$lock_dir_two" TRACE_FILE="$trace_two" PTY_INPUT=$'one\ntwo\n' \
+			run_in_pty_with_input mise run interactive-a ::: interactive-b
+	)"
+
+	if [[ $output_two != *"ia:one"* ]] || [[ $output_two != *"ib:two"* ]]; then
+		fail "expected per-task input routing for sequential interactive tasks"
+	fi
+
+	if grep -q 'overlap' "$trace_two"; then
+		fail "interactive tasks overlapped"
+	fi
+
+	assert "cat '$trace_two'" "interactive-a:start
+interactive-a:end
+interactive-b:start
+interactive-b:end"
+done
+
+# Matrix: V12 runtime path (C7) and deadlock regression guard
+: >"$trace_two"
+set +e
+output_three="$(
+	LOCK_DIR="$lock_dir_two" TRACE_FILE="$trace_two" PTY_TIMEOUT=8 \
+		run_in_pty_with_input mise run mixed-interactive 2>&1
+)"
+status=$?
+set -e
+if [[ $status -eq 124 ]]; then
+	fail "mixed interactive task deadlocked while waiting on injected runtime child"
+fi
+if [[ $status -ne 0 ]]; then
+	fail "expected mixed interactive run to succeed (status=$status): $output_three"
+fi
+if [[ $output_three != *"mixed-script"* ]]; then
+	fail "expected mixed interactive script output"
+fi
+assert "cat '$trace_two'" "mixed-interactive:start
+mixed-interactive:end
+worker:start
+worker:end"
+
+# Matrix: B06/C10 + O5
+# Regression sanity check (detailed turn-order behavior is unit-tested in scheduler TU).
+for i in $(seq 1 5); do
+	: >"$trace_three"
+	set +e
+	out_order="$(
+		TRACE_FILE="$trace_three" PTY_TIMEOUT=8 \
+			run_in_pty_with_input mise run --jobs=2 det-interactive ::: det-worker 2>&1
+	)"
+	status=$?
+	set -e
+	if [[ $status -eq 124 ]]; then
+		fail "deterministic order stress deadlocked at iteration $i"
+	fi
+	if [[ $status -ne 0 ]]; then
+		fail "deterministic order stress failed at iteration $i (status=$status): $out_order"
+	fi
+	assert "cat '$trace_three'" "det-interactive:start
+det-worker:start"
+done

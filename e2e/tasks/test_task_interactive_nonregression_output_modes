@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+# Matrix refs:
+# - R03
+# - Contract: C16
+# Applicability: common
+
+set -euo pipefail
+
+cat <<'EOF' >mise.toml
+[tasks.a]
+run = '''
+sleep 0.05
+echo "a-done"
+'''
+
+[tasks.b]
+run = '''
+sleep 0.05
+echo "b-done"
+'''
+EOF
+
+# Matrix: R03 (C16) - replacing mode should keep existing non-interactive behavior.
+assert_contains "mise run -o replacing a ::: b 2>&1" "a-done"
+assert_contains "mise run -o replacing a ::: b 2>&1" "b-done"
+
+# Matrix: R03 (C16) - timed mode should keep existing non-interactive behavior.
+assert_succeed "mise run -o timed a ::: b >/tmp/mise_r03_timed.out 2>&1"
+assert_contains "cat /tmp/mise_r03_timed.out" "Finished"
+
+# Matrix: R03 (C16) - replacing mode should remain stable for injected subgraph runtime tasks.
+cat <<'EOF' >mise.toml
+[tasks.child]
+run = "echo child-done"
+
+[tasks.parent]
+run = [{ task = "child" }]
+EOF
+
+assert_succeed "mise run -o replacing parent >/tmp/mise_r03_replacing_injected.out 2>&1"
+assert_contains "cat /tmp/mise_r03_replacing_injected.out" "child-done"
+assert_not_contains "cat /tmp/mise_r03_replacing_injected.out" "panicked"

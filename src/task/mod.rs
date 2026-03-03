@@ -54,11 +54,13 @@ pub mod task_output;
 pub mod task_output_handler;
 pub mod task_results_display;
 pub mod task_scheduler;
+pub mod task_scheduler_policy;
 mod task_script_parser;
 pub mod task_source_checker;
 pub mod task_sources;
 pub mod task_template;
 pub mod task_tool_installer;
+pub mod task_trace;
 
 pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax};
 pub use task_output::TaskOutput;
@@ -246,6 +248,16 @@ pub struct Task {
     #[serde(default)]
     pub raw: bool,
     #[serde(default)]
+    pub interactive: bool,
+    /// Internal scheduler owner for interactive barrier inheritance through injected subgraphs.
+    #[serde(skip)]
+    pub interactive_owner: Option<u64>,
+    /// Internal scheduler sequence used to preserve deterministic admission ordering.
+    #[serde(skip)]
+    pub scheduler_seq: Option<u64>,
+    #[serde(skip)]
+    pub interactive_explicit: bool,
+    #[serde(default)]
     pub sources: Vec<String>,
     #[serde(default)]
     pub outputs: TaskOutputs,
@@ -380,6 +392,15 @@ impl Task {
         task.dir = p.parse_str("dir");
         task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
         task.raw = p.parse_bool("raw").unwrap_or_default();
+        if let Some(interactive) = p.get_raw("interactive") {
+            task.interactive_explicit = true;
+            task.interactive = interactive.as_bool().ok_or_else(|| {
+                eyre!(
+                    "invalid 'interactive' value in task file header: expected boolean in {}",
+                    display_path(path)
+                )
+            })?;
+        }
         task.sources = p.parse_array("sources").unwrap_or_default();
         task.outputs = p.get_raw("outputs").map(|to| to.into()).unwrap_or_default();
         task.file = Some(path.to_path_buf());
@@ -626,21 +647,7 @@ impl Task {
                     .map(|tasks| tasks.into_iter().map(|t| (t, td)).collect_vec())
             })
             .flatten_ok()
-            .filter_map_ok(|(t, td)| {
-                if td.env.is_empty() && td.args.is_empty() {
-                    // Name-based matching: wait for any running instance of this task
-                    // regardless of env/args variant (e.g., "VERBOSE=1 setup" matches "setup").
-                    // Return the actual task from tasks_to_run so the dependency graph
-                    // gets the correct env/args-variant node.
-                    tasks_to_run
-                        .iter()
-                        .find(|tr| tr.name == t.name)
-                        .map(|tr| (*tr).clone())
-                } else {
-                    // Full identity matching: user explicitly wants a specific env/args variant
-                    tasks_to_run.contains(&t).then_some(t)
-                }
-            })
+            .filter_map_ok(|(t, td)| Self::resolve_wait_for_dependency(td, &t, &tasks_to_run))
             .collect_vec();
         let depends_post = self
             .depends_post
@@ -655,6 +662,27 @@ impl Task {
             .filter_ok(|t| t.name != self.name)
             .collect::<Result<_>>()?;
         Ok((depends, depends_post))
+    }
+
+    /// Resolve a `wait_for` candidate task against the currently running task instances.
+    ///
+    /// With no args/env on `wait_for`, match by task name and bind to the concrete running
+    /// instance. With args/env provided, require full identity match.
+    fn resolve_wait_for_dependency(
+        td: &TaskDep,
+        candidate: &Task,
+        tasks_to_run: &HashSet<&Task>,
+    ) -> Option<Task> {
+        if td.env.is_empty() && td.args.is_empty() {
+            tasks_to_run
+                .iter()
+                .find(|tr| tr.name == candidate.name)
+                .map(|tr| (*tr).clone())
+        } else {
+            tasks_to_run
+                .contains(candidate)
+                .then_some(candidate.clone())
+        }
     }
 
     fn populate_spec_metadata(&self, spec: &mut usage::Spec) {
@@ -1245,6 +1273,10 @@ impl Default for Task {
             hide: false,
             global: false,
             raw: false,
+            interactive: false,
+            interactive_owner: None,
+            scheduler_seq: None,
+            interactive_explicit: false,
             sources: vec![],
             outputs: Default::default(),
             raw_outputs: Default::default(),
@@ -1662,6 +1694,62 @@ mod tests {
         // Verify that other_task doesn't interfere (would have before the fix)
         assert_eq!(other_task.depends_post.len(), 1);
         assert_eq!(other_task.depends_post[0].task, "other_post");
+    }
+
+    #[test]
+    fn test_wait_for_name_only_binds_running_variant() {
+        // Matrix: B04 (C1, C3)
+        use crate::task::task_dep::TaskDep;
+        use std::collections::HashSet;
+
+        let candidate = Task {
+            name: "setup".to_string(),
+            ..Default::default()
+        };
+        let running_variant = Task {
+            name: "setup".to_string(),
+            args: vec!["--fast".to_string()],
+            ..Default::default()
+        };
+        let tasks_to_run: HashSet<&Task> = HashSet::from([&running_variant]);
+        let td = TaskDep {
+            task: "setup".to_string(),
+            args: vec![],
+            env: Default::default(),
+        };
+
+        let resolved = Task::resolve_wait_for_dependency(&td, &candidate, &tasks_to_run)
+            .expect("name-only wait_for should bind running variant");
+        assert_eq!(resolved.args, vec!["--fast".to_string()]);
+    }
+
+    #[test]
+    fn test_wait_for_with_args_requires_exact_identity() {
+        // Matrix: B04 (C1, C3)
+        use crate::task::task_dep::TaskDep;
+        use std::collections::HashSet;
+
+        let candidate = Task {
+            name: "setup".to_string(),
+            args: vec!["--strict".to_string()],
+            ..Default::default()
+        };
+        let running_other_variant = Task {
+            name: "setup".to_string(),
+            args: vec!["--fast".to_string()],
+            ..Default::default()
+        };
+        let tasks_to_run: HashSet<&Task> = HashSet::from([&running_other_variant]);
+        let td = TaskDep {
+            task: "setup".to_string(),
+            args: vec!["--strict".to_string()],
+            env: Default::default(),
+        };
+
+        assert!(Task::resolve_wait_for_dependency(&td, &candidate, &tasks_to_run).is_none());
+
+        let tasks_to_run_exact: HashSet<&Task> = HashSet::from([&candidate]);
+        assert!(Task::resolve_wait_for_dependency(&td, &candidate, &tasks_to_run_exact).is_some());
     }
 
     #[tokio::test]
@@ -2249,6 +2337,7 @@ echo "hello world"
     #[tokio::test]
     #[cfg(unix)]
     async fn test_parses_all_fields() {
+        // Matrix: V03 (C15)
         use std::fs;
         use tempfile::tempdir;
 
@@ -2269,6 +2358,7 @@ echo "hello world"
 #MISE dir="/some/dir"
 #MISE hide=true
 #MISE raw=true
+#MISE interactive=true
 #MISE sources=["src1.txt", "src2.txt"]
 #MISE outputs=["out1.txt"]
 #MISE shell="bash -c"
@@ -2294,6 +2384,7 @@ echo "test"
         assert_eq!(task.dir, Some("/some/dir".to_string()));
         assert_eq!(task.hide, true);
         assert_eq!(task.raw, true);
+        assert_eq!(task.interactive, true);
         assert_eq!(task.sources, vec!["src1.txt", "src2.txt"]);
         assert_eq!(task.shell, Some("bash -c".to_string()));
         assert_eq!(task.quiet, true);
@@ -2320,6 +2411,41 @@ echo "test"
             script_lines,
             parsed_fields
         );
+    }
+
+    #[test]
+    fn test_interactive_default_false() {
+        // Matrix: V02 (C15)
+        let task = Task::default();
+        assert!(!task.interactive);
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_interactive_header_rejects_non_boolean_value() {
+        // Matrix: V04 (C15)
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let tasks_dir = temp_dir.path().join("tasks");
+        fs::create_dir(&tasks_dir).unwrap();
+        let task_file = tasks_dir.join("bad-interactive");
+
+        let script_content = r#"#!/usr/bin/env bash
+#MISE interactive="yes"
+echo "test"
+"#;
+        fs::write(&task_file, script_content).unwrap();
+        fs::set_permissions(&task_file, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let config = Config::get().await.unwrap();
+        let err = Task::from_path(&config, &task_file, &tasks_dir, temp_dir.path())
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("invalid 'interactive' value"));
     }
 
     #[tokio::test]

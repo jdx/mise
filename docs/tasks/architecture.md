@@ -81,6 +81,42 @@ The default is 4 parallel jobs, but you can configure this globally:
 jobs = 8
 ```
 
+### Interactive Task Scheduling
+
+Tasks with `interactive=true` run with terminal passthrough and are coordinated so runtime process
+execution does not overlap with another interactive runtime phase.
+
+In practice:
+
+- Dependencies can still run before an interactive phase.
+- Multiple interactive tasks in one run execute in deterministic order (tie-break:
+  `task.name`, then args, then env).
+- When an interactive task becomes ready, scheduler admission keeps its turn ahead of
+  later-ready runtime work, preventing start-order races.
+- Admission queues are release-safe: pending interactive/permit entries are removed on
+  every terminal path (start, drop, launch error) to avoid stale barriers.
+- Structured output modes do not wrap/capture live interactive I/O.
+
+### Scheduler Invariants (Developer Notes)
+
+The scheduler admission pipeline relies on a few invariants to keep behavior deterministic and
+deadlock-safe:
+
+- `scheduler_seq` is assigned once per scheduled task in scheduler drain order.
+- `interactive_owner` is assigned once per interactive phase and inherited by runtime tasks spawned
+  from that phase (injected subgraphs).
+- Runtime tasks enqueue into the pending permit queue before admission.
+- Interactive phase roots enqueue into the pending interactive queue before admission.
+- Queue release rules:
+  - `Start`: runtime removes its permit queue entry; interactive removes its own head entry.
+  - `Drop` / launch error: queued entries are removed by value to avoid stale queue heads.
+- `in_flight`, `runtime_in_flight`, semaphore permits, and interactive gate are always released on
+  success, failure, timeout, signal, and pre-exec errors.
+- Admission/execution failures are wrapped with a `task trace report` timeline so debugging can
+  replay scheduler decisions in order.
+
+When changing admission behavior, preserve these invariants first, then adjust policy.
+
 ### Example Execution Flow
 
 Given these tasks:

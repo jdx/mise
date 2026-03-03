@@ -38,6 +38,7 @@ assert_json "mise tasks info lint --json" "$(
   "dir": null,
   "hide": false,
   "raw": false,
+  "interactive": false,
   "sources": [],
   "outputs": [],
   "shell": null,
@@ -75,3 +76,12 @@ assert_json "mise tasks info lint --json" "$(
 }
 EOF
 )"
+
+cat <<EOF >mise.toml
+[tasks.ask]
+run = "echo ask"
+interactive = true
+EOF
+
+# Matrix: I03 (C15)
+assert_contains "mise tasks info ask --json" '"interactive": true'

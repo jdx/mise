@@ -12,10 +12,15 @@ use crate::env;
 use crate::file::display_path;
 use crate::prepare::{PrepareEngine, PrepareOptions};
 use crate::task::has_any_args_defined;
-use crate::task::task_helpers::task_needs_permit;
+use crate::task::task_helpers::{
+    task_order_key, task_requires_runtime_owner, validate_interactive_stdin,
+};
 use crate::task::task_list::{get_task_lists, resolve_depends};
 use crate::task::task_output::TaskOutput;
 use crate::task::task_output_handler::OutputHandler;
+use crate::task::task_scheduler::AdmissionOutcome;
+use crate::task::task_scheduler_policy::{SpawnClass, classify_spawn_class};
+use crate::task::task_trace::{TaskTraceReport, TaskTraceStage};
 use crate::task::{Deps, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::{ctrlc, info, style};
@@ -23,6 +28,13 @@ use clap::{CommandFactory, ValueHint};
 use eyre::{Result, bail, eyre};
 use itertools::Itertools;
 use tokio::sync::Mutex;
+
+struct AdmissionPreparation {
+    task: Task,
+    spawn_class: SpawnClass,
+    stopping: bool,
+    runnable_post_dep: bool,
+}
 
 /// Run task(s)
 ///
@@ -302,18 +314,22 @@ impl Run {
         }
         time!("run get_task_lists");
 
-        // Resolve transitive dependencies once upfront so we can:
-        // 1. Discover prepare providers from monorepo subdirectory configs
-        // 2. Reuse the resolved list for execution (avoiding duplicate work)
-        let resolved_tasks = resolve_depends(&config, task_list).await?;
-
         // Run auto-enabled prepare steps (unless --no-prepare)
+        // This runs after task resolution so we can discover prepare providers
+        // from monorepo subdirectory configs referenced by the resolved tasks.
         if !self.no_prepare {
             let env = ts.env_with_path(&config).await?;
             let mut engine = PrepareEngine::new(&config)?;
 
-            // Collect subdirectory config files from all resolved tasks
-            let subdir_configs: Vec<_> = resolved_tasks
+            // Collect subdirectory config files from tasks in scope for this run.
+            // Include resolved dependencies so auto prepare providers from dependency
+            // tasks (e.g. monorepo //... targets) are considered as well.
+            let prepare_scope_tasks = if self.skip_deps {
+                task_list.clone()
+            } else {
+                resolve_depends(&config, task_list.clone()).await?
+            };
+            let subdir_configs: Vec<_> = prepare_scope_tasks
                 .iter()
                 .filter_map(|task| task.cf.clone())
                 .collect();
@@ -338,11 +354,11 @@ impl Run {
         };
 
         if let Some(timeout) = timeout {
-            tokio::time::timeout(timeout, self.parallelize_tasks(config, resolved_tasks))
+            tokio::time::timeout(timeout, self.parallelize_tasks(config, task_list))
                 .await
                 .map_err(|_| eyre!("mise run timed out after {:?}", timeout))??
         } else {
-            self.parallelize_tasks(config, resolved_tasks).await?
+            self.parallelize_tasks(config, task_list).await?
         }
 
         time!("run done");
@@ -359,6 +375,7 @@ impl Run {
 
     async fn parallelize_tasks(mut self, mut config: Arc<Config>, tasks: Vec<Task>) -> Result<()> {
         time!("parallelize_tasks start");
+        ctrlc::clear_interrupt();
         ctrlc::exit_on_ctrl_c(false);
 
         // Step 1: Prepare tasks (resolve dependencies, fetch, validate)
@@ -423,94 +440,149 @@ impl Run {
         deps_for_remove: Arc<Mutex<Deps>>,
         ctx: crate::task::task_scheduler::SpawnContext,
     ) -> Result<()> {
-        // If we're already stopping due to a previous failure and not in
-        // continue-on-error mode, do not launch this task unless it's a
-        // post-dependency (cleanup task that should run even on failure).
-        if this.is_stopping() && !this.continue_on_error {
-            let mut deps = deps_for_remove.lock().await;
-            if !deps.is_runnable_post_dep(&task) {
-                trace!(
-                    "aborting spawn before start (not continue-on-error): {} {}",
-                    task.name,
-                    task.args.join(" ")
-                );
-                deps.remove(&task);
-                return Ok(());
+        let prep = this
+            .prepare_admission_metadata(task, &deps_for_remove, &ctx)
+            .await?;
+        let AdmissionPreparation {
+            mut task,
+            spawn_class,
+            stopping,
+            runnable_post_dep,
+        } = prep;
+        let mut task_trace = TaskTraceReport::new(&task);
+        task_trace.mark(TaskTraceStage::SchedulerAdmissionPrepared {
+            class: format!("{spawn_class:?}"),
+            seq: task
+                .scheduler_seq
+                .expect("scheduler sequence must be set before trace/reporting"),
+            owner: task.interactive_owner,
+            stopping,
+            runnable_post_dep,
+        });
+
+        let jset = ctx.jset.clone();
+        jset.lock().await.spawn(async move {
+            if stopping {
+                ctx.request_stop();
             }
-            drop(deps);
-        }
-        let needs_permit = task_needs_permit(&task);
-        let permit_opt = if needs_permit {
-            let wait_start = std::time::Instant::now();
-            let p = Some(ctx.semaphore.clone().acquire_owned().await?);
-            trace!(
-                "semaphore acquired for {} after {}ms",
-                task.name,
-                wait_start.elapsed().as_millis()
-            );
-            // If a failure occurred while we were waiting for a permit and we're not
-            // in continue-on-error mode, skip launching this task unless it's a
-            // post-dependency (cleanup task). This prevents subsequently queued
-            // tasks from running after failure, while still allowing cleanup.
-            if this.is_stopping() && !this.continue_on_error {
-                let mut deps = deps_for_remove.lock().await;
-                if !deps.is_runnable_post_dep(&task) {
+
+            task_trace.mark(TaskTraceStage::SchedulerAdmissionWait);
+            let admission = ctx
+                .admit_task(
+                    spawn_class,
+                    &task.name,
+                    task.interactive_owner,
+                    task.scheduler_seq
+                        .expect("scheduler sequence must be set before admission"),
+                    this.continue_on_error,
+                    runnable_post_dep,
+                )
+                .await;
+            let ticket = match admission {
+                Err(err) => {
+                    task_trace.mark(TaskTraceStage::SchedulerAdmissionError);
+                    deps_for_remove.lock().await.remove(&task);
+                    return Err(
+                        task_trace.wrap_error(err, TaskTraceStage::SchedulerAdmissionFailed)
+                    );
+                }
+                Ok(AdmissionOutcome::Drop) => {
+                    task_trace.mark(TaskTraceStage::SchedulerAdmissionDrop);
                     trace!(
-                        "aborting spawn after failure (not continue-on-error): {} {}",
+                        "aborting spawn after wait (not continue-on-error): {} {}",
                         task.name,
                         task.args.join(" ")
                     );
-                    // Remove from deps so the scheduler can drain and not hang
-                    deps.remove(&task);
+                    deps_for_remove.lock().await.remove(&task);
                     return Ok(());
                 }
-                drop(deps);
-            }
-            p
-        } else {
-            trace!("no semaphore needed for orchestrator task: {}", task.name);
-            None
-        };
+                Ok(AdmissionOutcome::Start(ticket)) => {
+                    task_trace.mark(TaskTraceStage::SchedulerAdmissionStart);
+                    ticket
+                }
+            };
 
-        ctx.in_flight
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let in_flight_c = ctx.in_flight.clone();
-        trace!("running task: {task}");
-        // Mark task as executed synchronously before spawning so that the
-        // scheduler's failure-cleanup path (which checks is_runnable_post_dep)
-        // always sees the parent in `executed` — avoiding a race where a
-        // concurrent task fails between spawn and first poll.
-        deps_for_remove.lock().await.mark_executed(&task);
-        ctx.jset.lock().await.spawn(async move {
-            let _permit = permit_opt;
-            let result = this
-                .run_task_sched(&task, &ctx.config, ctx.sched_tx.clone())
-                .await;
+            // Re-check stop semantics after admission wait. State may have changed while waiting
+            // for permit/barrier; in that case, non-runnable post-deps must still be dropped.
+            if this.is_stopping() && !this.continue_on_error {
+                let runnable_post_dep_now =
+                    deps_for_remove.lock().await.is_runnable_post_dep(&task);
+                if !runnable_post_dep_now {
+                    trace!(
+                        "aborting spawn after admission due to stop (not continue-on-error): {} {}",
+                        task.name,
+                        task.args.join(" ")
+                    );
+                    task_trace.mark(TaskTraceStage::SchedulerAdmissionPostStopDrop);
+                    drop(ticket);
+                    this.finalize_task_completion(
+                        &task,
+                        &deps_for_remove,
+                        &ctx,
+                        spawn_class,
+                        false,
+                    )
+                    .await;
+                    return Ok(());
+                }
+            }
+
+            task.interactive_owner = ticket.interactive_owner;
+            task_trace.mark(TaskTraceStage::SchedulerExecutionStart {
+                owner: task.interactive_owner,
+            });
+            // Mark task as executed synchronously before spawning so post-dep
+            // runnability (based on `executed`) is race-free under failures.
+            deps_for_remove.lock().await.mark_executed(&task);
+            trace!("running task: {task}");
+            let _permit = ticket.permit;
+            let _interactive_guard = ticket.interactive_guard;
+            let result = match this
+                .run_task_sched(
+                    &task,
+                    &ctx.config,
+                    ctx.sched_tx.clone(),
+                    Some(&mut task_trace),
+                )
+                .await
+            {
+                Ok(()) => {
+                    task_trace.mark(TaskTraceStage::SchedulerExecutionOk);
+                    Ok(())
+                }
+                Err(err) => {
+                    task_trace.mark(TaskTraceStage::SchedulerExecutionError);
+                    Err(task_trace.wrap_error(err, TaskTraceStage::SchedulerTaskExecutionFailed))
+                }
+            };
             if let Err(err) = &result {
                 let status = Error::get_exit_status(err);
-                if !this.is_stopping() && status.is_none() {
+                if !this.is_stopping() {
                     let prefix = task.estyled_prefix();
                     if Settings::get().verbose {
                         this.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
                     } else {
                         this.eprint(&task, &prefix, &format!("{} {err}", style::ered("ERROR")));
-                        let mut current_err = err.source();
-                        while let Some(e) = current_err {
-                            this.eprint(&task, &prefix, &format!("{} {e}", style::ered("ERROR")));
-                            current_err = e.source();
+                        if status.is_none() {
+                            let mut current_err = err.source();
+                            while let Some(e) = current_err {
+                                this.eprint(
+                                    &task,
+                                    &prefix,
+                                    &format!("{} {e}", style::ered("ERROR")),
+                                );
+                                current_err = e.source();
+                            }
                         }
                     };
                 }
                 this.add_failed_task(task.clone(), status);
+                ctx.request_stop();
             }
-            if let Some(oh) = &this.output_handler
-                && oh.output(None) == TaskOutput::KeepOrder
-            {
-                oh.keep_order_state.lock().unwrap().on_task_finished(&task);
-            }
-            deps_for_remove.lock().await.remove(&task);
-            trace!("deps removed: {} {}", task.name, task.args.join(" "));
-            in_flight_c.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            task_trace.mark(TaskTraceStage::SchedulerCompletionFinalize);
+            this.finalize_task_completion(&task, &deps_for_remove, &ctx, spawn_class, true)
+                .await;
+            task_trace.mark(TaskTraceStage::SchedulerCompletionDone);
             result
         });
 
@@ -521,9 +593,9 @@ impl Run {
     // High-level workflow methods
     // ============================================================================
 
-    /// Prepare tasks: fetch remote tasks and create dependency graph
-    /// Dependencies should already be resolved via resolve_depends() before calling this.
-    async fn prepare_tasks(&mut self, config: &Arc<Config>, mut tasks: Vec<Task>) -> Result<Deps> {
+    /// Prepare tasks: resolve dependencies, fetch remote tasks, create dependency graph
+    async fn prepare_tasks(&mut self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<Deps> {
+        let mut tasks = resolve_depends(config, tasks).await?;
         let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
         fetcher.fetch_tasks(&mut tasks).await?;
         let tasks = Deps::new(config, tasks).await?;
@@ -533,6 +605,9 @@ impl Run {
 
     /// Initialize output handler and validate tasks
     fn setup_output_and_validate(&mut self, tasks: &Deps) -> Result<()> {
+        const PREFIX_FLUSH_TICK_MS: u64 = 20;
+        const PREFIX_FLUSH_DEBOUNCE_MS: u64 = 30;
+
         // Initialize OutputHandler AFTER is_linear is determined
         let output_config = crate::task::task_output_handler::OutputHandlerConfig {
             prefix: self.prefix,
@@ -566,6 +641,19 @@ impl Run {
                             }
                         }
                     }
+                    interval.tick().await;
+                }
+            });
+        }
+
+        if self.output(None) == TaskOutput::Prefix {
+            let output_handler = self.output_handler.as_ref().unwrap().clone();
+            tokio::spawn(async move {
+                let debounce = Duration::from_millis(PREFIX_FLUSH_DEBOUNCE_MS);
+                let mut interval =
+                    tokio::time::interval(Duration::from_millis(PREFIX_FLUSH_TICK_MS));
+                loop {
+                    output_handler.flush_prefix_debounced(debounce);
                     interval.tick().await;
                 }
             });
@@ -641,11 +729,12 @@ impl Run {
         task: &Task,
         config: &Arc<Config>,
         sched_tx: Arc<tokio::sync::mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+        task_trace: Option<&mut TaskTraceReport>,
     ) -> Result<()> {
         self.executor
             .as_ref()
             .expect("executor must be initialized before running tasks")
-            .run_task_sched(task, config, sched_tx)
+            .run_task_sched_with_trace(task, config, sched_tx, task_trace)
             .await
     }
 
@@ -656,6 +745,11 @@ impl Run {
     }
 
     fn validate_task(&self, task: &Task) -> Result<()> {
+        self.ensure_task_file_executable(task)?;
+        self.validate_task_runtime_contract(task)
+    }
+
+    fn ensure_task_file_executable(&self, task: &Task) -> Result<()> {
         use crate::file;
         use crate::ui;
         if let Some(path) = &task.file
@@ -670,7 +764,86 @@ impl Run {
                 bail!("`{dp}` is not executable")
             }
         }
+
         Ok(())
+    }
+
+    fn validate_task_runtime_contract(&self, task: &Task) -> Result<()> {
+        use crate::task::task_helpers::validate_interactive_config;
+        use std::io::IsTerminal;
+        validate_interactive_config(task)?;
+        validate_interactive_stdin(task, std::io::stdin().is_terminal())?;
+        Ok(())
+    }
+
+    async fn prepare_admission_metadata(
+        &self,
+        task: Task,
+        deps_for_remove: &Arc<Mutex<Deps>>,
+        ctx: &crate::task::task_scheduler::SpawnContext,
+    ) -> Result<AdmissionPreparation> {
+        // Validate every task at spawn time, including injected subgraph tasks.
+        // Keep this path pure: no prompts/side effects while scheduler is running.
+        self.validate_task_runtime_contract(&task)?;
+
+        let spawn_class = classify_spawn_class(&task);
+        let mut task = task;
+        // Assign scheduler sequence in drain order so admission can honor deterministic tie-breaks.
+        task.scheduler_seq = Some(ctx.assign_scheduler_seq(task.scheduler_seq));
+        let requires_runtime_owner = task_requires_runtime_owner(&task);
+        if requires_runtime_owner {
+            task.interactive_owner = ctx.allocate_owner_id(task.interactive_owner);
+        }
+        // Assign interactive owner deterministically for barrier phases.
+        task.interactive_owner = ctx.assign_interactive_owner(spawn_class, task.interactive_owner);
+        let starts_new_interactive_phase = spawn_class.requires_interactive_barrier()
+            && ctx.active_interactive_owner() != task.interactive_owner;
+        let task_seq = task
+            .scheduler_seq
+            .expect("scheduler sequence must be assigned before queueing");
+        if spawn_class.is_runtime() {
+            ctx.enqueue_pending_permit(task_seq);
+        }
+        if starts_new_interactive_phase {
+            ctx.enqueue_pending_interactive(
+                task_seq,
+                task.interactive_owner,
+                task_order_key(&task),
+            );
+        }
+
+        let stopping = self.is_stopping();
+        let runnable_post_dep = if stopping && !self.continue_on_error {
+            deps_for_remove.lock().await.is_runnable_post_dep(&task)
+        } else {
+            true
+        };
+
+        Ok(AdmissionPreparation {
+            task,
+            spawn_class,
+            stopping,
+            runnable_post_dep,
+        })
+    }
+
+    async fn finalize_task_completion(
+        &self,
+        task: &Task,
+        deps_for_remove: &Arc<Mutex<Deps>>,
+        ctx: &crate::task::task_scheduler::SpawnContext,
+        spawn_class: SpawnClass,
+        notify_keep_order: bool,
+    ) {
+        if notify_keep_order
+            && let Some(oh) = &self.output_handler
+            && oh.output(None) == TaskOutput::KeepOrder
+        {
+            oh.keep_order_state.lock().unwrap().on_task_finished(task);
+        }
+        deps_for_remove.lock().await.remove(task);
+        trace!("deps removed: {} {}", task.name, task.args.join(" "));
+        ctx.mark_task_finished(spawn_class, task.interactive_owner);
     }
 
     fn timings(&self) -> bool {

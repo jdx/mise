@@ -1,0 +1,367 @@
+#!/usr/bin/env bash
+
+# Matrix refs:
+# - F01/F02/F03/F04/F05/F06/F07/F08/F09/F10/F11/F12/F13/F14
+# - G01/G02/G03/G04
+# - L01/L02/L03
+# - O2/O3/O4/O7
+# - Contract: C12/C13
+# Applicability: common
+
+set -euo pipefail
+require_cmd python3
+
+run_in_pty() {
+	python3 - "$@" <<'PY'
+import os
+import pty
+import select
+import signal
+import subprocess
+import sys
+import time
+
+cmd = sys.argv[1:]
+master_fd, slave_fd = pty.openpty()
+proc = subprocess.Popen(
+    cmd,
+    stdin=slave_fd,
+    stdout=slave_fd,
+    stderr=slave_fd,
+    close_fds=True,
+)
+os.close(slave_fd)
+
+input_data = os.environ.get("PTY_INPUT", "")
+signal_name = os.environ.get("PTY_SIGNAL", "")
+signal_after = float(os.environ.get("PTY_SIGNAL_AFTER", "0"))
+timeout_s = float(os.environ.get("PTY_TIMEOUT", "20"))
+
+if input_data:
+    time.sleep(0.10)
+    os.write(master_fd, input_data.encode())
+
+signal_sent = False
+start = time.time()
+output = bytearray()
+while True:
+    elapsed = time.time() - start
+    if signal_name and not signal_sent and elapsed >= signal_after:
+        sig = getattr(signal, signal_name)
+        os.kill(proc.pid, sig)
+        signal_sent = True
+    if elapsed > timeout_s:
+        proc.kill()
+        os.close(master_fd)
+        sys.stdout.buffer.write(bytes(output).replace(b"\r\n", b"\n"))
+        sys.stderr.write(f"\nPTY timeout after {timeout_s}s\n")
+        sys.exit(124)
+
+    ready, _, _ = select.select([master_fd], [], [], 0.2)
+    if ready:
+        try:
+            chunk = os.read(master_fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        output.extend(chunk)
+
+    if proc.poll() is not None and not ready:
+        break
+
+os.close(master_fd)
+status = proc.wait()
+sys.stdout.buffer.write(bytes(output).replace(b"\r\n", b"\n"))
+sys.exit(status)
+PY
+}
+export -f run_in_pty
+
+assert_probe_ok() {
+	assert "mise run probe" "probe-ok"
+}
+
+# Matrix: F01/F06/F10 + O2/O3/O4 (C12)
+cat <<'EOF' >mise.toml
+[tasks.int-ok]
+interactive = true
+run = '''
+printf "ok> "
+read value
+echo "ok:$value"
+'''
+
+[tasks.probe]
+run = "echo probe-ok"
+EOF
+out="$(PTY_INPUT=$'v\n' run_in_pty mise run int-ok)"
+if [[ $out != *"ok:v"* ]]; then
+	fail "interactive success path did not receive input"
+fi
+assert_probe_ok
+
+# Matrix: F02/F07/F10 + O2/O3/O4 (C12)
+cat <<'EOF' >mise.toml
+[tasks.int-fail]
+interactive = true
+run = '''
+printf "fail> "
+read value
+echo "fail:$value"
+exit 7
+'''
+
+[tasks.probe]
+run = "echo probe-ok"
+EOF
+set +e
+out="$(PTY_INPUT=$'x\n' run_in_pty mise run int-fail 2>&1)"
+status=$?
+set -e
+if [[ $status -eq 0 ]]; then
+	fail "expected interactive failure path to return non-zero"
+fi
+assert_probe_ok
+
+# Matrix: F03/F08/F11 + O2/O3/O4/O7 (C12/C13)
+cat <<'EOF' >mise.toml
+[tasks.int-timeout]
+interactive = true
+run = '''
+echo "timeout:start"
+sleep 4
+echo "timeout:end"
+'''
+
+[tasks.probe]
+run = "echo probe-ok"
+EOF
+set +e
+PTY_TIMEOUT=12 run_in_pty mise run --timeout=1s int-timeout >/tmp/mise_int_timeout.out 2>&1
+status=$?
+set -e
+if [[ $status -eq 0 ]]; then
+	fail "expected timeout on interactive task"
+fi
+assert_probe_ok
+
+# Matrix: F04/F09/F12 + O2/O3/O4/O7 (C12/C13)
+cat <<'EOF' >mise.toml
+[tasks.int-sigint]
+interactive = true
+run = '''
+echo "sigint:start"
+sleep 5
+echo "sigint:end"
+'''
+
+[tasks.probe]
+run = "echo probe-ok"
+EOF
+set +e
+PTY_SIGNAL=SIGINT PTY_SIGNAL_AFTER=0.40 PTY_TIMEOUT=12 run_in_pty mise run int-sigint >/tmp/mise_int_sigint.out 2>&1
+status=$?
+set -e
+if [[ $status -eq 0 ]]; then
+	fail "expected SIGINT to interrupt interactive task"
+fi
+assert_probe_ok
+
+# Matrix: F05 (C12) [unix-only]
+case "$(uname -s)" in
+Darwin | Linux)
+	cat <<'EOF' >mise.toml
+[tasks.int-sigterm]
+interactive = true
+run = '''
+echo "sigterm:start"
+sleep 5
+echo "sigterm:end"
+'''
+
+[tasks.probe]
+run = "echo probe-ok"
+EOF
+	set +e
+	PTY_SIGNAL=SIGTERM PTY_SIGNAL_AFTER=0.40 PTY_TIMEOUT=12 run_in_pty mise run int-sigterm >/tmp/mise_int_sigterm.out 2>&1
+	status=$?
+	set -e
+	if [[ $status -eq 0 ]]; then
+		fail "expected SIGTERM to interrupt interactive task"
+	fi
+	assert_probe_ok
+	;;
+esac
+
+# Matrix: F13 + G02 + O7 (C12/C13)
+cat <<'EOF' >mise.toml
+[tasks.a-hold]
+run = '''
+echo "hold:start"
+sleep 2
+echo "hold:end"
+'''
+
+[tasks.b-fail]
+run = '''
+echo "fail:start"
+exit 17
+'''
+
+[tasks.z-int-wait]
+interactive = true
+run = '''
+printf "wait> "
+read value
+echo "wait:$value"
+'''
+
+[tasks.probe]
+run = "echo probe-ok"
+EOF
+set +e
+PTY_TIMEOUT=12 PTY_SIGNAL=SIGINT PTY_SIGNAL_AFTER=0.50 run_in_pty mise run --jobs=1 a-hold ::: b-fail ::: z-int-wait >/tmp/mise_int_wait_permit.out 2>&1
+status=$?
+set -e
+if [[ $status -eq 0 ]]; then
+	fail "expected non-zero status for permit wait interruption scenario"
+fi
+assert_probe_ok
+
+# Matrix: F14 + B18 + O7 (C5/C13)
+cat <<'EOF' >mise.toml
+[tasks.cleanup]
+run = "echo cleanup-ok"
+
+[tasks.int-cleanup-fail]
+interactive = true
+depends_post = ["cleanup"]
+run = '''
+printf "cf> "
+read value
+echo "cf:$value"
+exit 23
+'''
+
+[tasks.probe]
+run = "echo probe-ok"
+EOF
+set +e
+out="$(PTY_INPUT=$'c\n' PTY_TIMEOUT=12 run_in_pty mise run int-cleanup-fail 2>&1)"
+status=$?
+set -e
+if [[ $status -eq 0 ]]; then
+	fail "expected failure for cleanup scenario"
+fi
+if [[ $out != *"cleanup-ok"* ]]; then
+	fail "depends_post cleanup did not run on failure"
+fi
+assert_probe_ok
+
+# Matrix: G01 (C12/C13) - SIGINT while another task waits barrier
+cat <<'EOF' >mise.toml
+[tasks.int-long]
+interactive = true
+run = '''
+echo "int-long:start"
+sleep 5
+echo "int-long:end"
+'''
+
+[tasks.waiter]
+run = "echo waiter"
+
+[tasks.probe]
+run = "echo probe-ok"
+EOF
+set +e
+PTY_SIGNAL=SIGINT PTY_SIGNAL_AFTER=0.50 PTY_TIMEOUT=12 run_in_pty mise run int-long ::: waiter >/tmp/mise_int_wait_barrier_sigint.out 2>&1
+status=$?
+set -e
+if [[ $status -eq 0 ]]; then
+	fail "expected SIGINT interruption during barrier wait"
+fi
+assert_probe_ok
+
+# Matrix: G03/G04 (C12/C13) - global timeout while waiting around barrier
+cat <<'EOF' >mise.toml
+[tasks.int-timeout2]
+interactive = true
+run = '''
+echo "int-timeout2:start"
+sleep 5
+echo "int-timeout2:end"
+'''
+
+[tasks.w1]
+run = "echo w1"
+[tasks.w2]
+run = "echo w2"
+
+[tasks.probe]
+run = "echo probe-ok"
+EOF
+set +e
+PTY_TIMEOUT=12 run_in_pty mise run --timeout=1s int-timeout2 ::: w1 ::: w2 >/tmp/mise_int_wait_barrier_timeout.out 2>&1
+status=$?
+set -e
+if [[ $status -eq 0 ]]; then
+	fail "expected global timeout in barrier waiter scenario"
+fi
+assert_probe_ok
+
+# Matrix: L01 (C12) - ENOENT before spawn
+cat <<'EOF' >mise.toml
+[tasks.int-enoent]
+interactive = true
+run = "definitely_not_a_real_command_12345"
+
+[tasks.probe]
+run = "echo probe-ok"
+EOF
+set +e
+PTY_TIMEOUT=10 run_in_pty mise run int-enoent >/tmp/mise_int_enoent.out 2>&1
+status=$?
+set -e
+if [[ $status -eq 0 ]]; then
+	fail "expected ENOENT failure for interactive task"
+fi
+assert_probe_ok
+
+# Matrix: L02 (C12) - pre-exec cwd invalid
+cat <<'EOF' >mise.toml
+[tasks.int-bad-cwd]
+interactive = true
+dir = "/definitely/not/found/path/for/mise/tests"
+run = "echo should-not-run"
+
+[tasks.probe]
+run = "echo probe-ok"
+EOF
+set +e
+PTY_TIMEOUT=10 run_in_pty mise run int-bad-cwd >/tmp/mise_int_badcwd.out 2>&1
+status=$?
+set -e
+if [[ $status -eq 0 ]]; then
+	fail "expected invalid cwd failure for interactive task"
+fi
+assert_probe_ok
+
+# Matrix: L03 (C12) - templating/parse error before exec
+cat <<'EOF' >mise.toml
+[tasks.int-parse]
+interactive = true
+run = "echo {{ invalid_template_expr( }}"
+
+[tasks.probe]
+run = "echo probe-ok"
+EOF
+set +e
+PTY_TIMEOUT=10 run_in_pty mise run int-parse >/tmp/mise_int_parse.out 2>&1
+status=$?
+set -e
+if [[ $status -eq 0 ]]; then
+	fail "expected template parse failure for interactive task"
+fi
+assert_probe_ok

@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# Matrix refs:
+# - R06
+# - Contract: C16
+
 cat <<EOF >mise.toml
 tasks.a = "echo running a"
 tasks.b = "echo running b"

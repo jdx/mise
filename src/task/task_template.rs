@@ -32,6 +32,8 @@ pub struct TaskTemplate {
     #[serde(default)]
     pub raw: Option<bool>,
     #[serde(default)]
+    pub interactive: Option<bool>,
+    #[serde(default)]
     pub sources: Vec<String>,
     #[serde(default)]
     pub outputs: TaskOutputs,
@@ -151,6 +153,13 @@ impl Task {
         // Therefore, we do NOT merge these boolean fields from templates to avoid the case
         // where a task explicitly sets `quiet = false` but gets overridden by a template's
         // `quiet = true`. Users must explicitly set these in their task if needed.
+        //
+        // interactive uses explicit tracking on Task to preserve template inheritance semantics.
+        if !self.interactive_explicit
+            && let Some(interactive) = template.interactive
+        {
+            self.interactive = interactive;
+        }
 
         // silent: use template only if local is Off (Silent is an enum, so we can distinguish)
         if matches!(self.silent, Silent::Off)
@@ -352,5 +361,37 @@ mod tests {
             _ => None,
         });
         assert_eq!(shared_val, Some("task_value"));
+    }
+
+    #[test]
+    fn test_merge_template_interactive_inherited_when_unset() {
+        // Matrix: V13 (C15)
+        let mut task = Task::default();
+        let template = TaskTemplate {
+            interactive: Some(true),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        assert!(task.interactive);
+    }
+
+    #[test]
+    fn test_merge_template_interactive_override_preserved() {
+        // Matrix: V14 (C15)
+        let mut task = Task {
+            interactive: false,
+            interactive_explicit: true,
+            ..Default::default()
+        };
+        let template = TaskTemplate {
+            interactive: Some(true),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        assert!(!task.interactive);
     }
 }

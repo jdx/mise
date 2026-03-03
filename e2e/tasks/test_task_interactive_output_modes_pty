@@ -1,0 +1,418 @@
+#!/usr/bin/env bash
+
+# Matrix refs:
+# - E04/E05/E06/E07/E08/E09/E11/E12
+# - P01/P02/P03
+# - S07/S08/S09/S10/S11/S12
+# - C02/C03
+# - O6/O8
+# - Contract: C2/C5/C6/C13/C14/C18
+# Applicability: common
+
+set -euo pipefail
+require_cmd python3
+
+run_in_pty_with_input() {
+	python3 - "$@" <<'PY'
+import os
+import pty
+import select
+import signal
+import subprocess
+import sys
+import time
+
+cmd = sys.argv[1:]
+master_fd, slave_fd = pty.openpty()
+proc = subprocess.Popen(
+    cmd,
+    stdin=slave_fd,
+    stdout=slave_fd,
+    stderr=slave_fd,
+    close_fds=True,
+)
+os.close(slave_fd)
+
+input_data = os.environ.get("PTY_INPUT", "")
+if input_data:
+    time.sleep(0.10)
+    os.write(master_fd, input_data.encode("utf-8", "ignore"))
+
+signal_name = os.environ.get("PTY_SIGNAL", "")
+signal_after = float(os.environ.get("PTY_SIGNAL_AFTER", "0"))
+signal_sent = False
+timeout_s = float(os.environ.get("PTY_TIMEOUT", "20"))
+start = time.time()
+output = bytearray()
+while True:
+    elapsed = time.time() - start
+    if signal_name and not signal_sent and elapsed >= signal_after:
+        os.kill(proc.pid, getattr(signal, signal_name))
+        signal_sent = True
+    if elapsed > timeout_s:
+        proc.kill()
+        os.close(master_fd)
+        sys.stdout.buffer.write(bytes(output).replace(b"\r\n", b"\n"))
+        sys.stderr.write(f"\nPTY timeout after {timeout_s}s\n")
+        sys.exit(124)
+    ready, _, _ = select.select([master_fd], [], [], 0.2)
+    if ready:
+        try:
+            chunk = os.read(master_fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        output.extend(chunk)
+    if proc.poll() is not None and not ready:
+        break
+
+os.close(master_fd)
+status = proc.wait()
+sys.stdout.buffer.write(bytes(output).replace(b"\r\n", b"\n"))
+sys.exit(status)
+PY
+}
+export -f run_in_pty_with_input
+
+trace=$(mktemp)
+lock_dir="$(mktemp -u)"
+trap 'rm -f "$trace"; rmdir "$lock_dir" 2>/dev/null || true' EXIT
+
+# Matrix: E04 (C2/C6)
+cat <<'EOF' >mise.toml
+[tasks.d1]
+run = 'echo "d1:end" >> "$TRACE_FILE"; echo d1'
+[tasks.d2]
+run = 'echo "d2:end" >> "$TRACE_FILE"; echo d2'
+[tasks.d3]
+run = 'echo "d3:end" >> "$TRACE_FILE"; echo d3'
+[tasks.d4]
+run = 'echo "d4:end" >> "$TRACE_FILE"; echo d4'
+[tasks.d5]
+run = 'echo "d5:end" >> "$TRACE_FILE"; echo d5'
+
+[tasks.fan]
+interactive = true
+depends = ["d1", "d2", "d3", "d4", "d5"]
+run = '''
+echo "fan:start" >> "$TRACE_FILE"
+printf "fan> "
+read value
+echo "fan:$value"
+echo "fan:end" >> "$TRACE_FILE"
+'''
+EOF
+: >"$trace"
+out="$(
+	TRACE_FILE="$trace" PTY_INPUT=$'fv\n' run_in_pty_with_input mise run fan
+)"
+if [[ $out != *"fan:fv"* ]]; then
+	fail "fan-out interactive task did not receive input"
+fi
+for dep in d1 d2 d3 d4 d5; do
+	if ! grep -q "^${dep}:end$" "$trace"; then
+		fail "missing ${dep}:end marker for fan-out scenario"
+	fi
+done
+
+# Matrix: C01 + E05/E06/E07/E08/E09 + S11 + O6 (C2/C6)
+cat <<'EOF' >mise.toml
+[tasks.mode-int]
+interactive = true
+run = '''
+printf "mode> "
+read value
+echo "mode:$value"
+'''
+EOF
+for mode in prefix keep-order replacing timed quiet; do
+	out="$(
+		PTY_INPUT=$'mv\n' run_in_pty_with_input mise run -o "$mode" mode-int
+	)"
+	if [[ $out != *"mode:mv"* ]]; then
+		fail "interactive input failed for output mode=$mode"
+	fi
+done
+
+# Matrix: C02 (C6/C15)
+out="$(
+	MISE_TASK_OUTPUT=prefix PTY_INPUT=$'prio\n' \
+		run_in_pty_with_input mise run -o keep-order mode-int
+)"
+if [[ $out != *"mode:prio"* ]]; then
+	fail "interactive output priority failed with env + CLI output flags"
+fi
+
+# Matrix: S07/S08 (C2/C9)
+cat <<'EOF' >mise.toml
+[tasks.mode-int]
+interactive = true
+run = '''
+printf "mode> "
+read value
+echo "mode:$value"
+'''
+
+[tasks.raw-int]
+interactive = true
+raw = true
+run = '''
+printf "raw> "
+read value
+echo "raw:$value"
+'''
+EOF
+out="$(
+	MISE_RAW=1 PTY_INPUT=$'rv\n' run_in_pty_with_input mise run raw-int
+)"
+if [[ $out != *"raw:rv"* ]]; then
+	fail "interactive+raw scenario did not preserve stdio passthrough"
+fi
+
+# Matrix: S12 (C6) - color on/off must not corrupt interaction
+out="$(PTY_INPUT=$'c1\n' run_in_pty_with_input mise run mode-int)"
+if [[ $out != *"mode:c1"* ]]; then
+	fail "color-on interactive run failed"
+fi
+out="$(NO_COLOR=1 PTY_INPUT=$'c2\n' run_in_pty_with_input mise run mode-int)"
+if [[ $out != *"mode:c2"* ]]; then
+	fail "color-off interactive run failed"
+fi
+
+# Matrix: P01 (C2/C6)
+cat <<'EOF' >mise.toml
+[tasks.stderr-prompt]
+interactive = true
+run = '''
+printf "err> " 1>&2
+read value
+echo "err:$value"
+'''
+EOF
+out="$(PTY_INPUT=$'ep\n' run_in_pty_with_input mise run stderr-prompt)"
+if [[ $out != *"err:ep"* ]]; then
+	fail "stderr prompt scenario failed"
+fi
+
+# Matrix: P02 (C13/C17)
+cat <<'EOF' >mise.toml
+[tasks.eof-int]
+interactive = true
+run = '''
+printf "eof> "
+if ! read value; then
+  echo "got-eof"
+  exit 0
+fi
+echo "unexpected:$value"
+'''
+EOF
+out="$(PTY_INPUT=$'\x04' run_in_pty_with_input mise run eof-int)"
+if [[ $out != *"got-eof"* ]]; then
+	fail "expected EOF handling output"
+fi
+
+# Matrix: P03 (C18)
+cat <<'EOF' >mise.toml
+[tasks.toggle-echo]
+interactive = true
+run = '''
+stty -echo
+printf "te> "
+read value
+echo "te:$value"
+'''
+EOF
+out="$(
+	PTY_INPUT=$'abc\n' \
+		run_in_pty_with_input bash -lc 'mise run toggle-echo; stty -a'
+)"
+if [[ $out != *"te:abc"* ]]; then
+	fail "toggle-echo interactive scenario failed"
+fi
+if [[ $out != *" echo "* ]] || [[ $out == *" -echo "* ]]; then
+	fail "terminal echo state was not restored after interactive task"
+fi
+
+# Matrix: P03 (C18) - terminal state restored when task exits with error.
+cat <<'EOF' >mise.toml
+[tasks.toggle-echo-fail]
+interactive = true
+run = '''
+stty -echo
+printf "tef> "
+read value
+echo "tef:$value"
+exit 19
+'''
+EOF
+set +e
+# shellcheck disable=SC2016
+out="$(
+	PTY_INPUT=$'def\n' run_in_pty_with_input bash -lc 'mise run toggle-echo-fail; rc=$?; stty -a; exit $rc' 2>&1
+)"
+status=$?
+set -e
+if [[ $status -eq 0 ]]; then
+	fail "toggle-echo-fail should return non-zero"
+fi
+if [[ $out != *"tef:def"* ]]; then
+	fail "toggle-echo-fail did not consume interactive input"
+fi
+if [[ $out != *" echo "* ]] || [[ $out == *" -echo "* ]]; then
+	fail "terminal echo state was not restored after failing interactive task"
+fi
+
+# Matrix: P03 (C18) - terminal state restored after signal interruption.
+cat <<'EOF' >mise.toml
+[tasks.toggle-echo-sigint]
+interactive = true
+run = '''
+stty -echo
+echo "sigint:start"
+kill -INT $$
+echo "sigint:end"
+'''
+EOF
+set +e
+out="$(
+	# shellcheck disable=SC2016
+	run_in_pty_with_input bash -lc 'mise run toggle-echo-sigint; rc=$?; stty -a; exit $rc' 2>&1
+)"
+status=$?
+set -e
+if [[ $status -eq 0 ]]; then
+	fail "toggle-echo-sigint should be interrupted"
+fi
+if [[ $out != *"sigint:start"* ]]; then
+	fail "toggle-echo-sigint did not start before interruption"
+fi
+if [[ $out != *" echo "* ]] || [[ $out == *" -echo "* ]]; then
+	fail "terminal echo state was not restored after SIGINT interactive task"
+fi
+
+# Matrix: S09/O8 (C14)
+cat <<'EOF' >mise.toml
+redactions = ["SECRET"]
+[env]
+SECRET = "super_secret_value"
+
+[tasks.int-redact]
+interactive = true
+run = '''
+echo "secret:$SECRET"
+printf "r> "
+read value
+echo "r:$value"
+'''
+
+[tasks.nonint-redact]
+run = 'echo "secret:$SECRET"'
+EOF
+out="$(
+	PTY_INPUT=$'rv\n' run_in_pty_with_input mise run int-redact
+)"
+if [[ $out != *"interactive tasks stream output directly; live redaction is not applied"* ]]; then
+	fail "missing interactive redaction warning"
+fi
+if [[ $out != *"secret:super_secret_value"* ]]; then
+	fail "interactive passthrough should show unredacted value"
+fi
+
+# Matrix: S10 (C14/C16)
+assert "mise run nonint-redact" "secret:[redacted]"
+
+# Matrix: C03 (C12)
+cat <<'EOF' >mise.toml
+[tasks.confirm-int]
+interactive = true
+confirm = "Proceed with interactive task?"
+run = "echo should-not-run"
+
+[tasks.probe]
+run = "echo probe-ok"
+EOF
+set +e
+out="$(MISE_YES=0 PTY_INPUT=$'n\n' run_in_pty_with_input mise run confirm-int 2>&1)"
+status=$?
+set -e
+if [[ $status -eq 0 ]]; then
+	fail "confirm refusal should abort task"
+fi
+if [[ $out == *"should-not-run"* ]]; then
+	fail "interactive task body executed despite confirm refusal"
+fi
+assert "mise run probe" "probe-ok"
+
+# Matrix: E11 + O6 (C1/C11)
+cat <<'EOF' >mise.toml
+[tasks.inner-int]
+interactive = true
+run = '''
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  echo "overlap inner-int" >> "$TRACE_FILE"
+  exit 80
+fi
+echo "inner-int:start" >> "$TRACE_FILE"
+printf "ii> "
+read value
+echo "ii:$value"
+sleep 0.08
+echo "inner-int:end" >> "$TRACE_FILE"
+rmdir "$LOCK_DIR"
+'''
+
+[tasks.outer]
+run = [{ task = "inner-int" }]
+
+[tasks.external]
+run = '''
+if [ -d "$LOCK_DIR" ]; then
+  echo "overlap external" >> "$TRACE_FILE"
+fi
+echo external
+'''
+EOF
+: >"$trace"
+out="$(
+	LOCK_DIR="$lock_dir" TRACE_FILE="$trace" PTY_INPUT=$'ii\n' \
+		run_in_pty_with_input mise run outer ::: external
+)"
+if [[ $out != *"ii:ii"* ]] || [[ $out != *"external"* ]]; then
+	fail "subgraph + external interactive scenario failed"
+fi
+if grep -q '^overlap ' "$trace"; then
+	fail "detected overlap in subgraph + external scenario"
+fi
+
+# Matrix: E12 + O7 (C5/C13)
+cat <<'EOF' >mise.toml
+[tasks.fail-fast]
+run = "echo fail-fast && exit 21"
+
+[tasks.after-int]
+interactive = true
+run = '''
+echo "after-int:start" >> "$TRACE_FILE"
+printf "ai> "
+read value
+echo "ai:$value"
+'''
+
+[tasks.probe]
+run = "echo probe-ok"
+EOF
+: >"$trace"
+set +e
+out="$(
+	TRACE_FILE="$trace" PTY_INPUT=$'x\n' PTY_TIMEOUT=12 \
+		run_in_pty_with_input mise run fail-fast ::: after-int 2>&1
+)"
+status=$?
+set -e
+if [[ $status -eq 0 ]]; then
+	fail "expected failure in pre-barrier failure scenario"
+fi
+# no deadlock oracle: subsequent run still works
+assert "mise run probe" "probe-ok"

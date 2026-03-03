@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# Matrix refs:
+# - B14/B15 (C5)
+# - F13/F14 (C12/C13)
+# - Contract: C5, C12, C13
+#
+# Regression:
+# when continue_on_error=false, a task waiting for a permit must not start
+# after an earlier task fails.
+
+set -euo pipefail
+
+cat <<'EOF' >mise.toml
+[tasks.a-fail]
+run = "echo fail-first && exit 12"
+
+[tasks.z-late]
+run = "echo late-should-not-run"
+EOF
+
+set +e
+out="$(mise run --jobs=1 a-fail ::: z-late 2>&1)"
+status=$?
+set -e
+
+if [[ $status -eq 0 ]]; then
+	fail "expected failure when continue_on_error=false"
+fi
+if [[ $out == *"late-should-not-run"* ]]; then
+	fail "late task should not start after earlier failure when waiting permit"
+fi
+
+set +e
+out="$(mise run --jobs=1 -c a-fail ::: z-late 2>&1)"
+status=$?
+set -e
+
+if [[ $out != *"late-should-not-run"* ]]; then
+	fail "late task should run with --continue-on-error"
+fi
+# Status may remain non-zero because a-fail failed; this is expected.
