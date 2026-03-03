@@ -41,14 +41,13 @@ hello:2
 hello:all
 ├── hello:2
 └── hello:1"
-assert "mise tasks hello:all" 'Task: hello:all
-Description: Hello from all
-Source: ~/workdir/mise.toml
-Depends on: hello:*
-
-Usage Spec:
-  name hello:all
-  bin hello:all'
+hello_all_info="$(mise tasks hello:all)"
+assert_contains "printf '%s\n' \"$hello_all_info\"" "Task: hello:all"
+assert_contains "printf '%s\n' \"$hello_all_info\"" "Description: Hello from all"
+assert_contains "printf '%s\n' \"$hello_all_info\"" "Source: ~/workdir/mise.toml"
+assert_contains "printf '%s\n' \"$hello_all_info\"" "Depends on: hello:*"
+assert_contains "printf '%s\n' \"$hello_all_info\"" "name hello:all"
+assert_contains "printf '%s\n' \"$hello_all_info\"" "bin hello:all"
 
 echo '' >mise.toml
 

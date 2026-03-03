@@ -31,9 +31,9 @@ echo "{{arg(name='a')}}"
 echo "{{arg(name='b', var=true)}}"
 """
 tasks.escapenode = """
-#!/usr/bin/env -S node
-console.log("{{arg(name='a')}}")
-console.log("{{arg(name='b', var=true)}}")
+#!/usr/bin/env -S python3
+print("{{arg(name='a')}}")
+print("{{arg(name='b', var=true)}}")
 """
 EOF
 
