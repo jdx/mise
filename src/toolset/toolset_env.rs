@@ -339,6 +339,12 @@ impl Toolset {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.0.clone())),
         );
+
+        // Apply redactions from tools-only env vars (e.g. redact=true + tools=true)
+        if !env_results.redactions.is_empty() {
+            config.add_redactions(env_results.redactions.iter().cloned(), &env);
+        }
+
         Ok((env, env_results))
     }
 

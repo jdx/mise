@@ -58,3 +58,12 @@ EMPTY_SECRET = { value = "", redact = true }
 run = 'echo "Hello $EMPTY_SECRET"'
 TOML
 assert "mise run empty_redaction" "Hello "
+
+cat <<'TOML' >mise.toml
+[env]
+SECRET_WITH_TOOLS = { value = "tools_secret", tools = true, redact = true }
+
+[tasks.a]
+run = 'echo secret: $SECRET_WITH_TOOLS'
+TOML
+assert "mise run a" "secret: [redacted]"
