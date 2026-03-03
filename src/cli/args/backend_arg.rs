@@ -366,9 +366,21 @@ impl BackendArg {
                 .iter()
                 // filter out global options that are only relevant for initial installation
                 .filter(|(k, _)| !["postinstall", "install_env"].contains(&k.as_str()))
-                .map(|(k, v)| format!("{k}={v}"))
+                .map(|(k, v)| {
+                    // Parse the value to a toml::Value so Display handles quoting/escaping
+                    let tv = if v.starts_with('{') {
+                        // Inline table — parse it back to a toml::Value
+                        toml::from_str::<toml::Value>(&format!("x = {v}"))
+                            .ok()
+                            .and_then(|t| t.get("x").cloned())
+                            .unwrap_or_else(|| toml::Value::String(v.clone()))
+                    } else {
+                        toml::Value::String(v.clone())
+                    };
+                    format!("{k} = {tv}")
+                })
                 .collect::<Vec<_>>()
-                .join(",");
+                .join(", ");
             if !full.contains(['[', ']']) && !opts_str.is_empty() {
                 return format!("{full}[{opts_str}]");
             }

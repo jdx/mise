@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+# Test switching from single url to platform-specific urls
+# Regression test for https://github.com/jdx/mise/discussions/7034
+#
+# When a tool is first installed with a single `url`, the install state stores
+# the options (including url) in the manifest. If the user then changes the
+# config to use platform-specific urls via [tools."http:X".platforms], the
+# stale cached options could shadow the new config, causing
+# "Http backend requires 'url' option" error.
+
+# Step 1: Install with a single url
+cat <<EOF >mise.toml
+[tools]
+"http:hello-plat-switch" = { version = "1.0.0", url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+
+mise install
+assert_contains "mise x -- hello-world" "hello world"
+
+# Step 2: Switch to platform-specific urls (same tool name, same version)
+# This previously failed with "Http backend requires 'url' option" because
+# the stale cached platforms data from parse_tool_options was mangled and
+# shadowed the correct config values during merge.
+cat <<EOF >mise.toml
+[tools."http:hello-plat-switch"]
+version = "1.0.0"
+bin_path = "hello-world-1.0.0/bin"
+postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"
+
+[tools."http:hello-plat-switch".platforms]
+linux-x64 = { url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz" }
+linux-arm64 = { url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz" }
+darwin-arm64 = { url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz" }
+darwin-amd64 = { url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz" }
+EOF
+
+# This should succeed, not fail with "Http backend requires 'url' option"
+mise install
+assert_contains "mise x -- hello-world" "hello world"

@@ -162,7 +162,28 @@ impl ToolVersionOptions {
     }
 }
 
-pub fn parse_tool_options(s: &str) -> ToolVersionOptions {
+/// Try parsing an options string as a TOML inline table.
+/// Returns `Some(opts)` if the string is valid TOML, `None` otherwise.
+fn try_parse_as_toml(s: &str) -> Option<ToolVersionOptions> {
+    let toml_str = format!("_x_ = {{ {s} }}");
+    let value: toml::Value = toml::from_str(&toml_str).ok()?;
+    let table = value.get("_x_")?.as_table()?;
+    let mut tvo = ToolVersionOptions::default();
+    for (k, v) in table {
+        let s = match v {
+            toml::Value::String(s) => s.clone(),
+            // Nested tables (e.g. platforms) are stored as serialized TOML
+            toml::Value::Table(_) => v.to_string(),
+            _ => v.to_string(),
+        };
+        tvo.opts.insert(k.clone(), s);
+    }
+    Some(tvo)
+}
+
+/// Legacy manual parser for option strings with unquoted values (e.g. `exe=rg,match=musl`).
+/// Splits by commas, but segments without `=` are appended to the previous key's value.
+fn parse_tool_options_manual(s: &str) -> ToolVersionOptions {
     let mut tvo = ToolVersionOptions::default();
     let mut current_key: Option<String> = None;
     for opt in s.split(',') {
@@ -182,6 +203,20 @@ pub fn parse_tool_options(s: &str) -> ToolVersionOptions {
         }
     }
     tvo
+}
+
+pub fn parse_tool_options(s: &str) -> ToolVersionOptions {
+    // Try TOML parsing first (handles nested structures like platforms={...} correctly)
+    if let Some(tvo) = try_parse_as_toml(s) {
+        return tvo;
+    }
+    // TODO(2027.1.0): remove manual fallback once all manifests use quoted TOML values
+    debug_assert!(
+        *crate::cli::version::V < versions::Versioning::new("2027.1.0").unwrap(),
+        "parse_tool_options manual fallback should be removed"
+    );
+    // Fall back to manual parsing for legacy formats with unquoted values
+    parse_tool_options_manual(s)
 }
 
 #[cfg(test)]
@@ -267,6 +302,52 @@ mod tests {
                 ..Default::default()
             },
         );
+    }
+
+    #[test]
+    fn test_parse_tool_options_with_nested_braces() {
+        // Regression test for https://github.com/jdx/mise/discussions/7034
+        // platforms={ linux-x64 = { url = "..." }, macos-arm64 = { url = "..." } }
+        // should be parsed as a single "platforms" key, not split on the inner commas
+        let input = r#"platforms={ linux-x64 = { url = "https://example.com/linux.tar.gz" }, macos-arm64 = { url = "https://example.com/macos.tar.gz" } }"#;
+        let opts = parse_tool_options(input);
+        assert_eq!(opts.opts.len(), 1, "should have exactly one key");
+        let platforms_val = opts
+            .opts
+            .get("platforms")
+            .expect("should have platforms key");
+        assert!(
+            platforms_val.contains("linux-x64"),
+            "platforms value should contain linux-x64"
+        );
+        assert!(
+            platforms_val.contains("macos-arm64"),
+            "platforms value should contain macos-arm64"
+        );
+
+        // Also verify nested lookup works on the round-tripped value
+        let tvo = ToolVersionOptions {
+            opts: opts.opts,
+            ..Default::default()
+        };
+        assert_eq!(
+            tvo.get_nested_string("platforms.linux-x64.url"),
+            Some("https://example.com/linux.tar.gz".to_string())
+        );
+        assert_eq!(
+            tvo.get_nested_string("platforms.macos-arm64.url"),
+            Some("https://example.com/macos.tar.gz".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_tool_options_mixed_braces_and_simple() {
+        // Mix of simple key=value and nested brace values
+        let input = r#"bin_path=bin,platforms={ linux-x64 = { url = "https://example.com/linux.tar.gz" } },strip_components=1"#;
+        let opts = parse_tool_options(input);
+        assert_eq!(opts.opts.get("bin_path"), Some(&"bin".to_string()));
+        assert_eq!(opts.opts.get("strip_components"), Some(&"1".to_string()));
+        assert!(opts.opts.get("platforms").is_some());
     }
 
     #[test]
