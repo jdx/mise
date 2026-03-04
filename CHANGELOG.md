@@ -1,5 +1,15 @@
 # Changelog
 
+## [2026.3.3](https://github.com/jdx/mise/compare/v2026.3.2..v2026.3.3) - 2026-03-04
+
+### 🐛 Bug Fixes
+
+- **(installer)** guard zstd archive selection on zstd binary availability by @octo in [#8460](https://github.com/jdx/mise/pull/8460)
+
+### New Contributors
+
+- @octo made their first contribution in [#8460](https://github.com/jdx/mise/pull/8460)
+
 ## [2026.3.2](https://github.com/jdx/mise/compare/v2026.3.1..v2026.3.2) - 2026-03-04
 
 ### 🚀 Features
