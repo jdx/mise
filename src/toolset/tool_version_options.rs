@@ -187,10 +187,11 @@ fn parse_tool_options_manual(s: &str) -> ToolVersionOptions {
             // No '=' found, append to the previous value or create a new key
             if let Some(key) = &current_key
                 && let Some(existing_value) = tvo.opts.get_mut(key)
-                && let toml::Value::String(s) = existing_value {
-                    s.push(',');
-                    s.push_str(opt);
-                }
+                && let toml::Value::String(s) = existing_value
+            {
+                s.push(',');
+                s.push_str(opt);
+            }
         }
     }
     tvo
