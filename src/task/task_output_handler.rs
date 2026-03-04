@@ -323,7 +323,10 @@ impl OutputHandler {
     }
 
     fn silent_bool(&self) -> bool {
-        self.silent || Settings::get().silent || self.output.is_some_and(|o| o.is_silent())
+        self.silent
+            || Settings::get().silent
+            || self.output.is_some_and(|o| o.is_silent())
+            || Settings::get().task.output.is_some_and(|o| o.is_silent())
     }
 
     pub fn silent(&self, task: Option<&Task>) -> bool {
@@ -334,6 +337,7 @@ impl OutputHandler {
         self.quiet
             || Settings::get().quiet
             || self.output.is_some_and(|o| o.is_quiet())
+            || Settings::get().task.output.is_some_and(|o| o.is_quiet())
             || task.is_some_and(|t| t.quiet)
             || self.silent(task)
     }
