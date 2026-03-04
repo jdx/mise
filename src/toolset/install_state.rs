@@ -408,19 +408,22 @@ pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
     let full = ba.full();
     let explicit = ba.has_explicit_backend();
 
-    // Convert user-specified opts to native TOML values.
-    // Use the opts field (not the opts() method) to avoid persisting registry defaults.
-    let opts_map: BTreeMap<String, toml::Value> = ba
-        .opts
-        .as_ref()
-        .map(|o| {
-            o.opts
-                .iter()
-                .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str()))
-                .map(|(k, v)| (k.clone(), str_to_toml_value(v)))
-                .collect()
-        })
-        .unwrap_or_default();
+    // Use native TOML opts directly when available (from manifest round-trip),
+    // otherwise convert user-specified string opts.
+    let opts_map: BTreeMap<String, toml::Value> = if !ba.manifest_opts.is_empty() {
+        ba.manifest_opts.clone()
+    } else {
+        ba.opts
+            .as_ref()
+            .map(|o| {
+                o.opts
+                    .iter()
+                    .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str()))
+                    .map(|(k, v)| (k.clone(), str_to_toml_value(v)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
 
     let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
     let mut manifest = read_manifest();

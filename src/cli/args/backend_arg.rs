@@ -9,7 +9,7 @@ use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
 use eyre::{Result, bail};
 use heck::{ToKebabCase, ToShoutySnakeCase};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::env;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
@@ -48,6 +48,9 @@ pub struct BackendArg {
     /// ~/.local/share/mise/downloads/<THIS>
     pub downloads_path: PathBuf,
     pub opts: Option<ToolVersionOptions>,
+    /// Native TOML opts from the install manifest, preserved to avoid
+    /// lossy string round-trips when writing back.
+    pub manifest_opts: BTreeMap<String, toml::Value>,
     resolution: BackendResolution,
     // TODO: make this not a hash key anymore to use this
     // backend: OnceCell<ABackend>,
@@ -77,30 +80,17 @@ impl<A: AsRef<str>> From<A> for BackendArg {
 impl From<InstallStateTool> for BackendArg {
     fn from(ist: InstallStateTool) -> Self {
         let (short, tool_name, opts) = parse_backend_components(&ist.short, ist.full.as_ref());
+        let manifest_opts = ist.opts;
 
-        // Merge opts from InstallStateTool (native TOML) into the parsed opts
-        let merged_opts = if ist.opts.is_empty() {
-            opts
-        } else {
-            let mut tvo = opts.unwrap_or_default();
-            for (k, v) in &ist.opts {
-                let s = match v {
-                    toml::Value::String(s) => s.clone(),
-                    toml::Value::Table(_) => v.to_string(),
-                    _ => v.to_string(),
-                };
-                tvo.opts.insert(k.clone(), s);
-            }
-            Some(tvo)
-        };
-
-        Self::new_raw(
+        let mut ba = Self::new_raw(
             short,
             ist.full,
             tool_name,
-            merged_opts,
+            opts,
             BackendResolution::new(ist.explicit_backend),
-        )
+        );
+        ba.manifest_opts = manifest_opts;
+        ba
     }
 }
 
@@ -161,6 +151,7 @@ impl BackendArg {
             installs_path: dirs::INSTALLS.join(&pathname),
             downloads_path: dirs::DOWNLOADS.join(&pathname),
             opts,
+            manifest_opts: BTreeMap::new(),
             resolution,
             // backend: Default::default(),
         }
@@ -423,7 +414,7 @@ impl BackendArg {
             .map(|rt| rt.backend_options(&full))
             .unwrap_or_default();
 
-        // Get user-provided options (from self.opts or from full string)
+        // Get user-provided options (from self.opts, manifest_opts, or from full string)
         let user_opts = self.opts.clone().unwrap_or_else(|| {
             if let Some((_, opts_str)) = split_bracketed_opts(&full) {
                 parse_tool_options(opts_str)
@@ -435,6 +426,14 @@ impl BackendArg {
         // Merge user options on top (user options take precedence)
         for (k, v) in user_opts.opts {
             opts.opts.insert(k, v);
+        }
+
+        // Merge manifest opts (native TOML values from install state)
+        for (k, v) in &self.manifest_opts {
+            opts.opts.entry(k.clone()).or_insert_with(|| match v {
+                toml::Value::String(s) => s.clone(),
+                _ => v.to_string(),
+            });
         }
         for (k, v) in user_opts.install_env {
             opts.install_env.insert(k, v);
