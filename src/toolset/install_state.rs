@@ -405,7 +405,7 @@ pub async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
 
 /// Writes backend metadata to the consolidated manifest file.
 pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
-    let full = ba.full();
+    let full = ba.full_without_opts();
     let explicit = ba.has_explicit_backend();
 
     // Use native TOML opts directly when available (from manifest round-trip),
