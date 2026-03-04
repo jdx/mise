@@ -2,7 +2,9 @@
 packages:
   - type: http
     repo_owner: kunobi-ninja
-    repo_name: kunobi-releases
+    repo_name: kunobi
+    aliases:
+      - name: kunobi-ninja/kunobi-releases
     description: Kubernetes IDE for managing clusters, resources, and workloads
     link: https://kunobi.ninja
     version_source: github_tag

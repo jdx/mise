@@ -1,5 +1,35 @@
 # Changelog
 
+## [2026.3.2](https://github.com/jdx/mise/compare/v2026.3.1..v2026.3.2) - 2026-03-04
+
+### 🚀 Features
+
+- add `--local` flag to `outdated` and `upgrade` commands by @malept in [#8451](https://github.com/jdx/mise/pull/8451)
+
+### 🐛 Bug Fixes
+
+- **(env)** apply redactions for env vars with both tools=true and redact=true by @jdx in [#8449](https://github.com/jdx/mise/pull/8449)
+- **(prepare)** render tera templates in prepare.env values by @jdx in [#8450](https://github.com/jdx/mise/pull/8450)
+- correct regex syntax in tar/zstd version check by @chadlwilson in [#8453](https://github.com/jdx/mise/pull/8453)
+
+### 🚜 Refactor
+
+- prevent double-iteration when parsing idiomatic version files by @risu729 in [#8417](https://github.com/jdx/mise/pull/8417)
+
+### 🧪 Testing
+
+- **(tasks)** stabilize assertions and shell compatibility by @mackwic in [#8438](https://github.com/jdx/mise/pull/8438)
+
+### 📦 Registry
+
+- add tinygo ([aqua:tinygo-org/tinygo](https://github.com/tinygo-org/tinygo)) by @artemklevtsov in [#8446](https://github.com/jdx/mise/pull/8446)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`kunobi-ninja/kunobi`](https://github.com/kunobi-ninja/kunobi)
+
 ## [2026.3.1](https://github.com/jdx/mise/compare/v2026.3.0..v2026.3.1) - 2026-03-03
 
 ### 🐛 Bug Fixes
