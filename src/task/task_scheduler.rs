@@ -3,8 +3,8 @@ use crate::config::Config;
 use crate::task::{Deps, Task};
 use eyre::Result;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use tokio::sync::{Mutex, Semaphore, mpsc};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use tokio::sync::{Mutex, Notify, Semaphore, mpsc};
 use tokio::task::JoinSet;
 
 #[cfg(unix)]
@@ -15,6 +15,10 @@ pub type SchedMsg = (Task, Arc<Mutex<Deps>>);
 /// Schedules and executes tasks with concurrency control
 pub struct Scheduler {
     pub semaphore: Arc<Semaphore>,
+    max_permits: u32,
+    permit_order_next: Arc<AtomicU64>,
+    permit_order_cursor: Arc<AtomicU64>,
+    permit_order_notify: Arc<Notify>,
     pub jset: Arc<Mutex<JoinSet<Result<()>>>>,
     pub sched_tx: Arc<mpsc::UnboundedSender<SchedMsg>>,
     pub sched_rx: Option<mpsc::UnboundedReceiver<SchedMsg>>,
@@ -24,8 +28,14 @@ pub struct Scheduler {
 impl Scheduler {
     pub fn new(jobs: usize) -> Self {
         let (sched_tx, sched_rx) = mpsc::unbounded_channel::<SchedMsg>();
+        let permits = jobs.min(u32::MAX as usize);
+        let max_permits = permits as u32;
         Self {
-            semaphore: Arc::new(Semaphore::new(jobs)),
+            semaphore: Arc::new(Semaphore::new(permits)),
+            max_permits,
+            permit_order_next: Arc::new(AtomicU64::new(0)),
+            permit_order_cursor: Arc::new(AtomicU64::new(0)),
+            permit_order_notify: Arc::new(Notify::new()),
             jset: Arc::new(Mutex::new(JoinSet::new())),
             sched_tx: Arc::new(sched_tx),
             sched_rx: Some(sched_rx),
@@ -61,6 +71,10 @@ impl Scheduler {
             sched_tx: self.sched_tx.clone(),
             jset: self.jset.clone(),
             in_flight: self.in_flight.clone(),
+            max_permits: self.max_permits,
+            permit_order_next: self.permit_order_next.clone(),
+            permit_order_cursor: self.permit_order_cursor.clone(),
+            permit_order_notify: self.permit_order_notify.clone(),
         }
     }
 
@@ -79,36 +93,33 @@ impl Scheduler {
         let sched_tx = self.sched_tx.clone();
         let deps_clone = deps.clone();
 
-        // Forward initial leaves synchronously
-        {
-            let mut rx = deps_clone.lock().await.subscribe();
-            loop {
-                match rx.try_recv() {
-                    Ok(Some(task)) => {
-                        trace!(
-                            "main deps initial leaf: {} {}",
-                            task.name,
-                            task.args.join(" ")
-                        );
-                        let _ = sched_tx.send((task, deps_clone.clone()));
-                    }
-                    Ok(None) => {
-                        trace!("main deps initial done");
-                        break;
-                    }
-                    Err(mpsc::error::TryRecvError::Empty) => {
-                        break;
-                    }
-                    Err(mpsc::error::TryRecvError::Disconnected) => {
-                        break;
-                    }
+        // Reuse one receiver for initial drain + async forwarding to avoid completion races.
+        let mut rx = deps_clone.lock().await.subscribe();
+        loop {
+            match rx.try_recv() {
+                Ok(Some(task)) => {
+                    trace!(
+                        "main deps initial leaf: {} {}",
+                        task.name,
+                        task.args.join(" ")
+                    );
+                    let _ = sched_tx.send((task, deps_clone.clone()));
+                }
+                Ok(None) => {
+                    trace!("main deps initial done");
+                    break;
+                }
+                Err(mpsc::error::TryRecvError::Empty) => {
+                    break;
+                }
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    break;
                 }
             }
         }
 
         // Forward remaining leaves asynchronously
         tokio::spawn(async move {
-            let mut rx = deps_clone.lock().await.subscribe();
             while let Some(msg) = rx.recv().await {
                 match msg {
                     Some(task) => {
@@ -243,6 +254,10 @@ pub struct SpawnContext {
     pub sched_tx: Arc<mpsc::UnboundedSender<SchedMsg>>,
     pub jset: Arc<Mutex<JoinSet<Result<()>>>>,
     pub in_flight: Arc<AtomicUsize>,
+    pub max_permits: u32,
+    pub permit_order_next: Arc<AtomicU64>,
+    pub permit_order_cursor: Arc<AtomicU64>,
+    pub permit_order_notify: Arc<Notify>,
 }
 
 #[cfg(test)]

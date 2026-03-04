@@ -6,6 +6,8 @@ use console::Term;
 
 static EXIT: AtomicBool = AtomicBool::new(true);
 static SHOW_CURSOR: AtomicBool = AtomicBool::new(false);
+// Sticky "Ctrl-C seen" bit for the current `mise run` execution.
+static INTERRUPTED: AtomicBool = AtomicBool::new(false);
 // static HANDLERS: OnceCell<Vec<Box<dyn Fn() + Send + Sync + 'static>>> = OnceCell::new();
 
 pub fn init() {
@@ -15,6 +17,7 @@ pub fn init() {
             if SHOW_CURSOR.load(Ordering::Relaxed) {
                 let _ = Term::stderr().show_cursor();
             }
+            INTERRUPTED.store(true, Ordering::Relaxed);
             CmdLineRunner::kill_all(nix::sys::signal::SIGINT);
             if EXIT.load(Ordering::Relaxed) {
                 debug!("Ctrl-C pressed, exiting...");
@@ -31,4 +34,8 @@ pub fn exit_on_ctrl_c(do_exit: bool) {
 /// ensures cursor is displayed on ctrl-c
 pub fn show_cursor_after_ctrl_c() {
     SHOW_CURSOR.store(true, Ordering::Relaxed);
+}
+
+pub fn was_interrupted() -> bool {
+    INTERRUPTED.load(Ordering::Relaxed)
 }

@@ -12,7 +12,10 @@ use crate::env;
 use crate::file::display_path;
 use crate::prepare::{PrepareEngine, PrepareOptions};
 use crate::task::has_any_args_defined;
-use crate::task::task_helpers::task_needs_permit;
+use crate::task::task_helpers::{
+    task_is_interactive_chain, task_is_parent_permit_chain, task_propagates_interactive_barrier,
+    task_uses_runtime_slot,
+};
 use crate::task::task_list::{get_task_lists, resolve_depends};
 use crate::task::task_output::TaskOutput;
 use crate::task::task_output_handler::OutputHandler;
@@ -20,7 +23,7 @@ use crate::task::{Deps, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::{ctrlc, info, style};
 use clap::{CommandFactory, ValueHint};
-use eyre::{Result, bail, eyre};
+use eyre::{Result, bail, ensure, eyre};
 use itertools::Itertools;
 use tokio::sync::Mutex;
 
@@ -417,6 +420,87 @@ impl Run {
         Ok(())
     }
 
+    fn permit_count_for_task(task: &Task, max_permits: u32) -> u32 {
+        // Edge cases covered:
+        // - interactive tasks must block unrelated runtimes for the whole task lifecycle
+        // - mixed tasks that inject sub-tasks must not deadlock on `--jobs=1`
+        // - injected descendants of an interactive parent bypass permits and run under the
+        //   parent's barrier
+        if task_is_interactive_chain(task) || task_is_parent_permit_chain(task) {
+            0
+        } else if task_propagates_interactive_barrier(task) {
+            max_permits
+        } else if task_uses_runtime_slot(task) {
+            1
+        } else {
+            0
+        }
+    }
+
+    async fn acquire_permit_guard(
+        this: &Arc<Self>,
+        task: &Task,
+        deps_for_remove: &Arc<Mutex<Deps>>,
+        ctx: &crate::task::task_scheduler::SpawnContext,
+        permit_count: u32,
+        permit_order: Option<u64>,
+    ) -> Result<(Option<tokio::sync::OwnedSemaphorePermit>, bool)> {
+        if permit_count == 0 {
+            trace!("no semaphore needed for task: {}", task.name);
+            return Ok((None, true));
+        }
+
+        if let Some(order) = permit_order {
+            // Create the waiter before checking to avoid lost wakeups.
+            let mut notified = ctx.permit_order_notify.notified();
+            while ctx
+                .permit_order_cursor
+                .load(std::sync::atomic::Ordering::SeqCst)
+                != order
+            {
+                notified.await;
+                notified = ctx.permit_order_notify.notified();
+            }
+        }
+
+        let wait_start = std::time::Instant::now();
+        let acquire_result = if permit_count == 1 {
+            ctx.semaphore.clone().acquire_owned().await
+        } else {
+            ctx.semaphore.clone().acquire_many_owned(permit_count).await
+        };
+        if permit_order.is_some() {
+            ctx.permit_order_cursor
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            ctx.permit_order_notify.notify_waiters();
+        }
+        let permit = acquire_result?;
+        trace!(
+            "semaphore acquired (permits={}) for {} after {}ms",
+            permit_count,
+            task.name,
+            wait_start.elapsed().as_millis()
+        );
+        // If a failure occurred while waiting, do not launch this task unless it's
+        // a runnable post-dependency cleanup task.
+        if this.is_stopping() && !this.continue_on_error {
+            let mut deps = deps_for_remove.lock().await;
+            if !deps.is_runnable_post_dep(task) {
+                trace!(
+                    "aborting spawn after failure (not continue-on-error): {} {}",
+                    task.name,
+                    task.args.join(" ")
+                );
+                deps.remove(task);
+                drop(permit);
+                return Ok((None, false));
+            }
+            drop(deps);
+        }
+
+        Ok((Some(permit), true))
+    }
+
     async fn spawn_sched_job(
         this: Arc<Self>,
         task: Task,
@@ -439,53 +523,44 @@ impl Run {
             }
             drop(deps);
         }
-        let needs_permit = task_needs_permit(&task);
-        let permit_opt = if needs_permit {
-            let wait_start = std::time::Instant::now();
-            let p = Some(ctx.semaphore.clone().acquire_owned().await?);
-            trace!(
-                "semaphore acquired for {} after {}ms",
-                task.name,
-                wait_start.elapsed().as_millis()
-            );
-            // If a failure occurred while we were waiting for a permit and we're not
-            // in continue-on-error mode, skip launching this task unless it's a
-            // post-dependency (cleanup task). This prevents subsequently queued
-            // tasks from running after failure, while still allowing cleanup.
-            if this.is_stopping() && !this.continue_on_error {
-                let mut deps = deps_for_remove.lock().await;
-                if !deps.is_runnable_post_dep(&task) {
-                    trace!(
-                        "aborting spawn after failure (not continue-on-error): {} {}",
-                        task.name,
-                        task.args.join(" ")
-                    );
-                    // Remove from deps so the scheduler can drain and not hang
-                    deps.remove(&task);
-                    return Ok(());
-                }
-                drop(deps);
-            }
-            p
+        let permit_count = Self::permit_count_for_task(&task, ctx.max_permits);
+        let permit_order = if permit_count > 0 {
+            Some(
+                ctx.permit_order_next
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+            )
         } else {
-            trace!("no semaphore needed for orchestrator task: {}", task.name);
             None
         };
-
         ctx.in_flight
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let in_flight_c = ctx.in_flight.clone();
+        let jset = ctx.jset.clone();
         trace!("running task: {task}");
         // Mark task as executed synchronously before spawning so that the
         // scheduler's failure-cleanup path (which checks is_runnable_post_dep)
         // always sees the parent in `executed` — avoiding a race where a
         // concurrent task fails between spawn and first poll.
         deps_for_remove.lock().await.mark_executed(&task);
-        ctx.jset.lock().await.spawn(async move {
-            let _permit = permit_opt;
-            let result = this
-                .run_task_sched(&task, &ctx.config, ctx.sched_tx.clone())
-                .await;
+        jset.lock().await.spawn(async move {
+            let result: Result<()> = async {
+                let (permit_guard, should_run) = Self::acquire_permit_guard(
+                    &this,
+                    &task,
+                    &deps_for_remove,
+                    &ctx,
+                    permit_count,
+                    permit_order,
+                )
+                .await?;
+                if !should_run {
+                    return Ok(());
+                }
+                let _permit = permit_guard;
+                this.run_task_sched(&task, &ctx.config, ctx.sched_tx.clone())
+                    .await
+            }
+            .await;
             if let Err(err) = &result {
                 let status = Error::get_exit_status(err);
                 if !this.is_stopping() && status.is_none() {
@@ -658,6 +733,14 @@ impl Run {
     fn validate_task(&self, task: &Task) -> Result<()> {
         use crate::file;
         use crate::ui;
+        if task.interactive {
+            use std::io::IsTerminal;
+            ensure!(
+                std::io::stdin().is_terminal(),
+                "task '{}' requires a TTY on stdin (interactive tasks require a TTY on stdin)",
+                task.name
+            );
+        }
         if let Some(path) = &task.file
             && path.exists()
             && !file::is_executable(path)

@@ -4,6 +4,10 @@ use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::duration;
 use crate::file::{display_path, is_executable};
 use crate::task::task_context_builder::TaskContextBuilder;
+use crate::task::task_helpers::{
+    INTERACTIVE_CHAIN_ENV, PARENT_PERMIT_CHAIN_ENV, task_propagates_interactive_barrier,
+    task_uses_runtime_slot,
+};
 use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_output_handler::OutputHandler;
@@ -79,7 +83,8 @@ impl TaskExecutor {
     }
 
     pub fn is_stopping(&self) -> bool {
-        !self.failed_tasks.lock().unwrap().is_empty()
+        // Edge case: on Ctrl-C, no task may "fail" first, but wait loops must still stop.
+        crate::ui::ctrlc::was_interrupted() || !self.failed_tasks.lock().unwrap().is_empty()
     }
 
     pub fn add_failed_task(&self, task: Task, status: Option<i32>) {
@@ -266,9 +271,7 @@ impl TaskExecutor {
             );
         }
 
-        if self.task_timings()
-            && (task.file.as_ref().is_some() || !task.run_script_strings().is_empty())
-        {
+        if self.task_timings() && (task.file.as_ref().is_some() || task.has_runtime_script()) {
             self.eprint(
                 task,
                 &prefix,
@@ -292,6 +295,8 @@ impl TaskExecutor {
     ) -> Result<()> {
         let (env, task_env) = full_env;
         use crate::task::RunEntry;
+        self.validate_injected_interactive_non_tty(config, task)
+            .await?;
         let mut script_iter = rendered_scripts.into_iter();
         for entry in task.run() {
             match entry {
@@ -302,19 +307,101 @@ impl TaskExecutor {
                 }
                 RunEntry::SingleTask { task: spec } => {
                     let resolved_spec = crate::task::resolve_task_pattern(spec, Some(task));
-                    self.inject_and_wait(config, &[resolved_spec], task_env, sched_tx.clone())
-                        .await?;
+                    self.inject_and_wait(
+                        config,
+                        &[resolved_spec],
+                        task_env,
+                        task_propagates_interactive_barrier(task),
+                        task_uses_runtime_slot(task),
+                        sched_tx.clone(),
+                    )
+                    .await?;
                 }
                 RunEntry::TaskGroup { tasks } => {
                     let resolved_tasks: Vec<String> = tasks
                         .iter()
                         .map(|t| crate::task::resolve_task_pattern(t, Some(task)))
                         .collect();
-                    self.inject_and_wait(config, &resolved_tasks, task_env, sched_tx.clone())
-                        .await?;
+                    self.inject_and_wait(
+                        config,
+                        &resolved_tasks,
+                        task_env,
+                        task_propagates_interactive_barrier(task),
+                        task_uses_runtime_slot(task),
+                        sched_tx.clone(),
+                    )
+                    .await?;
                 }
             }
         }
+        Ok(())
+    }
+
+    async fn validate_injected_interactive_non_tty(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+    ) -> Result<()> {
+        use std::io::IsTerminal;
+        if std::io::stdin().is_terminal() {
+            return Ok(());
+        }
+        let specs = task
+            .run()
+            .iter()
+            .flat_map(|entry| match entry {
+                crate::task::RunEntry::SingleTask { task: spec } => {
+                    vec![crate::task::resolve_task_pattern(spec, Some(task))]
+                }
+                crate::task::RunEntry::TaskGroup { tasks } => tasks
+                    .iter()
+                    .map(|t| crate::task::resolve_task_pattern(t, Some(task)))
+                    .collect(),
+                crate::task::RunEntry::Script(_) => vec![],
+            })
+            .collect::<Vec<_>>();
+        if specs.is_empty() {
+            return Ok(());
+        }
+
+        let ctx = crate::task::TaskLoadContext::from_patterns(specs.iter().map(|s| {
+            let (name, _) = split_task_spec(s);
+            name
+        }));
+        let tasks = config.tasks_with_context(Some(&ctx)).await?;
+        let tasks_map: BTreeMap<String, Task> = tasks
+            .iter()
+            .flat_map(|(_, t)| {
+                t.aliases
+                    .iter()
+                    .map(|a| (a.to_string(), t.clone()))
+                    .chain(once((t.name.clone(), t.clone())))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        let mut to_run: Vec<Task> = vec![];
+        for spec in &specs {
+            let (name, args) = split_task_spec(spec);
+            let matches = tasks_map.get_matching(name)?;
+            for t in matches {
+                let mut t = (*t).clone();
+                t.args = args.clone();
+                if self.skip_deps {
+                    t.depends.clear();
+                    t.depends_post.clear();
+                    t.wait_for.clear();
+                }
+                to_run.push(t);
+            }
+        }
+        let deps = Deps::new(config, to_run).await?;
+        if let Some(interactive_task) = deps.all().find(|t| t.interactive) {
+            return Err(eyre!(
+                "task '{}' requires a TTY on stdin (interactive tasks require a TTY on stdin)",
+                interactive_task.name
+            ));
+        }
+
         Ok(())
     }
 
@@ -323,6 +410,8 @@ impl TaskExecutor {
         config: &Arc<Config>,
         specs: &[String],
         task_env: &[(String, String)],
+        interactive_barrier: bool,
+        parent_holds_permit: bool,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
     ) -> Result<()> {
         use crate::task::TaskLoadContext;
@@ -365,42 +454,53 @@ impl TaskExecutor {
 
         // Pump subgraph into scheduler and signal completion via oneshot when done
         let (done_tx, mut done_rx) = oneshot::channel::<()>();
-        let task_env_directives: Vec<EnvDirective> =
+        let mut task_env_directives: Vec<EnvDirective> =
             task_env.iter().cloned().map(Into::into).collect();
+        if interactive_barrier {
+            // Preserve the interactive runtime barrier across injected subgraphs.
+            task_env_directives.push(EnvDirective::Val(
+                INTERACTIVE_CHAIN_ENV.to_string(),
+                "1".to_string(),
+                Default::default(),
+            ));
+        }
+        if parent_holds_permit {
+            // Parent runtime already occupies a scheduler slot; children must not contend for it
+            // or `--jobs=1` mixed task chains can deadlock.
+            task_env_directives.push(EnvDirective::Val(
+                PARENT_PERMIT_CHAIN_ENV.to_string(),
+                "1".to_string(),
+                Default::default(),
+            ));
+        }
         {
             let sub_deps_clone = sub_deps.clone();
             let sched_tx = sched_tx.clone();
-            // forward initial leaves synchronously
-            {
-                let mut rx = sub_deps_clone.lock().await.subscribe();
-                let mut any = false;
-                loop {
-                    match rx.try_recv() {
-                        Ok(Some(task)) => {
-                            any = true;
-                            let task = task.derive_env(&task_env_directives);
-                            trace!("inject initial leaf: {} {}", task.name, task.args.join(" "));
-                            let _ = sched_tx.send((task, sub_deps_clone.clone()));
-                        }
-                        Ok(None) => {
-                            trace!("inject initial done");
-                            break;
-                        }
-                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
-                            break;
-                        }
-                        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
-                            break;
-                        }
+            // Create one receiver and reuse it for initial drain + async forwarding.
+            // This avoids a race where completion can be emitted between two subscribe() calls.
+            let mut rx = sub_deps_clone.lock().await.subscribe();
+            loop {
+                match rx.try_recv() {
+                    Ok(Some(task)) => {
+                        let task = task.derive_env(&task_env_directives);
+                        trace!("inject initial leaf: {} {}", task.name, task.args.join(" "));
+                        let _ = sched_tx.send((task, sub_deps_clone.clone()));
+                    }
+                    Ok(None) => {
+                        trace!("inject initial done");
+                        break;
+                    }
+                    Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
+                        break;
+                    }
+                    Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                        break;
                     }
                 }
-                if !any {
-                    trace!("inject had no initial leaves");
-                }
             }
+
             // then forward remaining leaves asynchronously
             tokio::spawn(async move {
-                let mut rx = sub_deps_clone.lock().await.subscribe();
                 while let Some(msg) = rx.recv().await {
                     match msg {
                         Some(task) => {
@@ -639,13 +739,29 @@ impl TaskExecutor {
         let config = Config::get().await?;
         let program = program.to_executable();
         let redactions = config.redactions();
-        let raw = self.raw(Some(task));
+        let interactive = task.interactive;
+        if interactive {
+            use std::io::IsTerminal;
+            ensure!(
+                std::io::stdin().is_terminal(),
+                "task '{}' requires a TTY on stdin (interactive tasks require a TTY on stdin)",
+                task.name
+            );
+        }
+        let raw = interactive || self.raw(Some(task));
         let mut cmd = CmdLineRunner::new(program.clone())
             .args(args)
             .envs(env)
             .redact(redactions.deref().clone())
             .raw(raw);
-        if raw && !redactions.is_empty() {
+        if interactive && !redactions.is_empty() {
+            hint!(
+                "interactive_redactions",
+                "interactive tasks stream output directly; live redaction is not applied",
+                ""
+            );
+        }
+        if raw && !interactive && !redactions.is_empty() {
             hint!(
                 "raw_redactions",
                 "--raw will prevent mise from being able to use redactions",
@@ -654,112 +770,120 @@ impl TaskExecutor {
         }
         let output = self.output(Some(task));
         cmd.with_pass_signals();
-        match output {
-            TaskOutput::Prefix => {
-                if !task.silent.suppresses_stdout() {
-                    cmd = cmd.with_on_stdout(|line| {
-                        if console::colors_enabled() {
-                            prefix_println!(prefix, "{line}\x1b[0m");
-                        } else {
-                            prefix_println!(prefix, "{line}");
-                        }
-                    });
-                } else {
-                    cmd = cmd.stdout(Stdio::null());
-                }
-                if !task.silent.suppresses_stderr() {
-                    cmd = cmd.with_on_stderr(|line| {
-                        if console::colors_enabled() {
-                            self.eprint(task, prefix, &format!("{line}\x1b[0m"));
-                        } else {
-                            self.eprint(task, prefix, &line);
-                        }
-                    });
-                } else {
-                    cmd = cmd.stderr(Stdio::null());
-                }
-            }
-            TaskOutput::KeepOrder => {
-                if !task.silent.suppresses_stdout() {
-                    let state = self.output_handler.keep_order_state.clone();
-                    let task_clone = task.clone();
-                    let prefix_str = prefix.to_string();
-                    cmd = cmd.with_on_stdout(move |line| {
-                        state
-                            .lock()
-                            .unwrap()
-                            .on_stdout(&task_clone, prefix_str.clone(), line);
-                    });
-                } else {
-                    cmd = cmd.stdout(Stdio::null());
-                }
-                if !task.silent.suppresses_stderr() {
-                    let state = self.output_handler.keep_order_state.clone();
-                    let task_clone = task.clone();
-                    let prefix_str = prefix.to_string();
-                    cmd = cmd.with_on_stderr(move |line| {
-                        state
-                            .lock()
-                            .unwrap()
-                            .on_stderr(&task_clone, prefix_str.clone(), line);
-                    });
-                } else {
-                    cmd = cmd.stderr(Stdio::null());
-                }
-            }
-            TaskOutput::Replacing => {
-                // Replacing mode shows a progress indicator unless both streams are suppressed
-                if task.silent.suppresses_stdout() {
-                    cmd = cmd.stdout(Stdio::null());
-                }
-                if task.silent.suppresses_stderr() {
-                    cmd = cmd.stderr(Stdio::null());
-                }
-                // Show progress indicator except when both streams are fully suppressed
-                if !task.silent.suppresses_both() {
-                    let pr = self.output_handler.task_prs.get(task).unwrap().clone();
-                    cmd = cmd.with_pr_arc(pr);
-                }
-            }
-            TaskOutput::Timed => {
-                if !task.silent.suppresses_stdout() {
-                    let timed_outputs = self.output_handler.timed_outputs.clone();
-                    cmd = cmd.with_on_stdout(move |line| {
-                        timed_outputs
-                            .lock()
-                            .unwrap()
-                            .insert(prefix.to_string(), (SystemTime::now(), line));
-                    });
-                } else {
-                    cmd = cmd.stdout(Stdio::null());
-                }
-                if !task.silent.suppresses_stderr() {
-                    cmd = cmd.with_on_stderr(|line| {
-                        if console::colors_enabled() {
-                            self.eprint(task, prefix, &format!("{line}\x1b[0m"));
-                        } else {
-                            self.eprint(task, prefix, &line);
-                        }
-                    });
-                } else {
-                    cmd = cmd.stderr(Stdio::null());
-                }
-            }
-            TaskOutput::Silent => {
-                cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
-            }
-            TaskOutput::Quiet | TaskOutput::Interleave => {
-                if raw || redactions.is_empty() {
-                    cmd = cmd.stdin(Stdio::inherit());
+        if interactive {
+            cmd = cmd
+                .stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit());
+        } else {
+            match output {
+                TaskOutput::Prefix => {
                     if !task.silent.suppresses_stdout() {
-                        cmd = cmd.stdout(Stdio::inherit());
+                        cmd = cmd.with_on_stdout(|line| {
+                            if console::colors_enabled() {
+                                prefix_println!(prefix, "{line}\x1b[0m");
+                            } else {
+                                prefix_println!(prefix, "{line}");
+                            }
+                        });
                     } else {
                         cmd = cmd.stdout(Stdio::null());
                     }
                     if !task.silent.suppresses_stderr() {
-                        cmd = cmd.stderr(Stdio::inherit());
+                        cmd = cmd.with_on_stderr(|line| {
+                            if console::colors_enabled() {
+                                self.eprint(task, prefix, &format!("{line}\x1b[0m"));
+                            } else {
+                                self.eprint(task, prefix, &line);
+                            }
+                        });
                     } else {
                         cmd = cmd.stderr(Stdio::null());
+                    }
+                }
+                TaskOutput::KeepOrder => {
+                    if !task.silent.suppresses_stdout() {
+                        let state = self.output_handler.keep_order_state.clone();
+                        let task_clone = task.clone();
+                        let prefix_str = prefix.to_string();
+                        cmd = cmd.with_on_stdout(move |line| {
+                            state
+                                .lock()
+                                .unwrap()
+                                .on_stdout(&task_clone, prefix_str.clone(), line);
+                        });
+                    } else {
+                        cmd = cmd.stdout(Stdio::null());
+                    }
+                    if !task.silent.suppresses_stderr() {
+                        let state = self.output_handler.keep_order_state.clone();
+                        let task_clone = task.clone();
+                        let prefix_str = prefix.to_string();
+                        cmd = cmd.with_on_stderr(move |line| {
+                            state
+                                .lock()
+                                .unwrap()
+                                .on_stderr(&task_clone, prefix_str.clone(), line);
+                        });
+                    } else {
+                        cmd = cmd.stderr(Stdio::null());
+                    }
+                }
+                TaskOutput::Replacing => {
+                    // Replacing mode shows a progress indicator unless both streams are suppressed
+                    if task.silent.suppresses_stdout() {
+                        cmd = cmd.stdout(Stdio::null());
+                    }
+                    if task.silent.suppresses_stderr() {
+                        cmd = cmd.stderr(Stdio::null());
+                    }
+                    // Show progress indicator except when both streams are fully suppressed
+                    if !task.silent.suppresses_both()
+                        && let Some(pr) = self.output_handler.task_prs.get(task)
+                    {
+                        cmd = cmd.with_pr_arc(pr.clone());
+                    }
+                }
+                TaskOutput::Timed => {
+                    if !task.silent.suppresses_stdout() {
+                        let timed_outputs = self.output_handler.timed_outputs.clone();
+                        cmd = cmd.with_on_stdout(move |line| {
+                            timed_outputs
+                                .lock()
+                                .unwrap()
+                                .insert(prefix.to_string(), (SystemTime::now(), line));
+                        });
+                    } else {
+                        cmd = cmd.stdout(Stdio::null());
+                    }
+                    if !task.silent.suppresses_stderr() {
+                        cmd = cmd.with_on_stderr(|line| {
+                            if console::colors_enabled() {
+                                self.eprint(task, prefix, &format!("{line}\x1b[0m"));
+                            } else {
+                                self.eprint(task, prefix, &line);
+                            }
+                        });
+                    } else {
+                        cmd = cmd.stderr(Stdio::null());
+                    }
+                }
+                TaskOutput::Silent => {
+                    cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
+                }
+                TaskOutput::Quiet | TaskOutput::Interleave => {
+                    if raw || redactions.is_empty() {
+                        cmd = cmd.stdin(Stdio::inherit());
+                        if !task.silent.suppresses_stdout() {
+                            cmd = cmd.stdout(Stdio::inherit());
+                        } else {
+                            cmd = cmd.stdout(Stdio::null());
+                        }
+                        if !task.silent.suppresses_stderr() {
+                            cmd = cmd.stderr(Stdio::inherit());
+                        } else {
+                            cmd = cmd.stderr(Stdio::null());
+                        }
                     }
                 }
             }

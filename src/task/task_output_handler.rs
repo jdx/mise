@@ -1,6 +1,6 @@
 use crate::config::Settings;
 use crate::task::Task;
-use crate::task::task_helpers::task_needs_permit;
+use crate::task::task_helpers::task_uses_runtime_slot;
 use crate::task::task_output::TaskOutput;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -239,7 +239,7 @@ impl OutputHandler {
         match self.output(Some(task)) {
             TaskOutput::KeepOrder => {
                 // Only add tasks that produce output (not orchestrator-only tasks)
-                if task_needs_permit(task) {
+                if task_uses_runtime_slot(task) {
                     self.keep_order_state.lock().unwrap().init_task(task);
                 }
             }
@@ -313,8 +313,12 @@ impl OutputHandler {
                 );
             }
             TaskOutput::Replacing => {
-                let pr = self.task_prs.get(task).unwrap().clone();
-                pr.set_message(format!("{prefix} {line}"));
+                if let Some(pr) = self.task_prs.get(task) {
+                    pr.set_message(format!("{prefix} {line}"));
+                } else {
+                    // Injected tasks may not be pre-registered in task_prs.
+                    prefix_eprintln!(prefix, "{line}");
+                }
             }
             _ => {
                 prefix_eprintln!(prefix, "{line}");

@@ -246,6 +246,8 @@ pub struct Task {
     #[serde(default)]
     pub raw: bool,
     #[serde(default)]
+    pub interactive: bool,
+    #[serde(default)]
     pub sources: Vec<String>,
     #[serde(default)]
     pub outputs: TaskOutputs,
@@ -380,6 +382,7 @@ impl Task {
         task.dir = p.parse_str("dir");
         task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
         task.raw = p.parse_bool("raw").unwrap_or_default();
+        task.interactive = p.parse_bool("interactive").unwrap_or_default();
         task.sources = p.parse_array("sources").unwrap_or_default();
         task.outputs = p.get_raw("outputs").map(|to| to.into()).unwrap_or_default();
         task.file = Some(path.to_path_buf());
@@ -522,6 +525,12 @@ impl Task {
         } else {
             &self.run
         }
+    }
+
+    pub fn has_runtime_script(&self) -> bool {
+        self.run()
+            .iter()
+            .any(|entry| matches!(entry, RunEntry::Script(_)))
     }
 
     /// Returns only the script strings from the run entries (without rendering)
@@ -1245,6 +1254,7 @@ impl Default for Task {
             hide: false,
             global: false,
             raw: false,
+            interactive: false,
             sources: vec![],
             outputs: Default::default(),
             raw_outputs: Default::default(),
@@ -2268,6 +2278,7 @@ echo "hello world"
 #MISE env={TEST_VAR="value"}
 #MISE dir="/some/dir"
 #MISE hide=true
+#MISE interactive=true
 #MISE raw=true
 #MISE sources=["src1.txt", "src2.txt"]
 #MISE outputs=["out1.txt"]
@@ -2293,6 +2304,7 @@ echo "test"
         assert_eq!(task.wait_for.len(), 1);
         assert_eq!(task.dir, Some("/some/dir".to_string()));
         assert_eq!(task.hide, true);
+        assert_eq!(task.interactive, true);
         assert_eq!(task.raw, true);
         assert_eq!(task.sources, vec!["src1.txt", "src2.txt"]);
         assert_eq!(task.shell, Some("bash -c".to_string()));

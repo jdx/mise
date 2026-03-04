@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+require_cmd python3
+
+run_with_timeout() {
+	python3 - "$@" <<'PY'
+import os
+import subprocess
+import sys
+
+cmd = sys.argv[1:]
+timeout_s = float(os.environ.get("RUN_TIMEOUT", "12"))
+try:
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+except subprocess.TimeoutExpired as exc:
+    if exc.stdout:
+        sys.stdout.write(exc.stdout)
+    if exc.stderr:
+        sys.stdout.write(exc.stderr)
+    sys.stderr.write(f"\ncommand timed out after {timeout_s}s\n")
+    sys.exit(124)
+
+if proc.stdout:
+    sys.stdout.write(proc.stdout)
+if proc.stderr:
+    sys.stdout.write(proc.stderr)
+sys.exit(proc.returncode)
+PY
+}
+
+trace_file="$(mktemp)"
+lock_dir="$(mktemp -u)"
+trap 'rm -f "$trace_file"; rmdir "$lock_dir" 2>/dev/null || true' EXIT
+
+cat <<'EOF' >mise.toml
+[tasks.parent_a]
+run = [
+'''
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  echo "overlap parent_a_script" >> "$TRACE_FILE"
+  exit 81
+fi
+echo "parent_a_script:start" >> "$TRACE_FILE"
+sleep 0.25
+echo "parent_a_script:end" >> "$TRACE_FILE"
+rmdir "$LOCK_DIR"
+''',
+{ task = "child_a" },
+]
+
+[tasks.child_a]
+run = '''
+echo "child_a:start" >> "$TRACE_FILE"
+sleep 0.05
+echo "child_a:end" >> "$TRACE_FILE"
+'''
+
+[tasks.parent_b]
+run = [
+'''
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  echo "overlap parent_b_script" >> "$TRACE_FILE"
+  exit 82
+fi
+echo "parent_b_script:start" >> "$TRACE_FILE"
+sleep 0.25
+echo "parent_b_script:end" >> "$TRACE_FILE"
+rmdir "$LOCK_DIR"
+''',
+{ task = "child_b" },
+]
+
+[tasks.child_b]
+run = '''
+echo "child_b:start" >> "$TRACE_FILE"
+echo "child_b:end" >> "$TRACE_FILE"
+'''
+EOF
+
+set +e
+out="$(
+	LOCK_DIR="$lock_dir" TRACE_FILE="$trace_file" RUN_TIMEOUT=12 \
+		run_with_timeout mise run --jobs=1 parent_a ::: parent_b 2>&1
+)"
+status=$?
+set -e
+
+if [[ $status -eq 124 ]]; then
+	fail "run deadlocked under --jobs=1 for mixed parent/injected child chain: $out"
+fi
+if [[ $status -ne 0 ]]; then
+	fail "expected success under --jobs=1 (status=$status): $out"
+fi
+
+if grep -q '^overlap ' "$trace_file"; then
+	fail "mixed parent scripts overlapped despite --jobs=1: $(cat "$trace_file")"
+fi
+
+assert_contains "cat '$trace_file'" "child_a:start"
+assert_contains "cat '$trace_file'" "child_b:start"

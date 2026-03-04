@@ -217,8 +217,11 @@ impl Deps {
 }
 
 fn leaves(graph: &DiGraph<Task, ()>) -> Vec<Task> {
-    graph
+    let mut tasks = graph
         .externals(Direction::Outgoing)
         .map(|idx| graph[idx].clone())
-        .collect()
+        .collect::<Vec<_>>();
+    // Deterministic tie-break for concurrently-ready leaves.
+    tasks.sort();
+    tasks
 }
