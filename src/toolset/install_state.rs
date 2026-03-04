@@ -230,9 +230,9 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             let mut full = mt.full.clone();
             let mut opts = mt.opts.clone();
             // Backward compat: if opts is empty but full contains [...], extract opts
-            if opts.is_empty() {
-                if let Some(ref f) = full {
-                    if let Some((stripped_str, opts_str)) =
+            if opts.is_empty()
+                && let Some(ref f) = full
+                    && let Some((stripped_str, opts_str)) =
                         crate::cli::args::split_bracketed_opts(f)
                     {
                         let stripped = stripped_str.to_string();
@@ -264,8 +264,6 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                             },
                         );
                     }
-                }
-            }
             (mt.short.clone(), full, mt.explicit_backend, opts)
         } else if let Some((s, full, explicit)) = read_legacy_backend_meta(&dir_name) {
             // Migration: absorb into manifest (clone on first migration)
