@@ -49,11 +49,6 @@ impl ToolVersionOptions {
         self.opts.get(key).and_then(|v| v.as_str())
     }
 
-    /// Get the raw toml::Value for a key.
-    pub fn get_value(&self, key: &str) -> Option<&toml::Value> {
-        self.opts.get(key)
-    }
-
     pub fn merge(&mut self, other: &IndexMap<String, toml::Value>) {
         for (key, value) in other {
             self.opts.entry(key.to_string()).or_insert(value.clone());
@@ -166,7 +161,21 @@ fn try_parse_as_toml(s: &str) -> Option<ToolVersionOptions> {
     let table = value.get("_x_")?.as_table()?;
     let mut tvo = ToolVersionOptions::default();
     for (k, v) in table {
-        tvo.opts.insert(k.clone(), v.clone());
+        match v {
+            toml::Value::Table(_) | toml::Value::Array(_) => {
+                tvo.opts.insert(k.clone(), v.clone());
+            }
+            toml::Value::String(_) => {
+                tvo.opts.insert(k.clone(), v.clone());
+            }
+            _ => {
+                // Convert scalar values (ints, bools, floats) to strings
+                tvo.opts.insert(
+                    k.clone(),
+                    toml::Value::String(v.to_string().trim_matches('"').to_string()),
+                );
+            }
+        }
     }
     Some(tvo)
 }
@@ -307,6 +316,15 @@ mod tests {
         assert_eq!(opts.get("bin_path"), Some("bin"));
         assert_eq!(opts.get("strip_components"), Some("1"));
         assert!(opts.opts.get("platforms").is_some());
+    }
+
+    #[test]
+    fn test_parse_tool_options_integer_strip_components() {
+        // strip_components=1 (integer, not string) should be converted to string
+        let input = r#"bin_path="bin",strip_components=1"#;
+        let opts = parse_tool_options(input);
+        assert_eq!(opts.get("bin_path"), Some("bin"));
+        assert_eq!(opts.get("strip_components"), Some("1"));
     }
 
     #[test]

@@ -1598,9 +1598,18 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                                     let s = s.replace("{{version}}", "{version}");
                                     options.opts.insert(k, toml::Value::String(s));
                                 }
-                                _ => {
-                                    // Store tables, arrays, bools, ints, floats directly
+                                toml::Value::Table(_) | toml::Value::Array(_) => {
+                                    // Keep tables and arrays as native TOML
                                     options.opts.insert(k, v);
+                                }
+                                _ => {
+                                    // Convert scalar values (ints, bools, floats) to strings
+                                    options.opts.insert(
+                                        k,
+                                        toml::Value::String(
+                                            v.to_string().trim_matches('"').to_string(),
+                                        ),
+                                    );
                                 }
                             }
                         }
@@ -1706,9 +1715,18 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                                     let s = s.replace("{{version}}", "{version}");
                                     options.opts.insert(k, toml::Value::String(s));
                                 }
-                                _ => {
-                                    // Store tables, arrays, bools, ints, floats directly
+                                toml::Value::Table(_) | toml::Value::Array(_) => {
+                                    // Keep tables and arrays as native TOML
                                     options.opts.insert(k, v);
+                                }
+                                _ => {
+                                    // Convert scalar values (ints, bools, floats) to strings
+                                    options.opts.insert(
+                                        k,
+                                        toml::Value::String(
+                                            v.to_string().trim_matches('"').to_string(),
+                                        ),
+                                    );
                                 }
                             }
                         }
