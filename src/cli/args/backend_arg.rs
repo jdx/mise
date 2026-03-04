@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state::InstallStateTool;
-use crate::toolset::{ToolVersionOptions, install_state, parse_tool_options};
+use crate::toolset::{EPHEMERAL_OPT_KEYS, ToolVersionOptions, install_state, parse_tool_options};
 use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
 use eyre::{Result, bail};
@@ -395,7 +395,7 @@ impl BackendArg {
                 .opts
                 .iter()
                 // filter out global options that are only relevant for initial installation
-                .filter(|(k, _)| !["postinstall", "install_env"].contains(&k.as_str()))
+                .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str()))
                 .map(|(k, v)| format!("{k}={v}"))
                 .collect::<Vec<_>>()
                 .join(",");

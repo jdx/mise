@@ -1,5 +1,9 @@
 use indexmap::IndexMap;
 
+/// Option keys that are only relevant during initial installation and should not
+/// be persisted in the manifest or included in `full_with_opts()`.
+pub const EPHEMERAL_OPT_KEYS: &[&str] = &["postinstall", "install_env"];
+
 #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct ToolVersionOptions {
     pub os: Option<Vec<String>>,

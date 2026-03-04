@@ -3,7 +3,7 @@ use crate::cli::args::BackendArg;
 use crate::file::display_path;
 use crate::git::Git;
 use crate::plugins::PluginType;
-use crate::toolset::parse_tool_options;
+use crate::toolset::{EPHEMERAL_OPT_KEYS, parse_tool_options};
 use crate::{dirs, file, runtime_symlinks};
 use eyre::{Ok, Result};
 use heck::ToKebabCase;
@@ -238,7 +238,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                         let stripped = stripped_str.to_string();
                         let parsed = parse_tool_options(opts_str);
                         for (k, v) in &parsed.opts {
-                            if ["postinstall", "install_env"].contains(&k.as_str()) {
+                            if EPHEMERAL_OPT_KEYS.contains(&k.as_str()) {
                                 continue;
                             }
                             let tv = if v.starts_with('{') {
@@ -411,7 +411,7 @@ pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
         .opts()
         .opts
         .iter()
-        .filter(|(k, _)| !["postinstall", "install_env"].contains(&k.as_str()))
+        .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str()))
         .map(|(k, v)| {
             let tv = if v.starts_with('{') {
                 // Inline table — parse it back to a toml::Value
