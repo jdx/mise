@@ -16,6 +16,32 @@ assert_contains "mise ls --installed dummy" "2.0.0"
 assert_not_contains "mise ls --installed dummy" "1.1.0"
 rm .tool-versions
 
+# Test: --local should only upgrade tools in local config, not global config
+cat <<EOF >mise.toml
+[tools]
+dummy = "1"
+EOF
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[tools]
+tiny = "1"
+EOF
+mise uninstall dummy tiny --all
+mise install dummy@1.0.0 tiny@1.0.0
+assert_contains "mise ls --installed dummy" "1.0.0"
+assert_contains "mise ls --installed tiny" "1.0.0"
+# Dry-run should only show the local tool (dummy)
+assert_contains "mise upgrade --local -n" "Would install dummy@1.1.0"
+assert_not_contains "mise upgrade --local -n" "tiny"
+# Actual upgrade should only upgrade dummy
+mise upgrade --local
+assert_contains "mise ls --installed dummy" "1.1.0"
+assert_not_contains "mise ls --installed dummy" "1.0.0"
+# tiny should remain at 1.0.0 since it's in global config
+assert_contains "mise ls --installed tiny" "1.0.0"
+assert_not_contains "mise ls --installed tiny" "1.1.0"
+rm -f "$MISE_CONFIG_DIR/config.toml"
+rm -f mise.toml
+
 # ensure options are retained
 mise use "ubi:bazelbuild/buildtools[exe=buildifier,matching=buildifier]@7.1.2"
 assert "cat mise.toml" '[tools]

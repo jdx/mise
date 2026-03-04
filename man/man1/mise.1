@@ -1462,6 +1462,12 @@ show other 20.x versions, not 21.x or 22.x versions.
 
 Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
 .TP
+\fB\-\-local\fR
+Only show outdated tools defined in local config files
+
+This will only show tools that are defined in project\-local mise.toml and
+will skip tools defined in the global config (~/.config/mise/config.toml).
+.TP
 \fB\-\-no\-header\fR
 Don't show table header
 \fBArguments:\fR
@@ -2916,6 +2922,12 @@ Explicitly pinned versions like "22.5.0" are not filtered.
 Like \-\-dry\-run but exits with code 1 if there are outdated tools
 
 This is useful for scripts to check if tools need to be upgraded.
+.TP
+\fB\-\-local\fR
+Only upgrade tools defined in local config files
+
+This will only upgrade tools that are defined in project\-local mise.toml and
+will skip tools defined in the global config (~/.config/mise/config.toml).
 .TP
 \fB\-\-raw\fR
 Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
