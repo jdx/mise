@@ -428,12 +428,17 @@ impl BackendArg {
             opts.opts.insert(k, v);
         }
 
-        // Merge manifest opts (native TOML values from install state)
+        // Merge manifest opts (native TOML values from install state).
+        // These are user-specified opts stored in native TOML format, so they
+        // override registry defaults (same precedence as user_opts above).
         for (k, v) in &self.manifest_opts {
-            opts.opts.entry(k.clone()).or_insert_with(|| match v {
-                toml::Value::String(s) => s.clone(),
-                _ => v.to_string(),
-            });
+            opts.opts.insert(
+                k.clone(),
+                match v {
+                    toml::Value::String(s) => s.clone(),
+                    _ => v.to_string(),
+                },
+            );
         }
         for (k, v) in user_opts.install_env {
             opts.install_env.insert(k, v);
