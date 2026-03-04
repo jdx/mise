@@ -3,6 +3,7 @@ use crate::cli::args::BackendArg;
 use crate::file::display_path;
 use crate::git::Git;
 use crate::plugins::PluginType;
+use crate::toolset::parse_tool_options;
 use crate::{dirs, file, runtime_symlinks};
 use eyre::{Ok, Result};
 use heck::ToKebabCase;
@@ -32,6 +33,7 @@ pub struct InstallStateTool {
     pub full: Option<String>,
     pub versions: Vec<String>,
     pub explicit_backend: bool,
+    pub opts: BTreeMap<String, toml::Value>,
 }
 
 /// Entry in the consolidated manifest file (.mise-installs.toml).
@@ -45,6 +47,8 @@ struct ManifestTool {
     full: Option<String>,
     #[serde(default = "default_true")]
     explicit_backend: bool,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    opts: BTreeMap<String, toml::Value>,
 }
 
 fn default_true() -> bool {
@@ -222,8 +226,46 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
         }
 
         // Get metadata: prefer manifest, fall back to legacy .mise.backend
-        let (short, full, explicit_backend) = if let Some(mt) = manifest.get(&dir_name) {
-            (mt.short.clone(), mt.full.clone(), mt.explicit_backend)
+        let (short, full, explicit_backend, opts) = if let Some(mt) = manifest.get(&dir_name) {
+            let mut full = mt.full.clone();
+            let mut opts = mt.opts.clone();
+            // Backward compat: if opts is empty but full contains [...], extract opts
+            if opts.is_empty() {
+                if let Some(ref f) = full {
+                    if let Some(c) = xx::regex!(r"^(.+)\[(.+)\]$").captures(f) {
+                        let stripped = c.get(1).unwrap().as_str().to_string();
+                        let opts_str = c.get(2).unwrap().as_str();
+                        let parsed = parse_tool_options(opts_str);
+                        for (k, v) in &parsed.opts {
+                            if ["postinstall", "install_env"].contains(&k.as_str()) {
+                                continue;
+                            }
+                            let tv = if v.starts_with('{') {
+                                toml::from_str::<toml::Value>(&format!("x = {v}"))
+                                    .ok()
+                                    .and_then(|t| t.get("x").cloned())
+                                    .unwrap_or_else(|| toml::Value::String(v.clone()))
+                            } else {
+                                toml::Value::String(v.clone())
+                            };
+                            opts.insert(k.clone(), tv);
+                        }
+                        full = Some(stripped);
+                        // Schedule manifest rewrite to migrate to new format
+                        let m = updated_manifest.get_or_insert_with(|| manifest.clone());
+                        m.insert(
+                            dir_name.clone(),
+                            ManifestTool {
+                                short: mt.short.clone(),
+                                full: full.clone(),
+                                explicit_backend: mt.explicit_backend,
+                                opts: opts.clone(),
+                            },
+                        );
+                    }
+                }
+            }
+            (mt.short.clone(), full, mt.explicit_backend, opts)
         } else if let Some((s, full, explicit)) = read_legacy_backend_meta(&dir_name) {
             // Migration: absorb into manifest (clone on first migration)
             let m = updated_manifest.get_or_insert_with(|| manifest.clone());
@@ -233,11 +275,12 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                     short: s.clone(),
                     full: full.clone(),
                     explicit_backend: explicit,
+                    opts: BTreeMap::new(),
                 },
             );
-            (s, full, explicit)
+            (s, full, explicit, BTreeMap::new())
         } else {
-            (dir_name.clone(), None, true)
+            (dir_name.clone(), None, true, BTreeMap::new())
         };
 
         let tool = InstallStateTool {
@@ -245,6 +288,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             full,
             versions,
             explicit_backend,
+            opts,
         };
         time!("init_tools {short}");
         tools.insert(short, tool);
@@ -271,6 +315,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 full: Some(full.clone()),
                 versions: Default::default(),
                 explicit_backend: true,
+                opts: BTreeMap::new(),
             });
         tool.full = Some(full);
     }
@@ -357,11 +402,28 @@ pub async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
 
 /// Writes backend metadata to the consolidated manifest file.
 pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
-    let full = match ba.full() {
-        full if full.starts_with("core:") => ba.full(),
-        _ => ba.full_with_opts(),
-    };
+    let full = ba.full();
     let explicit = ba.has_explicit_backend();
+
+    // Convert opts to native TOML values
+    let opts_map: BTreeMap<String, toml::Value> = ba
+        .opts()
+        .opts
+        .iter()
+        .filter(|(k, _)| !["postinstall", "install_env"].contains(&k.as_str()))
+        .map(|(k, v)| {
+            let tv = if v.starts_with('{') {
+                // Inline table — parse it back to a toml::Value
+                toml::from_str::<toml::Value>(&format!("x = {v}"))
+                    .ok()
+                    .and_then(|t| t.get("x").cloned())
+                    .unwrap_or_else(|| toml::Value::String(v.clone()))
+            } else {
+                toml::Value::String(v.clone())
+            };
+            (k.clone(), tv)
+        })
+        .collect();
 
     let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
     let mut manifest = read_manifest();
@@ -371,6 +433,7 @@ pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
             short: ba.short.clone(),
             full: Some(full),
             explicit_backend: explicit,
+            opts: opts_map,
         },
     );
     write_manifest(&manifest)?;
@@ -423,6 +486,7 @@ pub fn reset() {
 mod tests {
     use super::normalize_version_for_sort;
     use itertools::Itertools;
+    use std::collections::BTreeMap;
     use versions::Versioning;
 
     #[test]
@@ -477,6 +541,7 @@ mod tests {
                 short: "node".to_string(),
                 full: Some("core:node".to_string()),
                 explicit_backend: true,
+                opts: BTreeMap::new(),
             },
         );
         manifest.insert(
@@ -485,6 +550,7 @@ mod tests {
                 short: "bun".to_string(),
                 full: Some("aqua:oven-sh/bun".to_string()),
                 explicit_backend: false,
+                opts: BTreeMap::new(),
             },
         );
         manifest.insert(
@@ -493,6 +559,7 @@ mod tests {
                 short: "tiny".to_string(),
                 full: None,
                 explicit_backend: true,
+                opts: BTreeMap::new(),
             },
         );
 
@@ -509,5 +576,82 @@ mod tests {
         assert!(!deserialized["bun"].explicit_backend);
         assert!(deserialized["tiny"].full.is_none());
         assert!(deserialized["tiny"].explicit_backend);
+    }
+
+    #[test]
+    fn test_manifest_with_opts_roundtrip() {
+        use super::{Manifest, ManifestTool};
+
+        let mut opts = BTreeMap::new();
+        opts.insert(
+            "url".to_string(),
+            toml::Value::String("https://example.com/tool.tar.gz".to_string()),
+        );
+        opts.insert(
+            "bin_path".to_string(),
+            toml::Value::String("bin".to_string()),
+        );
+
+        // Nested table for platforms
+        let mut platforms = toml::map::Map::new();
+        let mut linux = toml::map::Map::new();
+        linux.insert(
+            "url".to_string(),
+            toml::Value::String("https://example.com/linux.tar.gz".to_string()),
+        );
+        platforms.insert("linux-x64".to_string(), toml::Value::Table(linux));
+        opts.insert("platforms".to_string(), toml::Value::Table(platforms));
+
+        let mut manifest = Manifest::new();
+        manifest.insert(
+            "hello".to_string(),
+            ManifestTool {
+                short: "hello".to_string(),
+                full: Some("http:hello".to_string()),
+                explicit_backend: true,
+                opts,
+            },
+        );
+
+        let serialized = toml::to_string_pretty(&manifest).unwrap();
+        let deserialized: Manifest = toml::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized["hello"].full.as_deref(), Some("http:hello"));
+        assert_eq!(
+            deserialized["hello"].opts.get("url"),
+            Some(&toml::Value::String(
+                "https://example.com/tool.tar.gz".to_string()
+            ))
+        );
+        assert_eq!(
+            deserialized["hello"].opts.get("bin_path"),
+            Some(&toml::Value::String("bin".to_string()))
+        );
+        // Verify nested platforms table survived round-trip
+        let platforms = deserialized["hello"].opts.get("platforms").unwrap();
+        assert!(platforms.is_table());
+        let linux = platforms.get("linux-x64").unwrap();
+        assert_eq!(
+            linux.get("url").unwrap().as_str(),
+            Some("https://example.com/linux.tar.gz")
+        );
+    }
+
+    #[test]
+    fn test_manifest_backward_compat_bracketed_full() {
+        use super::Manifest;
+
+        // Old format: full contains bracketed opts
+        let toml_str = r#"
+[hello]
+short = "hello"
+full = "http:hello[url = \"https://example.com/tool.tar.gz\", bin_path = \"bin\"]"
+explicit_backend = true
+"#;
+        let manifest: Manifest = toml::from_str(toml_str).unwrap();
+        let mt = &manifest["hello"];
+        // Old format should deserialize with opts empty and brackets in full
+        assert!(mt.opts.is_empty());
+        assert!(mt.full.as_ref().unwrap().contains('['));
     }
 }

@@ -77,11 +77,28 @@ impl<A: AsRef<str>> From<A> for BackendArg {
 impl From<InstallStateTool> for BackendArg {
     fn from(ist: InstallStateTool) -> Self {
         let (short, tool_name, opts) = parse_backend_components(&ist.short, ist.full.as_ref());
+
+        // Merge opts from InstallStateTool (native TOML) into the parsed opts
+        let merged_opts = if ist.opts.is_empty() {
+            opts
+        } else {
+            let mut tvo = opts.unwrap_or_default();
+            for (k, v) in &ist.opts {
+                let s = match v {
+                    toml::Value::String(s) => s.clone(),
+                    toml::Value::Table(_) => v.to_string(),
+                    _ => v.to_string(),
+                };
+                tvo.opts.insert(k.clone(), s);
+            }
+            Some(tvo)
+        };
+
         Self::new_raw(
             short,
             ist.full,
             tool_name,
-            opts,
+            merged_opts,
             BackendResolution::new(ist.explicit_backend),
         )
     }
@@ -366,21 +383,9 @@ impl BackendArg {
                 .iter()
                 // filter out global options that are only relevant for initial installation
                 .filter(|(k, _)| !["postinstall", "install_env"].contains(&k.as_str()))
-                .map(|(k, v)| {
-                    // Parse the value to a toml::Value so Display handles quoting/escaping
-                    let tv = if v.starts_with('{') {
-                        // Inline table — parse it back to a toml::Value
-                        toml::from_str::<toml::Value>(&format!("x = {v}"))
-                            .ok()
-                            .and_then(|t| t.get("x").cloned())
-                            .unwrap_or_else(|| toml::Value::String(v.clone()))
-                    } else {
-                        toml::Value::String(v.clone())
-                    };
-                    format!("{k} = {tv}")
-                })
+                .map(|(k, v)| format!("{k}={v}"))
                 .collect::<Vec<_>>()
-                .join(", ");
+                .join(",");
             if !full.contains(['[', ']']) && !opts_str.is_empty() {
                 return format!("{full}[{opts_str}]");
             }
