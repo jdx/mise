@@ -403,25 +403,30 @@ pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
     let full = ba.full();
     let explicit = ba.has_explicit_backend();
 
-    // Convert opts to native TOML values
+    // Convert user-specified opts to native TOML values.
+    // Use the opts field (not the opts() method) to avoid persisting registry defaults.
     let opts_map: BTreeMap<String, toml::Value> = ba
-        .opts()
         .opts
-        .iter()
-        .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str()))
-        .map(|(k, v)| {
-            let tv = if v.starts_with('{') {
-                // Inline table — parse it back to a toml::Value
-                toml::from_str::<toml::Value>(&format!("x = {v}"))
-                    .ok()
-                    .and_then(|t| t.get("x").cloned())
-                    .unwrap_or_else(|| toml::Value::String(v.clone()))
-            } else {
-                toml::Value::String(v.clone())
-            };
-            (k.clone(), tv)
+        .as_ref()
+        .map(|o| {
+            o.opts
+                .iter()
+                .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str()))
+                .map(|(k, v)| {
+                    let tv = if v.starts_with('{') {
+                        // Inline table — parse it back to a toml::Value
+                        toml::from_str::<toml::Value>(&format!("x = {v}"))
+                            .ok()
+                            .and_then(|t| t.get("x").cloned())
+                            .unwrap_or_else(|| toml::Value::String(v.clone()))
+                    } else {
+                        toml::Value::String(v.clone())
+                    };
+                    (k.clone(), tv)
+                })
+                .collect()
         })
-        .collect();
+        .unwrap_or_default();
 
     let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
     let mut manifest = read_manifest();
