@@ -1669,6 +1669,28 @@
                         "items": {
                           "type": "string"
                         }
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "task": {
+                            "type": "string"
+                          },
+                          "args": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "env": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": ["task"],
+                        "additionalProperties": false
                       }
                     ]
                   }
@@ -1695,6 +1717,28 @@
                         "items": {
                           "type": "string"
                         }
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "task": {
+                            "type": "string"
+                          },
+                          "args": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "env": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": ["task"],
+                        "additionalProperties": false
                       }
                     ]
                   }
@@ -1711,7 +1755,39 @@
                   "description": "task with args to wait for completion first",
                   "items": {
                     "description": "task name and args",
-                    "type": "string"
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "task": {
+                            "type": "string"
+                          },
+                          "args": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "env": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": ["task"],
+                        "additionalProperties": false
+                      }
+                    ]
                   },
                   "type": "array"
                 }
@@ -2285,6 +2361,28 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "task": {
+                        "type": "string"
+                      },
+                      "args": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "env": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": ["task"],
+                    "additionalProperties": false
                   }
                 ]
               }
@@ -2311,6 +2409,28 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "task": {
+                        "type": "string"
+                      },
+                      "args": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "env": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": ["task"],
+                    "additionalProperties": false
                   }
                 ]
               }
@@ -2327,7 +2447,39 @@
               "description": "task with args to wait for completion first",
               "items": {
                 "description": "task name and args",
-                "type": "string"
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "task": {
+                        "type": "string"
+                      },
+                      "args": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "env": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": ["task"],
+                    "additionalProperties": false
+                  }
+                ]
               },
               "type": "array"
             }
@@ -2553,6 +2705,28 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "task": {
+                        "type": "string"
+                      },
+                      "args": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "env": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": ["task"],
+                    "additionalProperties": false
                   }
                 ]
               }
@@ -2579,6 +2753,28 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "task": {
+                        "type": "string"
+                      },
+                      "args": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "env": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": ["task"],
+                    "additionalProperties": false
                   }
                 ]
               }
@@ -2595,7 +2791,39 @@
               "description": "task with args to wait for completion first",
               "items": {
                 "description": "task name and args",
-                "type": "string"
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "task": {
+                        "type": "string"
+                      },
+                      "args": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "env": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": ["task"],
+                    "additionalProperties": false
+                  }
+                ]
               },
               "type": "array"
             }
