@@ -40,6 +40,7 @@ assert_not_contains "mise ls --installed dummy" "1.0.0"
 assert_contains "mise ls --installed tiny" "1.0.0"
 assert_not_contains "mise ls --installed tiny" "1.1.0"
 rm -f "$MISE_CONFIG_DIR/config.toml"
+rm -f mise.toml
 
 # ensure options are retained
 mise use "ubi:bazelbuild/buildtools[exe=buildifier,matching=buildifier]@7.1.2"
