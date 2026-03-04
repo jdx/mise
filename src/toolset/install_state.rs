@@ -232,38 +232,37 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             // Backward compat: if opts is empty but full contains [...], extract opts
             if opts.is_empty()
                 && let Some(ref f) = full
-                    && let Some((stripped_str, opts_str)) =
-                        crate::cli::args::split_bracketed_opts(f)
-                    {
-                        let stripped = stripped_str.to_string();
-                        let parsed = parse_tool_options(opts_str);
-                        for (k, v) in &parsed.opts {
-                            if EPHEMERAL_OPT_KEYS.contains(&k.as_str()) {
-                                continue;
-                            }
-                            let tv = if v.starts_with('{') {
-                                toml::from_str::<toml::Value>(&format!("x = {v}"))
-                                    .ok()
-                                    .and_then(|t| t.get("x").cloned())
-                                    .unwrap_or_else(|| toml::Value::String(v.clone()))
-                            } else {
-                                toml::Value::String(v.clone())
-                            };
-                            opts.insert(k.clone(), tv);
-                        }
-                        full = Some(stripped);
-                        // Schedule manifest rewrite to migrate to new format
-                        let m = updated_manifest.get_or_insert_with(|| manifest.clone());
-                        m.insert(
-                            dir_name.clone(),
-                            ManifestTool {
-                                short: mt.short.clone(),
-                                full: full.clone(),
-                                explicit_backend: mt.explicit_backend,
-                                opts: opts.clone(),
-                            },
-                        );
+                && let Some((stripped_str, opts_str)) = crate::cli::args::split_bracketed_opts(f)
+            {
+                let stripped = stripped_str.to_string();
+                let parsed = parse_tool_options(opts_str);
+                for (k, v) in &parsed.opts {
+                    if EPHEMERAL_OPT_KEYS.contains(&k.as_str()) {
+                        continue;
                     }
+                    let tv = if v.starts_with('{') {
+                        toml::from_str::<toml::Value>(&format!("x = {v}"))
+                            .ok()
+                            .and_then(|t| t.get("x").cloned())
+                            .unwrap_or_else(|| toml::Value::String(v.clone()))
+                    } else {
+                        toml::Value::String(v.clone())
+                    };
+                    opts.insert(k.clone(), tv);
+                }
+                full = Some(stripped);
+                // Schedule manifest rewrite to migrate to new format
+                let m = updated_manifest.get_or_insert_with(|| manifest.clone());
+                m.insert(
+                    dir_name.clone(),
+                    ManifestTool {
+                        short: mt.short.clone(),
+                        full: full.clone(),
+                        explicit_backend: mt.explicit_backend,
+                        opts: opts.clone(),
+                    },
+                );
+            }
             (mt.short.clone(), full, mt.explicit_backend, opts)
         } else if let Some((s, full, explicit)) = read_legacy_backend_meta(&dir_name) {
             // Migration: absorb into manifest (clone on first migration)
