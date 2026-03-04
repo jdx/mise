@@ -157,9 +157,7 @@ bin = "docker-compose"  # Rename the downloaded binary to docker-compose
 
 ::: info
 When downloading single binaries (not archives), mise automatically removes OS/arch suffixes from the filename. For example, `docker-compose-linux-x86_64` becomes `docker-compose` automatically. Use the `bin` option only when you need a specific custom name.
-:::
 
-::: info
 On Windows, executable extensions (`.exe`, `.bat`, `.cmd`) are automatically preserved when renaming.
 :::
 
@@ -176,9 +174,7 @@ rename_exe = "yt-dlp"  # Rename the extracted binary to yt-dlp
 
 ::: tip
 Use `rename_exe` for archives where the binary inside has a different name than desired. Use `bin` for single binary downloads (non-archives).
-:::
 
-::: info
 On Windows, executable extensions (`.exe`, `.bat`, `.cmd`) are automatically preserved when renaming.
 :::
 

@@ -62,9 +62,7 @@ Use the `rename_exe` option to specify the target executable name:
 "ubi:cli/cli" = { version = "latest", exe = "gh", rename_exe = "github" } # github's cli
 ```
 
-::: info
 On Windows, executable extensions (`.exe`, `.bat`, `.cmd`) are **NOT** automatically preserved when renaming, on the contrary to how this works on other backends like [`github`](./github.html#rename-exe).
-:::
 
 ### `matching`
 
