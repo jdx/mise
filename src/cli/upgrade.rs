@@ -96,16 +96,19 @@ impl Upgrade {
         self.dry_run || self.dry_run_code
     }
 
-    pub async fn run(self) -> Result<()> {
-        let mut config = Config::get().await?;
-        let scope = if self.local {
+    fn scope(&self) -> ConfigScope {
+        if self.local {
             ConfigScope::LocalOnly
         } else {
             ConfigScope::All
-        };
+        }
+    }
+
+    pub async fn run(self) -> Result<()> {
+        let mut config = Config::get().await?;
         let ts = ToolsetBuilder::new()
             .with_args(&self.tool)
-            .with_scope(scope)
+            .with_scope(self.scope())
             .build(&config)
             .await?;
         // Compute before_date once to ensure consistency when using relative durations
@@ -155,14 +158,9 @@ impl Upgrade {
         before_date: Option<Timestamp>,
     ) -> Result<()> {
         let mpr = MultiProgressReport::get();
-        let scope = if self.local {
-            ConfigScope::LocalOnly
-        } else {
-            ConfigScope::All
-        };
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
-            .with_scope(scope)
+            .with_scope(self.scope())
             .build(config)
             .await?;
 
