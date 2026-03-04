@@ -51,6 +51,19 @@ struct ManifestTool {
     opts: BTreeMap<String, toml::Value>,
 }
 
+/// Convert a string option value to a `toml::Value`.
+/// Values starting with `{` are parsed as inline TOML tables; others become strings.
+fn str_to_toml_value(v: &str) -> toml::Value {
+    if v.starts_with('{') {
+        toml::from_str::<toml::Value>(&format!("x = {v}"))
+            .ok()
+            .and_then(|t| t.get("x").cloned())
+            .unwrap_or_else(|| toml::Value::String(v.to_string()))
+    } else {
+        toml::Value::String(v.to_string())
+    }
+}
+
 fn default_true() -> bool {
     true
 }
@@ -240,15 +253,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                     if EPHEMERAL_OPT_KEYS.contains(&k.as_str()) {
                         continue;
                     }
-                    let tv = if v.starts_with('{') {
-                        toml::from_str::<toml::Value>(&format!("x = {v}"))
-                            .ok()
-                            .and_then(|t| t.get("x").cloned())
-                            .unwrap_or_else(|| toml::Value::String(v.clone()))
-                    } else {
-                        toml::Value::String(v.clone())
-                    };
-                    opts.insert(k.clone(), tv);
+                    opts.insert(k.clone(), str_to_toml_value(v));
                 }
                 full = Some(stripped);
                 // Schedule manifest rewrite to migrate to new format
@@ -412,18 +417,7 @@ pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
             o.opts
                 .iter()
                 .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str()))
-                .map(|(k, v)| {
-                    let tv = if v.starts_with('{') {
-                        // Inline table — parse it back to a toml::Value
-                        toml::from_str::<toml::Value>(&format!("x = {v}"))
-                            .ok()
-                            .and_then(|t| t.get("x").cloned())
-                            .unwrap_or_else(|| toml::Value::String(v.clone()))
-                    } else {
-                        toml::Value::String(v.clone())
-                    };
-                    (k.clone(), tv)
-                })
+                .map(|(k, v)| (k.clone(), str_to_toml_value(v)))
                 .collect()
         })
         .unwrap_or_default();
