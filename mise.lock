@@ -124,17 +124,17 @@ backend = "aqua:cli/cli"
 "platforms.windows-x64-baseline" = { checksum = "sha256:c590bcb488f80a85c8febd5cde27edd68fdd481bd004aaf9adc50dcf1b21c09c", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_windows_amd64.zip"}
 
 [[tools.hk]]
-version = "1.36.0"
+version = "1.37.0"
 backend = "aqua:jdx/hk"
-"platforms.linux-arm64" = { checksum = "sha256:51cf51e2035038ee64d772e71f8daf4978380ef82faffee2b12c413f009341ab", url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-aarch64-unknown-linux-gnu.tar.gz"}
-"platforms.linux-arm64-musl" = { checksum = "sha256:51cf51e2035038ee64d772e71f8daf4978380ef82faffee2b12c413f009341ab", url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-aarch64-unknown-linux-gnu.tar.gz"}
-"platforms.linux-x64" = { checksum = "sha256:d20fa0be3f1135abc74471670306ae0353ad2336804595362293f0c8460952e7", url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
-"platforms.linux-x64-baseline" = { checksum = "sha256:d20fa0be3f1135abc74471670306ae0353ad2336804595362293f0c8460952e7", url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
-"platforms.linux-x64-musl" = { checksum = "sha256:d20fa0be3f1135abc74471670306ae0353ad2336804595362293f0c8460952e7", url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
-"platforms.linux-x64-musl-baseline" = { checksum = "sha256:d20fa0be3f1135abc74471670306ae0353ad2336804595362293f0c8460952e7", url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
-"platforms.macos-arm64" = { checksum = "sha256:553ff3c7c18d91f1c1dcdbae44315db0324b52336b5a02ed5b9c382f08499b3b", url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-aarch64-apple-darwin.tar.gz"}
-"platforms.windows-x64" = { checksum = "sha256:1f12218ccad806a3f49bcf521f86b6825fbd89486e830c1c04f72e3796f84589", url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-x86_64-pc-windows-msvc.zip"}
-"platforms.windows-x64-baseline" = { checksum = "sha256:1f12218ccad806a3f49bcf521f86b6825fbd89486e830c1c04f72e3796f84589", url = "https://github.com/jdx/hk/releases/download/v1.36.0/hk-x86_64-pc-windows-msvc.zip"}
+"platforms.linux-arm64" = { checksum = "sha256:4996fdbd499a86d3341c66d1f4ae41b77d0e79f24c0fbfc882f65935855d4b1d", url = "https://github.com/jdx/hk/releases/download/v1.37.0/hk-aarch64-unknown-linux-gnu.tar.gz"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:4996fdbd499a86d3341c66d1f4ae41b77d0e79f24c0fbfc882f65935855d4b1d", url = "https://github.com/jdx/hk/releases/download/v1.37.0/hk-aarch64-unknown-linux-gnu.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:616ecec3e54e35958d4c07f0d6ecff6946bc930db347601b75e26fb2c08553e4", url = "https://github.com/jdx/hk/releases/download/v1.37.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:616ecec3e54e35958d4c07f0d6ecff6946bc930db347601b75e26fb2c08553e4", url = "https://github.com/jdx/hk/releases/download/v1.37.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:616ecec3e54e35958d4c07f0d6ecff6946bc930db347601b75e26fb2c08553e4", url = "https://github.com/jdx/hk/releases/download/v1.37.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:616ecec3e54e35958d4c07f0d6ecff6946bc930db347601b75e26fb2c08553e4", url = "https://github.com/jdx/hk/releases/download/v1.37.0/hk-x86_64-unknown-linux-gnu.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:11a924978b7526b5e363c97293c62f5b1cdbf29abb26d3d40f5317f46ad65835", url = "https://github.com/jdx/hk/releases/download/v1.37.0/hk-aarch64-apple-darwin.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:102a744a25530f3896f5699b5038d996341b3b4c86feb7f595eea1eb769a29b5", url = "https://github.com/jdx/hk/releases/download/v1.37.0/hk-x86_64-pc-windows-msvc.zip"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:102a744a25530f3896f5699b5038d996341b3b4c86feb7f595eea1eb769a29b5", url = "https://github.com/jdx/hk/releases/download/v1.37.0/hk-x86_64-pc-windows-msvc.zip"}
 
 [[tools.jq]]
 version = "1.8.1"
@@ -186,7 +186,7 @@ version = "5.0.0"
 backend = "npm:ajv-cli"
 
 [[tools."npm:markdownlint-cli"]]
-version = "0.47.0"
+version = "0.48.0"
 backend = "npm:markdownlint-cli"
 
 [[tools."npm:prettier"]]
