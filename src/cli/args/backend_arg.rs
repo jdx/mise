@@ -9,7 +9,7 @@ use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
 use eyre::{Result, bail};
 use heck::{ToKebabCase, ToShoutySnakeCase};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::env;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
@@ -48,9 +48,6 @@ pub struct BackendArg {
     /// ~/.local/share/mise/downloads/<THIS>
     pub downloads_path: PathBuf,
     pub opts: Option<ToolVersionOptions>,
-    /// Native TOML opts from the install manifest, preserved to avoid
-    /// lossy string round-trips when writing back.
-    pub manifest_opts: BTreeMap<String, toml::Value>,
     resolution: BackendResolution,
     // TODO: make this not a hash key anymore to use this
     // backend: OnceCell<ABackend>,
@@ -79,18 +76,23 @@ impl<A: AsRef<str>> From<A> for BackendArg {
 
 impl From<InstallStateTool> for BackendArg {
     fn from(ist: InstallStateTool) -> Self {
-        let (short, tool_name, opts) = parse_backend_components(&ist.short, ist.full.as_ref());
-        let manifest_opts = ist.opts;
+        let (short, tool_name, mut opts) = parse_backend_components(&ist.short, ist.full.as_ref());
 
-        let mut ba = Self::new_raw(
+        // Merge manifest opts into the parsed opts (manifest opts provide defaults)
+        if !ist.opts.is_empty() {
+            let tvo = opts.get_or_insert_with(ToolVersionOptions::default);
+            for (k, v) in ist.opts {
+                tvo.opts.entry(k).or_insert(v);
+            }
+        }
+
+        Self::new_raw(
             short,
             ist.full,
             tool_name,
             opts,
             BackendResolution::new(ist.explicit_backend),
-        );
-        ba.manifest_opts = manifest_opts;
-        ba
+        )
     }
 }
 
@@ -151,7 +153,6 @@ impl BackendArg {
             installs_path: dirs::INSTALLS.join(&pathname),
             downloads_path: dirs::DOWNLOADS.join(&pathname),
             opts,
-            manifest_opts: BTreeMap::new(),
             resolution,
             // backend: Default::default(),
         }
@@ -385,9 +386,14 @@ impl BackendArg {
             let opts_str = opts
                 .opts
                 .iter()
-                // filter out global options that are only relevant for initial installation
                 .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str()))
-                .map(|(k, v)| format!("{k}={v}"))
+                .map(|(k, v)| {
+                    let v_str = match v {
+                        toml::Value::String(s) => s.clone(),
+                        _ => v.to_string(),
+                    };
+                    format!("{k}={v_str}")
+                })
                 .collect::<Vec<_>>()
                 .join(",");
             if !full.contains(['[', ']']) && !opts_str.is_empty() {
@@ -407,24 +413,11 @@ impl BackendArg {
 
     pub fn opts(&self) -> ToolVersionOptions {
         // Start with registry options as base (if available)
-        // Use backend_options to get options specific to the backend being used
         let full = self.full();
         let mut opts = REGISTRY
             .get(self.short.as_str())
             .map(|rt| rt.backend_options(&full))
             .unwrap_or_default();
-
-        // Merge manifest opts (cached values from install state).
-        // These override registry defaults but are overridden by fresh user opts.
-        for (k, v) in &self.manifest_opts {
-            opts.opts.insert(
-                k.clone(),
-                match v {
-                    toml::Value::String(s) => s.clone(),
-                    _ => v.to_string(),
-                },
-            );
-        }
 
         // Get user-provided options (from self.opts or from full string)
         let user_opts = self.opts.clone().unwrap_or_else(|| {
@@ -435,8 +428,7 @@ impl BackendArg {
             }
         });
 
-        // Merge user options on top (user options take precedence over both
-        // registry defaults and cached manifest opts)
+        // Merge user options on top (user options take precedence)
         for (k, v) in user_opts.opts {
             opts.opts.insert(k, v);
         }

@@ -264,8 +264,9 @@ impl GitProvider {
     fn from_ba(ba: &BackendArg) -> Self {
         let opts = ba.opts();
 
-        let default_provider = GitProviderKind::GitHub.as_ref().to_string();
-        let provider = opts.get("provider").unwrap_or(&default_provider);
+        let provider = opts
+            .get("provider")
+            .unwrap_or(GitProviderKind::GitHub.as_ref());
         let kind = if ba.tool_name.contains("gitlab.com") {
             GitProviderKind::GitLab
         } else {
@@ -365,7 +366,7 @@ mod tests {
                 "tool".to_string(),
                 Some(ToolVersionOptions {
                     opts: indexmap![
-                        "provider".to_string() => "gitlab".to_string()
+                        "provider".to_string() => toml::Value::String("gitlab".to_string())
                     ],
                     ..Default::default()
                 })
@@ -381,8 +382,8 @@ mod tests {
                 "tool".to_string(),
                 Some(ToolVersionOptions {
                     opts: indexmap![
-                        "api_url".to_string() => "https://gitlab.acme.com/api/v4".to_string(),
-                        "provider".to_string() => "gitlab".to_string(),
+                        "api_url".to_string() => toml::Value::String("https://gitlab.acme.com/api/v4".to_string()),
+                        "provider".to_string() => toml::Value::String("gitlab".to_string()),
                     ],
                     ..Default::default()
                 })

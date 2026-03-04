@@ -29,7 +29,7 @@ const METADATA_FILE: &str = "metadata.json";
 
 /// Helper to get an option value with platform-specific fallback
 fn get_opt(opts: &ToolVersionOptions, key: &str) -> Option<String> {
-    lookup_platform_key(opts, key).or_else(|| opts.get(key).cloned())
+    lookup_platform_key(opts, key).or_else(|| opts.get(key).map(|s| s.to_string()))
 }
 
 /// Metadata stored alongside cached extractions
@@ -571,13 +571,13 @@ impl HttpBackend {
         };
 
         let url = match opts.get("version_list_url") {
-            Some(url) => url.clone(),
+            Some(url) => url.to_string(),
             None => return Ok(vec![]),
         };
 
-        let regex = opts.get("version_regex").map(|s| s.as_str());
-        let json_path = opts.get("version_json_path").map(|s| s.as_str());
-        let version_expr = opts.get("version_expr").map(|s| s.as_str());
+        let regex = opts.get("version_regex");
+        let json_path = opts.get("version_json_path");
+        let version_expr = opts.get("version_expr");
 
         version_list::fetch_versions(&url, regex, json_path, version_expr).await
     }

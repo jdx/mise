@@ -126,7 +126,9 @@ impl Backend for CargoBackend {
         };
 
         let opts = tv.request.options();
-        if let Some(bin) = lookup_platform_key(&opts, "bin").or_else(|| opts.get("bin").cloned()) {
+        if let Some(bin) =
+            lookup_platform_key(&opts, "bin").or_else(|| opts.get("bin").map(|s| s.to_string()))
+        {
             cmd = cmd.arg(format!("--bin={bin}"));
         }
         if opts
@@ -177,7 +179,7 @@ impl Backend for CargoBackend {
         // These options affect what gets compiled/installed
         for key in ["features", "default-features", "bin"] {
             if let Some(value) = opts.get(key) {
-                result.insert(key.to_string(), value.clone());
+                result.insert(key.to_string(), value.to_string());
             }
         }
 

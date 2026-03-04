@@ -188,10 +188,16 @@ impl ToolStubFile {
             opts.insert("bin".to_string(), bin.clone());
         }
 
+        // Convert IndexMap<String, String> to IndexMap<String, toml::Value>
+        let opts_values: indexmap::IndexMap<String, toml::Value> = opts
+            .iter()
+            .map(|(k, v)| (k.clone(), toml::Value::String(v.clone())))
+            .collect();
+
         let options = ToolVersionOptions {
             os: self.os.clone(),
             install_env: self.install_env.clone(),
-            opts: opts.clone(),
+            opts: opts_values,
         };
 
         // Set options on the BackendArg so they're available to the backend

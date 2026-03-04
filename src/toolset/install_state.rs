@@ -51,19 +51,6 @@ struct ManifestTool {
     opts: BTreeMap<String, toml::Value>,
 }
 
-/// Convert a string option value to a `toml::Value`.
-/// Values starting with `{` are parsed as inline TOML tables; others become strings.
-fn str_to_toml_value(v: &str) -> toml::Value {
-    if v.starts_with('{') {
-        toml::from_str::<toml::Value>(&format!("x = {v}"))
-            .ok()
-            .and_then(|t| t.get("x").cloned())
-            .unwrap_or_else(|| toml::Value::String(v.to_string()))
-    } else {
-        toml::Value::String(v.to_string())
-    }
-}
-
 fn default_true() -> bool {
     true
 }
@@ -253,7 +240,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                     if EPHEMERAL_OPT_KEYS.contains(&k.as_str()) {
                         continue;
                     }
-                    opts.insert(k.clone(), str_to_toml_value(v));
+                    opts.insert(k.clone(), v.clone());
                 }
                 full = Some(stripped);
                 // Schedule manifest rewrite to migrate to new format
@@ -408,15 +395,15 @@ pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
     let full = ba.full_without_opts();
     let explicit = ba.has_explicit_backend();
 
-    // Start with manifest opts, then override with user opts (user takes precedence,
-    // matching the read path in opts()). Always filter ephemeral keys.
-    let mut opts_map: BTreeMap<String, toml::Value> = ba.manifest_opts.clone();
+    // Store opts as native TOML values, filtering out ephemeral keys.
+    let mut opts_map: BTreeMap<String, toml::Value> = BTreeMap::new();
     if let Some(o) = ba.opts.as_ref() {
         for (k, v) in &o.opts {
-            opts_map.insert(k.clone(), str_to_toml_value(v));
+            if !EPHEMERAL_OPT_KEYS.contains(&k.as_str()) {
+                opts_map.insert(k.clone(), v.clone());
+            }
         }
     }
-    opts_map.retain(|k, _| !EPHEMERAL_OPT_KEYS.contains(&k.as_str()));
 
     let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
     let mut manifest = read_manifest();

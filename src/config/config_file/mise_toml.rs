@@ -38,6 +38,37 @@ use crate::{env, file};
 use super::diagnostic::toml_parse_error;
 use super::{ConfigFileType, min_version::MinVersionSpec};
 
+/// Convert a `toml::Value` to a `toml_edit::Value` for serialization.
+fn toml_value_to_edit(v: toml::Value) -> Value {
+    match v {
+        toml::Value::String(s) => Value::from(s),
+        toml::Value::Integer(i) => Value::from(i),
+        toml::Value::Float(f) => Value::from(f),
+        toml::Value::Boolean(b) => Value::from(b),
+        toml::Value::Datetime(dt) => {
+            // Parse the datetime string back into a toml_edit datetime
+            dt.to_string()
+                .parse::<toml_edit::Datetime>()
+                .map(Value::from)
+                .unwrap_or_else(|_| Value::from(dt.to_string()))
+        }
+        toml::Value::Array(arr) => {
+            let mut edit_arr = Array::new();
+            for item in arr {
+                edit_arr.push(toml_value_to_edit(item));
+            }
+            Value::Array(edit_arr)
+        }
+        toml::Value::Table(table) => {
+            let mut edit_table = InlineTable::new();
+            for (k, v) in table {
+                edit_table.insert(k, toml_value_to_edit(v));
+            }
+            Value::InlineTable(edit_table)
+        }
+    }
+}
+
 #[derive(Default, Deserialize)]
 pub struct MiseToml {
     #[serde(rename = "_")]
@@ -582,7 +613,7 @@ impl ConfigFile for MiseToml {
                 let mut table = InlineTable::new();
                 table.insert("version", versions[0].version().into());
                 for (k, v) in options.opts {
-                    table.insert(k, v.into());
+                    table.insert(k, toml_value_to_edit(v));
                 }
                 if let Some(os) = options.os {
                     let mut arr = Array::new();
@@ -610,7 +641,7 @@ impl ConfigFile for MiseToml {
                     let mut table = InlineTable::new();
                     table.insert("version", v.to_string().into());
                     for (k, v) in tr.options().opts {
-                        table.insert(k, v.clone().into());
+                        table.insert(k, toml_value_to_edit(v.clone()));
                     }
                     arr.push(table);
                 }
@@ -694,7 +725,9 @@ impl ConfigFile for MiseToml {
                     let mut opts_context = context.clone();
                     opts_context.insert("version", "{{ version }}");
                     for v in options.opts.values_mut() {
-                        *v = self.parse_template_with_context(&opts_context, v)?;
+                        if let toml::Value::String(s) = v {
+                            *s = self.parse_template_with_context(&opts_context, s)?;
+                        }
                     }
                     let mut ba = ba.clone();
                     // Start with cached options but filter out install-time-only options
@@ -1528,7 +1561,7 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                             toml::Value::String(s) => {
                                 // Convert {{version}} to {version} for backend templating
                                 let s = s.replace("{{version}}", "{version}");
-                                options.opts.insert(k, s);
+                                options.opts.insert(k, toml::Value::String(s));
                             }
                             _ => {
                                 return Err(de::Error::custom("os must be a string or array"));
@@ -1558,28 +1591,16 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                             }
                         },
                         _ => {
-                            // Handle nested structures
+                            // Store values as native toml::Value
                             match v {
-                                toml::Value::Table(_) => {
-                                    // Store as TOML string, will be flattened later
-                                    options.opts.insert(k, v.to_string());
-                                }
                                 toml::Value::String(s) => {
                                     // Convert {{version}} to {version} for backend templating
                                     let s = s.replace("{{version}}", "{version}");
-                                    options.opts.insert(k, s);
-                                }
-                                toml::Value::Boolean(b) => {
-                                    options.opts.insert(k, b.to_string());
-                                }
-                                toml::Value::Integer(i) => {
-                                    options.opts.insert(k, i.to_string());
-                                }
-                                toml::Value::Float(f) => {
-                                    options.opts.insert(k, f.to_string());
+                                    options.opts.insert(k, toml::Value::String(s));
                                 }
                                 _ => {
-                                    return Err(de::Error::custom("invalid value type"));
+                                    // Store tables, arrays, bools, ints, floats directly
+                                    options.opts.insert(k, v);
                                 }
                             }
                         }
@@ -1648,7 +1669,7 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                             toml::Value::String(s) => {
                                 // Convert {{version}} to {version} for backend templating
                                 let s = s.replace("{{version}}", "{version}");
-                                options.opts.insert(k, s);
+                                options.opts.insert(k, toml::Value::String(s));
                             }
                             _ => {
                                 return Err(de::Error::custom("os must be a string or array"));
@@ -1678,24 +1699,18 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                             }
                         },
                         _ => {
-                            // Handle nested tables (like platform.macos-arm64)
-                            // and convert them to string representation for ToolVersionOptions
-                            let value_str = match v {
+                            // Store values as native toml::Value
+                            match v {
                                 toml::Value::String(s) => {
                                     // Convert {{version}} to {version} for backend templating
-                                    s.replace("{{version}}", "{version}")
+                                    let s = s.replace("{{version}}", "{version}");
+                                    options.opts.insert(k, toml::Value::String(s));
                                 }
-                                toml::Value::Table(_) | toml::Value::Array(_) => {
-                                    // Serialize complex types back to TOML string
-                                    // This preserves nested structures like platform.macos-arm64.bin_path
-                                    toml::to_string(&v).map_err(de::Error::custom)?
+                                _ => {
+                                    // Store tables, arrays, bools, ints, floats directly
+                                    options.opts.insert(k, v);
                                 }
-                                toml::Value::Boolean(b) => b.to_string(),
-                                toml::Value::Integer(i) => i.to_string(),
-                                toml::Value::Float(f) => f.to_string(),
-                                toml::Value::Datetime(dt) => dt.to_string(),
-                            };
-                            options.opts.insert(k, value_str);
+                            }
                         }
                     }
                 }
@@ -2348,12 +2363,12 @@ mod tests {
             .expect("ansible should be in tool request set");
         let opts = ansible_requests[0].options();
         assert_eq!(
-            opts.get("uvx").map(|s| s.as_str()),
+            opts.get("uvx"),
             Some("false"),
             "registry default uvx=false should be preserved with table syntax"
         );
         assert_eq!(
-            opts.get("pipx_args").map(|s| s.as_str()),
+            opts.get("pipx_args"),
             Some("--include-deps"),
             "registry default pipx_args=--include-deps should be preserved with table syntax"
         );
@@ -2372,12 +2387,12 @@ mod tests {
             .expect("ansible should be in tool request set");
         let opts2 = ansible2[0].options();
         assert_eq!(
-            opts2.get("uvx").map(|s| s.as_str()),
+            opts2.get("uvx"),
             Some("true"),
             "user-provided uvx=true should override registry default uvx=false"
         );
         assert_eq!(
-            opts2.get("pipx_args").map(|s| s.as_str()),
+            opts2.get("pipx_args"),
             Some("--include-deps"),
             "non-overridden registry default pipx_args should still be preserved"
         );

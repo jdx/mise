@@ -109,7 +109,14 @@ fn render_cache_key(config: &Config, tv: &ToolVersion, cache_key: &[String]) -> 
 fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> eyre::Result<String> {
     let mut ctx = BASE_CONTEXT.clone();
     ctx.insert("project_root", &config.project_root);
-    ctx.insert("opts", &tv.request.options().opts);
+    let opts: indexmap::IndexMap<String, String> = tv
+        .request
+        .options()
+        .opts
+        .iter()
+        .map(|(k, v)| (k.clone(), v.as_str().unwrap_or_default().to_string()))
+        .collect();
+    ctx.insert("opts", &opts);
     get_tera(
         config
             .project_root

@@ -116,7 +116,11 @@ impl Backend for VfoxBackend {
                 &tv.version,
                 tv.install_path(),
                 tv.download_path(),
-                tool_opts.opts.clone(),
+                tool_opts
+                    .opts
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or_default().to_string()))
+                    .collect(),
             )
             .await
             .wrap_err("Backend install method failed")?;
@@ -296,7 +300,10 @@ impl VfoxBackend {
                         tool_name,
                         &tv.version,
                         tv.install_path(),
-                        opts.opts.clone(),
+                        opts.opts
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.as_str().unwrap_or_default().to_string()))
+                            .collect(),
                     )
                     .await
                     .wrap_err("Backend exec env method failed")?

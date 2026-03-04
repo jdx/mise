@@ -171,10 +171,11 @@ impl AsdfBackend {
     ) -> Result<ScriptManager> {
         let mut sm = self.plugin.script_man.clone();
         for (key, value) in tv.request.options().opts {
+            let v = value.as_str().unwrap_or_default().to_string();
             let k = format!("RTX_TOOL_OPTS__{}", key.to_uppercase());
-            sm = sm.with_env(k, value.clone());
+            sm = sm.with_env(k, v.clone());
             let k = format!("MISE_TOOL_OPTS__{}", key.to_uppercase());
-            sm = sm.with_env(k, value.clone());
+            sm = sm.with_env(k, v);
         }
         for (key, value) in tv.request.options().install_env {
             sm = sm.with_env(key, value.clone());
