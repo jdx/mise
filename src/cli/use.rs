@@ -16,7 +16,8 @@ use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
 use crate::registry::REGISTRY;
 use crate::toolset::{
-    InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion, ToolsetBuilder,
+    ConfigScope, InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion,
+    ToolsetBuilder,
 };
 use crate::ui::ctrlc;
 use crate::{config, env, exit, file};
@@ -129,8 +130,13 @@ impl Use {
         }
         env::TOOL_ARGS.write().unwrap().clone_from(&self.tool);
         let mut config = Config::get().await?;
+        let scope = if self.global {
+            ConfigScope::GlobalOnly
+        } else {
+            ConfigScope::All
+        };
         let mut ts = ToolsetBuilder::new()
-            .with_global_only(self.global)
+            .with_scope(scope)
             .build(&config)
             .await?;
         let cf = self.get_config_file().await?;

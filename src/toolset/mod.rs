@@ -6,7 +6,7 @@ use crate::env::TERM_WIDTH;
 use crate::registry::REGISTRY;
 use crate::registry::tool_enabled;
 use crate::{backend, parallel};
-pub use builder::ToolsetBuilder;
+pub use builder::{ConfigScope, ToolsetBuilder};
 use console::truncate_str;
 use eyre::{Result, bail};
 use helpers::TVTuple;

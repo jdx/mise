@@ -10,10 +10,21 @@ use crate::errors::Error;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset};
 use crate::{config, env};
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigScope {
+    /// Include tools from all config files
+    #[default]
+    All,
+    /// Only include tools from local (non-global) config files
+    LocalOnly,
+    /// Only include tools from the global config file
+    GlobalOnly,
+}
+
 #[derive(Debug, Default)]
 pub struct ToolsetBuilder {
     args: Vec<ToolArg>,
-    global_only: bool,
+    scope: ConfigScope,
     default_to_latest: bool,
     resolve_options: ResolveOptions,
     config_files: Option<ConfigMap>,
@@ -34,8 +45,8 @@ impl ToolsetBuilder {
         self
     }
 
-    pub fn with_global_only(mut self, global_only: bool) -> Self {
-        self.global_only = global_only;
+    pub fn with_scope(mut self, scope: ConfigScope) -> Self {
+        self.scope = scope;
         self
     }
 
@@ -83,8 +94,11 @@ impl ToolsetBuilder {
         let config_files = self.config_files.as_ref().unwrap_or(&config.config_files);
 
         for cf in config_files.values().rev() {
-            if self.global_only && !config::is_global_config(cf.get_path()) {
-                continue;
+            let is_global = config::is_global_config(cf.get_path());
+            match self.scope {
+                ConfigScope::GlobalOnly if !is_global => continue,
+                ConfigScope::LocalOnly if is_global => continue,
+                _ => {}
             }
             ts.merge(cf.to_toolset()?);
         }
@@ -92,6 +106,10 @@ impl ToolsetBuilder {
     }
 
     fn load_runtime_env(&self, ts: &mut Toolset, env: EnvMap) -> eyre::Result<()> {
+        if self.scope == ConfigScope::LocalOnly {
+            // LocalOnly excludes env-based tool versions (MISE_*_VERSION).
+            return Ok(());
+        }
         for (k, v) in env {
             if k.starts_with("MISE_") && k.ends_with("_VERSION") && k != "MISE_VERSION" {
                 let plugin_name = k
