@@ -232,9 +232,10 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             // Backward compat: if opts is empty but full contains [...], extract opts
             if opts.is_empty() {
                 if let Some(ref f) = full {
-                    if let Some(c) = xx::regex!(r"^(.+)\[(.+)\]$").captures(f) {
-                        let stripped = c.get(1).unwrap().as_str().to_string();
-                        let opts_str = c.get(2).unwrap().as_str();
+                    if let Some((stripped_str, opts_str)) =
+                        crate::cli::args::split_bracketed_opts(f)
+                    {
+                        let stripped = stripped_str.to_string();
                         let parsed = parse_tool_options(opts_str);
                         for (k, v) in &parsed.opts {
                             if ["postinstall", "install_env"].contains(&k.as_str()) {

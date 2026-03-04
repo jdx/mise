@@ -104,6 +104,19 @@ impl From<InstallStateTool> for BackendArg {
     }
 }
 
+/// Split a string like `"http:hello[url=...,bin=bin]"` into `("http:hello", "url=...,bin=bin")`.
+/// Returns `None` if no bracketed opts are present.
+pub fn split_bracketed_opts(s: &str) -> Option<(&str, &str)> {
+    regex!(r"^(.+)\[(.+)\]$")
+        .captures(s)
+        .map(|c| (c.get(1).unwrap().as_str(), c.get(2).unwrap().as_str()))
+}
+
+/// Strip trailing `[...]` opts from a string, e.g. `"foo[a=1]"` → `"foo"`.
+pub(crate) fn strip_opts(s: &str) -> String {
+    regex!(r#"\[.+\]$"#).replace_all(s, "").to_string()
+}
+
 fn parse_backend_components(
     short: &str,
     full: Option<&String>,
@@ -113,12 +126,12 @@ fn parse_backend_components(
         .unwrap_or(&short)
         .split_once(':')
         .unwrap_or(("", full.unwrap_or(&short)));
-    let short = regex!(r#"\[.+\]$"#).replace_all(&short, "").to_string();
+    let short = strip_opts(&short);
 
     let mut opts = None;
-    if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(tool_name) {
-        tool_name = c.get(1).unwrap().as_str();
-        opts = Some(parse_tool_options(c.get(2).unwrap().as_str()));
+    if let Some((name, opts_str)) = split_bracketed_opts(tool_name) {
+        tool_name = name;
+        opts = Some(parse_tool_options(opts_str));
     }
 
     (short, tool_name.to_string(), opts)
@@ -374,7 +387,7 @@ impl BackendArg {
 
     pub fn full_with_opts(&self) -> String {
         let full = self.full();
-        if regex!(r"^(.+)\[(.+)\]$").is_match(&full) {
+        if split_bracketed_opts(&full).is_some() {
             return full;
         }
         if let Some(opts) = &self.opts {
@@ -395,8 +408,8 @@ impl BackendArg {
 
     pub fn full_without_opts(&self) -> String {
         let full = self.full();
-        if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&full) {
-            return c.get(1).unwrap().as_str().to_string();
+        if let Some((name, _)) = split_bracketed_opts(&full) {
+            return name.to_string();
         }
         full
     }
@@ -412,8 +425,8 @@ impl BackendArg {
 
         // Get user-provided options (from self.opts or from full string)
         let user_opts = self.opts.clone().unwrap_or_else(|| {
-            if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&full) {
-                parse_tool_options(c.get(2).unwrap().as_str())
+            if let Some((_, opts_str)) = split_bracketed_opts(&full) {
+                parse_tool_options(opts_str)
             } else {
                 ToolVersionOptions::default()
             }
@@ -456,8 +469,8 @@ impl BackendArg {
         if !self.resolution.explicit {
             let full = self.full();
             // Strip options since lockfiles have a separate options field
-            if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&full) {
-                return c.get(1).unwrap().as_str().to_string();
+            if let Some((name, _)) = split_bracketed_opts(&full) {
+                return name.to_string();
             }
             return full;
         }
@@ -480,8 +493,8 @@ impl BackendArg {
             }
         };
         // Strip options since lockfiles have a separate options field
-        if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&full) {
-            return c.get(1).unwrap().as_str().to_string();
+        if let Some((name, _)) = split_bracketed_opts(&full) {
+            return name.to_string();
         }
         full
     }
@@ -489,8 +502,7 @@ impl BackendArg {
     pub fn tool_name(&self) -> String {
         let full = self.full();
         let (_backend, tool_name) = full.split_once(':').unwrap_or(("", &full));
-        let tool_name = regex!(r#"\[.+\]$"#).replace_all(tool_name, "").to_string();
-        tool_name.to_string()
+        strip_opts(tool_name)
     }
 
     /// maps something like cargo:cargo-binstall to cargo-binstall and ubi:cargo-binstall, etc
