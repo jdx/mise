@@ -414,23 +414,8 @@ impl BackendArg {
             .map(|rt| rt.backend_options(&full))
             .unwrap_or_default();
 
-        // Get user-provided options (from self.opts, manifest_opts, or from full string)
-        let user_opts = self.opts.clone().unwrap_or_else(|| {
-            if let Some((_, opts_str)) = split_bracketed_opts(&full) {
-                parse_tool_options(opts_str)
-            } else {
-                ToolVersionOptions::default()
-            }
-        });
-
-        // Merge user options on top (user options take precedence)
-        for (k, v) in user_opts.opts {
-            opts.opts.insert(k, v);
-        }
-
-        // Merge manifest opts (native TOML values from install state).
-        // These are user-specified opts stored in native TOML format, so they
-        // override registry defaults (same precedence as user_opts above).
+        // Merge manifest opts (cached values from install state).
+        // These override registry defaults but are overridden by fresh user opts.
         for (k, v) in &self.manifest_opts {
             opts.opts.insert(
                 k.clone(),
@@ -439,6 +424,21 @@ impl BackendArg {
                     _ => v.to_string(),
                 },
             );
+        }
+
+        // Get user-provided options (from self.opts or from full string)
+        let user_opts = self.opts.clone().unwrap_or_else(|| {
+            if let Some((_, opts_str)) = split_bracketed_opts(&full) {
+                parse_tool_options(opts_str)
+            } else {
+                ToolVersionOptions::default()
+            }
+        });
+
+        // Merge user options on top (user options take precedence over both
+        // registry defaults and cached manifest opts)
+        for (k, v) in user_opts.opts {
+            opts.opts.insert(k, v);
         }
         for (k, v) in user_opts.install_env {
             opts.install_env.insert(k, v);
