@@ -289,7 +289,11 @@ mod tests {
             Some("1.0.0"),
         );
         // Scoped package names without backend prefix
-        t("@anthropic-ai/claude-code", "@anthropic-ai/claude-code", None);
+        t(
+            "@anthropic-ai/claude-code",
+            "@anthropic-ai/claude-code",
+            None,
+        );
         t("@biomejs/biome", "@biomejs/biome", None);
         t("@biomejs/biome@latest", "@biomejs/biome", Some("latest"));
         t("@biomejs/biome@1.0.0", "@biomejs/biome", Some("1.0.0"));
