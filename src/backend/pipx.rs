@@ -392,6 +392,9 @@ impl PIPXBackend {
         pr: &'a dyn SingleReport,
     ) -> Result<CmdLineRunner<'a>> {
         let mut cmd = CmdLineRunner::new("uv");
+        if !Settings::get().verbose {
+            cmd = cmd.arg("--quiet");
+        }
         for arg in args {
             cmd = cmd.arg(arg);
         }
@@ -414,6 +417,9 @@ impl PIPXBackend {
         pr: &'a dyn SingleReport,
     ) -> Result<CmdLineRunner<'a>> {
         let mut cmd = CmdLineRunner::new("pipx");
+        if !Settings::get().verbose {
+            cmd = cmd.arg("--quiet");
+        }
         for arg in args {
             cmd = cmd.arg(arg);
         }
