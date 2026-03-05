@@ -155,6 +155,25 @@ fn parse_input(s: &str) -> (&str, Option<&str>) {
         return (s, None);
     };
 
+    if left.is_empty() {
+        // Scoped package name starting with '@' (e.g., "@anthropic-ai/claude-code")
+        // The first '@' is part of the name, not a version separator
+        // Look for a second '@' to separate name from version
+        return right
+            .split_once('@')
+            .map(|(name, version)| {
+                (
+                    &s[..name.len() + 1],
+                    if version.is_empty() {
+                        None
+                    } else {
+                        Some(version)
+                    },
+                )
+            })
+            .unwrap_or((s, None));
+    }
+
     if left.ends_with(':') {
         // Backend format: try to find version in the remaining part
         return right
@@ -269,5 +288,11 @@ mod tests {
             "ubi:BurntSushi/ripgrep[exe=rg,match=musl]",
             Some("1.0.0"),
         );
+        // Scoped package names without backend prefix
+        t("@anthropic-ai/claude-code", "@anthropic-ai/claude-code", None);
+        t("@biomejs/biome", "@biomejs/biome", None);
+        t("@biomejs/biome@latest", "@biomejs/biome", Some("latest"));
+        t("@biomejs/biome@1.0.0", "@biomejs/biome", Some("1.0.0"));
+        t("@biomejs/biome@", "@biomejs/biome", None);
     }
 }
