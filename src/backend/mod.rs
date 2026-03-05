@@ -1351,10 +1351,24 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     async fn dependency_env(&self, config: &Arc<Config>) -> eyre::Result<BTreeMap<String, String>> {
-        self.dependency_toolset(config)
+        let mut env = self.dependency_toolset(config)
             .await?
             .full_env(config)
-            .await
+            .await?;
+
+        // Remove mise shims from PATH to prevent infinite shim recursion when a
+        // dependency tool (e.g., go) is configured but not installed. Without this,
+        // the shim for the dependency would call `mise exec` which would call the
+        // shim again infinitely.
+        if let Some(path_val) = env.get(&*env::PATH_KEY) {
+            let filtered: Vec<_> = env::split_paths(path_val)
+                .filter(|p| p.as_path() != *dirs::SHIMS)
+                .collect();
+            let joined = env::join_paths(&filtered)?;
+            env.insert(env::PATH_KEY.to_string(), joined.to_string_lossy().into_owned());
+        }
+
+        Ok(env)
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
