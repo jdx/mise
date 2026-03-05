@@ -26,8 +26,9 @@ impl CustomPrepareProvider {
         let mut paths = vec![];
 
         for pattern in patterns {
+            let base_dir = self.base.config_root();
             let full_pattern = if PathBuf::from(pattern).is_relative() {
-                self.base.project_root.join(pattern)
+                base_dir.join(pattern)
             } else {
                 PathBuf::from(pattern)
             };

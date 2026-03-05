@@ -75,17 +75,18 @@ get_ext() {
     echo "tar.gz"
   elif tar_supports_zstd; then
     echo "tar.zst"
-  elif command -v zstd >/dev/null 2>&1; then
-    echo "tar.zst"
   else
     echo "tar.gz"
   fi
 }
 
 tar_supports_zstd() {
-  # tar is bsdtar or version is >= 1.31
-  if tar --version | grep -q 'bsdtar' && command -v zstd >/dev/null 2>&1; then
+  if ! command -v zstd >/dev/null 2>&1; then
+    false
+  # tar is bsdtar
+  elif tar --version | grep -q 'bsdtar'; then
     true
+  # tar version is >= 1.31
   elif tar --version | grep -q '1\.\(3[1-9]\|[4-9][0-9]\)'; then
     true
   else
@@ -263,8 +264,11 @@ install_mise() {
   cd "$(dirname "$cache_file")" && get_checksum "$version" "$os" "$arch" "$ext" | "$(shasum_bin)" -c >/dev/null
 
   # extract tarball
+  if [ -d "$install_path" ]; then
+    error "MISE_INSTALL_PATH '$install_path' is a directory. Please set it to a file path, e.g. '$install_path/mise'."
+  fi
   mkdir -p "$install_dir"
-  rm -rf "$install_path"
+  rm -f "$install_path"
   extract_dir="$(mktemp -d)"
   cd "$extract_dir"
   if [ "$ext" = "tar.zst" ] && ! tar_supports_zstd; then
