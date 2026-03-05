@@ -9,8 +9,7 @@ full = "asdf:mise-plugins/mise-imagemagick"
 
 [[backends]]
 full = "github:ImageMagick/ImageMagick"
-os = ["windows"]
-platforms = ["windows-x64", "windows-x86", "windows-arm64"]
+platforms = ["windows"]
 
 [backends.options.platforms.windows-x64]
 asset_pattern = "ImageMagick-*-portable-Q16-HDRI-x64.7z"
