@@ -4,6 +4,44 @@
   "title": "mise-task-schema",
   "type": "object",
   "$defs": {
+    "task_dependency_item": {
+      "description": "task name and args",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "task": {
+              "type": "string"
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "env": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "task"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
     "task": {
       "oneOf": [
         {
@@ -50,40 +88,7 @@
                   "description": "task with args to run before this task",
                   "type": "array",
                   "items": {
-                    "description": "task name and args",
-                    "oneOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "task": {
-                            "type": "string"
-                          },
-                          "args": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
-                          },
-                          "env": {
-                            "type": "object",
-                            "additionalProperties": {
-                              "type": "string"
-                            }
-                          }
-                        },
-                        "required": ["task"],
-                        "additionalProperties": false
-                      }
-                    ]
+                    "$ref": "#/$defs/task_dependency_item"
                   }
                 }
               ]
@@ -98,40 +103,7 @@
                   "description": "task with args to run after this task",
                   "type": "array",
                   "items": {
-                    "description": "task name and args",
-                    "oneOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "task": {
-                            "type": "string"
-                          },
-                          "args": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
-                          },
-                          "env": {
-                            "type": "object",
-                            "additionalProperties": {
-                              "type": "string"
-                            }
-                          }
-                        },
-                        "required": ["task"],
-                        "additionalProperties": false
-                      }
-                    ]
+                    "$ref": "#/$defs/task_dependency_item"
                   }
                 }
               ]
@@ -145,40 +117,7 @@
                 {
                   "description": "task with args to wait for completion first",
                   "items": {
-                    "description": "task name and args",
-                    "oneOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "task": {
-                            "type": "string"
-                          },
-                          "args": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
-                          },
-                          "env": {
-                            "type": "object",
-                            "additionalProperties": {
-                              "type": "string"
-                            }
-                          }
-                        },
-                        "required": ["task"],
-                        "additionalProperties": false
-                      }
-                    ]
+                    "$ref": "#/$defs/task_dependency_item"
                   },
                   "type": "array"
                 }
@@ -230,7 +169,9 @@
                         ]
                       }
                     },
-                    "required": ["version"],
+                    "required": [
+                      "version"
+                    ],
                     "type": "object",
                     "additionalProperties": {
                       "oneOf": [
@@ -268,11 +209,15 @@
                   "properties": {
                     "auto": {
                       "description": "automatically touch an internal tracked file instead of specifying outputs",
-                      "enum": [true],
+                      "enum": [
+                        true
+                      ],
                       "type": "boolean"
                     }
                   },
-                  "required": ["auto"],
+                  "required": [
+                    "auto"
+                  ],
                   "type": "object"
                 }
               ]
@@ -290,7 +235,10 @@
                   "type": "boolean"
                 },
                 {
-                  "enum": ["stdout", "stderr"],
+                  "enum": [
+                    "stdout",
+                    "stderr"
+                  ],
                   "type": "string"
                 }
               ]
@@ -429,18 +377,25 @@
                       },
                       "format": {
                         "type": "string",
-                        "enum": ["raw", "zstd"],
+                        "enum": [
+                          "raw",
+                          "zstd"
+                        ],
                         "description": "[experimental] compression format for the encrypted value"
                       }
                     },
-                    "required": ["value"],
+                    "required": [
+                      "value"
+                    ],
                     "additionalProperties": false,
                     "description": "[experimental] age-encrypted value (complex format)"
                   }
                 ]
               }
             },
-            "required": ["age"],
+            "required": [
+              "age"
+            ],
             "additionalProperties": false,
             "description": "[experimental] age-encrypted environment variable"
           },
@@ -534,7 +489,9 @@
                           ]
                         }
                       },
-                      "required": ["path"]
+                      "required": [
+                        "path"
+                      ]
                     },
                     {
                       "type": "object",
@@ -546,7 +503,9 @@
                           }
                         }
                       },
-                      "required": ["paths"]
+                      "required": [
+                        "paths"
+                      ]
                     }
                   ]
                 },
@@ -630,7 +589,9 @@
                           }
                         }
                       },
-                      "required": ["path"],
+                      "required": [
+                        "path"
+                      ],
                       "type": "object"
                     }
                   ]
@@ -722,7 +683,9 @@
               "$ref": "#/$defs/env_directive/properties/path"
             }
           },
-          "required": ["path"]
+          "required": [
+            "path"
+          ]
         },
         {
           "type": "object",
@@ -731,7 +694,9 @@
               "$ref": "#/$defs/env_directive/properties/paths"
             }
           },
-          "required": ["paths"]
+          "required": [
+            "paths"
+          ]
         }
       ]
     },
@@ -750,7 +715,9 @@
               "type": "string"
             }
           },
-          "required": ["task"]
+          "required": [
+            "task"
+          ]
         },
         {
           "type": "object",
@@ -765,7 +732,9 @@
               "type": "array"
             }
           },
-          "required": ["tasks"]
+          "required": [
+            "tasks"
+          ]
         }
       ]
     },
@@ -802,40 +771,7 @@
               "description": "task with args to run before this task",
               "type": "array",
               "items": {
-                "description": "task name and args",
-                "oneOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "task": {
-                        "type": "string"
-                      },
-                      "args": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      "env": {
-                        "type": "object",
-                        "additionalProperties": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "required": ["task"],
-                    "additionalProperties": false
-                  }
-                ]
+                "$ref": "#/$defs/task_dependency_item"
               }
             }
           ]
@@ -850,40 +786,7 @@
               "description": "task with args to run after this task",
               "type": "array",
               "items": {
-                "description": "task name and args",
-                "oneOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "task": {
-                        "type": "string"
-                      },
-                      "args": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      "env": {
-                        "type": "object",
-                        "additionalProperties": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "required": ["task"],
-                    "additionalProperties": false
-                  }
-                ]
+                "$ref": "#/$defs/task_dependency_item"
               }
             }
           ]
@@ -897,40 +800,7 @@
             {
               "description": "task with args to wait for completion first",
               "items": {
-                "description": "task name and args",
-                "oneOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "task": {
-                        "type": "string"
-                      },
-                      "args": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      "env": {
-                        "type": "object",
-                        "additionalProperties": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "required": ["task"],
-                    "additionalProperties": false
-                  }
-                ]
+                "$ref": "#/$defs/task_dependency_item"
               },
               "type": "array"
             }
@@ -982,7 +852,9 @@
                     ]
                   }
                 },
-                "required": ["version"],
+                "required": [
+                  "version"
+                ],
                 "type": "object",
                 "additionalProperties": {
                   "oneOf": [
@@ -1020,11 +892,15 @@
               "properties": {
                 "auto": {
                   "description": "automatically touch an internal tracked file instead of specifying outputs",
-                  "enum": [true],
+                  "enum": [
+                    true
+                  ],
                   "type": "boolean"
                 }
               },
-              "required": ["auto"],
+              "required": [
+                "auto"
+              ],
               "type": "object"
             }
           ]
@@ -1042,7 +918,10 @@
               "type": "boolean"
             },
             {
-              "enum": ["stdout", "stderr"],
+              "enum": [
+                "stdout",
+                "stderr"
+              ],
               "type": "string"
             }
           ]
