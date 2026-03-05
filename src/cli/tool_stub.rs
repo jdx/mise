@@ -91,17 +91,15 @@ fn has_http_backend_config(opts: &indexmap::IndexMap<String, toml::Value>) -> bo
             // Check if the value is a table containing url keys
             if let toml::Value::Table(table) = value {
                 for (_, v) in table {
-                    if let toml::Value::Table(inner) = v {
-                        if inner.contains_key("url") {
+                    if let toml::Value::Table(inner) = v
+                        && inner.contains_key("url") {
                             return true;
                         }
-                    }
                 }
-            } else if let toml::Value::String(s) = value {
-                if s.contains("url") {
+            } else if let toml::Value::String(s) = value
+                && s.contains("url") {
                     return true;
                 }
-            }
         }
     }
 
@@ -412,13 +410,11 @@ fn resolve_platform_specific_bin(stub: &ToolStubFile, stub_path: &Path) -> Strin
     let platform_key = get_current_platform_key();
 
     // Check for platform-specific bin field: platforms.{platform}.bin
-    if let Some(toml::Value::Table(platforms)) = stub.opts.get("platforms") {
-        if let Some(toml::Value::Table(platform)) = platforms.get(&platform_key) {
-            if let Some(toml::Value::String(bin)) = platform.get("bin") {
+    if let Some(toml::Value::Table(platforms)) = stub.opts.get("platforms")
+        && let Some(toml::Value::Table(platform)) = platforms.get(&platform_key)
+            && let Some(toml::Value::String(bin)) = platform.get("bin") {
                 return bin.clone();
             }
-        }
-    }
 
     // Fall back to global bin field
     if let Some(bin) = &stub.bin {
