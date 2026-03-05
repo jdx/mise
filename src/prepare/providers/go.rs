@@ -28,17 +28,18 @@ impl PrepareProvider for GoPrepareProvider {
 
     fn sources(&self) -> Vec<PathBuf> {
         // go.mod defines dependencies - changes here trigger downloads
-        vec![self.base.project_root.join("go.mod")]
+        vec![self.base.config_root().join("go.mod")]
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
+        let root = self.base.config_root();
         // Go downloads modules to GOPATH/pkg/mod, but we can check vendor/ if used
-        let vendor = self.base.project_root.join("vendor");
+        let vendor = root.join("vendor");
         if vendor.exists() {
             vec![vendor]
         } else {
             // go.sum gets updated after go mod download completes
-            vec![self.base.project_root.join("go.sum")]
+            vec![root.join("go.sum")]
         }
     }
 
@@ -48,7 +49,7 @@ impl PrepareProvider for GoPrepareProvider {
         }
 
         // Use `go mod vendor` if vendor/ exists, otherwise `go mod download`
-        let vendor = self.base.project_root.join("vendor");
+        let vendor = self.base.config_root().join("vendor");
         let (args, desc) = if vendor.exists() {
             (
                 vec!["mod".to_string(), "vendor".to_string()],
@@ -65,7 +66,7 @@ impl PrepareProvider for GoPrepareProvider {
             program: "go".to_string(),
             args,
             env: self.base.config.env.clone(),
-            cwd: Some(self.base.project_root.clone()),
+            cwd: Some(self.base.config_root()),
             description: self
                 .base
                 .config
@@ -77,6 +78,6 @@ impl PrepareProvider for GoPrepareProvider {
 
     fn is_applicable(&self) -> bool {
         // Check for go.mod (the source/lockfile), not go.sum (which may be an output)
-        self.base.project_root.join("go.mod").exists()
+        self.base.config_root().join("go.mod").exists()
     }
 }

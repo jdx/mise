@@ -25,7 +25,7 @@ impl GitSubmodulePrepareProvider {
     /// Handles INI-style sections and comments. Only extracts `path` values
     /// from `[submodule "..."]` sections.
     fn submodule_paths(&self) -> Vec<PathBuf> {
-        let gitmodules = self.base.project_root.join(".gitmodules");
+        let gitmodules = self.base.config_root().join(".gitmodules");
         let Ok(content) = std::fs::read_to_string(&gitmodules) else {
             return vec![];
         };
@@ -53,7 +53,7 @@ impl GitSubmodulePrepareProvider {
                     let value = value.trim_start();
                     value
                         .strip_prefix('=')
-                        .map(|value| self.base.project_root.join(value.trim()))
+                        .map(|value| self.base.config_root().join(value.trim()))
                 } else {
                     None
                 }
@@ -68,7 +68,7 @@ impl PrepareProvider for GitSubmodulePrepareProvider {
     }
 
     fn sources(&self) -> Vec<PathBuf> {
-        vec![self.base.project_root.join(".gitmodules")]
+        vec![self.base.config_root().join(".gitmodules")]
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
@@ -89,7 +89,7 @@ impl PrepareProvider for GitSubmodulePrepareProvider {
                 "--recursive".to_string(),
             ],
             env: self.base.config.env.clone(),
-            cwd: Some(self.base.project_root.clone()),
+            cwd: Some(self.base.config_root()),
             description: self
                 .base
                 .config
@@ -100,7 +100,7 @@ impl PrepareProvider for GitSubmodulePrepareProvider {
     }
 
     fn is_applicable(&self) -> bool {
-        let gitmodules = self.base.project_root.join(".gitmodules");
+        let gitmodules = self.base.config_root().join(".gitmodules");
         gitmodules.exists() && gitmodules.metadata().map(|m| m.len() > 0).unwrap_or(false)
     }
 }

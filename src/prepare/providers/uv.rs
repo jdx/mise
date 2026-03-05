@@ -27,14 +27,12 @@ impl PrepareProvider for UvPrepareProvider {
     }
 
     fn sources(&self) -> Vec<PathBuf> {
-        vec![
-            self.base.project_root.join("uv.lock"),
-            self.base.project_root.join("pyproject.toml"),
-        ]
+        let root = self.base.config_root();
+        vec![root.join("uv.lock"), root.join("pyproject.toml")]
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        vec![self.base.project_root.join(".venv")]
+        vec![self.base.config_root().join(".venv")]
     }
 
     fn prepare_command(&self) -> Result<PrepareCommand> {
@@ -46,7 +44,7 @@ impl PrepareProvider for UvPrepareProvider {
             program: "uv".to_string(),
             args: vec!["sync".to_string()],
             env: self.base.config.env.clone(),
-            cwd: Some(self.base.project_root.clone()),
+            cwd: Some(self.base.config_root()),
             description: self
                 .base
                 .config
@@ -57,6 +55,6 @@ impl PrepareProvider for UvPrepareProvider {
     }
 
     fn is_applicable(&self) -> bool {
-        self.base.project_root.join("uv.lock").exists()
+        self.base.config_root().join("uv.lock").exists()
     }
 }
