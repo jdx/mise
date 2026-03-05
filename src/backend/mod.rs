@@ -1351,7 +1351,8 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     async fn dependency_env(&self, config: &Arc<Config>) -> eyre::Result<BTreeMap<String, String>> {
-        let mut env = self.dependency_toolset(config)
+        let mut env = self
+            .dependency_toolset(config)
             .await?
             .full_env(config)
             .await?;
@@ -1380,7 +1381,10 @@ pub trait Backend: Debug + Send + Sync {
                 })
                 .collect();
             let joined = env::join_paths(&filtered)?;
-            env.insert(env::PATH_KEY.to_string(), joined.to_string_lossy().into_owned());
+            env.insert(
+                env::PATH_KEY.to_string(),
+                joined.to_string_lossy().into_owned(),
+            );
         }
 
         Ok(env)

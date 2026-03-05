@@ -42,6 +42,6 @@ mise cache clear
 # Use run_with_timeout (from assert.sh) rather than the system timeout command,
 # which is not available on macOS without GNU coreutils.
 run_with_timeout 15 mise ls --json -c || {
-  echo "ERROR: mise ls timed out or failed — likely infinite shim recursion (fork bomb)"
-  exit 1
+	echo "ERROR: mise ls timed out or failed — likely infinite shim recursion (fork bomb)"
+	exit 1
 }
