@@ -39,4 +39,9 @@ mise cache clear
 # This must complete within the timeout without spawning infinite child processes.
 # Without the fix: fork bomb (OOM / timeout).
 # With the fix: go list fails cleanly (go not in dependency PATH), command completes.
-assert "timeout 15 mise ls --json -c"
+# Use run_with_timeout (from assert.sh) rather than the system timeout command,
+# which is not available on macOS without GNU coreutils.
+run_with_timeout 15 mise ls --json -c || {
+  echo "ERROR: mise ls timed out or failed — likely infinite shim recursion (fork bomb)"
+  exit 1
+}
