@@ -9,6 +9,7 @@ use crate::ui::progress_report::SingleReport;
 use eyre::{Result, bail};
 use indexmap::IndexSet;
 use std::path::Path;
+use std::path::PathBuf;
 use std::sync::LazyLock;
 
 /// Regex pattern for matching version suffixes like -v1.2.3, _1.2.3, etc.
@@ -684,8 +685,15 @@ pub fn rename_executable_in_dir(
             if should_skip_file(&file_name, false) {
                 continue;
             }
-            file::rename(&path, &target_path)?;
-            debug!("Renamed {} to {}", path.display(), target_path.display());
+            let target_path_with_extension =
+                keep_required_extensions(dir, &file_name, new_name, target_path);
+
+            file::rename(&path, &target_path_with_extension)?;
+            debug!(
+                "Renamed {} to {}",
+                path.display(),
+                target_path_with_extension.display()
+            );
             return Ok(());
         }
     }
@@ -701,12 +709,15 @@ pub fn rename_executable_in_dir(
 
                 // Check if filename matches tool name pattern or the target name
                 if file_name.contains(tool_name) || *file_name == *new_name {
+                    let target_path_with_extension =
+                        keep_required_extensions(dir, &file_name, new_name, target_path);
+
                     file::make_executable(&path)?;
-                    file::rename(&path, &target_path)?;
+                    file::rename(&path, &target_path_with_extension)?;
                     debug!(
                         "Found and renamed {} to {} (added exec permissions)",
                         path.display(),
-                        target_path.display()
+                        target_path_with_extension.display()
                     );
                     return Ok(());
                 }
@@ -763,6 +774,39 @@ fn rename_executable_in_app_bundle(
     }
 
     Ok(false)
+}
+
+fn keep_required_extensions(
+    dir: &Path,
+    file_name: &str,
+    new_name: &str,
+    target_path: PathBuf,
+) -> PathBuf {
+    if cfg!(windows) {
+        return keep_extensions(
+            dir,
+            file_name,
+            new_name,
+            target_path,
+            &[".exe", ".cmd", ".bat"],
+        );
+    }
+    target_path
+}
+
+fn keep_extensions(
+    dir: &Path,
+    file_name: &str,
+    new_name: &str,
+    target_path: PathBuf,
+    exts: &[&str],
+) -> PathBuf {
+    for ext in exts {
+        if file_name.to_lowercase().ends_with(ext) && !new_name.to_lowercase().ends_with(ext) {
+            return dir.join(format!("{}{}", new_name, ext));
+        }
+    }
+    target_path
 }
 
 /// Cleans a binary name by removing OS/arch suffixes and version numbers.
@@ -1008,6 +1052,88 @@ mod tests {
         // Test edge cases
         assert_eq!(clean_binary_name("linux", None), "linux"); // Just OS name
         assert_eq!(clean_binary_name("", None), "");
+    }
+
+    #[test]
+    fn test_keep_extensions() {
+        let dir = Path::new("/tmp");
+        let initial_target = dir.join("new_tool");
+
+        // Does not append extension not in the list
+        assert_eq!(
+            keep_extensions(
+                dir,
+                "mytool.sh",
+                "new_tool",
+                initial_target.clone(),
+                &[".exe"]
+            ),
+            initial_target
+        );
+
+        // Appends if in the list
+        assert_eq!(
+            keep_extensions(
+                dir,
+                "mytool.sh",
+                "new_tool",
+                initial_target.clone(),
+                &[".sh"]
+            ),
+            dir.join("new_tool.sh")
+        );
+
+        // Case insensitivity handled
+        assert_eq!(
+            keep_extensions(
+                dir,
+                "mytool.SH",
+                "new_tool",
+                initial_target.clone(),
+                &[".sh"]
+            ),
+            dir.join("new_tool.sh")
+        );
+
+        // New name already has extension - avoids double extension
+        assert_eq!(
+            keep_extensions(
+                dir,
+                "mytool.exe",
+                "new_tool.exe",
+                dir.join("new_tool.exe"),
+                &[".exe"]
+            ),
+            dir.join("new_tool.exe")
+        );
+    }
+
+    #[test]
+    fn test_keep_required_extensions() {
+        let dir = Path::new("/tmp");
+        let initial_target = dir.join("new_tool");
+
+        if cfg!(windows) {
+            // Keeps Windows executable extensions
+            assert_eq!(
+                keep_required_extensions(dir, "mytool.exe", "new_tool", initial_target.clone()),
+                dir.join("new_tool.exe")
+            );
+            assert_eq!(
+                keep_required_extensions(dir, "mytool.cmd", "new_tool", initial_target.clone()),
+                dir.join("new_tool.cmd")
+            );
+            assert_eq!(
+                keep_required_extensions(dir, "MYTOOL.BAT", "new_tool", initial_target.clone()),
+                dir.join("new_tool.bat")
+            );
+        } else {
+            // Does not append on non-windows
+            assert_eq!(
+                keep_required_extensions(dir, "mytool.exe", "new_tool", initial_target.clone()),
+                initial_target
+            );
+        }
     }
 
     #[test]
