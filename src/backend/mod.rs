@@ -1362,7 +1362,22 @@ pub trait Backend: Debug + Send + Sync {
         // shim again infinitely.
         if let Some(path_val) = env.get(&*env::PATH_KEY) {
             let filtered: Vec<_> = env::split_paths(path_val)
-                .filter(|p| p.as_path() != *dirs::SHIMS)
+                .filter(|p| {
+                    if cfg!(windows) {
+                        // On Windows use case-insensitive, separator-normalised comparison
+                        // (same pattern as exec.rs) to handle path variations such as
+                        // ~/.local/share/mise\shims vs C:\Users\user\.local\share\mise\shims
+                        let shims_normalized = dirs::SHIMS
+                            .to_string_lossy()
+                            .to_lowercase()
+                            .replace('/', "\\");
+                        let expanded = file::replace_path(p);
+                        expanded.to_string_lossy().to_lowercase().replace('/', "\\")
+                            != shims_normalized
+                    } else {
+                        p.as_path() != *dirs::SHIMS
+                    }
+                })
                 .collect();
             let joined = env::join_paths(&filtered)?;
             env.insert(env::PATH_KEY.to_string(), joined.to_string_lossy().into_owned());
