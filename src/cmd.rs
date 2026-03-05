@@ -18,6 +18,8 @@ use eyre::{Context, bail};
 use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
 #[cfg(not(any(test, target_os = "windows")))]
 use signal_hook::iterator::Signals;
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::sync::LazyLock as Lazy;
 
 use crate::config::Settings;
@@ -106,6 +108,7 @@ pub struct CmdLineRunner<'a> {
     stdin: Option<String>,
     redactor: Redactor,
     raw: bool,
+    interactive: bool,
     pass_signals: bool,
     on_stdout: Option<Box<dyn Fn(String) + Send + 'a>>,
     on_stderr: Option<Box<dyn Fn(String) + Send + 'a>>,
@@ -243,6 +246,7 @@ impl<'a> CmdLineRunner<'a> {
             stdin: None,
             redactor: Default::default(),
             raw: false,
+            interactive: false,
             pass_signals: false,
             on_stdout: None,
             on_stderr: None,
@@ -395,6 +399,11 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
+    pub fn interactive(mut self, interactive: bool) -> Self {
+        self.interactive = interactive;
+        self
+    }
+
     pub fn with_pass_signals(&mut self) -> &mut Self {
         self.pass_signals = true;
         self
@@ -541,12 +550,53 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     fn execute_raw(mut self) -> Result<()> {
+        #[cfg(unix)]
+        let tty_before = unsafe {
+            let stdin = std::os::fd::BorrowedFd::borrow_raw(0);
+            if std::io::IsTerminal::is_terminal(&stdin) {
+                nix::sys::termios::tcgetattr(stdin).ok()
+            } else {
+                None
+            }
+        };
+        #[cfg(unix)]
+        unsafe {
+            let interactive = self.interactive;
+            self.cmd.pre_exec(move || {
+                // Interactive tasks in non-tty contexts run in a separate process group.
+                let stdin = std::os::fd::BorrowedFd::borrow_raw(0);
+                if interactive && !std::io::IsTerminal::is_terminal(&stdin) {
+                    let _ = nix::unistd::setpgid(
+                        nix::unistd::Pid::from_raw(0),
+                        nix::unistd::Pid::from_raw(0),
+                    );
+                }
+                Ok(())
+            });
+        }
         let mut cp = self.spawn_with_etxtbsy_retry()?;
-        let timeout_guard = self.timeout.map(|t| TimeoutGuard::new(t, cp.id()));
-        let status = cp.wait()?;
+        let id = cp.id();
+        // Edge case: interactive/raw commands must be tracked so global Ctrl-C can kill them.
+        RUNNING_PIDS.lock().unwrap().insert(id);
+        let timeout_guard = self.timeout.map(|t| TimeoutGuard::new(t, id));
+        let status = cp.wait();
+        #[cfg(unix)]
+        if let Some(termios) = tty_before {
+            // Edge case: interactive tasks may mutate tty state (`stty -echo`); always restore.
+            unsafe {
+                let stdin = std::os::fd::BorrowedFd::borrow_raw(0);
+                let _ = nix::sys::termios::tcsetattr(
+                    stdin,
+                    nix::sys::termios::SetArg::TCSANOW,
+                    &termios,
+                );
+            }
+        }
+        RUNNING_PIDS.lock().unwrap().remove(&id);
         if let Some(g) = &timeout_guard {
             g.cancel();
         }
+        let status = status?;
         if !status.success() {
             if let Some(duration) = timeout_guard.as_ref().and_then(|g| g.timed_out()) {
                 bail!("timed out after {duration:?}");

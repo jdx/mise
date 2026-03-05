@@ -2329,6 +2329,36 @@ mod tests {
         parse(toml).env_entries().unwrap().into_iter().join("\n")
     }
 
+    #[test]
+    fn test_tasks_interactive_deserialize_true_and_default_false() {
+        let cf = parse(formatdoc! {r#"
+            [tasks.interactive-task]
+            run = "echo interactive"
+            interactive = true
+
+            [tasks.normal-task]
+            run = "echo normal"
+        "#});
+
+        assert!(cf.tasks.0["interactive-task"].interactive);
+        assert!(!cf.tasks.0["normal-task"].interactive);
+    }
+
+    #[test]
+    fn test_tasks_interactive_rejects_non_bool() {
+        let path = CWD.as_ref().unwrap().join(".test.mise.toml");
+        let toml = formatdoc! {r#"
+            [tasks.bad]
+            run = "echo bad"
+            interactive = "true"
+        "#};
+
+        file::write(&path, toml).unwrap();
+        let result = MiseToml::from_file(&path);
+        file::remove_file(&path).unwrap();
+        assert!(result.is_err());
+    }
+
     #[tokio::test]
     async fn test_table_syntax_preserves_registry_defaults() {
         // Test for #8039: table syntax like `ansible = { version = "latest" }`

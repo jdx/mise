@@ -22,11 +22,22 @@ use std::iter::once;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use std::time::{Duration, SystemTime};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tokio::sync::{mpsc, oneshot};
 use xx::file;
+
+static TASK_RUNTIME_LOCK: LazyLock<Arc<RwLock<()>>> = LazyLock::new(|| Arc::new(RwLock::new(())));
+
+enum RuntimeSegmentLockGuard {
+    Read {
+        _guard: tokio::sync::OwnedRwLockReadGuard<()>,
+    },
+    Write {
+        _guard: tokio::sync::OwnedRwLockWriteGuard<()>,
+    },
+}
 
 /// Configuration for TaskExecutor
 pub struct TaskExecutorConfig {
@@ -101,6 +112,29 @@ impl TaskExecutor {
 
     fn raw(&self, task: Option<&Task>) -> bool {
         self.output_handler.raw(task)
+    }
+
+    async fn acquire_runtime_segment_lock(task: &Task) -> RuntimeSegmentLockGuard {
+        if task.interactive {
+            RuntimeSegmentLockGuard::Write {
+                _guard: TASK_RUNTIME_LOCK.clone().write_owned().await,
+            }
+        } else {
+            RuntimeSegmentLockGuard::Read {
+                _guard: TASK_RUNTIME_LOCK.clone().read_owned().await,
+            }
+        }
+    }
+
+    async fn acquire_runtime_segment_lock_and_check_stop(
+        &self,
+        task: &Task,
+    ) -> Result<RuntimeSegmentLockGuard> {
+        let guard = Self::acquire_runtime_segment_lock(task).await;
+        if self.is_stopping() && !self.continue_on_error {
+            return Err(eyre!("task execution aborted due to previous failure"));
+        }
+        Ok(guard)
     }
 
     pub fn task_timings(&self) -> bool {
@@ -636,14 +670,25 @@ impl TaskExecutor {
         env: &BTreeMap<String, String>,
         prefix: &str,
     ) -> Result<()> {
+        let interactive = task.interactive;
+        if interactive {
+            use std::io::IsTerminal;
+            ensure!(
+                std::io::stdin().is_terminal(),
+                "task '{}' requires an interactive TTY on stdin to run",
+                task.name
+            );
+        }
+
         let config = Config::get().await?;
         let program = program.to_executable();
         let redactions = config.redactions();
-        let raw = self.raw(Some(task));
+        let raw = interactive || self.raw(Some(task));
         let mut cmd = CmdLineRunner::new(program.clone())
             .args(args)
             .envs(env)
             .redact(redactions.deref().clone())
+            .interactive(interactive)
             .raw(raw);
         if raw && !redactions.is_empty() {
             hint!(
@@ -653,6 +698,7 @@ impl TaskExecutor {
             );
         }
         let output = self.output(Some(task));
+        let output_is_silent = matches!(&output, TaskOutput::Silent);
         cmd.with_pass_signals();
         match output {
             TaskOutput::Prefix => {
@@ -764,6 +810,21 @@ impl TaskExecutor {
                 }
             }
         }
+        if interactive {
+            // Interactive tasks always run with direct TTY passthrough, which
+            // intentionally takes precedence over output mode and `silent`.
+            if task.silent.is_silent() || output_is_silent {
+                hint!(
+                    "interactive_silent",
+                    "interactive tasks always use terminal passthrough; `silent` is ignored",
+                    ""
+                );
+            }
+            cmd = cmd
+                .stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit());
+        }
         let dir = task_cwd(task, &config).await?;
         if !dir.exists() {
             self.eprint(
@@ -793,6 +854,13 @@ impl TaskExecutor {
         if let Some(timeout) = effective_timeout {
             cmd = cmd.with_timeout(timeout);
         }
+        // CAUTION: cmd.execute() is a blocking call. The runtime segment lock is held
+        // across the blocking wait for the child process, tying up a Tokio worker thread.
+        // This is intentional for correctness (the lock must span the subprocess lifetime)
+        // but callers should be aware of the thread-blocking behavior.
+        let _runtime_segment_lock = self
+            .acquire_runtime_segment_lock_and_check_stop(task)
+            .await?;
         cmd.execute()?;
         trace!("{prefix} exited successfully");
         Ok(())
@@ -930,4 +998,139 @@ fn shell_from_shebang(path: &Path) -> Option<Vec<String>> {
     };
     let args: Vec<String> = parts.map(|s| s.to_string()).collect();
     Some(once(shell.to_string()).chain(args).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::task::task_output::TaskOutput;
+    use crate::task::task_output_handler::{OutputHandler, OutputHandlerConfig};
+    use std::sync::LazyLock;
+
+    static TEST_SERIAL_LOCK: LazyLock<tokio::sync::Mutex<()>> =
+        LazyLock::new(|| tokio::sync::Mutex::new(()));
+
+    fn test_executor(continue_on_error: bool) -> TaskExecutor {
+        TaskExecutor::new(
+            TaskContextBuilder::new(),
+            OutputHandler::new(OutputHandlerConfig {
+                prefix: false,
+                interleave: false,
+                output: Some(TaskOutput::Silent),
+                silent: false,
+                quiet: false,
+                raw: false,
+                is_linear: true,
+                jobs: Some(1),
+            }),
+            TaskExecutorConfig {
+                force: false,
+                cd: None,
+                shell: None,
+                tool: vec![],
+                timings: false,
+                continue_on_error,
+                dry_run: false,
+                skip_deps: false,
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn test_stop_check_happens_after_runtime_lock_acquisition() {
+        let _serial = TEST_SERIAL_LOCK.lock().await;
+        let executor = Arc::new(test_executor(false));
+        executor.add_failed_task(
+            Task {
+                name: "failed".to_string(),
+                ..Default::default()
+            },
+            Some(1),
+        );
+
+        let interactive = Task {
+            interactive: true,
+            ..Default::default()
+        };
+        let non_interactive = Task::default();
+        let write_guard = TaskExecutor::acquire_runtime_segment_lock(&interactive).await;
+        assert!(matches!(write_guard, RuntimeSegmentLockGuard::Write { .. }));
+
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel::<()>();
+        let (done_tx, mut done_rx) = tokio::sync::mpsc::unbounded_channel::<bool>();
+        let executor_c = executor.clone();
+        let task_c = non_interactive.clone();
+
+        let join = tokio::spawn(async move {
+            let _ = started_tx.send(());
+            let result = executor_c
+                .acquire_runtime_segment_lock_and_check_stop(&task_c)
+                .await;
+            let _ = done_tx.send(result.is_err());
+        });
+        started_rx.await.unwrap();
+
+        assert!(
+            matches!(
+                done_rx.try_recv(),
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+            ),
+            "stop check should happen after waiting on runtime lock"
+        );
+
+        drop(write_guard);
+        let is_err = tokio::time::timeout(Duration::from_secs(1), done_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(is_err);
+        tokio::time::timeout(Duration::from_secs(1), join)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_interactive_segment_uses_write_lock_and_blocks_readers() {
+        let _serial = TEST_SERIAL_LOCK.lock().await;
+        let interactive = Task {
+            interactive: true,
+            ..Default::default()
+        };
+        let non_interactive = Task::default();
+
+        let write_guard = TaskExecutor::acquire_runtime_segment_lock(&interactive).await;
+        assert!(matches!(write_guard, RuntimeSegmentLockGuard::Write { .. }));
+
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel::<()>();
+        let (done_tx, mut done_rx) = tokio::sync::mpsc::unbounded_channel::<bool>();
+
+        let join = tokio::spawn(async move {
+            let _ = started_tx.send(());
+            let read_guard = TaskExecutor::acquire_runtime_segment_lock(&non_interactive).await;
+            assert!(matches!(read_guard, RuntimeSegmentLockGuard::Read { .. }));
+            let _ = done_tx.send(true);
+            drop(read_guard);
+        });
+        started_rx.await.unwrap();
+
+        assert!(
+            matches!(
+                done_rx.try_recv(),
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+            ),
+            "reader should block while interactive write lock is held"
+        );
+
+        drop(write_guard);
+        let read_acquired = tokio::time::timeout(Duration::from_secs(1), done_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(read_acquired);
+        tokio::time::timeout(Duration::from_secs(1), join)
+            .await
+            .unwrap()
+            .unwrap();
+    }
 }

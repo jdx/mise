@@ -20,7 +20,7 @@ use crate::task::{Deps, Task};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::{ctrlc, info, style};
 use clap::{CommandFactory, ValueHint};
-use eyre::{Result, bail, eyre};
+use eyre::{Result, bail, ensure, eyre};
 use itertools::Itertools;
 use tokio::sync::Mutex;
 
@@ -658,6 +658,14 @@ impl Run {
     fn validate_task(&self, task: &Task) -> Result<()> {
         use crate::file;
         use crate::ui;
+        if task.interactive {
+            use std::io::IsTerminal;
+            ensure!(
+                std::io::stdin().is_terminal(),
+                "task '{}' requires an interactive TTY on stdin to run",
+                task.name
+            );
+        }
         if let Some(path) = &task.file
             && path.exists()
             && !file::is_executable(path)
