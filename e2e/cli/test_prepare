@@ -492,3 +492,35 @@ assert_not_contains "cat tera_output.txt" "{{env.MY_TEMPLATE_VAR}}"
 # Clean up
 rm -f tera_input.txt tera_output.txt mise.toml
 rm -rf .mise
+
+# Test dir option affects source/output resolution for custom providers
+mkdir -p subdir
+echo '{"name": "test"}' >subdir/package.json
+echo '{"lockfileVersion": 3}' >subdir/package-lock.json
+
+cat >mise.toml <<'EOF'
+[prepare.subdir_custom]
+dir = "subdir"
+sources = ["package.json", "package-lock.json"]
+outputs = ["build_output"]
+run = "echo SUBDIR_RAN"
+EOF
+
+# Sources should resolve against subdir, not project root
+assert_contains "mise prepare --list" "subdir_custom"
+assert_contains "mise prepare --list" "subdir/package.json"
+assert_contains "mise prepare --list" "subdir/package-lock.json"
+
+# Run prepare and verify source hashes are tracked (provider becomes fresh)
+mkdir -p subdir/build_output
+assert_contains "mise prepare --only subdir_custom" "Prepared: subdir_custom"
+
+# Second run should be fresh (sources hashed correctly via subdir)
+assert_contains "mise prepare --only subdir_custom" "up to date"
+
+# Modify source in subdir → should be stale
+echo '{"name": "modified"}' >subdir/package.json
+assert_contains "mise prepare --only subdir_custom" "Prepared: subdir_custom"
+
+# Clean up
+rm -rf subdir mise.toml .mise

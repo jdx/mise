@@ -27,12 +27,12 @@ impl PrepareProvider for PipPrepareProvider {
     }
 
     fn sources(&self) -> Vec<PathBuf> {
-        vec![self.base.project_root.join("requirements.txt")]
+        vec![self.base.config_root().join("requirements.txt")]
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
         // Check for .venv directory as output indicator
-        vec![self.base.project_root.join(".venv")]
+        vec![self.base.config_root().join(".venv")]
     }
 
     fn prepare_command(&self) -> Result<PrepareCommand> {
@@ -48,7 +48,7 @@ impl PrepareProvider for PipPrepareProvider {
                 "requirements.txt".to_string(),
             ],
             env: self.base.config.env.clone(),
-            cwd: Some(self.base.project_root.clone()),
+            cwd: Some(self.base.config_root()),
             description: self
                 .base
                 .config
@@ -59,6 +59,6 @@ impl PrepareProvider for PipPrepareProvider {
     }
 
     fn is_applicable(&self) -> bool {
-        self.base.project_root.join("requirements.txt").exists()
+        self.base.config_root().join("requirements.txt").exists()
     }
 }

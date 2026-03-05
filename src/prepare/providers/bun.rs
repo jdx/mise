@@ -21,12 +21,13 @@ impl BunPrepareProvider {
     }
 
     fn lockfile_path(&self) -> Option<PathBuf> {
+        let root = self.base.config_root();
         // Bun supports both bun.lockb (binary) and bun.lock (text)
-        let binary_lock = self.base.project_root.join("bun.lockb");
+        let binary_lock = root.join("bun.lockb");
         if binary_lock.exists() {
             return Some(binary_lock);
         }
-        let text_lock = self.base.project_root.join("bun.lock");
+        let text_lock = root.join("bun.lock");
         if text_lock.exists() {
             return Some(text_lock);
         }
@@ -44,12 +45,12 @@ impl PrepareProvider for BunPrepareProvider {
         if let Some(lockfile) = self.lockfile_path() {
             sources.push(lockfile);
         }
-        sources.push(self.base.project_root.join("package.json"));
+        sources.push(self.base.config_root().join("package.json"));
         sources
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        vec![self.base.project_root.join("node_modules")]
+        vec![self.base.config_root().join("node_modules")]
     }
 
     fn prepare_command(&self) -> Result<PrepareCommand> {
@@ -61,7 +62,7 @@ impl PrepareProvider for BunPrepareProvider {
             program: "bun".to_string(),
             args: vec!["install".to_string()],
             env: self.base.config.env.clone(),
-            cwd: Some(self.base.project_root.clone()),
+            cwd: Some(self.base.config_root()),
             description: self
                 .base
                 .config

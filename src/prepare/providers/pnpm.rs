@@ -27,14 +27,12 @@ impl PrepareProvider for PnpmPrepareProvider {
     }
 
     fn sources(&self) -> Vec<PathBuf> {
-        vec![
-            self.base.project_root.join("pnpm-lock.yaml"),
-            self.base.project_root.join("package.json"),
-        ]
+        let root = self.base.config_root();
+        vec![root.join("pnpm-lock.yaml"), root.join("package.json")]
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
-        vec![self.base.project_root.join("node_modules")]
+        vec![self.base.config_root().join("node_modules")]
     }
 
     fn prepare_command(&self) -> Result<PrepareCommand> {
@@ -46,7 +44,7 @@ impl PrepareProvider for PnpmPrepareProvider {
             program: "pnpm".to_string(),
             args: vec!["install".to_string()],
             env: self.base.config.env.clone(),
-            cwd: Some(self.base.project_root.clone()),
+            cwd: Some(self.base.config_root()),
             description: self
                 .base
                 .config
@@ -57,6 +55,6 @@ impl PrepareProvider for PnpmPrepareProvider {
     }
 
     fn is_applicable(&self) -> bool {
-        self.base.project_root.join("pnpm-lock.yaml").exists()
+        self.base.config_root().join("pnpm-lock.yaml").exists()
     }
 }

@@ -27,20 +27,19 @@ impl PrepareProvider for BundlerPrepareProvider {
     }
 
     fn sources(&self) -> Vec<PathBuf> {
-        vec![
-            self.base.project_root.join("Gemfile.lock"),
-            self.base.project_root.join("Gemfile"),
-        ]
+        let root = self.base.config_root();
+        vec![root.join("Gemfile.lock"), root.join("Gemfile")]
     }
 
     fn outputs(&self) -> Vec<PathBuf> {
+        let root = self.base.config_root();
         // Check for vendor/bundle if using --path vendor/bundle
-        let vendor = self.base.project_root.join("vendor/bundle");
+        let vendor = root.join("vendor/bundle");
         if vendor.exists() {
             vec![vendor]
         } else {
             // Use .bundle directory as fallback indicator
-            vec![self.base.project_root.join(".bundle")]
+            vec![root.join(".bundle")]
         }
     }
 
@@ -53,7 +52,7 @@ impl PrepareProvider for BundlerPrepareProvider {
             program: "bundle".to_string(),
             args: vec!["install".to_string()],
             env: self.base.config.env.clone(),
-            cwd: Some(self.base.project_root.clone()),
+            cwd: Some(self.base.config_root()),
             description: self
                 .base
                 .config
@@ -64,6 +63,6 @@ impl PrepareProvider for BundlerPrepareProvider {
     }
 
     fn is_applicable(&self) -> bool {
-        self.base.project_root.join("Gemfile.lock").exists()
+        self.base.config_root().join("Gemfile.lock").exists()
     }
 }
