@@ -55,16 +55,12 @@ use the `exe` option to specify the executable name:
 
 The `rename_exe` option allows you to specify the name of the executable once it has been extracted.
 
-Use the `rename_exe` option to specify the target executable name:
+use the `rename_exe` option to specify the target executable name:
 
 ```toml
 [tools]
 "ubi:cli/cli" = { version = "latest", exe = "gh", rename_exe = "github" } # github's cli
 ```
-
-::: info
-On Windows, executable extensions (`.exe`, `.bat`, `.cmd`) are **NOT** automatically preserved when renaming, on the contrary to how this works on other backends like [`github`](./github.html#rename-exe).
-:::
 
 ### `matching`
 
