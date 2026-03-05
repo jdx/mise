@@ -13,5 +13,4 @@ platforms = ["windows"]
 
 [backends.options.platforms]
 windows-x64 = { asset_pattern = "ImageMagick-*-portable-Q16-HDRI-x64.7z" }
-windows-x86 = { asset_pattern = "ImageMagick-*-portable-Q16-HDRI-x86.7z" }
 windows-arm64 = { asset_pattern = "ImageMagick-*-portable-Q16-HDRI-arm64.7z" }
