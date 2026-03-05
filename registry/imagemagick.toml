@@ -12,5 +12,5 @@ full = "github:ImageMagick/ImageMagick"
 platforms = ["windows"]
 
 [backends.options.platforms]
-windows-x64 = { asset_pattern = "ImageMagick-*-portable-Q16-HDRI-x64.7z" }
 windows-arm64 = { asset_pattern = "ImageMagick-*-portable-Q16-HDRI-arm64.7z" }
+windows-x64 = { asset_pattern = "ImageMagick-*-portable-Q16-HDRI-x64.7z" }
