@@ -1,3 +1,22 @@
-backends = ["conda:imagemagick", "asdf:mise-plugins/mise-imagemagick"]
 description = "ImageMagick is a free, open-source software suite for creating, editing, converting, and displaying images. It supports 200+ formats and offers powerful command-line tools and APIs for automation, scripting, and integration across platforms"
 test = { cmd = "magick --version 2>&1", expected = "ImageMagick" }
+
+[[backends]]
+full = "conda:imagemagick"
+
+[[backends]]
+full = "asdf:mise-plugins/mise-imagemagick"
+
+[[backends]]
+full = "github:ImageMagick/ImageMagick"
+os = ["windows"]
+platforms = ["windows-x64", "windows-x86", "windows-arm64"]
+
+[backends.options.platforms.windows-x64]
+asset_pattern = "ImageMagick-*-portable-Q16-HDRI-x64.7z"
+
+[backends.options.platforms.windows-x86]
+asset_pattern = "ImageMagick-*-portable-Q16-HDRI-x86.7z"
+
+[backends.options.platforms.windows-arm64]
+asset_pattern = "ImageMagick-*-portable-Q16-HDRI-arm64.7z"
