@@ -1349,10 +1349,52 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     async fn dependency_env(&self, config: &Arc<Config>) -> eyre::Result<BTreeMap<String, String>> {
-        self.dependency_toolset(config)
+        let mut env = self
+            .dependency_toolset(config)
             .await?
             .full_env(config)
-            .await
+            .await?;
+
+        // Remove mise shims from PATH to prevent infinite shim recursion when a
+        // dependency tool (e.g., go) is configured but not installed. Without this,
+        // the shim for the dependency would call `mise exec` which would call the
+        // shim again infinitely.
+        if let Some(path_val) = env.get(&*env::PATH_KEY) {
+            let paths: Vec<_> = env::split_paths(path_val).collect();
+            let original_len = paths.len();
+            #[cfg(not(windows))]
+            let filtered: Vec<_> = paths
+                .into_iter()
+                .filter(|p| p.as_path() != *dirs::SHIMS)
+                .collect();
+            #[cfg(windows)]
+            let filtered: Vec<_> = {
+                // Pre-compute once; case-insensitive + separator-normalised to handle
+                // path variations such as ~/.local/share/mise\shims vs
+                // C:\Users\user\.local\share\mise\shims
+                let shims_normalized = dirs::SHIMS
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .replace('/', "\\");
+                paths
+                    .into_iter()
+                    .filter(|p| {
+                        let expanded = file::replace_path(p);
+                        expanded.to_string_lossy().to_lowercase().replace('/', "\\")
+                            != shims_normalized
+                    })
+                    .collect()
+            };
+            if filtered.len() != original_len {
+                let joined = env::join_paths(&filtered)?;
+                env.insert(
+                    env::PATH_KEY.to_string(),
+                    joined.to_string_lossy().into_owned(),
+                );
+            }
+        }
+
+        Ok(env)
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
