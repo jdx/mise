@@ -1,0 +1,3 @@
+backends = ["github:betterleaks/betterleaks"]
+description = "A Better Secrets Scanner built for configurability and speed"
+test = { cmd = "betterleaks --version", expected = "betterleaks version {{version}}" }
