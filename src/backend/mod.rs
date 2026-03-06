@@ -1368,13 +1368,25 @@ pub trait Backend: Debug + Send + Sync {
                         // On Windows use case-insensitive, separator-normalised comparison
                         // (same pattern as exec.rs) to handle path variations such as
                         // ~/.local/share/mise\shims vs C:\Users\user\.local\share\mise\shims
-                        let shims_normalized = dirs::SHIMS
-                            .to_string_lossy()
-                            .to_lowercase()
-                            .replace('/', "\\");
+        let filtered: Vec<_> = {
+            // Pre-compute shims_normalized once (needed for Windows path)
+            #[cfg(windows)]
+            let shims_normalized = dirs::SHIMS
+                .to_string_lossy()
+                .to_lowercase()
+                .replace('/', "\\");
+            env::split_paths(path_val)
+                .filter(|p| {
+                    if cfg!(windows) {
                         let expanded = file::replace_path(p);
                         expanded.to_string_lossy().to_lowercase().replace('/', "\\")
                             != shims_normalized
+                    } else {
+                        p.as_path() != *dirs::SHIMS
+                    }
+                })
+                .collect()
+        };
                     } else {
                         p.as_path() != *dirs::SHIMS
                     }
