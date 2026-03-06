@@ -1,3 +1,4 @@
 backends = ["github:betterleaks/betterleaks"]
 description = "A Better Secrets Scanner built for configurability and speed"
+detect = [".betterleaks.toml"]
 test = { cmd = "betterleaks --version", expected = "betterleaks version {{version}}" }
