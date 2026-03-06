@@ -387,12 +387,10 @@ impl BackendArg {
                 .opts
                 .iter()
                 .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str()))
-                .map(|(k, v)| {
-                    let v_str = match v {
-                        toml::Value::String(s) => s.clone(),
-                        _ => v.to_string(),
-                    };
-                    format!("{k}={v_str}")
+                .filter_map(|(k, v)| match v {
+                    toml::Value::String(s) => Some(format!("{k}={s}")),
+                    toml::Value::Table(_) | toml::Value::Array(_) => None,
+                    _ => Some(format!("{k}={v}")),
                 })
                 .collect::<Vec<_>>()
                 .join(",");

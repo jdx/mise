@@ -119,7 +119,15 @@ impl Backend for VfoxBackend {
                 tool_opts
                     .opts
                     .iter()
-                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or_default().to_string()))
+                    .map(|(k, v)| {
+                        (
+                            k.clone(),
+                            match v {
+                                toml::Value::String(s) => s.clone(),
+                                _ => v.to_string(),
+                            },
+                        )
+                    })
                     .collect(),
             )
             .await
@@ -302,7 +310,15 @@ impl VfoxBackend {
                         tv.install_path(),
                         opts.opts
                             .iter()
-                            .map(|(k, v)| (k.clone(), v.as_str().unwrap_or_default().to_string()))
+                            .map(|(k, v)| {
+                                (
+                                    k.clone(),
+                                    match v {
+                                        toml::Value::String(s) => s.clone(),
+                                        _ => v.to_string(),
+                                    },
+                                )
+                            })
                             .collect(),
                     )
                     .await

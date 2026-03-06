@@ -2,6 +2,8 @@ use indexmap::IndexMap;
 
 /// Option keys that are only relevant during initial installation and should not
 /// be persisted in the manifest or included in `full_with_opts()`.
+// install_env is a named field on ToolVersionOptions (serde puts it in self.install_env),
+// but parse_tool_options() can still place it in opts, so we filter it here as well.
 pub const EPHEMERAL_OPT_KEYS: &[&str] = &["postinstall", "install_env"];
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -27,14 +29,32 @@ impl std::hash::Hash for ToolVersionOptions {
         install_env_sorted.hash(state);
 
         // Hash opts in sorted order for deterministic hashing
-        // toml::Value doesn't implement Hash, so hash its string representation
-        let mut opts_sorted: Vec<_> = self
-            .opts
-            .iter()
-            .map(|(k, v)| (k.clone(), v.to_string()))
-            .collect();
-        opts_sorted.sort_by_key(|(k, _)| k.clone());
-        opts_sorted.hash(state);
+        let mut opts_sorted: Vec<_> = self.opts.iter().collect();
+        opts_sorted.sort_by_key(|(k, _)| k.as_str());
+        for (k, v) in opts_sorted {
+            k.hash(state);
+            hash_toml_value(v, state);
+        }
+    }
+}
+
+fn hash_toml_value<H: std::hash::Hasher>(v: &toml::Value, state: &mut H) {
+    use std::hash::Hash;
+    match v {
+        toml::Value::Table(t) => {
+            let mut sorted: Vec<_> = t.iter().collect();
+            sorted.sort_by_key(|(k, _)| k.as_str());
+            for (k, v) in sorted {
+                k.hash(state);
+                hash_toml_value(v, state);
+            }
+        }
+        toml::Value::Array(arr) => {
+            for v in arr {
+                hash_toml_value(v, state);
+            }
+        }
+        _ => v.to_string().hash(state),
     }
 }
 

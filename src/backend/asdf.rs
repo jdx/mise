@@ -171,7 +171,10 @@ impl AsdfBackend {
     ) -> Result<ScriptManager> {
         let mut sm = self.plugin.script_man.clone();
         for (key, value) in tv.request.options().opts {
-            let v = value.as_str().unwrap_or_default().to_string();
+            let v = match &value {
+                toml::Value::String(s) => s.clone(),
+                _ => value.to_string(),
+            };
             let k = format!("RTX_TOOL_OPTS__{}", key.to_uppercase());
             sm = sm.with_env(k, v.clone());
             let k = format!("MISE_TOOL_OPTS__{}", key.to_uppercase());

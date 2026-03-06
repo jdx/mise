@@ -114,7 +114,15 @@ fn parse_template(config: &Config, tv: &ToolVersion, tmpl: &str) -> eyre::Result
         .options()
         .opts
         .iter()
-        .map(|(k, v)| (k.clone(), v.as_str().unwrap_or_default().to_string()))
+        .map(|(k, v)| {
+            (
+                k.clone(),
+                match v {
+                    toml::Value::String(s) => s.clone(),
+                    _ => v.to_string(),
+                },
+            )
+        })
         .collect();
     ctx.insert("opts", &opts);
     get_tera(
