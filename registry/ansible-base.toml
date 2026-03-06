@@ -1,0 +1,3 @@
+backends = ["pipx:ansible-base"]
+description = "ansible-base is the predecessor of ansible-core, containing Ansible 2.10.x releases"
+test = { cmd = "ansible --version", expected = "ansible 2" }
