@@ -51,7 +51,7 @@ impl TaskResultsDisplay {
     fn display_timing_summary(&self, num_tasks: usize, timer: std::time::Instant) {
         if self.show_timings && num_tasks > 1 {
             let msg = format!("Finished in {}", time::format_duration(timer.elapsed()));
-            eprintln!("{}", style::edim(msg));
+            let _ = calm_io::stderrln!("{}", style::edim(msg));
         }
     }
 
@@ -67,7 +67,7 @@ impl TaskResultsDisplay {
         }
 
         let count = failed.len();
-        eprintln!("{} {} task(s) failed:", style::ered("ERROR"), count);
+        let _ = calm_io::stderrln!("{} {} task(s) failed:", style::ered("ERROR"), count);
         for (task, status) in &failed {
             let prefix = task.estyled_prefix();
             let status_str = status

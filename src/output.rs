@@ -6,14 +6,14 @@ use std::sync::Mutex;
 macro_rules! prefix_println {
     ($prefix:expr, $($arg:tt)*) => {{
         let msg = format!($($arg)*);
-        println!("{} {}", $prefix, msg);
+        let _ = calm_io::stdoutln!("{} {}", $prefix, msg);
     }};
 }
 #[macro_export]
 macro_rules! prefix_eprintln {
     ($prefix:expr, $($arg:tt)*) => {{
         let msg = format!($($arg)*);
-        eprintln!("{} {}", $prefix, msg);
+        let _ = calm_io::stderrln!("{} {}", $prefix, msg);
     }};
 }
 
