@@ -1173,11 +1173,14 @@ impl AquaBackend {
                         "SLSA provenance verified successfully for {tv} at level {}",
                         min_level
                     );
-                    // Record provenance in lockfile
+                    // Record provenance in lockfile only if not already set by a
+                    // higher-priority verification (github-attestations runs first)
                     let platform_key = self.get_platform_key();
                     let pi = tv.lock_platforms.entry(platform_key).or_default();
-                    pi.provenance = Some("slsa".to_string());
-                    pi.provenance_url = Some(provenance_download_url.clone());
+                    if pi.provenance.is_none() {
+                        pi.provenance = Some("slsa".to_string());
+                        pi.provenance_url = Some(provenance_download_url.clone());
+                    }
                 }
                 Ok(false) => {
                     return Err(eyre!("SLSA provenance verification failed for {tv}"));
@@ -1247,14 +1250,11 @@ impl AquaBackend {
                     ctx.pr
                         .set_message("✓ GitHub artifact attestations verified".to_string());
                     debug!("GitHub artifact attestations verified successfully for {tv}");
-                    // Only record provenance if not already set by a prior verification
-                    // (e.g., SLSA). This avoids overwriting and causing false-positive
-                    // downgrade errors when both mechanisms succeed.
+                    // Record provenance — this runs first in verify(), so provenance
+                    // is always None here
                     let platform_key = self.get_platform_key();
                     let pi = tv.lock_platforms.entry(platform_key).or_default();
-                    if pi.provenance.is_none() {
-                        pi.provenance = Some("github-attestations".to_string());
-                    }
+                    pi.provenance = Some("github-attestations".to_string());
                 }
                 Ok(false) => {
                     return Err(eyre!(

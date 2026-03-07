@@ -435,12 +435,13 @@ impl Backend for ZigPlugin {
             }),
             Err(_) if regex!(r"^\d+\.\d+\.\d+$").is_match(&tv.version) => {
                 // Fallback: construct URL directly for numbered versions (no checksum available)
+                // Don't pre-set provenance here — record it only after download() confirms
+                // minisign verification succeeded during install
                 Ok(PlatformInfo {
                     url: Some(format!(
                         "https://ziglang.org/download/{}/zig-{}-{}-{}.tar.xz",
                         tv.version, os, arch, tv.version
                     )),
-                    provenance: Some("minisign".to_string()),
                     ..Default::default()
                 })
             }
