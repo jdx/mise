@@ -649,13 +649,21 @@ impl Backend for AquaBackend {
 impl AquaBackend {
     /// Detect provenance type from aqua registry package config.
     ///
-    /// Only returns provenance types that can be verified without downloading
-    /// the artifact (cosign, minisign). GithubAttestations and SLSA are NOT
-    /// recorded here because their verification can silently fail (missing
-    /// assets, no attestations published). They are recorded at install-time
-    /// after successful verification instead.
+    /// Returns the highest-priority provenance type that is configured and
+    /// enabled for the package. GithubAttestations is NOT detected here
+    /// because it requires downloading the artifact to query the attestation
+    /// API — it is recorded at install-time after successful verification.
     fn detect_provenance_type(&self, pkg: &AquaPackage) -> Option<ProvenanceType> {
         let settings = Settings::get();
+
+        // Check for SLSA provenance (highest priority available at lock-time)
+        if settings.slsa
+            && settings.aqua.slsa
+            && let Some(slsa) = &pkg.slsa_provenance
+            && slsa.enabled != Some(false)
+        {
+            return Some(ProvenanceType::Slsa { url: None });
+        }
 
         // Check for cosign (nested under checksum config, requires checksum enabled)
         if settings.aqua.cosign

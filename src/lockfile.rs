@@ -67,7 +67,7 @@ pub struct LockfileTool {
 /// The ordering is significant: during verification, higher-priority mechanisms
 /// are tried first, and the lockfile records whichever succeeds.
 /// SLSA carries an optional URL for the provenance file (.intoto.jsonl).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, strum::Display, strum::EnumIs)]
+#[derive(Debug, Clone, strum::Display, strum::EnumIs)]
 #[strum(serialize_all = "kebab-case")]
 pub enum ProvenanceType {
     Minisign,
@@ -89,6 +89,23 @@ impl std::str::FromStr for ProvenanceType {
             "github-attestations" => Ok(Self::GithubAttestations),
             other => Err(format!("unknown provenance type: {other}")),
         }
+    }
+}
+
+/// PartialEq, Eq, Hash, and Ord all compare by ordinal (variant priority) only.
+/// Two `Slsa` variants with different URLs are considered equal.
+/// Use field access to compare URLs when needed.
+impl PartialEq for ProvenanceType {
+    fn eq(&self, other: &Self) -> bool {
+        self.ordinal() == other.ordinal()
+    }
+}
+
+impl Eq for ProvenanceType {}
+
+impl std::hash::Hash for ProvenanceType {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.ordinal().hash(state);
     }
 }
 
@@ -115,12 +132,6 @@ impl ProvenanceType {
     }
 }
 
-/// NOTE: Ord compares only by ordinal (variant priority), not by inner data.
-/// This means `Slsa { url: None }` and `Slsa { url: Some("x") }` are `Equal`
-/// under `cmp()` but `!=` under `PartialEq`. This is intentional — priority
-/// ordering should not depend on the URL. Use `merge()` instead of `max()`
-/// when both values may carry data that should be preserved.
-#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for ProvenanceType {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -2281,12 +2292,16 @@ backend = "conda:jq"
             "https://example.com/tool.intoto.jsonl"
         );
         let parsed: PlatformInfo = toml_val.try_into().unwrap();
-        assert_eq!(
-            parsed.provenance,
-            Some(ProvenanceType::Slsa {
-                url: Some("https://example.com/tool.intoto.jsonl".to_string())
-            })
-        );
+        assert!(parsed.provenance.as_ref().unwrap().is_slsa());
+        match &parsed.provenance {
+            Some(ProvenanceType::Slsa { url }) => {
+                assert_eq!(
+                    url.as_deref(),
+                    Some("https://example.com/tool.intoto.jsonl")
+                );
+            }
+            _ => panic!("expected Slsa provenance"),
+        }
     }
 
     #[test]
@@ -2300,12 +2315,16 @@ backend = "conda:jq"
             "https://example.com/tool.intoto.jsonl".into(),
         );
         let parsed = PlatformInfo::try_from(toml::Value::Table(table)).unwrap();
-        assert_eq!(
-            parsed.provenance,
-            Some(ProvenanceType::Slsa {
-                url: Some("https://example.com/tool.intoto.jsonl".to_string())
-            })
-        );
+        assert!(parsed.provenance.as_ref().unwrap().is_slsa());
+        match &parsed.provenance {
+            Some(ProvenanceType::Slsa { url }) => {
+                assert_eq!(
+                    url.as_deref(),
+                    Some("https://example.com/tool.intoto.jsonl")
+                );
+            }
+            _ => panic!("expected Slsa provenance"),
+        }
     }
 
     #[test]
@@ -2336,20 +2355,27 @@ backend = "conda:jq"
             ..Default::default()
         };
         let merged = without_url.merge_with(&with_url);
-        assert_eq!(
-            merged.provenance,
-            Some(ProvenanceType::Slsa {
-                url: Some("https://example.com/provenance.intoto.jsonl".to_string())
-            })
-        );
+        assert!(merged.provenance.as_ref().unwrap().is_slsa());
+        match &merged.provenance {
+            Some(ProvenanceType::Slsa { url }) => {
+                assert_eq!(
+                    url.as_deref(),
+                    Some("https://example.com/provenance.intoto.jsonl")
+                );
+            }
+            _ => panic!("expected Slsa provenance"),
+        }
         // Also in reverse order
         let merged = with_url.merge_with(&without_url);
-        assert_eq!(
-            merged.provenance,
-            Some(ProvenanceType::Slsa {
-                url: Some("https://example.com/provenance.intoto.jsonl".to_string())
-            })
-        );
+        match &merged.provenance {
+            Some(ProvenanceType::Slsa { url }) => {
+                assert_eq!(
+                    url.as_deref(),
+                    Some("https://example.com/provenance.intoto.jsonl")
+                );
+            }
+            _ => panic!("expected Slsa provenance"),
+        }
     }
 
     #[test]
