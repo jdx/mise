@@ -14,7 +14,7 @@ local linters = new Mapping<String, Step> {
     //  fix = "cargo clippy --manifest-path {{workspace_indicator}} --all-features --fix --allow-dirty --allow-staged -- -Dwarnings"
     //}
     ["cargo-fmt"] {
-      glob = List("*.rs")
+      glob = List("**/*.rs")
       check = "cargo fmt --all -- --check"
       fix = "cargo fmt --all"
     }
@@ -42,13 +42,13 @@ fi
 
     // uses custom pkl linter config
     ["pkl"] {
-        glob = "*.pkl"
+        glob = "**/*.pkl"
         check = "pkl eval {{files}} >/dev/null"
     }
 
     // uses taplo for TOML formatting and validation
     ["taplo"] {
-        glob = List("*.toml")
+        glob = List("**/*.toml")
         exclude = List("docs/registry/") // exclude docs/registry/ symlink
         check = "taplo fmt --check {{files}} && taplo check {{files}}"
         fix = "taplo fmt {{files}} && taplo check {{files}}"
@@ -75,7 +75,7 @@ fi
         fix = "markdownlint --fix {{ files }}"
     }
     ["schema"] {
-        glob = List("schema/*.json")
+        glob = List("schema/**/*.json")
         check = "ajv compile -s schema/mise.json --spec=draft2019 --strict-schema=true && ajv compile -s schema/mise-task.json --spec=draft2019 --strict-schema=true && ajv compile -s schema/mise.plugin.json --spec=draft2020 --strict-schema=true"
     }
 }
