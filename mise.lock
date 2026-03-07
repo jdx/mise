@@ -790,57 +790,68 @@ backend = "aqua:getsops/sops"
 [tools.sops."platforms.linux-arm64"]
 checksum = "sha256:c7904d07bf1fb3ffdc329b0103ce70ff6a884aa7af7931427402bea0c09cc522"
 url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.arm64"
-provenance = "slsa"
+
+[tools.sops."platforms.linux-arm64".provenance.slsa]
 
 [tools.sops."platforms.linux-arm64-musl"]
 checksum = "sha256:c7904d07bf1fb3ffdc329b0103ce70ff6a884aa7af7931427402bea0c09cc522"
 url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.arm64"
-provenance = "slsa"
+
+[tools.sops."platforms.linux-arm64-musl".provenance.slsa]
 
 [tools.sops."platforms.linux-x64"]
 checksum = "sha256:cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100"
 url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.amd64"
-provenance = "slsa"
+
+[tools.sops."platforms.linux-x64".provenance.slsa]
 
 [tools.sops."platforms.linux-x64-baseline"]
 checksum = "sha256:cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100"
 url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.amd64"
-provenance = "slsa"
+
+[tools.sops."platforms.linux-x64-baseline".provenance.slsa]
 
 [tools.sops."platforms.linux-x64-musl"]
 checksum = "sha256:cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100"
 url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.amd64"
-provenance = "slsa"
+
+[tools.sops."platforms.linux-x64-musl".provenance.slsa]
 
 [tools.sops."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100"
 url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.amd64"
-provenance = "slsa"
+
+[tools.sops."platforms.linux-x64-musl-baseline".provenance.slsa]
 
 [tools.sops."platforms.macos-arm64"]
 checksum = "sha256:3a23c388e2d7b9beff306f4817d197698b1d9ddf01c10020470c94225435e901"
 url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.darwin.arm64"
-provenance = "slsa"
+
+[tools.sops."platforms.macos-arm64".provenance.slsa]
 
 [tools.sops."platforms.macos-x64"]
 checksum = "sha256:d6d296499e08d62325d933e4572fe8b6b9b11d0c08ee00d09b518a2731814c7b"
 url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.darwin.amd64"
-provenance = "slsa"
+
+[tools.sops."platforms.macos-x64".provenance.slsa]
 
 [tools.sops."platforms.macos-x64-baseline"]
 checksum = "sha256:d6d296499e08d62325d933e4572fe8b6b9b11d0c08ee00d09b518a2731814c7b"
 url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.darwin.amd64"
-provenance = "slsa"
+
+[tools.sops."platforms.macos-x64-baseline".provenance.slsa]
 
 [tools.sops."platforms.windows-x64"]
 checksum = "sha256:161eff06643ca77cc0585099e0888d04897827162fd62bdb79cc1bcff933330f"
 url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.amd64.exe"
-provenance = "slsa"
+
+[tools.sops."platforms.windows-x64".provenance.slsa]
 
 [tools.sops."platforms.windows-x64-baseline"]
 checksum = "sha256:161eff06643ca77cc0585099e0888d04897827162fd62bdb79cc1bcff933330f"
 url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.amd64.exe"
-provenance = "slsa"
+
+[tools.sops."platforms.windows-x64-baseline".provenance.slsa]
 
 [[tools.stylua]]
 version = "2.3.1"
