@@ -1298,8 +1298,10 @@ impl UnifiedGitBackend {
             Ok(verified) => {
                 if verified {
                     debug!("SLSA provenance verified successfully for {tv}");
+                    Ok((true, Some(provenance_download_url)))
+                } else {
+                    Ok((false, None))
                 }
-                Ok((verified, Some(provenance_download_url)))
             }
             Err(e) => {
                 if is_slsa_format_issue(&e) {

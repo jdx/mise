@@ -1083,39 +1083,40 @@ impl AquaBackend {
             (slsa_pkg.repo_owner, slsa_pkg.repo_name) =
                 resolve_repo_info(slsa.repo_owner.as_ref(), slsa.repo_name.as_ref(), pkg);
 
-            let provenance_path = match slsa.r#type.as_deref().unwrap_or_default() {
-                "github_release" => {
-                    let asset_strs = slsa.asset_strs(pkg, v, os(), arch())?;
-                    if asset_strs.is_empty() {
-                        warn!("no asset configured for slsa verification of {tv}");
-                        return Ok(());
-                    }
-                    match self.github_release_asset(&slsa_pkg, v, asset_strs).await {
-                        Ok((url, _)) => {
-                            let asset_filename = get_filename_from_url(&url);
-                            let path = tv.download_path().join(asset_filename);
-                            HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
-                                .await?;
-                            path
-                        }
-                        Err(e) => {
-                            warn!("no asset found for slsa verification of {tv}: {e}");
+            let (provenance_path, provenance_download_url) =
+                match slsa.r#type.as_deref().unwrap_or_default() {
+                    "github_release" => {
+                        let asset_strs = slsa.asset_strs(pkg, v, os(), arch())?;
+                        if asset_strs.is_empty() {
+                            warn!("no asset configured for slsa verification of {tv}");
                             return Ok(());
                         }
+                        match self.github_release_asset(&slsa_pkg, v, asset_strs).await {
+                            Ok((url, _)) => {
+                                let asset_filename = get_filename_from_url(&url);
+                                let path = tv.download_path().join(asset_filename);
+                                HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                                    .await?;
+                                (path, url)
+                            }
+                            Err(e) => {
+                                warn!("no asset found for slsa verification of {tv}: {e}");
+                                return Ok(());
+                            }
+                        }
                     }
-                }
-                "http" => {
-                    let url = slsa.url(pkg, v, os(), arch())?;
-                    let path = tv.download_path().join(get_filename_from_url(&url));
-                    HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
-                        .await?;
-                    path
-                }
-                t => {
-                    warn!("unsupported slsa type: {t}");
-                    return Ok(());
-                }
-            };
+                    "http" => {
+                        let url = slsa.url(pkg, v, os(), arch())?;
+                        let path = tv.download_path().join(get_filename_from_url(&url));
+                        HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                            .await?;
+                        (path, url)
+                    }
+                    t => {
+                        warn!("unsupported slsa type: {t}");
+                        return Ok(());
+                    }
+                };
 
             let artifact_path = tv.download_path().join(filename);
 
@@ -1141,13 +1142,7 @@ impl AquaBackend {
                     let platform_key = self.get_platform_key();
                     let pi = tv.lock_platforms.entry(platform_key).or_default();
                     pi.provenance = Some("slsa".to_string());
-                    pi.provenance_url = Some(
-                        provenance_path
-                            .file_name()
-                            .unwrap()
-                            .to_string_lossy()
-                            .to_string(),
-                    );
+                    pi.provenance_url = Some(provenance_download_url.clone());
                 }
                 Ok(false) => {
                     return Err(eyre!("SLSA provenance verification failed for {tv}"));
