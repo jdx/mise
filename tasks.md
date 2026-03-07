@@ -137,41 +137,11 @@ Run all lint checks
 
 Automatically fix lint issues
 
-## `lint:actionlint`
-
-- **Usage**: `lint:actionlint`
-
-Lint GitHub Actions workflows
-
-## `lint:cargo-fmt`
-
-- **Usage**: `lint:cargo-fmt`
-
-Check Rust code formatting with cargo fmt
-
 ## `lint:hk`
 
 - **Usage**: `lint:hk`
 
 Lint HK files
-
-## `lint:markdownlint`
-
-- **Usage**: `lint:markdownlint`
-
-Lint Markdown files
-
-## `lint:ripgrep`
-
-- **Usage**: `lint:ripgrep`
-
-Lint using ripgrep
-
-## `lint:schema`
-
-- **Usage**: `lint:schema`
-
-Lint schemas
 
 ## `pre-commit`
 

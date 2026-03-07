@@ -13,6 +13,11 @@ local linters = new Mapping<String, Step> {
     //  check = "cargo clippy --manifest-path {{workspace_indicator}} --all-features -- -Dwarnings"
     //  fix = "cargo clippy --manifest-path {{workspace_indicator}} --all-features --fix --allow-dirty --allow-staged -- -Dwarnings"
     //}
+    ["cargo-fmt"] {
+      glob = List("**/*.rs")
+      check = "cargo fmt --all -- --check"
+      fix = "cargo fmt --all"
+    }
     ["cargo-check"] = (Builtins.cargo_check) {
       check = "cargo check --all-features"
     }
@@ -37,13 +42,13 @@ fi
 
     // uses custom pkl linter config
     ["pkl"] {
-        glob = "*.pkl"
+        glob = "**/*.pkl"
         check = "pkl eval {{files}} >/dev/null"
     }
 
     // uses taplo for TOML formatting and validation
     ["taplo"] {
-        glob = List("*.toml")
+        glob = List("**/*.toml")
         exclude = List("docs/registry/") // exclude docs/registry/ symlink
         check = "taplo fmt --check {{files}} && taplo check {{files}}"
         fix = "taplo fmt {{files}} && taplo check {{files}}"
@@ -59,6 +64,19 @@ fi
         glob = List("crates/vfox/plugins/**/*.lua")
         check = "stylua --check crates/vfox/plugins/"
         fix = "stylua crates/vfox/plugins/"
+    }
+    ["actionlint"] {
+        glob = List(".github/workflows/*.yml")
+        check = "SHELLCHECK_OPTS='--exclude=SC1090 --exclude=SC2046 --exclude=SC2086 --exclude=SC2129' actionlint"
+    }
+    ["markdownlint"] {
+        glob = List("**/*.md")
+        check = "markdownlint {{ files }}"
+        fix = "markdownlint --fix {{ files }}"
+    }
+    ["schema"] {
+        glob = List("schema/**/*.json")
+        check = "ajv compile -s schema/mise.json --spec=draft2019 --strict-schema=true && ajv compile -s schema/mise-task.json --spec=draft2019 --strict-schema=true && ajv compile -s schema/mise.plugin.json --spec=draft2020 --strict-schema=true"
     }
 }
 

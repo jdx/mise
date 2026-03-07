@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-#MISE description="Lint Markdown files"
-set -euo pipefail
-
-markdownlint .
