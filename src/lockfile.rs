@@ -93,8 +93,10 @@ impl std::str::FromStr for ProvenanceType {
 }
 
 /// PartialEq, Eq, Hash, and Ord all compare by ordinal (variant priority) only.
-/// Two `Slsa` variants with different URLs are considered equal.
-/// Use field access to compare URLs when needed.
+/// `Slsa { url: None } == Slsa { url: Some("x") }` — this is intentional so that
+/// variant priority determines equality and ordering, not inner data.
+/// Do NOT use `ProvenanceType` as a `BTreeMap`/`HashSet` key for this reason.
+/// Use `merge()` instead of `max()` when both values may carry data to preserve.
 impl PartialEq for ProvenanceType {
     fn eq(&self, other: &Self) -> bool {
         self.ordinal() == other.ordinal()
