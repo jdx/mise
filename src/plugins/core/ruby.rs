@@ -386,6 +386,26 @@ impl RubyPlugin {
 
     // ===== Precompiled Ruby support =====
 
+    /// Detect provenance type for precompiled Ruby binaries.
+    /// Returns Some("github-attestations") if attestations are enabled and
+    /// the source is a GitHub repo (not a custom URL).
+    fn detect_precompiled_provenance(&self) -> Option<String> {
+        let settings = Settings::get();
+        let enabled = settings
+            .ruby
+            .github_attestations
+            .unwrap_or(settings.github_attestations);
+        if !enabled {
+            return None;
+        }
+        let source = &settings.ruby.precompiled_url;
+        // Custom URL templates aren't verified via GitHub attestation API
+        if source.contains("://") {
+            return None;
+        }
+        Some("github-attestations".to_string())
+    }
+
     /// Check if precompiled binaries should be tried
     /// Precompiled if: explicit opt-in (compile=false), or experimental + not opted out
     /// TODO(2026.8.0): make precompiled the default when compile is unset, remove this debug_assert
@@ -585,7 +605,7 @@ impl RubyPlugin {
     async fn install_precompiled(
         &self,
         ctx: &InstallContext,
-        tv: &ToolVersion,
+        tv: &mut ToolVersion,
     ) -> Result<Option<ToolVersion>> {
         let Some(platform) = self.precompiled_platform() else {
             return Ok(None);
@@ -613,9 +633,39 @@ impl RubyPlugin {
             hash::ensure_checksum(&tarball_path, hash_str, Some(ctx.pr.as_ref()), "sha256")?;
         }
 
+        // Check lockfile provenance expectation before verification
+        let platform_key = PlatformTarget::from_current().to_key();
+        let locked_provenance = tv
+            .lock_platforms
+            .get_mut(&platform_key)
+            .and_then(|pi| pi.provenance.take());
+
         // Verify GitHub artifact attestations for precompiled binaries
-        self.verify_github_artifact_attestations(ctx, &tarball_path, &tv.version)
-            .await?;
+        let verified = self
+            .verify_github_artifact_attestations(ctx, &tarball_path, &tv.version)
+            .await
+            .is_ok();
+
+        // Record provenance if verification succeeded
+        if verified {
+            let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
+            pi.provenance = Some("github-attestations".to_string());
+        }
+
+        // Enforce lockfile provenance
+        if let Some(ref expected) = locked_provenance {
+            let got = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|pi| pi.provenance.as_deref());
+            if got != Some(expected.as_str()) {
+                return Err(eyre!(
+                    "Lockfile requires {expected} provenance for {tv} but {got:?} was used. \
+                     This may indicate a downgrade attack. Enable the corresponding verification setting \
+                     or update the lockfile."
+                ));
+            }
+        }
 
         ctx.pr.set_message(format!("extract {}", filename));
         let install_path = tv.install_path();
@@ -796,6 +846,7 @@ impl Backend for RubyPlugin {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        let mut tv = tv;
         let settings = Settings::get();
         if settings.ruby.compile.is_none() && !settings.experimental {
             warn_once!(
@@ -807,7 +858,7 @@ impl Backend for RubyPlugin {
 
         // Try precompiled if compile=false or experimental + not opted out
         if self.should_try_precompiled()
-            && let Some(installed_tv) = self.install_precompiled(ctx, &tv).await?
+            && let Some(installed_tv) = self.install_precompiled(ctx, &mut tv).await?
         {
             hint!(
                 "ruby_precompiled",
@@ -896,12 +947,12 @@ impl Backend for RubyPlugin {
                 .resolve_precompiled_url(&tv.version, &platform, false)
                 .await?
         {
+            // Detect provenance for precompiled binaries
+            let provenance = self.detect_precompiled_provenance();
             return Ok(PlatformInfo {
                 url: Some(url),
                 checksum,
-                size: None,
-                url_api: None,
-                conda_deps: None,
+                provenance,
                 ..Default::default()
             });
         }

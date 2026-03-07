@@ -1430,7 +1430,15 @@ fn format(mut doc: DocumentMut) -> String {
                                 let mut subtable = toml_edit::Table::new();
                                 let mut keys: Vec<_> =
                                     platform_info.iter().map(|(k, _)| k.to_string()).collect();
-                                keys.sort();
+                                keys.sort_by_key(|k| match k.as_str() {
+                                    "checksum" => 0,
+                                    "size" => 1,
+                                    "url" => 2,
+                                    "url_api" => 3,
+                                    "provenance" => 4,
+                                    "provenance_url" => 5,
+                                    _ => 6,
+                                });
                                 for k in &keys {
                                     if let Some(item) = platform_info.get(k) {
                                         subtable.insert(k, item.clone());
