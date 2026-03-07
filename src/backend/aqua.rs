@@ -9,7 +9,7 @@ use crate::config::Settings;
 use crate::file::{TarFormat, TarOptions};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
@@ -634,17 +634,63 @@ impl Backend for AquaBackend {
                 .flatten(),
         };
 
+        // Detect provenance from aqua registry config
+        let provenance = self.detect_provenance_type(&pkg);
+
         Ok(PlatformInfo {
             url,
             checksum,
-            size: None,
-            url_api: None,
-            conda_deps: None,
+            provenance,
+            ..Default::default()
         })
     }
 }
 
 impl AquaBackend {
+    /// Detect provenance type from aqua registry package config.
+    ///
+    /// Returns the highest-priority provenance type that is configured and
+    /// enabled for the package. GithubAttestations is NOT detected here
+    /// because it requires downloading the artifact to query the attestation
+    /// API — it is recorded at install-time after successful verification.
+    ///
+    /// NOTE: For packages with both `slsa_provenance` and `github_artifact_attestations`,
+    /// this returns `Slsa`. Subsequent `mise install` will enforce SLSA verification even
+    /// though attestations would also work. If SLSA verification fails (missing asset,
+    /// format change), the lockfile entry must be deleted and re-locked.
+    fn detect_provenance_type(&self, pkg: &AquaPackage) -> Option<ProvenanceType> {
+        let settings = Settings::get();
+
+        // Check for SLSA provenance (highest priority available at lock-time)
+        if settings.slsa
+            && settings.aqua.slsa
+            && let Some(slsa) = &pkg.slsa_provenance
+            && slsa.enabled != Some(false)
+        {
+            return Some(ProvenanceType::Slsa { url: None });
+        }
+
+        // Check for cosign (nested under checksum config, requires checksum enabled)
+        if settings.aqua.cosign
+            && let Some(checksum) = &pkg.checksum
+            && checksum.enabled()
+            && let Some(cosign) = checksum.cosign.as_ref()
+            && cosign.enabled != Some(false)
+        {
+            return Some(ProvenanceType::Cosign);
+        }
+
+        // Check for minisign
+        if settings.aqua.minisign
+            && let Some(minisign) = &pkg.minisign
+            && minisign.enabled != Some(false)
+        {
+            return Some(ProvenanceType::Minisign);
+        }
+
+        None
+    }
+
     pub fn from_arg(ba: BackendArg) -> Self {
         let full = ba.full_without_opts();
         let mut id = full.split_once(":").unwrap_or(("", &full)).1;
@@ -937,39 +983,125 @@ impl AquaBackend {
         v: &str,
         filename: &str,
     ) -> Result<()> {
-        self.verify_slsa(ctx, tv, pkg, v, filename).await?;
-        self.verify_minisign(ctx, tv, pkg, v, filename).await?;
-        self.verify_github_artifact_attestations(ctx, tv, pkg, v, filename)
-            .await?;
+        // Check if the lockfile expects provenance for this platform, then clear it
+        // so we can detect whether verification actually re-set it
+        let platform_key = self.get_platform_key();
+        let locked_provenance = tv
+            .lock_platforms
+            .get_mut(&platform_key)
+            .and_then(|pi| pi.provenance.take());
+
+        // When the lockfile specifies a provenance type, only run that specific mechanism.
+        // This prevents false-positive downgrade errors when a tool supports multiple mechanisms
+        // (e.g., both minisign and cosign) that would otherwise compete for the provenance slot.
+        let skip_attestations = locked_provenance
+            .as_ref()
+            .is_some_and(|l| !l.is_github_attestations());
+        let skip_slsa = locked_provenance.as_ref().is_some_and(|l| !l.is_slsa());
+        let skip_minisign = locked_provenance.as_ref().is_some_and(|l| !l.is_minisign());
+        let skip_cosign = locked_provenance.as_ref().is_some_and(|l| !l.is_cosign());
+
+        if !skip_attestations {
+            self.verify_github_artifact_attestations(ctx, tv, pkg, v, filename)
+                .await?;
+        }
+        if !skip_slsa {
+            // Short-circuit: if a higher-priority mechanism already recorded provenance, skip SLSA
+            let already_verified = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|pi| pi.provenance.as_ref())
+                .is_some_and(|p| *p > ProvenanceType::Slsa { url: None });
+            if !already_verified {
+                self.verify_slsa(ctx, tv, pkg, v, filename).await?;
+            }
+        }
+        if !skip_minisign {
+            // Short-circuit: if SLSA or GithubAttestations already recorded provenance, skip minisign.
+            // Cosign runs later in the checksum block, so it cannot be set at this point.
+            let already_verified = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|pi| pi.provenance.as_ref())
+                .is_some_and(|p| p.is_slsa() || p.is_github_attestations());
+            if !already_verified {
+                self.verify_minisign(ctx, tv, pkg, v, filename).await?;
+            }
+        }
 
         let download_path = tv.download_path();
-        let platform_key = self.get_platform_key();
-        let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-        if platform_info.checksum.is_none()
-            && let Some(checksum) = &pkg.checksum
+        if let Some(checksum) = &pkg.checksum
             && checksum.enabled()
         {
-            let url = match checksum._type() {
-                AquaChecksumType::GithubRelease => {
-                    let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
-                    self.github_release_asset(pkg, v, asset_strs).await?.0
-                }
-                AquaChecksumType::Http => checksum.url(pkg, v, os(), arch())?,
-            };
             let checksum_path = download_path.join(format!("{filename}.checksum"));
-            HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))
-                .await?;
-            self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
-                .await?;
-            let checksum_content = file::read_to_string(&checksum_path)?;
-            let checksum_str =
-                self.parse_checksum_from_content(&checksum_content, checksum, filename)?;
-            let checksum_val = format!("{}:{}", checksum.algorithm(), checksum_str);
-            // Now set the checksum after all borrows are done
             let platform_key = self.get_platform_key();
-            let platform_info = tv.lock_platforms.get_mut(&platform_key).unwrap();
-            platform_info.checksum = Some(checksum_val);
+            let needs_checksum = tv
+                .lock_platforms
+                .get(&platform_key)
+                .is_none_or(|pi| pi.checksum.is_none());
+
+            let needs_cosign = !skip_cosign;
+            // Short-circuit cosign if a higher-priority mechanism already recorded provenance.
+            // Safe to cache: provenance is only modified by the single-threaded verification
+            // methods above (attestations, slsa, minisign), all of which have completed by now.
+            let cosign_already_verified = needs_cosign
+                && tv
+                    .lock_platforms
+                    .get(&platform_key)
+                    .and_then(|pi| pi.provenance.as_ref())
+                    .is_some_and(|p| *p > ProvenanceType::Cosign);
+            // Re-download only if the checksum file doesn't exist yet. An existing file
+            // from a prior attempt is trusted because the download directory is version-specific
+            // and the final artifact is independently verified by verify_checksum at the end.
+            if (needs_checksum || (needs_cosign && !cosign_already_verified))
+                && !checksum_path.exists()
+            {
+                let url = match checksum._type() {
+                    AquaChecksumType::GithubRelease => {
+                        let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
+                        self.github_release_asset(pkg, v, asset_strs).await?.0
+                    }
+                    AquaChecksumType::Http => checksum.url(pkg, v, os(), arch())?,
+                };
+                HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))
+                    .await?;
+            }
+
+            if !skip_cosign && !cosign_already_verified && checksum_path.exists() {
+                self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
+                    .await?;
+            }
+
+            if needs_checksum && checksum_path.exists() {
+                let checksum_content = file::read_to_string(&checksum_path)?;
+                let checksum_str =
+                    self.parse_checksum_from_content(&checksum_content, checksum, filename)?;
+                let checksum_val = format!("{}:{}", checksum.algorithm(), checksum_str);
+                let platform_key = self.get_platform_key();
+                let platform_info = tv.lock_platforms.entry(platform_key).or_default();
+                platform_info.checksum = Some(checksum_val);
+            }
         }
+        // If lockfile recorded provenance, verify that the type matches
+        // (checked after all verification methods including cosign have had a chance to record)
+        if let Some(ref expected) = locked_provenance {
+            let platform_key = self.get_platform_key();
+            let got = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|pi| pi.provenance.as_ref());
+            if !got.is_some_and(|g| std::mem::discriminant(g) == std::mem::discriminant(expected)) {
+                let got_str = got
+                    .map(|g| g.to_string())
+                    .unwrap_or_else(|| "no verification".to_string());
+                return Err(eyre!(
+                    "Lockfile requires {expected} provenance for {tv} but {got_str} was used. \
+                     This may indicate a downgrade attack. Enable the corresponding verification setting \
+                     or update the lockfile."
+                ));
+            }
+        }
+
         let tarball_path = tv.download_path().join(filename);
         self.verify_checksum(ctx, tv, &tarball_path)?;
         Ok(())
@@ -1028,6 +1160,13 @@ impl AquaBackend {
             let data = file::read(tv.download_path().join(filename))?;
             let sig = file::read_to_string(sig_path)?;
             minisign::verify(&minisign.public_key(pkg, v, os(), arch())?, &data, &sig)?;
+
+            // Record minisign provenance if no higher-priority verification already recorded
+            let platform_key = self.get_platform_key();
+            let pi = tv.lock_platforms.entry(platform_key).or_default();
+            if pi.provenance.is_none() {
+                pi.provenance = Some(ProvenanceType::Minisign);
+            }
         }
         Ok(())
     }
@@ -1057,39 +1196,40 @@ impl AquaBackend {
             (slsa_pkg.repo_owner, slsa_pkg.repo_name) =
                 resolve_repo_info(slsa.repo_owner.as_ref(), slsa.repo_name.as_ref(), pkg);
 
-            let provenance_path = match slsa.r#type.as_deref().unwrap_or_default() {
-                "github_release" => {
-                    let asset_strs = slsa.asset_strs(pkg, v, os(), arch())?;
-                    if asset_strs.is_empty() {
-                        warn!("no asset configured for slsa verification of {tv}");
-                        return Ok(());
-                    }
-                    match self.github_release_asset(&slsa_pkg, v, asset_strs).await {
-                        Ok((url, _)) => {
-                            let asset_filename = get_filename_from_url(&url);
-                            let path = tv.download_path().join(asset_filename);
-                            HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
-                                .await?;
-                            path
-                        }
-                        Err(e) => {
-                            warn!("no asset found for slsa verification of {tv}: {e}");
+            let (provenance_path, provenance_download_url) =
+                match slsa.r#type.as_deref().unwrap_or_default() {
+                    "github_release" => {
+                        let asset_strs = slsa.asset_strs(pkg, v, os(), arch())?;
+                        if asset_strs.is_empty() {
+                            warn!("no asset configured for slsa verification of {tv}");
                             return Ok(());
                         }
+                        match self.github_release_asset(&slsa_pkg, v, asset_strs).await {
+                            Ok((url, _)) => {
+                                let asset_filename = get_filename_from_url(&url);
+                                let path = tv.download_path().join(asset_filename);
+                                HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                                    .await?;
+                                (path, url)
+                            }
+                            Err(e) => {
+                                warn!("no asset found for slsa verification of {tv}: {e}");
+                                return Ok(());
+                            }
+                        }
                     }
-                }
-                "http" => {
-                    let url = slsa.url(pkg, v, os(), arch())?;
-                    let path = tv.download_path().join(get_filename_from_url(&url));
-                    HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
-                        .await?;
-                    path
-                }
-                t => {
-                    warn!("unsupported slsa type: {t}");
-                    return Ok(());
-                }
-            };
+                    "http" => {
+                        let url = slsa.url(pkg, v, os(), arch())?;
+                        let path = tv.download_path().join(get_filename_from_url(&url));
+                        HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                            .await?;
+                        (path, url)
+                    }
+                    t => {
+                        warn!("unsupported slsa type: {t}");
+                        return Ok(());
+                    }
+                };
 
             let artifact_path = tv.download_path().join(filename);
 
@@ -1111,6 +1251,15 @@ impl AquaBackend {
                         "SLSA provenance verified successfully for {tv} at level {}",
                         min_level
                     );
+                    // Record provenance in lockfile only if not already set by a
+                    // higher-priority verification (github-attestations runs first)
+                    let platform_key = self.get_platform_key();
+                    let pi = tv.lock_platforms.entry(platform_key).or_default();
+                    if pi.provenance.is_none() {
+                        pi.provenance = Some(ProvenanceType::Slsa {
+                            url: Some(provenance_download_url.clone()),
+                        });
+                    }
                 }
                 Ok(false) => {
                     return Err(eyre!("SLSA provenance verification failed for {tv}"));
@@ -1138,7 +1287,7 @@ impl AquaBackend {
     async fn verify_github_artifact_attestations(
         &self,
         ctx: &InstallContext,
-        tv: &ToolVersion,
+        tv: &mut ToolVersion,
         pkg: &AquaPackage,
         _v: &str,
         filename: &str,
@@ -1180,6 +1329,11 @@ impl AquaBackend {
                     ctx.pr
                         .set_message("✓ GitHub artifact attestations verified".to_string());
                     debug!("GitHub artifact attestations verified successfully for {tv}");
+                    let platform_key = self.get_platform_key();
+                    let pi = tv.lock_platforms.entry(platform_key).or_default();
+                    if pi.provenance.is_none() {
+                        pi.provenance = Some(ProvenanceType::GithubAttestations);
+                    }
                 }
                 Ok(false) => {
                     return Err(eyre!(
@@ -1207,7 +1361,7 @@ impl AquaBackend {
         ctx: &InstallContext,
         pkg: &AquaPackage,
         v: &str,
-        tv: &ToolVersion,
+        tv: &mut ToolVersion,
         checksum_path: &Path,
         download_path: &Path,
     ) -> Result<()> {
@@ -1303,6 +1457,15 @@ impl AquaBackend {
                             ctx.pr
                                 .set_message("✓ Cosign signature verified with key".to_string());
                             debug!("Cosign signature verified successfully with key for {tv}");
+                            let platform_key = self.get_platform_key();
+                            let pi = tv.lock_platforms.entry(platform_key).or_default();
+                            if pi
+                                .provenance
+                                .as_ref()
+                                .is_none_or(|p| *p < ProvenanceType::Cosign)
+                            {
+                                pi.provenance = Some(ProvenanceType::Cosign);
+                            }
                         }
                         Ok(false) => {
                             return Err(eyre!("Cosign signature verification failed for {tv}"));
@@ -1353,6 +1516,15 @@ impl AquaBackend {
                             ctx.pr
                                 .set_message("✓ Cosign bundle verified (keyless)".to_string());
                             debug!("Cosign bundle verified successfully for {tv}");
+                            let platform_key = self.get_platform_key();
+                            let pi = tv.lock_platforms.entry(platform_key).or_default();
+                            if pi
+                                .provenance
+                                .as_ref()
+                                .is_none_or(|p| *p < ProvenanceType::Cosign)
+                            {
+                                pi.provenance = Some(ProvenanceType::Cosign);
+                            }
                         }
                         Ok(false) => {
                             return Err(eyre!("Cosign bundle verification failed for {tv}"));

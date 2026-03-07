@@ -661,6 +661,7 @@ impl Backend for CondaBackend {
                 size: None,
                 url_api: None,
                 conda_deps: Some(dep_basenames),
+                ..Default::default()
             }),
             None => Ok(PlatformInfo::default()),
         }

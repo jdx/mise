@@ -20,7 +20,7 @@ use crate::github::{self, GithubRelease};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::plugins::PluginSource;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
@@ -386,6 +386,31 @@ impl RubyPlugin {
 
     // ===== Precompiled Ruby support =====
 
+    /// Detect provenance type for precompiled Ruby binaries.
+    /// Records GithubAttestations based on settings and URL format without an API probe.
+    /// This assumes all releases from the configured precompiled source have attestations;
+    /// if a release lacks them, install will fail at verification time.
+    fn detect_precompiled_provenance(&self) -> Option<ProvenanceType> {
+        let settings = Settings::get();
+        let enabled = settings
+            .ruby
+            .github_attestations
+            .unwrap_or(settings.github_attestations);
+        if !enabled {
+            return None;
+        }
+        let source = &settings.ruby.precompiled_url;
+        // Custom URL templates aren't verified via GitHub attestation API
+        if source.contains("://") {
+            return None;
+        }
+        // Must be a valid owner/repo format for GitHub attestation verification
+        if !source.contains('/') {
+            return None;
+        }
+        Some(ProvenanceType::GithubAttestations)
+    }
+
     /// Check if precompiled binaries should be tried
     /// Precompiled if: explicit opt-in (compile=false), or experimental + not opted out
     /// TODO(2026.8.0): make precompiled the default when compile is unset, remove this debug_assert
@@ -585,7 +610,7 @@ impl RubyPlugin {
     async fn install_precompiled(
         &self,
         ctx: &InstallContext,
-        tv: &ToolVersion,
+        tv: &mut ToolVersion,
     ) -> Result<Option<ToolVersion>> {
         let Some(platform) = self.precompiled_platform() else {
             return Ok(None);
@@ -613,9 +638,42 @@ impl RubyPlugin {
             hash::ensure_checksum(&tarball_path, hash_str, Some(ctx.pr.as_ref()), "sha256")?;
         }
 
+        // Check lockfile provenance expectation before verification
+        let platform_key = PlatformTarget::from_current().to_key();
+        let locked_provenance = tv
+            .lock_platforms
+            .get_mut(&platform_key)
+            .and_then(|pi| pi.provenance.take());
+
         // Verify GitHub artifact attestations for precompiled binaries
-        self.verify_github_artifact_attestations(ctx, &tarball_path, &tv.version)
+        // Returns Ok(true) if verified, Ok(false) if skipped, Err if failed
+        let verified = self
+            .verify_github_artifact_attestations(ctx, &tarball_path, &tv.version)
             .await?;
+
+        // Record provenance only if verification actually succeeded (not skipped)
+        if verified {
+            let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
+            pi.provenance = Some(ProvenanceType::GithubAttestations);
+        }
+
+        // Enforce lockfile provenance
+        if let Some(ref expected) = locked_provenance {
+            let got = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|pi| pi.provenance.as_ref());
+            if !got.is_some_and(|g| std::mem::discriminant(g) == std::mem::discriminant(expected)) {
+                let got_str = got
+                    .map(|g| g.to_string())
+                    .unwrap_or_else(|| "no verification".to_string());
+                return Err(eyre!(
+                    "Lockfile requires {expected} provenance for {tv} but {got_str} was used. \
+                     This may indicate a downgrade attack. Enable the corresponding verification setting \
+                     or update the lockfile."
+                ));
+            }
+        }
 
         ctx.pr.set_message(format!("extract {}", filename));
         let install_path = tv.install_path();
@@ -634,14 +692,15 @@ impl RubyPlugin {
     }
 
     /// Verify GitHub artifact attestations for precompiled Ruby binary
-    /// Returns Ok(()) if verification succeeds or is skipped (attestations unavailable)
+    /// Returns Ok(true) if verification succeeds
+    /// Returns Ok(false) if verification was skipped (disabled or not applicable)
     /// Returns Err if verification is enabled and fails
     async fn verify_github_artifact_attestations(
         &self,
         ctx: &InstallContext,
         tarball_path: &std::path::Path,
         version: &str,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let settings = Settings::get();
 
         // Check Ruby-specific setting, fall back to global
@@ -651,7 +710,7 @@ impl RubyPlugin {
             .unwrap_or(settings.github_attestations);
         if !enabled {
             debug!("GitHub artifact attestations verification disabled for Ruby");
-            return Ok(());
+            return Ok(false);
         }
 
         let source = &settings.ruby.precompiled_url;
@@ -659,14 +718,14 @@ impl RubyPlugin {
         // Skip for custom URL templates (not GitHub repos)
         if source.contains("://") {
             debug!("Skipping GitHub artifact attestation verification for custom URL template");
-            return Ok(());
+            return Ok(false);
         }
 
         let (owner, repo) = match source.split_once('/') {
             Some((o, r)) => (o, r),
             None => {
                 warn!("Invalid precompiled_url format: {}", source);
-                return Ok(());
+                return Ok(false);
             }
         };
 
@@ -689,7 +748,7 @@ impl RubyPlugin {
                     "GitHub artifact attestations verified successfully for ruby@{}",
                     version
                 );
-                Ok(())
+                Ok(true)
             }
             Ok(false) => Err(eyre!(
                 "GitHub artifact attestations verification failed for ruby@{version}\n{ATTESTATION_HELP}"
@@ -799,6 +858,7 @@ impl Backend for RubyPlugin {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        let mut tv = tv;
         let settings = Settings::get();
         if settings.ruby.compile.is_none() && !settings.experimental {
             warn_once!(
@@ -810,7 +870,7 @@ impl Backend for RubyPlugin {
 
         // Try precompiled if compile=false or experimental + not opted out
         if self.should_try_precompiled()
-            && let Some(installed_tv) = self.install_precompiled(ctx, &tv).await?
+            && let Some(installed_tv) = self.install_precompiled(ctx, &mut tv).await?
         {
             hint!(
                 "ruby_precompiled",
@@ -899,12 +959,13 @@ impl Backend for RubyPlugin {
                 .resolve_precompiled_url(&tv.version, &platform, false)
                 .await?
         {
+            // Detect provenance for precompiled binaries
+            let provenance = self.detect_precompiled_provenance();
             return Ok(PlatformInfo {
                 url: Some(url),
                 checksum,
-                size: None,
-                url_api: None,
-                conda_deps: None,
+                provenance,
+                ..Default::default()
             });
         }
 
@@ -916,6 +977,7 @@ impl Backend for RubyPlugin {
                 size: None,
                 url_api: None,
                 conda_deps: None,
+                ..Default::default()
             }),
             None => Ok(PlatformInfo::default()),
         }

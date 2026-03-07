@@ -57,5 +57,6 @@ assert_contains "echo '$output'" "Targeting 1 platform(s)"
 assert_contains "echo '$output'" "$TARGET_PLATFORM"
 
 EXPECTED_URL="https://example.com/base-${TARGET_AQUA_OS}-amd64-1.0.0.zip"
-assert_contains "cat mise.lock" "\"platforms.$TARGET_PLATFORM\" = { url = \"$EXPECTED_URL\"}"
+assert_contains "cat mise.lock" "\"platforms.$TARGET_PLATFORM\""
+assert_contains "cat mise.lock" "url = \"$EXPECTED_URL\""
 assert_not_contains "cat mise.lock" "https://example.com/host-"

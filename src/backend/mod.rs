@@ -1557,6 +1557,7 @@ pub trait Backend: Debug + Send + Sync {
             url: Some(tarball_url.to_string()),
             url_api: None,
             conda_deps: None,
+            ..Default::default()
         })
     }
 
@@ -1591,6 +1592,7 @@ pub trait Backend: Debug + Send + Sync {
             url: asset_url,
             url_api: None,
             conda_deps: None,
+            ..Default::default()
         })
     }
 
@@ -1609,6 +1611,7 @@ pub trait Backend: Debug + Send + Sync {
             url: None,
             url_api: None,
             conda_deps: None,
+            ..Default::default()
         })
     }
 }

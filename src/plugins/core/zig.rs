@@ -14,7 +14,7 @@ use crate::duration::DAILY;
 use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{file, minisign, plugins};
@@ -309,7 +309,32 @@ impl Backend for ZigPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
+        // download() unconditionally verifies minisign (not behind a settings check).
+        // If minisign verification fails, download() returns Err and we never reach
+        // the provenance recording below. This is safe to record unconditionally.
         let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
+
+        // Enforce lockfile provenance expectation
+        let platform_key = PlatformTarget::from_current().to_key();
+        let locked_provenance = tv
+            .lock_platforms
+            .get_mut(&platform_key)
+            .and_then(|pi| pi.provenance.take());
+
+        if let Some(ref expected) = locked_provenance
+            && !expected.is_minisign()
+        {
+            return Err(eyre::eyre!(
+                "Lockfile requires {expected} provenance for {tv} but minisign was used. \
+                     This may indicate a downgrade attack."
+            ));
+        }
+
+        // Record minisign provenance — only reached if download() (and its
+        // minisign::verify call) succeeded
+        let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
+        pi.provenance = Some(ProvenanceType::Minisign);
+
         ctx.pr.next_operation();
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         ctx.pr.next_operation();
@@ -397,6 +422,9 @@ impl Backend for ZigPlugin {
         };
 
         // Try to get full info from JSON (includes checksum and size)
+        // Don't pre-set provenance at lock time — minisign verification hasn't run yet.
+        // Provenance is recorded in install_version_ after download() confirms minisign
+        // verification succeeded.
         match self
             .get_download_info_from_json(json_url, version, arch, os)
             .await
@@ -405,20 +433,18 @@ impl Backend for ZigPlugin {
                 url: Some(url),
                 checksum,
                 size,
-                url_api: None,
-                conda_deps: None,
+                ..Default::default()
             }),
             Err(_) if regex!(r"^\d+\.\d+\.\d+$").is_match(&tv.version) => {
                 // Fallback: construct URL directly for numbered versions (no checksum available)
+                // Don't pre-set provenance here — record it only after download() confirms
+                // minisign verification succeeded during install
                 Ok(PlatformInfo {
                     url: Some(format!(
                         "https://ziglang.org/download/{}/zig-{}-{}-{}.tar.xz",
                         tv.version, os, arch, tv.version
                     )),
-                    checksum: None,
-                    size: None,
-                    url_api: None,
-                    conda_deps: None,
+                    ..Default::default()
                 })
             }
             Err(_) => Ok(PlatformInfo::default()),

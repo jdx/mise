@@ -8,7 +8,7 @@ use crate::file::display_path;
 use crate::path::PathExt;
 use crate::platform::Platform;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset};
-use eyre::{Report, Result, bail};
+use eyre::{Report, Result, bail, eyre};
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 use std::fs;
@@ -63,6 +63,154 @@ pub struct LockfileTool {
     pub platforms: BTreeMap<String, PlatformInfo>,
 }
 
+/// Type of provenance verification, ordered by priority (lowest to highest).
+/// The ordering is significant: during verification, higher-priority mechanisms
+/// are tried first, and the lockfile records whichever succeeds.
+/// SLSA carries an optional URL for the provenance file (.intoto.jsonl).
+#[derive(Debug, Clone, strum::Display, strum::EnumIs)]
+#[strum(serialize_all = "kebab-case")]
+pub enum ProvenanceType {
+    Minisign,
+    Cosign,
+    #[strum(serialize = "slsa")]
+    Slsa {
+        url: Option<String>,
+    },
+    GithubAttestations,
+}
+
+impl std::str::FromStr for ProvenanceType {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "minisign" => Ok(Self::Minisign),
+            "cosign" => Ok(Self::Cosign),
+            "slsa" => Ok(Self::Slsa { url: None }),
+            "github-attestations" => Ok(Self::GithubAttestations),
+            other => Err(format!("unknown provenance type: {other}")),
+        }
+    }
+}
+
+/// PartialEq, Eq, Hash, and Ord all compare by ordinal (variant priority) only.
+/// `Slsa { url: None } == Slsa { url: Some("x") }` — this is intentional so that
+/// variant priority determines equality and ordering, not inner data.
+/// Do NOT use `ProvenanceType` as a `BTreeMap`/`HashSet` key for this reason.
+/// Use `merge()` instead of `max()` when both values may carry data to preserve.
+impl PartialEq for ProvenanceType {
+    fn eq(&self, other: &Self) -> bool {
+        self.ordinal() == other.ordinal()
+    }
+}
+
+impl Eq for ProvenanceType {}
+
+impl std::hash::Hash for ProvenanceType {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.ordinal().hash(state);
+    }
+}
+
+impl ProvenanceType {
+    /// Discriminant for ordering (lowest = lowest priority)
+    fn ordinal(&self) -> u8 {
+        match self {
+            Self::Minisign => 0,
+            Self::Cosign => 1,
+            Self::Slsa { .. } => 2,
+            Self::GithubAttestations => 3,
+        }
+    }
+
+    /// Merge two provenance values, keeping the higher-priority variant.
+    /// When both are `Slsa`, preserves the URL from whichever has one.
+    fn merge(self, other: Self) -> Self {
+        match (&self, &other) {
+            (Self::Slsa { url: a }, Self::Slsa { url: b }) => Self::Slsa {
+                url: a.clone().or_else(|| b.clone()),
+            },
+            _ => std::cmp::max(self, other),
+        }
+    }
+}
+
+impl PartialOrd for ProvenanceType {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ProvenanceType {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.ordinal().cmp(&other.ordinal())
+    }
+}
+
+impl serde::Serialize for ProvenanceType {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        match self {
+            Self::Slsa { url: Some(u) } => {
+                // Serialize as { slsa = { url = "..." } } only when URL is present
+                use serde::ser::SerializeMap;
+                let mut slsa_map = std::collections::BTreeMap::new();
+                slsa_map.insert("url", u.as_str());
+                let mut outer = serializer.serialize_map(Some(1))?;
+                outer.serialize_entry("slsa", &slsa_map)?;
+                outer.end()
+            }
+            // Slsa without URL serializes as plain string, like other variants
+            _ => serializer.serialize_str(&self.to_string()),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ProvenanceType {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        use serde::de;
+
+        struct ProvenanceVisitor;
+        impl<'de> de::Visitor<'de> for ProvenanceVisitor {
+            type Value = ProvenanceType;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "a provenance string or table")
+            }
+            fn visit_str<E: de::Error>(self, s: &str) -> std::result::Result<Self::Value, E> {
+                s.parse().map_err(de::Error::custom)
+            }
+            fn visit_map<A: de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> std::result::Result<Self::Value, A::Error> {
+                let key: String = map
+                    .next_key()?
+                    .ok_or_else(|| de::Error::custom("empty provenance table"))?;
+                let result = match key.as_str() {
+                    "slsa" => {
+                        #[derive(serde_derive::Deserialize)]
+                        struct SlsaInner {
+                            url: Option<String>,
+                        }
+                        let inner: SlsaInner = map.next_value()?;
+                        Ok(ProvenanceType::Slsa { url: inner.url })
+                    }
+                    other => Err(de::Error::custom(format!(
+                        "unknown provenance table key: {other}"
+                    ))),
+                }?;
+                // Drain any remaining entries to satisfy strict deserializers
+                while map.next_entry::<String, de::IgnoredAny>()?.is_some() {}
+                Ok(result)
+            }
+        }
+        deserializer.deserialize_any(ProvenanceVisitor)
+    }
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -77,6 +225,9 @@ pub struct PlatformInfo {
     /// References to conda packages in the shared conda-packages section (by basename)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conda_deps: Option<Vec<String>>,
+    /// Type of provenance verification that succeeded (SLSA carries its URL)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<ProvenanceType>,
 }
 
 // Re-export CondaPackageInfo from conda backend for lockfile serialization
@@ -89,6 +240,7 @@ impl PlatformInfo {
             && self.url.is_none()
             && self.url_api.is_none()
             && self.conda_deps.is_none()
+            && self.provenance.is_none()
     }
 
     /// Merge this PlatformInfo with another, preserving important data.
@@ -118,6 +270,10 @@ impl PlatformInfo {
             url: self.url.clone().or_else(|| other.url.clone()),
             url_api: self.url_api.clone().or_else(|| other.url_api.clone()),
             conda_deps: self.conda_deps.clone().or_else(|| other.conda_deps.clone()),
+            provenance: match (self.provenance.clone(), other.provenance.clone()) {
+                (Some(a), Some(b)) => Some(a.merge(b)),
+                (a, b) => a.or(b),
+            },
         }
     }
 }
@@ -156,12 +312,50 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     ),
                     _ => None,
                 };
+                // Legacy: read provenance_url for backwards compat with old lockfiles
+                let legacy_provenance_url = match t.remove("provenance_url") {
+                    Some(toml::Value::String(s)) => Some(s),
+                    _ => None,
+                };
+                let provenance = match t.remove("provenance") {
+                    Some(toml::Value::String(s)) => {
+                        let mut prov: ProvenanceType = s
+                            .parse()
+                            .map_err(|_| eyre!("unrecognized provenance type {s:?} in lockfile"))?;
+                        // Attach legacy provenance_url to SLSA if present
+                        if let ProvenanceType::Slsa { ref mut url } = prov {
+                            *url = legacy_provenance_url;
+                        }
+                        Some(prov)
+                    }
+                    Some(toml::Value::Table(mut prov_table)) => {
+                        if let Some(slsa_val) = prov_table.remove("slsa") {
+                            let slsa_url = match slsa_val {
+                                toml::Value::Table(mut st) => match st.remove("url") {
+                                    Some(toml::Value::String(u)) => Some(u),
+                                    _ => None,
+                                },
+                                _ => None,
+                            };
+                            Some(ProvenanceType::Slsa { url: slsa_url })
+                        } else {
+                            // Unknown table variant
+                            let keys: Vec<_> = prov_table.keys().cloned().collect();
+                            bail!(
+                                "unrecognized provenance table format in lockfile: {:?}",
+                                keys
+                            );
+                        }
+                    }
+                    _ => None,
+                };
                 Ok(PlatformInfo {
                     checksum,
                     size,
                     url,
                     url_api,
                     conda_deps,
+                    provenance,
                 })
             }
             _ => bail!("unsupported asset info format"),
@@ -188,6 +382,21 @@ impl From<PlatformInfo> for toml::Value {
                 .collect::<Vec<_>>()
                 .into();
             table.insert("conda_deps".to_string(), deps);
+        }
+        if let Some(ref provenance) = platform_info.provenance {
+            match provenance {
+                ProvenanceType::Slsa { url: Some(url) } => {
+                    let mut slsa_table = toml::Table::new();
+                    slsa_table.insert("url".to_string(), url.clone().into());
+                    let mut prov_table = toml::Table::new();
+                    prov_table.insert("slsa".to_string(), toml::Value::Table(slsa_table));
+                    table.insert("provenance".to_string(), toml::Value::Table(prov_table));
+                }
+                // Slsa without URL and all other variants serialize as plain string
+                _ => {
+                    table.insert("provenance".to_string(), provenance.to_string().into());
+                }
+            }
         }
         toml::Value::Table(table)
     }
@@ -467,6 +676,10 @@ impl Lockfile {
                     // For conda_deps, always use the new value - None means "no dependencies"
                     // rather than "not computed", so we shouldn't preserve stale deps
                     conda_deps: platform_info.conda_deps,
+                    provenance: match (platform_info.provenance, existing.provenance.clone()) {
+                        (Some(a), Some(b)) => Some(a.merge(b)),
+                        (a, b) => a.or(b),
+                    },
                 }
             } else {
                 platform_info
@@ -1348,16 +1561,7 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
 
                 // Convert tool version lock_platforms to lockfile platforms
                 for (platform, platform_info) in &tv.lock_platforms {
-                    platforms.insert(
-                        platform.clone(),
-                        PlatformInfo {
-                            checksum: platform_info.checksum.clone(),
-                            size: platform_info.size,
-                            url: platform_info.url.clone(),
-                            url_api: platform_info.url_api.clone(),
-                            conda_deps: platform_info.conda_deps.clone(),
-                        },
-                    );
+                    platforms.insert(platform.clone(), platform_info.clone());
                 }
 
                 // Resolve lockfile options from the backend
@@ -1394,19 +1598,31 @@ fn format(mut doc: DocumentMut) -> String {
                         }
                         a.to_string().cmp(&b.to_string())
                     });
-                    // Convert platforms to inline tables with dotted keys
+                    // TODO: use TOML 1.1 multiline inline tables once toml_edit supports
+                    // InlineTable::set_multiline(). See https://github.com/toml-rs/toml/issues/1027
+                    // Convert platforms to dotted-key subtables (multi-line)
                     if let Some(toml_edit::Item::Table(platforms_table)) = t.remove("platforms") {
                         for (platform_key, platform_value) in platforms_table.iter() {
                             if let toml_edit::Item::Table(platform_info) = platform_value {
-                                let mut inline = toml_edit::InlineTable::new();
-                                for (k, v) in platform_info.iter() {
-                                    if let toml_edit::Item::Value(val) = v {
-                                        inline.insert(k, val.clone());
+                                let dotted_key = format!("platforms.{}", platform_key);
+                                let mut subtable = toml_edit::Table::new();
+                                let mut keys: Vec<_> =
+                                    platform_info.iter().map(|(k, _)| k.to_string()).collect();
+                                keys.sort_by_key(|k| match k.as_str() {
+                                    "checksum" => 0,
+                                    "size" => 1,
+                                    "url" => 2,
+                                    "url_api" => 3,
+                                    "provenance" => 4,
+                                    _ => 5,
+                                });
+                                for k in &keys {
+                                    if let Some(item) = platform_info.get(k) {
+                                        subtable.insert(k, item.clone());
                                     }
                                 }
-                                inline.sort_values();
-                                let dotted_key = format!("platforms.{}", platform_key);
-                                t.insert(&dotted_key, toml_edit::Item::Value(inline.into()));
+                                subtable.set_implicit(true);
+                                t.insert(&dotted_key, toml_edit::Item::Table(subtable));
                             }
                         }
                     }
@@ -1448,6 +1664,7 @@ mod tests {
                 url: None,
                 url_api: None,
                 conda_deps: Some(vec![dep.to_string()]),
+                ..Default::default()
             },
         );
         LockfileTool {
@@ -1528,6 +1745,7 @@ backend = "core:python"
                 url: Some("https://example.com/node.tar.gz".to_string()),
                 url_api: Some("https://api.github.com.com/repos/test/1234".to_string()),
                 conda_deps: None,
+                ..Default::default()
             },
         );
 
@@ -1791,6 +2009,7 @@ backend = "conda:jq"
                 size: None,
                 url_api: None,
                 conda_deps: Some(vec!["ncurses-6.4-h7ea286d_0".to_string()]),
+                ..Default::default()
             },
         );
         lockfile.tools.insert(
@@ -1878,6 +2097,7 @@ backend = "conda:jq"
                 size: None,
                 url_api: None,
                 conda_deps: Some(vec!["referenced-pkg".to_string()]),
+                ..Default::default()
             },
         );
         lockfile.tools.insert(
@@ -2049,5 +2269,121 @@ backend = "conda:jq"
         };
         let merged = no_url.merge_with(&blake3_info);
         assert_eq!(merged.url, Some("https://example.com/b".to_string()));
+    }
+
+    #[test]
+    fn test_provenance_fields_roundtrip() {
+        let info = PlatformInfo {
+            checksum: Some("sha256:abc123".to_string()),
+            url: Some("https://example.com/tool.tar.gz".to_string()),
+            provenance: Some(ProvenanceType::Slsa {
+                url: Some("https://example.com/tool.intoto.jsonl".to_string()),
+            }),
+            ..Default::default()
+        };
+
+        // Test toml roundtrip — SLSA serializes as a table with url inside
+        let toml_val: toml::Value = info.clone().into();
+        let table = toml_val.as_table().unwrap();
+        let prov_table = table.get("provenance").unwrap().as_table().unwrap();
+        let slsa_table = prov_table.get("slsa").unwrap().as_table().unwrap();
+        assert_eq!(
+            slsa_table.get("url").unwrap().as_str().unwrap(),
+            "https://example.com/tool.intoto.jsonl"
+        );
+        let parsed: PlatformInfo = toml_val.try_into().unwrap();
+        assert!(parsed.provenance.as_ref().unwrap().is_slsa());
+        match &parsed.provenance {
+            Some(ProvenanceType::Slsa { url }) => {
+                assert_eq!(
+                    url.as_deref(),
+                    Some("https://example.com/tool.intoto.jsonl")
+                );
+            }
+            _ => panic!("expected Slsa provenance"),
+        }
+    }
+
+    #[test]
+    fn test_provenance_legacy_provenance_url_compat() {
+        // Old lockfile format: provenance = "slsa" + provenance_url = "..."
+        // Must go through TryFrom<toml::Value> which handles the legacy field
+        let mut table = toml::Table::new();
+        table.insert("provenance".to_string(), "slsa".into());
+        table.insert(
+            "provenance_url".to_string(),
+            "https://example.com/tool.intoto.jsonl".into(),
+        );
+        let parsed = PlatformInfo::try_from(toml::Value::Table(table)).unwrap();
+        assert!(parsed.provenance.as_ref().unwrap().is_slsa());
+        match &parsed.provenance {
+            Some(ProvenanceType::Slsa { url }) => {
+                assert_eq!(
+                    url.as_deref(),
+                    Some("https://example.com/tool.intoto.jsonl")
+                );
+            }
+            _ => panic!("expected Slsa provenance"),
+        }
+    }
+
+    #[test]
+    fn test_provenance_merge_preserves_existing() {
+        let with_provenance = PlatformInfo {
+            provenance: Some(ProvenanceType::GithubAttestations),
+            ..Default::default()
+        };
+        let without = PlatformInfo::default();
+
+        // Merging with empty preserves provenance
+        let merged = with_provenance.merge_with(&without);
+        assert_eq!(merged.provenance, Some(ProvenanceType::GithubAttestations));
+
+        // Merging empty (new) with provenance (old) preserves existing provenance
+        let merged = without.merge_with(&with_provenance);
+        assert_eq!(merged.provenance, Some(ProvenanceType::GithubAttestations));
+
+        // Merging Slsa { url: None } with Slsa { url: Some(...) } preserves URL
+        let with_url = PlatformInfo {
+            provenance: Some(ProvenanceType::Slsa {
+                url: Some("https://example.com/provenance.intoto.jsonl".to_string()),
+            }),
+            ..Default::default()
+        };
+        let without_url = PlatformInfo {
+            provenance: Some(ProvenanceType::Slsa { url: None }),
+            ..Default::default()
+        };
+        let merged = without_url.merge_with(&with_url);
+        assert!(merged.provenance.as_ref().unwrap().is_slsa());
+        match &merged.provenance {
+            Some(ProvenanceType::Slsa { url }) => {
+                assert_eq!(
+                    url.as_deref(),
+                    Some("https://example.com/provenance.intoto.jsonl")
+                );
+            }
+            _ => panic!("expected Slsa provenance"),
+        }
+        // Also in reverse order
+        let merged = with_url.merge_with(&without_url);
+        match &merged.provenance {
+            Some(ProvenanceType::Slsa { url }) => {
+                assert_eq!(
+                    url.as_deref(),
+                    Some("https://example.com/provenance.intoto.jsonl")
+                );
+            }
+            _ => panic!("expected Slsa provenance"),
+        }
+    }
+
+    #[test]
+    fn test_provenance_not_empty() {
+        let info = PlatformInfo {
+            provenance: Some(ProvenanceType::Slsa { url: None }),
+            ..Default::default()
+        };
+        assert!(!info.is_empty());
     }
 }
