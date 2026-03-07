@@ -373,12 +373,10 @@ pub trait Backend: Debug + Send + Sync {
     fn ba(&self) -> &Arc<BackendArg>;
 
     /// Generates a platform key for lockfile storage.
-    /// Default implementation uses os-arch format, but backends can override for more specific keys.
+    /// Default implementation uses the current platform key (os-arch or os-arch-qualifier),
+    /// which includes the libc qualifier on musl systems.
     fn get_platform_key(&self) -> String {
-        let settings = Settings::get();
-        let os = settings.os();
-        let arch = settings.arch();
-        format!("{os}-{arch}")
+        Platform::current().to_key()
     }
 
     /// Resolves the lockfile options for a tool request on a target platform.

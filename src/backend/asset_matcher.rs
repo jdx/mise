@@ -176,13 +176,15 @@ pub struct AssetPicker {
 }
 
 impl AssetPicker {
-    /// Create an AssetPicker with an explicit libc setting
+    /// Create an AssetPicker with an explicit libc setting.
+    /// When no explicit libc is provided, defaults to the platform's standard libc
+    /// (msvc for Windows, gnu for Linux/other). The caller is responsible for passing
+    /// the correct libc qualifier from PlatformTarget — this avoids polluting
+    /// cross-platform lockfile entries with the current system's libc.
     pub fn with_libc(target_os: String, target_arch: String, libc: Option<String>) -> Self {
         let target_libc = libc.unwrap_or_else(|| {
             if target_os == "windows" {
                 "msvc".to_string()
-            } else if cfg!(target_env = "musl") {
-                "musl".to_string()
             } else {
                 "gnu".to_string()
             }

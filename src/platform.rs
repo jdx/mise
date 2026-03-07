@@ -38,13 +38,20 @@ impl Platform {
         }
     }
 
-    /// Get the current platform from system information
+    /// Get the current platform from system information.
+    /// On Linux, detects musl vs glibc at runtime and sets the qualifier accordingly.
     pub fn current() -> Self {
         let settings = Settings::get();
+        let os = settings.os().to_string();
+        let qualifier = if os == "linux" && is_musl_system() {
+            Some("musl".to_string())
+        } else {
+            None
+        };
         Platform {
-            os: settings.os().to_string(),
+            os,
             arch: settings.arch().to_string(),
-            qualifier: None,
+            qualifier,
         }
     }
 
@@ -117,7 +124,9 @@ impl Platform {
     pub fn common_platforms() -> Vec<Self> {
         vec![
             Platform::parse("linux-x64").unwrap(),
+            Platform::parse("linux-x64-musl").unwrap(),
             Platform::parse("linux-arm64").unwrap(),
+            Platform::parse("linux-arm64-musl").unwrap(),
             Platform::parse("macos-x64").unwrap(),
             Platform::parse("macos-arm64").unwrap(),
             Platform::parse("windows-x64").unwrap(),
@@ -172,6 +181,43 @@ impl From<&str> for Platform {
             Self::current()
         })
     }
+}
+
+/// Detect whether the system uses musl libc at runtime.
+/// Checks for the absence of glibc's dynamic linker (`ld-linux-*`) in /lib and /lib64.
+/// On glibc systems, `ld-linux-*` is always present (even if musl-tools is installed
+/// for cross-compilation, which also places `ld-musl-*` in /lib). On musl-only systems
+/// (Alpine, Void musl, etc.), only `ld-musl-*` exists without `ld-linux-*`.
+#[cfg(target_os = "linux")]
+fn is_musl_system() -> bool {
+    use std::sync::LazyLock;
+    static IS_MUSL: LazyLock<bool> = LazyLock::new(|| {
+        // If glibc's dynamic linker exists, this is a glibc system
+        for dir in ["/lib", "/lib64"] {
+            if has_file_prefix(dir, "ld-linux-") {
+                return false;
+            }
+        }
+        // No glibc linker found — check for musl's
+        has_file_prefix("/lib", "ld-musl-")
+    });
+    *IS_MUSL
+}
+
+#[cfg(target_os = "linux")]
+fn has_file_prefix(dir: &str, prefix: &str) -> bool {
+    std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .any(|e| e.file_name().to_string_lossy().starts_with(prefix))
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn is_musl_system() -> bool {
+    false
 }
 
 #[cfg(test)]
@@ -283,11 +329,13 @@ mod tests {
     #[test]
     fn test_common_platforms() {
         let platforms = Platform::common_platforms();
-        assert_eq!(platforms.len(), 5);
+        assert_eq!(platforms.len(), 7);
 
         let keys: Vec<String> = platforms.iter().map(|p| p.to_key()).collect();
         assert!(keys.contains(&"linux-x64".to_string()));
+        assert!(keys.contains(&"linux-x64-musl".to_string()));
         assert!(keys.contains(&"linux-arm64".to_string()));
+        assert!(keys.contains(&"linux-arm64-musl".to_string()));
         assert!(keys.contains(&"macos-x64".to_string()));
         assert!(keys.contains(&"macos-arm64".to_string()));
         assert!(keys.contains(&"windows-x64".to_string()));
