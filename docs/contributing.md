@@ -405,38 +405,20 @@ hk check --step prettier
 hk check --step shellcheck
 ```
 
-### Pre-commit Task Configuration
-
-mise defines a `pre-commit` task that runs the main linting checks:
-
-```toml
-[pre-commit]
-env = { PRE_COMMIT = 1 }
-run = ["mise run lint"]
-```
-
-This task:
-
-1. Sets `PRE_COMMIT=1` environment variable
-2. Runs `mise run lint`, which executes `hk check --all`
-
 ### Setting Up Pre-commit Hooks
 
 ```bash
-# Set up git hook to run mise's pre-commit task
-mise generate git-pre-commit --write --task=pre-commit
+# Set up git hooks to run hk on pre-commit
+hk install --mise
 ```
 
-### Running Pre-commit Checks Manually
+### Running Checks Manually
 
 ```bash
-# Run all pre-commit checks
-mise run pre-commit
+# Run all checks
+hk check --all
 
-# Run specific linting checks
-mise run lint
-
-# Run linting with fixes
+# Run checks with fixes
 hk fix --all
 
 # Run checks on specific files

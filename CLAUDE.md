@@ -133,9 +133,10 @@ All commit messages and PR titles MUST follow conventional commit format:
 - `registry: add miller`
 
 ### Pre-commit Process
-1. Run `mise run lint-fix` and `git add` any lint fixes before committing
-2. Use `mise run test:e2e [test_filename]...` for running specific e2e tests
-3. Never run e2e tests by executing them directly - always use the mise task
+1. Run `hk install --mise` once to set up pre-commit hooks (runs `hk fix` automatically on commit)
+2. Run `mise run lint-fix` and `git add` any lint fixes before committing
+3. Use `mise run test:e2e [test_filename]...` for running specific e2e tests
+4. Never run e2e tests by executing them directly - always use the mise task
 
 ## Important Implementation Notes
 
