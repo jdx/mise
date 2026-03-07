@@ -1151,12 +1151,13 @@ impl UnifiedGitBackend {
             {
                 Ok(true) => {
                     if let Some(ref expected) = locked_provenance
-                        && expected != "github-attestations" {
-                            return Err(eyre::eyre!(
-                                "Lockfile requires {expected} provenance for {tv} but github-attestations was used instead. \
+                        && expected != "github-attestations"
+                    {
+                        return Err(eyre::eyre!(
+                            "Lockfile requires {expected} provenance for {tv} but github-attestations was used instead. \
                                  This may indicate a downgrade attack."
-                            ));
-                        }
+                        ));
+                    }
                     return Ok(Some(("github-attestations".to_string(), None)));
                 }
                 Ok(false) => {
@@ -1183,12 +1184,13 @@ impl UnifiedGitBackend {
             match self.try_verify_slsa(ctx, tv, file_path).await {
                 Ok((true, provenance_url)) => {
                     if let Some(ref expected) = locked_provenance
-                        && expected != "slsa" {
-                            return Err(eyre::eyre!(
-                                "Lockfile requires {expected} provenance for {tv} but slsa was used instead. \
+                        && expected != "slsa"
+                    {
+                        return Err(eyre::eyre!(
+                            "Lockfile requires {expected} provenance for {tv} but slsa was used instead. \
                                  This may indicate a downgrade attack."
-                            ));
-                        }
+                        ));
+                    }
                     return Ok(Some(("slsa".to_string(), provenance_url)));
                 }
                 Ok((false, _)) => {
