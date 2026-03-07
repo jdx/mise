@@ -281,7 +281,7 @@ pub static IS_RUNNING_AS_SHIM: Lazy<bool> = Lazy::new(|| {
     #[cfg(windows)]
     let mise_bin = "mise.exe";
     let bin_name = *MISE_BIN_NAME;
-    bin_name != mise_bin && !bin_name.starts_with("mise-")
+    bin_name != "mise" && bin_name != mise_bin && !bin_name.starts_with("mise-") && !bin_name.starts_with("mise.")
 });
 
 #[cfg(test)]
