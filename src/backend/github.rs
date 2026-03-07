@@ -408,9 +408,10 @@ impl UnifiedGitBackend {
                     use sigstore_verification::AttestationSource;
                     let artifact_ref = sigstore_verification::ArtifactRef::from_digest(digest);
                     if let Ok(attestations) = source.fetch_attestations(&artifact_ref).await
-                        && !attestations.is_empty() {
-                            return Some("github-attestations".to_string());
-                        }
+                        && !attestations.is_empty()
+                    {
+                        return Some("github-attestations".to_string());
+                    }
                 }
             }
         }
