@@ -1088,6 +1088,13 @@ impl AquaBackend {
             let data = file::read(tv.download_path().join(filename))?;
             let sig = file::read_to_string(sig_path)?;
             minisign::verify(&minisign.public_key(pkg, v, os(), arch())?, &data, &sig)?;
+
+            // Record minisign provenance only if no higher-priority verification already recorded
+            let platform_key = self.get_platform_key();
+            let pi = tv.lock_platforms.entry(platform_key).or_default();
+            if pi.provenance.is_none() {
+                pi.provenance = Some("minisign".to_string());
+            }
         }
         Ok(())
     }
