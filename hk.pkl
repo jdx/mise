@@ -13,6 +13,11 @@ local linters = new Mapping<String, Step> {
     //  check = "cargo clippy --manifest-path {{workspace_indicator}} --all-features -- -Dwarnings"
     //  fix = "cargo clippy --manifest-path {{workspace_indicator}} --all-features --fix --allow-dirty --allow-staged -- -Dwarnings"
     //}
+    ["cargo-fmt"] {
+      glob = List("*.rs")
+      check = "cargo fmt --all -- --check"
+      fix = "cargo fmt --all"
+    }
     ["cargo-check"] = (Builtins.cargo_check) {
       check = "cargo check --all-features"
     }
