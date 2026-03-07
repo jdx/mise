@@ -389,22 +389,16 @@ impl UnifiedGitBackend {
             .await
             .ok()?;
 
-        // Check for GitHub artifact attestations (.sigstore.json or .sigstore)
-        if settings.github_attestations && settings.github.github_attestations {
-            let has_attestations = release.assets.iter().any(|a| {
-                let name = a.name.to_lowercase();
-                name.ends_with(".sigstore.json") || name.ends_with(".sigstore")
-            });
-            if has_attestations {
-                return Some("github-attestations".to_string());
-            }
-        }
-
-        // Check for SLSA provenance (.intoto.jsonl)
+        // Check for SLSA provenance from release assets
+        // (.intoto.jsonl for SLSA, .sigstore.json/.sigstore for sigstore bundles)
+        // Note: "github-attestations" uses the GitHub attestation API (not asset files)
+        // and cannot be detected from release assets alone.
         if settings.slsa && settings.github.slsa {
             let has_slsa = release.assets.iter().any(|a| {
                 let name = a.name.to_lowercase();
                 name.contains(".intoto.jsonl")
+                    || name.ends_with(".sigstore.json")
+                    || name.ends_with(".sigstore")
             });
             if has_slsa {
                 return Some("slsa".to_string());
