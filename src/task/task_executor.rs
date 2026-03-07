@@ -309,6 +309,7 @@ impl TaskExecutor {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn exec_task_run_entries(
         &self,
         config: &Arc<Config>,
@@ -701,7 +702,7 @@ impl TaskExecutor {
             .redact(redactions.deref().clone())
             .raw(raw);
         if raw && !redactions.is_empty() {
-            if task.interactive {
+            if task.interactive && !task.raw && !Settings::get().raw {
                 hint!(
                     "interactive_redactions",
                     "interactive tasks bypass redactions—secrets may appear in terminal output",
