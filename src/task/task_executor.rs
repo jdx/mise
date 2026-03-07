@@ -264,8 +264,17 @@ impl TaskExecutor {
             self.parse_usage_spec_and_init_env(config, task, &mut env, get_args, extra_vars)
                 .await?;
 
+            // For interactive tasks, acquire the lock before confirmation so the
+            // prompt gets exclusive terminal access (consistent with exec_file path).
+            let confirm_guard = if task.interactive {
+                Some(acquire_runtime_lock(task.interactive).await)
+            } else {
+                None
+            };
+
             // Check confirmation after usage args are parsed
             self.check_confirmation(config, task, &env).await?;
+            drop(confirm_guard);
 
             let exec_start = std::time::Instant::now();
             self.exec_task_run_entries(
