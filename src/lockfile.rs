@@ -67,52 +67,16 @@ pub struct LockfileTool {
 /// The ordering is significant: during verification, higher-priority mechanisms
 /// are tried first, and the lockfile records whichever succeeds.
 /// SLSA carries an optional URL for the provenance file (.intoto.jsonl).
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, strum::Display, strum::EnumIs)]
+#[strum(serialize_all = "kebab-case")]
 pub enum ProvenanceType {
     Minisign,
     Cosign,
-    Slsa { url: Option<String> },
+    #[strum(serialize = "slsa")]
+    Slsa {
+        url: Option<String>,
+    },
     GithubAttestations,
-}
-
-impl ProvenanceType {
-    /// Discriminant for ordering (lowest = lowest priority)
-    fn ordinal(&self) -> u8 {
-        match self {
-            Self::Minisign => 0,
-            Self::Cosign => 1,
-            Self::Slsa { .. } => 2,
-            Self::GithubAttestations => 3,
-        }
-    }
-
-    /// Check if this is the same variant as another (ignoring inner data)
-    pub fn is_same_variant(&self, other: &Self) -> bool {
-        self.ordinal() == other.ordinal()
-    }
-}
-
-impl PartialOrd for ProvenanceType {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for ProvenanceType {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.ordinal().cmp(&other.ordinal())
-    }
-}
-
-impl std::fmt::Display for ProvenanceType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Minisign => write!(f, "minisign"),
-            Self::Cosign => write!(f, "cosign"),
-            Self::Slsa { .. } => write!(f, "slsa"),
-            Self::GithubAttestations => write!(f, "github-attestations"),
-        }
-    }
 }
 
 impl std::str::FromStr for ProvenanceType {
@@ -125,6 +89,30 @@ impl std::str::FromStr for ProvenanceType {
             "github-attestations" => Ok(Self::GithubAttestations),
             other => Err(format!("unknown provenance type: {other}")),
         }
+    }
+}
+
+impl ProvenanceType {
+    /// Discriminant for ordering (lowest = lowest priority)
+    fn ordinal(&self) -> u8 {
+        match self {
+            Self::Minisign => 0,
+            Self::Cosign => 1,
+            Self::Slsa { .. } => 2,
+            Self::GithubAttestations => 3,
+        }
+    }
+}
+
+impl PartialOrd for ProvenanceType {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ProvenanceType {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.ordinal().cmp(&other.ordinal())
     }
 }
 

@@ -1190,10 +1190,8 @@ impl UnifiedGitBackend {
         // When the lockfile specifies a provenance type, only run that specific mechanism
         let skip_attestations = locked_provenance
             .as_ref()
-            .is_some_and(|l| !l.is_same_variant(&ProvenanceType::GithubAttestations));
-        let skip_slsa = locked_provenance
-            .as_ref()
-            .is_some_and(|l| !l.is_same_variant(&ProvenanceType::Slsa { url: None }));
+            .is_some_and(|l| !l.is_github_attestations());
+        let skip_slsa = locked_provenance.as_ref().is_some_and(|l| !l.is_slsa());
 
         // Try GitHub artifact attestations first (if enabled globally and for github backend)
         if !skip_attestations && settings.github_attestations && settings.github.github_attestations

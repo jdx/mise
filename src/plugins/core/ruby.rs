@@ -660,7 +660,7 @@ impl RubyPlugin {
                 .lock_platforms
                 .get(&platform_key)
                 .and_then(|pi| pi.provenance.as_ref());
-            if !got.is_some_and(|g| g.is_same_variant(expected)) {
+            if !got.is_some_and(|g| std::mem::discriminant(g) == std::mem::discriminant(expected)) {
                 return Err(eyre!(
                     "Lockfile requires {expected} provenance for {tv} but {got:?} was used. \
                      This may indicate a downgrade attack. Enable the corresponding verification setting \

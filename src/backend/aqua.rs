@@ -993,26 +993,36 @@ impl AquaBackend {
         // (e.g., both minisign and cosign) that would otherwise compete for the provenance slot.
         let skip_attestations = locked_provenance
             .as_ref()
-            .is_some_and(|l| !l.is_same_variant(&ProvenanceType::GithubAttestations));
-        let skip_slsa = locked_provenance
-            .as_ref()
-            .is_some_and(|l| !l.is_same_variant(&ProvenanceType::Slsa { url: None }));
-        let skip_minisign = locked_provenance
-            .as_ref()
-            .is_some_and(|l| !l.is_same_variant(&ProvenanceType::Minisign));
-        let skip_cosign = locked_provenance
-            .as_ref()
-            .is_some_and(|l| !l.is_same_variant(&ProvenanceType::Cosign));
+            .is_some_and(|l| !l.is_github_attestations());
+        let skip_slsa = locked_provenance.as_ref().is_some_and(|l| !l.is_slsa());
+        let skip_minisign = locked_provenance.as_ref().is_some_and(|l| !l.is_minisign());
+        let skip_cosign = locked_provenance.as_ref().is_some_and(|l| !l.is_cosign());
 
         if !skip_attestations {
             self.verify_github_artifact_attestations(ctx, tv, pkg, v, filename)
                 .await?;
         }
         if !skip_slsa {
-            self.verify_slsa(ctx, tv, pkg, v, filename).await?;
+            // Short-circuit: if a higher-priority mechanism already recorded provenance, skip SLSA
+            let already_verified = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|pi| pi.provenance.as_ref())
+                .is_some_and(|p| *p > ProvenanceType::Slsa { url: None });
+            if !already_verified {
+                self.verify_slsa(ctx, tv, pkg, v, filename).await?;
+            }
         }
         if !skip_minisign {
-            self.verify_minisign(ctx, tv, pkg, v, filename).await?;
+            // Short-circuit: if a higher-priority mechanism already recorded provenance, skip minisign
+            let already_verified = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|pi| pi.provenance.as_ref())
+                .is_some_and(|p| *p > ProvenanceType::Minisign);
+            if !already_verified {
+                self.verify_minisign(ctx, tv, pkg, v, filename).await?;
+            }
         }
 
         let download_path = tv.download_path();
@@ -1062,7 +1072,7 @@ impl AquaBackend {
                 .lock_platforms
                 .get(&platform_key)
                 .and_then(|pi| pi.provenance.as_ref());
-            if !got.is_some_and(|g| g.is_same_variant(expected)) {
+            if !got.is_some_and(|g| std::mem::discriminant(g) == std::mem::discriminant(expected)) {
                 return Err(eyre!(
                     "Lockfile requires {expected} provenance for {tv} but {got:?} was used. \
                      This may indicate a downgrade attack. Enable the corresponding verification setting \
