@@ -188,6 +188,7 @@ impl From<&str> for Platform {
 /// On glibc systems, `ld-linux-*` is always present (even if musl-tools is installed
 /// for cross-compilation, which also places `ld-musl-*` in /lib). On musl-only systems
 /// (Alpine, Void musl, etc.), only `ld-musl-*` exists without `ld-linux-*`.
+// NOTE: This logic is mirrored in crates/vfox/src/config.rs env_type(). Keep in sync.
 #[cfg(target_os = "linux")]
 fn is_musl_system() -> bool {
     use std::sync::LazyLock;
