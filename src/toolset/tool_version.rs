@@ -263,10 +263,8 @@ impl ToolVersion {
             {
                 return build(v);
             }
-            if settings.prefer_offline() {
-                return build(v);
-            }
             if !is_offline
+                && !settings.prefer_offline()
                 && let Some(v) = backend
                     .latest_version_with_opts(config, None, opts.before_date)
                     .await?
