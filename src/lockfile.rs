@@ -126,11 +126,10 @@ impl PlatformInfo {
             url: self.url.clone().or_else(|| other.url.clone()),
             url_api: self.url_api.clone().or_else(|| other.url_api.clone()),
             conda_deps: self.conda_deps.clone().or_else(|| other.conda_deps.clone()),
-            provenance: self.provenance.clone().or_else(|| other.provenance.clone()),
-            provenance_url: self
-                .provenance_url
-                .clone()
-                .or_else(|| other.provenance_url.clone()),
+            // For provenance, always use the new value - None means "no provenance expected"
+            // rather than "not computed", so we shouldn't preserve stale provenance
+            provenance: self.provenance.clone(),
+            provenance_url: self.provenance_url.clone(),
         }
     }
 }
@@ -496,12 +495,11 @@ impl Lockfile {
                     // For conda_deps, always use the new value - None means "no dependencies"
                     // rather than "not computed", so we shouldn't preserve stale deps
                     conda_deps: platform_info.conda_deps,
-                    provenance: platform_info
-                        .provenance
-                        .or_else(|| existing.provenance.clone()),
-                    provenance_url: platform_info
-                        .provenance_url
-                        .or_else(|| existing.provenance_url.clone()),
+                    // For provenance, always use the new value - None means "no provenance
+                    // expected" rather than "not computed", so we shouldn't preserve stale
+                    // provenance that would cause false downgrade-attack errors
+                    provenance: platform_info.provenance,
+                    provenance_url: platform_info.provenance_url,
                 }
             } else {
                 platform_info
