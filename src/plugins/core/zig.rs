@@ -309,7 +309,14 @@ impl Backend for ZigPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
+        // download() includes minisign verification
         let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
+
+        // Record minisign provenance in lockfile
+        let platform_key = PlatformTarget::from_current().to_key();
+        let pi = tv.lock_platforms.entry(platform_key).or_default();
+        pi.provenance = Some("minisign".to_string());
+
         ctx.pr.next_operation();
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         ctx.pr.next_operation();
@@ -405,8 +412,7 @@ impl Backend for ZigPlugin {
                 url: Some(url),
                 checksum,
                 size,
-                url_api: None,
-                conda_deps: None,
+                provenance: Some("minisign".to_string()),
                 ..Default::default()
             }),
             Err(_) if regex!(r"^\d+\.\d+\.\d+$").is_match(&tv.version) => {
@@ -416,10 +422,7 @@ impl Backend for ZigPlugin {
                         "https://ziglang.org/download/{}/zig-{}-{}-{}.tar.xz",
                         tv.version, os, arch, tv.version
                     )),
-                    checksum: None,
-                    size: None,
-                    url_api: None,
-                    conda_deps: None,
+                    provenance: Some("minisign".to_string()),
                     ..Default::default()
                 })
             }
