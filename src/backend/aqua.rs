@@ -1290,11 +1290,11 @@ impl AquaBackend {
                     ctx.pr
                         .set_message("✓ GitHub artifact attestations verified".to_string());
                     debug!("GitHub artifact attestations verified successfully for {tv}");
-                    // Record provenance — this runs first in verify(), so provenance
-                    // is always None here
                     let platform_key = self.get_platform_key();
                     let pi = tv.lock_platforms.entry(platform_key).or_default();
-                    pi.provenance = Some(ProvenanceType::GithubAttestations);
+                    if pi.provenance.is_none() {
+                        pi.provenance = Some(ProvenanceType::GithubAttestations);
+                    }
                 }
                 Ok(false) => {
                     return Err(eyre!(
