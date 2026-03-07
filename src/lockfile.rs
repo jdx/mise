@@ -102,6 +102,17 @@ impl ProvenanceType {
             Self::GithubAttestations => 3,
         }
     }
+
+    /// Merge two provenance values, keeping the higher-priority variant.
+    /// When both are `Slsa`, preserves the URL from whichever has one.
+    fn merge(self, other: Self) -> Self {
+        match (&self, &other) {
+            (Self::Slsa { url: a }, Self::Slsa { url: b }) => Self::Slsa {
+                url: a.clone().or_else(|| b.clone()),
+            },
+            _ => std::cmp::max(self, other),
+        }
+    }
 }
 
 impl PartialOrd for ProvenanceType {
@@ -238,7 +249,10 @@ impl PlatformInfo {
             url: self.url.clone().or_else(|| other.url.clone()),
             url_api: self.url_api.clone().or_else(|| other.url_api.clone()),
             conda_deps: self.conda_deps.clone().or_else(|| other.conda_deps.clone()),
-            provenance: std::cmp::max(self.provenance.clone(), other.provenance.clone()),
+            provenance: match (self.provenance.clone(), other.provenance.clone()) {
+                (Some(a), Some(b)) => Some(a.merge(b)),
+                (a, b) => a.or(b),
+            },
         }
     }
 }
@@ -642,10 +656,10 @@ impl Lockfile {
                     // For conda_deps, always use the new value - None means "no dependencies"
                     // rather than "not computed", so we shouldn't preserve stale deps
                     conda_deps: platform_info.conda_deps,
-                    provenance: std::cmp::max(
-                        platform_info.provenance,
-                        existing.provenance.clone(),
-                    ),
+                    provenance: match (platform_info.provenance, existing.provenance.clone()) {
+                        (Some(a), Some(b)) => Some(a.merge(b)),
+                        (a, b) => a.or(b),
+                    },
                 }
             } else {
                 platform_info
@@ -2301,6 +2315,33 @@ backend = "conda:jq"
         // Merging empty (new) with provenance (old) preserves existing provenance
         let merged = without.merge_with(&with_provenance);
         assert_eq!(merged.provenance, Some(ProvenanceType::GithubAttestations));
+
+        // Merging Slsa { url: None } with Slsa { url: Some(...) } preserves URL
+        let with_url = PlatformInfo {
+            provenance: Some(ProvenanceType::Slsa {
+                url: Some("https://example.com/provenance.intoto.jsonl".to_string()),
+            }),
+            ..Default::default()
+        };
+        let without_url = PlatformInfo {
+            provenance: Some(ProvenanceType::Slsa { url: None }),
+            ..Default::default()
+        };
+        let merged = without_url.merge_with(&with_url);
+        assert_eq!(
+            merged.provenance,
+            Some(ProvenanceType::Slsa {
+                url: Some("https://example.com/provenance.intoto.jsonl".to_string())
+            })
+        );
+        // Also in reverse order
+        let merged = with_url.merge_with(&without_url);
+        assert_eq!(
+            merged.provenance,
+            Some(ProvenanceType::Slsa {
+                url: Some("https://example.com/provenance.intoto.jsonl".to_string())
+            })
+        );
     }
 
     #[test]
