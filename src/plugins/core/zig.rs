@@ -321,8 +321,8 @@ impl Backend for ZigPlugin {
             .get_mut(&platform_key)
             .and_then(|pi| pi.provenance.take());
 
-        if let Some(expected) = locked_provenance
-            && expected != ProvenanceType::Minisign
+        if let Some(ref expected) = locked_provenance
+            && !expected.is_same_variant(&ProvenanceType::Minisign)
         {
             return Err(eyre::eyre!(
                 "Lockfile requires {expected} provenance for {tv} but minisign was used. \

@@ -66,15 +66,66 @@ pub struct LockfileTool {
 /// Type of provenance verification, ordered by priority (lowest to highest).
 /// The ordering is significant: during verification, higher-priority mechanisms
 /// are tried first, and the lockfile records whichever succeeds.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, strum::EnumString, strum::Display,
-)]
-#[strum(serialize_all = "kebab-case")]
+/// SLSA carries an optional URL for the provenance file (.intoto.jsonl).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ProvenanceType {
     Minisign,
     Cosign,
-    Slsa,
+    Slsa { url: Option<String> },
     GithubAttestations,
+}
+
+impl ProvenanceType {
+    /// Discriminant for ordering (lowest = lowest priority)
+    fn ordinal(&self) -> u8 {
+        match self {
+            Self::Minisign => 0,
+            Self::Cosign => 1,
+            Self::Slsa { .. } => 2,
+            Self::GithubAttestations => 3,
+        }
+    }
+
+    /// Check if this is the same variant as another (ignoring inner data)
+    pub fn is_same_variant(&self, other: &Self) -> bool {
+        self.ordinal() == other.ordinal()
+    }
+}
+
+impl PartialOrd for ProvenanceType {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ProvenanceType {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.ordinal().cmp(&other.ordinal())
+    }
+}
+
+impl std::fmt::Display for ProvenanceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Minisign => write!(f, "minisign"),
+            Self::Cosign => write!(f, "cosign"),
+            Self::Slsa { .. } => write!(f, "slsa"),
+            Self::GithubAttestations => write!(f, "github-attestations"),
+        }
+    }
+}
+
+impl std::str::FromStr for ProvenanceType {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "minisign" => Ok(Self::Minisign),
+            "cosign" => Ok(Self::Cosign),
+            "slsa" => Ok(Self::Slsa { url: None }),
+            "github-attestations" => Ok(Self::GithubAttestations),
+            other => Err(format!("unknown provenance type: {other}")),
+        }
+    }
 }
 
 impl serde::Serialize for ProvenanceType {
@@ -82,7 +133,20 @@ impl serde::Serialize for ProvenanceType {
         &self,
         serializer: S,
     ) -> std::result::Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.to_string())
+        use serde::ser::SerializeMap;
+        match self {
+            Self::Slsa { url } => {
+                // Serialize as { slsa = { url = "..." } }
+                let mut slsa_map = std::collections::BTreeMap::new();
+                if let Some(u) = url {
+                    slsa_map.insert("url", u.as_str());
+                }
+                let mut outer = serializer.serialize_map(Some(1))?;
+                outer.serialize_entry("slsa", &slsa_map)?;
+                outer.end()
+            }
+            _ => serializer.serialize_str(&self.to_string()),
+        }
     }
 }
 
@@ -90,8 +154,40 @@ impl<'de> serde::Deserialize<'de> for ProvenanceType {
     fn deserialize<D: serde::Deserializer<'de>>(
         deserializer: D,
     ) -> std::result::Result<Self, D::Error> {
-        let s: String = serde::Deserialize::deserialize(deserializer)?;
-        s.parse().map_err(serde::de::Error::custom)
+        use serde::de;
+
+        struct ProvenanceVisitor;
+        impl<'de> de::Visitor<'de> for ProvenanceVisitor {
+            type Value = ProvenanceType;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "a provenance string or table")
+            }
+            fn visit_str<E: de::Error>(self, s: &str) -> std::result::Result<Self::Value, E> {
+                s.parse().map_err(de::Error::custom)
+            }
+            fn visit_map<A: de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> std::result::Result<Self::Value, A::Error> {
+                let key: String = map
+                    .next_key()?
+                    .ok_or_else(|| de::Error::custom("empty provenance table"))?;
+                match key.as_str() {
+                    "slsa" => {
+                        #[derive(serde_derive::Deserialize)]
+                        struct SlsaInner {
+                            url: Option<String>,
+                        }
+                        let inner: SlsaInner = map.next_value()?;
+                        Ok(ProvenanceType::Slsa { url: inner.url })
+                    }
+                    other => Err(de::Error::custom(format!(
+                        "unknown provenance table key: {other}"
+                    ))),
+                }
+            }
+        }
+        deserializer.deserialize_any(ProvenanceVisitor)
     }
 }
 
@@ -109,12 +205,9 @@ pub struct PlatformInfo {
     /// References to conda packages in the shared conda-packages section (by basename)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conda_deps: Option<Vec<String>>,
-    /// Type of provenance verification that succeeded
+    /// Type of provenance verification that succeeded (SLSA carries its URL)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provenance: Option<ProvenanceType>,
-    /// URL or asset name of the provenance/attestation file (for SLSA .intoto.jsonl)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub provenance_url: Option<String>,
 }
 
 // Re-export CondaPackageInfo from conda backend for lockfile serialization
@@ -128,7 +221,6 @@ impl PlatformInfo {
             && self.url_api.is_none()
             && self.conda_deps.is_none()
             && self.provenance.is_none()
-            && self.provenance_url.is_none()
     }
 
     /// Merge this PlatformInfo with another, preserving important data.
@@ -158,11 +250,7 @@ impl PlatformInfo {
             url: self.url.clone().or_else(|| other.url.clone()),
             url_api: self.url_api.clone().or_else(|| other.url_api.clone()),
             conda_deps: self.conda_deps.clone().or_else(|| other.conda_deps.clone()),
-            provenance: std::cmp::max(self.provenance, other.provenance),
-            provenance_url: self
-                .provenance_url
-                .clone()
-                .or_else(|| other.provenance_url.clone()),
+            provenance: std::cmp::max(self.provenance.clone(), other.provenance.clone()),
         }
     }
 }
@@ -201,15 +289,41 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     ),
                     _ => None,
                 };
-                let provenance = match t.remove("provenance") {
-                    Some(toml::Value::String(s)) => Some(
-                        s.parse()
-                            .map_err(|_| eyre!("unrecognized provenance type {s:?} in lockfile"))?,
-                    ),
+                // Legacy: read provenance_url for backwards compat with old lockfiles
+                let legacy_provenance_url = match t.remove("provenance_url") {
+                    Some(toml::Value::String(s)) => Some(s),
                     _ => None,
                 };
-                let provenance_url = match t.remove("provenance_url") {
-                    Some(toml::Value::String(s)) => Some(s),
+                let provenance = match t.remove("provenance") {
+                    Some(toml::Value::String(s)) => {
+                        let mut prov: ProvenanceType = s
+                            .parse()
+                            .map_err(|_| eyre!("unrecognized provenance type {s:?} in lockfile"))?;
+                        // Attach legacy provenance_url to SLSA if present
+                        if let ProvenanceType::Slsa { ref mut url } = prov {
+                            *url = legacy_provenance_url;
+                        }
+                        Some(prov)
+                    }
+                    Some(toml::Value::Table(mut prov_table)) => {
+                        if let Some(slsa_val) = prov_table.remove("slsa") {
+                            let slsa_url = match slsa_val {
+                                toml::Value::Table(mut st) => match st.remove("url") {
+                                    Some(toml::Value::String(u)) => Some(u),
+                                    _ => None,
+                                },
+                                _ => None,
+                            };
+                            Some(ProvenanceType::Slsa { url: slsa_url })
+                        } else {
+                            // Unknown table variant
+                            let keys: Vec<_> = prov_table.keys().cloned().collect();
+                            bail!(
+                                "unrecognized provenance table format in lockfile: {:?}",
+                                keys
+                            );
+                        }
+                    }
                     _ => None,
                 };
                 Ok(PlatformInfo {
@@ -219,7 +333,6 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     url_api,
                     conda_deps,
                     provenance,
-                    provenance_url,
                 })
             }
             _ => bail!("unsupported asset info format"),
@@ -247,11 +360,21 @@ impl From<PlatformInfo> for toml::Value {
                 .into();
             table.insert("conda_deps".to_string(), deps);
         }
-        if let Some(provenance) = platform_info.provenance {
-            table.insert("provenance".to_string(), provenance.to_string().into());
-        }
-        if let Some(provenance_url) = platform_info.provenance_url {
-            table.insert("provenance_url".to_string(), provenance_url.into());
+        if let Some(ref provenance) = platform_info.provenance {
+            match provenance {
+                ProvenanceType::Slsa { url } => {
+                    let mut slsa_table = toml::Table::new();
+                    if let Some(url) = url {
+                        slsa_table.insert("url".to_string(), url.clone().into());
+                    }
+                    let mut prov_table = toml::Table::new();
+                    prov_table.insert("slsa".to_string(), toml::Value::Table(slsa_table));
+                    table.insert("provenance".to_string(), toml::Value::Table(prov_table));
+                }
+                _ => {
+                    table.insert("provenance".to_string(), provenance.to_string().into());
+                }
+            }
         }
         toml::Value::Table(table)
     }
@@ -531,10 +654,10 @@ impl Lockfile {
                     // For conda_deps, always use the new value - None means "no dependencies"
                     // rather than "not computed", so we shouldn't preserve stale deps
                     conda_deps: platform_info.conda_deps,
-                    provenance: std::cmp::max(platform_info.provenance, existing.provenance),
-                    provenance_url: platform_info
-                        .provenance_url
-                        .or_else(|| existing.provenance_url.clone()),
+                    provenance: std::cmp::max(
+                        platform_info.provenance,
+                        existing.provenance.clone(),
+                    ),
                 }
             } else {
                 platform_info
@@ -2132,24 +2255,46 @@ backend = "conda:jq"
         let info = PlatformInfo {
             checksum: Some("sha256:abc123".to_string()),
             url: Some("https://example.com/tool.tar.gz".to_string()),
-            provenance: Some(ProvenanceType::Slsa),
-            provenance_url: Some("https://example.com/tool.intoto.jsonl".to_string()),
+            provenance: Some(ProvenanceType::Slsa {
+                url: Some("https://example.com/tool.intoto.jsonl".to_string()),
+            }),
             ..Default::default()
         };
 
-        // Test toml roundtrip
+        // Test toml roundtrip — SLSA serializes as a table with url inside
         let toml_val: toml::Value = info.clone().into();
         let table = toml_val.as_table().unwrap();
-        assert_eq!(table.get("provenance").unwrap().as_str().unwrap(), "slsa");
+        let prov_table = table.get("provenance").unwrap().as_table().unwrap();
+        let slsa_table = prov_table.get("slsa").unwrap().as_table().unwrap();
         assert_eq!(
-            table.get("provenance_url").unwrap().as_str().unwrap(),
+            slsa_table.get("url").unwrap().as_str().unwrap(),
             "https://example.com/tool.intoto.jsonl"
         );
         let parsed: PlatformInfo = toml_val.try_into().unwrap();
-        assert_eq!(parsed.provenance, Some(ProvenanceType::Slsa));
         assert_eq!(
-            parsed.provenance_url,
-            Some("https://example.com/tool.intoto.jsonl".to_string())
+            parsed.provenance,
+            Some(ProvenanceType::Slsa {
+                url: Some("https://example.com/tool.intoto.jsonl".to_string())
+            })
+        );
+    }
+
+    #[test]
+    fn test_provenance_legacy_provenance_url_compat() {
+        // Old lockfile format: provenance = "slsa" + provenance_url = "..."
+        // Must go through TryFrom<toml::Value> which handles the legacy field
+        let mut table = toml::Table::new();
+        table.insert("provenance".to_string(), "slsa".into());
+        table.insert(
+            "provenance_url".to_string(),
+            "https://example.com/tool.intoto.jsonl".into(),
+        );
+        let parsed = PlatformInfo::try_from(toml::Value::Table(table)).unwrap();
+        assert_eq!(
+            parsed.provenance,
+            Some(ProvenanceType::Slsa {
+                url: Some("https://example.com/tool.intoto.jsonl".to_string())
+            })
         );
     }
 
@@ -2173,7 +2318,7 @@ backend = "conda:jq"
     #[test]
     fn test_provenance_not_empty() {
         let info = PlatformInfo {
-            provenance: Some(ProvenanceType::Slsa),
+            provenance: Some(ProvenanceType::Slsa { url: None }),
             ..Default::default()
         };
         assert!(!info.is_empty());

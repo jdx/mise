@@ -655,12 +655,12 @@ impl RubyPlugin {
         }
 
         // Enforce lockfile provenance
-        if let Some(expected) = locked_provenance {
+        if let Some(ref expected) = locked_provenance {
             let got = tv
                 .lock_platforms
                 .get(&platform_key)
-                .and_then(|pi| pi.provenance);
-            if got != Some(expected) {
+                .and_then(|pi| pi.provenance.as_ref());
+            if !got.is_some_and(|g| g.is_same_variant(expected)) {
                 return Err(eyre!(
                     "Lockfile requires {expected} provenance for {tv} but {got:?} was used. \
                      This may indicate a downgrade attack. Enable the corresponding verification setting \

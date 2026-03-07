@@ -666,7 +666,7 @@ impl AquaBackend {
             && let Some(slsa) = &pkg.slsa_provenance
             && slsa.enabled != Some(false)
         {
-            return Some(ProvenanceType::Slsa);
+            return Some(ProvenanceType::Slsa { url: None });
         }
 
         // Check for cosign (nested under checksum config)
@@ -991,11 +991,18 @@ impl AquaBackend {
         // When the lockfile specifies a provenance type, only run that specific mechanism.
         // This prevents false-positive downgrade errors when a tool supports multiple mechanisms
         // (e.g., both minisign and cosign) that would otherwise compete for the provenance slot.
-        let skip_attestations =
-            locked_provenance.is_some_and(|l| l != ProvenanceType::GithubAttestations);
-        let skip_slsa = locked_provenance.is_some_and(|l| l != ProvenanceType::Slsa);
-        let skip_minisign = locked_provenance.is_some_and(|l| l != ProvenanceType::Minisign);
-        let skip_cosign = locked_provenance.is_some_and(|l| l != ProvenanceType::Cosign);
+        let skip_attestations = locked_provenance
+            .as_ref()
+            .is_some_and(|l| !l.is_same_variant(&ProvenanceType::GithubAttestations));
+        let skip_slsa = locked_provenance
+            .as_ref()
+            .is_some_and(|l| !l.is_same_variant(&ProvenanceType::Slsa { url: None }));
+        let skip_minisign = locked_provenance
+            .as_ref()
+            .is_some_and(|l| !l.is_same_variant(&ProvenanceType::Minisign));
+        let skip_cosign = locked_provenance
+            .as_ref()
+            .is_some_and(|l| !l.is_same_variant(&ProvenanceType::Cosign));
 
         if !skip_attestations {
             self.verify_github_artifact_attestations(ctx, tv, pkg, v, filename)
@@ -1049,13 +1056,13 @@ impl AquaBackend {
         }
         // If lockfile recorded provenance, verify that the type matches
         // (checked after all verification methods including cosign have had a chance to record)
-        if let Some(expected) = locked_provenance {
+        if let Some(ref expected) = locked_provenance {
             let platform_key = self.get_platform_key();
             let got = tv
                 .lock_platforms
                 .get(&platform_key)
-                .and_then(|pi| pi.provenance);
-            if got != Some(expected) {
+                .and_then(|pi| pi.provenance.as_ref());
+            if !got.is_some_and(|g| g.is_same_variant(expected)) {
                 return Err(eyre!(
                     "Lockfile requires {expected} provenance for {tv} but {got:?} was used. \
                      This may indicate a downgrade attack. Enable the corresponding verification setting \
@@ -1218,8 +1225,9 @@ impl AquaBackend {
                     let platform_key = self.get_platform_key();
                     let pi = tv.lock_platforms.entry(platform_key).or_default();
                     if pi.provenance.is_none() {
-                        pi.provenance = Some(ProvenanceType::Slsa);
-                        pi.provenance_url = Some(provenance_download_url.clone());
+                        pi.provenance = Some(ProvenanceType::Slsa {
+                            url: Some(provenance_download_url.clone()),
+                        });
                     }
                 }
                 Ok(false) => {
@@ -1420,7 +1428,11 @@ impl AquaBackend {
                             debug!("Cosign signature verified successfully with key for {tv}");
                             let platform_key = self.get_platform_key();
                             let pi = tv.lock_platforms.entry(platform_key).or_default();
-                            if pi.provenance.is_none_or(|p| p < ProvenanceType::Cosign) {
+                            if pi
+                                .provenance
+                                .as_ref()
+                                .is_none_or(|p| *p < ProvenanceType::Cosign)
+                            {
                                 pi.provenance = Some(ProvenanceType::Cosign);
                             }
                         }
@@ -1475,7 +1487,11 @@ impl AquaBackend {
                             debug!("Cosign bundle verified successfully for {tv}");
                             let platform_key = self.get_platform_key();
                             let pi = tv.lock_platforms.entry(platform_key).or_default();
-                            if pi.provenance.is_none_or(|p| p < ProvenanceType::Cosign) {
+                            if pi
+                                .provenance
+                                .as_ref()
+                                .is_none_or(|p| *p < ProvenanceType::Cosign)
+                            {
                                 pi.provenance = Some(ProvenanceType::Cosign);
                             }
                         }
