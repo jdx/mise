@@ -334,9 +334,9 @@ impl Backend for UnifiedGitBackend {
 
         match asset {
             Ok(asset) => {
-                // Detect provenance availability from release assets
+                // Detect provenance availability from release assets and attestation API
                 let provenance = if !self.is_gitlab() && !self.is_forgejo() {
-                    self.detect_provenance_type(tv, &opts, &repo, &api_url)
+                    self.detect_provenance_type(tv, &opts, &repo, &api_url, asset.digest.as_deref())
                         .await
                 } else {
                     None
@@ -368,13 +368,15 @@ impl UnifiedGitBackend {
         Self { ba: Arc::new(ba) }
     }
 
-    /// Detect what provenance type is available for a release by checking its assets.
+    /// Detect what provenance type is available for a release by checking its assets
+    /// and querying the GitHub attestation API.
     async fn detect_provenance_type(
         &self,
         tv: &ToolVersion,
         opts: &ToolVersionOptions,
         repo: &str,
         api_url: &str,
+        asset_digest: Option<&str>,
     ) -> Option<String> {
         let settings = Settings::get();
         let version = &tv.version;
@@ -389,14 +391,33 @@ impl UnifiedGitBackend {
             .await
             .ok()?;
 
+        // Check github-attestations first (higher priority, matching install verification order)
+        // Uses the asset digest from the GitHub API to query attestations without downloading
+        if settings.github_attestations
+            && settings.github.github_attestations
+            && let Some(digest) = asset_digest
+        {
+            let parts: Vec<&str> = repo.split('/').collect();
+            if parts.len() == 2 {
+                let (owner, repo_name) = (parts[0], parts[1]);
+                if let Ok(source) = sigstore_verification::sources::github::GitHubSource::new(
+                    owner,
+                    repo_name,
+                    env::GITHUB_TOKEN.as_deref(),
+                ) {
+                    use sigstore_verification::AttestationSource;
+                    let artifact_ref = sigstore_verification::ArtifactRef::from_digest(digest);
+                    if let Ok(attestations) = source.fetch_attestations(&artifact_ref).await {
+                        if !attestations.is_empty() {
+                            return Some("github-attestations".to_string());
+                        }
+                    }
+                }
+            }
+        }
+
         // Check for SLSA provenance from release assets
         // (.intoto.jsonl for SLSA, .sigstore.json/.sigstore for sigstore bundles)
-        //
-        // Limitation: "github-attestations" cannot be detected during `mise lock` because
-        // the GitHub attestation API requires the artifact's sha256 digest, which is only
-        // available after downloading. For github-backend tools that only use
-        // github-attestations (no SLSA assets), provenance will be recorded on first
-        // `mise install` and committed to the lockfile from that point forward.
         if settings.slsa && settings.github.slsa {
             let has_slsa = release.assets.iter().any(|a| {
                 let name = a.name.to_lowercase();
