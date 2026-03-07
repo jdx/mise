@@ -324,12 +324,13 @@ impl Backend for ZigPlugin {
         pi.provenance = Some("minisign".to_string());
 
         if let Some(ref expected) = locked_provenance
-            && expected != "minisign" {
-                return Err(eyre::eyre!(
-                    "Lockfile requires {expected} provenance for {tv} but minisign was used. \
+            && expected != "minisign"
+        {
+            return Err(eyre::eyre!(
+                "Lockfile requires {expected} provenance for {tv} but minisign was used. \
                      This may indicate a downgrade attack."
-                ));
-            }
+            ));
+        }
 
         ctx.pr.next_operation();
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
