@@ -309,7 +309,9 @@ impl Backend for ZigPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        // download() includes minisign verification
+        // download() unconditionally verifies minisign (not behind a settings check).
+        // If minisign verification fails, download() returns Err and we never reach
+        // the provenance recording below. This is safe to record unconditionally.
         let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
 
         // Enforce lockfile provenance expectation
@@ -319,10 +321,6 @@ impl Backend for ZigPlugin {
             .get_mut(&platform_key)
             .and_then(|pi| pi.provenance.take());
 
-        // Record minisign provenance (download() always verifies minisign)
-        let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
-        pi.provenance = Some("minisign".to_string());
-
         if let Some(ref expected) = locked_provenance
             && expected != "minisign"
         {
@@ -331,6 +329,11 @@ impl Backend for ZigPlugin {
                      This may indicate a downgrade attack."
             ));
         }
+
+        // Record minisign provenance — only reached if download() (and its
+        // minisign::verify call) succeeded
+        let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
+        pi.provenance = Some("minisign".to_string());
 
         ctx.pr.next_operation();
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;

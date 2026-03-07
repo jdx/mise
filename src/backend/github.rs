@@ -1130,11 +1130,6 @@ impl UnifiedGitBackend {
     ) -> Result<Option<(String, Option<String>)>> {
         let settings = Settings::get();
 
-        // Only verify for GitHub repos (not GitLab)
-        if self.is_gitlab() || self.is_forgejo() {
-            return Ok(None);
-        }
-
         // If the lockfile says this tool has provenance, enforce it
         let platform_key = self.get_platform_key();
         let locked_provenance = tv
@@ -1142,6 +1137,17 @@ impl UnifiedGitBackend {
             .get(&platform_key)
             .and_then(|pi| pi.provenance.as_deref())
             .map(|s| s.to_string());
+
+        // Only verify for GitHub repos (not GitLab/Forgejo)
+        if self.is_gitlab() || self.is_forgejo() {
+            if let Some(expected) = &locked_provenance {
+                return Err(eyre::eyre!(
+                    "Lockfile requires {expected} provenance for {tv} but verification is not available \
+                     for GitLab/Forgejo backends. This may indicate a downgrade attack."
+                ));
+            }
+            return Ok(None);
+        }
 
         // When the lockfile specifies a provenance type, only try the matching verification
         // to avoid false-positive downgrade errors when a tool supports multiple mechanisms
