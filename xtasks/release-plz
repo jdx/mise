@@ -318,7 +318,8 @@ if [[ -n $AQUA_CHANGELOG_MD ]]; then
 	' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
 fi
 
-mise up
+# TODO: re-enable once fd v10.4.0 asset is fixed (missing fd-v10.4.0-x86_64-unknown-linux-musl.tar.gz)
+# mise up
 mise lock
 # Refresh PATH after mise up, since upgraded tools have new install paths
 eval "$(mise env)"
