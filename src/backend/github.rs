@@ -391,8 +391,12 @@ impl UnifiedGitBackend {
 
         // Check for SLSA provenance from release assets
         // (.intoto.jsonl for SLSA, .sigstore.json/.sigstore for sigstore bundles)
-        // Note: "github-attestations" uses the GitHub attestation API (not asset files)
-        // and cannot be detected from release assets alone.
+        //
+        // Limitation: "github-attestations" cannot be detected during `mise lock` because
+        // the GitHub attestation API requires the artifact's sha256 digest, which is only
+        // available after downloading. For github-backend tools that only use
+        // github-attestations (no SLSA assets), provenance will be recorded on first
+        // `mise install` and committed to the lockfile from that point forward.
         if settings.slsa && settings.github.slsa {
             let has_slsa = release.assets.iter().any(|a| {
                 let name = a.name.to_lowercase();

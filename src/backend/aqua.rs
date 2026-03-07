@@ -989,7 +989,6 @@ impl AquaBackend {
 
         // If lockfile recorded provenance, verify that the type matches
         if let Some(ref expected) = locked_provenance {
-            let platform_key = self.get_platform_key();
             let got = tv
                 .lock_platforms
                 .get(&platform_key)
