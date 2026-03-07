@@ -652,18 +652,22 @@ impl AquaBackend {
         let settings = Settings::get();
 
         // Check for GitHub artifact attestations
-        if settings.github_attestations && settings.aqua.github_attestations
+        if settings.github_attestations
+            && settings.aqua.github_attestations
             && let Some(att) = &pkg.github_artifact_attestations
-                && att.enabled != Some(false) {
-                    return Some("github-attestations".to_string());
-                }
+            && att.enabled != Some(false)
+        {
+            return Some("github-attestations".to_string());
+        }
 
         // Check for SLSA provenance
-        if settings.slsa && settings.aqua.slsa
+        if settings.slsa
+            && settings.aqua.slsa
             && let Some(slsa) = &pkg.slsa_provenance
-                && slsa.enabled != Some(false) {
-                    return Some("slsa".to_string());
-                }
+            && slsa.enabled != Some(false)
+        {
+            return Some("slsa".to_string());
+        }
 
         None
     }
@@ -973,17 +977,16 @@ impl AquaBackend {
         self.verify_github_artifact_attestations(ctx, tv, pkg, v, filename)
             .await?;
 
-        // If lockfile recorded provenance but none was verified, it's a downgrade attack
-        if let Some(expected) = locked_provenance {
+        // If lockfile recorded provenance, verify that the type matches
+        if let Some(ref expected) = locked_provenance {
             let platform_key = self.get_platform_key();
-            let verified = tv
+            let got = tv
                 .lock_platforms
                 .get(&platform_key)
-                .and_then(|pi| pi.provenance.as_deref())
-                .is_some();
-            if !verified {
+                .and_then(|pi| pi.provenance.as_deref());
+            if got != Some(expected.as_str()) {
                 return Err(eyre!(
-                    "Lockfile requires {expected} provenance for {tv} but verification was not performed. \
+                    "Lockfile requires {expected} provenance for {tv} but {got:?} was used. \
                      This may indicate a downgrade attack. Enable the corresponding verification setting \
                      or update the lockfile."
                 ));
@@ -1234,10 +1237,11 @@ impl AquaBackend {
                     ctx.pr
                         .set_message("✓ GitHub artifact attestations verified".to_string());
                     debug!("GitHub artifact attestations verified successfully for {tv}");
-                    // Record provenance in lockfile
+                    // Record provenance in lockfile (clear provenance_url in case SLSA set it earlier)
                     let platform_key = self.get_platform_key();
                     let pi = tv.lock_platforms.entry(platform_key).or_default();
                     pi.provenance = Some("github-attestations".to_string());
+                    pi.provenance_url = None;
                 }
                 Ok(false) => {
                     return Err(eyre!(

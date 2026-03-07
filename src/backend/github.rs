@@ -405,8 +405,6 @@ impl UnifiedGitBackend {
             let has_slsa = release.assets.iter().any(|a| {
                 let name = a.name.to_lowercase();
                 name.contains(".intoto.jsonl")
-                    || name.contains("provenance")
-                    || name.ends_with(".attestation")
             });
             if has_slsa {
                 return Some("slsa".to_string());
@@ -1158,6 +1156,14 @@ impl UnifiedGitBackend {
                 .await
             {
                 Ok(true) => {
+                    if let Some(ref expected) = locked_provenance {
+                        if expected != "github-attestations" {
+                            return Err(eyre::eyre!(
+                                "Lockfile requires {expected} provenance for {tv} but github-attestations was used instead. \
+                                 This may indicate a downgrade attack."
+                            ));
+                        }
+                    }
                     return Ok(Some(("github-attestations".to_string(), None)));
                 }
                 Ok(false) => {
@@ -1183,6 +1189,14 @@ impl UnifiedGitBackend {
         if settings.slsa && settings.github.slsa {
             match self.try_verify_slsa(ctx, tv, file_path).await {
                 Ok((true, provenance_url)) => {
+                    if let Some(ref expected) = locked_provenance {
+                        if expected != "slsa" {
+                            return Err(eyre::eyre!(
+                                "Lockfile requires {expected} provenance for {tv} but slsa was used instead. \
+                                 This may indicate a downgrade attack."
+                            ));
+                        }
+                    }
                     return Ok(Some(("slsa".to_string(), provenance_url)));
                 }
                 Ok((false, _)) => {
@@ -1200,9 +1214,8 @@ impl UnifiedGitBackend {
             }
         }
 
-        // If lockfile recorded provenance for this tool but we couldn't verify it,
-        // that's a security error - possible downgrade/stripping attack
-        if let Some(expected) = locked_provenance {
+        // If lockfile recorded provenance but no verification succeeded, it's a downgrade attack
+        if let Some(expected) = &locked_provenance {
             return Err(eyre::eyre!(
                 "Lockfile requires {expected} provenance for {tv} but verification was not performed. \
                  This may indicate a downgrade attack. Enable the corresponding verification setting \
