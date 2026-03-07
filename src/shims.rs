@@ -25,7 +25,7 @@ use tokio::task::JoinSet;
 pub async fn handle_shim() -> Result<()> {
     // TODO: instead, check if bin is in shims dir
     let bin_name = *env::MISE_BIN_NAME;
-    if bin_name.starts_with("mise") || cfg!(test) {
+    if env::is_mise_binary(bin_name) || cfg!(test) {
         return Ok(());
     }
     let mut config = Config::get().await?;
