@@ -555,8 +555,14 @@ impl Backend for PythonPlugin {
         } else {
             self.install_or_update_python_build(None)?;
             let python_build_bin = self.python_build_bin();
-            plugins::core::run_fetch_task_with_timeout(move || {
-                let output = cmd!(python_build_bin, "--definitions").read()?;
+            let python_build_str = python_build_bin.to_string_lossy().to_string();
+            plugins::core::run_fetch_task_with_timeout_async(async move || {
+                let output = crate::cmd::cmd_read_async_inherited_env(
+                    &python_build_str,
+                    &["--definitions"],
+                    std::iter::empty::<(&str, &std::ffi::OsStr)>(),
+                )
+                .await?;
                 let versions = output
                     .split('\n')
                     // remove free-threaded pythons like 3.13t and 3.14t-dev
@@ -569,6 +575,7 @@ impl Backend for PythonPlugin {
                     .collect();
                 Ok(versions)
             })
+            .await
         }
     }
 

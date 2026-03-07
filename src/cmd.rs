@@ -705,6 +705,88 @@ enum ChildProcessOutput {
     Signal(i32),
 }
 
+/// Run a command asynchronously with `kill_on_drop(true)` so that timeouts
+/// (via `tokio::time::timeout`) actually terminate the subprocess.
+///
+/// This variant **clears** the environment and sets only the provided `env` —
+/// use it for backends that pass a full env from `dependency_env()`.
+pub async fn cmd_read_async<I, K, V>(program: &str, args: &[&str], env: I) -> Result<String>
+where
+    I: IntoIterator<Item = (K, V)>,
+    K: AsRef<OsStr>,
+    V: AsRef<OsStr>,
+{
+    let display_args = args.join(" ");
+    debug!("$ {program} {display_args}");
+
+    let output = tokio::process::Command::new(program)
+        .args(args)
+        .env_clear()
+        .envs(env)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .output()
+        .await
+        .wrap_err_with(|| format!("failed to execute command: {program} {display_args}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!(
+            "{program} {display_args} failed: exit code {}\n{}",
+            output.status.code().unwrap_or(-1),
+            stderr.trim()
+        );
+    }
+
+    let stdout = String::from_utf8(output.stdout)
+        .wrap_err_with(|| format!("{program} produced invalid UTF-8 output"))?;
+    Ok(stdout.trim_end().to_string())
+}
+
+/// Like [`cmd_read_async`] but **inherits** the current process environment,
+/// only adding the provided extra variables on top.
+///
+/// Use this for core plugins that need the ambient PATH / locale / etc.
+pub async fn cmd_read_async_inherited_env<I, K, V>(
+    program: &str,
+    args: &[&str],
+    extra_env: I,
+) -> Result<String>
+where
+    I: IntoIterator<Item = (K, V)>,
+    K: AsRef<OsStr>,
+    V: AsRef<OsStr>,
+{
+    let display_args = args.join(" ");
+    debug!("$ {program} {display_args}");
+
+    let output = tokio::process::Command::new(program)
+        .args(args)
+        .envs(extra_env)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .output()
+        .await
+        .wrap_err_with(|| format!("failed to execute command: {program} {display_args}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!(
+            "{program} {display_args} failed: exit code {}\n{}",
+            output.status.code().unwrap_or(-1),
+            stderr.trim()
+        );
+    }
+
+    let stdout = String::from_utf8(output.stdout)
+        .wrap_err_with(|| format!("{program} produced invalid UTF-8 output"))?;
+    Ok(stdout.trim_end().to_string())
+}
+
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {

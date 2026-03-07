@@ -243,16 +243,14 @@ impl Backend for GoPlugin {
             // Fast path: use git ls-remote to get all go tags efficiently
             // We can't use github::list_tags here because golang/go has 500+ tags
             // and the "go1.x" version tags aren't on the first page of API results
-            plugins::core::run_fetch_task_with_timeout(move || {
-                let output = cmd!(
+            let go_repo = Settings::get().go_repo.clone();
+            plugins::core::run_fetch_task_with_timeout_async(async move || {
+                let output = crate::cmd::cmd_read_async_inherited_env(
                     "git",
-                    "ls-remote",
-                    "--tags",
-                    "--refs",
-                    &Settings::get().go_repo,
-                    "go*"
+                    &["ls-remote", "--tags", "--refs", &go_repo, "go*"],
+                    std::iter::empty::<(&str, &std::ffi::OsStr)>(),
                 )
-                .read()?;
+                .await?;
                 let versions: Vec<VersionInfo> = output
                     .lines()
                     .filter_map(|line| line.split("/go").last())
@@ -267,7 +265,8 @@ impl Backend for GoPlugin {
                     })
                     .collect();
                 Ok(versions)
-            })?
+            })
+            .await?
         };
         Ok(versions)
     }

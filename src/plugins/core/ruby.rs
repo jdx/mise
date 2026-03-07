@@ -743,15 +743,18 @@ impl Backend for RubyPlugin {
                 let release_dates = self.fetch_ruby_release_dates().await;
 
                 let ruby_build_bin = self.ruby_build_bin();
-                let versions = plugins::core::run_fetch_task_with_timeout(move || {
-                    let output = cmd!(ruby_build_bin, "--definitions").read()?;
-                    let versions: Vec<String> = output
-                        .split('\n')
-                        .sorted_by_cached_key(|s| regex!(r#"^\d"#).is_match(s)) // show matz ruby first
-                        .map(|s| s.to_string())
-                        .collect();
-                    Ok(versions)
-                })?;
+                let ruby_build_str = ruby_build_bin.to_string_lossy().to_string();
+                let output = crate::cmd::cmd_read_async_inherited_env(
+                    &ruby_build_str,
+                    &["--definitions"],
+                    std::iter::empty::<(&str, &std::ffi::OsStr)>(),
+                )
+                .await?;
+                let versions: Vec<String> = output
+                    .split('\n')
+                    .sorted_by_cached_key(|s| regex!(r#"^\d"#).is_match(s)) // show matz ruby first
+                    .map(|s| s.to_string())
+                    .collect();
 
                 // Map versions to VersionInfo with created_at timestamps
                 let version_infos = versions

@@ -10,15 +10,15 @@ use crate::toolset::ToolVersion;
 use crate::{Result, config::Config, env};
 use async_trait::async_trait;
 use indoc::formatdoc;
-use once_cell::sync::OnceCell;
 use serde::Deserialize;
 use std::path::Path;
 use std::{fmt::Debug, sync::Arc};
+use tokio::sync::OnceCell as TokioOnceCell;
 
 const GEM_PROGRAM: &str = if cfg!(windows) { "gem.cmd" } else { "gem" };
 
 /// Cached gem source URL, memoized globally after first successful detection
-static GEM_SOURCE: OnceCell<String> = OnceCell::new();
+static GEM_SOURCE: TokioOnceCell<String> = TokioOnceCell::const_new();
 
 #[derive(Debug)]
 pub struct GemBackend {
@@ -113,23 +113,20 @@ impl GemBackend {
     async fn get_gem_source(&self, config: &Arc<Config>) -> &'static str {
         const DEFAULT_SOURCE: &str = "https://rubygems.org/";
 
-        // Return cached source if available
-        if let Some(source) = GEM_SOURCE.get() {
-            return source.as_str();
-        }
-
         // Get the mise-managed Ruby environment
         let env = self.dependency_env(config).await.unwrap_or_default();
 
         // Try to initialize the source - only memoize on success
-        match GEM_SOURCE.get_or_try_init(|| {
-            let output = cmd!(GEM_PROGRAM, "sources")
-                .full_env(&env)
-                .read()
-                .map_err(|e| eyre::eyre!("failed to run `gem sources`: {e}"))?;
+        match GEM_SOURCE
+            .get_or_try_init(|| async {
+                let output = crate::cmd::cmd_read_async(GEM_PROGRAM, &["sources"], &env)
+                    .await
+                    .map_err(|e| eyre::eyre!("failed to run `gem sources`: {e}"))?;
 
-            Ok::<_, eyre::Report>(parse_gem_source_output(&output))
-        }) {
+                Ok::<_, eyre::Report>(parse_gem_source_output(&output))
+            })
+            .await
+        {
             Ok(source) => source.as_str(),
             Err(e) => {
                 warn!("{e}, falling back to rubygems.org");
