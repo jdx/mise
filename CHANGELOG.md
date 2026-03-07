@@ -1,5 +1,58 @@
 # Changelog
 
+## [2026.3.4](https://github.com/jdx/mise/compare/v2026.3.3..v2026.3.4) - 2026-03-07
+
+### 🚀 Features
+
+- **(github)** keep exe extensions on Windows by @iki in [#8424](https://github.com/jdx/mise/pull/8424)
+- **(task)** add `interactive` field for exclusive terminal access by @jdx in [#8491](https://github.com/jdx/mise/pull/8491)
+- add header comment to generated lockfiles by @ivy in [#8481](https://github.com/jdx/mise/pull/8481)
+- runtime musl/glibc detection for correct libc variant selection by @jdx in [#8490](https://github.com/jdx/mise/pull/8490)
+
+### 🐛 Bug Fixes
+
+- **(github)** use registry platform options during install by @jdx in [#8492](https://github.com/jdx/mise/pull/8492)
+- **(http)** store tool opts as native TOML to fix platform switching by @jdx in [#8448](https://github.com/jdx/mise/pull/8448)
+- **(installer)** error if MISE_INSTALL_PATH is a directory by @jdx in [#8468](https://github.com/jdx/mise/pull/8468)
+- **(prepare)** resolve sources/outputs relative to `dir` when set by @jdx in [#8472](https://github.com/jdx/mise/pull/8472)
+- **(ruby)** fetch precompiled binary by release tag instead of listing all releases by @jdx in [#8488](https://github.com/jdx/mise/pull/8488)
+- **(schema)** support structured objects in task depends by @risu729 in [#8463](https://github.com/jdx/mise/pull/8463)
+- **(task)** replace println!/eprintln! with calm_io in task output macros by @vmaleze in [#8485](https://github.com/jdx/mise/pull/8485)
+- handle scoped npm package names without backend prefix by @jdx in [#8477](https://github.com/jdx/mise/pull/8477)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:copr docker digest to c485c4c by @renovate[bot] in [#8484](https://github.com/jdx/mise/pull/8484)
+- update ghcr.io/jdx/mise:alpine docker digest to 8118bc7 by @renovate[bot] in [#8483](https://github.com/jdx/mise/pull/8483)
+
+### 📦 Registry
+
+- disable sd version test by @jdx in [#8489](https://github.com/jdx/mise/pull/8489)
+
+### New Contributors
+
+- @ivy made their first contribution in [#8481](https://github.com/jdx/mise/pull/8481)
+- @iki made their first contribution in [#8424](https://github.com/jdx/mise/pull/8424)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (5)
+
+- [`datadog-labs/pup`](https://github.com/datadog-labs/pup)
+- [`k1LoW/mo`](https://github.com/k1LoW/mo)
+- [`rtk-ai/rtk`](https://github.com/rtk-ai/rtk)
+- [`suzuki-shunsuke/docfresh`](https://github.com/suzuki-shunsuke/docfresh)
+- [`yashikota/exiftool-go`](https://github.com/yashikota/exiftool-go)
+
+#### Updated Packages (6)
+
+- [`cloudflare/cloudflared`](https://github.com/cloudflare/cloudflared)
+- [`mozilla/sccache`](https://github.com/mozilla/sccache)
+- [`owenlamont/ryl`](https://github.com/owenlamont/ryl)
+- [`spinel-coop/rv`](https://github.com/spinel-coop/rv)
+- [`technicalpickles/envsense`](https://github.com/technicalpickles/envsense)
+- [`weaviate/weaviate`](https://github.com/weaviate/weaviate)
+
 ## [2026.3.3](https://github.com/jdx/mise/compare/v2026.3.2..v2026.3.3) - 2026-03-04
 
 ### 🐛 Bug Fixes

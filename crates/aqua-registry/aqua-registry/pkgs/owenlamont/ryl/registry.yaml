@@ -8,6 +8,18 @@ packages:
     version_overrides:
       - version_constraint: semver("<= 0.2.0")
         no_asset: true
+      - version_constraint: semver("< 0.3.2")
+        asset: ryl-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: ryl-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -20,3 +32,5 @@ packages:
         overrides:
           - goos: windows
             format: zip
+        github_artifact_attestations:
+          signer_workflow: owenlamont/ryl/.github/workflows/release.yml

@@ -3,13 +3,62 @@ packages:
   - type: github_release
     repo_owner: cloudflare
     repo_name: cloudflared
-    description: cloudflared connects your machine or user identity to Cloudflare's global network
-    rosetta2: true
-    supported_envs:
-      - darwin
-      - linux
-      - amd64
-    asset: cloudflared-{{.OS}}-{{.Arch}}
-    overrides:
-      - goos: darwin
-        asset: cloudflared-{{.OS}}-{{.Arch}}.tgz
+    description: Cloudflare Tunnel client
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 2021.3.4")
+        error_message: This version is too old. Please update.
+      - version_constraint: Version in ["2021.6.0"]
+        asset: cloudflared-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        supported_envs:
+          - linux
+          - windows/amd64
+      - version_constraint: Version == "2021.8.0"
+        asset: cloudflared-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: arm
+          - goos: darwin
+            format: tgz
+            asset: cloudflared-{{.OS}}-{{.Arch}}.{{.Format}}
+      - version_constraint: Version in ["2021.8.5", "2021.10.2"]
+        asset: cloudflared-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        supported_envs:
+          - linux
+          - windows/amd64
+      - version_constraint: Version == "2022.12.0"
+        asset: cloudflared-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tgz
+        rosetta2: true
+        overrides:
+          - goos: linux
+            format: raw
+            asset: cloudflared-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 2024.6.1")
+        asset: cloudflared-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: darwin
+            format: tgz
+            asset: cloudflared-{{.OS}}-{{.Arch}}.{{.Format}}
+      - version_constraint: "true"
+        asset: cloudflared-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        overrides:
+          - goos: darwin
+            format: tgz
+            asset: cloudflared-{{.OS}}-{{.Arch}}.{{.Format}}
