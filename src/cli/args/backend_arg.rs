@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state::InstallStateTool;
-use crate::toolset::{ToolVersionOptions, install_state, parse_tool_options};
+use crate::toolset::{EPHEMERAL_OPT_KEYS, ToolVersionOptions, install_state, parse_tool_options};
 use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
 use eyre::{Result, bail};
@@ -76,7 +76,16 @@ impl<A: AsRef<str>> From<A> for BackendArg {
 
 impl From<InstallStateTool> for BackendArg {
     fn from(ist: InstallStateTool) -> Self {
-        let (short, tool_name, opts) = parse_backend_components(&ist.short, ist.full.as_ref());
+        let (short, tool_name, mut opts) = parse_backend_components(&ist.short, ist.full.as_ref());
+
+        // Merge manifest opts into the parsed opts (manifest opts provide defaults)
+        if !ist.opts.is_empty() {
+            let tvo = opts.get_or_insert_with(ToolVersionOptions::default);
+            for (k, v) in ist.opts {
+                tvo.opts.entry(k).or_insert(v);
+            }
+        }
+
         Self::new_raw(
             short,
             ist.full,
@@ -85,6 +94,19 @@ impl From<InstallStateTool> for BackendArg {
             BackendResolution::new(ist.explicit_backend),
         )
     }
+}
+
+/// Split a string like `"http:hello[url=...,bin=bin]"` into `("http:hello", "url=...,bin=bin")`.
+/// Returns `None` if no bracketed opts are present.
+pub fn split_bracketed_opts(s: &str) -> Option<(&str, &str)> {
+    regex!(r"^(.+)\[(.+)\]$")
+        .captures(s)
+        .map(|c| (c.get(1).unwrap().as_str(), c.get(2).unwrap().as_str()))
+}
+
+/// Strip trailing `[...]` opts from a string, e.g. `"foo[a=1]"` → `"foo"`.
+pub(crate) fn strip_opts(s: &str) -> String {
+    regex!(r#"\[.+\]$"#).replace_all(s, "").to_string()
 }
 
 fn parse_backend_components(
@@ -96,12 +118,12 @@ fn parse_backend_components(
         .unwrap_or(&short)
         .split_once(':')
         .unwrap_or(("", full.unwrap_or(&short)));
-    let short = regex!(r#"\[.+\]$"#).replace_all(&short, "").to_string();
+    let short = strip_opts(&short);
 
     let mut opts = None;
-    if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(tool_name) {
-        tool_name = c.get(1).unwrap().as_str();
-        opts = Some(parse_tool_options(c.get(2).unwrap().as_str()));
+    if let Some((name, opts_str)) = split_bracketed_opts(tool_name) {
+        tool_name = name;
+        opts = Some(parse_tool_options(opts_str));
     }
 
     (short, tool_name.to_string(), opts)
@@ -357,16 +379,19 @@ impl BackendArg {
 
     pub fn full_with_opts(&self) -> String {
         let full = self.full();
-        if regex!(r"^(.+)\[(.+)\]$").is_match(&full) {
+        if split_bracketed_opts(&full).is_some() {
             return full;
         }
         if let Some(opts) = &self.opts {
             let opts_str = opts
                 .opts
                 .iter()
-                // filter out global options that are only relevant for initial installation
-                .filter(|(k, _)| !["postinstall", "install_env"].contains(&k.as_str()))
-                .map(|(k, v)| format!("{k}={v}"))
+                .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str()))
+                .filter_map(|(k, v)| match v {
+                    toml::Value::String(s) => Some(format!("{k}={s}")),
+                    toml::Value::Table(_) | toml::Value::Array(_) => None,
+                    _ => Some(format!("{k}={v}")),
+                })
                 .collect::<Vec<_>>()
                 .join(",");
             if !full.contains(['[', ']']) && !opts_str.is_empty() {
@@ -378,15 +403,14 @@ impl BackendArg {
 
     pub fn full_without_opts(&self) -> String {
         let full = self.full();
-        if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&full) {
-            return c.get(1).unwrap().as_str().to_string();
+        if let Some((name, _)) = split_bracketed_opts(&full) {
+            return name.to_string();
         }
         full
     }
 
     pub fn opts(&self) -> ToolVersionOptions {
         // Start with registry options as base (if available)
-        // Use backend_options to get options specific to the backend being used
         let full = self.full();
         let mut opts = REGISTRY
             .get(self.short.as_str())
@@ -395,8 +419,8 @@ impl BackendArg {
 
         // Get user-provided options (from self.opts or from full string)
         let user_opts = self.opts.clone().unwrap_or_else(|| {
-            if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&full) {
-                parse_tool_options(c.get(2).unwrap().as_str())
+            if let Some((_, opts_str)) = split_bracketed_opts(&full) {
+                parse_tool_options(opts_str)
             } else {
                 ToolVersionOptions::default()
             }
@@ -439,8 +463,8 @@ impl BackendArg {
         if !self.resolution.explicit {
             let full = self.full();
             // Strip options since lockfiles have a separate options field
-            if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&full) {
-                return c.get(1).unwrap().as_str().to_string();
+            if let Some((name, _)) = split_bracketed_opts(&full) {
+                return name.to_string();
             }
             return full;
         }
@@ -463,8 +487,8 @@ impl BackendArg {
             }
         };
         // Strip options since lockfiles have a separate options field
-        if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&full) {
-            return c.get(1).unwrap().as_str().to_string();
+        if let Some((name, _)) = split_bracketed_opts(&full) {
+            return name.to_string();
         }
         full
     }
@@ -472,8 +496,7 @@ impl BackendArg {
     pub fn tool_name(&self) -> String {
         let full = self.full();
         let (_backend, tool_name) = full.split_once(':').unwrap_or(("", &full));
-        let tool_name = regex!(r#"\[.+\]$"#).replace_all(tool_name, "").to_string();
-        tool_name.to_string()
+        strip_opts(tool_name)
     }
 
     /// maps something like cargo:cargo-binstall to cargo-binstall and ubi:cargo-binstall, etc

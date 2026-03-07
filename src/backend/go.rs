@@ -163,7 +163,7 @@ impl Backend for GoBackend {
 
         // tags affect compilation
         if let Some(value) = opts.get("tags") {
-            result.insert("tags".to_string(), value.clone());
+            result.insert("tags".to_string(), value.to_string());
         }
 
         result

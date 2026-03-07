@@ -265,7 +265,7 @@ fn get_args(tv: &ToolVersion) -> (Option<String>, Option<Vec<String>>, Option<Ve
     let profile = rt
         .as_ref()
         .and_then(|rt| rt.profile.clone())
-        .or_else(|| tv.request.options().get("profile").cloned());
+        .or_else(|| tv.request.options().get("profile").map(|s| s.to_string()));
     let components = rt
         .as_ref()
         .and_then(|rt| rt.components.clone())

@@ -105,7 +105,9 @@ ToolRequestSet {
                     os: None,
                     install_env: {},
                     opts: {
-                        "venv": ".venv",
+                        "venv": String(
+                            ".venv",
+                        ),
                     },
                 },
                 source: MiseToml(

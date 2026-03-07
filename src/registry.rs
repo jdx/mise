@@ -131,7 +131,7 @@ impl RegistryTool {
 
         if let Some(backend) = self.get_backend(full) {
             for (k, v) in backend.options {
-                opts.insert(k.to_string(), v.to_string());
+                opts.insert(k.to_string(), toml::Value::String(v.to_string()));
             }
         }
 

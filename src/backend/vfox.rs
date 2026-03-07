@@ -116,7 +116,7 @@ impl Backend for VfoxBackend {
                 &tv.version,
                 tv.install_path(),
                 tv.download_path(),
-                tool_opts.opts.clone(),
+                tool_opts.opts_as_strings(),
             )
             .await
             .wrap_err("Backend install method failed")?;
@@ -296,7 +296,18 @@ impl VfoxBackend {
                         tool_name,
                         &tv.version,
                         tv.install_path(),
-                        opts.opts.clone(),
+                        opts.opts
+                            .iter()
+                            .map(|(k, v)| {
+                                (
+                                    k.clone(),
+                                    match v {
+                                        toml::Value::String(s) => s.clone(),
+                                        _ => v.to_string(),
+                                    },
+                                )
+                            })
+                            .collect(),
                     )
                     .await
                     .wrap_err("Backend exec env method failed")?

@@ -318,7 +318,7 @@ impl PythonPlugin {
             .map(|s| re_digits.replace(s, "").to_string());
         if cfg!(unix) {
             if let (Some(major), Some(minor), Some(suffix)) = (major, minor, suffix) {
-                if tv.request.options().get("patch_sysconfig") != Some(&"false".to_string()) {
+                if tv.request.options().get("patch_sysconfig") != Some("false") {
                     sysconfig::update_sysconfig(&install, major, minor, &suffix)?;
                 }
             } else {

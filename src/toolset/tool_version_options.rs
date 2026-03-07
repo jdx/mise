@@ -1,12 +1,22 @@
 use indexmap::IndexMap;
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+/// Option keys that are only relevant during initial installation and should not
+/// be persisted in the manifest or included in `full_with_opts()`.
+// install_env is a named field on ToolVersionOptions (serde puts it in self.install_env),
+// but parse_tool_options() can still place it in opts, so we filter it here as well.
+pub const EPHEMERAL_OPT_KEYS: &[&str] = &["postinstall", "install_env"];
+
+#[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct ToolVersionOptions {
     pub os: Option<Vec<String>>,
     pub install_env: IndexMap<String, String>,
     #[serde(flatten)]
-    pub opts: IndexMap<String, String>,
+    pub opts: IndexMap<String, toml::Value>,
 }
+
+// toml::Value doesn't implement Eq (due to floats), but we control the values
+// and won't have NaN, so this is safe in practice.
+impl Eq for ToolVersionOptions {}
 
 // Implement Hash manually to ensure deterministic hashing across IndexMap
 impl std::hash::Hash for ToolVersionOptions {
@@ -20,8 +30,31 @@ impl std::hash::Hash for ToolVersionOptions {
 
         // Hash opts in sorted order for deterministic hashing
         let mut opts_sorted: Vec<_> = self.opts.iter().collect();
-        opts_sorted.sort_by_key(|(k, _)| *k);
-        opts_sorted.hash(state);
+        opts_sorted.sort_by_key(|(k, _)| k.as_str());
+        for (k, v) in opts_sorted {
+            k.hash(state);
+            hash_toml_value(v, state);
+        }
+    }
+}
+
+fn hash_toml_value<H: std::hash::Hasher>(v: &toml::Value, state: &mut H) {
+    use std::hash::Hash;
+    match v {
+        toml::Value::Table(t) => {
+            let mut sorted: Vec<_> = t.iter().collect();
+            sorted.sort_by_key(|(k, _)| k.as_str());
+            for (k, v) in sorted {
+                k.hash(state);
+                hash_toml_value(v, state);
+            }
+        }
+        toml::Value::Array(arr) => {
+            for v in arr {
+                hash_toml_value(v, state);
+            }
+        }
+        _ => v.to_string().hash(state),
     }
 }
 
@@ -30,23 +63,32 @@ impl ToolVersionOptions {
         self.install_env.is_empty() && self.opts.is_empty()
     }
 
-    pub fn get(&self, key: &str) -> Option<&String> {
-        // First try direct lookup
-        if let Some(value) = self.opts.get(key) {
-            return Some(value);
-        }
-
-        // We can't return references to temporarily parsed TOML values,
-        // so nested lookup is not possible with this API.
-        // For nested values, users should access the raw opts and parse themselves.
-        None
+    /// Get a string value for a key. Returns the str for String values,
+    /// or None for non-string values.
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.opts.get(key).and_then(|v| v.as_str())
     }
 
-    pub fn merge(&mut self, other: &IndexMap<String, String>) {
+    /// Convert opts to string values, extracting inner strings from
+    /// `toml::Value::String` and calling `to_string()` on other types.
+    pub fn opts_as_strings(&self) -> IndexMap<String, String> {
+        self.opts
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.clone(),
+                    match v {
+                        toml::Value::String(s) => s.clone(),
+                        _ => v.to_string(),
+                    },
+                )
+            })
+            .collect()
+    }
+
+    pub fn merge(&mut self, other: &IndexMap<String, toml::Value>) {
         for (key, value) in other {
-            self.opts
-                .entry(key.to_string())
-                .or_insert(value.to_string());
+            self.opts.entry(key.to_string()).or_insert(value.clone());
         }
     }
 
@@ -59,7 +101,7 @@ impl ToolVersionOptions {
         self.get_nested_value_exists(key)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &String)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &toml::Value)> {
         self.opts.iter()
     }
 
@@ -74,19 +116,8 @@ impl ToolVersionOptions {
         let root_key = parts[0];
         let nested_path = &parts[1..];
 
-        // Get the root value and try to parse it as TOML
         if let Some(value) = self.opts.get(root_key) {
-            if let Ok(toml_value) = toml::de::from_str::<toml::Value>(value) {
-                return Self::value_exists_at_path(&toml_value, nested_path);
-            } else if value.trim().starts_with('{') && value.trim().ends_with('}') {
-                // Try to parse as inline TOML table
-                if let Ok(toml_value) =
-                    toml::de::from_str::<toml::Value>(&format!("value = {value}"))
-                    && let Some(table_value) = toml_value.get("value")
-                {
-                    return Self::value_exists_at_path(table_value, nested_path);
-                }
-            }
+            return Self::value_exists_at_path(value, nested_path);
         }
 
         false
@@ -109,9 +140,8 @@ impl ToolVersionOptions {
         }
     }
 
-    // New method to get nested values as owned Strings
+    /// Get nested values as owned Strings by navigating the toml::Value tree.
     pub fn get_nested_string(&self, key: &str) -> Option<String> {
-        // Split the key by dots to navigate nested structure
         let parts: Vec<&str> = key.split('.').collect();
         if parts.len() < 2 {
             return None;
@@ -120,19 +150,8 @@ impl ToolVersionOptions {
         let root_key = parts[0];
         let nested_path = &parts[1..];
 
-        // Get the root value and try to parse it as TOML
         if let Some(value) = self.opts.get(root_key) {
-            if let Ok(toml_value) = toml::de::from_str::<toml::Value>(value) {
-                return Self::get_string_at_path(&toml_value, nested_path);
-            } else if value.trim().starts_with('{') && value.trim().ends_with('}') {
-                // Try to parse as inline TOML table
-                if let Ok(toml_value) =
-                    toml::de::from_str::<toml::Value>(&format!("value = {value}"))
-                    && let Some(table_value) = toml_value.get("value")
-                {
-                    return Self::get_string_at_path(table_value, nested_path);
-                }
-            }
+            return Self::get_string_at_path(value, nested_path);
         }
 
         None
@@ -163,21 +182,61 @@ impl ToolVersionOptions {
 }
 
 pub fn parse_tool_options(s: &str) -> ToolVersionOptions {
+    // Try TOML parsing first (handles nested structures like platforms={...} correctly)
+    if let Some(tvo) = try_parse_as_toml(s) {
+        return tvo;
+    }
+    // Fall back to manual parsing for legacy formats with unquoted values
+    parse_tool_options_manual(s)
+}
+
+/// Try parsing an options string as a TOML inline table.
+/// Returns `Some(opts)` if the string is valid TOML, `None` otherwise.
+fn try_parse_as_toml(s: &str) -> Option<ToolVersionOptions> {
+    let toml_str = format!("_x_ = {{ {s} }}");
+    let value: toml::Value = toml::from_str(&toml_str).ok()?;
+    let table = value.get("_x_")?.as_table()?;
+    let mut tvo = ToolVersionOptions::default();
+    for (k, v) in table {
+        match v {
+            toml::Value::Table(_) | toml::Value::Array(_) => {
+                tvo.opts.insert(k.clone(), v.clone());
+            }
+            toml::Value::String(_) => {
+                tvo.opts.insert(k.clone(), v.clone());
+            }
+            _ => {
+                // Convert scalar values (ints, bools, floats) to strings
+                tvo.opts.insert(
+                    k.clone(),
+                    toml::Value::String(v.to_string().trim_matches('"').to_string()),
+                );
+            }
+        }
+    }
+    Some(tvo)
+}
+
+/// Legacy manual parser for option strings with unquoted values (e.g. `exe=rg,match=musl`).
+/// Splits by commas, but segments without `=` are appended to the previous key's value.
+fn parse_tool_options_manual(s: &str) -> ToolVersionOptions {
     let mut tvo = ToolVersionOptions::default();
     let mut current_key: Option<String> = None;
     for opt in s.split(',') {
         if let Some((k, v)) = opt.split_once('=') {
             if !k.trim().is_empty() {
-                tvo.opts.insert(k.trim().to_string(), v.to_string());
+                tvo.opts
+                    .insert(k.trim().to_string(), toml::Value::String(v.to_string()));
                 current_key = Some(k.trim().to_string());
             }
         } else if !opt.is_empty() {
             // No '=' found, append to the previous value or create a new key
             if let Some(key) = &current_key
                 && let Some(existing_value) = tvo.opts.get_mut(key)
+                && let toml::Value::String(s) = existing_value
             {
-                existing_value.push(',');
-                existing_value.push_str(opt);
+                s.push(',');
+                s.push_str(opt);
             }
         }
     }
@@ -190,6 +249,10 @@ mod tests {
     use pretty_assertions::assert_eq;
     use test_log::test;
 
+    fn s(v: &str) -> toml::Value {
+        toml::Value::String(v.to_string())
+    }
+
     #[test]
     fn test_parse_tool_options() {
         let t = |input, expected| {
@@ -201,10 +264,7 @@ mod tests {
         t(
             "exe=rg",
             ToolVersionOptions {
-                opts: [("exe".to_string(), "rg".to_string())]
-                    .iter()
-                    .cloned()
-                    .collect(),
+                opts: [("exe".to_string(), s("rg"))].iter().cloned().collect(),
                 ..Default::default()
             },
         );
@@ -212,8 +272,8 @@ mod tests {
             "exe=rg,match=musl",
             ToolVersionOptions {
                 opts: [
-                    ("exe".to_string(), "rg".to_string()),
-                    ("match".to_string(), "musl".to_string()),
+                    ("exe".to_string(), s("rg")),
+                    ("match".to_string(), s("musl")),
                 ]
                 .iter()
                 .cloned()
@@ -225,11 +285,11 @@ mod tests {
             "profile=minimal,components=rust-src,llvm-tools,targets=wasm32-unknown-unknown,thumbv2-none-eabi",
             ToolVersionOptions {
                 opts: [
-                    ("profile".to_string(), "minimal".to_string()),
-                    ("components".to_string(), "rust-src,llvm-tools".to_string()),
+                    ("profile".to_string(), s("minimal")),
+                    ("components".to_string(), s("rust-src,llvm-tools")),
                     (
                         "targets".to_string(),
-                        "wasm32-unknown-unknown,thumbv2-none-eabi".to_string(),
+                        s("wasm32-unknown-unknown,thumbv2-none-eabi"),
                     ),
                 ]
                 .iter()
@@ -243,8 +303,8 @@ mod tests {
             "  exe =  rg  ,  match = musl  ",
             ToolVersionOptions {
                 opts: [
-                    ("exe".to_string(), "  rg  ".to_string()),
-                    ("match".to_string(), " musl  ".to_string()),
+                    ("exe".to_string(), s("  rg  ")),
+                    ("match".to_string(), s(" musl  ")),
                 ]
                 .iter()
                 .cloned()
@@ -257,9 +317,9 @@ mod tests {
             "foo=,bar=baz,baz=",
             ToolVersionOptions {
                 opts: [
-                    ("foo".to_string(), "".to_string()),
-                    ("bar".to_string(), "baz".to_string()),
-                    ("baz".to_string(), "".to_string()),
+                    ("foo".to_string(), s("")),
+                    ("bar".to_string(), s("baz")),
+                    ("baz".to_string(), s("")),
                 ]
                 .iter()
                 .cloned()
@@ -270,21 +330,66 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_tool_options_with_nested_braces() {
+        let input = r#"platforms={ linux-x64 = { url = "https://example.com/linux.tar.gz" }, macos-arm64 = { url = "https://example.com/macos.tar.gz" } }"#;
+        let opts = parse_tool_options(input);
+        assert_eq!(opts.opts.len(), 1, "should have exactly one key");
+        assert!(opts.opts.get("platforms").unwrap().is_table());
+
+        assert_eq!(
+            opts.get_nested_string("platforms.linux-x64.url"),
+            Some("https://example.com/linux.tar.gz".to_string())
+        );
+        assert_eq!(
+            opts.get_nested_string("platforms.macos-arm64.url"),
+            Some("https://example.com/macos.tar.gz".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_tool_options_mixed_braces_and_simple() {
+        let input = r#"bin_path="bin",platforms={ linux-x64 = { url = "https://example.com/linux.tar.gz" } },strip_components="1""#;
+        let opts = parse_tool_options(input);
+        assert_eq!(opts.get("bin_path"), Some("bin"));
+        assert_eq!(opts.get("strip_components"), Some("1"));
+        assert!(opts.opts.get("platforms").is_some());
+    }
+
+    #[test]
+    fn test_parse_tool_options_integer_strip_components() {
+        // strip_components=1 (integer, not string) should be converted to string
+        let input = r#"bin_path="bin",strip_components=1"#;
+        let opts = parse_tool_options(input);
+        assert_eq!(opts.get("bin_path"), Some("bin"));
+        assert_eq!(opts.get("strip_components"), Some("1"));
+    }
+
+    #[test]
     fn test_nested_option_with_os_arch_dash() {
         let mut opts = IndexMap::new();
-        opts.insert(
-            "platforms".to_string(),
-            r#"
-[macos-x64]
-url = "https://example.com/macos-x64.tar.gz"
-checksum = "sha256:abc123"
-
-[linux-x64]
-url = "https://example.com/linux-x64.tar.gz"
-checksum = "sha256:def456"
-"#
-            .to_string(),
+        let mut platforms = toml::map::Map::new();
+        let mut macos = toml::map::Map::new();
+        macos.insert(
+            "url".to_string(),
+            toml::Value::String("https://example.com/macos-x64.tar.gz".to_string()),
         );
+        macos.insert(
+            "checksum".to_string(),
+            toml::Value::String("sha256:abc123".to_string()),
+        );
+        platforms.insert("macos-x64".to_string(), toml::Value::Table(macos));
+
+        let mut linux = toml::map::Map::new();
+        linux.insert(
+            "url".to_string(),
+            toml::Value::String("https://example.com/linux-x64.tar.gz".to_string()),
+        );
+        linux.insert(
+            "checksum".to_string(),
+            toml::Value::String("sha256:def456".to_string()),
+        );
+        platforms.insert("linux-x64".to_string(), toml::Value::Table(linux));
+        opts.insert("platforms".to_string(), toml::Value::Table(platforms));
 
         let tool_opts = ToolVersionOptions {
             opts,
@@ -312,19 +417,26 @@ checksum = "sha256:def456"
     #[test]
     fn test_generic_nested_options() {
         let mut opts = IndexMap::new();
-        opts.insert(
-            "config".to_string(),
-            r#"
-[database]
-host = "localhost"
-port = 5432
-
-[cache.redis]
-host = "redis.example.com"
-port = 6379
-"#
-            .to_string(),
+        let mut config = toml::map::Map::new();
+        let mut database = toml::map::Map::new();
+        database.insert(
+            "host".to_string(),
+            toml::Value::String("localhost".to_string()),
         );
+        database.insert("port".to_string(), toml::Value::Integer(5432));
+        config.insert("database".to_string(), toml::Value::Table(database));
+
+        let mut cache = toml::map::Map::new();
+        let mut redis = toml::map::Map::new();
+        redis.insert(
+            "host".to_string(),
+            toml::Value::String("redis.example.com".to_string()),
+        );
+        redis.insert("port".to_string(), toml::Value::Integer(6379));
+        cache.insert("redis".to_string(), toml::Value::Table(redis));
+        config.insert("cache".to_string(), toml::Value::Table(cache));
+
+        opts.insert("config".to_string(), toml::Value::Table(config));
 
         let tool_opts = ToolVersionOptions {
             opts,
@@ -352,41 +464,42 @@ port = 6379
     #[test]
     fn test_direct_and_nested_options() {
         let mut opts = IndexMap::new();
-        opts.insert(
-            "platforms".to_string(),
-            r#"
-[macos-x64]
-url = "https://example.com/macos-x64.tar.gz"
-"#
-            .to_string(),
+        let mut platforms = toml::map::Map::new();
+        let mut macos = toml::map::Map::new();
+        macos.insert(
+            "url".to_string(),
+            toml::Value::String("https://example.com/macos-x64.tar.gz".to_string()),
         );
-        opts.insert("simple_option".to_string(), "value".to_string());
+        platforms.insert("macos-x64".to_string(), toml::Value::Table(macos));
+        opts.insert("platforms".to_string(), toml::Value::Table(platforms));
+        opts.insert(
+            "simple_option".to_string(),
+            toml::Value::String("value".to_string()),
+        );
 
         let tool_opts = ToolVersionOptions {
             opts,
             ..Default::default()
         };
 
-        // Test nested option
         assert_eq!(
             tool_opts.get_nested_string("platforms.macos-x64.url"),
             Some("https://example.com/macos-x64.tar.gz".to_string())
         );
-        // Test direct option
-        assert_eq!(tool_opts.get("simple_option"), Some(&"value".to_string()));
+        assert_eq!(tool_opts.get("simple_option"), Some("value"));
     }
 
     #[test]
     fn test_contains_key_with_nested_options() {
         let mut opts = IndexMap::new();
-        opts.insert(
-            "platforms".to_string(),
-            r#"
-[macos-x64]
-url = "https://example.com/macos-x64.tar.gz"
-"#
-            .to_string(),
+        let mut platforms = toml::map::Map::new();
+        let mut macos = toml::map::Map::new();
+        macos.insert(
+            "url".to_string(),
+            toml::Value::String("https://example.com/macos-x64.tar.gz".to_string()),
         );
+        platforms.insert("macos-x64".to_string(), toml::Value::Table(macos));
+        opts.insert("platforms".to_string(), toml::Value::Table(platforms));
 
         let tool_opts = ToolVersionOptions {
             opts,
@@ -401,29 +514,29 @@ url = "https://example.com/macos-x64.tar.gz"
     #[test]
     fn test_merge_functionality() {
         let mut opts = IndexMap::new();
-        opts.insert(
-            "platforms".to_string(),
-            r#"
-[macos-x64]
-url = "https://example.com/macos-x64.tar.gz"
-"#
-            .to_string(),
+        let mut platforms = toml::map::Map::new();
+        let mut macos = toml::map::Map::new();
+        macos.insert(
+            "url".to_string(),
+            toml::Value::String("https://example.com/macos-x64.tar.gz".to_string()),
         );
+        platforms.insert("macos-x64".to_string(), toml::Value::Table(macos));
+        opts.insert("platforms".to_string(), toml::Value::Table(platforms));
 
         let mut tool_opts = ToolVersionOptions {
             opts,
             ..Default::default()
         };
 
-        // Verify nested option access
         assert!(tool_opts.contains_key("platforms.macos-x64.url"));
 
-        // Merge new options
         let mut new_opts = IndexMap::new();
-        new_opts.insert("simple_option".to_string(), "value".to_string());
+        new_opts.insert(
+            "simple_option".to_string(),
+            toml::Value::String("value".to_string()),
+        );
         tool_opts.merge(&new_opts);
 
-        // Should be able to access both old and new options
         assert!(tool_opts.contains_key("platforms.macos-x64.url"));
         assert!(tool_opts.contains_key("simple_option"));
     }
@@ -431,21 +544,20 @@ url = "https://example.com/macos-x64.tar.gz"
     #[test]
     fn test_non_existent_nested_paths() {
         let mut opts = IndexMap::new();
-        opts.insert(
-            "platforms".to_string(),
-            r#"
-[macos-x64]
-url = "https://example.com/macos-x64.tar.gz"
-"#
-            .to_string(),
+        let mut platforms = toml::map::Map::new();
+        let mut macos = toml::map::Map::new();
+        macos.insert(
+            "url".to_string(),
+            toml::Value::String("https://example.com/macos-x64.tar.gz".to_string()),
         );
+        platforms.insert("macos-x64".to_string(), toml::Value::Table(macos));
+        opts.insert("platforms".to_string(), toml::Value::Table(platforms));
 
         let tool_opts = ToolVersionOptions {
             opts,
             ..Default::default()
         };
 
-        // Test non-existent nested paths
         assert_eq!(
             tool_opts.get_nested_string("platforms.windows-x64.url"),
             None
@@ -461,12 +573,10 @@ url = "https://example.com/macos-x64.tar.gz"
     fn test_indexmap_preserves_order() {
         let mut tvo = ToolVersionOptions::default();
 
-        // Insert options in a specific order
-        tvo.opts.insert("zebra".to_string(), "last".to_string());
-        tvo.opts.insert("alpha".to_string(), "first".to_string());
-        tvo.opts.insert("beta".to_string(), "second".to_string());
+        tvo.opts.insert("zebra".to_string(), s("last"));
+        tvo.opts.insert("alpha".to_string(), s("first"));
+        tvo.opts.insert("beta".to_string(), s("second"));
 
-        // Collect keys to verify order is preserved
         let keys: Vec<_> = tvo.opts.keys().collect();
         assert_eq!(keys, vec!["zebra", "alpha", "beta"]);
     }

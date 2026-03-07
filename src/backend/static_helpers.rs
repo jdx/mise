@@ -248,7 +248,7 @@ pub fn lookup_platform_key(opts: &ToolVersionOptions, key_type: &str) -> Option<
             // Try flat format: platforms_macos_arm64_url
             let flat_key = format!("{prefix}_{os}_{arch}_{key_type}");
             if let Some(val) = opts.get(&flat_key) {
-                return Some(val.clone());
+                return Some(val.to_string());
             }
         }
     }
@@ -266,7 +266,7 @@ pub fn lookup_platform_key(opts: &ToolVersionOptions, key_type: &str) -> Option<
 /// * `Some(value)` if found in platform-specific or base options
 /// * `None` if not found
 pub fn lookup_with_fallback(opts: &ToolVersionOptions, key: &str) -> Option<String> {
-    lookup_platform_key(opts, key).or_else(|| opts.get(key).cloned())
+    lookup_platform_key(opts, key).or_else(|| opts.get(key).map(|s| s.to_string()))
 }
 
 /// Returns all possible aliases for a given platform target (os, arch).
@@ -316,7 +316,7 @@ pub fn lookup_platform_key_for_target(
             // Try flat format: platforms_macos_arm64_url
             let flat_key = format!("{prefix}_{os}_{arch}_{key_type}");
             if let Some(val) = opts.get(&flat_key) {
-                return Some(val.clone());
+                return Some(val.to_string());
             }
         }
     }
@@ -415,7 +415,7 @@ pub fn install_artifact(
 ) -> eyre::Result<()> {
     let install_path = tv.install_path();
     let mut strip_components = lookup_platform_key(opts, "strip_components")
-        .or_else(|| opts.get("strip_components").cloned())
+        .or_else(|| opts.get("strip_components").map(|s| s.to_string()))
         .and_then(|s| s.parse().ok());
 
     file::remove_all(&install_path)?;
@@ -495,7 +495,7 @@ pub fn install_artifact(
         // Only do this if strip_components was not explicitly set by the user AND bin_path is not configured
         if strip_components.is_none()
             && lookup_platform_key(opts, "bin_path")
-                .or_else(|| opts.get("bin_path").cloned())
+                .or_else(|| opts.get("bin_path").map(|s| s.to_string()))
                 .is_none()
             && let Ok(should_strip) = file::should_strip_components(file_path, format)
             && should_strip
@@ -1142,16 +1142,16 @@ mod tests {
         // Flat keys with os_arch_keytype naming
         opts.insert(
             "platforms_macos_x86_64_url".to_string(),
-            "https://example.com/macos-x86_64.tar.gz".to_string(),
+            toml::Value::String("https://example.com/macos-x86_64.tar.gz".to_string()),
         );
         opts.insert(
             "platforms_linux_x64_url".to_string(),
-            "https://example.com/linux-x64.tar.gz".to_string(),
+            toml::Value::String("https://example.com/linux-x64.tar.gz".to_string()),
         );
         // Different prefix variant also supported
         opts.insert(
             "platform_windows_arm64_url".to_string(),
-            "https://example.com/windows-arm64.zip".to_string(),
+            toml::Value::String("https://example.com/windows-arm64.zip".to_string()),
         );
 
         let tool_opts = ToolVersionOptions {
@@ -1174,7 +1174,8 @@ mod tests {
         let mut opts = IndexMap::new();
         opts.insert(
             "platforms".to_string(),
-            r#"
+            toml::Value::String(
+                r#"
 [macos-x64]
 checksum = "blake3:abc123"
 size = "1024"
@@ -1199,7 +1200,8 @@ size = "3072"
 checksum = "blake3:mno345"
 size = "5120"
 "#
-            .to_string(),
+                .to_string(),
+            ),
         );
 
         let tool_opts = ToolVersionOptions {
@@ -1231,8 +1233,11 @@ size = "5120"
     #[test]
     fn test_verify_artifact_fallback_to_generic() {
         let mut opts = IndexMap::new();
-        opts.insert("checksum".to_string(), "blake3:generic123".to_string());
-        opts.insert("size".to_string(), "512".to_string());
+        opts.insert(
+            "checksum".to_string(),
+            toml::Value::String("blake3:generic123".to_string()),
+        );
+        opts.insert("size".to_string(), toml::Value::String("512".to_string()));
 
         let tool_opts = ToolVersionOptions {
             opts,
@@ -1241,7 +1246,7 @@ size = "5120"
 
         // Test that generic fallback works when no platform-specific values exist
         let checksum = lookup_platform_key(&tool_opts, "checksum")
-            .or_else(|| tool_opts.get("checksum").cloned());
+            .or_else(|| tool_opts.get("checksum").map(|s| s.to_string()));
         let size = lookup_with_fallback(&tool_opts, "size");
 
         assert_eq!(checksum, Some("blake3:generic123".to_string()));
@@ -1253,7 +1258,8 @@ size = "5120"
         let mut opts = IndexMap::new();
         opts.insert(
             "platform".to_string(),
-            r#"
+            toml::Value::String(
+                r#"
 [macos-arm64]
 bin_path = "CMake.app/Contents/bin"
 
@@ -1263,7 +1269,8 @@ bin_path = "bin"
 [windows-x64]
 bin_path = "."
 "#
-            .to_string(),
+                .to_string(),
+            ),
         );
 
         let tool_opts = ToolVersionOptions {
@@ -1290,7 +1297,8 @@ bin_path = "."
         let mut opts = IndexMap::new();
         opts.insert(
             "platforms".to_string(),
-            r#"
+            toml::Value::String(
+                r#"
 [macos-arm64]
 bin = "xmake"
 
@@ -1300,7 +1308,8 @@ bin = "xmake"
 [windows-x64]
 bin = "xmake.exe"
 "#
-            .to_string(),
+                .to_string(),
+            ),
         );
 
         let tool_opts = ToolVersionOptions {
@@ -1325,14 +1334,19 @@ bin = "xmake.exe"
     #[test]
     fn test_lookup_platform_key_bin_with_fallback() {
         let mut opts = IndexMap::new();
-        opts.insert("bin".to_string(), "generic-tool".to_string());
+        opts.insert(
+            "bin".to_string(),
+            toml::Value::String("generic-tool".to_string()),
+        );
         opts.insert(
             "platforms".to_string(),
-            r#"
+            toml::Value::String(
+                r#"
 [windows-x64]
 bin = "tool.exe"
 "#
-            .to_string(),
+                .to_string(),
+            ),
         );
 
         let tool_opts = ToolVersionOptions {
@@ -1358,10 +1372,16 @@ bin = "tool.exe"
         let mut opts = IndexMap::new();
         opts.insert(
             "platforms_windows_x64_bin".to_string(),
-            "xmake.exe".to_string(),
+            toml::Value::String("xmake.exe".to_string()),
         );
-        opts.insert("platforms_linux_x64_bin".to_string(), "xmake".to_string());
-        opts.insert("platforms_macos_arm64_bin".to_string(), "xmake".to_string());
+        opts.insert(
+            "platforms_linux_x64_bin".to_string(),
+            toml::Value::String("xmake".to_string()),
+        );
+        opts.insert(
+            "platforms_macos_arm64_bin".to_string(),
+            toml::Value::String("xmake".to_string()),
+        );
 
         let tool_opts = ToolVersionOptions {
             opts,

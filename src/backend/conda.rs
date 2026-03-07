@@ -56,7 +56,7 @@ impl CondaBackend {
         self.ba
             .opts()
             .get("channel")
-            .cloned()
+            .map(|s| s.to_string())
             .unwrap_or_else(|| Settings::get().conda.channel.clone())
     }
 

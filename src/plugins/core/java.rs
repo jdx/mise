@@ -244,7 +244,7 @@ impl JavaPlugin {
         tv.request
             .options()
             .get("release_type")
-            .cloned()
+            .map(|s| s.to_string())
             .unwrap_or(String::from("ga"))
     }
 
@@ -304,7 +304,7 @@ impl Backend for JavaPlugin {
             .list_tools()
             .iter()
             .find(|ba| ba.short == "java")
-            .and_then(|ba| ba.opts().get("release_type").cloned())
+            .and_then(|ba| ba.opts().get("release_type").map(|s| s.to_string()))
             .unwrap_or_else(|| "ga".to_string());
 
         let versions = self

@@ -309,7 +309,7 @@ impl Backend for UnifiedGitBackend {
         // These options affect which artifact is downloaded
         for key in ["asset_pattern", "url", "version_prefix"] {
             if let Some(value) = opts.get(key) {
-                result.insert(key.to_string(), value.clone());
+                result.insert(key.to_string(), value.to_string());
             }
         }
 
@@ -383,7 +383,6 @@ impl UnifiedGitBackend {
 
     fn get_api_url(&self, opts: &ToolVersionOptions) -> String {
         opts.get("api_url")
-            .map(|s| s.as_str())
             .unwrap_or(if self.is_gitlab() {
                 DEFAULT_GITLAB_API_BASE_URL
             } else if self.is_forgejo() {
@@ -407,7 +406,7 @@ impl UnifiedGitBackend {
 
         // Check if we'll verify checksum
         let has_checksum = lookup_platform_key(opts, "checksum")
-            .or_else(|| opts.get("checksum").cloned())
+            .or_else(|| opts.get("checksum").map(|s| s.to_string()))
             .is_some();
 
         // Store the asset URL and digest (if available) in the tool version
@@ -493,8 +492,8 @@ impl UnifiedGitBackend {
     /// Discovers bin paths in the installation directory
     fn discover_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<std::path::PathBuf>> {
         let opts = tv.request.options();
-        if let Some(bin_path_template) =
-            lookup_platform_key(&opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
+        if let Some(bin_path_template) = lookup_platform_key(&opts, "bin_path")
+            .or_else(|| opts.get("bin_path").map(|s| s.to_string()))
         {
             let bin_path = template_string(&bin_path_template, tv);
             return Ok(vec![tv.install_path().join(&bin_path)]);
@@ -599,7 +598,7 @@ impl UnifiedGitBackend {
         }
 
         let version = &tv.version;
-        let version_prefix = opts.get("version_prefix").map(|s| s.as_str());
+        let version_prefix = opts.get("version_prefix");
         if self.is_gitlab() {
             try_with_v_prefix(version, version_prefix, |candidate| async move {
                 self.resolve_gitlab_asset_url_for_target(
@@ -655,7 +654,7 @@ impl UnifiedGitBackend {
 
         // Try explicit pattern first
         if let Some(pattern) = lookup_platform_key_for_target(opts, "asset_pattern", target)
-            .or_else(|| opts.get("asset_pattern").cloned())
+            .or_else(|| opts.get("asset_pattern").map(|s| s.to_string()))
         {
             // Template the pattern for the target platform
             let templated_pattern = template_string_for_target(&pattern, tv, target);
@@ -752,7 +751,7 @@ impl UnifiedGitBackend {
 
         // Try explicit pattern first
         if let Some(pattern) = lookup_platform_key_for_target(opts, "asset_pattern", target)
-            .or_else(|| opts.get("asset_pattern").cloned())
+            .or_else(|| opts.get("asset_pattern").map(|s| s.to_string()))
         {
             // Template the pattern for the target platform
             let templated_pattern = template_string_for_target(&pattern, tv, target);
@@ -847,7 +846,7 @@ impl UnifiedGitBackend {
 
         // Try explicit pattern first
         if let Some(pattern) = lookup_platform_key_for_target(opts, "asset_pattern", target)
-            .or_else(|| opts.get("asset_pattern").cloned())
+            .or_else(|| opts.get("asset_pattern").map(|s| s.to_string()))
         {
             // Template the pattern for the target platform
             let templated_pattern = template_string_for_target(&pattern, tv, target);
@@ -1007,7 +1006,7 @@ impl UnifiedGitBackend {
     fn get_filter_bins(&self, tv: &ToolVersion) -> Option<Vec<String>> {
         let opts = tv.request.options();
         let filter_bins = lookup_platform_key(&opts, "filter_bins")
-            .or_else(|| opts.get("filter_bins").cloned())?;
+            .or_else(|| opts.get("filter_bins").map(|s| s.to_string()))?;
 
         Some(
             filter_bins
@@ -1194,7 +1193,7 @@ impl UnifiedGitBackend {
         let version = &tv.version;
 
         // Try to get the release (with version prefix support)
-        let version_prefix = opts.get("version_prefix").map(|s| s.as_str());
+        let version_prefix = opts.get("version_prefix");
         let release =
             match try_with_v_prefix_and_repo(version, version_prefix, Some(&repo), |candidate| {
                 let api_url = api_url.clone();
@@ -1429,8 +1428,10 @@ mod tests {
 
         // Test with custom version prefix
         let mut opts = ToolVersionOptions::default();
-        opts.opts
-            .insert("version_prefix".to_string(), "release-".to_string());
+        opts.opts.insert(
+            "version_prefix".to_string(),
+            toml::Value::String("release-".to_string()),
+        );
 
         assert_eq!(
             backend.strip_version_prefix("release-1.0.0", &opts),
