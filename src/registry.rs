@@ -131,7 +131,13 @@ impl RegistryTool {
 
         if let Some(backend) = self.get_backend(full) {
             for (k, v) in backend.options {
-                opts.insert(k.to_string(), toml::Value::String(v.to_string()));
+                // Try to parse as TOML to preserve nested table structure
+                // (e.g., platforms with per-platform options like asset_pattern)
+                let value = match toml::from_str::<toml::Value>(v) {
+                    Ok(parsed) if parsed.is_table() => parsed,
+                    _ => toml::Value::String(v.to_string()),
+                };
+                opts.insert(k.to_string(), value);
             }
         }
 

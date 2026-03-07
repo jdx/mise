@@ -254,7 +254,7 @@ impl Backend for UnifiedGitBackend {
             .config
             .get_tool_opts(&self.ba)
             .await?
-            .unwrap_or_else(|| tv.request.options());
+            .unwrap_or_else(|| self.ba.opts());
         let api_url = self.get_api_url(&opts);
 
         // Check if URL already exists in lockfile platforms first
