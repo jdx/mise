@@ -648,17 +648,11 @@ impl Backend for AquaBackend {
 
 impl AquaBackend {
     /// Detect provenance type from aqua registry package config.
+    /// Note: GithubAttestations is NOT recorded here because we cannot verify
+    /// attestations exist without downloading the artifact first. It is recorded
+    /// at install-time after successful verification instead.
     fn detect_provenance_type(&self, pkg: &AquaPackage) -> Option<ProvenanceType> {
         let settings = Settings::get();
-
-        // Check for GitHub artifact attestations (highest priority)
-        if settings.github_attestations
-            && settings.aqua.github_attestations
-            && let Some(att) = &pkg.github_artifact_attestations
-            && att.enabled != Some(false)
-        {
-            return Some(ProvenanceType::GithubAttestations);
-        }
 
         // Check for SLSA provenance
         if settings.slsa
@@ -1075,8 +1069,11 @@ impl AquaBackend {
                 .get(&platform_key)
                 .and_then(|pi| pi.provenance.as_ref());
             if !got.is_some_and(|g| std::mem::discriminant(g) == std::mem::discriminant(expected)) {
+                let got_str = got
+                    .map(|g| g.to_string())
+                    .unwrap_or_else(|| "no verification".to_string());
                 return Err(eyre!(
-                    "Lockfile requires {expected} provenance for {tv} but {got:?} was used. \
+                    "Lockfile requires {expected} provenance for {tv} but {got_str} was used. \
                      This may indicate a downgrade attack. Enable the corresponding verification setting \
                      or update the lockfile."
                 ));

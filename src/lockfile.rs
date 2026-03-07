@@ -1594,8 +1594,7 @@ fn format(mut doc: DocumentMut) -> String {
                                     "url" => 2,
                                     "url_api" => 3,
                                     "provenance" => 4,
-                                    "provenance_url" => 5,
-                                    _ => 6,
+                                    _ => 5,
                                 });
                                 for k in &keys {
                                     if let Some(item) = platform_info.get(k) {

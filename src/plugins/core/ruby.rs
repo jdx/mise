@@ -661,8 +661,11 @@ impl RubyPlugin {
                 .get(&platform_key)
                 .and_then(|pi| pi.provenance.as_ref());
             if !got.is_some_and(|g| std::mem::discriminant(g) == std::mem::discriminant(expected)) {
+                let got_str = got
+                    .map(|g| g.to_string())
+                    .unwrap_or_else(|| "no verification".to_string());
                 return Err(eyre!(
-                    "Lockfile requires {expected} provenance for {tv} but {got:?} was used. \
+                    "Lockfile requires {expected} provenance for {tv} but {got_str} was used. \
                      This may indicate a downgrade attack. Enable the corresponding verification setting \
                      or update the lockfile."
                 ));
