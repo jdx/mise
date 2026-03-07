@@ -38,13 +38,20 @@ impl Platform {
         }
     }
 
-    /// Get the current platform from system information
+    /// Get the current platform from system information.
+    /// On Linux, detects musl vs glibc at runtime and sets the qualifier accordingly.
     pub fn current() -> Self {
         let settings = Settings::get();
+        let os = settings.os().to_string();
+        let qualifier = if os == "linux" && is_musl_system() {
+            Some("musl".to_string())
+        } else {
+            None
+        };
         Platform {
-            os: settings.os().to_string(),
+            os,
             arch: settings.arch().to_string(),
-            qualifier: None,
+            qualifier,
         }
     }
 
@@ -117,7 +124,9 @@ impl Platform {
     pub fn common_platforms() -> Vec<Self> {
         vec![
             Platform::parse("linux-x64").unwrap(),
+            Platform::parse("linux-x64-musl").unwrap(),
             Platform::parse("linux-arm64").unwrap(),
+            Platform::parse("linux-arm64-musl").unwrap(),
             Platform::parse("macos-x64").unwrap(),
             Platform::parse("macos-arm64").unwrap(),
             Platform::parse("windows-x64").unwrap(),
@@ -172,6 +181,32 @@ impl From<&str> for Platform {
             Self::current()
         })
     }
+}
+
+/// Detect whether the system uses musl libc at runtime.
+/// Checks for the musl dynamic linker in /lib, which is present on musl-based
+/// systems like Alpine Linux. This is a runtime check (not compile-time) so a
+/// statically-linked or musl-built mise binary running on a glibc system will
+/// correctly detect glibc, and vice versa.
+#[cfg(target_os = "linux")]
+fn is_musl_system() -> bool {
+    use std::sync::LazyLock;
+    static IS_MUSL: LazyLock<bool> = LazyLock::new(|| {
+        if let Ok(entries) = std::fs::read_dir("/lib") {
+            for entry in entries.flatten() {
+                if entry.file_name().to_string_lossy().starts_with("ld-musl-") {
+                    return true;
+                }
+            }
+        }
+        false
+    });
+    *IS_MUSL
+}
+
+#[cfg(not(target_os = "linux"))]
+fn is_musl_system() -> bool {
+    false
 }
 
 #[cfg(test)]
@@ -283,11 +318,13 @@ mod tests {
     #[test]
     fn test_common_platforms() {
         let platforms = Platform::common_platforms();
-        assert_eq!(platforms.len(), 5);
+        assert_eq!(platforms.len(), 7);
 
         let keys: Vec<String> = platforms.iter().map(|p| p.to_key()).collect();
         assert!(keys.contains(&"linux-x64".to_string()));
+        assert!(keys.contains(&"linux-x64-musl".to_string()));
         assert!(keys.contains(&"linux-arm64".to_string()));
+        assert!(keys.contains(&"linux-arm64-musl".to_string()));
         assert!(keys.contains(&"macos-x64".to_string()));
         assert!(keys.contains(&"macos-arm64".to_string()));
         assert!(keys.contains(&"windows-x64".to_string()));

@@ -176,15 +176,19 @@ pub struct AssetPicker {
 }
 
 impl AssetPicker {
-    /// Create an AssetPicker with an explicit libc setting
+    /// Create an AssetPicker with an explicit libc setting.
+    /// When no explicit libc is provided, uses runtime detection via Platform::current()
+    /// to determine the system's libc (musl vs glibc), rather than compile-time checks.
     pub fn with_libc(target_os: String, target_arch: String, libc: Option<String>) -> Self {
         let target_libc = libc.unwrap_or_else(|| {
             if target_os == "windows" {
                 "msvc".to_string()
-            } else if cfg!(target_env = "musl") {
-                "musl".to_string()
             } else {
-                "gnu".to_string()
+                let current = crate::platform::Platform::current();
+                match current.qualifier.as_deref() {
+                    Some("musl") | Some("musl-baseline") => "musl".to_string(),
+                    _ => "gnu".to_string(),
+                }
             }
         });
 
