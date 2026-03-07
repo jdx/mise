@@ -274,7 +274,6 @@ impl TaskExecutor {
 
             // Check confirmation after usage args are parsed
             self.check_confirmation(config, task, &env).await?;
-            drop(confirm_guard);
 
             let exec_start = std::time::Instant::now();
             self.exec_task_run_entries(
@@ -284,6 +283,7 @@ impl TaskExecutor {
                 &prefix,
                 rendered_run_scripts,
                 sched_tx,
+                confirm_guard,
             )
             .await?;
             trace!(
@@ -317,14 +317,18 @@ impl TaskExecutor {
         prefix: &str,
         rendered_scripts: Vec<(String, Vec<String>)>,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+        existing_guard: Option<RuntimeLockGuard<'static>>,
     ) -> Result<()> {
         let (env, task_env) = full_env;
         use crate::task::RunEntry;
         let mut script_iter = rendered_scripts.into_iter();
-        // Acquire the runtime lock once outside the loop so consecutive script entries
-        // maintain exclusivity for interactive tasks. The lock is temporarily dropped
-        // around inject_and_wait calls to avoid deadlocking with sub-tasks.
-        let mut guard = Some(acquire_runtime_lock(task.interactive).await);
+        // Use an existing guard (e.g. from confirmation) or acquire a new one.
+        // The lock is held across consecutive script entries for exclusivity
+        // and temporarily dropped around inject_and_wait to avoid deadlocking.
+        let mut guard = match existing_guard {
+            Some(g) => Some(g),
+            None => Some(acquire_runtime_lock(task.interactive).await),
+        };
         for entry in task.run() {
             match entry {
                 RunEntry::Script(_) => {
