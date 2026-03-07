@@ -33,7 +33,8 @@ assert "test -f mise.lock"
 assert_contains "cat mise.lock" "\"platforms.$PLATFORM\""
 
 # Inject provenance into the lockfile (simulating a previously-verified install)
-sed -i "/\"platforms\.$PLATFORM\"\]/a provenance = \"github-attestations\"" mise.lock
+ESCAPED_PLATFORM="${PLATFORM//./\\.}"
+sed -i "/\"platforms\.$ESCAPED_PLATFORM\"\]/a provenance = \"github-attestations\"" mise.lock
 assert_contains "cat mise.lock" 'provenance = "github-attestations"'
 
 # Attempt install with provenance verification disabled.

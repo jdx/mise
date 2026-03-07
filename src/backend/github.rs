@@ -1143,21 +1143,19 @@ impl UnifiedGitBackend {
             .and_then(|pi| pi.provenance.as_deref())
             .map(|s| s.to_string());
 
+        // When the lockfile specifies a provenance type, only try the matching verification
+        // to avoid false-positive downgrade errors when a tool supports multiple mechanisms
+        let skip_attestations = locked_provenance.as_deref() == Some("slsa");
+        let skip_slsa = locked_provenance.as_deref() == Some("github-attestations");
+
         // Try GitHub artifact attestations first (if enabled globally and for github backend)
-        if settings.github_attestations && settings.github.github_attestations {
+        if !skip_attestations && settings.github_attestations && settings.github.github_attestations
+        {
             match self
                 .try_verify_github_attestations(ctx, tv, file_path)
                 .await
             {
                 Ok(true) => {
-                    if let Some(ref expected) = locked_provenance
-                        && expected != "github-attestations"
-                    {
-                        return Err(eyre::eyre!(
-                            "Lockfile requires {expected} provenance for {tv} but github-attestations was used instead. \
-                                 This may indicate a downgrade attack."
-                        ));
-                    }
                     return Ok(Some(("github-attestations".to_string(), None)));
                 }
                 Ok(false) => {
@@ -1180,17 +1178,9 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to SLSA provenance (if enabled globally and for github backend)
-        if settings.slsa && settings.github.slsa {
+        if !skip_slsa && settings.slsa && settings.github.slsa {
             match self.try_verify_slsa(ctx, tv, file_path).await {
                 Ok((true, provenance_url)) => {
-                    if let Some(ref expected) = locked_provenance
-                        && expected != "slsa"
-                    {
-                        return Err(eyre::eyre!(
-                            "Lockfile requires {expected} provenance for {tv} but slsa was used instead. \
-                                 This may indicate a downgrade attack."
-                        ));
-                    }
                     return Ok(Some(("slsa".to_string(), provenance_url)));
                 }
                 Ok((false, _)) => {

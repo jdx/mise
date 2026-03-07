@@ -1237,11 +1237,14 @@ impl AquaBackend {
                     ctx.pr
                         .set_message("✓ GitHub artifact attestations verified".to_string());
                     debug!("GitHub artifact attestations verified successfully for {tv}");
-                    // Record provenance in lockfile (clear provenance_url in case SLSA set it earlier)
+                    // Only record provenance if not already set by a prior verification
+                    // (e.g., SLSA). This avoids overwriting and causing false-positive
+                    // downgrade errors when both mechanisms succeed.
                     let platform_key = self.get_platform_key();
                     let pi = tv.lock_platforms.entry(platform_key).or_default();
-                    pi.provenance = Some("github-attestations".to_string());
-                    pi.provenance_url = None;
+                    if pi.provenance.is_none() {
+                        pi.provenance = Some("github-attestations".to_string());
+                    }
                 }
                 Ok(false) => {
                     return Err(eyre!(

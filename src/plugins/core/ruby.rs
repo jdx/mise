@@ -641,12 +641,12 @@ impl RubyPlugin {
             .and_then(|pi| pi.provenance.take());
 
         // Verify GitHub artifact attestations for precompiled binaries
+        // Returns Ok(true) if verified, Ok(false) if skipped, Err if failed
         let verified = self
             .verify_github_artifact_attestations(ctx, &tarball_path, &tv.version)
-            .await
-            .is_ok();
+            .await?;
 
-        // Record provenance if verification succeeded
+        // Record provenance only if verification actually succeeded (not skipped)
         if verified {
             let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
             pi.provenance = Some("github-attestations".to_string());
@@ -684,14 +684,15 @@ impl RubyPlugin {
     }
 
     /// Verify GitHub artifact attestations for precompiled Ruby binary
-    /// Returns Ok(()) if verification succeeds or is skipped (attestations unavailable)
+    /// Returns Ok(true) if verification succeeds
+    /// Returns Ok(false) if verification was skipped (disabled or not applicable)
     /// Returns Err if verification is enabled and fails
     async fn verify_github_artifact_attestations(
         &self,
         ctx: &InstallContext,
         tarball_path: &std::path::Path,
         version: &str,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let settings = Settings::get();
 
         // Check Ruby-specific setting, fall back to global
@@ -701,7 +702,7 @@ impl RubyPlugin {
             .unwrap_or(settings.github_attestations);
         if !enabled {
             debug!("GitHub artifact attestations verification disabled for Ruby");
-            return Ok(());
+            return Ok(false);
         }
 
         let source = &settings.ruby.precompiled_url;
@@ -709,14 +710,14 @@ impl RubyPlugin {
         // Skip for custom URL templates (not GitHub repos)
         if source.contains("://") {
             debug!("Skipping GitHub artifact attestation verification for custom URL template");
-            return Ok(());
+            return Ok(false);
         }
 
         let (owner, repo) = match source.split_once('/') {
             Some((o, r)) => (o, r),
             None => {
                 warn!("Invalid precompiled_url format: {}", source);
-                return Ok(());
+                return Ok(false);
             }
         };
 
@@ -739,7 +740,7 @@ impl RubyPlugin {
                     "GitHub artifact attestations verified successfully for ruby@{}",
                     version
                 );
-                Ok(())
+                Ok(true)
             }
             Ok(false) => Err(eyre!(
                 "GitHub artifact attestations verification failed for ruby@{version}\n{ATTESTATION_HELP}"
