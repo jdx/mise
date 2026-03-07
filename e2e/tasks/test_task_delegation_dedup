@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# Regression test: task delegation via `run = [{ task }]` should not
+# re-run shared dependencies that already completed in the parent graph.
+
+cat <<'EOF' >mise.toml
+[tasks.setup]
+run = "echo '>>> SETUP RUNNING <<<'"
+
+[tasks.lint]
+hide = true
+depends = ["setup"]
+run = "echo 'lint done'"
+
+[tasks."check:security"]
+hide = true
+depends = ["setup"]
+run = "echo 'security check done'"
+
+[tasks."fix:security"]
+hide = true
+depends = ["lint"]
+run = [{ task = "check:security" }]
+
+[tasks.all]
+depends = ["fix:security"]
+EOF
+
+# "setup" output must appear exactly once (exclude the "$ echo ..." command line)
+output="$(mise run -f all 2>&1)"
+count="$(echo "$output" | grep -v '^\[setup\] \$' | grep -c '>>> SETUP RUNNING <<<')"
+if [[ $count -ne 1 ]]; then
+	echo "Expected setup to run exactly once, but it ran $count times"
+	echo "Full output:"
+	echo "$output"
+	exit 1
+fi
+
+# Verify all tasks actually ran
+assert_contains "echo \"$output\"" "lint done"
+assert_contains "echo \"$output\"" "security check done"
+
+# Standalone call should still trigger setup as a dependency
+assert_contains "mise run -f check:security" ">>> SETUP RUNNING <<<"
+assert_contains "mise run -f check:security" "security check done"

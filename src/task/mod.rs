@@ -70,7 +70,7 @@ use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::toolset::Toolset;
 use crate::ui::style;
-pub use deps::Deps;
+pub use deps::{Deps, TaskKey};
 use task_dep::TaskDep;
 use task_sources::{RawOutputTemplates, TaskOutputs};
 

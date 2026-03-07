@@ -13,7 +13,7 @@ use tokio::sync::mpsc;
 /// Unique key for a task instance, including name, args, and env vars
 pub type TaskKey = (String, Vec<String>, Vec<(String, String)>);
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Deps {
     pub graph: DiGraph<Task, ()>,
     sent: HashSet<TaskKey>, // tasks that have already started so should not run again
@@ -100,6 +100,31 @@ impl Deps {
         })
     }
 
+    /// Create a sub-graph that prunes tasks already completed by the caller.
+    /// `completed` is a snapshot of task keys that have finished in the parent
+    /// graph — these are removed from the sub-graph so they don't run again.
+    pub async fn new_pruned(
+        config: &Arc<Config>,
+        tasks: Vec<Task>,
+        completed: &HashSet<TaskKey>,
+    ) -> eyre::Result<Self> {
+        let mut deps = Self::new(config, tasks).await?;
+        let mut to_remove = vec![];
+        for idx in deps.graph.node_indices() {
+            let key = task_key(&deps.graph[idx]);
+            if completed.contains(&key) {
+                to_remove.push(idx);
+            }
+        }
+        // Remove in reverse index order so petgraph swap-remove
+        // doesn't invalidate indices we haven't processed yet
+        to_remove.sort_unstable_by(|a, b| b.cmp(a));
+        for idx in to_remove {
+            deps.graph.remove_node(idx);
+        }
+        Ok(deps)
+    }
+
     /// main method to emit tasks that no longer have dependencies being waited on
     fn emit_leaves(&mut self) {
         let leaves = leaves(&self.graph);
@@ -140,6 +165,14 @@ impl Deps {
 
     pub fn is_empty(&self) -> bool {
         self.graph.node_count() == 0
+    }
+
+    /// Snapshot of task keys that have completed (removed from the graph).
+    /// Used by `new_pruned` so sub-graphs skip tasks the parent already ran.
+    /// Only includes confirmed-complete tasks, not in-flight ones, to
+    /// preserve dependency ordering in the sub-graph.
+    pub fn handled_task_keys(&self) -> HashSet<TaskKey> {
+        self.removed.clone()
     }
 
     /// Check if a post-dep task should actually run: it must be a post-dependency
