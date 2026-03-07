@@ -1349,10 +1349,55 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     async fn dependency_env(&self, config: &Arc<Config>) -> eyre::Result<BTreeMap<String, String>> {
-        self.dependency_toolset(config)
+        let mut env = self
+            .dependency_toolset(config)
             .await?
             .full_env(config)
-            .await
+            .await?;
+
+        // Remove mise shims from PATH to prevent infinite shim recursion when a
+        // dependency tool (e.g., go) is configured but not installed. Without this,
+        // the shim for the dependency would call `mise exec` which would call the
+        // shim again infinitely.
+        if let Some(path_val) = env.get(&*env::PATH_KEY) {
+            let filtered: Vec<_> = env::split_paths(path_val)
+                .filter(|p| {
+                    if cfg!(windows) {
+                        // On Windows use case-insensitive, separator-normalised comparison
+                        // (same pattern as exec.rs) to handle path variations such as
+                        // ~/.local/share/mise\shims vs C:\Users\user\.local\share\mise\shims
+        let filtered: Vec<_> = {
+            // Pre-compute shims_normalized once (needed for Windows path)
+            #[cfg(windows)]
+            let shims_normalized = dirs::SHIMS
+                .to_string_lossy()
+                .to_lowercase()
+                .replace('/', "\\");
+            env::split_paths(path_val)
+                .filter(|p| {
+                    if cfg!(windows) {
+                        let expanded = file::replace_path(p);
+                        expanded.to_string_lossy().to_lowercase().replace('/', "\\")
+                            != shims_normalized
+                    } else {
+                        p.as_path() != *dirs::SHIMS
+                    }
+                })
+                .collect()
+        };
+                    } else {
+                        p.as_path() != *dirs::SHIMS
+                    }
+                })
+                .collect();
+            let joined = env::join_paths(&filtered)?;
+            env.insert(
+                env::PATH_KEY.to_string(),
+                joined.to_string_lossy().into_owned(),
+            );
+        }
+
+        Ok(env)
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
