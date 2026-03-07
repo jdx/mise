@@ -184,24 +184,35 @@ impl From<&str> for Platform {
 }
 
 /// Detect whether the system uses musl libc at runtime.
-/// Uses `ldd --version` output which reliably distinguishes musl from glibc:
-/// - glibc's ldd prints version info (e.g., "ldd (GNU libc) 2.31")
-/// - musl's ldd prints "musl libc" in its output
-/// This avoids false positives from `/lib/ld-musl-*` which can exist on glibc
-/// systems with musl-tools installed for cross-compilation.
+/// Checks for the absence of glibc's dynamic linker (`ld-linux-*`) in /lib and /lib64.
+/// On glibc systems, `ld-linux-*` is always present (even if musl-tools is installed
+/// for cross-compilation, which also places `ld-musl-*` in /lib). On musl-only systems
+/// (Alpine, Void musl, etc.), only `ld-musl-*` exists without `ld-linux-*`.
 #[cfg(target_os = "linux")]
 fn is_musl_system() -> bool {
     use std::sync::LazyLock;
     static IS_MUSL: LazyLock<bool> = LazyLock::new(|| {
-        let Ok(output) = std::process::Command::new("ldd").arg("--version").output() else {
-            return false;
-        };
-        // musl's ldd prints to stderr, glibc's to stdout
-        let text = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        stderr.contains("musl") || text.contains("musl")
+        // If glibc's dynamic linker exists, this is a glibc system
+        for dir in ["/lib", "/lib64"] {
+            if has_file_prefix(dir, "ld-linux-") {
+                return false;
+            }
+        }
+        // No glibc linker found — check for musl's
+        has_file_prefix("/lib", "ld-musl-")
     });
     *IS_MUSL
+}
+
+#[cfg(target_os = "linux")]
+fn has_file_prefix(dir: &str, prefix: &str) -> bool {
+    std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .any(|e| e.file_name().to_string_lossy().starts_with(prefix))
+        })
+        .unwrap_or(false)
 }
 
 #[cfg(not(target_os = "linux"))]
