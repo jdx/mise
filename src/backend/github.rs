@@ -432,13 +432,14 @@ impl UnifiedGitBackend {
         }
 
         // Check for SLSA provenance from release assets
-        // (.intoto.jsonl for SLSA, .sigstore.json/.sigstore for sigstore bundles)
+        // Must match pick_best_provenance patterns: .intoto.jsonl, provenance, .attestation
+        // (.sigstore.json/.sigstore are GitHub Attestations, not SLSA — handled above)
         if settings.slsa && settings.github.slsa {
             let has_slsa = release.assets.iter().any(|a| {
                 let name = a.name.to_lowercase();
                 name.contains(".intoto.jsonl")
-                    || name.ends_with(".sigstore.json")
-                    || name.ends_with(".sigstore")
+                    || name.contains("provenance")
+                    || name.ends_with(".attestation")
             });
             if has_slsa {
                 return Some(ProvenanceType::Slsa { url: None });
