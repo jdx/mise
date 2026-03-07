@@ -77,13 +77,6 @@ pub enum ProvenanceType {
     GithubAttestations,
 }
 
-impl ProvenanceType {
-    /// Returns true if `self` has strictly lower priority than `other`.
-    pub fn lower_priority_than(self, other: ProvenanceType) -> bool {
-        self < other
-    }
-}
-
 impl serde::Serialize for ProvenanceType {
     fn serialize<S: serde::Serializer>(
         &self,

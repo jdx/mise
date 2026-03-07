@@ -988,12 +988,14 @@ impl AquaBackend {
             .get_mut(&platform_key)
             .and_then(|pi| pi.provenance.take());
 
-        // When the lockfile specifies a provenance type, skip higher-priority mechanisms
-        // to avoid false-positive downgrade errors when a tool supports multiple mechanisms.
-        let skip_attestations = locked_provenance
-            .is_some_and(|l| l.lower_priority_than(ProvenanceType::GithubAttestations));
-        let skip_slsa =
-            locked_provenance.is_some_and(|l| l.lower_priority_than(ProvenanceType::Slsa));
+        // When the lockfile specifies a provenance type, only run that specific mechanism.
+        // This prevents false-positive downgrade errors when a tool supports multiple mechanisms
+        // (e.g., both minisign and cosign) that would otherwise compete for the provenance slot.
+        let skip_attestations =
+            locked_provenance.is_some_and(|l| l != ProvenanceType::GithubAttestations);
+        let skip_slsa = locked_provenance.is_some_and(|l| l != ProvenanceType::Slsa);
+        let skip_minisign = locked_provenance.is_some_and(|l| l != ProvenanceType::Minisign);
+        let skip_cosign = locked_provenance.is_some_and(|l| l != ProvenanceType::Cosign);
 
         if !skip_attestations {
             self.verify_github_artifact_attestations(ctx, tv, pkg, v, filename)
@@ -1002,7 +1004,9 @@ impl AquaBackend {
         if !skip_slsa {
             self.verify_slsa(ctx, tv, pkg, v, filename).await?;
         }
-        self.verify_minisign(ctx, tv, pkg, v, filename).await?;
+        if !skip_minisign {
+            self.verify_minisign(ctx, tv, pkg, v, filename).await?;
+        }
 
         let download_path = tv.download_path();
         let platform_key = self.get_platform_key();
@@ -1021,8 +1025,10 @@ impl AquaBackend {
             let checksum_path = download_path.join(format!("{filename}.checksum"));
             HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))
                 .await?;
-            self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
-                .await?;
+            if !skip_cosign {
+                self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
+                    .await?;
+            }
             let checksum_content = file::read_to_string(&checksum_path)?;
             let checksum_str =
                 self.parse_checksum_from_content(&checksum_content, checksum, filename)?;
@@ -1108,10 +1114,10 @@ impl AquaBackend {
             let sig = file::read_to_string(sig_path)?;
             minisign::verify(&minisign.public_key(pkg, v, os(), arch())?, &data, &sig)?;
 
-            // Record minisign provenance only if no higher-priority verification already recorded
+            // Record minisign provenance if no higher-priority verification already recorded
             let platform_key = self.get_platform_key();
             let pi = tv.lock_platforms.entry(platform_key).or_default();
-            if pi.provenance.is_none() {
+            if pi.provenance.map_or(true, |p| p < ProvenanceType::Minisign) {
                 pi.provenance = Some(ProvenanceType::Minisign);
             }
         }
@@ -1405,7 +1411,7 @@ impl AquaBackend {
                             debug!("Cosign signature verified successfully with key for {tv}");
                             let platform_key = self.get_platform_key();
                             let pi = tv.lock_platforms.entry(platform_key).or_default();
-                            if pi.provenance.is_none() {
+                            if pi.provenance.map_or(true, |p| p < ProvenanceType::Cosign) {
                                 pi.provenance = Some(ProvenanceType::Cosign);
                             }
                         }
@@ -1460,7 +1466,7 @@ impl AquaBackend {
                             debug!("Cosign bundle verified successfully for {tv}");
                             let platform_key = self.get_platform_key();
                             let pi = tv.lock_platforms.entry(platform_key).or_default();
-                            if pi.provenance.is_none() {
+                            if pi.provenance.map_or(true, |p| p < ProvenanceType::Cosign) {
                                 pi.provenance = Some(ProvenanceType::Cosign);
                             }
                         }
