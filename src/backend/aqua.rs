@@ -652,22 +652,18 @@ impl AquaBackend {
         let settings = Settings::get();
 
         // Check for GitHub artifact attestations
-        if settings.github_attestations && settings.aqua.github_attestations {
-            if let Some(att) = &pkg.github_artifact_attestations {
-                if att.enabled != Some(false) {
+        if settings.github_attestations && settings.aqua.github_attestations
+            && let Some(att) = &pkg.github_artifact_attestations
+                && att.enabled != Some(false) {
                     return Some("github-attestations".to_string());
                 }
-            }
-        }
 
         // Check for SLSA provenance
-        if settings.slsa && settings.aqua.slsa {
-            if let Some(slsa) = &pkg.slsa_provenance {
-                if slsa.enabled != Some(false) {
+        if settings.slsa && settings.aqua.slsa
+            && let Some(slsa) = &pkg.slsa_provenance
+                && slsa.enabled != Some(false) {
                     return Some("slsa".to_string());
                 }
-            }
-        }
 
         None
     }
