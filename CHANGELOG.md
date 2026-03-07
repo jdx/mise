@@ -1,5 +1,37 @@
 # Changelog
 
+## [2026.3.5](https://github.com/jdx/mise/compare/v2026.3.4..v2026.3.5) - 2026-03-07
+
+### 🚀 Features
+
+- **(vfox)** add `RUNTIME.envType` for libc variant detection by @malept in [#8493](https://github.com/jdx/mise/pull/8493)
+- store provenance verification results in lockfile by @jdx in [#8495](https://github.com/jdx/mise/pull/8495)
+
+### 🐛 Bug Fixes
+
+- **(env)** skip remote version fetching for "latest" in prefer-offline mode by @jdx in [#8500](https://github.com/jdx/mise/pull/8500)
+- **(tasks)** deduplicate shared deps across task delegation by @vadimpiven in [#8497](https://github.com/jdx/mise/pull/8497)
+- **(windows)** correctly identify mise binary without extension by @jdx in [#8503](https://github.com/jdx/mise/pull/8503)
+
+### 🚜 Refactor
+
+- **(core)** migrate cmd! callers to async with kill_on_drop by @jdx in [a63f7d2](https://github.com/jdx/mise/commit/a63f7d288c5c276fadfca4a76e92c48a4843a957)
+
+### 📦 Registry
+
+- add portless (npm:portless) by @risu729 in [#8508](https://github.com/jdx/mise/pull/8508)
+
+### Chore
+
+- **(ci)** temporarily disable `mise up` in release-plz by @jdx in [#8504](https://github.com/jdx/mise/pull/8504)
+- consolidate all linters into hk.pkl by @jdx in [#8498](https://github.com/jdx/mise/pull/8498)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`apache/ant`](https://github.com/apache/ant)
+
 ## [2026.3.4](https://github.com/jdx/mise/compare/v2026.3.3..v2026.3.4) - 2026-03-07
 
 ### 🚀 Features
