@@ -1117,7 +1117,7 @@ impl AquaBackend {
             // Record minisign provenance if no higher-priority verification already recorded
             let platform_key = self.get_platform_key();
             let pi = tv.lock_platforms.entry(platform_key).or_default();
-            if pi.provenance.map_or(true, |p| p < ProvenanceType::Minisign) {
+            if pi.provenance.is_none_or(|p| p < ProvenanceType::Minisign) {
                 pi.provenance = Some(ProvenanceType::Minisign);
             }
         }
@@ -1411,7 +1411,7 @@ impl AquaBackend {
                             debug!("Cosign signature verified successfully with key for {tv}");
                             let platform_key = self.get_platform_key();
                             let pi = tv.lock_platforms.entry(platform_key).or_default();
-                            if pi.provenance.map_or(true, |p| p < ProvenanceType::Cosign) {
+                            if pi.provenance.is_none_or(|p| p < ProvenanceType::Cosign) {
                                 pi.provenance = Some(ProvenanceType::Cosign);
                             }
                         }
@@ -1466,7 +1466,7 @@ impl AquaBackend {
                             debug!("Cosign bundle verified successfully for {tv}");
                             let platform_key = self.get_platform_key();
                             let pi = tv.lock_platforms.entry(platform_key).or_default();
-                            if pi.provenance.map_or(true, |p| p < ProvenanceType::Cosign) {
+                            if pi.provenance.is_none_or(|p| p < ProvenanceType::Cosign) {
                                 pi.provenance = Some(ProvenanceType::Cosign);
                             }
                         }
