@@ -1420,19 +1420,24 @@ fn format(mut doc: DocumentMut) -> String {
                         }
                         a.to_string().cmp(&b.to_string())
                     });
-                    // Convert platforms to inline tables with dotted keys
+                    // TODO: use TOML 1.1 multiline inline tables once toml_edit supports
+                    // InlineTable::set_multiline(). See https://github.com/toml-rs/toml/issues/1027
+                    // Convert platforms to dotted-key subtables (multi-line)
                     if let Some(toml_edit::Item::Table(platforms_table)) = t.remove("platforms") {
                         for (platform_key, platform_value) in platforms_table.iter() {
                             if let toml_edit::Item::Table(platform_info) = platform_value {
-                                let mut inline = toml_edit::InlineTable::new();
-                                for (k, v) in platform_info.iter() {
-                                    if let toml_edit::Item::Value(val) = v {
-                                        inline.insert(k, val.clone());
+                                let dotted_key = format!("platforms.{}", platform_key);
+                                let mut subtable = toml_edit::Table::new();
+                                let mut keys: Vec<_> =
+                                    platform_info.iter().map(|(k, _)| k.to_string()).collect();
+                                keys.sort();
+                                for k in &keys {
+                                    if let Some(item) = platform_info.get(k) {
+                                        subtable.insert(k, item.clone());
                                     }
                                 }
-                                inline.sort_values();
-                                let dotted_key = format!("platforms.{}", platform_key);
-                                t.insert(&dotted_key, toml_edit::Item::Value(inline.into()));
+                                subtable.set_implicit(true);
+                                t.insert(&dotted_key, toml_edit::Item::Table(subtable));
                             }
                         }
                     }
