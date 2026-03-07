@@ -111,12 +111,12 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn test_env_type_linux_is_valid() {
-        // On Linux we may detect gnu/musl, or None if detection is unavailable.
+        // On Linux, env_type() must resolve to a known libc variant.
         let et = env_type();
-        match et.as_deref() {
-            Some("gnu") | Some("musl") | None => {}
-            other => panic!("unexpected linux env_type: {other:?}"),
-        }
+        assert!(
+            et.as_deref() == Some("gnu") || et.as_deref() == Some("musl"),
+            "expected Some(\"gnu\") or Some(\"musl\") on Linux, got {et:?}"
+        );
     }
 
     #[cfg(not(target_os = "linux"))]
