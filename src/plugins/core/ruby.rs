@@ -485,7 +485,10 @@ impl RubyPlugin {
         platform: &str,
         prefer_no_yjit: bool,
     ) -> Result<Option<(String, Option<String>)>> {
-        let releases = github::list_releases(repo).await?;
+        let release = match github::get_release(repo, version).await {
+            Ok(r) => r,
+            Err(_) => return Ok(None),
+        };
         let standard_name = format!("ruby-{}.{}.tar.gz", version, platform);
         let no_yjit_name = format!("ruby-{}.{}.no_yjit.tar.gz", version, platform);
 
@@ -496,18 +499,11 @@ impl RubyPlugin {
         let mut standard_asset = None;
         let mut no_yjit_asset = None;
 
-        for release in &releases {
-            for asset in &release.assets {
-                if no_yjit_asset.is_none() && asset.name == no_yjit_name {
-                    no_yjit_asset =
-                        Some((asset.browser_download_url.clone(), asset.digest.clone()));
-                } else if standard_asset.is_none() && asset.name == standard_name {
-                    standard_asset =
-                        Some((asset.browser_download_url.clone(), asset.digest.clone()));
-                }
-            }
-            if no_yjit_asset.is_some() && standard_asset.is_some() {
-                break;
+        for asset in &release.assets {
+            if no_yjit_asset.is_none() && asset.name == no_yjit_name {
+                no_yjit_asset = Some((asset.browser_download_url.clone(), asset.digest.clone()));
+            } else if standard_asset.is_none() && asset.name == standard_name {
+                standard_asset = Some((asset.browser_download_url.clone(), asset.digest.clone()));
             }
         }
 
