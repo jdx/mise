@@ -669,9 +669,11 @@ impl AquaBackend {
             return Some(ProvenanceType::Slsa { url: None });
         }
 
-        // Check for cosign (nested under checksum config)
+        // Check for cosign (nested under checksum config, requires checksum enabled)
         if settings.aqua.cosign
-            && let Some(cosign) = pkg.checksum.as_ref().and_then(|c| c.cosign.as_ref())
+            && let Some(checksum) = &pkg.checksum
+            && checksum.enabled()
+            && let Some(cosign) = checksum.cosign.as_ref()
             && cosign.enabled != Some(false)
         {
             return Some(ProvenanceType::Cosign);
