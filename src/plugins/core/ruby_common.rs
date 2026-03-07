@@ -48,6 +48,7 @@ pub async fn resolve_rubyinstaller_lock_info(version: &str) -> Result<PlatformIn
             size: None,
             url_api: None,
             conda_deps: None,
+            ..Default::default()
         });
     }
 
@@ -58,5 +59,6 @@ pub async fn resolve_rubyinstaller_lock_info(version: &str) -> Result<PlatformIn
         size: None,
         url_api: None,
         conda_deps: None,
+        ..Default::default()
     })
 }

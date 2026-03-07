@@ -208,6 +208,7 @@ impl Backend for DenoPlugin {
             size: None,
             url_api: None,
             conda_deps: None,
+            ..Default::default()
         })
     }
 }

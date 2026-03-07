@@ -902,6 +902,7 @@ impl Backend for RubyPlugin {
                 size: None,
                 url_api: None,
                 conda_deps: None,
+                ..Default::default()
             });
         }
 
@@ -913,6 +914,7 @@ impl Backend for RubyPlugin {
                 size: None,
                 url_api: None,
                 conda_deps: None,
+                ..Default::default()
             }),
             None => Ok(PlatformInfo::default()),
         }

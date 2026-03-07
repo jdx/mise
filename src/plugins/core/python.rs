@@ -710,6 +710,7 @@ impl Backend for PythonPlugin {
             size: None,
             url_api: None,
             conda_deps: None,
+            ..Default::default()
         })
     }
 }

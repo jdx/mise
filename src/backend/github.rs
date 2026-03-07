@@ -339,6 +339,7 @@ impl Backend for UnifiedGitBackend {
                 checksum: asset.digest,
                 size: None,
                 conda_deps: None,
+                ..Default::default()
             }),
             Err(e) => {
                 debug!(
@@ -476,8 +477,17 @@ impl UnifiedGitBackend {
         self.verify_checksum(ctx, tv, &file_path)?;
 
         // Verify attestations or SLSA (check attestations first, fall back to SLSA)
-        self.verify_attestations_or_slsa(ctx, tv, &file_path)
+        let provenance_result = self
+            .verify_attestations_or_slsa(ctx, tv, &file_path)
             .await?;
+
+        // Record provenance verification result in lock_platforms
+        if let Some((provenance_type, provenance_url)) = provenance_result {
+            let platform_key = self.get_platform_key();
+            let platform_info = tv.lock_platforms.entry(platform_key).or_default();
+            platform_info.provenance = Some(provenance_type);
+            platform_info.provenance_url = provenance_url;
+        }
 
         ctx.pr.next_operation();
         install_artifact(tv, &file_path, opts, Some(ctx.pr.as_ref()))?;
@@ -1060,18 +1070,29 @@ impl UnifiedGitBackend {
     /// Verify artifact using GitHub artifact attestations or SLSA provenance.
     /// Tries attestations first, falls back to SLSA if no attestations found.
     /// If verification is attempted and fails, it's a hard error.
+    ///
+    /// Returns `Ok(Some((type, url)))` if provenance was verified successfully,
+    /// or `Ok(None)` if no provenance was found (not an error).
     async fn verify_attestations_or_slsa(
         &self,
         ctx: &InstallContext,
         tv: &ToolVersion,
         file_path: &std::path::Path,
-    ) -> Result<()> {
+    ) -> Result<Option<(String, Option<String>)>> {
         let settings = Settings::get();
 
         // Only verify for GitHub repos (not GitLab)
         if self.is_gitlab() || self.is_forgejo() {
-            return Ok(());
+            return Ok(None);
         }
+
+        // If the lockfile says this tool has provenance, enforce it
+        let platform_key = self.get_platform_key();
+        let locked_provenance = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|pi| pi.provenance.as_deref())
+            .map(|s| s.to_string());
 
         // Try GitHub artifact attestations first (if enabled globally and for github backend)
         if settings.github_attestations && settings.github.github_attestations {
@@ -1079,7 +1100,9 @@ impl UnifiedGitBackend {
                 .try_verify_github_attestations(ctx, tv, file_path)
                 .await
             {
-                Ok(true) => return Ok(()), // Verified successfully
+                Ok(true) => {
+                    return Ok(Some(("github-attestations".to_string(), None)));
+                }
                 Ok(false) => {
                     // Attestations exist but verification failed - hard error
                     return Err(eyre::eyre!(
@@ -1102,8 +1125,10 @@ impl UnifiedGitBackend {
         // Fall back to SLSA provenance (if enabled globally and for github backend)
         if settings.slsa && settings.github.slsa {
             match self.try_verify_slsa(ctx, tv, file_path).await {
-                Ok(true) => return Ok(()), // Verified successfully
-                Ok(false) => {
+                Ok((true, provenance_url)) => {
+                    return Ok(Some(("slsa".to_string(), provenance_url)));
+                }
+                Ok((false, _)) => {
                     // Provenance exists but verification failed - hard error
                     return Err(eyre::eyre!("SLSA provenance verification failed for {tv}"));
                 }
@@ -1118,7 +1143,17 @@ impl UnifiedGitBackend {
             }
         }
 
-        Ok(())
+        // If lockfile recorded provenance for this tool but we couldn't verify it,
+        // that's a security error - possible downgrade/stripping attack
+        if let Some(expected) = locked_provenance {
+            return Err(eyre::eyre!(
+                "Lockfile requires {expected} provenance for {tv} but verification was not performed. \
+                 This may indicate a downgrade attack. Enable the corresponding verification setting \
+                 or update the lockfile."
+            ));
+        }
+
+        Ok(None)
     }
 
     /// Try to verify GitHub artifact attestations. Returns:
@@ -1170,8 +1205,8 @@ impl UnifiedGitBackend {
     }
 
     /// Try to verify SLSA provenance. Returns:
-    /// - Ok(true) if provenance exists and verified successfully
-    /// - Ok(false) if provenance exists but verification failed
+    /// - Ok((true, Some(url))) if provenance exists and verified successfully
+    /// - Ok((false, _)) if provenance exists but verification failed
     /// - Err(NoAttestations) if no provenance found
     /// - Err(Error) if an error occurred during verification
     async fn try_verify_slsa(
@@ -1179,7 +1214,7 @@ impl UnifiedGitBackend {
         ctx: &InstallContext,
         tv: &ToolVersion,
         file_path: &std::path::Path,
-    ) -> std::result::Result<bool, VerificationStatus> {
+    ) -> std::result::Result<(bool, Option<String>), VerificationStatus> {
         if self.is_gitlab() || self.is_forgejo() {
             return Err(VerificationStatus::NoAttestations);
         }
@@ -1252,6 +1287,7 @@ impl UnifiedGitBackend {
         ctx.pr.set_message("verify SLSA provenance".to_string());
 
         // Verify the provenance
+        let provenance_download_url = provenance_asset.browser_download_url.clone();
         match sigstore_verification::verify_slsa_provenance(
             file_path,
             &provenance_path,
@@ -1263,7 +1299,7 @@ impl UnifiedGitBackend {
                 if verified {
                     debug!("SLSA provenance verified successfully for {tv}");
                 }
-                Ok(verified)
+                Ok((verified, Some(provenance_download_url)))
             }
             Err(e) => {
                 if is_slsa_format_issue(&e) {

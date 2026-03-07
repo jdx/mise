@@ -640,6 +640,7 @@ impl Backend for AquaBackend {
             size: None,
             url_api: None,
             conda_deps: None,
+            ..Default::default()
         })
     }
 }
@@ -1111,6 +1112,17 @@ impl AquaBackend {
                         "SLSA provenance verified successfully for {tv} at level {}",
                         min_level
                     );
+                    // Record provenance in lockfile
+                    let platform_key = self.get_platform_key();
+                    let pi = tv.lock_platforms.entry(platform_key).or_default();
+                    pi.provenance = Some("slsa".to_string());
+                    pi.provenance_url = Some(
+                        provenance_path
+                            .file_name()
+                            .unwrap()
+                            .to_string_lossy()
+                            .to_string(),
+                    );
                 }
                 Ok(false) => {
                     return Err(eyre!("SLSA provenance verification failed for {tv}"));
@@ -1138,7 +1150,7 @@ impl AquaBackend {
     async fn verify_github_artifact_attestations(
         &self,
         ctx: &InstallContext,
-        tv: &ToolVersion,
+        tv: &mut ToolVersion,
         pkg: &AquaPackage,
         _v: &str,
         filename: &str,
@@ -1180,6 +1192,10 @@ impl AquaBackend {
                     ctx.pr
                         .set_message("✓ GitHub artifact attestations verified".to_string());
                     debug!("GitHub artifact attestations verified successfully for {tv}");
+                    // Record provenance in lockfile
+                    let platform_key = self.get_platform_key();
+                    let pi = tv.lock_platforms.entry(platform_key).or_default();
+                    pi.provenance = Some("github-attestations".to_string());
                 }
                 Ok(false) => {
                     return Err(eyre!(

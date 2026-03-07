@@ -77,6 +77,12 @@ pub struct PlatformInfo {
     /// References to conda packages in the shared conda-packages section (by basename)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conda_deps: Option<Vec<String>>,
+    /// Type of provenance verification that succeeded: "github-attestations", "slsa", "cosign"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<String>,
+    /// URL or asset name of the provenance/attestation file (for SLSA .intoto.jsonl)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provenance_url: Option<String>,
 }
 
 // Re-export CondaPackageInfo from conda backend for lockfile serialization
@@ -89,6 +95,8 @@ impl PlatformInfo {
             && self.url.is_none()
             && self.url_api.is_none()
             && self.conda_deps.is_none()
+            && self.provenance.is_none()
+            && self.provenance_url.is_none()
     }
 
     /// Merge this PlatformInfo with another, preserving important data.
@@ -118,6 +126,11 @@ impl PlatformInfo {
             url: self.url.clone().or_else(|| other.url.clone()),
             url_api: self.url_api.clone().or_else(|| other.url_api.clone()),
             conda_deps: self.conda_deps.clone().or_else(|| other.conda_deps.clone()),
+            provenance: self.provenance.clone().or_else(|| other.provenance.clone()),
+            provenance_url: self
+                .provenance_url
+                .clone()
+                .or_else(|| other.provenance_url.clone()),
         }
     }
 }
@@ -156,12 +169,22 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     ),
                     _ => None,
                 };
+                let provenance = match t.remove("provenance") {
+                    Some(toml::Value::String(s)) => Some(s),
+                    _ => None,
+                };
+                let provenance_url = match t.remove("provenance_url") {
+                    Some(toml::Value::String(s)) => Some(s),
+                    _ => None,
+                };
                 Ok(PlatformInfo {
                     checksum,
                     size,
                     url,
                     url_api,
                     conda_deps,
+                    provenance,
+                    provenance_url,
                 })
             }
             _ => bail!("unsupported asset info format"),
@@ -188,6 +211,12 @@ impl From<PlatformInfo> for toml::Value {
                 .collect::<Vec<_>>()
                 .into();
             table.insert("conda_deps".to_string(), deps);
+        }
+        if let Some(provenance) = platform_info.provenance {
+            table.insert("provenance".to_string(), provenance.into());
+        }
+        if let Some(provenance_url) = platform_info.provenance_url {
+            table.insert("provenance_url".to_string(), provenance_url.into());
         }
         toml::Value::Table(table)
     }
@@ -467,6 +496,12 @@ impl Lockfile {
                     // For conda_deps, always use the new value - None means "no dependencies"
                     // rather than "not computed", so we shouldn't preserve stale deps
                     conda_deps: platform_info.conda_deps,
+                    provenance: platform_info
+                        .provenance
+                        .or_else(|| existing.provenance.clone()),
+                    provenance_url: platform_info
+                        .provenance_url
+                        .or_else(|| existing.provenance_url.clone()),
                 }
             } else {
                 platform_info
@@ -1348,16 +1383,7 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
 
                 // Convert tool version lock_platforms to lockfile platforms
                 for (platform, platform_info) in &tv.lock_platforms {
-                    platforms.insert(
-                        platform.clone(),
-                        PlatformInfo {
-                            checksum: platform_info.checksum.clone(),
-                            size: platform_info.size,
-                            url: platform_info.url.clone(),
-                            url_api: platform_info.url_api.clone(),
-                            conda_deps: platform_info.conda_deps.clone(),
-                        },
-                    );
+                    platforms.insert(platform.clone(), platform_info.clone());
                 }
 
                 // Resolve lockfile options from the backend
@@ -1448,6 +1474,7 @@ mod tests {
                 url: None,
                 url_api: None,
                 conda_deps: Some(vec![dep.to_string()]),
+                ..Default::default()
             },
         );
         LockfileTool {
@@ -1528,6 +1555,7 @@ backend = "core:python"
                 url: Some("https://example.com/node.tar.gz".to_string()),
                 url_api: Some("https://api.github.com.com/repos/test/1234".to_string()),
                 conda_deps: None,
+                ..Default::default()
             },
         );
 
@@ -1791,6 +1819,7 @@ backend = "conda:jq"
                 size: None,
                 url_api: None,
                 conda_deps: Some(vec!["ncurses-6.4-h7ea286d_0".to_string()]),
+                ..Default::default()
             },
         );
         lockfile.tools.insert(
@@ -1878,6 +1907,7 @@ backend = "conda:jq"
                 size: None,
                 url_api: None,
                 conda_deps: Some(vec!["referenced-pkg".to_string()]),
+                ..Default::default()
             },
         );
         lockfile.tools.insert(
@@ -2049,5 +2079,57 @@ backend = "conda:jq"
         };
         let merged = no_url.merge_with(&blake3_info);
         assert_eq!(merged.url, Some("https://example.com/b".to_string()));
+    }
+
+    #[test]
+    fn test_provenance_fields_roundtrip() {
+        let info = PlatformInfo {
+            checksum: Some("sha256:abc123".to_string()),
+            url: Some("https://example.com/tool.tar.gz".to_string()),
+            provenance: Some("slsa".to_string()),
+            provenance_url: Some("https://example.com/tool.intoto.jsonl".to_string()),
+            ..Default::default()
+        };
+
+        // Test toml roundtrip
+        let toml_val: toml::Value = info.clone().into();
+        let table = toml_val.as_table().unwrap();
+        assert_eq!(table.get("provenance").unwrap().as_str().unwrap(), "slsa");
+        assert_eq!(
+            table.get("provenance_url").unwrap().as_str().unwrap(),
+            "https://example.com/tool.intoto.jsonl"
+        );
+        let parsed: PlatformInfo = toml_val.try_into().unwrap();
+        assert_eq!(parsed.provenance, Some("slsa".to_string()));
+        assert_eq!(
+            parsed.provenance_url,
+            Some("https://example.com/tool.intoto.jsonl".to_string())
+        );
+    }
+
+    #[test]
+    fn test_provenance_merge_preserves_existing() {
+        let with_provenance = PlatformInfo {
+            provenance: Some("github-attestations".to_string()),
+            ..Default::default()
+        };
+        let without = PlatformInfo::default();
+
+        // Merging with empty preserves provenance
+        let merged = with_provenance.merge_with(&without);
+        assert_eq!(merged.provenance, Some("github-attestations".to_string()));
+
+        // Merging empty with provenance picks up provenance from other
+        let merged = without.merge_with(&with_provenance);
+        assert_eq!(merged.provenance, Some("github-attestations".to_string()));
+    }
+
+    #[test]
+    fn test_provenance_not_empty() {
+        let info = PlatformInfo {
+            provenance: Some("slsa".to_string()),
+            ..Default::default()
+        };
+        assert!(!info.is_empty());
     }
 }

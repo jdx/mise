@@ -407,6 +407,7 @@ impl Backend for ZigPlugin {
                 size,
                 url_api: None,
                 conda_deps: None,
+                ..Default::default()
             }),
             Err(_) if regex!(r"^\d+\.\d+\.\d+$").is_match(&tv.version) => {
                 // Fallback: construct URL directly for numbered versions (no checksum available)
@@ -419,6 +420,7 @@ impl Backend for ZigPlugin {
                     size: None,
                     url_api: None,
                     conda_deps: None,
+                    ..Default::default()
                 })
             }
             Err(_) => Ok(PlatformInfo::default()),
