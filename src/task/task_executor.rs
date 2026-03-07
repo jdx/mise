@@ -235,7 +235,6 @@ impl TaskExecutor {
 
         if let Some(file) = task.file_path(config).await? {
             let exec_start = std::time::Instant::now();
-            let _guard = acquire_runtime_lock(task.interactive).await;
             self.exec_file(config, &file, task, &env, &prefix, extra_vars)
                 .await?;
             trace!(
@@ -610,6 +609,7 @@ impl TaskExecutor {
             self.eprint(task, prefix, &cmd);
         }
 
+        let _guard = acquire_runtime_lock(task.interactive).await;
         self.exec(file, &args, task, &env, prefix).await
     }
 
