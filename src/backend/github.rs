@@ -1175,11 +1175,11 @@ impl UnifiedGitBackend {
 
         // When the lockfile specifies a provenance type, skip higher-priority mechanisms
         // to avoid false-positive downgrade errors when a tool supports multiple mechanisms
-        let skip_attestations = locked_provenance.map_or(false, |l| {
+        let skip_attestations = locked_provenance.is_some_and(|l| {
             l.lower_priority_than(ProvenanceType::GithubAttestations)
         });
         let skip_slsa =
-            locked_provenance.map_or(false, |l| l.lower_priority_than(ProvenanceType::Slsa));
+            locked_provenance.is_some_and(|l| l.lower_priority_than(ProvenanceType::Slsa));
 
         // Try GitHub artifact attestations first (if enabled globally and for github backend)
         if !skip_attestations && settings.github_attestations && settings.github.github_attestations

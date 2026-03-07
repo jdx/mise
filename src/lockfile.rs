@@ -166,7 +166,7 @@ impl PlatformInfo {
             conda_deps: self.conda_deps.clone().or_else(|| other.conda_deps.clone()),
             // For provenance, always use the new value - None means "no provenance expected"
             // rather than "not computed", so we shouldn't preserve stale provenance
-            provenance: self.provenance.clone(),
+            provenance: self.provenance,
             provenance_url: self.provenance_url.clone(),
         }
     }
