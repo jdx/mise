@@ -387,6 +387,9 @@ impl RubyPlugin {
     // ===== Precompiled Ruby support =====
 
     /// Detect provenance type for precompiled Ruby binaries.
+    /// Records GithubAttestations based on settings and URL format without an API probe.
+    /// This assumes all releases from the configured precompiled source have attestations;
+    /// if a release lacks them, install will fail at verification time.
     fn detect_precompiled_provenance(&self) -> Option<ProvenanceType> {
         let settings = Settings::get();
         let enabled = settings

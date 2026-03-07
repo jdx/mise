@@ -1170,7 +1170,10 @@ impl UnifiedGitBackend {
     ) -> Result<Option<ProvenanceType>> {
         let settings = Settings::get();
 
-        // If the lockfile says this tool has provenance, enforce it
+        // Read the expected provenance from the lockfile. Unlike aqua's .take() approach,
+        // we use .clone() here because tv is &ToolVersion. The caller unconditionally
+        // overwrites platform_info.provenance with the returned value, so stale data
+        // cannot persist after a successful call.
         let platform_key = self.get_platform_key();
         let locked_provenance = tv
             .lock_platforms

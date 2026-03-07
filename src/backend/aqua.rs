@@ -1036,7 +1036,9 @@ impl AquaBackend {
                 .is_none_or(|pi| pi.checksum.is_none());
 
             let needs_cosign = !skip_cosign;
-            // Short-circuit cosign if a higher-priority mechanism already recorded provenance
+            // Short-circuit cosign if a higher-priority mechanism already recorded provenance.
+            // Safe to cache: provenance is only modified by the single-threaded verification
+            // methods above (attestations, slsa, minisign), all of which have completed by now.
             let cosign_already_verified = needs_cosign
                 && tv
                     .lock_platforms
