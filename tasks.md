@@ -143,12 +143,6 @@ Automatically fix lint issues
 
 Lint GitHub Actions workflows
 
-## `lint:cargo-fmt`
-
-- **Usage**: `lint:cargo-fmt`
-
-Check Rust code formatting with cargo fmt
-
 ## `lint:hk`
 
 - **Usage**: `lint:hk`
