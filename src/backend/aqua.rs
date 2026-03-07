@@ -648,20 +648,14 @@ impl Backend for AquaBackend {
 
 impl AquaBackend {
     /// Detect provenance type from aqua registry package config.
-    /// Note: GithubAttestations is NOT recorded here because we cannot verify
-    /// attestations exist without downloading the artifact first. It is recorded
-    /// at install-time after successful verification instead.
+    ///
+    /// Only returns provenance types that can be verified without downloading
+    /// the artifact (cosign, minisign). GithubAttestations and SLSA are NOT
+    /// recorded here because their verification can silently fail (missing
+    /// assets, no attestations published). They are recorded at install-time
+    /// after successful verification instead.
     fn detect_provenance_type(&self, pkg: &AquaPackage) -> Option<ProvenanceType> {
         let settings = Settings::get();
-
-        // Check for SLSA provenance
-        if settings.slsa
-            && settings.aqua.slsa
-            && let Some(slsa) = &pkg.slsa_provenance
-            && slsa.enabled != Some(false)
-        {
-            return Some(ProvenanceType::Slsa { url: None });
-        }
 
         // Check for cosign (nested under checksum config, requires checksum enabled)
         if settings.aqua.cosign
@@ -1010,12 +1004,13 @@ impl AquaBackend {
             }
         }
         if !skip_minisign {
-            // Short-circuit: if a higher-priority mechanism already recorded provenance, skip minisign
+            // Short-circuit: if SLSA or GithubAttestations already recorded provenance, skip minisign.
+            // Cosign runs later in the checksum block, so it cannot be set at this point.
             let already_verified = tv
                 .lock_platforms
                 .get(&platform_key)
                 .and_then(|pi| pi.provenance.as_ref())
-                .is_some_and(|p| *p > ProvenanceType::Minisign);
+                .is_some_and(|p| p.is_slsa() || p.is_github_attestations());
             if !already_verified {
                 self.verify_minisign(ctx, tv, pkg, v, filename).await?;
             }
@@ -1032,8 +1027,8 @@ impl AquaBackend {
                 .get(&platform_key)
                 .is_none_or(|pi| pi.checksum.is_none());
 
-            // Download checksum file if we need the checksum or need to run cosign
-            if (needs_checksum || !skip_cosign) && !checksum_path.exists() {
+            let needs_cosign = !skip_cosign;
+            if (needs_checksum || needs_cosign) && !checksum_path.exists() {
                 let url = match checksum._type() {
                     AquaChecksumType::GithubRelease => {
                         let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;

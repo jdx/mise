@@ -115,6 +115,12 @@ impl ProvenanceType {
     }
 }
 
+/// NOTE: Ord compares only by ordinal (variant priority), not by inner data.
+/// This means `Slsa { url: None }` and `Slsa { url: Some("x") }` are `Equal`
+/// under `cmp()` but `!=` under `PartialEq`. This is intentional — priority
+/// ordering should not depend on the URL. Use `merge()` instead of `max()`
+/// when both values may carry data that should be preserved.
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for ProvenanceType {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -171,7 +177,7 @@ impl<'de> serde::Deserialize<'de> for ProvenanceType {
                 let key: String = map
                     .next_key()?
                     .ok_or_else(|| de::Error::custom("empty provenance table"))?;
-                match key.as_str() {
+                let result = match key.as_str() {
                     "slsa" => {
                         #[derive(serde_derive::Deserialize)]
                         struct SlsaInner {
@@ -183,7 +189,10 @@ impl<'de> serde::Deserialize<'de> for ProvenanceType {
                     other => Err(de::Error::custom(format!(
                         "unknown provenance table key: {other}"
                     ))),
-                }
+                }?;
+                // Drain any remaining entries to satisfy strict deserializers
+                while map.next_entry::<String, de::IgnoredAny>()?.is_some() {}
+                Ok(result)
             }
         }
         deserializer.deserialize_any(ProvenanceVisitor)
