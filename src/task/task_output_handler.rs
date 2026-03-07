@@ -343,6 +343,9 @@ impl OutputHandler {
     }
 
     pub fn raw(&self, task: Option<&Task>) -> bool {
+        // Interactive tasks are treated as raw for I/O (stdin/stdout/stderr inherit).
+        // This means CmdLineRunner will also acquire its internal RAW_LOCK — that's
+        // intentional and harmless since TASK_RUNTIME_LOCK already provides exclusivity.
         self.raw || Settings::get().raw || task.is_some_and(|t| t.raw || t.interactive)
     }
 

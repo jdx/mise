@@ -79,6 +79,9 @@ impl TasksInfo {
         if task.raw {
             properties.push("raw");
         }
+        if task.interactive {
+            properties.push("interactive");
+        }
         if !properties.is_empty() {
             info::inline_section("Properties", properties.join(", "))?;
         }

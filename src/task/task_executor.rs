@@ -816,7 +816,9 @@ impl TaskExecutor {
         if let Some(timeout) = effective_timeout {
             cmd = cmd.with_timeout(timeout);
         }
-        cmd.execute()?;
+        // cmd.execute() is blocking (calls cp.wait()), so use block_in_place
+        // to avoid starving the tokio runtime while holding the TASK_RUNTIME_LOCK guard.
+        tokio::task::block_in_place(|| cmd.execute())?;
         trace!("{prefix} exited successfully");
         Ok(())
     }
