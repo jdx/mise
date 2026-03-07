@@ -69,6 +69,23 @@ impl ToolVersionOptions {
         self.opts.get(key).and_then(|v| v.as_str())
     }
 
+    /// Convert opts to string values, extracting inner strings from
+    /// `toml::Value::String` and calling `to_string()` on other types.
+    pub fn opts_as_strings(&self) -> IndexMap<String, String> {
+        self.opts
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.clone(),
+                    match v {
+                        toml::Value::String(s) => s.clone(),
+                        _ => v.to_string(),
+                    },
+                )
+            })
+            .collect()
+    }
+
     pub fn merge(&mut self, other: &IndexMap<String, toml::Value>) {
         for (key, value) in other {
             self.opts.entry(key.to_string()).or_insert(value.clone());
