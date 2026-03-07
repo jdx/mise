@@ -86,25 +86,6 @@ impl ToolVersion {
         tv
     }
 
-    /// Look up platform info with fallback to the base (unqualified) key.
-    /// For example, if platform_key is "linux-x64-musl" and not found,
-    /// falls back to "linux-x64". This provides backward compatibility
-    /// with lockfiles generated before musl qualifier support was added.
-    pub fn get_lock_platform(&self, platform_key: &str) -> Option<&PlatformInfo> {
-        self.lock_platforms.get(platform_key).or_else(|| {
-            if let Ok(platform) = crate::platform::Platform::parse(platform_key) {
-                if platform.qualifier.is_some() {
-                    let base_key = format!("{}-{}", platform.os, platform.arch);
-                    self.lock_platforms.get(&base_key)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        })
-    }
-
     pub fn ba(&self) -> &BackendArg {
         self.request.ba()
     }

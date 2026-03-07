@@ -284,7 +284,8 @@ impl Backend for AquaBackend {
         // This allows us to skip API calls when lockfile has the URL
         let platform_key = self.get_platform_key();
         let existing_platform = tv
-            .get_lock_platform(&platform_key)
+            .lock_platforms
+            .get(&platform_key)
             .and_then(|asset| asset.url.clone());
 
         // Skip get_version_tags() API call if we have lockfile URL
