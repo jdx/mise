@@ -20,7 +20,7 @@ use crate::github::{self, GithubRelease};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::plugins::PluginSource;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
@@ -387,9 +387,7 @@ impl RubyPlugin {
     // ===== Precompiled Ruby support =====
 
     /// Detect provenance type for precompiled Ruby binaries.
-    /// Returns Some("github-attestations") if attestations are enabled and
-    /// the source is a GitHub repo (not a custom URL).
-    fn detect_precompiled_provenance(&self) -> Option<String> {
+    fn detect_precompiled_provenance(&self) -> Option<ProvenanceType> {
         let settings = Settings::get();
         let enabled = settings
             .ruby
@@ -407,7 +405,7 @@ impl RubyPlugin {
         if !source.contains('/') {
             return None;
         }
-        Some("github-attestations".to_string())
+        Some(ProvenanceType::GithubAttestations)
     }
 
     /// Check if precompiled binaries should be tried
@@ -653,16 +651,16 @@ impl RubyPlugin {
         // Record provenance only if verification actually succeeded (not skipped)
         if verified {
             let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
-            pi.provenance = Some("github-attestations".to_string());
+            pi.provenance = Some(ProvenanceType::GithubAttestations);
         }
 
         // Enforce lockfile provenance
-        if let Some(ref expected) = locked_provenance {
+        if let Some(expected) = locked_provenance {
             let got = tv
                 .lock_platforms
                 .get(&platform_key)
-                .and_then(|pi| pi.provenance.as_deref());
-            if got != Some(expected.as_str()) {
+                .and_then(|pi| pi.provenance);
+            if got != Some(expected) {
                 return Err(eyre!(
                     "Lockfile requires {expected} provenance for {tv} but {got:?} was used. \
                      This may indicate a downgrade attack. Enable the corresponding verification setting \

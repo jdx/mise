@@ -14,7 +14,7 @@ use crate::duration::DAILY;
 use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{file, minisign, plugins};
@@ -321,8 +321,8 @@ impl Backend for ZigPlugin {
             .get_mut(&platform_key)
             .and_then(|pi| pi.provenance.take());
 
-        if let Some(ref expected) = locked_provenance
-            && expected != "minisign"
+        if let Some(expected) = locked_provenance
+            && expected != ProvenanceType::Minisign
         {
             return Err(eyre::eyre!(
                 "Lockfile requires {expected} provenance for {tv} but minisign was used. \
@@ -333,7 +333,7 @@ impl Backend for ZigPlugin {
         // Record minisign provenance — only reached if download() (and its
         // minisign::verify call) succeeded
         let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
-        pi.provenance = Some("minisign".to_string());
+        pi.provenance = Some(ProvenanceType::Minisign);
 
         ctx.pr.next_operation();
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
@@ -430,7 +430,7 @@ impl Backend for ZigPlugin {
                 url: Some(url),
                 checksum,
                 size,
-                provenance: Some("minisign".to_string()),
+                provenance: Some(ProvenanceType::Minisign),
                 ..Default::default()
             }),
             Err(_) if regex!(r"^\d+\.\d+\.\d+$").is_match(&tv.version) => {

@@ -13,7 +13,7 @@ use crate::env;
 use crate::file;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::toolset::ToolVersionOptions;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{backend::Backend, forgejo, github, gitlab};
@@ -377,7 +377,7 @@ impl UnifiedGitBackend {
         repo: &str,
         api_url: &str,
         asset_digest: Option<&str>,
-    ) -> Option<String> {
+    ) -> Option<ProvenanceType> {
         let settings = Settings::get();
         let version = &tv.version;
         let version_prefix = opts.get("version_prefix");
@@ -410,7 +410,7 @@ impl UnifiedGitBackend {
                     if let Ok(attestations) = source.fetch_attestations(&artifact_ref).await
                         && !attestations.is_empty()
                     {
-                        return Some("github-attestations".to_string());
+                        return Some(ProvenanceType::GithubAttestations);
                     }
                 }
             }
@@ -426,7 +426,7 @@ impl UnifiedGitBackend {
                     || name.ends_with(".sigstore")
             });
             if has_slsa {
-                return Some("slsa".to_string());
+                return Some(ProvenanceType::Slsa);
             }
         }
 
@@ -1152,7 +1152,7 @@ impl UnifiedGitBackend {
         ctx: &InstallContext,
         tv: &ToolVersion,
         file_path: &std::path::Path,
-    ) -> Result<Option<(String, Option<String>)>> {
+    ) -> Result<Option<(ProvenanceType, Option<String>)>> {
         let settings = Settings::get();
 
         // If the lockfile says this tool has provenance, enforce it
@@ -1160,12 +1160,11 @@ impl UnifiedGitBackend {
         let locked_provenance = tv
             .lock_platforms
             .get(&platform_key)
-            .and_then(|pi| pi.provenance.as_deref())
-            .map(|s| s.to_string());
+            .and_then(|pi| pi.provenance);
 
         // Only verify for GitHub repos (not GitLab/Forgejo)
         if self.is_gitlab() || self.is_forgejo() {
-            if let Some(expected) = &locked_provenance {
+            if let Some(expected) = locked_provenance {
                 return Err(eyre::eyre!(
                     "Lockfile requires {expected} provenance for {tv} but verification is not available \
                      for GitLab/Forgejo backends. This may indicate a downgrade attack."
@@ -1174,10 +1173,13 @@ impl UnifiedGitBackend {
             return Ok(None);
         }
 
-        // When the lockfile specifies a provenance type, only try the matching verification
+        // When the lockfile specifies a provenance type, skip higher-priority mechanisms
         // to avoid false-positive downgrade errors when a tool supports multiple mechanisms
-        let skip_attestations = locked_provenance.as_deref() == Some("slsa");
-        let skip_slsa = locked_provenance.as_deref() == Some("github-attestations");
+        let skip_attestations = locked_provenance.map_or(false, |l| {
+            l.lower_priority_than(ProvenanceType::GithubAttestations)
+        });
+        let skip_slsa =
+            locked_provenance.map_or(false, |l| l.lower_priority_than(ProvenanceType::Slsa));
 
         // Try GitHub artifact attestations first (if enabled globally and for github backend)
         if !skip_attestations && settings.github_attestations && settings.github.github_attestations
@@ -1187,7 +1189,7 @@ impl UnifiedGitBackend {
                 .await
             {
                 Ok(true) => {
-                    return Ok(Some(("github-attestations".to_string(), None)));
+                    return Ok(Some((ProvenanceType::GithubAttestations, None)));
                 }
                 Ok(false) => {
                     // Attestations exist but verification failed - hard error
@@ -1212,7 +1214,7 @@ impl UnifiedGitBackend {
         if !skip_slsa && settings.slsa && settings.github.slsa {
             match self.try_verify_slsa(ctx, tv, file_path).await {
                 Ok((true, provenance_url)) => {
-                    return Ok(Some(("slsa".to_string(), provenance_url)));
+                    return Ok(Some((ProvenanceType::Slsa, provenance_url)));
                 }
                 Ok((false, _)) => {
                     // Provenance exists but verification failed - hard error
@@ -1230,7 +1232,7 @@ impl UnifiedGitBackend {
         }
 
         // If lockfile recorded provenance but no verification succeeded, it's a downgrade attack
-        if let Some(expected) = &locked_provenance {
+        if let Some(expected) = locked_provenance {
             return Err(eyre::eyre!(
                 "Lockfile requires {expected} provenance for {tv} but verification was not performed. \
                  This may indicate a downgrade attack. Enable the corresponding verification setting \

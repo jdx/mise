@@ -63,6 +63,44 @@ pub struct LockfileTool {
     pub platforms: BTreeMap<String, PlatformInfo>,
 }
 
+/// Type of provenance verification, ordered by priority (lowest to highest).
+/// The ordering is significant: during verification, higher-priority mechanisms
+/// are tried first, and the lockfile records whichever succeeds.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, strum::EnumString, strum::Display,
+)]
+#[strum(serialize_all = "kebab-case")]
+pub enum ProvenanceType {
+    Minisign,
+    Slsa,
+    GithubAttestations,
+}
+
+impl ProvenanceType {
+    /// Returns true if `self` has strictly lower priority than `other`.
+    pub fn lower_priority_than(self, other: ProvenanceType) -> bool {
+        self < other
+    }
+}
+
+impl serde::Serialize for ProvenanceType {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ProvenanceType {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        let s: String = serde::Deserialize::deserialize(deserializer)?;
+        s.parse().map_err(serde::de::Error::custom)
+    }
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -77,9 +115,9 @@ pub struct PlatformInfo {
     /// References to conda packages in the shared conda-packages section (by basename)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conda_deps: Option<Vec<String>>,
-    /// Type of provenance verification that succeeded: "github-attestations", "slsa", "cosign"
+    /// Type of provenance verification that succeeded
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub provenance: Option<String>,
+    pub provenance: Option<ProvenanceType>,
     /// URL or asset name of the provenance/attestation file (for SLSA .intoto.jsonl)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provenance_url: Option<String>,
@@ -169,7 +207,7 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     _ => None,
                 };
                 let provenance = match t.remove("provenance") {
-                    Some(toml::Value::String(s)) => Some(s),
+                    Some(toml::Value::String(s)) => s.parse().ok(),
                     _ => None,
                 };
                 let provenance_url = match t.remove("provenance_url") {
@@ -212,7 +250,7 @@ impl From<PlatformInfo> for toml::Value {
             table.insert("conda_deps".to_string(), deps);
         }
         if let Some(provenance) = platform_info.provenance {
-            table.insert("provenance".to_string(), provenance.into());
+            table.insert("provenance".to_string(), provenance.to_string().into());
         }
         if let Some(provenance_url) = platform_info.provenance_url {
             table.insert("provenance_url".to_string(), provenance_url.into());
@@ -2097,7 +2135,7 @@ backend = "conda:jq"
         let info = PlatformInfo {
             checksum: Some("sha256:abc123".to_string()),
             url: Some("https://example.com/tool.tar.gz".to_string()),
-            provenance: Some("slsa".to_string()),
+            provenance: Some(ProvenanceType::Slsa),
             provenance_url: Some("https://example.com/tool.intoto.jsonl".to_string()),
             ..Default::default()
         };
@@ -2111,7 +2149,7 @@ backend = "conda:jq"
             "https://example.com/tool.intoto.jsonl"
         );
         let parsed: PlatformInfo = toml_val.try_into().unwrap();
-        assert_eq!(parsed.provenance, Some("slsa".to_string()));
+        assert_eq!(parsed.provenance, Some(ProvenanceType::Slsa));
         assert_eq!(
             parsed.provenance_url,
             Some("https://example.com/tool.intoto.jsonl".to_string())
@@ -2121,14 +2159,14 @@ backend = "conda:jq"
     #[test]
     fn test_provenance_merge_preserves_existing() {
         let with_provenance = PlatformInfo {
-            provenance: Some("github-attestations".to_string()),
+            provenance: Some(ProvenanceType::GithubAttestations),
             ..Default::default()
         };
         let without = PlatformInfo::default();
 
         // Merging with empty preserves provenance
         let merged = with_provenance.merge_with(&without);
-        assert_eq!(merged.provenance, Some("github-attestations".to_string()));
+        assert_eq!(merged.provenance, Some(ProvenanceType::GithubAttestations));
 
         // Merging empty (new) with provenance (old) uses the new value (None)
         // because None means "no provenance expected", not "not computed"
@@ -2139,7 +2177,7 @@ backend = "conda:jq"
     #[test]
     fn test_provenance_not_empty() {
         let info = PlatformInfo {
-            provenance: Some("slsa".to_string()),
+            provenance: Some(ProvenanceType::Slsa),
             ..Default::default()
         };
         assert!(!info.is_empty());

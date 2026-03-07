@@ -9,7 +9,7 @@ use crate::config::Settings;
 use crate::file::{TarFormat, TarOptions};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
@@ -648,16 +648,16 @@ impl Backend for AquaBackend {
 
 impl AquaBackend {
     /// Detect provenance type from aqua registry package config.
-    fn detect_provenance_type(&self, pkg: &AquaPackage) -> Option<String> {
+    fn detect_provenance_type(&self, pkg: &AquaPackage) -> Option<ProvenanceType> {
         let settings = Settings::get();
 
-        // Check for GitHub artifact attestations
+        // Check for GitHub artifact attestations (highest priority)
         if settings.github_attestations
             && settings.aqua.github_attestations
             && let Some(att) = &pkg.github_artifact_attestations
             && att.enabled != Some(false)
         {
-            return Some("github-attestations".to_string());
+            return Some(ProvenanceType::GithubAttestations);
         }
 
         // Check for SLSA provenance
@@ -666,7 +666,7 @@ impl AquaBackend {
             && let Some(slsa) = &pkg.slsa_provenance
             && slsa.enabled != Some(false)
         {
-            return Some("slsa".to_string());
+            return Some(ProvenanceType::Slsa);
         }
 
         None
@@ -972,17 +972,13 @@ impl AquaBackend {
             .get_mut(&platform_key)
             .and_then(|pi| pi.provenance.take());
 
-        // When the lockfile specifies a provenance type, only try the matching verification
+        // When the lockfile specifies a provenance type, skip higher-priority mechanisms
         // to avoid false-positive downgrade errors when a tool supports multiple mechanisms.
-        // Order matches detect_provenance_type: github-attestations first, then SLSA.
-        let skip_attestations = matches!(
-            locked_provenance.as_deref(),
-            Some("slsa") | Some("minisign")
-        );
-        let skip_slsa = matches!(
-            locked_provenance.as_deref(),
-            Some("github-attestations") | Some("minisign")
-        );
+        let skip_attestations = locked_provenance.map_or(false, |l| {
+            l.lower_priority_than(ProvenanceType::GithubAttestations)
+        });
+        let skip_slsa =
+            locked_provenance.map_or(false, |l| l.lower_priority_than(ProvenanceType::Slsa));
 
         if !skip_attestations {
             self.verify_github_artifact_attestations(ctx, tv, pkg, v, filename)
@@ -994,12 +990,12 @@ impl AquaBackend {
         self.verify_minisign(ctx, tv, pkg, v, filename).await?;
 
         // If lockfile recorded provenance, verify that the type matches
-        if let Some(ref expected) = locked_provenance {
+        if let Some(expected) = locked_provenance {
             let got = tv
                 .lock_platforms
                 .get(&platform_key)
-                .and_then(|pi| pi.provenance.as_deref());
-            if got != Some(expected.as_str()) {
+                .and_then(|pi| pi.provenance);
+            if got != Some(expected) {
                 return Err(eyre!(
                     "Lockfile requires {expected} provenance for {tv} but {got:?} was used. \
                      This may indicate a downgrade attack. Enable the corresponding verification setting \
@@ -1099,7 +1095,7 @@ impl AquaBackend {
             let platform_key = self.get_platform_key();
             let pi = tv.lock_platforms.entry(platform_key).or_default();
             if pi.provenance.is_none() {
-                pi.provenance = Some("minisign".to_string());
+                pi.provenance = Some(ProvenanceType::Minisign);
             }
         }
         Ok(())
@@ -1190,7 +1186,7 @@ impl AquaBackend {
                     let platform_key = self.get_platform_key();
                     let pi = tv.lock_platforms.entry(platform_key).or_default();
                     if pi.provenance.is_none() {
-                        pi.provenance = Some("slsa".to_string());
+                        pi.provenance = Some(ProvenanceType::Slsa);
                         pi.provenance_url = Some(provenance_download_url.clone());
                     }
                 }
@@ -1266,7 +1262,7 @@ impl AquaBackend {
                     // is always None here
                     let platform_key = self.get_platform_key();
                     let pi = tv.lock_platforms.entry(platform_key).or_default();
-                    pi.provenance = Some("github-attestations".to_string());
+                    pi.provenance = Some(ProvenanceType::GithubAttestations);
                 }
                 Ok(false) => {
                     return Err(eyre!(
