@@ -158,10 +158,11 @@ impl PlatformInfo {
             url: self.url.clone().or_else(|| other.url.clone()),
             url_api: self.url_api.clone().or_else(|| other.url_api.clone()),
             conda_deps: self.conda_deps.clone().or_else(|| other.conda_deps.clone()),
-            // For provenance, always use the new value - None means "no provenance expected"
-            // rather than "not computed", so we shouldn't preserve stale provenance
-            provenance: self.provenance,
-            provenance_url: self.provenance_url.clone(),
+            provenance: self.provenance.or(other.provenance),
+            provenance_url: self
+                .provenance_url
+                .clone()
+                .or_else(|| other.provenance_url.clone()),
         }
     }
 }
@@ -527,11 +528,10 @@ impl Lockfile {
                     // For conda_deps, always use the new value - None means "no dependencies"
                     // rather than "not computed", so we shouldn't preserve stale deps
                     conda_deps: platform_info.conda_deps,
-                    // For provenance, always use the new value - None means "no provenance
-                    // expected" rather than "not computed", so we shouldn't preserve stale
-                    // provenance that would cause false downgrade-attack errors
-                    provenance: platform_info.provenance,
-                    provenance_url: platform_info.provenance_url,
+                    provenance: platform_info.provenance.or(existing.provenance),
+                    provenance_url: platform_info
+                        .provenance_url
+                        .or_else(|| existing.provenance_url.clone()),
                 }
             } else {
                 platform_info
@@ -2162,10 +2162,9 @@ backend = "conda:jq"
         let merged = with_provenance.merge_with(&without);
         assert_eq!(merged.provenance, Some(ProvenanceType::GithubAttestations));
 
-        // Merging empty (new) with provenance (old) uses the new value (None)
-        // because None means "no provenance expected", not "not computed"
+        // Merging empty (new) with provenance (old) preserves existing provenance
         let merged = without.merge_with(&with_provenance);
-        assert_eq!(merged.provenance, None);
+        assert_eq!(merged.provenance, Some(ProvenanceType::GithubAttestations));
     }
 
     #[test]
