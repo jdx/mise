@@ -483,8 +483,9 @@ impl Run {
         deps_for_remove.lock().await.mark_executed(&task);
         ctx.jset.lock().await.spawn(async move {
             let _permit = permit_opt;
+            let completed = deps_for_remove.lock().await.handled_task_keys();
             let result = this
-                .run_task_sched(&task, &ctx.config, ctx.sched_tx.clone())
+                .run_task_sched(&task, &ctx.config, ctx.sched_tx.clone(), completed)
                 .await;
             if let Err(err) = &result {
                 let status = Error::get_exit_status(err);
@@ -641,11 +642,12 @@ impl Run {
         task: &Task,
         config: &Arc<Config>,
         sched_tx: Arc<tokio::sync::mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+        completed_tasks: std::collections::HashSet<crate::task::TaskKey>,
     ) -> Result<()> {
         self.executor
             .as_ref()
             .expect("executor must be initialized before running tasks")
-            .run_task_sched(task, config, sched_tx)
+            .run_task_sched(task, config, sched_tx, completed_tasks)
             .await
     }
 

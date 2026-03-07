@@ -3,6 +3,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::duration;
 use crate::file::{display_path, is_executable};
+use crate::task::TaskKey;
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
@@ -17,7 +18,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 #[cfg(unix)]
 use nix::errno::Errno;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::iter::once;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -137,6 +138,7 @@ impl TaskExecutor {
         task: &Task,
         config: &Arc<Config>,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+        completed_tasks: HashSet<TaskKey>,
     ) -> Result<()> {
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
@@ -284,6 +286,7 @@ impl TaskExecutor {
                 rendered_run_scripts,
                 sched_tx,
                 confirm_guard,
+                &completed_tasks,
             )
             .await?;
             trace!(
@@ -319,6 +322,7 @@ impl TaskExecutor {
         rendered_scripts: Vec<(String, Vec<String>)>,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         existing_guard: Option<RuntimeLockGuard<'static>>,
+        completed_tasks: &HashSet<TaskKey>,
     ) -> Result<()> {
         let (env, task_env) = full_env;
         use crate::task::RunEntry;
@@ -343,8 +347,14 @@ impl TaskExecutor {
                 RunEntry::SingleTask { task: spec } => {
                     let resolved_spec = crate::task::resolve_task_pattern(spec, Some(task));
                     guard = None; // drop lock before waiting on sub-tasks
-                    self.inject_and_wait(config, &[resolved_spec], task_env, sched_tx.clone())
-                        .await?;
+                    self.inject_and_wait(
+                        config,
+                        &[resolved_spec],
+                        task_env,
+                        sched_tx.clone(),
+                        completed_tasks,
+                    )
+                    .await?;
                 }
                 RunEntry::TaskGroup { tasks } => {
                     let resolved_tasks: Vec<String> = tasks
@@ -352,8 +362,14 @@ impl TaskExecutor {
                         .map(|t| crate::task::resolve_task_pattern(t, Some(task)))
                         .collect();
                     guard = None; // drop lock before waiting on sub-tasks
-                    self.inject_and_wait(config, &resolved_tasks, task_env, sched_tx.clone())
-                        .await?;
+                    self.inject_and_wait(
+                        config,
+                        &resolved_tasks,
+                        task_env,
+                        sched_tx.clone(),
+                        completed_tasks,
+                    )
+                    .await?;
                 }
             }
         }
@@ -366,6 +382,7 @@ impl TaskExecutor {
         specs: &[String],
         task_env: &[(String, String)],
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+        completed_tasks: &HashSet<TaskKey>,
     ) -> Result<()> {
         use crate::task::TaskLoadContext;
         trace!("inject start: {}", specs.join(", "));
@@ -402,7 +419,7 @@ impl TaskExecutor {
                 to_run.push(t);
             }
         }
-        let sub_deps = Deps::new(config, to_run).await?;
+        let sub_deps = Deps::new_pruned(config, to_run, completed_tasks).await?;
         let sub_deps = Arc::new(Mutex::new(sub_deps));
 
         // Pump subgraph into scheduler and signal completion via oneshot when done
