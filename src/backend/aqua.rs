@@ -669,6 +669,22 @@ impl AquaBackend {
             return Some(ProvenanceType::Slsa);
         }
 
+        // Check for cosign (nested under checksum config)
+        if settings.aqua.cosign
+            && let Some(cosign) = pkg.checksum.as_ref().and_then(|c| c.cosign.as_ref())
+            && cosign.enabled != Some(false)
+        {
+            return Some(ProvenanceType::Cosign);
+        }
+
+        // Check for minisign
+        if settings.aqua.minisign
+            && let Some(minisign) = &pkg.minisign
+            && minisign.enabled != Some(false)
+        {
+            return Some(ProvenanceType::Minisign);
+        }
+
         None
     }
 
@@ -988,21 +1004,6 @@ impl AquaBackend {
         }
         self.verify_minisign(ctx, tv, pkg, v, filename).await?;
 
-        // If lockfile recorded provenance, verify that the type matches
-        if let Some(expected) = locked_provenance {
-            let got = tv
-                .lock_platforms
-                .get(&platform_key)
-                .and_then(|pi| pi.provenance);
-            if got != Some(expected) {
-                return Err(eyre!(
-                    "Lockfile requires {expected} provenance for {tv} but {got:?} was used. \
-                     This may indicate a downgrade attack. Enable the corresponding verification setting \
-                     or update the lockfile."
-                ));
-            }
-        }
-
         let download_path = tv.download_path();
         let platform_key = self.get_platform_key();
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
@@ -1031,6 +1032,23 @@ impl AquaBackend {
             let platform_info = tv.lock_platforms.get_mut(&platform_key).unwrap();
             platform_info.checksum = Some(checksum_val);
         }
+        // If lockfile recorded provenance, verify that the type matches
+        // (checked after all verification methods including cosign have had a chance to record)
+        if let Some(expected) = locked_provenance {
+            let platform_key = self.get_platform_key();
+            let got = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|pi| pi.provenance);
+            if got != Some(expected) {
+                return Err(eyre!(
+                    "Lockfile requires {expected} provenance for {tv} but {got:?} was used. \
+                     This may indicate a downgrade attack. Enable the corresponding verification setting \
+                     or update the lockfile."
+                ));
+            }
+        }
+
         let tarball_path = tv.download_path().join(filename);
         self.verify_checksum(ctx, tv, &tarball_path)?;
         Ok(())
@@ -1289,7 +1307,7 @@ impl AquaBackend {
         ctx: &InstallContext,
         pkg: &AquaPackage,
         v: &str,
-        tv: &ToolVersion,
+        tv: &mut ToolVersion,
         checksum_path: &Path,
         download_path: &Path,
     ) -> Result<()> {
@@ -1385,6 +1403,11 @@ impl AquaBackend {
                             ctx.pr
                                 .set_message("✓ Cosign signature verified with key".to_string());
                             debug!("Cosign signature verified successfully with key for {tv}");
+                            let platform_key = self.get_platform_key();
+                            let pi = tv.lock_platforms.entry(platform_key).or_default();
+                            if pi.provenance.is_none() {
+                                pi.provenance = Some(ProvenanceType::Cosign);
+                            }
                         }
                         Ok(false) => {
                             return Err(eyre!("Cosign signature verification failed for {tv}"));
@@ -1435,6 +1458,11 @@ impl AquaBackend {
                             ctx.pr
                                 .set_message("✓ Cosign bundle verified (keyless)".to_string());
                             debug!("Cosign bundle verified successfully for {tv}");
+                            let platform_key = self.get_platform_key();
+                            let pi = tv.lock_platforms.entry(platform_key).or_default();
+                            if pi.provenance.is_none() {
+                                pi.provenance = Some(ProvenanceType::Cosign);
+                            }
                         }
                         Ok(false) => {
                             return Err(eyre!("Cosign bundle verification failed for {tv}"));

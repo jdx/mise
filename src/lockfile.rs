@@ -72,6 +72,7 @@ pub struct LockfileTool {
 #[strum(serialize_all = "kebab-case")]
 pub enum ProvenanceType {
     Minisign,
+    Cosign,
     Slsa,
     GithubAttestations,
 }
