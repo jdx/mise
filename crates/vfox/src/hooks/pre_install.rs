@@ -249,6 +249,44 @@ mod tests {
         Runtime::reset();
     }
 
+    #[test]
+    async fn test_runtime_env_type_is_nil_for_platform_override() {
+        let plugin = Plugin::test("dummy");
+
+        Runtime::set_env_type(Some("gnu".to_string()));
+
+        let host_env_type: Option<String> = plugin
+            .eval_async(chunk! {
+                return RUNTIME.envType
+            })
+            .await
+            .unwrap();
+        assert_eq!(host_env_type, Some("gnu".to_string()));
+
+        let target_runtime = Runtime::with_platform(plugin.dir.clone(), "linux", "amd64");
+        let target_os = "linux".to_string();
+        let target_arch = "amd64".to_string();
+        let target_env_type: Option<String> = plugin
+            .eval_async(chunk! {
+                local saved_os = OS_TYPE
+                local saved_arch = ARCH_TYPE
+                local saved_runtime = RUNTIME
+                OS_TYPE = $target_os
+                ARCH_TYPE = $target_arch
+                RUNTIME = $target_runtime
+                local env_type = RUNTIME.envType
+                OS_TYPE = saved_os
+                ARCH_TYPE = saved_arch
+                RUNTIME = saved_runtime
+                return env_type
+            })
+            .await
+            .unwrap();
+        assert_eq!(target_env_type, None);
+
+        Runtime::reset();
+    }
+
     async fn run(plugin: &str, v: &str) -> PreInstall {
         let p = Plugin::test(plugin);
         p.pre_install(v).await.unwrap()
