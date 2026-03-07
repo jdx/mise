@@ -184,22 +184,22 @@ impl From<&str> for Platform {
 }
 
 /// Detect whether the system uses musl libc at runtime.
-/// Checks for the musl dynamic linker in /lib, which is present on musl-based
-/// systems like Alpine Linux. This is a runtime check (not compile-time) so a
-/// statically-linked or musl-built mise binary running on a glibc system will
-/// correctly detect glibc, and vice versa.
+/// Uses `ldd --version` output which reliably distinguishes musl from glibc:
+/// - glibc's ldd prints version info (e.g., "ldd (GNU libc) 2.31")
+/// - musl's ldd prints "musl libc" in its output
+/// This avoids false positives from `/lib/ld-musl-*` which can exist on glibc
+/// systems with musl-tools installed for cross-compilation.
 #[cfg(target_os = "linux")]
 fn is_musl_system() -> bool {
     use std::sync::LazyLock;
     static IS_MUSL: LazyLock<bool> = LazyLock::new(|| {
-        if let Ok(entries) = std::fs::read_dir("/lib") {
-            for entry in entries.flatten() {
-                if entry.file_name().to_string_lossy().starts_with("ld-musl-") {
-                    return true;
-                }
-            }
-        }
-        false
+        let Ok(output) = std::process::Command::new("ldd").arg("--version").output() else {
+            return false;
+        };
+        // musl's ldd prints to stderr, glibc's to stdout
+        let text = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        stderr.contains("musl") || text.contains("musl")
     });
     *IS_MUSL
 }
