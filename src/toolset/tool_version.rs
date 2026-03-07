@@ -264,7 +264,7 @@ impl ToolVersion {
                 return build(v);
             }
             if !is_offline
-                && !settings.prefer_offline()
+                && (!settings.prefer_offline() || opts.latest_versions)
                 && let Some(v) = backend
                     .latest_version_with_opts(config, None, opts.before_date)
                     .await?
@@ -289,7 +289,10 @@ impl ToolVersion {
         // fetching for fully-qualified versions (e.g. "2.3.2") and "latest" that
         // aren't installed. Prefix versions like "2" still need remote resolution
         // to find e.g. "2.1.0".
-        if settings.prefer_offline() && (v == "latest" || v.matches('.').count() >= 2) {
+        if settings.prefer_offline()
+            && !opts.latest_versions
+            && (v == "latest" || v.matches('.').count() >= 2)
+        {
             return build(v);
         }
         // First try with date filter (common case)
