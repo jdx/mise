@@ -1009,34 +1009,45 @@ impl AquaBackend {
         }
 
         let download_path = tv.download_path();
-        let platform_key = self.get_platform_key();
-        let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-        if platform_info.checksum.is_none()
-            && let Some(checksum) = &pkg.checksum
+        if let Some(checksum) = &pkg.checksum
             && checksum.enabled()
         {
-            let url = match checksum._type() {
-                AquaChecksumType::GithubRelease => {
-                    let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
-                    self.github_release_asset(pkg, v, asset_strs).await?.0
-                }
-                AquaChecksumType::Http => checksum.url(pkg, v, os(), arch())?,
-            };
             let checksum_path = download_path.join(format!("{filename}.checksum"));
-            HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))
-                .await?;
-            if !skip_cosign {
+            let platform_key = self.get_platform_key();
+            let needs_checksum = tv
+                .lock_platforms
+                .get(&platform_key)
+                .map_or(true, |pi| pi.checksum.is_none());
+
+            // Download checksum file if we need the checksum or need to run cosign
+            if needs_checksum || !skip_cosign {
+                if !checksum_path.exists() {
+                    let url = match checksum._type() {
+                        AquaChecksumType::GithubRelease => {
+                            let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
+                            self.github_release_asset(pkg, v, asset_strs).await?.0
+                        }
+                        AquaChecksumType::Http => checksum.url(pkg, v, os(), arch())?,
+                    };
+                    HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))
+                        .await?;
+                }
+            }
+
+            if !skip_cosign && checksum_path.exists() {
                 self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
                     .await?;
             }
-            let checksum_content = file::read_to_string(&checksum_path)?;
-            let checksum_str =
-                self.parse_checksum_from_content(&checksum_content, checksum, filename)?;
-            let checksum_val = format!("{}:{}", checksum.algorithm(), checksum_str);
-            // Now set the checksum after all borrows are done
-            let platform_key = self.get_platform_key();
-            let platform_info = tv.lock_platforms.get_mut(&platform_key).unwrap();
-            platform_info.checksum = Some(checksum_val);
+
+            if needs_checksum && checksum_path.exists() {
+                let checksum_content = file::read_to_string(&checksum_path)?;
+                let checksum_str =
+                    self.parse_checksum_from_content(&checksum_content, checksum, filename)?;
+                let checksum_val = format!("{}:{}", checksum.algorithm(), checksum_str);
+                let platform_key = self.get_platform_key();
+                let platform_info = tv.lock_platforms.entry(platform_key).or_default();
+                platform_info.checksum = Some(checksum_val);
+            }
         }
         // If lockfile recorded provenance, verify that the type matches
         // (checked after all verification methods including cosign have had a chance to record)
