@@ -313,16 +313,23 @@ impl TaskExecutor {
         let (env, task_env) = full_env;
         use crate::task::RunEntry;
         let mut script_iter = rendered_scripts.into_iter();
+        // Acquire the runtime lock once outside the loop so consecutive script entries
+        // maintain exclusivity for interactive tasks. The lock is temporarily dropped
+        // around inject_and_wait calls to avoid deadlocking with sub-tasks.
+        let mut guard = Some(acquire_runtime_lock(task.interactive).await);
         for entry in task.run() {
             match entry {
                 RunEntry::Script(_) => {
                     if let Some((script, args)) = script_iter.next() {
-                        let _guard = acquire_runtime_lock(task.interactive).await;
+                        if guard.is_none() {
+                            guard = Some(acquire_runtime_lock(task.interactive).await);
+                        }
                         self.exec_script(&script, &args, task, env, prefix).await?;
                     }
                 }
                 RunEntry::SingleTask { task: spec } => {
                     let resolved_spec = crate::task::resolve_task_pattern(spec, Some(task));
+                    guard = None; // drop lock before waiting on sub-tasks
                     self.inject_and_wait(config, &[resolved_spec], task_env, sched_tx.clone())
                         .await?;
                 }
@@ -331,6 +338,7 @@ impl TaskExecutor {
                         .iter()
                         .map(|t| crate::task::resolve_task_pattern(t, Some(task)))
                         .collect();
+                    guard = None; // drop lock before waiting on sub-tasks
                     self.inject_and_wait(config, &resolved_tasks, task_env, sched_tx.clone())
                         .await?;
                 }
