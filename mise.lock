@@ -3,30 +3,30 @@
 [[tools.actionlint]]
 version = "1.7.11"
 backend = "aqua:rhysd/actionlint"
-"platforms.linux-arm64" = { checksum = "sha256:21bc0dfb57a913fe175298c2a9e906ee630f747cb66d0a934d0d4b69f4ee1235", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_arm64.tar.gz"}
-"platforms.linux-arm64-musl" = { checksum = "sha256:21bc0dfb57a913fe175298c2a9e906ee630f747cb66d0a934d0d4b69f4ee1235", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_arm64.tar.gz"}
-"platforms.linux-x64" = { checksum = "sha256:900919a84f2229bac68ca9cd4103ea297abc35e9689ebb842c6e34a3d1b01b0a", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_amd64.tar.gz"}
-"platforms.linux-x64-baseline" = { checksum = "sha256:900919a84f2229bac68ca9cd4103ea297abc35e9689ebb842c6e34a3d1b01b0a", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_amd64.tar.gz"}
-"platforms.linux-x64-musl" = { checksum = "sha256:900919a84f2229bac68ca9cd4103ea297abc35e9689ebb842c6e34a3d1b01b0a", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_amd64.tar.gz"}
-"platforms.linux-x64-musl-baseline" = { checksum = "sha256:900919a84f2229bac68ca9cd4103ea297abc35e9689ebb842c6e34a3d1b01b0a", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_amd64.tar.gz"}
-"platforms.macos-arm64" = { checksum = "sha256:a21ba7366d8329e7223faee0ed69eb13da27fe8acabb356bb7eb0b7f1e1cb6d8", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_darwin_arm64.tar.gz"}
-"platforms.macos-x64" = { checksum = "sha256:17ffc17fed8f0258ef6ad4aed932d3272464c7ef7d64e1cb0d65aa97c9752107", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_darwin_amd64.tar.gz"}
-"platforms.macos-x64-baseline" = { checksum = "sha256:17ffc17fed8f0258ef6ad4aed932d3272464c7ef7d64e1cb0d65aa97c9752107", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_darwin_amd64.tar.gz"}
-"platforms.windows-x64" = { checksum = "sha256:5414b7124a91f4b5abee62e5c9d84802237734f8d15b9b7032732a32c3ebffa3", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_windows_amd64.zip"}
-"platforms.windows-x64-baseline" = { checksum = "sha256:5414b7124a91f4b5abee62e5c9d84802237734f8d15b9b7032732a32c3ebffa3", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_windows_amd64.zip"}
+"platforms.linux-arm64" = { checksum = "sha256:21bc0dfb57a913fe175298c2a9e906ee630f747cb66d0a934d0d4b69f4ee1235", provenance = "github-attestations", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_arm64.tar.gz"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:21bc0dfb57a913fe175298c2a9e906ee630f747cb66d0a934d0d4b69f4ee1235", provenance = "github-attestations", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_arm64.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:900919a84f2229bac68ca9cd4103ea297abc35e9689ebb842c6e34a3d1b01b0a", provenance = "github-attestations", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_amd64.tar.gz"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:900919a84f2229bac68ca9cd4103ea297abc35e9689ebb842c6e34a3d1b01b0a", provenance = "github-attestations", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_amd64.tar.gz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:900919a84f2229bac68ca9cd4103ea297abc35e9689ebb842c6e34a3d1b01b0a", provenance = "github-attestations", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_amd64.tar.gz"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:900919a84f2229bac68ca9cd4103ea297abc35e9689ebb842c6e34a3d1b01b0a", provenance = "github-attestations", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_amd64.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:a21ba7366d8329e7223faee0ed69eb13da27fe8acabb356bb7eb0b7f1e1cb6d8", provenance = "github-attestations", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_darwin_arm64.tar.gz"}
+"platforms.macos-x64" = { checksum = "sha256:17ffc17fed8f0258ef6ad4aed932d3272464c7ef7d64e1cb0d65aa97c9752107", provenance = "github-attestations", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_darwin_amd64.tar.gz"}
+"platforms.macos-x64-baseline" = { checksum = "sha256:17ffc17fed8f0258ef6ad4aed932d3272464c7ef7d64e1cb0d65aa97c9752107", provenance = "github-attestations", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_darwin_amd64.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:5414b7124a91f4b5abee62e5c9d84802237734f8d15b9b7032732a32c3ebffa3", provenance = "github-attestations", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_windows_amd64.zip"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:5414b7124a91f4b5abee62e5c9d84802237734f8d15b9b7032732a32c3ebffa3", provenance = "github-attestations", url = "https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_windows_amd64.zip"}
 
 [[tools.age]]
 version = "1.3.1"
 backend = "aqua:FiloSottile/age"
-"platforms.linux-arm64" = { checksum = "sha256:c6878a324421b69e3e20b00ba17c04bc5c6dab0030cfe55bf8f68fa8d9e9093a", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-arm64.tar.gz"}
-"platforms.linux-arm64-musl" = { checksum = "sha256:c6878a324421b69e3e20b00ba17c04bc5c6dab0030cfe55bf8f68fa8d9e9093a", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-arm64.tar.gz"}
-"platforms.linux-x64" = { checksum = "sha256:bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-amd64.tar.gz"}
-"platforms.linux-x64-baseline" = { checksum = "sha256:bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-amd64.tar.gz"}
-"platforms.linux-x64-musl" = { checksum = "sha256:bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-amd64.tar.gz"}
-"platforms.linux-x64-musl-baseline" = { checksum = "sha256:bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-amd64.tar.gz"}
-"platforms.macos-arm64" = { checksum = "sha256:01120ea2cbf0463d4c6bd767f99f3271bbed1cdc8a9aa718a76ba1fe4f01998b", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-darwin-arm64.tar.gz"}
-"platforms.windows-x64" = { checksum = "sha256:c56e8ce22f7e80cb85ad946cc82d198767b056366201d3e1a2b93d865be38154", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-windows-amd64.zip"}
-"platforms.windows-x64-baseline" = { checksum = "sha256:c56e8ce22f7e80cb85ad946cc82d198767b056366201d3e1a2b93d865be38154", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-windows-amd64.zip"}
+"platforms.linux-arm64" = { checksum = "sha256:c6878a324421b69e3e20b00ba17c04bc5c6dab0030cfe55bf8f68fa8d9e9093a", provenance = "github-attestations", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-arm64.tar.gz"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:c6878a324421b69e3e20b00ba17c04bc5c6dab0030cfe55bf8f68fa8d9e9093a", provenance = "github-attestations", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-arm64.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377", provenance = "github-attestations", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-amd64.tar.gz"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377", provenance = "github-attestations", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-amd64.tar.gz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377", provenance = "github-attestations", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-amd64.tar.gz"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:bdc69c09cbdd6cf8b1f333d372a1f58247b3a33146406333e30c0f26e8f51377", provenance = "github-attestations", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-linux-amd64.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:01120ea2cbf0463d4c6bd767f99f3271bbed1cdc8a9aa718a76ba1fe4f01998b", provenance = "github-attestations", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-darwin-arm64.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:c56e8ce22f7e80cb85ad946cc82d198767b056366201d3e1a2b93d865be38154", provenance = "github-attestations", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-windows-amd64.zip"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:c56e8ce22f7e80cb85ad946cc82d198767b056366201d3e1a2b93d865be38154", provenance = "github-attestations", url = "https://github.com/FiloSottile/age/releases/download/v1.3.1/age-v1.3.1-windows-amd64.zip"}
 
 [[tools.bun]]
 version = "1.3.10"
@@ -113,17 +113,17 @@ backend = "aqua:sharkdp/fd"
 [[tools.gh]]
 version = "2.87.3"
 backend = "aqua:cli/cli"
-"platforms.linux-arm64" = { checksum = "sha256:5f5d89563bf26751e2173b37e594065504e85b6b781c1f1832d24bf2c2b4554f", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_linux_arm64.tar.gz"}
-"platforms.linux-arm64-musl" = { checksum = "sha256:5f5d89563bf26751e2173b37e594065504e85b6b781c1f1832d24bf2c2b4554f", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_linux_arm64.tar.gz"}
-"platforms.linux-x64" = { checksum = "sha256:c6e5537631fca45f277ef405ce8751d139b491e9402cc20891a003525a8773b2", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_linux_amd64.tar.gz"}
-"platforms.linux-x64-baseline" = { checksum = "sha256:c6e5537631fca45f277ef405ce8751d139b491e9402cc20891a003525a8773b2", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_linux_amd64.tar.gz"}
-"platforms.linux-x64-musl" = { checksum = "sha256:c6e5537631fca45f277ef405ce8751d139b491e9402cc20891a003525a8773b2", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_linux_amd64.tar.gz"}
-"platforms.linux-x64-musl-baseline" = { checksum = "sha256:c6e5537631fca45f277ef405ce8751d139b491e9402cc20891a003525a8773b2", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_linux_amd64.tar.gz"}
-"platforms.macos-arm64" = { checksum = "sha256:dedfc6f569e9dbc5b92d47dce44acadbdf5b6b7a861510db0c748dfac55002f6", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_macOS_arm64.zip"}
-"platforms.macos-x64" = { checksum = "sha256:7b8d5495fe9689494b1c69559c0d28209bc057bb028008e903ec4b3e19bd8c75", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_macOS_amd64.zip"}
-"platforms.macos-x64-baseline" = { checksum = "sha256:7b8d5495fe9689494b1c69559c0d28209bc057bb028008e903ec4b3e19bd8c75", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_macOS_amd64.zip"}
-"platforms.windows-x64" = { checksum = "sha256:c590bcb488f80a85c8febd5cde27edd68fdd481bd004aaf9adc50dcf1b21c09c", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_windows_amd64.zip"}
-"platforms.windows-x64-baseline" = { checksum = "sha256:c590bcb488f80a85c8febd5cde27edd68fdd481bd004aaf9adc50dcf1b21c09c", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_windows_amd64.zip"}
+"platforms.linux-arm64" = { checksum = "sha256:5f5d89563bf26751e2173b37e594065504e85b6b781c1f1832d24bf2c2b4554f", provenance = "github-attestations", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_linux_arm64.tar.gz"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:5f5d89563bf26751e2173b37e594065504e85b6b781c1f1832d24bf2c2b4554f", provenance = "github-attestations", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_linux_arm64.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:c6e5537631fca45f277ef405ce8751d139b491e9402cc20891a003525a8773b2", provenance = "github-attestations", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_linux_amd64.tar.gz"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:c6e5537631fca45f277ef405ce8751d139b491e9402cc20891a003525a8773b2", provenance = "github-attestations", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_linux_amd64.tar.gz"}
+"platforms.linux-x64-musl" = { checksum = "sha256:c6e5537631fca45f277ef405ce8751d139b491e9402cc20891a003525a8773b2", provenance = "github-attestations", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_linux_amd64.tar.gz"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:c6e5537631fca45f277ef405ce8751d139b491e9402cc20891a003525a8773b2", provenance = "github-attestations", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_linux_amd64.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:dedfc6f569e9dbc5b92d47dce44acadbdf5b6b7a861510db0c748dfac55002f6", provenance = "github-attestations", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_macOS_arm64.zip"}
+"platforms.macos-x64" = { checksum = "sha256:7b8d5495fe9689494b1c69559c0d28209bc057bb028008e903ec4b3e19bd8c75", provenance = "github-attestations", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_macOS_amd64.zip"}
+"platforms.macos-x64-baseline" = { checksum = "sha256:7b8d5495fe9689494b1c69559c0d28209bc057bb028008e903ec4b3e19bd8c75", provenance = "github-attestations", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_macOS_amd64.zip"}
+"platforms.windows-x64" = { checksum = "sha256:c590bcb488f80a85c8febd5cde27edd68fdd481bd004aaf9adc50dcf1b21c09c", provenance = "github-attestations", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_windows_amd64.zip"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:c590bcb488f80a85c8febd5cde27edd68fdd481bd004aaf9adc50dcf1b21c09c", provenance = "github-attestations", url = "https://github.com/cli/cli/releases/download/v2.87.3/gh_2.87.3_windows_amd64.zip"}
 
 [[tools.hk]]
 version = "1.37.0"
@@ -141,17 +141,17 @@ backend = "aqua:jdx/hk"
 [[tools.jq]]
 version = "1.8.1"
 backend = "aqua:jqlang/jq"
-"platforms.linux-arm64" = { checksum = "sha256:6bc62f25981328edd3cfcfe6fe51b073f2d7e7710d7ef7fcdac28d4e384fc3d4", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-arm64"}
-"platforms.linux-arm64-musl" = { checksum = "sha256:6bc62f25981328edd3cfcfe6fe51b073f2d7e7710d7ef7fcdac28d4e384fc3d4", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-arm64"}
-"platforms.linux-x64" = { checksum = "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"}
-"platforms.linux-x64-baseline" = { checksum = "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"}
-"platforms.linux-x64-musl" = { checksum = "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"}
-"platforms.linux-x64-musl-baseline" = { checksum = "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"}
-"platforms.macos-arm64" = { checksum = "sha256:a9fe3ea2f86dfc72f6728417521ec9067b343277152b114f4e98d8cb0e263603", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"}
-"platforms.macos-x64" = { checksum = "sha256:e80dbe0d2a2597e3c11c404f03337b981d74b4a8504b70586c354b7697a7c27f", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-amd64"}
-"platforms.macos-x64-baseline" = { checksum = "sha256:e80dbe0d2a2597e3c11c404f03337b981d74b4a8504b70586c354b7697a7c27f", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-amd64"}
-"platforms.windows-x64" = { checksum = "sha256:23cb60a1354eed6bcc8d9b9735e8c7b388cd1fdcb75726b93bc299ef22dd9334", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-windows-amd64.exe"}
-"platforms.windows-x64-baseline" = { checksum = "sha256:23cb60a1354eed6bcc8d9b9735e8c7b388cd1fdcb75726b93bc299ef22dd9334", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-windows-amd64.exe"}
+"platforms.linux-arm64" = { checksum = "sha256:6bc62f25981328edd3cfcfe6fe51b073f2d7e7710d7ef7fcdac28d4e384fc3d4", provenance = "github-attestations", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-arm64"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:6bc62f25981328edd3cfcfe6fe51b073f2d7e7710d7ef7fcdac28d4e384fc3d4", provenance = "github-attestations", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-arm64"}
+"platforms.linux-x64" = { checksum = "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d", provenance = "github-attestations", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d", provenance = "github-attestations", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"}
+"platforms.linux-x64-musl" = { checksum = "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d", provenance = "github-attestations", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d", provenance = "github-attestations", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"}
+"platforms.macos-arm64" = { checksum = "sha256:a9fe3ea2f86dfc72f6728417521ec9067b343277152b114f4e98d8cb0e263603", provenance = "github-attestations", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"}
+"platforms.macos-x64" = { checksum = "sha256:e80dbe0d2a2597e3c11c404f03337b981d74b4a8504b70586c354b7697a7c27f", provenance = "github-attestations", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-amd64"}
+"platforms.macos-x64-baseline" = { checksum = "sha256:e80dbe0d2a2597e3c11c404f03337b981d74b4a8504b70586c354b7697a7c27f", provenance = "github-attestations", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-amd64"}
+"platforms.windows-x64" = { checksum = "sha256:23cb60a1354eed6bcc8d9b9735e8c7b388cd1fdcb75726b93bc299ef22dd9334", provenance = "github-attestations", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-windows-amd64.exe"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:23cb60a1354eed6bcc8d9b9735e8c7b388cd1fdcb75726b93bc299ef22dd9334", provenance = "github-attestations", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-windows-amd64.exe"}
 
 [[tools.lua-language-server]]
 version = "3.17.1"
@@ -258,17 +258,17 @@ backend = "aqua:mvdan/sh"
 [[tools.sops]]
 version = "3.12.1"
 backend = "aqua:getsops/sops"
-"platforms.linux-arm64" = { checksum = "sha256:c7904d07bf1fb3ffdc329b0103ce70ff6a884aa7af7931427402bea0c09cc522", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.arm64"}
-"platforms.linux-arm64-musl" = { checksum = "sha256:c7904d07bf1fb3ffdc329b0103ce70ff6a884aa7af7931427402bea0c09cc522", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.arm64"}
-"platforms.linux-x64" = { checksum = "sha256:cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.amd64"}
-"platforms.linux-x64-baseline" = { checksum = "sha256:cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.amd64"}
-"platforms.linux-x64-musl" = { checksum = "sha256:cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.amd64"}
-"platforms.linux-x64-musl-baseline" = { checksum = "sha256:cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.amd64"}
-"platforms.macos-arm64" = { checksum = "sha256:3a23c388e2d7b9beff306f4817d197698b1d9ddf01c10020470c94225435e901", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.darwin.arm64"}
-"platforms.macos-x64" = { checksum = "sha256:d6d296499e08d62325d933e4572fe8b6b9b11d0c08ee00d09b518a2731814c7b", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.darwin.amd64"}
-"platforms.macos-x64-baseline" = { checksum = "sha256:d6d296499e08d62325d933e4572fe8b6b9b11d0c08ee00d09b518a2731814c7b", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.darwin.amd64"}
-"platforms.windows-x64" = { checksum = "sha256:161eff06643ca77cc0585099e0888d04897827162fd62bdb79cc1bcff933330f", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.amd64.exe"}
-"platforms.windows-x64-baseline" = { checksum = "sha256:161eff06643ca77cc0585099e0888d04897827162fd62bdb79cc1bcff933330f", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.amd64.exe"}
+"platforms.linux-arm64" = { checksum = "sha256:c7904d07bf1fb3ffdc329b0103ce70ff6a884aa7af7931427402bea0c09cc522", provenance = "slsa", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.arm64"}
+"platforms.linux-arm64-musl" = { checksum = "sha256:c7904d07bf1fb3ffdc329b0103ce70ff6a884aa7af7931427402bea0c09cc522", provenance = "slsa", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.arm64"}
+"platforms.linux-x64" = { checksum = "sha256:cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100", provenance = "slsa", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.amd64"}
+"platforms.linux-x64-baseline" = { checksum = "sha256:cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100", provenance = "slsa", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.amd64"}
+"platforms.linux-x64-musl" = { checksum = "sha256:cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100", provenance = "slsa", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.amd64"}
+"platforms.linux-x64-musl-baseline" = { checksum = "sha256:cf3136d20a6004405c986a48e179c3c7a731f777fbf105a37bd5dac5c9047100", provenance = "slsa", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.linux.amd64"}
+"platforms.macos-arm64" = { checksum = "sha256:3a23c388e2d7b9beff306f4817d197698b1d9ddf01c10020470c94225435e901", provenance = "slsa", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.darwin.arm64"}
+"platforms.macos-x64" = { checksum = "sha256:d6d296499e08d62325d933e4572fe8b6b9b11d0c08ee00d09b518a2731814c7b", provenance = "slsa", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.darwin.amd64"}
+"platforms.macos-x64-baseline" = { checksum = "sha256:d6d296499e08d62325d933e4572fe8b6b9b11d0c08ee00d09b518a2731814c7b", provenance = "slsa", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.darwin.amd64"}
+"platforms.windows-x64" = { checksum = "sha256:161eff06643ca77cc0585099e0888d04897827162fd62bdb79cc1bcff933330f", provenance = "slsa", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.amd64.exe"}
+"platforms.windows-x64-baseline" = { checksum = "sha256:161eff06643ca77cc0585099e0888d04897827162fd62bdb79cc1bcff933330f", provenance = "slsa", url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.amd64.exe"}
 
 [[tools.stylua]]
 version = "2.3.1"

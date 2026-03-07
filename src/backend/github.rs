@@ -333,14 +333,23 @@ impl Backend for UnifiedGitBackend {
             .await;
 
         match asset {
-            Ok(asset) => Ok(PlatformInfo {
-                url: Some(asset.url),
-                url_api: Some(asset.url_api),
-                checksum: asset.digest,
-                size: None,
-                conda_deps: None,
-                ..Default::default()
-            }),
+            Ok(asset) => {
+                // Detect provenance availability from release assets
+                let provenance = if !self.is_gitlab() && !self.is_forgejo() {
+                    self.detect_provenance_type(tv, &opts, &repo, &api_url)
+                        .await
+                } else {
+                    None
+                };
+
+                Ok(PlatformInfo {
+                    url: Some(asset.url),
+                    url_api: Some(asset.url_api),
+                    checksum: asset.digest,
+                    provenance,
+                    ..Default::default()
+                })
+            }
             Err(e) => {
                 debug!(
                     "Failed to resolve asset for {} on {}: {}",
@@ -357,6 +366,54 @@ impl Backend for UnifiedGitBackend {
 impl UnifiedGitBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
+    }
+
+    /// Detect what provenance type is available for a release by checking its assets.
+    async fn detect_provenance_type(
+        &self,
+        tv: &ToolVersion,
+        opts: &ToolVersionOptions,
+        repo: &str,
+        api_url: &str,
+    ) -> Option<String> {
+        let settings = Settings::get();
+        let version = &tv.version;
+        let version_prefix = opts.get("version_prefix");
+
+        let release =
+            try_with_v_prefix_and_repo(version, version_prefix, Some(repo), |candidate| {
+                let api_url = api_url.to_string();
+                let repo = repo.to_string();
+                async move { github::get_release_for_url(&api_url, &repo, &candidate).await }
+            })
+            .await
+            .ok()?;
+
+        // Check for GitHub artifact attestations (.sigstore.json or .sigstore)
+        if settings.github_attestations && settings.github.github_attestations {
+            let has_attestations = release.assets.iter().any(|a| {
+                let name = a.name.to_lowercase();
+                name.ends_with(".sigstore.json") || name.ends_with(".sigstore")
+            });
+            if has_attestations {
+                return Some("github-attestations".to_string());
+            }
+        }
+
+        // Check for SLSA provenance (.intoto.jsonl)
+        if settings.slsa && settings.github.slsa {
+            let has_slsa = release.assets.iter().any(|a| {
+                let name = a.name.to_lowercase();
+                name.contains(".intoto.jsonl")
+                    || name.contains("provenance")
+                    || name.ends_with(".attestation")
+            });
+            if has_slsa {
+                return Some("slsa".to_string());
+            }
+        }
+
+        None
     }
 
     fn is_gitlab(&self) -> bool {

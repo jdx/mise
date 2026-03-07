@@ -634,18 +634,44 @@ impl Backend for AquaBackend {
                 .flatten(),
         };
 
+        // Detect provenance from aqua registry config
+        let provenance = self.detect_provenance_type(&pkg);
+
         Ok(PlatformInfo {
             url,
             checksum,
-            size: None,
-            url_api: None,
-            conda_deps: None,
+            provenance,
             ..Default::default()
         })
     }
 }
 
 impl AquaBackend {
+    /// Detect provenance type from aqua registry package config.
+    fn detect_provenance_type(&self, pkg: &AquaPackage) -> Option<String> {
+        let settings = Settings::get();
+
+        // Check for GitHub artifact attestations
+        if settings.github_attestations && settings.aqua.github_attestations {
+            if let Some(att) = &pkg.github_artifact_attestations {
+                if att.enabled != Some(false) {
+                    return Some("github-attestations".to_string());
+                }
+            }
+        }
+
+        // Check for SLSA provenance
+        if settings.slsa && settings.aqua.slsa {
+            if let Some(slsa) = &pkg.slsa_provenance {
+                if slsa.enabled != Some(false) {
+                    return Some("slsa".to_string());
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn from_arg(ba: BackendArg) -> Self {
         let full = ba.full_without_opts();
         let mut id = full.split_once(":").unwrap_or(("", &full)).1;

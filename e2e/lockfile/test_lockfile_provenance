@@ -5,7 +5,22 @@ export MISE_LOCKFILE=1
 detect_platform
 PLATFORM="$MISE_PLATFORM"
 
+echo "=== Testing mise lock writes provenance ==="
+# Use a tool that has SLSA provenance in the aqua registry (sops)
+cat <<EOF >mise.toml
+[tools]
+sops = "3.12.1"
+EOF
+
+# Generate lockfile - provenance detection should be on by default
+mise lock --platform "$PLATFORM"
+assert "test -f mise.lock"
+# sops has SLSA provenance configured in the aqua registry
+assert_contains "cat mise.lock" 'provenance = "slsa"'
+
 echo "=== Testing provenance downgrade attack detection ==="
+rm -f mise.lock mise.toml
+
 # Set up a tool via aqua backend
 cat <<EOF >mise.toml
 [tools]
