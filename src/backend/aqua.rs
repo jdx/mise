@@ -1017,11 +1017,11 @@ impl AquaBackend {
             let needs_checksum = tv
                 .lock_platforms
                 .get(&platform_key)
-                .map_or(true, |pi| pi.checksum.is_none());
+                .is_none_or(|pi| pi.checksum.is_none());
 
             // Download checksum file if we need the checksum or need to run cosign
-            if needs_checksum || !skip_cosign {
-                if !checksum_path.exists() {
+            if (needs_checksum || !skip_cosign)
+                && !checksum_path.exists() {
                     let url = match checksum._type() {
                         AquaChecksumType::GithubRelease => {
                             let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
@@ -1032,7 +1032,6 @@ impl AquaBackend {
                     HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))
                         .await?;
                 }
-            }
 
             if !skip_cosign && checksum_path.exists() {
                 self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
