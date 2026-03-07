@@ -1,0 +1,2 @@
+backends = ["aqua:goteammate/lgtm"]
+description = "CLI-native email client with AI integration via MCP"
