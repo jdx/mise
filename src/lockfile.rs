@@ -2130,9 +2130,10 @@ backend = "conda:jq"
         let merged = with_provenance.merge_with(&without);
         assert_eq!(merged.provenance, Some("github-attestations".to_string()));
 
-        // Merging empty with provenance picks up provenance from other
+        // Merging empty (new) with provenance (old) uses the new value (None)
+        // because None means "no provenance expected", not "not computed"
         let merged = without.merge_with(&with_provenance);
-        assert_eq!(merged.provenance, Some("github-attestations".to_string()));
+        assert_eq!(merged.provenance, None);
     }
 
     #[test]
