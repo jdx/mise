@@ -687,12 +687,20 @@ impl TaskExecutor {
             .envs(env)
             .redact(redactions.deref().clone())
             .raw(raw);
-        if raw && !redactions.is_empty() && !task.interactive {
-            hint!(
-                "raw_redactions",
-                "--raw will prevent mise from being able to use redactions",
-                ""
-            );
+        if raw && !redactions.is_empty() {
+            if task.interactive {
+                hint!(
+                    "interactive_redactions",
+                    "interactive tasks bypass redactions—secrets may appear in terminal output",
+                    ""
+                );
+            } else {
+                hint!(
+                    "raw_redactions",
+                    "--raw will prevent mise from being able to use redactions",
+                    ""
+                );
+            }
         }
         let output = self.output(Some(task));
         cmd.with_pass_signals();
