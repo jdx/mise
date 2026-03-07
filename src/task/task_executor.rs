@@ -33,6 +33,20 @@ use xx::file;
 /// Interactive tasks acquire a write lock (exclusive), non-interactive tasks acquire a read lock (shared).
 static TASK_RUNTIME_LOCK: LazyLock<RwLock<()>> = LazyLock::new(|| RwLock::new(()));
 
+#[allow(dead_code)] // Guards are held for their Drop impl, not read
+enum RuntimeLockGuard<'a> {
+    Read(tokio::sync::RwLockReadGuard<'a, ()>),
+    Write(tokio::sync::RwLockWriteGuard<'a, ()>),
+}
+
+async fn acquire_runtime_lock(interactive: bool) -> RuntimeLockGuard<'static> {
+    if interactive {
+        RuntimeLockGuard::Write(TASK_RUNTIME_LOCK.write().await)
+    } else {
+        RuntimeLockGuard::Read(TASK_RUNTIME_LOCK.read().await)
+    }
+}
+
 /// Configuration for TaskExecutor
 pub struct TaskExecutorConfig {
     pub force: bool,
@@ -221,17 +235,9 @@ impl TaskExecutor {
 
         if let Some(file) = task.file_path(config).await? {
             let exec_start = std::time::Instant::now();
-            // Acquire the runtime lock around file-based task execution.
-            // Interactive tasks get exclusive (write) access; others get shared (read).
-            if task.interactive {
-                let _guard = TASK_RUNTIME_LOCK.write().await;
-                self.exec_file(config, &file, task, &env, &prefix, extra_vars)
-                    .await?;
-            } else {
-                let _guard = TASK_RUNTIME_LOCK.read().await;
-                self.exec_file(config, &file, task, &env, &prefix, extra_vars)
-                    .await?;
-            }
+            let _guard = acquire_runtime_lock(task.interactive).await;
+            self.exec_file(config, &file, task, &env, &prefix, extra_vars)
+                .await?;
             trace!(
                 "task {} exec_file took {}ms (total {}ms)",
                 task.name,
@@ -311,16 +317,8 @@ impl TaskExecutor {
             match entry {
                 RunEntry::Script(_) => {
                     if let Some((script, args)) = script_iter.next() {
-                        // Acquire the runtime lock around script execution.
-                        // Interactive tasks get exclusive (write) access to the terminal;
-                        // non-interactive tasks get shared (read) access.
-                        if task.interactive {
-                            let _guard = TASK_RUNTIME_LOCK.write().await;
-                            self.exec_script(&script, &args, task, env, prefix).await?;
-                        } else {
-                            let _guard = TASK_RUNTIME_LOCK.read().await;
-                            self.exec_script(&script, &args, task, env, prefix).await?;
-                        }
+                        let _guard = acquire_runtime_lock(task.interactive).await;
+                        self.exec_script(&script, &args, task, env, prefix).await?;
                     }
                 }
                 RunEntry::SingleTask { task: spec } => {
