@@ -485,12 +485,7 @@ impl Run {
             let _permit = permit_opt;
             let completed = deps_for_remove.lock().await.handled_task_keys();
             let result = this
-                .run_task_sched(
-                    &task,
-                    &ctx.config,
-                    ctx.sched_tx.clone(),
-                    completed,
-                )
+                .run_task_sched(&task, &ctx.config, ctx.sched_tx.clone(), completed)
                 .await;
             if let Err(err) = &result {
                 let status = Error::get_exit_status(err);

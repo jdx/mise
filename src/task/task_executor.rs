@@ -3,6 +3,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::duration;
 use crate::file::{display_path, is_executable};
+use crate::task::TaskKey;
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
@@ -17,7 +18,6 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 #[cfg(unix)]
 use nix::errno::Errno;
-use crate::task::TaskKey;
 use std::collections::{BTreeMap, HashSet};
 use std::iter::once;
 use std::ops::Deref;
