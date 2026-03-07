@@ -1126,7 +1126,7 @@ impl AquaBackend {
             // Record minisign provenance if no higher-priority verification already recorded
             let platform_key = self.get_platform_key();
             let pi = tv.lock_platforms.entry(platform_key).or_default();
-            if pi.provenance.is_none_or(|p| p < ProvenanceType::Minisign) {
+            if pi.provenance.is_none() {
                 pi.provenance = Some(ProvenanceType::Minisign);
             }
         }

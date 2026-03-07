@@ -8,7 +8,7 @@ use crate::file::display_path;
 use crate::path::PathExt;
 use crate::platform::Platform;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset};
-use eyre::{Report, Result, bail};
+use eyre::{Report, Result, bail, eyre};
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 use std::fs;
@@ -202,7 +202,10 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     _ => None,
                 };
                 let provenance = match t.remove("provenance") {
-                    Some(toml::Value::String(s)) => s.parse().ok(),
+                    Some(toml::Value::String(s)) => Some(
+                        s.parse()
+                            .map_err(|_| eyre!("unrecognized provenance type {s:?} in lockfile"))?,
+                    ),
                     _ => None,
                 };
                 let provenance_url = match t.remove("provenance_url") {
