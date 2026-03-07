@@ -158,7 +158,7 @@ impl PlatformInfo {
             url: self.url.clone().or_else(|| other.url.clone()),
             url_api: self.url_api.clone().or_else(|| other.url_api.clone()),
             conda_deps: self.conda_deps.clone().or_else(|| other.conda_deps.clone()),
-            provenance: self.provenance.or(other.provenance),
+            provenance: std::cmp::max(self.provenance, other.provenance),
             provenance_url: self
                 .provenance_url
                 .clone()
@@ -531,7 +531,7 @@ impl Lockfile {
                     // For conda_deps, always use the new value - None means "no dependencies"
                     // rather than "not computed", so we shouldn't preserve stale deps
                     conda_deps: platform_info.conda_deps,
-                    provenance: platform_info.provenance.or(existing.provenance),
+                    provenance: std::cmp::max(platform_info.provenance, existing.provenance),
                     provenance_url: platform_info
                         .provenance_url
                         .or_else(|| existing.provenance_url.clone()),

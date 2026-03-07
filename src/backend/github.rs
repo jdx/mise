@@ -400,17 +400,32 @@ impl UnifiedGitBackend {
             let parts: Vec<&str> = repo.split('/').collect();
             if parts.len() == 2 {
                 let (owner, repo_name) = (parts[0], parts[1]);
-                if let Ok(source) = sigstore_verification::sources::github::GitHubSource::new(
+                match sigstore_verification::sources::github::GitHubSource::new(
                     owner,
                     repo_name,
                     env::GITHUB_TOKEN.as_deref(),
                 ) {
-                    use sigstore_verification::AttestationSource;
-                    let artifact_ref = sigstore_verification::ArtifactRef::from_digest(digest);
-                    if let Ok(attestations) = source.fetch_attestations(&artifact_ref).await
-                        && !attestations.is_empty()
-                    {
-                        return Some(ProvenanceType::GithubAttestations);
+                    Ok(source) => {
+                        use sigstore_verification::AttestationSource;
+                        let artifact_ref = sigstore_verification::ArtifactRef::from_digest(digest);
+                        match source.fetch_attestations(&artifact_ref).await {
+                            Ok(attestations) if !attestations.is_empty() => {
+                                return Some(ProvenanceType::GithubAttestations);
+                            }
+                            Ok(_) => {}
+                            Err(e) => {
+                                warn!(
+                                    "GitHub attestation API query failed for {owner}/{repo_name}: {e}. \
+                                     Lockfile may not record github-attestations provenance."
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to create GitHub attestation source for {owner}/{repo_name}: {e}. \
+                             Lockfile may not record github-attestations provenance."
+                        );
                     }
                 }
             }
