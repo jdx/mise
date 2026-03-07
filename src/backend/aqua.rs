@@ -938,10 +938,35 @@ impl AquaBackend {
         v: &str,
         filename: &str,
     ) -> Result<()> {
+        // Check if the lockfile expects provenance for this platform, then clear it
+        // so we can detect whether verification actually re-set it
+        let platform_key = self.get_platform_key();
+        let locked_provenance = tv
+            .lock_platforms
+            .get_mut(&platform_key)
+            .and_then(|pi| pi.provenance.take());
+
         self.verify_slsa(ctx, tv, pkg, v, filename).await?;
         self.verify_minisign(ctx, tv, pkg, v, filename).await?;
         self.verify_github_artifact_attestations(ctx, tv, pkg, v, filename)
             .await?;
+
+        // If lockfile recorded provenance but none was verified, it's a downgrade attack
+        if let Some(expected) = locked_provenance {
+            let platform_key = self.get_platform_key();
+            let verified = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|pi| pi.provenance.as_deref())
+                .is_some();
+            if !verified {
+                return Err(eyre!(
+                    "Lockfile requires {expected} provenance for {tv} but verification was not performed. \
+                     This may indicate a downgrade attack. Enable the corresponding verification setting \
+                     or update the lockfile."
+                ));
+            }
+        }
 
         let download_path = tv.download_path();
         let platform_key = self.get_platform_key();
