@@ -336,8 +336,15 @@ impl Backend for UnifiedGitBackend {
             Ok(asset) => {
                 // Detect provenance availability from release assets and attestation API
                 let provenance = if !self.is_gitlab() && !self.is_forgejo() {
-                    self.detect_provenance_type(tv, &opts, &repo, &api_url, asset.digest.as_deref())
-                        .await
+                    self.detect_provenance_type(
+                        tv,
+                        &opts,
+                        &repo,
+                        &api_url,
+                        asset.digest.as_deref(),
+                        target,
+                    )
+                    .await
                 } else {
                     None
                 };
@@ -377,6 +384,7 @@ impl UnifiedGitBackend {
         repo: &str,
         api_url: &str,
         asset_digest: Option<&str>,
+        target: &PlatformTarget,
     ) -> Option<ProvenanceType> {
         let settings = Settings::get();
         let version = &tv.version;
@@ -431,17 +439,17 @@ impl UnifiedGitBackend {
             }
         }
 
-        // Check for SLSA provenance from release assets
-        // Must match pick_best_provenance patterns: .intoto.jsonl, provenance, .attestation
-        // (.sigstore.json/.sigstore are GitHub Attestations, not SLSA — handled above)
+        // Check for SLSA provenance from release assets using the same platform-aware
+        // picker as install-time verification. This ensures we only record SLSA provenance
+        // when a matching provenance file exists for the target platform.
         if settings.slsa && settings.github.slsa {
-            let has_slsa = release.assets.iter().any(|a| {
-                let name = a.name.to_lowercase();
-                name.contains(".intoto.jsonl")
-                    || name.contains("provenance")
-                    || name.ends_with(".attestation")
-            });
-            if has_slsa {
+            let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
+            let picker = AssetPicker::with_libc(
+                target.os_name().to_string(),
+                target.arch_name().to_string(),
+                target.qualifier().map(|s| s.to_string()),
+            );
+            if picker.pick_best_provenance(&asset_names).is_some() {
                 return Some(ProvenanceType::Slsa { url: None });
             }
         }

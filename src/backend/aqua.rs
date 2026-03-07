@@ -653,6 +653,11 @@ impl AquaBackend {
     /// enabled for the package. GithubAttestations is NOT detected here
     /// because it requires downloading the artifact to query the attestation
     /// API — it is recorded at install-time after successful verification.
+    ///
+    /// NOTE: For packages with both `slsa_provenance` and `github_artifact_attestations`,
+    /// this returns `Slsa`. Subsequent `mise install` will enforce SLSA verification even
+    /// though attestations would also work. If SLSA verification fails (missing asset,
+    /// format change), the lockfile entry must be deleted and re-locked.
     fn detect_provenance_type(&self, pkg: &AquaPackage) -> Option<ProvenanceType> {
         let settings = Settings::get();
 
@@ -1045,6 +1050,9 @@ impl AquaBackend {
                     .get(&platform_key)
                     .and_then(|pi| pi.provenance.as_ref())
                     .is_some_and(|p| *p > ProvenanceType::Cosign);
+            // Re-download only if the checksum file doesn't exist yet. An existing file
+            // from a prior attempt is trusted because the download directory is version-specific
+            // and the final artifact is independently verified by verify_checksum at the end.
             if (needs_checksum || (needs_cosign && !cosign_already_verified))
                 && !checksum_path.exists()
             {

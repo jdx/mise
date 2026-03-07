@@ -151,18 +151,17 @@ impl serde::Serialize for ProvenanceType {
         &self,
         serializer: S,
     ) -> std::result::Result<S::Ok, S::Error> {
-        use serde::ser::SerializeMap;
         match self {
-            Self::Slsa { url } => {
-                // Serialize as { slsa = { url = "..." } }
+            Self::Slsa { url: Some(u) } => {
+                // Serialize as { slsa = { url = "..." } } only when URL is present
+                use serde::ser::SerializeMap;
                 let mut slsa_map = std::collections::BTreeMap::new();
-                if let Some(u) = url {
-                    slsa_map.insert("url", u.as_str());
-                }
+                slsa_map.insert("url", u.as_str());
                 let mut outer = serializer.serialize_map(Some(1))?;
                 outer.serialize_entry("slsa", &slsa_map)?;
                 outer.end()
             }
+            // Slsa without URL serializes as plain string, like other variants
             _ => serializer.serialize_str(&self.to_string()),
         }
     }
@@ -386,15 +385,14 @@ impl From<PlatformInfo> for toml::Value {
         }
         if let Some(ref provenance) = platform_info.provenance {
             match provenance {
-                ProvenanceType::Slsa { url } => {
+                ProvenanceType::Slsa { url: Some(url) } => {
                     let mut slsa_table = toml::Table::new();
-                    if let Some(url) = url {
-                        slsa_table.insert("url".to_string(), url.clone().into());
-                    }
+                    slsa_table.insert("url".to_string(), url.clone().into());
                     let mut prov_table = toml::Table::new();
                     prov_table.insert("slsa".to_string(), toml::Value::Table(slsa_table));
                     table.insert("provenance".to_string(), toml::Value::Table(prov_table));
                 }
+                // Slsa without URL and all other variants serialize as plain string
                 _ => {
                     table.insert("provenance".to_string(), provenance.to_string().into());
                 }
