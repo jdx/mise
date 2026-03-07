@@ -403,6 +403,10 @@ impl RubyPlugin {
         if source.contains("://") {
             return None;
         }
+        // Must be a valid owner/repo format for GitHub attestation verification
+        if !source.contains('/') {
+            return None;
+        }
         Some("github-attestations".to_string())
     }
 

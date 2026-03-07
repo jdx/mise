@@ -975,8 +975,14 @@ impl AquaBackend {
         // When the lockfile specifies a provenance type, only try the matching verification
         // to avoid false-positive downgrade errors when a tool supports multiple mechanisms.
         // Order matches detect_provenance_type: github-attestations first, then SLSA.
-        let skip_attestations = locked_provenance.as_deref() == Some("slsa");
-        let skip_slsa = locked_provenance.as_deref() == Some("github-attestations");
+        let skip_attestations = matches!(
+            locked_provenance.as_deref(),
+            Some("slsa") | Some("minisign")
+        );
+        let skip_slsa = matches!(
+            locked_provenance.as_deref(),
+            Some("github-attestations") | Some("minisign")
+        );
 
         if !skip_attestations {
             self.verify_github_artifact_attestations(ctx, tv, pkg, v, filename)
