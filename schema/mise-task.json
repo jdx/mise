@@ -232,6 +232,11 @@
                 }
               ]
             },
+            "interactive": {
+              "default": false,
+              "description": "mark task as interactive, acquiring exclusive terminal access while allowing other non-interactive tasks to run in parallel",
+              "type": "boolean"
+            },
             "raw": {
               "default": false,
               "description": "directly connect task to stdin/stdout/stderr",
@@ -884,6 +889,11 @@
               "type": "string"
             }
           ]
+        },
+        "interactive": {
+          "default": false,
+          "description": "mark task as interactive, acquiring exclusive terminal access while allowing other non-interactive tasks to run in parallel",
+          "type": "boolean"
         },
         "raw": {
           "default": false,

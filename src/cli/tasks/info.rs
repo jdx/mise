@@ -79,6 +79,9 @@ impl TasksInfo {
         if task.raw {
             properties.push("raw");
         }
+        if task.interactive {
+            properties.push("interactive");
+        }
         if !properties.is_empty() {
             info::inline_section("Properties", properties.join(", "))?;
         }
@@ -137,6 +140,7 @@ impl TasksInfo {
             "dir": task.dir,
             "hide": task.hide,
             "raw": task.raw,
+            "interactive": task.interactive,
             "sources": task.sources,
             "outputs": task.outputs,
             "shell": task.shell,

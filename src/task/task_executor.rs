@@ -22,11 +22,30 @@ use std::iter::once;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use std::time::{Duration, SystemTime};
 use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use tokio::sync::{mpsc, oneshot};
 use xx::file;
+
+/// Global lock for interactive task exclusivity.
+/// Interactive tasks acquire a write lock (exclusive), non-interactive tasks acquire a read lock (shared).
+static TASK_RUNTIME_LOCK: LazyLock<RwLock<()>> = LazyLock::new(|| RwLock::new(()));
+
+#[allow(dead_code)] // Guards are held for their Drop impl, not read
+enum RuntimeLockGuard<'a> {
+    Read(tokio::sync::RwLockReadGuard<'a, ()>),
+    Write(tokio::sync::RwLockWriteGuard<'a, ()>),
+}
+
+async fn acquire_runtime_lock(interactive: bool) -> RuntimeLockGuard<'static> {
+    if interactive {
+        RuntimeLockGuard::Write(TASK_RUNTIME_LOCK.write().await)
+    } else {
+        RuntimeLockGuard::Read(TASK_RUNTIME_LOCK.read().await)
+    }
+}
 
 /// Configuration for TaskExecutor
 pub struct TaskExecutorConfig {
@@ -245,6 +264,14 @@ impl TaskExecutor {
             self.parse_usage_spec_and_init_env(config, task, &mut env, get_args, extra_vars)
                 .await?;
 
+            // For interactive tasks, acquire the lock before confirmation so the
+            // prompt gets exclusive terminal access (consistent with exec_file path).
+            let confirm_guard = if task.interactive {
+                Some(acquire_runtime_lock(task.interactive).await)
+            } else {
+                None
+            };
+
             // Check confirmation after usage args are parsed
             self.check_confirmation(config, task, &env).await?;
 
@@ -256,6 +283,7 @@ impl TaskExecutor {
                 &prefix,
                 rendered_run_scripts,
                 sched_tx,
+                confirm_guard,
             )
             .await?;
             trace!(
@@ -281,6 +309,7 @@ impl TaskExecutor {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn exec_task_run_entries(
         &self,
         config: &Arc<Config>,
@@ -289,19 +318,31 @@ impl TaskExecutor {
         prefix: &str,
         rendered_scripts: Vec<(String, Vec<String>)>,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+        existing_guard: Option<RuntimeLockGuard<'static>>,
     ) -> Result<()> {
         let (env, task_env) = full_env;
         use crate::task::RunEntry;
         let mut script_iter = rendered_scripts.into_iter();
+        // Use an existing guard (e.g. from confirmation) or acquire a new one.
+        // The lock is held across consecutive script entries for exclusivity
+        // and temporarily dropped around inject_and_wait to avoid deadlocking.
+        let mut guard = match existing_guard {
+            Some(g) => Some(g),
+            None => Some(acquire_runtime_lock(task.interactive).await),
+        };
         for entry in task.run() {
             match entry {
                 RunEntry::Script(_) => {
                     if let Some((script, args)) = script_iter.next() {
+                        if guard.is_none() {
+                            guard = Some(acquire_runtime_lock(task.interactive).await);
+                        }
                         self.exec_script(&script, &args, task, env, prefix).await?;
                     }
                 }
                 RunEntry::SingleTask { task: spec } => {
                     let resolved_spec = crate::task::resolve_task_pattern(spec, Some(task));
+                    guard = None; // drop lock before waiting on sub-tasks
                     self.inject_and_wait(config, &[resolved_spec], task_env, sched_tx.clone())
                         .await?;
                 }
@@ -310,6 +351,7 @@ impl TaskExecutor {
                         .iter()
                         .map(|t| crate::task::resolve_task_pattern(t, Some(task)))
                         .collect();
+                    guard = None; // drop lock before waiting on sub-tasks
                     self.inject_and_wait(config, &resolved_tasks, task_env, sched_tx.clone())
                         .await?;
                 }
@@ -569,6 +611,15 @@ impl TaskExecutor {
         self.parse_usage_spec_and_init_env(config, task, &mut env, get_args, extra_vars)
             .await?;
 
+        // For interactive tasks, acquire the lock before confirmation so the
+        // prompt gets exclusive terminal access. For non-interactive tasks,
+        // acquire after confirmation to avoid blocking the task graph.
+        let guard = if task.interactive {
+            Some(acquire_runtime_lock(task.interactive).await)
+        } else {
+            None
+        };
+
         // Check confirmation after usage args are parsed
         self.check_confirmation(config, task, &env).await?;
 
@@ -581,6 +632,11 @@ impl TaskExecutor {
             self.eprint(task, prefix, &cmd);
         }
 
+        let _guard = if guard.is_some() {
+            guard
+        } else {
+            Some(acquire_runtime_lock(task.interactive).await)
+        };
         self.exec(file, &args, task, &env, prefix).await
     }
 
@@ -646,11 +702,19 @@ impl TaskExecutor {
             .redact(redactions.deref().clone())
             .raw(raw);
         if raw && !redactions.is_empty() {
-            hint!(
-                "raw_redactions",
-                "--raw will prevent mise from being able to use redactions",
-                ""
-            );
+            if task.interactive && !task.raw && !Settings::get().raw {
+                hint!(
+                    "interactive_redactions",
+                    "interactive tasks bypass redactions—secrets may appear in terminal output",
+                    ""
+                );
+            } else {
+                hint!(
+                    "raw_redactions",
+                    "--raw will prevent mise from being able to use redactions",
+                    ""
+                );
+            }
         }
         let output = self.output(Some(task));
         cmd.with_pass_signals();
@@ -793,7 +857,9 @@ impl TaskExecutor {
         if let Some(timeout) = effective_timeout {
             cmd = cmd.with_timeout(timeout);
         }
-        cmd.execute()?;
+        // cmd.execute() is blocking (calls cp.wait()), so use block_in_place
+        // to avoid starving the tokio runtime while holding the TASK_RUNTIME_LOCK guard.
+        tokio::task::block_in_place(|| cmd.execute())?;
         trace!("{prefix} exited successfully");
         Ok(())
     }

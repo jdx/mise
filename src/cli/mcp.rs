@@ -326,6 +326,7 @@ impl ServerHandler for MiseServer {
                         "dir": task.dir.clone(),
                         "hide": task.hide,
                         "raw": task.raw,
+                        "interactive": task.interactive,
                         "sources": task.sources.clone(),
                         "outputs": task.outputs.clone(),
                         "shell": task.shell.clone(),
