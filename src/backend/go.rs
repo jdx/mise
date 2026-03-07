@@ -3,7 +3,7 @@ use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
-use crate::cmd::CmdLineRunner;
+use crate::cmd::{CmdLineRunner, cmd_read_async};
 use crate::config::Config;
 use crate::config::Settings;
 use crate::install_context::InstallContext;
@@ -69,19 +69,22 @@ impl Backend for GoBackend {
                     .unique()
                     .collect::<Vec<_>>();
 
+                let env = self.dependency_env(config).await?;
                 for i in indices {
                     let mod_path = parts[..=i].join("/");
-                    let res = cmd!(
+                    let res = cmd_read_async(
                         "go",
-                        "list",
-                        "-mod=readonly",
-                        "-m",
-                        "-versions",
-                        "-json",
-                        mod_path
+                        &[
+                            "list",
+                            "-mod=readonly",
+                            "-m",
+                            "-versions",
+                            "-json",
+                            &mod_path,
+                        ],
+                        &env,
                     )
-                    .full_env(self.dependency_env(config).await?)
-                    .read();
+                    .await;
                     if let Ok(raw) = res {
                         let res = serde_json::from_str::<GoModInfo>(&raw);
                         if let Ok(mod_info) = res {

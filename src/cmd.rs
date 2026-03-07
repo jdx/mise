@@ -99,6 +99,48 @@ where
     duct::cmd(program, args)
 }
 
+/// Async version of `cmd!().read()` that uses `tokio::process::Command`.
+///
+/// Unlike `duct::Expression::read()`, this is truly async — it yields at `.await`
+/// points so `tokio::time::timeout` can cancel it, and `kill_on_drop(true)` ensures
+/// the child process is killed when the future is dropped (preventing orphans).
+pub async fn cmd_read_async<I, K, V>(program: &str, args: &[&str], env: I) -> Result<String>
+where
+    I: IntoIterator<Item = (K, V)>,
+    K: AsRef<OsStr>,
+    V: AsRef<OsStr>,
+{
+    let display_args = args.join(" ");
+    debug!("$ {program} {display_args}");
+
+    let output = tokio::process::Command::new(program)
+        .args(args)
+        .env_clear()
+        .envs(env)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .output()
+        .await
+        .wrap_err_with(|| format!("failed to run {program}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!(
+            "{program} {display_args} failed: exit {}{}\n",
+            output.status,
+            if stderr.is_empty() {
+                String::new()
+            } else {
+                format!("\nstderr: {stderr}")
+            }
+        );
+    }
+
+    Ok(String::from_utf8(output.stdout)
+        .wrap_err_with(|| format!("{program} output was not valid UTF-8"))?)
+}
+
 pub struct CmdLineRunner<'a> {
     cmd: Command,
     pr: Option<&'a dyn SingleReport>,

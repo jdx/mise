@@ -4,7 +4,7 @@ use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
-use crate::cmd::CmdLineRunner;
+use crate::cmd::{CmdLineRunner, cmd_read_async};
 use crate::config::settings::NpmPackageManager;
 use crate::config::{Config, Settings};
 use crate::install_context::InstallContext;
@@ -80,19 +80,16 @@ impl Backend for NPMBackend {
         self.ensure_npm_for_version_check(config).await;
         timeout::run_with_timeout_async(
             async || {
-                let env = self.dependency_env(config).await?;
+                let mut env = self.dependency_env(config).await?;
+                env.insert("NPM_CONFIG_UPDATE_NOTIFIER".into(), "false".into());
 
-                let raw = cmd!(
+                let tool_name = self.tool_name();
+                let raw = cmd_read_async(
                     NPM_PROGRAM,
-                    "view",
-                    self.tool_name(),
-                    "versions",
-                    "time",
-                    "--json"
+                    &["view", &tool_name, "versions", "time", "--json"],
+                    &env,
                 )
-                .full_env(&env)
-                .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-                .read()?;
+                .await?;
                 let data: Value = serde_json::from_str(&raw)?;
                 let versions = data["versions"]
                     .as_array()
@@ -135,11 +132,15 @@ impl Backend for NPMBackend {
                     .get_or_try_init_async(async || {
                         // Always use npm for getting version info since bun info requires package.json
                         // bun is only used for actual package installation
-                        let raw =
-                            cmd!(NPM_PROGRAM, "view", this.tool_name(), "dist-tags", "--json")
-                                .full_env(this.dependency_env(config).await?)
-                                .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-                                .read()?;
+                        let mut env = this.dependency_env(config).await?;
+                        env.insert("NPM_CONFIG_UPDATE_NOTIFIER".into(), "false".into());
+                        let tool_name = this.tool_name();
+                        let raw = cmd_read_async(
+                            NPM_PROGRAM,
+                            &["view", &tool_name, "dist-tags", "--json"],
+                            &env,
+                        )
+                        .await?;
                         let dist_tags: Value = serde_json::from_str(&raw)?;
                         match dist_tags["latest"] {
                             Value::String(ref s) => Ok(Some(s.clone())),
