@@ -974,9 +974,8 @@ impl AquaBackend {
 
         // When the lockfile specifies a provenance type, skip higher-priority mechanisms
         // to avoid false-positive downgrade errors when a tool supports multiple mechanisms.
-        let skip_attestations = locked_provenance.is_some_and(|l| {
-            l.lower_priority_than(ProvenanceType::GithubAttestations)
-        });
+        let skip_attestations = locked_provenance
+            .is_some_and(|l| l.lower_priority_than(ProvenanceType::GithubAttestations));
         let skip_slsa =
             locked_provenance.is_some_and(|l| l.lower_priority_than(ProvenanceType::Slsa));
 
