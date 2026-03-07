@@ -137,8 +137,8 @@ where
         );
     }
 
-    Ok(String::from_utf8(output.stdout)
-        .wrap_err_with(|| format!("{program} output was not valid UTF-8"))?)
+    String::from_utf8(output.stdout)
+        .wrap_err_with(|| format!("{program} output was not valid UTF-8"))
 }
 
 pub struct CmdLineRunner<'a> {
