@@ -312,10 +312,25 @@ impl Backend for ZigPlugin {
         // download() includes minisign verification
         let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
 
-        // Record minisign provenance in lockfile
+        // Enforce lockfile provenance expectation
         let platform_key = PlatformTarget::from_current().to_key();
-        let pi = tv.lock_platforms.entry(platform_key).or_default();
+        let locked_provenance = tv
+            .lock_platforms
+            .get_mut(&platform_key)
+            .and_then(|pi| pi.provenance.take());
+
+        // Record minisign provenance (download() always verifies minisign)
+        let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
         pi.provenance = Some("minisign".to_string());
+
+        if let Some(ref expected) = locked_provenance {
+            if expected != "minisign" {
+                return Err(eyre::eyre!(
+                    "Lockfile requires {expected} provenance for {tv} but minisign was used. \
+                     This may indicate a downgrade attack."
+                ));
+            }
+        }
 
         ctx.pr.next_operation();
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
