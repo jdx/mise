@@ -1028,7 +1028,16 @@ impl AquaBackend {
                 .is_none_or(|pi| pi.checksum.is_none());
 
             let needs_cosign = !skip_cosign;
-            if (needs_checksum || needs_cosign) && !checksum_path.exists() {
+            // Short-circuit cosign if a higher-priority mechanism already recorded provenance
+            let cosign_already_verified = needs_cosign
+                && tv
+                    .lock_platforms
+                    .get(&platform_key)
+                    .and_then(|pi| pi.provenance.as_ref())
+                    .is_some_and(|p| *p > ProvenanceType::Cosign);
+            if (needs_checksum || (needs_cosign && !cosign_already_verified))
+                && !checksum_path.exists()
+            {
                 let url = match checksum._type() {
                     AquaChecksumType::GithubRelease => {
                         let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
@@ -1040,7 +1049,7 @@ impl AquaBackend {
                     .await?;
             }
 
-            if !skip_cosign && checksum_path.exists() {
+            if !skip_cosign && !cosign_already_verified && checksum_path.exists() {
                 self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
                     .await?;
             }
