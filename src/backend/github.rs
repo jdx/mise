@@ -1178,10 +1178,10 @@ impl UnifiedGitBackend {
     ) -> Result<Option<ProvenanceType>> {
         let settings = Settings::get();
 
-        // Read the expected provenance from the lockfile. Unlike aqua's .take() approach,
-        // we use .clone() here because tv is &ToolVersion. The caller unconditionally
-        // overwrites platform_info.provenance with the returned value, so stale data
-        // cannot persist after a successful call.
+        // Read the expected provenance from the lockfile. We use .clone() because tv is
+        // &ToolVersion. The result is validated against this expectation at every return
+        // point: successful verification checks type match, and no-verification triggers
+        // a downgrade error.
         let platform_key = self.get_platform_key();
         let locked_provenance = tv
             .lock_platforms
@@ -1213,6 +1213,15 @@ impl UnifiedGitBackend {
                 .await
             {
                 Ok(true) => {
+                    // Defense-in-depth: verify the result matches the lockfile expectation
+                    if let Some(ref expected) = locked_provenance
+                        && !expected.is_github_attestations()
+                    {
+                        return Err(eyre::eyre!(
+                            "Lockfile requires {expected} provenance for {tv} but github-attestations was verified. \
+                             This may indicate a provenance type mismatch."
+                        ));
+                    }
                     return Ok(Some(ProvenanceType::GithubAttestations));
                 }
                 Ok(false) => {
@@ -1238,6 +1247,15 @@ impl UnifiedGitBackend {
         if !skip_slsa && settings.slsa && settings.github.slsa {
             match self.try_verify_slsa(ctx, tv, file_path).await {
                 Ok((true, provenance_url)) => {
+                    // Defense-in-depth: verify the result matches the lockfile expectation
+                    if let Some(ref expected) = locked_provenance
+                        && !expected.is_slsa()
+                    {
+                        return Err(eyre::eyre!(
+                            "Lockfile requires {expected} provenance for {tv} but slsa was verified. \
+                             This may indicate a provenance type mismatch."
+                        ));
+                    }
                     return Ok(Some(ProvenanceType::Slsa {
                         url: provenance_url,
                     }));
@@ -1258,7 +1276,7 @@ impl UnifiedGitBackend {
         }
 
         // If lockfile recorded provenance but no verification succeeded, it's a downgrade attack
-        if let Some(expected) = locked_provenance {
+        if let Some(ref expected) = locked_provenance {
             return Err(eyre::eyre!(
                 "Lockfile requires {expected} provenance for {tv} but verification was not performed. \
                  This may indicate a downgrade attack. Enable the corresponding verification setting \

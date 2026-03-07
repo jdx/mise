@@ -422,6 +422,9 @@ impl Backend for ZigPlugin {
         };
 
         // Try to get full info from JSON (includes checksum and size)
+        // Don't pre-set provenance at lock time — minisign verification hasn't run yet.
+        // Provenance is recorded in install_version_ after download() confirms minisign
+        // verification succeeded.
         match self
             .get_download_info_from_json(json_url, version, arch, os)
             .await
@@ -430,7 +433,6 @@ impl Backend for ZigPlugin {
                 url: Some(url),
                 checksum,
                 size,
-                provenance: Some(ProvenanceType::Minisign),
                 ..Default::default()
             }),
             Err(_) if regex!(r"^\d+\.\d+\.\d+$").is_match(&tv.version) => {
