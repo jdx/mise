@@ -221,8 +221,17 @@ impl TaskExecutor {
 
         if let Some(file) = task.file_path(config).await? {
             let exec_start = std::time::Instant::now();
-            self.exec_file(config, &file, task, &env, &prefix, extra_vars)
-                .await?;
+            // Acquire the runtime lock around file-based task execution.
+            // Interactive tasks get exclusive (write) access; others get shared (read).
+            if task.interactive {
+                let _guard = TASK_RUNTIME_LOCK.write().await;
+                self.exec_file(config, &file, task, &env, &prefix, extra_vars)
+                    .await?;
+            } else {
+                let _guard = TASK_RUNTIME_LOCK.read().await;
+                self.exec_file(config, &file, task, &env, &prefix, extra_vars)
+                    .await?;
+            }
             trace!(
                 "task {} exec_file took {}ms (total {}ms)",
                 task.name,
@@ -302,7 +311,16 @@ impl TaskExecutor {
             match entry {
                 RunEntry::Script(_) => {
                     if let Some((script, args)) = script_iter.next() {
-                        self.exec_script(&script, &args, task, env, prefix).await?;
+                        // Acquire the runtime lock around script execution.
+                        // Interactive tasks get exclusive (write) access to the terminal;
+                        // non-interactive tasks get shared (read) access.
+                        if task.interactive {
+                            let _guard = TASK_RUNTIME_LOCK.write().await;
+                            self.exec_script(&script, &args, task, env, prefix).await?;
+                        } else {
+                            let _guard = TASK_RUNTIME_LOCK.read().await;
+                            self.exec_script(&script, &args, task, env, prefix).await?;
+                        }
                     }
                 }
                 RunEntry::SingleTask { task: spec } => {
@@ -650,7 +668,7 @@ impl TaskExecutor {
             .envs(env)
             .redact(redactions.deref().clone())
             .raw(raw);
-        if raw && !redactions.is_empty() {
+        if raw && !redactions.is_empty() && !task.interactive {
             hint!(
                 "raw_redactions",
                 "--raw will prevent mise from being able to use redactions",
@@ -798,13 +816,7 @@ impl TaskExecutor {
         if let Some(timeout) = effective_timeout {
             cmd = cmd.with_timeout(timeout);
         }
-        if task.interactive {
-            let _guard = TASK_RUNTIME_LOCK.write().await;
-            cmd.execute()?;
-        } else {
-            let _guard = TASK_RUNTIME_LOCK.read().await;
-            cmd.execute()?;
-        }
+        cmd.execute()?;
         trace!("{prefix} exited successfully");
         Ok(())
     }
