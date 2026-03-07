@@ -137,6 +137,7 @@ impl TasksInfo {
             "dir": task.dir,
             "hide": task.hide,
             "raw": task.raw,
+            "interactive": task.interactive,
             "sources": task.sources,
             "outputs": task.outputs,
             "shell": task.shell,

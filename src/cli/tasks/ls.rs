@@ -191,6 +191,7 @@ impl TasksLs {
                   "hide": task.hide,
                   "global": task.global,
                   "raw": task.raw,
+                  "interactive": task.interactive,
                   "sources": task.sources,
                   "outputs": task.outputs,
                   "shell": task.shell,

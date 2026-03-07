@@ -343,7 +343,7 @@ impl OutputHandler {
     }
 
     pub fn raw(&self, task: Option<&Task>) -> bool {
-        self.raw || Settings::get().raw || task.is_some_and(|t| t.raw)
+        self.raw || Settings::get().raw || task.is_some_and(|t| t.raw || t.interactive)
     }
 
     pub fn jobs(&self) -> usize {

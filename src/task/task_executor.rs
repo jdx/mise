@@ -22,11 +22,16 @@ use std::iter::once;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use std::time::{Duration, SystemTime};
 use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use tokio::sync::{mpsc, oneshot};
 use xx::file;
+
+/// Global lock for interactive task exclusivity.
+/// Interactive tasks acquire a write lock (exclusive), non-interactive tasks acquire a read lock (shared).
+static TASK_RUNTIME_LOCK: LazyLock<RwLock<()>> = LazyLock::new(|| RwLock::new(()));
 
 /// Configuration for TaskExecutor
 pub struct TaskExecutorConfig {
@@ -793,7 +798,13 @@ impl TaskExecutor {
         if let Some(timeout) = effective_timeout {
             cmd = cmd.with_timeout(timeout);
         }
-        cmd.execute()?;
+        if task.interactive {
+            let _guard = TASK_RUNTIME_LOCK.write().await;
+            cmd.execute()?;
+        } else {
+            let _guard = TASK_RUNTIME_LOCK.read().await;
+            cmd.execute()?;
+        }
         trace!("{prefix} exited successfully");
         Ok(())
     }
