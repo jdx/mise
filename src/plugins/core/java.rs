@@ -439,7 +439,7 @@ impl Backend for JavaPlugin {
         // Check if URL already exists in lockfile platforms first
         let platform_key = self.get_platform_key();
         let (metadata, tarball_path) =
-            if let Some(platform_info) = tv.lock_platforms.get(&platform_key) {
+            if let Some(platform_info) = tv.get_lock_platform(&platform_key) {
                 if let Some(ref url) = platform_info.url {
                     // Use the filename from the URL, not the platform key
                     let filename = url.split('/').next_back().unwrap();

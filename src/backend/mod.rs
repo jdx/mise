@@ -987,8 +987,7 @@ pub trait Backend: Debug + Send + Sync {
         if ctx.locked && !tv.request.source().is_tool_stub() && self.supports_lockfile_url() {
             let platform_key = self.get_platform_key();
             let has_lockfile_url = tv
-                .lock_platforms
-                .get(&platform_key)
+                .get_lock_platform(&platform_key)
                 .and_then(|p| p.url.as_ref())
                 .is_some();
             if !has_lockfile_url {
