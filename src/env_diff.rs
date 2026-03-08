@@ -75,7 +75,8 @@ impl EnvDiff {
     {
         let env: IndexMap<OsString, OsString> =
             env.into_iter().map(|(k, v)| (k.into(), v.into())).collect();
-        let bash_path = file::which("bash").unwrap_or("/bin/bash".into());
+        let bash_path = file::which(if cfg!(windows) { "bash.exe" } else { "bash" })
+            .unwrap_or("/bin/bash".into());
         let out = cmd!(
             bash_path,
             "--noprofile",
