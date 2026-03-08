@@ -1,6 +1,6 @@
 # mise.lock Lockfile
 
-`mise.lock` is a lockfile that pins exact versions and checksums of tools for reproducible environments. When enabled, mise will automatically maintain this file to ensure consistent tool versions across different machines and deployments.
+`mise.lock` is a lockfile that pins exact versions and checksums of tools for reproducible environments. Lockfiles are not created automatically—you must run `mise lock` to generate them. Once a lockfile exists, mise will keep it updated as tools are installed or upgraded.
 
 ## Overview
 
@@ -26,7 +26,7 @@ lockfile = true
 
 ## How It Works
 
-1. **Automatic Creation**: When you run `mise install` or `mise use`, mise updates `mise.lock` with the exact versions installed
+1. **Lockfile Updates**: Once a `mise.lock` file exists, running `mise install` or `mise use` updates it with the exact versions installed
 2. **Version Resolution**: If a `mise.lock` exists, mise will prefer locked versions over version ranges in `mise.toml`
 3. **Checksum Verification**: For supported backends, mise stores and verifies checksums of downloaded tools
 
@@ -166,10 +166,10 @@ This is useful for CI environments where you want to guarantee reproducible buil
 ### Initial Setup
 
 ```sh
-# Create the lockfile
-touch mise.lock
+# Generate the lockfile
+mise lock
 
-# Install tools (this will populate the lockfile)
+# Install tools using locked versions
 mise install
 ```
 
@@ -271,8 +271,9 @@ lockfile = false
 # Convert .tool-versions to mise.toml
 mise config generate
 
-# Enable lockfiles and populate
+# Enable lockfiles and generate the lockfile
 mise settings lockfile=true
+mise lock
 mise install
 ```
 

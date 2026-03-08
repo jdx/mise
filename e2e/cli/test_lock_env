@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+# Test that `mise lock` sets the env field for tools from env-specific configs
+
+export MISE_LOCKFILE=1
+
+echo "=== Testing mise lock sets env tag for env-specific config ==="
+
+cat >mise.toml <<'EOF'
+[tools]
+tiny = "1"
+EOF
+
+cat >mise.test.toml <<'EOF'
+[tools]
+"aqua:jqlang/jq" = "1.7.1"
+EOF
+
+rm -f mise.lock
+
+# Install tiny so it's available
+assert "mise install tiny@1.0.1"
+
+# Run mise lock with MISE_ENV=test so mise.test.toml is loaded
+assert "MISE_ENV=test mise lock --platform linux-x64"
+
+# The base tool should have no env tag
+assert_contains "cat mise.lock" '[[tools.tiny]]'
+assert_contains "cat mise.lock" 'version = "1.0.1"'
+# Verify tiny's entry does not have an env field (env line only appears once, for jq)
+assert "test $(grep -c 'env = ' mise.lock) -eq 1"
+
+# The env-specific tool should have env = ["test"]
+assert_contains "cat mise.lock" 'jqlang/jq'
+assert_contains "cat mise.lock" 'env = ["test"]'
+
+echo "=== Testing mise lock without MISE_ENV has no env tag ==="
+
+rm -f mise.lock mise.test.toml
+
+# With only mise.toml and no MISE_ENV, there should be no env field
+assert "mise lock --platform linux-x64"
+assert_contains "cat mise.lock" 'version = "1.0.1"'
+assert_not_contains "cat mise.lock" 'env = '
+
+echo "=== Cleanup ==="
+rm -f mise.lock mise.toml mise.test.toml
+
+echo "mise lock env tests passed!"

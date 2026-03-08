@@ -704,6 +704,48 @@ impl Lockfile {
         }
     }
 
+    /// Set the env field on a tool entry matching the given short name, version, and options.
+    /// If the tool already has an env field, merges the new env values.
+    pub fn set_tool_env(
+        &mut self,
+        short: &str,
+        version: &str,
+        options: &BTreeMap<String, String>,
+        envs: &[String],
+    ) {
+        if let Some(tools) = self.tools.get_mut(short)
+            && let Some(tool) = tools
+                .iter_mut()
+                .find(|t| t.version == version && &t.options == options)
+        {
+            let mut existing: Vec<String> = tool.env.clone().unwrap_or_default();
+            for env in envs {
+                if !existing.contains(env) {
+                    existing.push(env.clone());
+                }
+            }
+            existing.sort();
+            tool.env = Some(existing);
+        }
+    }
+
+    /// Clear the env field on a tool entry matching the given short name, version, and options.
+    /// Used to remove stale env tags when a tool moves from an env-specific config to a base config.
+    pub fn clear_tool_env(
+        &mut self,
+        short: &str,
+        version: &str,
+        options: &BTreeMap<String, String>,
+    ) {
+        if let Some(tools) = self.tools.get_mut(short)
+            && let Some(tool) = tools
+                .iter_mut()
+                .find(|t| t.version == version && &t.options == options)
+        {
+            tool.env = None;
+        }
+    }
+
     /// Save the lockfile to disk (public for mise lock command)
     pub fn write<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         self.save(path)
@@ -753,7 +795,7 @@ fn is_local_config(path: &Path) -> bool {
 
 /// Extracts environment name from config filename
 /// e.g., "mise.test.toml" -> Some("test"), "mise.test.local.toml" -> Some("test"), "mise.toml" -> None
-fn extract_env_from_config_path(path: &Path) -> Option<String> {
+pub fn extract_env_from_config_path(path: &Path) -> Option<String> {
     let filename = path
         .file_name()
         .and_then(|n| n.to_str())
