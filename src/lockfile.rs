@@ -708,16 +708,17 @@ impl Lockfile {
     /// If the tool already has an env field, merges the new env values.
     pub fn set_tool_env(&mut self, short: &str, version: &str, envs: &[String]) {
         if let Some(tools) = self.tools.get_mut(short)
-            && let Some(tool) = tools.iter_mut().find(|t| t.version == version) {
-                let mut existing: Vec<String> = tool.env.clone().unwrap_or_default();
-                for env in envs {
-                    if !existing.contains(env) {
-                        existing.push(env.clone());
-                    }
+            && let Some(tool) = tools.iter_mut().find(|t| t.version == version)
+        {
+            let mut existing: Vec<String> = tool.env.clone().unwrap_or_default();
+            for env in envs {
+                if !existing.contains(env) {
+                    existing.push(env.clone());
                 }
-                existing.sort();
-                tool.env = Some(existing);
             }
+            existing.sort();
+            tool.env = Some(existing);
+        }
     }
 
     /// Save the lockfile to disk (public for mise lock command)
