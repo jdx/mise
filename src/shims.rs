@@ -193,8 +193,11 @@ fn remove_shims_individually(shims_dir: &Path) -> Result<()> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(e) => {
             return Err(e).wrap_err_with(|| {
-                format!("failed to read shims directory: {}", display_path(shims_dir))
-            })
+                format!(
+                    "failed to read shims directory: {}",
+                    display_path(shims_dir)
+                )
+            });
         }
     };
     for entry in entries {
