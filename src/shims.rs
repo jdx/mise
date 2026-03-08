@@ -116,8 +116,6 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
             .then(|| fs::read_to_string(&mode_file).unwrap_or_default())
             .is_some_and(|prev| prev.trim() != shim_mode)
     };
-    let is_windows_hardlink_or_exe =
-        cfg!(windows) && (shim_mode == "hardlink" || shim_mode == "exe");
     if force || shim_mode_changed {
         // On Windows, .exe shims may be locked by processes or the shell (they
         // are on PATH).  Instead of removing the entire directory (which fails
@@ -142,11 +140,6 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
             desired.into_iter().collect::<BTreeSet<_>>(),
             BTreeSet::new(),
         )
-    } else if is_windows_hardlink_or_exe {
-        // For exe/hardlink mode we cannot rely on symlink staleness checks, so
-        // recompute diffs but only add/remove individual shims — never nuke the
-        // whole directory.
-        get_shim_diffs(config, &mise_bin, ts).await?
     } else {
         get_shim_diffs(config, &mise_bin, ts).await?
     };
@@ -197,7 +190,12 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
 fn remove_shims_individually(shims_dir: &Path) -> Result<()> {
     let entries = match shims_dir.read_dir() {
         Ok(entries) => entries,
-        Err(_) => return Ok(()), // directory doesn't exist yet
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => {
+            return Err(e).wrap_err_with(|| {
+                format!("failed to read shims directory: {}", display_path(shims_dir))
+            })
+        }
     };
     for entry in entries {
         let entry = entry?;
@@ -225,8 +223,9 @@ fn remove_shim_with_rename_fallback(path: &Path) -> Result<()> {
 
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
-        Err(e) if cfg!(windows) && e.raw_os_error() == Some(5) => {
-            // ERROR_ACCESS_DENIED (5): file is locked, rename it instead.
+        Err(e) if cfg!(windows) && matches!(e.raw_os_error(), Some(5) | Some(32)) => {
+            // ERROR_ACCESS_DENIED (5) or ERROR_SHARING_VIOLATION (32): file is
+            // locked by another process, rename it instead.
             trace!(
                 "cannot delete locked shim {}, renaming to .old",
                 display_path(path)
