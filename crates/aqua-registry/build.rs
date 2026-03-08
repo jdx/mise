@@ -10,6 +10,7 @@ fn generate_baked_registry(out_dir: &str) {
     let dest_path = Path::new(out_dir).join("aqua_standard_registry.rs");
 
     let registry_dir = find_registry_dir();
+    println!("cargo:rerun-if-changed={}", registry_dir.display());
 
     let registries =
         collect_aqua_registries(&registry_dir).expect("Failed to collect aqua registry files");
