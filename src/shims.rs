@@ -138,7 +138,10 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
     let (shims_to_add, shims_to_remove) = if force || shim_mode_changed {
         // After a full wipe, all desired shims need to be re-created.
         let desired = get_desired_shims(config, &mise_bin, ts).await?;
-        (desired.into_iter().collect::<BTreeSet<_>>(), BTreeSet::new())
+        (
+            desired.into_iter().collect::<BTreeSet<_>>(),
+            BTreeSet::new(),
+        )
     } else if is_windows_hardlink_or_exe {
         // For exe/hardlink mode we cannot rely on symlink staleness checks, so
         // recompute diffs but only add/remove individual shims — never nuke the
