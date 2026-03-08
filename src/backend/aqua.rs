@@ -435,7 +435,8 @@ impl Backend for AquaBackend {
 
         let format = pkg.format(&v, os(), arch()).unwrap_or_default();
 
-        self.download(ctx, &tv, &url, &filename).await?;
+        self.download(ctx, &tv, &url, &filename, api_digest.as_deref())
+            .await?;
 
         if validated_url.is_none() {
             // Store the asset URL and digest (if available) in the tool version
@@ -947,10 +948,15 @@ impl AquaBackend {
         url: &str,
         download_path: &Path,
         ctx: &InstallContext,
+        tv: &ToolVersion,
     ) -> Result<PathBuf> {
         if url.starts_with("http") {
             let path = download_path.join(get_filename_from_url(url));
-            HTTP.download_file(url, &path, Some(ctx.pr.as_ref()))
+            let checksum = tv
+                .lock_platforms
+                .get(&self.get_platform_key())
+                .and_then(|p| p.checksum.as_deref());
+            HTTP.download_file_with_checksum(url, &path, checksum, None, Some(ctx.pr.as_ref()))
                 .await?;
             Ok(path)
         } else {
@@ -964,13 +970,14 @@ impl AquaBackend {
         tv: &ToolVersion,
         url: &str,
         filename: &str,
+        checksum: Option<&str>,
     ) -> Result<()> {
         let tarball_path = tv.download_path().join(filename);
         if tarball_path.exists() {
             return Ok(());
         }
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file(url, &tarball_path, Some(ctx.pr.as_ref()))
+        HTTP.download_file_with_checksum(url, &tarball_path, checksum, None, Some(ctx.pr.as_ref()))
             .await?;
         Ok(())
     }
@@ -1404,7 +1411,7 @@ impl AquaBackend {
                 if !key_arg.is_empty() {
                     // Download or locate the public key
                     let key_path = self
-                        .download_url_to_path(&key_arg, download_path, ctx)
+                        .download_url_to_path(&key_arg, download_path, ctx, tv)
                         .await?;
 
                     // Download signature if specified
@@ -1434,7 +1441,7 @@ impl AquaBackend {
                             }
                         };
                         if !sig_arg.is_empty() {
-                            self.download_url_to_path(&sig_arg, download_path, ctx)
+                            self.download_url_to_path(&sig_arg, download_path, ctx, tv)
                                 .await?
                         } else {
                             // Default signature path
@@ -1502,7 +1509,7 @@ impl AquaBackend {
                 };
                 if !bundle_arg.is_empty() {
                     let bundle_path = self
-                        .download_url_to_path(&bundle_arg, download_path, ctx)
+                        .download_url_to_path(&bundle_arg, download_path, ctx, tv)
                         .await?;
 
                     // Verify with bundle (keyless)

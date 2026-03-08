@@ -7,6 +7,7 @@ use std::time::Duration;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use eyre::{Report, Result, bail, ensure};
+use futures_util::StreamExt;
 use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{ClientBuilder, IntoUrl, Method, Response};
@@ -23,6 +24,7 @@ use crate::netrc;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::time::format_duration;
 use crate::{env, file};
+use fetchurl_sdk::FetchSession;
 
 #[cfg(not(test))]
 pub static HTTP_VERSION_CHECK: Lazy<Client> =
@@ -326,6 +328,113 @@ impl Client {
         }
         file.persist(path)?;
         Ok(())
+    }
+
+    /// Download a file with optional checksum verification via fetchurl.
+    /// If checksum is provided, uses fetchurl SDK for zero-trust caching.
+    /// The SDK handles FETCHURL_SERVER internally and falls back to direct download.
+    /// Extra headers are merged with SDK headers for each attempt.
+    pub async fn download_file_with_checksum<U: IntoUrl>(
+        &self,
+        url: U,
+        path: &Path,
+        checksum: Option<&str>,
+        extra_headers: Option<&HeaderMap>,
+        pr: Option<&dyn SingleReport>,
+    ) -> Result<()> {
+        let url = url.into_url()?;
+
+        // Parse checksum (format: "algo:hash" or just "hash")
+        let Some((algo, hash)) = checksum.and_then(|c| {
+            let (algo, hash) = c.split_once(':').unwrap_or(("sha256", c));
+            fetchurl_sdk::is_supported(algo).then(|| (algo.to_string(), hash.to_string()))
+        }) else {
+            let headers = extra_headers
+                .cloned()
+                .unwrap_or_else(|| github_headers(&url));
+            return self
+                .download_file_with_headers(url, path, &headers, pr)
+                .await;
+        };
+
+        let mut session = FetchSession::new(&algo, &hash, &[url.as_str()])
+            .map_err(|e| eyre::eyre!("fetchurl error: {}", e))?;
+
+        let parent = path.parent().unwrap();
+        file::create_dir_all(parent)?;
+
+        while let Some(attempt) = session.next_attempt() {
+            debug!("fetchurl trying: {}", attempt.url());
+
+            let mut req = self.reqwest.get(attempt.url());
+
+            // Add SDK headers
+            for (key, value) in attempt.headers() {
+                if let Ok(hv) = HeaderValue::from_str(value) {
+                    req = req.header(key, hv);
+                }
+            }
+
+            // Add extra headers (e.g., auth for GitHub/GitLab)
+            if let Some(extra) = extra_headers {
+                for (key, value) in extra {
+                    req = req.header(key, value);
+                }
+            }
+
+            let Ok(resp) = req.send().await else { continue };
+            if !resp.status().is_success() {
+                continue;
+            }
+
+            if let Some(length) = resp.content_length()
+                && let Some(pr) = pr
+            {
+                pr.set_length(length);
+                pr.set_position(0);
+            }
+
+            let mut file = tempfile::NamedTempFile::with_prefix_in(path, parent)?;
+            let mut verifier = session.verifier(&mut file);
+
+            let mut success = true;
+            let mut stream = resp.bytes_stream();
+            while let Some(chunk) = stream.next().await {
+                match chunk {
+                    Ok(data) => {
+                        if verifier.write_all(&data).is_err() {
+                            success = false;
+                            break;
+                        }
+                        if let Some(pr) = pr {
+                            pr.inc(data.len() as u64);
+                        }
+                    }
+                    Err(_) => {
+                        success = false;
+                        break;
+                    }
+                }
+            }
+
+            if !success {
+                if verifier.bytes_written() > 0 {
+                    session.report_partial()
+                }
+                continue;
+            }
+
+            match verifier.finish() {
+                Ok(_) => {
+                    session.report_success();
+                    file.persist(path)?;
+                    return Ok(());
+                }
+                Err(_) => session.report_partial(),
+            }
+        }
+
+        bail!("fetchurl failed to download from any source");
     }
 
     async fn send_with_https_fallback(
