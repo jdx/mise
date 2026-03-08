@@ -9,6 +9,13 @@ use crate::platform::Platform;
 use crate::toolset::Toolset;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{cli::args::ToolArg, config::Settings};
+
+/// A tool to lock along with its environment context (from the source config filename).
+type ToolWithEnv = (
+    crate::cli::args::BackendArg,
+    crate::toolset::ToolVersion,
+    Option<String>,
+);
 use console::style;
 use eyre::{Result, bail};
 use tokio::sync::Semaphore;
@@ -70,18 +77,26 @@ impl Lock {
             let lockfile_path = self.get_lockfile_path(&config, is_local);
             let tools = self.get_tools_to_lock(&config, ts, is_local);
 
+            // Extract (ba, tv) pairs for compatibility with stale-entry helpers
+            let tools_no_env: Vec<(crate::cli::args::BackendArg, crate::toolset::ToolVersion)> =
+                tools
+                    .iter()
+                    .map(|(ba, tv, _)| (ba.clone(), tv.clone()))
+                    .collect();
+
             if tools.is_empty() {
                 // `tools` can be empty either because config has no tools, or because a filter excludes all.
                 // For unfiltered runs (`mise lock`), this means "prune all stale lockfile entries".
                 let mut lockfile = Lockfile::read(&lockfile_path)?;
                 if self.dry_run {
-                    let stale_tools = self.stale_entries_if_pruned(&lockfile, &tools);
+                    let stale_tools = self.stale_entries_if_pruned(&lockfile, &tools_no_env);
                     self.show_stale_prune_message(&lockfile_path, &stale_tools, true)?;
                     if !stale_tools.is_empty() {
                         has_lock_targets = true;
                     }
                 } else {
-                    let pruned_tools = self.prune_stale_entries_if_needed(&mut lockfile, &tools);
+                    let pruned_tools =
+                        self.prune_stale_entries_if_needed(&mut lockfile, &tools_no_env);
                     if !pruned_tools.is_empty() {
                         lockfile.write(&lockfile_path)?;
                         self.show_stale_prune_message(&lockfile_path, &pruned_tools, false)?;
@@ -112,7 +127,7 @@ impl Lock {
                 tools.len(),
                 tools
                     .iter()
-                    .map(|(ba, tv)| format!("{}@{}", ba.short, tv.version))
+                    .map(|(ba, tv, _)| format!("{}@{}", ba.short, tv.version))
                     .collect::<Vec<_>>()
                     .join(", ")
             );
@@ -121,7 +136,7 @@ impl Lock {
                 self.show_dry_run(&tools, &target_platforms)?;
                 if self.is_unfiltered_lock_run() {
                     let lockfile = Lockfile::read(&lockfile_path)?;
-                    let stale_tools = self.stale_entries_if_pruned(&lockfile, &tools);
+                    let stale_tools = self.stale_entries_if_pruned(&lockfile, &tools_no_env);
                     self.show_stale_prune_message(&lockfile_path, &stale_tools, true)?;
                 }
                 continue;
@@ -129,7 +144,7 @@ impl Lock {
 
             // Process tools and update lockfile
             let mut lockfile = Lockfile::read(&lockfile_path)?;
-            self.prune_stale_entries_if_needed(&mut lockfile, &tools);
+            self.prune_stale_entries_if_needed(&mut lockfile, &tools_no_env);
             let results = self
                 .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
                 .await?;
@@ -271,12 +286,8 @@ impl Lock {
 
     /// Collect tools that belong to a given lockfile pass (local or non-local).
     /// Only includes tools whose source config matches the requested locality.
-    fn get_tools_to_lock(
-        &self,
-        config: &Config,
-        ts: &Toolset,
-        is_local: bool,
-    ) -> Vec<(crate::cli::args::BackendArg, crate::toolset::ToolVersion)> {
+    /// Returns each tool along with its env context (extracted from the config filename).
+    fn get_tools_to_lock(&self, config: &Config, ts: &Toolset, is_local: bool) -> Vec<ToolWithEnv> {
         // Determine the reference lockfile directory from the first config file.
         // Used to filter out tools from unrelated directories (e.g. global config).
         let target_lockfile_dir = config
@@ -300,12 +311,12 @@ impl Lock {
                 .unwrap_or_default()
         };
 
-        let mut all_tools: Vec<_> = Vec::new();
+        let mut all_tools: Vec<ToolWithEnv> = Vec::new();
         let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
 
         // First pass: tools from the resolved toolset whose source matches this locality
         for (backend, tv) in ts.list_current_versions() {
-            if let Some(source_path) = tv.request.source().path() {
+            let env = if let Some(source_path) = tv.request.source().path() {
                 if get_lockfile_dir(source_path) != target_lockfile_dir {
                     continue;
                 }
@@ -313,15 +324,17 @@ impl Lock {
                 if source_is_local != is_local {
                     continue;
                 }
+                lockfile::extract_env_from_config_path(source_path)
             } else {
                 // Tools without a source path (env vars, CLI args) go to non-local only
                 if is_local {
                     continue;
                 }
-            }
+                None
+            };
             let key = (backend.ba().short.clone(), tv.version.clone());
             if seen.insert(key) {
-                all_tools.push((backend.ba().as_ref().clone(), tv));
+                all_tools.push((backend.ba().as_ref().clone(), tv, env));
             }
         }
 
@@ -335,6 +348,7 @@ impl Lock {
             if config_is_local != is_local {
                 continue;
             }
+            let env = lockfile::extract_env_from_config_path(path);
             if let Ok(trs) = cf.to_tool_request_set() {
                 for (ba, requests, _source) in trs.iter() {
                     for request in requests {
@@ -345,7 +359,11 @@ impl Lock {
                                     if tv.request.version() == request.version() {
                                         let key = (ba.short.clone(), tv.version.clone());
                                         if seen.insert(key) {
-                                            all_tools.push((ba.as_ref().clone(), tv.clone()));
+                                            all_tools.push((
+                                                ba.as_ref().clone(),
+                                                tv.clone(),
+                                                env.clone(),
+                                            ));
                                         }
                                     }
                                 }
@@ -363,7 +381,7 @@ impl Lock {
                                             request.clone(),
                                             latest_version.clone(),
                                         );
-                                        all_tools.push((ba.as_ref().clone(), tv));
+                                        all_tools.push((ba.as_ref().clone(), tv, env.clone()));
                                     }
                                 }
                             }
@@ -380,18 +398,14 @@ impl Lock {
                 self.tool.iter().map(|t| t.ba.short.clone()).collect();
             all_tools
                 .into_iter()
-                .filter(|(ba, _)| specified.contains(&ba.short))
+                .filter(|(ba, _, _)| specified.contains(&ba.short))
                 .collect()
         }
     }
 
-    fn show_dry_run(
-        &self,
-        tools: &[(crate::cli::args::BackendArg, crate::toolset::ToolVersion)],
-        platforms: &[Platform],
-    ) -> Result<()> {
+    fn show_dry_run(&self, tools: &[ToolWithEnv], platforms: &[Platform]) -> Result<()> {
         miseprintln!("{} Dry run - would update:", style("→").yellow());
-        for (ba, tv) in tools {
+        for (ba, tv, _env) in tools {
             let backend = crate::backend::get(ba);
             for platform in platforms {
                 // Expand platform variants just like process_tools does
@@ -417,7 +431,7 @@ impl Lock {
     async fn process_tools(
         &self,
         settings: &Settings,
-        tools: &[(crate::cli::args::BackendArg, crate::toolset::ToolVersion)],
+        tools: &[ToolWithEnv],
         platforms: &[Platform],
         lockfile: &mut Lockfile,
     ) -> Result<Vec<(String, String, bool)>> {
@@ -428,13 +442,20 @@ impl Lock {
 
         let mpr = MultiProgressReport::get();
 
+        // Build a map of (tool short name, version) -> env for setting env tags after resolution
+        let mut tool_envs: std::collections::HashMap<(String, String), Option<String>> =
+            std::collections::HashMap::new();
+        for (ba, tv, env) in tools {
+            tool_envs.insert((ba.short.clone(), tv.version.clone()), env.clone());
+        }
+
         // Collect all platform variants for each tool/platform combination
         let mut all_tasks: Vec<(
             crate::cli::args::BackendArg,
             crate::toolset::ToolVersion,
             Platform,
         )> = Vec::new();
-        for (ba, tv) in tools {
+        for (ba, tv, _env) in tools {
             let backend = crate::backend::get(ba);
             for platform in platforms {
                 // Get all variants for this platform from the backend
@@ -479,7 +500,15 @@ impl Lock {
                     }
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
+                    // Look up env for this tool and set it after applying lock result
+                    let env = tool_envs
+                        .get(&(short.clone(), version.clone()))
+                        .cloned()
+                        .flatten();
                     lockfile::apply_lock_result(lockfile, resolution);
+                    if let Some(env_name) = env {
+                        lockfile.set_tool_env(&short, &version, &[env_name]);
+                    }
                     results.push((short, platform_key, ok));
                 }
                 Err(e) => {
