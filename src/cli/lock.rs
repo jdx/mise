@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -9,6 +9,10 @@ use crate::platform::Platform;
 use crate::toolset::Toolset;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{cli::args::ToolArg, config::Settings};
+use console::style;
+use eyre::{Result, bail};
+use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
 /// A tool to lock along with its environment context (from the source config filename).
 type ToolWithEnv = (
@@ -16,10 +20,6 @@ type ToolWithEnv = (
     crate::toolset::ToolVersion,
     Option<String>,
 );
-use console::style;
-use eyre::{Result, bail};
-use tokio::sync::Semaphore;
-use tokio::task::JoinSet;
 
 /// Update lockfile checksums and URLs for all specified platforms
 ///
@@ -443,8 +443,7 @@ impl Lock {
         let mpr = MultiProgressReport::get();
 
         // Build a map of (tool short name, version) -> env for setting env tags after resolution
-        let mut tool_envs: std::collections::HashMap<(String, String), Option<String>> =
-            std::collections::HashMap::new();
+        let mut tool_envs: HashMap<(String, String), Option<String>> = HashMap::new();
         for (ba, tv, env) in tools {
             tool_envs.insert((ba.short.clone(), tv.version.clone()), env.clone());
         }
@@ -505,9 +504,10 @@ impl Lock {
                         .get(&(short.clone(), version.clone()))
                         .cloned()
                         .flatten();
+                    let options = resolution.5.clone();
                     lockfile::apply_lock_result(lockfile, resolution);
                     if let Some(env_name) = env {
-                        lockfile.set_tool_env(&short, &version, &[env_name]);
+                        lockfile.set_tool_env(&short, &version, &options, &[env_name]);
                     }
                     results.push((short, platform_key, ok));
                 }

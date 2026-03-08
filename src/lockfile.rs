@@ -704,11 +704,19 @@ impl Lockfile {
         }
     }
 
-    /// Set the env field on a tool entry matching the given short name and version.
+    /// Set the env field on a tool entry matching the given short name, version, and options.
     /// If the tool already has an env field, merges the new env values.
-    pub fn set_tool_env(&mut self, short: &str, version: &str, envs: &[String]) {
+    pub fn set_tool_env(
+        &mut self,
+        short: &str,
+        version: &str,
+        options: &BTreeMap<String, String>,
+        envs: &[String],
+    ) {
         if let Some(tools) = self.tools.get_mut(short)
-            && let Some(tool) = tools.iter_mut().find(|t| t.version == version)
+            && let Some(tool) = tools
+                .iter_mut()
+                .find(|t| t.version == version && &t.options == options)
         {
             let mut existing: Vec<String> = tool.env.clone().unwrap_or_default();
             for env in envs {
