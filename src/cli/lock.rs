@@ -508,6 +508,8 @@ impl Lock {
                     lockfile::apply_lock_result(lockfile, resolution);
                     if let Some(env_name) = env {
                         lockfile.set_tool_env(&short, &version, &options, &[env_name]);
+                    } else {
+                        lockfile.clear_tool_env(&short, &version, &options);
                     }
                     results.push((short, platform_key, ok));
                 }

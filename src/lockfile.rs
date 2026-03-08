@@ -729,6 +729,23 @@ impl Lockfile {
         }
     }
 
+    /// Clear the env field on a tool entry matching the given short name, version, and options.
+    /// Used to remove stale env tags when a tool moves from an env-specific config to a base config.
+    pub fn clear_tool_env(
+        &mut self,
+        short: &str,
+        version: &str,
+        options: &BTreeMap<String, String>,
+    ) {
+        if let Some(tools) = self.tools.get_mut(short)
+            && let Some(tool) = tools
+                .iter_mut()
+                .find(|t| t.version == version && &t.options == options)
+        {
+            tool.env = None;
+        }
+    }
+
     /// Save the lockfile to disk (public for mise lock command)
     pub fn write<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         self.save(path)
