@@ -271,8 +271,9 @@ lockfile = false
 # Convert .tool-versions to mise.toml
 mise config generate
 
-# Enable lockfiles and populate
+# Enable lockfiles and generate the lockfile
 mise settings lockfile=true
+mise lock
 mise install
 ```
 
