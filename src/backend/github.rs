@@ -244,6 +244,35 @@ impl Backend for UnifiedGitBackend {
         Ok(versions)
     }
 
+    async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
+        let repo = self.ba.tool_name();
+        let opts = config
+            .get_tool_opts(&self.ba)
+            .await?
+            .unwrap_or_else(|| self.ba.opts());
+        let api_url = self.get_api_url(&opts);
+
+        let latest_version = if self.is_gitlab() {
+            // GitLab doesn't have a "latest" endpoint
+            None
+        } else if self.is_forgejo() {
+            forgejo::get_release_latest(&api_url, &repo)
+                .await
+                .ok()
+                .map(|r| self.strip_version_prefix(&r.tag_name, &opts))
+        } else {
+            github::get_release_latest(&api_url, &repo)
+                .await
+                .ok()
+                .map(|r| self.strip_version_prefix(&r.tag_name, &opts))
+        };
+
+        match latest_version {
+            Some(version) => Ok(Some(version)),
+            None => self.latest_version(config, Some("latest".into())).await,
+        }
+    }
+
     async fn install_version_(
         &self,
         ctx: &InstallContext,

@@ -281,6 +281,16 @@ assert_empty() {
 	fi
 }
 
+assert_not_empty() {
+  local actual
+  actual="$(quiet_assert_succeed "$1")"
+  if [[ -n $actual ]]; then
+    ok "[$1] output is not empty"
+  else
+    fail "[$1] expected non-empty output but got empty"
+  fi
+}
+
 assert_directory_exists() {
 	if [[ -d $1 ]]; then
 		ok "[$1] directory exists"
