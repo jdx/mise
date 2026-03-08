@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: remko
+    repo_name: age-plugin-se
+    description: Age plugin for Apple's Secure Enclave
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.2.0"
+        no_asset: true
+      - version_constraint: Version == "v0.0.2"
+        asset: age-plugin-se-{{.Version}}-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "v0.0.3"
+        asset: age-plugin-se-{{.Version}}-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            format: tgz
+            asset: age-plugin-se-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+            replacements:
+              amd64: x86_64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.0.5")
+        asset: age-plugin-se-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            format: tgz
+            replacements:
+              amd64: x86_64
+          - goos: darwin
+            asset: age-plugin-se-{{.Version}}-{{.OS}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: age-plugin-se-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: age-plugin-se-{{.Version}}-{{.OS}}.{{.Format}}
+          - goos: linux
+            format: tgz
+            files:
+              - name: age-plugin-se
+                src: "{{.AssetWithoutExt}}/usr/bin/age-plugin-se"
+            replacements:
+              amd64: x86_64
+              arm64: aarch64
