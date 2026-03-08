@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::Write;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -145,7 +146,7 @@ impl Client {
         let resp = self.get_async_with_headers(url.clone(), &headers).await?;
         let text = resp.text().await?;
         if text.starts_with("<!DOCTYPE html>") {
-            if url.scheme() == "http" {
+            if should_try_https_fallback(&url) {
                 // try with https since http may be blocked
                 url.set_scheme("https").unwrap();
                 return Box::pin(self.get_text_with_headers(url, extra_headers)).await;
@@ -347,7 +348,7 @@ impl Client {
                         .await
                     {
                         Ok(resp) => Ok(resp),
-                        Err(_err) if url.scheme() == "http" => {
+                        Err(_err) if should_try_https_fallback(&url) => {
                             let mut url = url;
                             url.set_scheme("https").unwrap();
                             self.send_once(method, url, &headers, verb_label).await
@@ -428,6 +429,54 @@ pub fn error_code(e: &Report) -> Option<u16> {
     } else {
         None
     }
+}
+
+fn should_try_https_fallback(url: &Url) -> bool {
+    if url.scheme() != "http" {
+        return false;
+    }
+
+    match url.host() {
+        Some(url::Host::Domain(host)) => {
+            let host = host.trim_end_matches('.');
+            let lower = host.to_ascii_lowercase();
+            !(lower == "localhost" || lower.ends_with(".localhost"))
+        }
+        Some(url::Host::Ipv4(ip)) => !is_local_or_private_ipv4(ip),
+        Some(url::Host::Ipv6(ip)) => !is_local_or_private_ipv6(ip),
+        None => false,
+    }
+}
+
+fn is_local_or_private_ipv4(ip: Ipv4Addr) -> bool {
+    let octets = ip.octets();
+    let is_this_network = octets[0] == 0;
+    let is_shared_cgnat = octets[0] == 100 && (64..=127).contains(&octets[1]); // 100.64.0.0/10
+    let is_benchmarking = octets[0] == 198 && (18..=19).contains(&octets[1]); // 198.18.0.0/15
+    let is_reserved = octets[0] >= 240; // 240.0.0.0/4
+
+    ip.is_loopback()
+        || ip.is_private()
+        || ip.is_link_local()
+        || ip.is_broadcast()
+        || ip.is_documentation()
+        || ip.is_unspecified()
+        || ip.is_multicast()
+        || is_this_network
+        || is_shared_cgnat
+        || is_benchmarking
+        || is_reserved
+}
+
+fn is_local_or_private_ipv6(ip: Ipv6Addr) -> bool {
+    let is_site_local = (ip.segments()[0] & 0xffc0) == 0xfec0; // fec0::/10 (deprecated site-local)
+
+    ip.is_loopback()
+        || ip.is_unique_local()
+        || ip.is_unicast_link_local()
+        || ip.is_unspecified()
+        || ip.is_multicast()
+        || is_site_local
 }
 
 fn github_headers(url: &Url) -> HeaderMap {
@@ -838,5 +887,50 @@ mod tests {
                 "https://cdn.example.com/artifacts/v1.0.0/file.tar.gz"
             );
         });
+    }
+
+    #[test]
+    fn test_should_try_https_fallback_for_public_http_urls() {
+        let url = Url::parse("http://example.com/test.txt").unwrap();
+        assert!(should_try_https_fallback(&url));
+    }
+
+    #[test]
+    fn test_should_not_try_https_fallback_for_local_hosts() {
+        let localhost = Url::parse("http://localhost:8765/test.txt").unwrap();
+        assert!(!should_try_https_fallback(&localhost));
+
+        let localhost_suffix = Url::parse("http://foo.localhost/test.txt").unwrap();
+        assert!(!should_try_https_fallback(&localhost_suffix));
+
+        let loopback_v4 = Url::parse("http://127.0.0.1:8765/test.txt").unwrap();
+        assert!(!should_try_https_fallback(&loopback_v4));
+
+        let loopback_v6 = Url::parse("http://[::1]:8765/test.txt").unwrap();
+        assert!(!should_try_https_fallback(&loopback_v6));
+    }
+
+    #[test]
+    fn test_should_not_try_https_fallback_for_private_network_ips() {
+        let private_v4 = Url::parse("http://10.0.0.1/test.txt").unwrap();
+        assert!(!should_try_https_fallback(&private_v4));
+
+        let shared_v4 = Url::parse("http://100.64.0.1/test.txt").unwrap();
+        assert!(!should_try_https_fallback(&shared_v4));
+
+        let benchmarking_v4 = Url::parse("http://198.18.0.1/test.txt").unwrap();
+        assert!(!should_try_https_fallback(&benchmarking_v4));
+
+        let private_v6 = Url::parse("http://[fd00::1]/test.txt").unwrap();
+        assert!(!should_try_https_fallback(&private_v6));
+
+        let site_local_v6 = Url::parse("http://[fec0::1]/test.txt").unwrap();
+        assert!(!should_try_https_fallback(&site_local_v6));
+    }
+
+    #[test]
+    fn test_should_not_try_https_fallback_for_https_urls() {
+        let url = Url::parse("https://example.com/test.txt").unwrap();
+        assert!(!should_try_https_fallback(&url));
     }
 }
