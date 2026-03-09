@@ -199,9 +199,16 @@ docker run jdxcode/mise x node@20 -- node -v
 ```dockerfile
 FROM jdxcode/mise:latest AS mise
 
-FROM debian:bookworm-slim
+FROM ubuntu:24.04
+RUN apt -y update && \
+    apt -y upgrade && \
+    apt -y install curl && \
+    rm -rf /var/lib/apt/lists/*
 COPY --from=mise /usr/local/bin/mise /usr/local/bin/mise
-RUN mise trust -a && mise install
+RUN mise trust -a 
+RUN mise use -g node@lts
+ENTRYPOINT ["/bin/bash", "-c", "source <(mise activate --shims bash) && exec \"$@\"", "--"]
+CMD ["bash"]
 ```
 
 :::
