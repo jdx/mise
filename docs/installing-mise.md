@@ -205,7 +205,7 @@ RUN apt -y update && \
     apt -y install curl && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=mise /usr/local/bin/mise /usr/local/bin/mise
-RUN mise trust -a 
+RUN mise trust -a
 RUN mise use -g node@lts
 ENTRYPOINT ["/bin/bash", "-c", "source <(mise activate --shims bash) && exec \"$@\"", "--"]
 CMD ["bash"]
