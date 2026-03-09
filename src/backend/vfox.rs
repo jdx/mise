@@ -417,11 +417,10 @@ impl VfoxBackend {
 fn verified_attestation_to_provenance(att: vfox::VerifiedAttestation) -> ProvenanceType {
     match att {
         vfox::VerifiedAttestation::GithubAttestations { .. } => ProvenanceType::GithubAttestations,
-        vfox::VerifiedAttestation::Slsa {
-            provenance_path, ..
-        } => ProvenanceType::Slsa {
-            url: Some(format!("file://{}", provenance_path.display())),
-        },
+        // The provenance_path is a local filesystem path to the downloaded SLSA
+        // provenance file — ephemeral and only valid during this install session.
+        // Use url: None to match how github and aqua backends handle SLSA at lock-time.
+        vfox::VerifiedAttestation::Slsa { .. } => ProvenanceType::Slsa { url: None },
         vfox::VerifiedAttestation::Cosign { .. } => ProvenanceType::Cosign,
     }
 }
@@ -452,15 +451,12 @@ mod test {
         let prov = verified_attestation_to_provenance(att);
         assert!(matches!(prov, ProvenanceType::GithubAttestations));
 
-        // SLSA provenance
+        // SLSA provenance — url is None because the local path is ephemeral
         let att = vfox::VerifiedAttestation::Slsa {
             provenance_path: PathBuf::from("/tmp/slsa.json"),
         };
         let prov = verified_attestation_to_provenance(att);
-        assert!(matches!(prov, ProvenanceType::Slsa { url: Some(_) }));
-        if let ProvenanceType::Slsa { url: Some(u) } = &prov {
-            assert_eq!(u, "file:///tmp/slsa.json");
-        }
+        assert!(matches!(prov, ProvenanceType::Slsa { url: None }));
 
         // Cosign signature
         let att = vfox::VerifiedAttestation::Cosign {

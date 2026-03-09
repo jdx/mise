@@ -26,12 +26,8 @@ assert_contains "cat mise.lock" "\"platforms.$PLATFORM\""
 
 # Inject provenance into the lockfile (simulating a previously-verified install)
 awk -v platform="$PLATFORM" '
-    # Remove existing provenance lines in the target platform section
-    /^provenance/ && in_section { next }
-    # Detect entering the target platform section and add provenance after the header
     { print }
-    index($0, "platforms." platform) > 0 { in_section=1; print "provenance = \"github-attestations\"" }
-    /^\[/ { in_section=0 }
+    index($0, "platforms." platform) > 0 { print "provenance = \"github-attestations\"" }
 ' mise.lock >mise.lock.tmp && mv mise.lock.tmp mise.lock
 assert_contains "cat mise.lock" 'provenance = "github-attestations"'
 
