@@ -2,7 +2,9 @@
 packages:
   - type: github_release
     repo_owner: swanysimon
-    repo_name: markdownlint-rs
+    repo_name: mdlint
+    aliases:
+      - name: swanysimon/markdownlint-rs
     description: Attempting to port markdownlint (and the markdownlint-cli2 interface) to Rust using mostly vibes
     files:
       - name: mdlint
