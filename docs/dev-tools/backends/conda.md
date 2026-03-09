@@ -89,26 +89,6 @@ Override the conda channel for a specific package:
 "conda:bioconductor-deseq2" = { version = "latest", channel = "bioconda" }
 ```
 
-### `filter_bins`
-
-Comma-separated list of binaries to symlink into a filtered `.mise-bins` directory.
-This is useful when a conda package pulls in dependencies that shadow system commands
-you don't want overridden on PATH.
-
-For example, `conda:postgresql` installs not only `psql` but also hundreds of dependency
-binaries like `clear`, `reset`, `tput`, `tabs`, and other ncurses utilities that shadow
-standard system commands. With `filter_bins`, you can expose only the binaries you need:
-
-```toml
-[tools]
-"conda:postgresql" = { version = "latest", filter_bins = "psql,pg_dump,pg_restore,createdb,dropdb" }
-```
-
-When enabled:
-
-- A `.mise-bins` subdirectory is created inside the install path with symlinks only to the specified binaries
-- Other binaries from the package and its dependencies are not exposed on PATH
-
 ## Common Channels
 
 - `conda-forge` - Community-maintained packages (default)
