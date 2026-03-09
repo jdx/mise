@@ -122,6 +122,7 @@ impl Deps {
         for idx in to_remove {
             deps.graph.remove_node(idx);
         }
+        deps.mark_ambiguous_prefixes();
         Ok(deps)
     }
 
@@ -226,6 +227,25 @@ impl Deps {
 
     pub fn all(&self) -> impl Iterator<Item = &Task> {
         self.graph.node_indices().map(|idx| &self.graph[idx])
+    }
+
+    /// Mark tasks that share a display_name so their prefix includes args
+    /// for disambiguation (e.g. `[test-docker 4.1]` vs `[test-docker 4.2]`).
+    pub fn mark_ambiguous_prefixes(&mut self) {
+        let mut name_to_indices: HashMap<String, Vec<petgraph::graph::NodeIndex>> = HashMap::new();
+        for idx in self.graph.node_indices() {
+            name_to_indices
+                .entry(self.graph[idx].display_name.clone())
+                .or_default()
+                .push(idx);
+        }
+        for indices in name_to_indices.values() {
+            if indices.len() > 1 {
+                for &idx in indices {
+                    self.graph[idx].show_args_in_prefix = true;
+                }
+            }
+        }
     }
 
     pub fn is_linear(&self) -> bool {

@@ -293,6 +293,11 @@ pub struct Task {
     /// Name of the task template to extend (requires experimental = true)
     #[serde(default)]
     pub extends: Option<String>,
+
+    /// When true, include args in the output prefix to disambiguate tasks
+    /// with the same display_name but different arguments.
+    #[serde(skip)]
+    pub show_args_in_prefix: bool,
 }
 
 impl Task {
@@ -517,9 +522,13 @@ impl Task {
 
     pub fn prefix(&self) -> String {
         let max_width = 40;
-        let inner = format!("{} {}", self.display_name, self.args.join(" "));
-        let inner = inner.trim();
-        format!("[{}]", console::truncate_str(inner, max_width, "…"))
+        let inner = if self.show_args_in_prefix && !self.args.is_empty() {
+            let s = format!("{} {}", self.display_name, self.args.join(" "));
+            s.trim().to_string()
+        } else {
+            self.display_name.clone()
+        };
+        format!("[{}]", console::truncate_str(&inner, max_width, "…"))
     }
 
     pub fn run(&self) -> &Vec<RunEntry> {
@@ -1267,6 +1276,7 @@ impl Default for Task {
             timeout: None,
             remote_file_source: None,
             extends: None,
+            show_args_in_prefix: false,
         }
     }
 }
