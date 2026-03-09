@@ -39,17 +39,17 @@ This can be useful if you need to reproduce an issue you're having with mise in 
 
 ```toml [mise.toml]
 [tasks.docker]
-run = "docker run --pull=always -it --rm debian-mise"
+run = "docker run -it --rm debian-mise"
 ```
 
 Build the image first (see above), then:
 
 ```shell
 ❯ mise docker
-[docker] $ docker run --pull=always -it --rm debian-mise
+[docker] $ docker run -it --rm debian-mise
 root@75f179a190a1:/# eval "$(mise activate bash)"
 # overwrite configuration and prune to give us a clean state
-root@75f179a190a1:/# echo "" > ~/.config/mise/config.toml
+root@75f179a190a1:/# echo "" > /mise/config.toml
 root@75f179a190a1:/# mise prune --yes
 # ...
 ```
