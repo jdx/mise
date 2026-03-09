@@ -1,8 +1,7 @@
 # Prepare <Badge type="warning" text="experimental" />
 
-The `mise prepare` command ensures project dependencies are ready by checking if lockfiles
-are newer than installed outputs (e.g., `package-lock.json` vs `node_modules/`) and running
-install commands if needed.
+The `mise prepare` command ensures project dependencies are ready by hashing source files
+(e.g., `package-lock.json`) and running install commands when changes are detected.
 
 ## Quick Start
 
@@ -87,37 +86,33 @@ run = "npx prisma generate"
 
 ### Provider Options
 
-| Option          | Type     | Description                                                                     |
-| --------------- | -------- | ------------------------------------------------------------------------------- |
-| `auto`          | bool     | Auto-run before `mise x` and `mise run` (default: false)                        |
-| `sources`       | string[] | Files/patterns to check for changes                                             |
-| `outputs`       | string[] | Files/directories that should be newer than sources                             |
-| `run`           | string   | Command to run when stale                                                       |
-| `env`           | table    | Environment variables to set                                                    |
-| `dir`           | string   | Working directory for the command                                               |
-| `description`   | string   | Description shown in output                                                     |
-| `touch_outputs` | bool     | Touch output mtimes after a successful run so they appear fresh (default: true) |
-| `depends`       | string[] | Other provider names that must complete before this one runs                    |
-| `timeout`       | string   | Timeout for the run command, e.g., `"30s"`, `"5m"` (default: no timeout)        |
+| Option        | Type     | Description                                                               |
+| ------------- | -------- | ------------------------------------------------------------------------- |
+| `auto`        | bool     | Auto-run before `mise x` and `mise run` (default: false)                  |
+| `sources`     | string[] | Files/patterns to check for changes                                       |
+| `outputs`     | string[] | Files/directories that must exist for the provider to be considered fresh |
+| `run`         | string   | Command to run when stale                                                 |
+| `env`         | table    | Environment variables to set                                              |
+| `dir`         | string   | Working directory for the command                                         |
+| `description` | string   | Description shown in output                                               |
+| `depends`     | string[] | Other provider names that must complete before this one runs              |
+| `timeout`     | string   | Timeout for the run command, e.g., `"30s"`, `"5m"` (default: no timeout)  |
 
 ## Freshness Checking
 
-mise uses modification time (mtime) comparison to determine if outputs are stale:
+mise uses blake3 content hashing to determine if sources have changed since the last
+successful run. Hashes are stored in `.mise/prepare-state.toml`.
 
-1. Find the most recent mtime among all source files
-2. Find the most recent mtime among all output files
-3. If any source is newer than all outputs, the provider is stale
+1. Compute blake3 hashes of all source files
+2. Compare against stored hashes from the last successful run
+3. If any file was added, removed, or changed, the provider is stale
 
 This means:
 
 - If you modify `package-lock.json`, `node_modules/` will be considered stale
 - If `node_modules/` doesn't exist, the provider is always stale
 - If sources don't exist, the provider is considered fresh (nothing to do)
-
-After a successful run, mise touches the mtime of each output to now (controlled by
-`touch_outputs`, default `true`). This ensures that commands which are no-ops when
-dependencies are already satisfied (e.g. `uv sync` when the venv is up to date) still
-mark outputs as fresh, preventing repeated stale warnings on subsequent invocations.
+- On first run (no stored state), the provider is always considered stale
 
 ## Auto-Prepare
 

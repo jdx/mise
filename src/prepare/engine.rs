@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use eyre::Result;
-use filetime::FileTime;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
@@ -69,7 +68,6 @@ struct PrepareJob {
     id: String,
     cmd: super::PrepareCommand,
     outputs: Vec<PathBuf>,
-    touch: bool,
     depends: Vec<String>,
     timeout: Option<std::time::Duration>,
 }
@@ -346,7 +344,6 @@ impl PrepareEngine {
             if !freshness.is_fresh() {
                 let cmd = provider.prepare_command()?;
                 let outputs = provider.outputs();
-                let touch = provider.touch_outputs();
                 let depends = provider.depends();
                 let timeout = provider.timeout();
                 let reason = freshness.reason().to_string();
@@ -358,7 +355,6 @@ impl PrepareEngine {
                         id,
                         cmd,
                         outputs,
-                        touch,
                         depends,
                         timeout,
                     });
@@ -433,9 +429,6 @@ impl PrepareEngine {
             let pr = mpr.add(&job.cmd.description);
             match Self::execute_prepare_static(&job.cmd, &toolset_env, job.timeout) {
                 Ok(()) => {
-                    if job.touch {
-                        Self::touch_outputs(&job.outputs);
-                    }
                     pr.finish_with_message(format!("{} done", job.cmd.description));
                     Ok((PrepareStepResult::Ran(job.id), job.outputs))
                 }
@@ -587,9 +580,6 @@ impl PrepareEngine {
 
                         match result {
                             Ok(Ok(())) => {
-                                if job.touch {
-                                    Self::touch_outputs(&job.outputs);
-                                }
                                 pr.finish_with_message(format!("{} done", job.cmd.description));
                                 let step = PrepareStepResult::Ran(id.clone());
                                 Ok((id, step, job.outputs))
@@ -775,17 +765,5 @@ impl PrepareEngine {
 
         runner.execute()?;
         Ok(())
-    }
-
-    /// Update the mtime of output files/directories to now
-    fn touch_outputs(outputs: &[PathBuf]) {
-        let now = FileTime::now();
-        for path in outputs {
-            if path.exists()
-                && let Err(e) = filetime::set_file_mtime(path, now)
-            {
-                warn!("failed to touch {}: {e}", path.display());
-            }
-        }
     }
 }
