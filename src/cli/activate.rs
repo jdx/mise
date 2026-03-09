@@ -90,10 +90,13 @@ impl Activate {
     fn activate_shims(&self, shell: &dyn Shell, mise_bin: &Path) -> std::io::Result<()> {
         let exe_dir = mise_bin.parent().unwrap();
         let mut prelude = vec![];
-        if let Some(p) = self.prepend_path(exe_dir) {
+        // For shells with native path dedup/reorder (fish), always emit path commands
+        // using MovePrependEnv so entries get moved to front on re-source (e.g. VS Code).
+        // For other shells, keep the is_dir_in_path guard to avoid PATH growth on re-source.
+        if let Some(p) = self.shims_prepend_path(shell, exe_dir) {
             prelude.push(p);
         }
-        if let Some(p) = self.prepend_path(&dirs::SHIMS) {
+        if let Some(p) = self.shims_prepend_path(shell, &dirs::SHIMS) {
             prelude.push(p);
         }
         miseprint!("{}", shell.format_activate_prelude(&prelude))?;
@@ -147,6 +150,23 @@ impl Activate {
             ))
         } else {
             None
+        }
+    }
+
+    /// Used by activate_shims. For shells with native path dedup (fish), skips
+    /// the is_dir_in_path check and uses MovePrependEnv to reorder entries on
+    /// re-source. For other shells, falls back to prepend_path to avoid PATH growth.
+    fn shims_prepend_path(&self, shell: &dyn Shell, p: &Path) -> Option<ActivatePrelude> {
+        if !is_dir_not_in_nix(p) || p.is_relative() {
+            return None;
+        }
+        if shell.supports_move_path() {
+            Some(ActivatePrelude::MovePrependEnv(
+                PATH_KEY.to_string(),
+                p.to_string_lossy().to_string(),
+            ))
+        } else {
+            self.prepend_path(p)
         }
     }
 }

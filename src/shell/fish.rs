@@ -166,6 +166,29 @@ impl Shell for Fish {
         }
     }
 
+    fn move_prepend_env(&self, key: &str, value: &str) -> String {
+        match key {
+            env_key if env_key == *env::PATH_KEY => env::split_paths(value)
+                .filter_map(|path| {
+                    let path_str = path.to_str()?;
+                    if path_str.is_empty() {
+                        None
+                    } else {
+                        Some(format!(
+                            "fish_add_path --global --move --path {}\n",
+                            escape(path_str.into())
+                        ))
+                    }
+                })
+                .collect::<String>(),
+            _ => self.prepend_env(key, value),
+        }
+    }
+
+    fn supports_move_path(&self) -> bool {
+        true
+    }
+
     fn unset_env(&self, k: &str) -> String {
         format!("set -e {k}\n", k = escape(k.into()))
     }
@@ -226,6 +249,14 @@ mod tests {
     fn test_prepend_env() {
         let sh = Fish::default();
         assert_snapshot!(replace_path(&sh.prepend_env("PATH", "/some/dir:/2/dir")));
+    }
+
+    #[test]
+    fn test_move_prepend_env() {
+        let sh = Fish::default();
+        assert_snapshot!(replace_path(
+            &sh.move_prepend_env("PATH", "/some/dir:/2/dir")
+        ));
     }
 
     #[test]

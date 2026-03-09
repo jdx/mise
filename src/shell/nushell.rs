@@ -38,7 +38,9 @@ impl Nushell {
             .iter()
             .map(|p| match p {
                 ActivatePrelude::SetEnv(k, v) => format!("$env.{k} = r#'{v}'#\n"),
-                ActivatePrelude::PrependEnv(k, v) => self.prepend_env(k, v),
+                ActivatePrelude::PrependEnv(k, v) | ActivatePrelude::MovePrependEnv(k, v) => {
+                    self.prepend_env(k, v)
+                }
             })
             .join("")
     }
