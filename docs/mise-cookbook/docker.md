@@ -35,26 +35,21 @@ docker run -it --rm debian-mise
 
 ## Task to run mise in a Docker container
 
-This can be useful use if you need to reproduce an issue you're having with mise in a clean environment.
+This can be useful if you need to reproduce an issue you're having with mise in a clean environment.
 
 ```toml [mise.toml]
 [tasks.docker]
-run = "docker run --pull=always -it --rm --entrypoint bash jdxcode/mise:latest"
+run = "docker run --pull=always -it --rm debian-mise"
 ```
 
-Example usage:
+Build the image first (see above), then:
 
 ```shell
 ❯ mise docker
-[docker] $ docker run --pull=always -it --rm --entrypoint bash jdxcode/mise:latest
-# latest: Pulling from jdxcode/mise
-# Digest: sha256:eecc479b6259479ffca5a4f9c68dbfe8631ca62dc59aa60c9ab5e4f6e9982701
-# Status: Image is up to date for jdxcode/mise:latest
-root@75f179a190a1:/mise# eval "$(mise activate bash)"
+[docker] $ docker run --pull=always -it --rm debian-mise
+root@75f179a190a1:/# eval "$(mise activate bash)"
 # overwrite configuration and prune to give us a clean state
-root@75f179a190a1:/mise# echo "" >/mise/config.toml
-root@75f179a190a1:/mise# mise prune --yes
-# mise pruned configuration links
-# mise python@3.13.1 ✓ remove /mise/cache/python/3.13.1
+root@75f179a190a1:/# echo "" > ~/.config/mise/config.toml
+root@75f179a190a1:/# mise prune --yes
 # ...
 ```
