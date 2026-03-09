@@ -188,19 +188,24 @@ sudo snap install mise --classic --beta
 
 ### Docker
 
-```sh
-docker run jdxcode/mise x node@20 -- node -v
-```
-
-[Docker Hub](https://hub.docker.com/r/jdxcode/mise)
+See the [Docker cookbook](/mise-cookbook/docker) for tips on using mise with Docker.
 
 ::: details Example Dockerfile
 
 ```dockerfile
-FROM jdxcode/mise:latest AS mise
+FROM debian:13-slim
 
-FROM debian:bookworm-slim
-COPY --from=mise /usr/local/bin/mise /usr/local/bin/mise
+RUN apt-get update \
+    && apt-get -y --no-install-recommends install sudo curl git ca-certificates build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ENV MISE_DATA_DIR="/mise"
+ENV MISE_CONFIG_DIR="/mise"
+ENV MISE_CACHE_DIR="/mise/cache"
+ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
+ENV PATH="/mise/shims:$PATH"
+RUN curl https://mise.run | sh
 RUN mise trust -a && mise install
 ```
 
