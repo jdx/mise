@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+# Test that github backend handles "latest" version correctly
+# Regression test for https://github.com/jdx/mise/discussions/8530
+# The GitHub API endpoint for latest release is /releases/latest, not /releases/tags/latest
+
+cat <<EOF >mise.toml
+[tools]
+"github:jdx/mise-test-fixtures" = { version = "latest", asset_pattern = "hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+
+mise install
+assert_contains "mise x -- hello-world" "hello world"
+
+# Verify that "latest" resolved to a concrete version, not the literal string "latest"
+assert_not_contains "mise ls github:jdx/mise-test-fixtures" "latest (missing)"
