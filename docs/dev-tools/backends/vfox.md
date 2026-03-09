@@ -10,7 +10,7 @@ Vfox is the recommended plugin system for mise. It provides cross-platform suppo
 
 - **Cross-platform** — plugins work on Windows, macOS, and Linux without platform-specific code
 - **Built-in modules** — HTTP, JSON, HTML parsing, archive extraction, semver comparison, and logging are all available out of the box, no external dependencies needed
-- **Security** — supports attestation verification (cosign signatures, SLSA provenance) for downloaded artifacts
+- **Security** — [tool plugins](../../tool-plugin-development.md) support attestation verification (GitHub artifact attestations, cosign signatures, SLSA provenance) for downloaded artifacts. When a tool plugin's `PreInstall` hook returns an `attestation` table, mise verifies it during install and records the result in `mise.lock`, protecting against downgrade attacks on subsequent installs. Backend plugins do not currently support attestation
 - **Modern architecture** — structured hooks with typed contexts, backend plugins for multi-tool management, rolling version checksums, and lock file support
 
 The code for this is inside the mise repository at [`./src/backend/vfox.rs`](https://github.com/jdx/mise/blob/main/src/backend/vfox.rs).
