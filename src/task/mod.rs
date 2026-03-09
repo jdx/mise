@@ -516,7 +516,10 @@ impl Task {
     }
 
     pub fn prefix(&self) -> String {
-        format!("[{}]", self.display_name)
+        let max_width = 40;
+        let inner = format!("{} {}", self.display_name, self.args.join(" "));
+        let inner = inner.trim();
+        format!("[{}]", console::truncate_str(inner, max_width, "…"))
     }
 
     pub fn run(&self) -> &Vec<RunEntry> {
