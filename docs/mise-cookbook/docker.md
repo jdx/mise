@@ -7,7 +7,7 @@ Here are some tips on using Docker with mise.
 Here is an example Dockerfile showing how to install mise in a Docker image.
 
 ```Dockerfile [Dockerfile]
-FROM debian:12-slim
+FROM debian:13-slim
 
 RUN apt-get update  \
     && apt-get -y --no-install-recommends install  \

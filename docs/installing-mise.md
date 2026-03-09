@@ -193,13 +193,14 @@ See the [Docker cookbook](/mise-cookbook/docker) for tips on using mise with Doc
 ::: details Example Dockerfile
 
 ```dockerfile
-FROM debian:bookworm-slim
+FROM debian:13-slim
 
 RUN apt-get update \
     && apt-get -y --no-install-recommends install sudo curl git ca-certificates build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
 ENV PATH="/mise/shims:$PATH"
 RUN curl https://mise.run | sh
 RUN mise trust -a && mise install
