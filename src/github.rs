@@ -273,7 +273,11 @@ pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result
 }
 
 async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
-    let url = format!("{api_url}/repos/{repo}/releases/tags/{tag}");
+    let url = if tag == "latest" {
+        format!("{api_url}/repos/{repo}/releases/latest")
+    } else {
+        format!("{api_url}/repos/{repo}/releases/tags/{tag}")
+    };
     let headers = get_headers(&url);
     crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
