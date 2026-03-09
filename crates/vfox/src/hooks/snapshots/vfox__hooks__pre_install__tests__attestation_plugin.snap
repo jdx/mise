@@ -1,0 +1,30 @@
+---
+source: crates/vfox/src/hooks/pre_install.rs
+expression: pre_install
+---
+PreInstall {
+    version: "1.2.3",
+    url: Some(
+        "https://example.com/download/1.2.3.tar.gz",
+    ),
+    note: None,
+    sha256: None,
+    md5: None,
+    sha1: None,
+    sha512: None,
+    attestation: Some(
+        PreInstallAttestation {
+            github_owner: Some(
+                "test-owner",
+            ),
+            github_repo: Some(
+                "test-repo",
+            ),
+            github_signer_workflow: None,
+            cosign_sig_or_bundle_path: None,
+            cosign_public_key_path: None,
+            slsa_provenance_path: None,
+            slsa_min_level: None,
+        },
+    ),
+}
