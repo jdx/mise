@@ -905,6 +905,33 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
             }
         }
 
+        // Check if any env-specific tool is also defined in a base config file.
+        // When MISE_ENV is set, env configs override base configs in the resolved toolset,
+        // so tools_by_source only has the env-specific entry. But the tool is still defined
+        // in the base config, so it shouldn't get an env tag.
+        for (config_path, env) in &configs {
+            if env.is_some() {
+                continue; // only look at base configs
+            }
+            if let Some(cf) = config.config_files.get(config_path) {
+                if let Ok(trs) = cf.to_tool_request_set() {
+                    for (ba, _requests, _source) in trs.iter() {
+                        if let Some(entries) = tools_with_env.get_mut(&ba.short) {
+                            // This tool is defined in a base config — add a base marker
+                            // so merge_tool_entries_with_env sees has_base=true
+                            let already_has_base = entries.iter().any(|(_, e)| e.is_none());
+                            if !already_has_base {
+                                // Find the matching env entry and clone it as a base entry
+                                if let Some((tool, _)) = entries.first().cloned() {
+                                    entries.push((tool, None));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Preserve base entries from existing lockfile that were overridden by env configs
         // Without this, base entries (env=None) get dropped when env configs override them
         // Only preserve if ALL new entries are env-specific - if any new entry has env=None,

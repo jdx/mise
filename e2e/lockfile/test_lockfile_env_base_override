@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+# Test that env tag is NOT set when a tool exists in both base and env-specific configs
+# Bug: MISE_ENV=dev mise install incorrectly sets env=["dev"] on a tool that is also
+# defined in the base mise.toml
+
+export MISE_LOCKFILE=1
+
+echo "=== Setup: jq in both base and dev config ==="
+
+cat >mise.toml <<'EOF'
+[settings]
+lockfile = true
+
+[tools]
+tiny = "1"
+EOF
+
+cat >mise.dev.toml <<'EOF'
+[tools]
+tiny = "1"
+EOF
+
+touch mise.lock
+
+# Install with base config first
+assert "mise install tiny@1.0.1"
+
+echo "=== Test: MISE_ENV=dev should NOT add env tag when tool is also in base ==="
+
+assert "MISE_ENV=dev mise install"
+
+# The tool should NOT have env=["dev"] because it exists in both configs
+assert_not_contains "cat mise.lock" 'env = '
+
+echo "=== Test: tool only in env config SHOULD get env tag ==="
+
+# Remove tiny from base config
+cat >mise.toml <<'EOF'
+[settings]
+lockfile = true
+EOF
+
+rm -f mise.lock
+touch mise.lock
+
+assert "MISE_ENV=dev mise install"
+
+# Now env tag should be present since tiny is only in mise.dev.toml
+assert_contains "cat mise.lock" 'env = ["dev"]'
+
+echo "=== Cleanup ==="
+rm -f mise.lock mise.toml mise.dev.toml
+
+echo "lockfile env base override tests passed!"
