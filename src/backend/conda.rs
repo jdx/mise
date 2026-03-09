@@ -17,8 +17,7 @@ use itertools::Itertools;
 use rattler::install::{InstallDriver, InstallOptions, PythonInfo, link_package};
 use rattler_conda_types::{
     Channel, ChannelConfig, GenericVirtualPackage, MatchSpec, ParseStrictness,
-    Platform as CondaPlatform, RepoDataRecord, prefix::Prefix,
-    prefix_record::PathsEntry,
+    Platform as CondaPlatform, RepoDataRecord, prefix::Prefix, prefix_record::PathsEntry,
 };
 use rattler_repodata_gateway::{Gateway, RepoData};
 use rattler_solve::{
@@ -517,13 +516,20 @@ impl CondaBackend {
 
         let install_path = tv.install_path();
         let bin_dirs: &[&std::path::Path] = if cfg!(windows) {
-            &[std::path::Path::new("Library/bin"), std::path::Path::new("Scripts"), std::path::Path::new("bin")]
+            &[
+                std::path::Path::new("Library/bin"),
+                std::path::Path::new("Scripts"),
+                std::path::Path::new("bin"),
+            ]
         } else {
             &[std::path::Path::new("bin")]
         };
 
         for entry in main_paths {
-            if !bin_dirs.iter().any(|dir| entry.relative_path.starts_with(dir)) {
+            if !bin_dirs
+                .iter()
+                .any(|dir| entry.relative_path.starts_with(dir))
+            {
                 continue;
             }
             let Some(bin_name) = entry.relative_path.file_name() else {
