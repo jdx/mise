@@ -1,5 +1,54 @@
 # Changelog
 
+## [2026.3.6](https://github.com/jdx/mise/compare/v2026.3.5..v2026.3.6) - 2026-03-09
+
+### 🐛 Bug Fixes
+
+- **(activate)** reorder shims to front of PATH on re-source in fish by @jdx in [#8534](https://github.com/jdx/mise/pull/8534)
+- **(backend)** strip mise shims from dependency_env PATH to prevent fork bomb by @pose in [#8475](https://github.com/jdx/mise/pull/8475)
+- **(github)** resolve "latest" version correctly via GitHub API by @jdx in [#8532](https://github.com/jdx/mise/pull/8532)
+- **(lock)** set env tags and clarify lockfile docs by @jdx in [#8519](https://github.com/jdx/mise/pull/8519)
+- **(lock)** use separate mise.<env>.lock files instead of env tags by @jdx in [#8523](https://github.com/jdx/mise/pull/8523)
+- **(task)** include args in task output prefix and truncate long prefixes by @jdx in [#8533](https://github.com/jdx/mise/pull/8533)
+- **(task)** only include args in task prefix when disambiguating duplicates by @jdx in [#8536](https://github.com/jdx/mise/pull/8536)
+- **(test)** pin goreleaser version in attestation e2e test by @jdx in [#8518](https://github.com/jdx/mise/pull/8518)
+- **(windows)** env._.source needs to run bash.exe on Windows (fix #6513) by @pjeby in [#8520](https://github.com/jdx/mise/pull/8520)
+- handle locked .exe shims on Windows during reshim by @davireis in [#8517](https://github.com/jdx/mise/pull/8517)
+
+### 🚜 Refactor
+
+- **(prepare)** remove touch_outputs and update docs to reflect blake3 hashing by @jdx in [#8535](https://github.com/jdx/mise/pull/8535)
+
+### 📚 Documentation
+
+- **(docker)** replace jdxcode/mise image with curl install, update to debian:13-slim by @jdx in [#8526](https://github.com/jdx/mise/pull/8526)
+- fix "gzip: stdin is encrypted" error in shell tricks cookbook by @pjeby in [#8512](https://github.com/jdx/mise/pull/8512)
+
+### 📦 Registry
+
+- add tigerbeetle ([github:tigerbeetle/tigerbeetle](https://github.com/tigerbeetle/tigerbeetle)) by @risu729 in [#8514](https://github.com/jdx/mise/pull/8514)
+
+### New Contributors
+
+- @pjeby made their first contribution in [#8520](https://github.com/jdx/mise/pull/8520)
+- @davireis made their first contribution in [#8517](https://github.com/jdx/mise/pull/8517)
+- @Aurorxa made their first contribution in [#8511](https://github.com/jdx/mise/pull/8511)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (6)
+
+- [`betterleaks/betterleaks`](https://github.com/betterleaks/betterleaks)
+- [`majorcontext/moat`](https://github.com/majorcontext/moat)
+- [`princjef/gomarkdoc`](https://github.com/princjef/gomarkdoc)
+- [`remko/age-plugin-se`](https://github.com/remko/age-plugin-se)
+- [`sudorandom/fauxrpc`](https://github.com/sudorandom/fauxrpc)
+- [`swanysimon/mdlint`](https://github.com/swanysimon/mdlint)
+
+#### Updated Packages (1)
+
+- [`moonrepo/moon`](https://github.com/moonrepo/moon)
+
 ## [2026.3.5](https://github.com/jdx/mise/compare/v2026.3.4..v2026.3.5) - 2026-03-07
 
 ### 🚀 Features

@@ -3,33 +3,17 @@ packages:
   - type: github_release
     repo_owner: moonrepo
     repo_name: moon
-    description: A task runner and repo management tool for the web ecosystem
-    asset: moon-{{.Arch}}-{{.OS}}
-    format: raw
-    overrides:
-      - goos: windows
-        replacements:
-          arm64: arm64
-    replacements:
-      amd64: x86_64
-      arm64: aarch64
-      darwin: apple-darwin
-      linux: unknown-linux-musl
-      windows: pc-windows-msvc
-    supported_envs:
-      - darwin
-      - linux
-      - amd64
-    version_constraint: semver(">= 1.0.0")
+    description: A build system and monorepo management tool for the web ecosystem, written in Rust
+    version_constraint: "false"
     version_overrides:
-      - version_constraint: semver(">= 0.12.1")
+      - version_constraint: Version == "@moonrepo/cli@0.12.0"
+        no_asset: true
+      - version_constraint: semver("<= 0.1.0")
         version_prefix: "@moonrepo/cli@"
-      - version_constraint: semver(">= 0.2.0")
-        version_prefix: "@moonrepo/cli@"
-        supported_envs:
-          - darwin
-          - amd64
-      - version_constraint: semver("< 0.2.0")
+        asset: moon-{{.Arch}}-{{.OS}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
         replacements:
           amd64: x86_64
           darwin: apple-darwin
@@ -37,6 +21,65 @@ packages:
           windows: pc-windows-msvc
         supported_envs:
           - darwin
+          - windows
           - amd64
+      - version_constraint: semver("<= 0.11.1")
         version_prefix: "@moonrepo/cli@"
-        rosetta2: true
+        asset: moon-{{.Arch}}-{{.OS}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.41.8")
+        asset: moon-{{.Arch}}-{{.OS}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+      - version_constraint: "true"
+        asset: moon_cli-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: moon
+            src: "{{.AssetWithoutExt}}/moon"
+          - name: moonx
+            src: "{{.AssetWithoutExt}}/moonx"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+            files:
+              - name: moon
+              - name: moonx
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
