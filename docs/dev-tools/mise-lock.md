@@ -63,10 +63,6 @@ options = { exe = "rg" }
 checksum = "sha256:4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e"
 size = 1234567
 
-# Environment-specific version (only used when MISE_ENV=test)
-[[tools.tiny]]
-version = "2.1.0"
-env = ["test"]
 ```
 
 ### Platform Information
@@ -84,7 +80,6 @@ Each tool entry (`[[tools.name]]`) can contain:
 - **`version`** (required): The exact version of the tool
 - **`backend`** (optional): The backend used to install the tool (e.g., `core:node`, `aqua:BurntSushi/ripgrep`)
 - **`options`** (optional): Backend-specific options that identify the artifact (e.g., `{exe = "rg", matching = "musl"}`)
-- **`env`** (optional): List of environment names this version applies to (e.g., `["test", "staging"]`)
 - **`platforms`** (optional): Platform-specific metadata (checksums, URLs, sizes)
 
 ### Platform Keys
@@ -95,31 +90,31 @@ The platform key format is generally `os-arch` but can be customized by backends
 - **Backend-specific**: Some backends like Java may use more specific platform identifiers
 - **Tool-specific**: Backends like `ubi` may include additional tool-specific information in the platform key
 
-## Environment-Specific Versions
+## Environment-Specific Lockfiles
 
-When using [environment-specific configuration files](/configuration/environments) (e.g., `mise.test.toml`), tools from those files are tagged with an `env` field in the lockfile:
+When using [environment-specific configuration files](/configuration/environments) (e.g., `mise.test.toml`), each environment gets its own lockfile:
 
-```toml
-# mise.test.toml
-[tools]
-tiny = "2"
+| Config file            | Lockfile               |
+| ---------------------- | ---------------------- |
+| `mise.toml`            | `mise.lock`            |
+| `mise.test.toml`       | `mise.test.lock`       |
+| `mise.staging.toml`    | `mise.staging.lock`    |
+| `mise.local.toml`      | `mise.local.lock`      |
+| `mise.test.local.toml` | `mise.test.local.lock` |
+
+For example, with `MISE_ENV=test`:
+
+```sh
+MISE_ENV=test mise lock  # creates mise.lock AND mise.test.lock
 ```
 
-When you run `MISE_ENV=test mise use tiny@2`, the lockfile will include:
+Tools from `mise.toml` go to `mise.lock`, tools from `mise.test.toml` go to `mise.test.lock`.
 
-```toml
-[[tools.tiny]]
-version = "2.1.0"
-env = ["test"]
-```
+**Resolution**: When `MISE_ENV=test`, mise reads `mise.test.lock` for tools defined in `mise.test.toml` and `mise.lock` for tools in `mise.toml`. Environment-specific lockfiles are strictly scoped to their corresponding config — they only contain tools defined in that config.
 
-**Resolution priority**: When resolving versions, mise checks in order:
+This design means CI environments that don't set `MISE_ENV` only depend on `mise.lock`, so dev tool version bumps in `mise.dev.lock` won't invalidate CI caches.
 
-1. Entry with matching `env` for the current `MISE_ENV`
-2. Base entry (no `env` field)
-3. First available entry
-
-This allows different environments to use different tool versions while sharing the same lockfile.
+Both `mise.lock` and `mise.<env>.lock` files should be committed to version control. `mise.local.lock` and `mise.<env>.local.lock` should be gitignored alongside their corresponding config files.
 
 ## Local Lockfiles
 
