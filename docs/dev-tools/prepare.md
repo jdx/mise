@@ -1,8 +1,7 @@
 # Prepare <Badge type="warning" text="experimental" />
 
-The `mise prepare` command ensures project dependencies are ready by checking if lockfiles
-are newer than installed outputs (e.g., `package-lock.json` vs `node_modules/`) and running
-install commands if needed.
+The `mise prepare` command ensures project dependencies are ready by hashing source files
+(e.g., `package-lock.json`) and running install commands when changes are detected.
 
 ## Quick Start
 
@@ -87,17 +86,17 @@ run = "npx prisma generate"
 
 ### Provider Options
 
-| Option        | Type     | Description                                                              |
-| ------------- | -------- | ------------------------------------------------------------------------ |
-| `auto`        | bool     | Auto-run before `mise x` and `mise run` (default: false)                 |
-| `sources`     | string[] | Files/patterns to check for changes                                      |
-| `outputs`     | string[] | Files/directories that should be newer than sources                      |
-| `run`         | string   | Command to run when stale                                                |
-| `env`         | table    | Environment variables to set                                             |
-| `dir`         | string   | Working directory for the command                                        |
-| `description` | string   | Description shown in output                                              |
-| `depends`     | string[] | Other provider names that must complete before this one runs             |
-| `timeout`     | string   | Timeout for the run command, e.g., `"30s"`, `"5m"` (default: no timeout) |
+| Option        | Type     | Description                                                               |
+| ------------- | -------- | ------------------------------------------------------------------------- |
+| `auto`        | bool     | Auto-run before `mise x` and `mise run` (default: false)                  |
+| `sources`     | string[] | Files/patterns to check for changes                                       |
+| `outputs`     | string[] | Files/directories that must exist for the provider to be considered fresh |
+| `run`         | string   | Command to run when stale                                                 |
+| `env`         | table    | Environment variables to set                                              |
+| `dir`         | string   | Working directory for the command                                         |
+| `description` | string   | Description shown in output                                               |
+| `depends`     | string[] | Other provider names that must complete before this one runs              |
+| `timeout`     | string   | Timeout for the run command, e.g., `"30s"`, `"5m"` (default: no timeout)  |
 
 ## Freshness Checking
 
