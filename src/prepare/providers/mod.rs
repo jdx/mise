@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use crate::prepare::rule::PrepareProviderConfig;
 
 /// Shared base for all prepare providers, holding the id, project root, and config.
-/// Provides common implementations for `id`, `is_auto`, and `touch_outputs`.
+/// Provides common implementations for `id` and `is_auto`.
 #[derive(Debug)]
 pub struct ProviderBase {
     pub(crate) id: String,
@@ -48,10 +48,6 @@ impl ProviderBase {
 
     pub fn is_auto(&self) -> bool {
         self.config.auto
-    }
-
-    pub fn touch_outputs(&self) -> bool {
-        self.config.touch_outputs.unwrap_or(true)
     }
 
     /// Returns the effective root directory for resolving sources/outputs.

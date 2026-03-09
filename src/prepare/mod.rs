@@ -129,11 +129,6 @@ pub trait PrepareProvider: Debug + Send + Sync {
         self.base().is_auto()
     }
 
-    /// Whether to update mtime of output files/dirs after a successful run
-    fn touch_outputs(&self) -> bool {
-        self.base().touch_outputs()
-    }
-
     /// Other prepare providers that must complete before this one runs
     fn depends(&self) -> Vec<String> {
         self.base().config.depends.clone()
