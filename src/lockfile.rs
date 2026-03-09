@@ -57,8 +57,6 @@ pub struct LockfileTool {
     pub backend: Option<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub options: BTreeMap<String, String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub env: Option<Vec<String>>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub platforms: BTreeMap<String, PlatformInfo>,
 }
@@ -698,51 +696,8 @@ impl Lockfile {
                 version: version.to_string(),
                 backend: backend.map(|s| s.to_string()),
                 options: options.clone(),
-                env: None,
                 platforms,
             });
-        }
-    }
-
-    /// Set the env field on a tool entry matching the given short name, version, and options.
-    /// If the tool already has an env field, merges the new env values.
-    pub fn set_tool_env(
-        &mut self,
-        short: &str,
-        version: &str,
-        options: &BTreeMap<String, String>,
-        envs: &[String],
-    ) {
-        if let Some(tools) = self.tools.get_mut(short)
-            && let Some(tool) = tools
-                .iter_mut()
-                .find(|t| t.version == version && &t.options == options)
-        {
-            let mut existing: Vec<String> = tool.env.clone().unwrap_or_default();
-            for env in envs {
-                if !existing.contains(env) {
-                    existing.push(env.clone());
-                }
-            }
-            existing.sort();
-            tool.env = Some(existing);
-        }
-    }
-
-    /// Clear the env field on a tool entry matching the given short name, version, and options.
-    /// Used to remove stale env tags when a tool moves from an env-specific config to a base config.
-    pub fn clear_tool_env(
-        &mut self,
-        short: &str,
-        version: &str,
-        options: &BTreeMap<String, String>,
-    ) {
-        if let Some(tools) = self.tools.get_mut(short)
-            && let Some(tool) = tools
-                .iter_mut()
-                .find(|t| t.version == version && &t.options == options)
-        {
-            tool.env = None;
         }
     }
 
@@ -762,10 +717,12 @@ impl Lockfile {
 /// - `.mise/conf.d/foo.toml` -> `.mise/mise.lock` (conf.d files share parent's lockfile)
 pub fn lockfile_path_for_config(config_path: &Path) -> (PathBuf, bool) {
     let is_local = is_local_config(config_path);
-    let lockfile_name = if is_local {
-        "mise.local.lock"
-    } else {
-        "mise.lock"
+    let env = extract_env_from_config_path(config_path);
+    let lockfile_name = match (&env, is_local) {
+        (Some(e), true) => format!("mise.{e}.local.lock"),
+        (Some(e), false) => format!("mise.{e}.lock"),
+        (None, true) => "mise.local.lock".to_string(),
+        (None, false) => "mise.lock".to_string(),
     };
 
     let parent = config_path.parent().unwrap_or(Path::new("."));
@@ -853,18 +810,16 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
     }
 
     // Group config files by target lockfile path
-    // Key: lockfile path, Value: list of (config_path, env) tuples
-    let mut lockfile_configs: HashMap<PathBuf, Vec<(PathBuf, Option<String>)>> = HashMap::new();
+    let mut lockfile_configs: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
     for (config_path, cf) in config.config_files.iter().rev() {
         if !cf.source().is_mise_toml() {
             continue;
         }
         let (lockfile_path, _is_local) = lockfile_path_for_config(config_path);
-        let env = extract_env_from_config_path(config_path);
         lockfile_configs
             .entry(lockfile_path)
             .or_default()
-            .push((config_path.clone(), env));
+            .push(config_path.clone());
     }
 
     debug!("updating {} lockfiles", lockfile_configs.len());
@@ -885,53 +840,24 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         let mut existing_lockfile = Lockfile::read(&lockfile_path)
             .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
 
-        // Collect all tools from all contributing configs with their env context
-        // Key: tool short name, Value: list of (LockfileTool, env)
-        let mut tools_with_env: HashMap<String, Vec<(LockfileTool, Option<String>)>> =
-            HashMap::new();
+        // Collect all tools from all contributing configs
+        let mut tools_by_short: HashMap<String, Vec<LockfileTool>> = HashMap::new();
 
-        for (config_path, env) in &configs {
+        for config_path in &configs {
             let tool_source = ToolSource::MiseToml(config_path.clone());
             if let Some(tools) = tools_by_source.get(&tool_source) {
                 for (short, tvl) in tools {
                     let lockfile_tools: Vec<LockfileTool> = tvl.clone().into();
                     for tool in lockfile_tools {
-                        tools_with_env
-                            .entry(short.clone())
-                            .or_default()
-                            .push((tool, env.clone()));
+                        tools_by_short.entry(short.clone()).or_default().push(tool);
                     }
                 }
             }
         }
 
-        // Preserve base entries from existing lockfile that were overridden by env configs
-        // Without this, base entries (env=None) get dropped when env configs override them
-        // Only preserve if ALL new entries are env-specific - if any new entry has env=None,
-        // it means the base config was updated and old entries should be replaced, not preserved
-        for (short, existing_entries) in &existing_lockfile.tools {
-            if let Some(new_entries) = tools_with_env.get_mut(short) {
-                // Only preserve if all new entries are env-specific (no base config update)
-                let all_env_specific = new_entries.iter().all(|(_, env)| env.is_some());
-                if all_env_specific {
-                    for existing in existing_entries {
-                        // If existing entry has no env (base) and isn't already in new_entries, preserve it
-                        if existing.env.is_none()
-                            && !new_entries.iter().any(|(t, _)| {
-                                t.version == existing.version && t.options == existing.options
-                            })
-                        {
-                            new_entries.push((existing.clone(), None));
-                        }
-                    }
-                }
-            }
-        }
-
-        // Process each tool with deduplication and env merging
-        for (short, entries) in tools_with_env {
-            let merged_tools =
-                merge_tool_entries_with_env(entries, existing_lockfile.tools.get(&short));
+        // Process each tool with deduplication
+        for (short, entries) in tools_by_short {
+            let merged_tools = merge_tool_entries(entries, existing_lockfile.tools.get(&short));
             existing_lockfile.tools.insert(short, merged_tools);
         }
 
@@ -1173,47 +1099,31 @@ pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) 
     }
 }
 
-/// Merge tool entries with environment tracking and deduplication
-/// Rules:
-/// - Same version+options: if any has no env (base), keep only base entry; otherwise merge env arrays
-/// - Different version/options: separate entries
-/// - Preserve existing env-specific entries that aren't in new entries (env configs may not be loaded)
-#[allow(clippy::type_complexity)]
-fn merge_tool_entries_with_env(
-    entries: Vec<(LockfileTool, Option<String>)>,
+/// Merge tool entries with deduplication by (version, options).
+/// Merges platform info for entries with the same key.
+/// Preserves existing platform info for matching entries.
+fn merge_tool_entries(
+    entries: Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,
 ) -> Vec<LockfileTool> {
     // Group by (version, options) - the key for deduplication
-    let mut by_key: HashMap<
-        (String, BTreeMap<String, String>),
-        (LockfileTool, BTreeSet<String>, bool),
-    > = HashMap::new();
+    let mut by_key: HashMap<(String, BTreeMap<String, String>), LockfileTool> = HashMap::new();
 
-    for (tool, env) in entries {
+    for tool in entries {
         let key = (tool.version.clone(), tool.options.clone());
-        let entry = by_key
-            .entry(key)
-            .or_insert_with(|| (tool.clone(), BTreeSet::new(), false));
+        let entry = by_key.entry(key).or_insert_with(|| tool.clone());
 
         // Merge platforms - properly combine platform info to preserve URLs and prefer sha256
         for (platform, info) in tool.platforms {
             entry
-                .0
                 .platforms
                 .entry(platform)
                 .and_modify(|existing| *existing = info.merge_with(existing))
                 .or_insert(info);
         }
-
-        // Track env - if any entry has no env, mark as base
-        if let Some(e) = env {
-            entry.1.insert(e);
-        } else {
-            entry.2 = true; // has_base
-        }
     }
 
-    // Merge with existing tools to preserve platform info AND env-specific entries
+    // Merge with existing tools to preserve platform info
     if let Some(existing) = existing_tools {
         for existing_tool in existing {
             let key = (existing_tool.version.clone(), existing_tool.options.clone());
@@ -1221,46 +1131,10 @@ fn merge_tool_entries_with_env(
                 // Merge platform info from existing - preserve URLs and prefer sha256
                 for (platform, info) in &existing_tool.platforms {
                     entry
-                        .0
                         .platforms
                         .entry(platform.clone())
                         .and_modify(|existing| *existing = existing.merge_with(info))
                         .or_insert(info.clone());
-                }
-                // Preserve existing env if we have no new env info
-                if entry.1.is_empty()
-                    && !entry.2
-                    && let Some(ref existing_env) = existing_tool.env
-                {
-                    for e in existing_env {
-                        entry.1.insert(e.clone());
-                    }
-                }
-            } else if let Some(existing_envs) = &existing_tool.env {
-                // Check if this env is already covered by a new entry
-                // If so, the existing entry is stale and should not be preserved
-                let env_already_covered = by_key
-                    .values()
-                    .any(|(_, new_envs, _)| existing_envs.iter().any(|e| new_envs.contains(e)));
-
-                if !env_already_covered {
-                    // Preserve env-specific entries that have no match in new entries
-                    // and whose env is not covered by any new entry
-                    // This handles the case where env configs (e.g., mise.test.toml) aren't loaded
-                    // but we don't want to lose their lockfile entries
-                    by_key.insert(
-                        key,
-                        (
-                            existing_tool.clone(),
-                            existing_tool
-                                .env
-                                .clone()
-                                .unwrap_or_default()
-                                .into_iter()
-                                .collect(),
-                            false,
-                        ),
-                    );
                 }
             }
         }
@@ -1269,16 +1143,6 @@ fn merge_tool_entries_with_env(
     // Convert to final list
     by_key
         .into_values()
-        .map(|(mut tool, envs, has_base)| {
-            // If has_base (any entry had no env), don't set env field
-            // Otherwise, set env field with merged envs
-            tool.env = if has_base || envs.is_empty() {
-                None
-            } else {
-                Some(envs.into_iter().sorted().collect())
-            };
-            tool
-        })
         .sorted_by(|a, b| a.version.cmp(&b.version))
         .collect()
 }
@@ -1310,10 +1174,26 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
         }
         seen_roots.insert(root.clone());
 
-        // Read both lockfiles (local takes precedence)
+        // Read lockfiles in priority order (highest first):
+        // 1. mise.<env>.local.lock (if MISE_ENV is set)
+        // 2. mise.local.lock
+        // 3. mise.<env>.lock (if MISE_ENV is set)
+        // 4. mise.lock
+        for env_name in env::MISE_ENV.iter() {
+            let p = root.join(format!("mise.{env_name}.local.lock"));
+            if let Ok(l) = Lockfile::read(&p) {
+                all.push(l);
+            }
+        }
         let local_path = root.join("mise.local.lock");
         if let Ok(local) = Lockfile::read(&local_path) {
             all.push(local);
+        }
+        for env_name in env::MISE_ENV.iter() {
+            let p = root.join(format!("mise.{env_name}.lock"));
+            if let Ok(l) = Lockfile::read(&p) {
+                all.push(l);
+            }
         }
         let main_path = root.join("mise.lock");
         if let Ok(main) = Lockfile::read(&main_path) {
@@ -1325,10 +1205,11 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
         for (short, tools) in l.tools {
             let existing = acc.tools.entry(short).or_default();
             for tool in tools {
-                // Avoid duplicates (same version+options+env)
-                if !existing.iter().any(|t| {
-                    t.version == tool.version && t.options == tool.options && t.env == tool.env
-                }) {
+                // Avoid duplicates (same version+options)
+                if !existing
+                    .iter()
+                    .any(|t| t.version == tool.version && t.options == tool.options)
+                {
                     existing.push(tool);
                 }
             }
@@ -1372,8 +1253,6 @@ pub fn get_locked_version(
         return Ok(None);
     }
 
-    let current_envs: HashSet<&str> = env::MISE_ENV.iter().map(|s| s.as_str()).collect();
-
     let lockfile = match path {
         Some(path) => {
             trace!(
@@ -1416,37 +1295,9 @@ pub fn get_locked_version(
             });
         }
 
-        // Priority: 1) env-specific match, 2) base entry (no env)
-        if !current_envs.is_empty()
-            && let Some(env_match) = matching.iter().find(|t| {
-                t.env
-                    .as_ref()
-                    .is_some_and(|envs| envs.iter().any(|e| current_envs.contains(e.as_str())))
-            })
-        {
-            trace!(
-                "[{short}@{prefix}] found {} in lockfile (env-specific: {:?})",
-                env_match.version, env_match.env
-            );
-            return Ok(Some((*env_match).clone()));
-        }
-
-        // Fall back to base entry (no env field)
-        if let Some(base) = matching.iter().find(|t| t.env.is_none()) {
-            trace!(
-                "[{short}@{prefix}] found {} in lockfile (base)",
-                base.version
-            );
-            return Ok(Some((*base).clone()));
-        }
-
-        // Last resort: any matching entry
-        if let Some(any) = matching.first() {
-            trace!(
-                "[{short}@{prefix}] found {} in lockfile (fallback)",
-                any.version
-            );
-            return Ok(Some((*any).clone()));
+        if let Some(found) = matching.first() {
+            trace!("[{short}@{prefix}] found {} in lockfile", found.version);
+            return Ok(Some((*found).clone()));
         }
     }
 
@@ -1499,7 +1350,6 @@ impl TryFrom<toml::Value> for LockfileTool {
                 version: v,
                 backend: Default::default(),
                 options: Default::default(),
-                env: None,
                 platforms: Default::default(),
             },
             toml::Value::Table(mut t) => {
@@ -1532,14 +1382,8 @@ impl TryFrom<toml::Value> for LockfileTool {
                         }
                     }
                 }
-                let env = t.remove("env").and_then(|v| match v {
-                    toml::Value::Array(arr) => Some(
-                        arr.into_iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect(),
-                    ),
-                    _ => None,
-                });
+                // Silently discard env field from old lockfiles for backwards compat
+                t.remove("env");
                 LockfileTool {
                     version: t
                         .remove("version")
@@ -1552,7 +1396,6 @@ impl TryFrom<toml::Value> for LockfileTool {
                         .transpose()?
                         .unwrap_or_default(),
                     options,
-                    env,
                     platforms,
                 }
             }
@@ -1576,14 +1419,6 @@ impl LockfileTool {
                 .map(|(k, v)| (k, toml::Value::String(v)))
                 .collect();
             table.insert("options".to_string(), toml::Value::Table(opts_table));
-        }
-        if let Some(env) = self.env {
-            let env_arr: toml::Value = env
-                .into_iter()
-                .map(toml::Value::String)
-                .collect::<Vec<_>>()
-                .into();
-            table.insert("env".to_string(), env_arr);
         }
         if !self.platforms.is_empty() {
             table.insert("platforms".to_string(), self.platforms.clone().into());
@@ -1618,7 +1453,6 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
                     version: tv.version.clone(),
                     backend: Some(tv.ba().stored_full()),
                     options,
-                    env: None, // Set by merge_tool_entries_with_env based on config source
                     platforms,
                 }
             })
@@ -1686,7 +1520,7 @@ mod tests {
             version: version.to_string(),
             backend: Some(backend.to_string()),
             options: BTreeMap::new(),
-            env: None,
+
             platforms: BTreeMap::new(),
         }
     }
@@ -1713,7 +1547,7 @@ mod tests {
             version: version.to_string(),
             backend: Some(backend.to_string()),
             options: BTreeMap::new(),
-            env: None,
+
             platforms,
         }
     }
@@ -1795,7 +1629,7 @@ backend = "core:python"
             version: "20.10.0".to_string(),
             backend: Some("core:node".to_string()),
             options: BTreeMap::new(),
-            env: None,
+
             platforms,
         };
 
@@ -1861,7 +1695,7 @@ checksum = "blake3:abc123"
             version: "14.0.0".to_string(),
             backend: Some("ubi:BurntSushi/ripgrep".to_string()),
             options: BTreeMap::new(), // Empty options
-            env: None,
+
             platforms: BTreeMap::new(),
         };
         lockfile.tools.insert("ripgrep".to_string(), vec![tool]);
@@ -1889,7 +1723,7 @@ checksum = "blake3:abc123"
             version: "14.0.0".to_string(),
             backend: Some("ubi:BurntSushi/ripgrep".to_string()),
             options,
-            env: None,
+
             platforms: BTreeMap::new(),
         };
         lockfile.tools.insert("ripgrep".to_string(), vec![tool]);
@@ -2060,7 +1894,7 @@ backend = "conda:jq"
                 version: "1.7.1".to_string(),
                 backend: Some("conda:jq".to_string()),
                 options: BTreeMap::new(),
-                env: None,
+
                 platforms,
             }],
         );
@@ -2148,7 +1982,7 @@ backend = "conda:jq"
                 version: "1.0.0".to_string(),
                 backend: Some("conda:mytool".to_string()),
                 options: BTreeMap::new(),
-                env: None,
+
                 platforms,
             }],
         );
@@ -2261,7 +2095,7 @@ backend = "conda:jq"
                 version: "1.7.1".to_string(),
                 backend: Some("aqua:jqlang/jq".to_string()),
                 options: BTreeMap::new(),
-                env: None,
+
                 platforms: BTreeMap::new(),
             }],
         );
