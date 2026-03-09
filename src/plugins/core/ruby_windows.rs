@@ -18,7 +18,7 @@ use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, github, plugins};
 use async_trait::async_trait;
-use eyre::Result;
+use eyre::{Result, bail};
 use itertools::Itertools;
 use versions::Versioning;
 use xx::regex;
@@ -205,6 +205,13 @@ impl Backend for RubyPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
+        if !super::ruby_common::is_mri_version(&tv.version) {
+            bail!(
+                "Ruby engine '{}' is not supported on Windows.\n\
+                 Only standard MRI Ruby versions can be installed via RubyInstaller2.",
+                tv.version
+            );
+        }
         let tarball = self.download(&tv, ctx.pr.as_ref()).await?;
         self.verify_checksum(ctx, &mut tv, &tarball)?;
         self.install(ctx, &tv, &tarball).await?;
