@@ -54,7 +54,7 @@ EOF
 
 # Usage spec handles its own flags (parsed by usage spec, not passed as $@)
 # shellcheck disable=SC2016
-assert "mise run with_usage -x myfile 2>&1" '[with_usage -x myfile] $ echo "custom=$usage_custom file=$usage_file args=$@"
+assert "mise run with_usage -x myfile 2>&1" '[with_usage] $ echo "custom=$usage_custom file=$usage_file args=$@"
 custom=true file=myfile args='
 
 # But mise flags still go to mise (myfile is consumed by usage spec, not passed to $@)
