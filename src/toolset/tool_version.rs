@@ -264,10 +264,18 @@ impl ToolVersion {
                 return build(v);
             }
             if !is_offline
+                && (!settings.prefer_offline() || opts.latest_versions)
                 && let Some(v) = backend
                     .latest_version_with_opts(config, None, opts.before_date)
                     .await?
             {
+                return build(v);
+            }
+            // In prefer-offline mode, if no installed version was found and we
+            // skipped remote resolution, return early with "latest" rather than
+            // falling through to install logic. The backend install path handles
+            // "latest" correctly (e.g. GitHub uses /releases/latest API endpoint).
+            if settings.prefer_offline() && !opts.latest_versions {
                 return build(v);
             }
         }
@@ -286,8 +294,7 @@ impl ToolVersion {
         }
         // In prefer-offline mode (hook-env, activate, exec), skip remote version
         // fetching for fully-qualified versions (e.g. "2.3.2") that aren't installed.
-        // Prefix versions like "2" or "latest" still need remote resolution to find
-        // e.g. "2.1.0" or the actual latest version number.
+        // Prefix versions like "2" still need remote resolution to find e.g. "2.1.0".
         if settings.prefer_offline() && v.matches('.').count() >= 2 {
             return build(v);
         }
