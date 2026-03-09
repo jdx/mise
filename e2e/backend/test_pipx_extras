@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 require_cmd python3
 
-# use python3.12 if available since 3.13 has issues with harlequin
+# use python3.12 if available for consistency
 if command -v python3.12 &>/dev/null; then
 	ln -s "$(which python3.12)" "$HOME/bin/python3"
 fi
@@ -25,10 +25,10 @@ export MISE_PYTHON_COMPILE=0
 cat >.mise.toml <<EOF
 [tools]
 pipx = "1.5.0"
-"pipx:harlequin" = {version = "1.24.0", extras = "s3"}
+"pipx:harlequin" = {version = "2.5.1", extras = "s3"}
 EOF
 
 # Install the tools
 mise install
 
-assert_contains "mise x -- harlequin --version" "1.24.0"
+assert_contains "mise x -- harlequin --version" "2.5.1"
