@@ -1,6 +1,7 @@
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::static_helpers::lookup_with_fallback;
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::Settings;
@@ -373,6 +374,10 @@ impl CondaBackend {
 
         Self::make_bins_executable(&install_path)?;
 
+        if let Some(bins) = self.get_filter_bins(tv) {
+            self.create_symlink_bin_dir(tv, bins)?;
+        }
+
         // Store lockfile info
         let n_deps = all_records.len() - 1; // all except main
         let dep_basenames: Vec<String> = all_records[..n_deps]
@@ -465,6 +470,10 @@ impl CondaBackend {
 
         Self::make_bins_executable(&install_path)?;
 
+        if let Some(bins) = self.get_filter_bins(tv) {
+            self.create_symlink_bin_dir(tv, bins)?;
+        }
+
         // Repopulate tv.conda_packages from lockfile so downstream lockfile update preserves entries
         for basename in &dep_basenames {
             if let Some(pkg_info) = lockfile.get_conda_package(platform_key, basename) {
@@ -491,6 +500,58 @@ impl CondaBackend {
                 if path.is_file() {
                     file::make_executable(&path)?;
                 }
+            }
+        }
+        Ok(())
+    }
+
+    fn get_filter_bins(&self, tv: &ToolVersion) -> Option<Vec<String>> {
+        let opts = tv.request.options();
+        let filter_bins = lookup_with_fallback(&opts, "filter_bins")?;
+
+        Some(
+            filter_bins
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
+        )
+    }
+
+    /// Creates a `.mise-bins` directory with symlinks only to the binaries specified in filter_bins.
+    fn create_symlink_bin_dir(&self, tv: &ToolVersion, bins: Vec<String>) -> Result<()> {
+        let symlink_dir = tv.install_path().join(".mise-bins");
+        file::create_dir_all(&symlink_dir)?;
+
+        let install_path = tv.install_path();
+        let src_dirs: Vec<PathBuf> = if cfg!(windows) {
+            vec![
+                install_path.join("Library").join("bin"),
+                install_path.join("bin"),
+            ]
+        } else {
+            vec![install_path.join("bin")]
+        };
+
+        for bin_name in bins {
+            let mut found = false;
+            for dir in &src_dirs {
+                let src = dir.join(&bin_name);
+                if src.exists() {
+                    let dst = symlink_dir.join(&bin_name);
+                    if !dst.exists() {
+                        file::make_symlink_or_copy(&src, &dst)?;
+                    }
+                    found = true;
+                    break;
+                }
+            }
+
+            if !found {
+                warn!(
+                    "Could not find binary '{}' in install directories. Available paths: {:?}",
+                    bin_name, src_dirs
+                );
             }
         }
         Ok(())
@@ -672,6 +733,12 @@ impl Backend for CondaBackend {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
+        if let Some(bins) = self.get_filter_bins(tv) {
+            if !bins.is_empty() {
+                return Ok(vec![tv.install_path().join(".mise-bins")]);
+            }
+        }
+
         let install_path = tv.install_path();
         if cfg!(windows) {
             // Conda packages on Windows can put binaries in either location
