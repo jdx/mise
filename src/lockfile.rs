@@ -1520,7 +1520,6 @@ mod tests {
             version: version.to_string(),
             backend: Some(backend.to_string()),
             options: BTreeMap::new(),
-
             platforms: BTreeMap::new(),
         }
     }
@@ -1547,7 +1546,6 @@ mod tests {
             version: version.to_string(),
             backend: Some(backend.to_string()),
             options: BTreeMap::new(),
-
             platforms,
         }
     }
@@ -1629,7 +1627,6 @@ backend = "core:python"
             version: "20.10.0".to_string(),
             backend: Some("core:node".to_string()),
             options: BTreeMap::new(),
-
             platforms,
         };
 
@@ -1695,7 +1692,6 @@ checksum = "blake3:abc123"
             version: "14.0.0".to_string(),
             backend: Some("ubi:BurntSushi/ripgrep".to_string()),
             options: BTreeMap::new(), // Empty options
-
             platforms: BTreeMap::new(),
         };
         lockfile.tools.insert("ripgrep".to_string(), vec![tool]);
@@ -1723,7 +1719,6 @@ checksum = "blake3:abc123"
             version: "14.0.0".to_string(),
             backend: Some("ubi:BurntSushi/ripgrep".to_string()),
             options,
-
             platforms: BTreeMap::new(),
         };
         lockfile.tools.insert("ripgrep".to_string(), vec![tool]);
@@ -1894,7 +1889,6 @@ backend = "conda:jq"
                 version: "1.7.1".to_string(),
                 backend: Some("conda:jq".to_string()),
                 options: BTreeMap::new(),
-
                 platforms,
             }],
         );
@@ -1982,7 +1976,6 @@ backend = "conda:jq"
                 version: "1.0.0".to_string(),
                 backend: Some("conda:mytool".to_string()),
                 options: BTreeMap::new(),
-
                 platforms,
             }],
         );

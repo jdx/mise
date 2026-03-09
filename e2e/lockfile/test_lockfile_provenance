@@ -40,7 +40,7 @@ awk -v platform="$PLATFORM" '
     # Detect entering the target platform section and add provenance after the header
     { print }
     index($0, "platforms." platform) > 0 { in_section=1; print "provenance = \"github-attestations\"" }
-    /^\[/ && !/platforms/ { in_section=0 }
+    /^\[/ { in_section=0 }
 ' mise.lock >mise.lock.tmp && mv mise.lock.tmp mise.lock
 assert_contains "cat mise.lock" 'provenance = "github-attestations"'
 
