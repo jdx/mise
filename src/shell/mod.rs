@@ -76,6 +76,17 @@ pub trait Shell: Display {
     fn deactivate(&self) -> String;
     fn set_env(&self, k: &str, v: &str) -> String;
     fn prepend_env(&self, k: &str, v: &str) -> String;
+    /// Prepend env, moving existing entries to the front if already present.
+    /// Default falls back to prepend_env. Fish overrides with --move flag.
+    fn move_prepend_env(&self, k: &str, v: &str) -> String {
+        self.prepend_env(k, v)
+    }
+    /// Whether this shell natively deduplicates/reorders PATH entries.
+    /// When true, activate_shims skips the is_dir_in_path guard and uses
+    /// MovePrependEnv to ensure correct ordering on re-source.
+    fn supports_move_path(&self) -> bool {
+        false
+    }
     fn unset_env(&self, k: &str) -> String;
 
     /// Set a shell alias. Returns empty string if not supported by this shell.
@@ -98,14 +109,19 @@ pub trait Shell: Display {
             .map(|p| match p {
                 ActivatePrelude::SetEnv(k, v) => self.set_env(k, v),
                 ActivatePrelude::PrependEnv(k, v) => self.prepend_env(k, v),
+                ActivatePrelude::MovePrependEnv(k, v) => self.move_prepend_env(k, v),
             })
             .join("")
     }
 }
 
+#[allow(clippy::enum_variant_names)]
 pub enum ActivatePrelude {
     SetEnv(String, String),
     PrependEnv(String, String),
+    /// Like PrependEnv but moves existing entries to the front (for fish --move).
+    /// Used only by activate_shims to reorder paths on re-source.
+    MovePrependEnv(String, String),
 }
 
 pub struct ActivateOptions {
