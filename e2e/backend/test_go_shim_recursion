@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Test that go: backend tools don't cause infinite process spawning when:
+# - the cache is cleared (forcing _list_remote_versions to call `go list`)
+# - go is available only as a mise shim in PATH (simulating `mise activate --shims` mode)
+# - the configured go version is not installed
+#
+# Without the fix in dependency_env, the go shim would call `mise exec`, which
+# would resolve the go: backend tool again, calling `go list` via shim, etc. → fork bomb.
+# With the fix, shims are stripped from dependency_env PATH so go list fails cleanly.
+
+# Create a fake go shim that mimics real mise shim behavior:
+# it calls `mise exec -- go "$@"`, triggering recursive mise resolution
+mkdir -p "$MISE_DATA_DIR/shims"
+cat >"$MISE_DATA_DIR/shims/go" <<'SHIM'
+#!/usr/bin/env bash
+exec mise exec -- go "$@"
+SHIM
+chmod +x "$MISE_DATA_DIR/shims/go"
+
+# Add the shims directory to PATH, simulating the effect of `mise activate bash --shims`.
+# In --shims mode the shims dir is added to the shell's PATH without setting __MISE_DIFF,
+# so PRISTINE_ENV ends up containing the shims dir and dependency_env inherits it.
+export PATH="$MISE_DATA_DIR/shims:$PATH"
+
+# Configure a go: backend tool plus a go version that is NOT installed.
+# The go: backend's _list_remote_versions calls `go list` using dependency_env;
+# since go@1.23.3 is not installed, the only `go` available is the shim above.
+cat >>mise.toml <<'EOF'
+[tools]
+"go:github.com/pulumi/upgrade-provider" = "main"
+go = "1.23.3"
+EOF
+mise trust --yes
+
+# Clear the remote version cache so _list_remote_versions must actually call `go list`
+# (without this, the cached versions would be returned and the shim would not be called)
+mise cache clear
+
+# This must complete within the timeout without spawning infinite child processes.
+# Without the fix: fork bomb (OOM / timeout).
+# With the fix: go list fails cleanly (go not in dependency PATH), command completes.
+output="$(run_with_timeout 15 mise ls --json -c)" || {
+	echo "ERROR: mise ls timed out or failed (likely infinite recursion fork bomb)"
+	exit 1
+}
+assert_contains "echo '$output'" '"go"'
