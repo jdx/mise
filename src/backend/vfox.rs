@@ -19,7 +19,7 @@ use crate::config::{Config, Settings};
 use crate::dirs;
 use crate::env_diff::EnvMap;
 use crate::install_context::InstallContext;
-use crate::lockfile::ProvenanceType;
+use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::plugins::Plugin;
 use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::toolset::{ToolVersion, Toolset, install_state};
@@ -245,6 +245,38 @@ impl Backend for VfoxBackend {
             .await?;
 
         Ok(pre_install.url)
+    }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> eyre::Result<PlatformInfo> {
+        let config = Config::get().await?;
+        self.ensure_plugin_installed(&config).await?;
+
+        // Map mise platform names to vfox platform names
+        let os = match target.os_name() {
+            "macos" => "darwin",
+            os => os,
+        };
+        let arch = match target.arch_name() {
+            "x64" => "amd64",
+            arch => arch,
+        };
+
+        let (vfox, _log_rx) = self.plugin.vfox();
+        let (url, att) = vfox
+            .pre_install_provenance_for_platform(&self.pathname, &tv.version, os, arch)
+            .await?;
+
+        let provenance = att.map(verified_attestation_to_provenance);
+
+        Ok(PlatformInfo {
+            url,
+            provenance,
+            ..Default::default()
+        })
     }
 }
 

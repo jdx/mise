@@ -18,7 +18,7 @@ use crate::hooks::mise_env::{MiseEnvContext, MiseEnvResult};
 use crate::hooks::mise_path::MisePathContext;
 use crate::hooks::parse_legacy_file::ParseLegacyFileResponse;
 use crate::hooks::post_install::PostInstallContext;
-use crate::hooks::pre_install::{PreInstall, VerifiedAttestation};
+use crate::hooks::pre_install::{PreInstall, PreInstallAttestation, VerifiedAttestation};
 use crate::http::CLIENT;
 use crate::metadata::Metadata;
 use crate::plugin::Plugin;
@@ -205,6 +205,23 @@ impl Vfox {
     ) -> Result<PreInstall> {
         let sdk = self.get_sdk(sdk)?;
         sdk.pre_install_for_platform(version, os, arch).await
+    }
+
+    /// Returns the download URL and the highest-priority verified attestation type
+    /// declared by the plugin for the given platform, without performing actual
+    /// verification or installation.
+    pub async fn pre_install_provenance_for_platform(
+        &self,
+        sdk: &str,
+        version: &str,
+        os: &str,
+        arch: &str,
+    ) -> Result<(Option<String>, Option<VerifiedAttestation>)> {
+        let pre = self
+            .pre_install_for_platform(sdk, version, os, arch)
+            .await?;
+        let att = pre.attestation.and_then(attestation_to_verified);
+        Ok((pre.url, att))
     }
 
     pub async fn metadata(&self, sdk: &str) -> Result<Metadata> {
@@ -467,6 +484,36 @@ impl Vfox {
         }
         Ok(())
     }
+}
+
+/// Convert a `PreInstallAttestation` to the highest-priority `VerifiedAttestation` variant
+/// declared by the plugin. Priority: GitHub > SLSA > Cosign.
+///
+/// This is used by `pre_install_provenance_for_platform` to report what *type* of attestation
+/// the plugin declares, without actually performing sigstore verification.
+fn attestation_to_verified(att: PreInstallAttestation) -> Option<VerifiedAttestation> {
+    // GitHub attestations have the highest priority
+    if let Some(owner) = att.github_owner
+        && let Some(repo) = att.github_repo
+    {
+        return Some(VerifiedAttestation::GithubAttestations {
+            owner,
+            repo,
+            signer_workflow: att.github_signer_workflow,
+        });
+    }
+    // SLSA is second priority
+    if let Some(provenance_path) = att.slsa_provenance_path {
+        return Some(VerifiedAttestation::Slsa { provenance_path });
+    }
+    // Cosign is third priority
+    if let Some(sig_or_bundle_path) = att.cosign_sig_or_bundle_path {
+        return Some(VerifiedAttestation::Cosign {
+            sig_or_bundle_path,
+            public_key_path: att.cosign_public_key_path,
+        });
+    }
+    None
 }
 
 impl Default for Vfox {
