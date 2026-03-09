@@ -913,8 +913,8 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
             if env.is_some() {
                 continue; // only look at base configs
             }
-            if let Some(cf) = config.config_files.get(config_path) {
-                if let Ok(trs) = cf.to_tool_request_set() {
+            if let Some(cf) = config.config_files.get(config_path)
+                && let Ok(trs) = cf.to_tool_request_set() {
                     for (ba, _requests, _source) in trs.iter() {
                         if let Some(entries) = tools_with_env.get_mut(&ba.short) {
                             // This tool is defined in a base config — add a base marker
@@ -929,7 +929,6 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
                         }
                     }
                 }
-            }
         }
 
         // Preserve base entries from existing lockfile that were overridden by env configs
