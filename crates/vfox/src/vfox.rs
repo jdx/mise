@@ -400,7 +400,9 @@ impl Vfox {
                     attestation.github_signer_workflow.as_deref(),
                 )
                 .await?;
-                // GitHub attestations have the highest priority
+                // All configured verifications always execute (no short-circuit).
+                // Priority only affects which variant is *recorded* in `verified`.
+                // GitHub attestations have the highest recording priority.
                 verified = Some(VerifiedAttestation::GithubAttestations {
                     owner: owner.clone(),
                     repo: repo.clone(),
@@ -420,7 +422,8 @@ impl Vfox {
                     sigstore_verification::verify_cosign_signature(file, sig_or_bundle_path)
                         .await?;
                 }
-                // Only record Cosign if nothing higher-priority was verified
+                // Cosign has the lowest recording priority: only record it if no
+                // higher-priority verification was already recorded.
                 if verified.is_none() {
                     verified = Some(VerifiedAttestation::Cosign {
                         sig_or_bundle_path: sig_or_bundle_path.clone(),
@@ -433,7 +436,8 @@ impl Vfox {
                 let min_level = attestation.slsa_min_level.unwrap_or(1u8);
                 sigstore_verification::verify_slsa_provenance(file, provenance_path, min_level)
                     .await?;
-                // SLSA is higher priority than Cosign, lower than GitHub
+                // SLSA has mid-tier recording priority: record it unless GitHub
+                // attestation (higher priority) was already recorded.
                 if !matches!(
                     verified,
                     Some(VerifiedAttestation::GithubAttestations { .. })
