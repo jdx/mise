@@ -1,5 +1,31 @@
 # Changelog
 
+## [2026.3.7](https://github.com/jdx/mise/compare/v2026.3.6..v2026.3.7) - 2026-03-10
+
+### 🐛 Bug Fixes
+
+- **(conda)** exclude transitive dependency binaries from PATH by @simonepri in [#8543](https://github.com/jdx/mise/pull/8543)
+
+### New Contributors
+
+- @simonepri made their first contribution in [#8543](https://github.com/jdx/mise/pull/8543)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`stackrox/stackrox/roxctl`](https://github.com/stackrox/stackrox/roxctl)
+
+#### Updated Packages (7)
+
+- [`dprint/dprint`](https://github.com/dprint/dprint)
+- [`j178/prek`](https://github.com/j178/prek)
+- [`jdx/hk`](https://github.com/jdx/hk)
+- [`jdx/mise`](https://github.com/jdx/mise)
+- [`jdx/usage`](https://github.com/jdx/usage)
+- [`mvdan/sh`](https://github.com/mvdan/sh)
+- [`pnpm/pnpm`](https://github.com/pnpm/pnpm)
+
 ## [2026.3.6](https://github.com/jdx/mise/compare/v2026.3.5..v2026.3.6) - 2026-03-09
 
 ### 🐛 Bug Fixes

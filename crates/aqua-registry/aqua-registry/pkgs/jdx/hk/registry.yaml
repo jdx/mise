@@ -22,6 +22,25 @@ packages:
         supported_envs:
           - linux
           - darwin/arm64
+      - version_constraint: semver("< 1.11.0")
+        asset: hk-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
       - version_constraint: "true"
         asset: hk-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -41,3 +60,4 @@ packages:
           - linux
           - darwin/arm64
           - windows
+        github_immutable_release: true
