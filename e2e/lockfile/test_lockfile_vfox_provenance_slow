@@ -24,7 +24,10 @@ mise lock --platform "$PLATFORM"
 assert "test -f mise.lock"
 assert_contains "cat mise.lock" "\"platforms.$PLATFORM\""
 
-# Inject provenance into the lockfile (simulating a previously-verified install)
+# Inject provenance into the lockfile (simulating a previously-verified install).
+# NOTE: This awk matches every platform section header. It works here because
+# the fixture has a single tool. For multi-tool lockfiles, add the tool name
+# to the match (e.g. index($0, "vfox:version-fox/vfox-cmake") && ...).
 awk -v platform="$PLATFORM" '
     { print }
     index($0, "platforms." platform) > 0 { print "provenance = \"github-attestations\"" }
