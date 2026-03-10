@@ -221,6 +221,8 @@ impl Vfox {
             .pre_install_for_platform(sdk, version, os, arch)
             .await?;
         let att = pre.attestation.and_then(attestation_to_verified);
+        // Note: pre.sha256 / pre.sha512 are intentionally not returned here;
+        // checksum verification only happens during `mise install`, not `mise lock`.
         Ok((pre.url, att))
     }
 
