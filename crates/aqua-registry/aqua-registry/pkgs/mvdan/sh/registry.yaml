@@ -17,7 +17,7 @@ packages:
           - amd64
         files:
           - name: shfmt
-      - version_constraint: "true"
+      - version_constraint: semver("<= 3.12.0")
         format: raw
         asset: shfmt_{{.Version}}_{{.OS}}_{{.Arch}}
         supported_envs:
@@ -30,3 +30,12 @@ packages:
           type: github_release
           asset: sha256sums.txt
           algorithm: sha256
+      - version_constraint: "true"
+        format: raw
+        asset: shfmt_{{.Version}}_{{.OS}}_{{.Arch}}
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        files:
+          - name: shfmt
