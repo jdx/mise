@@ -58,6 +58,18 @@ packages:
           windows: win
       - version_constraint: Version == "v7.0.0-alpha.1"
         no_asset: true
+      - version_constraint: semver("<= 10.26.1")
+        asset: pnpm-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        files:
+          - name: pnpm
+            link: pnpm
+            hard: true
+        replacements:
+          amd64: x64
+          darwin: macos
+          windows: win
       - version_constraint: "true"
         asset: pnpm-{{.OS}}-{{.Arch}}
         format: raw
@@ -70,3 +82,4 @@ packages:
           amd64: x64
           darwin: macos
           windows: win
+        github_immutable_release: true

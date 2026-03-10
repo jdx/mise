@@ -17,7 +17,7 @@ use itertools::Itertools;
 use rattler::install::{InstallDriver, InstallOptions, PythonInfo, link_package};
 use rattler_conda_types::{
     Channel, ChannelConfig, GenericVirtualPackage, MatchSpec, ParseStrictness,
-    Platform as CondaPlatform, RepoDataRecord, prefix::Prefix,
+    Platform as CondaPlatform, RepoDataRecord, prefix::Prefix, prefix_record::PathsEntry,
 };
 use rattler_repodata_gateway::{Gateway, RepoData};
 use rattler_solve::{
@@ -256,17 +256,17 @@ impl CondaBackend {
         prefix: &Prefix,
         driver: &InstallDriver,
         python_info: Option<PythonInfo>,
-    ) -> Result<()> {
+    ) -> Result<Vec<PathsEntry>> {
         let temp_dir = tempfile::tempdir()?;
         Self::extract_package(archive, temp_dir.path()).await?;
         let install_options = InstallOptions {
             python_info,
             ..InstallOptions::default()
         };
-        link_package(temp_dir.path(), prefix, driver, install_options)
+        let paths = link_package(temp_dir.path(), prefix, driver, install_options)
             .await
             .map_err(|e| eyre::eyre!("failed to link {}: {}", archive.display(), e))?;
-        Ok(())
+        Ok(paths)
     }
 
     /// Extract PythonInfo from the solved records if a python package is present.
@@ -365,13 +365,20 @@ impl CondaBackend {
             .map_err(|e| eyre::eyre!("failed to create conda prefix: {}", e))?;
         let driver = InstallDriver::default();
 
+        let mut main_paths = Vec::new();
         for (record, archive) in all_records.iter().zip(downloaded.iter()) {
             let name = record.package_record.name.as_normalized();
+            let is_main = name == tool_name_norm;
             ctx.pr.set_message(format!("installing {name}"));
-            Self::install_package(archive, &prefix, &driver, python_info.clone()).await?;
+            let paths =
+                Self::install_package(archive, &prefix, &driver, python_info.clone()).await?;
+            if is_main {
+                main_paths = paths;
+            }
         }
 
         Self::make_bins_executable(&install_path)?;
+        self.create_symlink_bin_dir(tv, &main_paths)?;
 
         // Store lockfile info
         let n_deps = all_records.len() - 1; // all except main
@@ -457,13 +464,17 @@ impl CondaBackend {
             .map_err(|e| eyre::eyre!("failed to create conda prefix: {}", e))?;
         let driver = InstallDriver::default();
 
+        let mut main_paths = Vec::new();
         for archive in &downloaded {
             let filename = archive.file_name().and_then(|n| n.to_str()).unwrap_or("?");
             ctx.pr.set_message(format!("installing {filename}"));
-            Self::install_package(archive, &prefix, &driver, python_info.clone()).await?;
+            // main package is always last, so main_paths ends up with its entries
+            main_paths =
+                Self::install_package(archive, &prefix, &driver, python_info.clone()).await?;
         }
 
         Self::make_bins_executable(&install_path)?;
+        self.create_symlink_bin_dir(tv, &main_paths)?;
 
         // Repopulate tv.conda_packages from lockfile so downstream lockfile update preserves entries
         for basename in &dep_basenames {
@@ -491,6 +502,43 @@ impl CondaBackend {
                 if path.is_file() {
                     file::make_executable(&path)?;
                 }
+            }
+        }
+        Ok(())
+    }
+
+    /// Creates a `.mise-bins` directory with symlinks only to binaries from the main package.
+    /// Uses the PathsEntry list returned by rattler's link_package to identify which files
+    /// belong to the main package (excluding transitive dependency binaries).
+    fn create_symlink_bin_dir(&self, tv: &ToolVersion, main_paths: &[PathsEntry]) -> Result<()> {
+        let symlink_dir = tv.install_path().join(".mise-bins");
+        file::create_dir_all(&symlink_dir)?;
+
+        let install_path = tv.install_path();
+        let bin_dirs: &[&std::path::Path] = if cfg!(windows) {
+            &[
+                std::path::Path::new("Library/bin"),
+                std::path::Path::new("Scripts"),
+                std::path::Path::new("bin"),
+            ]
+        } else {
+            &[std::path::Path::new("bin")]
+        };
+
+        for entry in main_paths {
+            if !bin_dirs
+                .iter()
+                .any(|dir| entry.relative_path.starts_with(dir))
+            {
+                continue;
+            }
+            let Some(bin_name) = entry.relative_path.file_name() else {
+                continue;
+            };
+            let src = install_path.join(&entry.relative_path);
+            let dst = symlink_dir.join(bin_name);
+            if src.exists() && !dst.exists() {
+                file::make_symlink_or_copy(&src, &dst)?;
             }
         }
         Ok(())
@@ -672,6 +720,12 @@ impl Backend for CondaBackend {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
+        let mise_bins = tv.install_path().join(".mise-bins");
+        if mise_bins.exists() {
+            return Ok(vec![mise_bins]);
+        }
+
+        // Fallback for tools installed before this change
         let install_path = tv.install_path();
         if cfg!(windows) {
             // Conda packages on Windows can put binaries in either location

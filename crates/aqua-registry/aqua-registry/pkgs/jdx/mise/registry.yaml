@@ -38,6 +38,21 @@ packages:
           - darwin
       - version_constraint: semver(">= 2025.7.13, <= 2025.7.15")
         no_asset: true
+      - version_constraint: semver("<= 2025.8.21")
+        asset: mise-{{.Version}}-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+        format: tar.gz
+        files:
+          - name: mise
+            src: mise/bin/mise
+        overrides:
+          - goos: darwin
+            asset: mise-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        replacements:
+          amd64: x64
+          darwin: macos
+        supported_envs:
+          - linux
+          - darwin
       - version_constraint: "true"
         asset: mise-{{.Version}}-{{.OS}}-{{.Arch}}-musl.{{.Format}}
         format: tar.gz
@@ -53,3 +68,4 @@ packages:
         supported_envs:
           - linux
           - darwin
+        github_immutable_release: true

@@ -106,25 +106,11 @@ pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result
 }
 
 async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<ForgejoRelease> {
-    let url = format!("{api_url}/repos/{repo}/releases/tags/{tag}");
-    let headers = get_headers(&url);
-    crate::http::HTTP_FETCH
-        .json_with_headers(url, &headers)
-        .await
-}
-
-pub async fn get_release_latest(api_url: &str, repo: &str) -> Result<ForgejoRelease> {
-    let key = format!("{api_url}-{repo}-latest").to_kebab_case();
-    let cache = get_release_cache(&key).await;
-    let cache = cache.get(&key).unwrap();
-    Ok(cache
-        .get_or_try_init_async(async || get_release_latest_(api_url, repo).await)
-        .await?
-        .clone())
-}
-
-async fn get_release_latest_(api_url: &str, repo: &str) -> Result<ForgejoRelease> {
-    let url = format!("{api_url}/repos/{repo}/releases/latest");
+    let url = if tag == "latest" {
+        format!("{api_url}/repos/{repo}/releases/latest")
+    } else {
+        format!("{api_url}/repos/{repo}/releases/tags/{tag}")
+    };
     let headers = get_headers(&url);
     crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
