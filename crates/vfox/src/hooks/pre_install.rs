@@ -350,6 +350,20 @@ mod tests {
     }
 
     #[test]
+    async fn test_github_attestation_repo_without_owner() {
+        let lua = Lua::new();
+        let table = lua.create_table().unwrap();
+        table.set("github_repo", "repo").unwrap();
+        let result = PreInstallAttestation::from_lua(mlua::Value::Table(table), &lua);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("github_repo requires github_owner"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
     async fn test_github_attestation_signer_without_owner_repo() {
         let lua = Lua::new();
         let table = lua.create_table().unwrap();
