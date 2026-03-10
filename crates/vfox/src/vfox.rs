@@ -438,6 +438,7 @@ impl Vfox {
                     .await?;
                 // SLSA has mid-tier recording priority: record it unless GitHub
                 // attestation (higher priority) was already recorded.
+                // Note: if Cosign also passed, SLSA supersedes it (SLSA > Cosign).
                 if !matches!(
                     verified,
                     Some(VerifiedAttestation::GithubAttestations { .. })
