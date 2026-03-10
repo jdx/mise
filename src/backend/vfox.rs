@@ -156,8 +156,8 @@ impl Backend for VfoxBackend {
                     .unwrap_or_else(|| "no verification".to_string());
                 return Err(eyre!(
                     "Lockfile requires {expected} provenance for {tv} but {got_str} was used. \
-                     This may indicate a downgrade attack. Enable the corresponding verification setting \
-                     or update the lockfile."
+                     This may indicate a downgrade attack. Update the lockfile if the plugin's \
+                     attestation configuration has intentionally changed."
                 ));
             }
         }
