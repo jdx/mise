@@ -229,15 +229,7 @@ impl Backend for VfoxBackend {
         let config = Config::get().await?;
         self.ensure_plugin_installed(&config).await?;
 
-        // Map mise platform names to vfox platform names
-        let os = match target.os_name() {
-            "macos" => "darwin",
-            os => os,
-        };
-        let arch = match target.arch_name() {
-            "x64" => "amd64",
-            arch => arch,
-        };
+        let (os, arch) = Self::to_vfox_platform(target);
 
         let (vfox, _log_rx) = self.plugin.vfox();
         let pre_install = vfox
@@ -261,15 +253,7 @@ impl Backend for VfoxBackend {
         let config = Config::get().await?;
         self.ensure_plugin_installed(&config).await?;
 
-        // Map mise platform names to vfox platform names
-        let os = match target.os_name() {
-            "macos" => "darwin",
-            os => os,
-        };
-        let arch = match target.arch_name() {
-            "x64" => "amd64",
-            arch => arch,
-        };
+        let (os, arch) = Self::to_vfox_platform(target);
 
         let (vfox, _log_rx) = self.plugin.vfox();
         let (url, att) = vfox
@@ -289,6 +273,19 @@ impl Backend for VfoxBackend {
 impl VfoxBackend {
     fn is_backend_plugin(&self) -> bool {
         matches!(&self.plugin_enum, PluginEnum::VfoxBackend(_))
+    }
+
+    /// Map mise platform names to the names expected by vfox plugins.
+    fn to_vfox_platform(target: &PlatformTarget) -> (&str, &str) {
+        let os = match target.os_name() {
+            "macos" => "darwin",
+            os => os,
+        };
+        let arch = match target.arch_name() {
+            "x64" => "amd64",
+            arch => arch,
+        };
+        (os, arch)
     }
 
     fn get_tool_name(&self) -> eyre::Result<&str> {
