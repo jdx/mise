@@ -252,6 +252,12 @@ impl Backend for VfoxBackend {
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> eyre::Result<PlatformInfo> {
+        // Backend plugins use backend_install and have no PreInstall hook;
+        // fall back to the default implementation.
+        if self.is_backend_plugin() {
+            return Ok(PlatformInfo::default());
+        }
+
         let config = Config::get().await?;
         self.ensure_plugin_installed(&config).await?;
 
