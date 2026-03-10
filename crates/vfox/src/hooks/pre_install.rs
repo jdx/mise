@@ -60,9 +60,14 @@ impl Plugin {
 
 /// The type of attestation that was successfully verified.
 ///
-/// Variants mirror the vfox-relevant subset of `ProvenanceType` in `src/lockfile.rs`
-/// (i.e. all variants except `Minisign`). When adding a new vfox attestation type,
-/// add it to both enums and update `verified_attestation_to_provenance()`.
+/// This is the vfox-relevant subset of `ProvenanceType` in `src/lockfile.rs`.
+/// `Minisign` is intentionally absent — vfox plugins do not produce Minisign
+/// signatures, so there is no vfox-side variant for it.
+///
+/// When adding a new vfox attestation type, add a variant here **and** add the
+/// corresponding variant to `ProvenanceType` in `src/lockfile.rs`, then update
+/// `verified_attestation_to_provenance()` to bridge the two enums.
+///
 /// Priority order (highest first): GithubAttestations > Slsa > Cosign.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerifiedAttestation {
