@@ -313,27 +313,41 @@ impl Client {
         pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
         let url = url.into_url()?;
-        debug!("GET Downloading {} to {}", &url, display_path(path));
-
-        let mut resp = self.get_async_with_headers(url.clone(), headers).await?;
+        debug!("Downloading {} to {}", &url, display_path(path));
 
         let num_chunks = Settings::get().http_download_chunks.max(1) as u64;
-        if num_chunks > 1
-            && let Some(length) = resp.content_length()
-        {
-            let supports_ranges = resp
-                .headers()
-                .get(reqwest::header::ACCEPT_RANGES)
-                .and_then(|v| v.to_str().ok())
-                .is_some_and(|v| v.contains("bytes"));
-            if length >= CHUNK_DOWNLOAD_THRESHOLD && supports_ranges {
-                drop(resp);
-                return self
-                    .download_file_chunked(url, path, headers, length, num_chunks, pr)
-                    .await;
+        if num_chunks > 1 {
+            // Probe with HEAD to check range support without downloading the body.
+            if let Ok(head_resp) = self
+                .send_with_https_fallback(Method::HEAD, url.clone(), headers, "HEAD")
+                .await
+            {
+                let supports_ranges = head_resp
+                    .headers()
+                    .get(reqwest::header::ACCEPT_RANGES)
+                    .and_then(|v| v.to_str().ok())
+                    .is_some_and(|v| v.contains("bytes"));
+                // reqwest's content_length() returns 0 for HEAD responses (no body),
+                // so parse the Content-Length header directly.
+                let length = head_resp
+                    .headers()
+                    .get(reqwest::header::CONTENT_LENGTH)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse::<u64>().ok());
+                if let Some(length) = length {
+                    if length >= CHUNK_DOWNLOAD_THRESHOLD && supports_ranges {
+                        // Use the response URL — it reflects any HTTP→HTTPS upgrade.
+                        let final_url = head_resp.url().clone();
+                        return self
+                            .download_file_chunked(final_url, path, headers, length, num_chunks, pr)
+                            .await;
+                    }
+                }
             }
         }
 
+        // Single-stream fallback (HEAD failed, too small, or no range support).
+        let mut resp = self.get_async_with_headers(url.clone(), headers).await?;
         if let Some(length) = resp.content_length()
             && let Some(pr) = pr
         {
@@ -1207,14 +1221,12 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
         let test_data = generate_test_data(200); // > 100-byte test threshold
 
-        // Initial GET — returns full body with appropriate headers
-        let _initial = server
-            .mock("GET", "/file.bin")
-            .match_header("Range", mockito::Matcher::Missing)
+        // HEAD probe — returns headers indicating range support
+        let _head = server
+            .mock("HEAD", "/file.bin")
             .with_status(200)
             .with_header("Content-Length", "200")
             .with_header("Accept-Ranges", "bytes")
-            .with_body(&test_data)
             .expect_at_most(1)
             .create_async()
             .await;
@@ -1260,7 +1272,15 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
         let test_data = generate_test_data(200);
 
-        // No Accept-Ranges header — should fall back to single GET
+        // HEAD probe — no Accept-Ranges, so chunking is skipped
+        let _head = server
+            .mock("HEAD", "/file.bin")
+            .with_status(200)
+            .with_header("Content-Length", "200")
+            .create_async()
+            .await;
+
+        // Falls through to single GET
         let mock = server
             .mock("GET", "/file.bin")
             .with_status(200)
@@ -1294,6 +1314,16 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
         let test_data = generate_test_data(50); // < 100-byte test threshold
 
+        // HEAD probe — below threshold, so chunking is skipped
+        let _head = server
+            .mock("HEAD", "/file.bin")
+            .with_status(200)
+            .with_header("Content-Length", "50")
+            .with_header("Accept-Ranges", "bytes")
+            .create_async()
+            .await;
+
+        // Falls through to single GET
         let mock = server
             .mock("GET", "/file.bin")
             .with_status(200)
