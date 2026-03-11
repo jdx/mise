@@ -27,7 +27,10 @@ use crate::ui::time::format_duration;
 use crate::{env, file};
 
 /// Files larger than this threshold are downloaded using parallel range requests.
+#[cfg(not(test))]
 const CHUNK_DOWNLOAD_THRESHOLD: u64 = 10 * 1024 * 1024; // 10 MB
+#[cfg(test)]
+const CHUNK_DOWNLOAD_THRESHOLD: u64 = 100; // 100 bytes for testing
 
 #[cfg(not(test))]
 pub static HTTP_VERSION_CHECK: Lazy<Client> =
@@ -1016,5 +1019,339 @@ mod tests {
                 "https://cdn.example.com/artifacts/v1.0.0/file.tar.gz"
             );
         });
+    }
+
+    // --- Chunked download test helpers ---
+
+    fn test_client() -> Client {
+        Client::new(Duration::from_secs(5), ClientKind::Http).unwrap()
+    }
+
+    /// Set up settings with a specific number of download chunks and zero retries,
+    /// then run the provided async test function.
+    async fn with_chunked_settings<F, Fut>(num_chunks: i64, test_fn: F)
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = ()>,
+    {
+        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.http_download_chunks = Some(num_chunks);
+        settings.http_retries = Some(0);
+        crate::config::Settings::reset(Some(settings));
+        test_fn().await;
+        crate::config::Settings::reset(None);
+    }
+
+    fn generate_test_data(size: usize) -> Vec<u8> {
+        (0..size).map(|i| (i % 256) as u8).collect()
+    }
+
+    // --- Chunked download tests ---
+
+    #[tokio::test]
+    async fn test_chunked_download_reassembles_correctly() {
+        let mut server = mockito::Server::new_async().await;
+        let test_data = generate_test_data(1000);
+        let num_chunks: u64 = 4;
+        let chunk_size = test_data.len() as u64 / num_chunks;
+
+        let mut mocks = Vec::new();
+        for i in 0..num_chunks {
+            let start = i * chunk_size;
+            let end = if i == num_chunks - 1 {
+                test_data.len() as u64 - 1
+            } else {
+                (i + 1) * chunk_size - 1
+            };
+            let mock = server
+                .mock("GET", "/file.bin")
+                .match_header("Range", format!("bytes={start}-{end}").as_str())
+                .with_status(206)
+                .with_body(&test_data[start as usize..=end as usize])
+                .create_async()
+                .await;
+            mocks.push(mock);
+        }
+
+        let client = test_client();
+        let dir = tempfile::tempdir().unwrap();
+        let out_path = dir.path().join("file.bin");
+        let url: Url = format!("{}/file.bin", server.url()).parse().unwrap();
+
+        client
+            .download_file_chunked(url, &out_path, &HeaderMap::new(), 1000, num_chunks, None)
+            .await
+            .unwrap();
+
+        let result = std::fs::read(&out_path).unwrap();
+        assert_eq!(result, test_data);
+
+        for m in &mocks {
+            m.assert_async().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_chunked_download_two_chunks() {
+        let mut server = mockito::Server::new_async().await;
+        let test_data = generate_test_data(500);
+        let num_chunks: u64 = 2;
+
+        let mock0 = server
+            .mock("GET", "/file.bin")
+            .match_header("Range", "bytes=0-249")
+            .with_status(206)
+            .with_body(&test_data[0..250])
+            .create_async()
+            .await;
+        let mock1 = server
+            .mock("GET", "/file.bin")
+            .match_header("Range", "bytes=250-499")
+            .with_status(206)
+            .with_body(&test_data[250..500])
+            .create_async()
+            .await;
+
+        let client = test_client();
+        let dir = tempfile::tempdir().unwrap();
+        let out_path = dir.path().join("file.bin");
+        let url: Url = format!("{}/file.bin", server.url()).parse().unwrap();
+
+        client
+            .download_file_chunked(url, &out_path, &HeaderMap::new(), 500, num_chunks, None)
+            .await
+            .unwrap();
+
+        let result = std::fs::read(&out_path).unwrap();
+        assert_eq!(result, test_data);
+        mock0.assert_async().await;
+        mock1.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_chunked_download_uneven_remainder() {
+        let mut server = mockito::Server::new_async().await;
+        let test_data = generate_test_data(1001);
+        let num_chunks: u64 = 4;
+        // chunk_size = 1001 / 4 = 250
+        // chunks: 0-249, 250-499, 500-749, 750-1000
+
+        let ranges = [(0u64, 249u64), (250, 499), (500, 749), (750, 1000)];
+        let mut mocks = Vec::new();
+        for (start, end) in &ranges {
+            let mock = server
+                .mock("GET", "/file.bin")
+                .match_header("Range", format!("bytes={start}-{end}").as_str())
+                .with_status(206)
+                .with_body(&test_data[*start as usize..=*end as usize])
+                .create_async()
+                .await;
+            mocks.push(mock);
+        }
+
+        let client = test_client();
+        let dir = tempfile::tempdir().unwrap();
+        let out_path = dir.path().join("file.bin");
+        let url: Url = format!("{}/file.bin", server.url()).parse().unwrap();
+
+        client
+            .download_file_chunked(url, &out_path, &HeaderMap::new(), 1001, num_chunks, None)
+            .await
+            .unwrap();
+
+        let result = std::fs::read(&out_path).unwrap();
+        assert_eq!(result, test_data);
+
+        for m in &mocks {
+            m.assert_async().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_chunked_download_rejects_non_206() {
+        let mut server = mockito::Server::new_async().await;
+        let test_data = generate_test_data(500);
+
+        // Return 200 instead of 206 for the range request
+        server
+            .mock("GET", "/file.bin")
+            .match_header("Range", mockito::Matcher::Any)
+            .with_status(200)
+            .with_body(&test_data)
+            .create_async()
+            .await;
+
+        let client = test_client();
+        let dir = tempfile::tempdir().unwrap();
+        let out_path = dir.path().join("file.bin");
+        let url: Url = format!("{}/file.bin", server.url()).parse().unwrap();
+
+        let err = client
+            .download_file_chunked(url, &out_path, &HeaderMap::new(), 500, 2, None)
+            .await
+            .unwrap_err();
+
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("200"),
+            "error should mention the status code, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_download_uses_chunked_when_eligible() {
+        let mut server = mockito::Server::new_async().await;
+        let test_data = generate_test_data(200); // > 100-byte test threshold
+
+        // Initial GET — returns full body with appropriate headers
+        let _initial = server
+            .mock("GET", "/file.bin")
+            .match_header("Range", mockito::Matcher::Missing)
+            .with_status(200)
+            .with_header("Content-Length", "200")
+            .with_header("Accept-Ranges", "bytes")
+            .with_body(&test_data)
+            .expect_at_most(1)
+            .create_async()
+            .await;
+
+        // Range requests for 2 chunks: 0-99, 100-199
+        let mock0 = server
+            .mock("GET", "/file.bin")
+            .match_header("Range", "bytes=0-99")
+            .with_status(206)
+            .with_body(&test_data[0..100])
+            .create_async()
+            .await;
+        let mock1 = server
+            .mock("GET", "/file.bin")
+            .match_header("Range", "bytes=100-199")
+            .with_status(206)
+            .with_body(&test_data[100..200])
+            .create_async()
+            .await;
+
+        with_chunked_settings(2, || async {
+            let client = test_client();
+            let dir = tempfile::tempdir().unwrap();
+            let out_path = dir.path().join("file.bin");
+            let url = format!("{}/file.bin", server.url());
+
+            client
+                .download_file_with_headers(url, &out_path, &HeaderMap::new(), None)
+                .await
+                .unwrap();
+
+            let result = std::fs::read(&out_path).unwrap();
+            assert_eq!(result, test_data);
+        })
+        .await;
+
+        mock0.assert_async().await;
+        mock1.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_download_skips_chunking_no_range_support() {
+        let mut server = mockito::Server::new_async().await;
+        let test_data = generate_test_data(200);
+
+        // No Accept-Ranges header — should fall back to single GET
+        let mock = server
+            .mock("GET", "/file.bin")
+            .with_status(200)
+            .with_header("Content-Length", "200")
+            .with_body(&test_data)
+            .expect(1)
+            .create_async()
+            .await;
+
+        with_chunked_settings(2, || async {
+            let client = test_client();
+            let dir = tempfile::tempdir().unwrap();
+            let out_path = dir.path().join("file.bin");
+            let url = format!("{}/file.bin", server.url());
+
+            client
+                .download_file_with_headers(url, &out_path, &HeaderMap::new(), None)
+                .await
+                .unwrap();
+
+            let result = std::fs::read(&out_path).unwrap();
+            assert_eq!(result, test_data);
+        })
+        .await;
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_download_skips_chunking_below_threshold() {
+        let mut server = mockito::Server::new_async().await;
+        let test_data = generate_test_data(50); // < 100-byte test threshold
+
+        let mock = server
+            .mock("GET", "/file.bin")
+            .with_status(200)
+            .with_header("Content-Length", "50")
+            .with_header("Accept-Ranges", "bytes")
+            .with_body(&test_data)
+            .expect(1)
+            .create_async()
+            .await;
+
+        with_chunked_settings(2, || async {
+            let client = test_client();
+            let dir = tempfile::tempdir().unwrap();
+            let out_path = dir.path().join("file.bin");
+            let url = format!("{}/file.bin", server.url());
+
+            client
+                .download_file_with_headers(url, &out_path, &HeaderMap::new(), None)
+                .await
+                .unwrap();
+
+            let result = std::fs::read(&out_path).unwrap();
+            assert_eq!(result, test_data);
+        })
+        .await;
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_download_skips_chunking_when_disabled() {
+        let mut server = mockito::Server::new_async().await;
+        let test_data = generate_test_data(200);
+
+        // Even with large content and Accept-Ranges, chunks=1 means no chunking
+        let mock = server
+            .mock("GET", "/file.bin")
+            .with_status(200)
+            .with_header("Content-Length", "200")
+            .with_header("Accept-Ranges", "bytes")
+            .with_body(&test_data)
+            .expect(1)
+            .create_async()
+            .await;
+
+        with_chunked_settings(1, || async {
+            let client = test_client();
+            let dir = tempfile::tempdir().unwrap();
+            let out_path = dir.path().join("file.bin");
+            let url = format!("{}/file.bin", server.url());
+
+            client
+                .download_file_with_headers(url, &out_path, &HeaderMap::new(), None)
+                .await
+                .unwrap();
+
+            let result = std::fs::read(&out_path).unwrap();
+            assert_eq!(result, test_data);
+        })
+        .await;
+
+        mock.assert_async().await;
     }
 }
