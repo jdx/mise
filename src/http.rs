@@ -334,15 +334,14 @@ impl Client {
                     .get(reqwest::header::CONTENT_LENGTH)
                     .and_then(|v| v.to_str().ok())
                     .and_then(|v| v.parse::<u64>().ok());
-                if let Some(length) = length {
-                    if length >= CHUNK_DOWNLOAD_THRESHOLD && supports_ranges {
+                if let Some(length) = length
+                    && length >= CHUNK_DOWNLOAD_THRESHOLD && supports_ranges {
                         // Use the response URL — it reflects any HTTP→HTTPS upgrade.
                         let final_url = head_resp.url().clone();
                         return self
                             .download_file_chunked(final_url, path, headers, length, num_chunks, pr)
                             .await;
                     }
-                }
             }
         }
 
@@ -385,10 +384,13 @@ impl Client {
             &url, num_chunks, total_size
         );
 
-        let parent = path.parent().ok_or_else(|| eyre::eyre!("path has no parent: {}", path.display()))?;
+        let parent = path
+            .parent()
+            .ok_or_else(|| eyre::eyre!("path has no parent: {}", path.display()))?;
         file::create_dir_all(parent)?;
         let tmp_file = tempfile::NamedTempFile::with_prefix_in(
-            path.file_name().unwrap_or(std::ffi::OsStr::new(".mise-download")),
+            path.file_name()
+                .unwrap_or(std::ffi::OsStr::new(".mise-download")),
             parent,
         )?;
         tmp_file.as_file().set_len(total_size)?;
