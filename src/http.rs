@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -8,10 +9,11 @@ use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use eyre::{Report, Result, bail, ensure};
 use regex::Regex;
-use reqwest::header::{HeaderMap, HeaderValue};
-use reqwest::{ClientBuilder, IntoUrl, Method, Response};
+use reqwest::header::{ACCEPT_ENCODING, HeaderMap, HeaderValue, RANGE};
+use reqwest::{ClientBuilder, IntoUrl, Method, Response, StatusCode};
 use std::sync::LazyLock as Lazy;
 use tokio::sync::OnceCell;
+use tokio::task::JoinSet;
 use tokio_retry::Retry;
 use tokio_retry::strategy::{ExponentialBackoff, jitter};
 use url::Url;
@@ -23,6 +25,9 @@ use crate::netrc;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::time::format_duration;
 use crate::{env, file};
+
+/// Files larger than this threshold are downloaded using parallel range requests.
+const CHUNK_DOWNLOAD_THRESHOLD: u64 = 10 * 1024 * 1024; // 10 MB
 
 #[cfg(not(test))]
 pub static HTTP_VERSION_CHECK: Lazy<Client> =
@@ -306,7 +311,26 @@ impl Client {
     ) -> Result<()> {
         let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));
+
         let mut resp = self.get_async_with_headers(url.clone(), headers).await?;
+
+        let num_chunks = Settings::get().http_download_chunks.max(1) as u64;
+        if num_chunks > 1 {
+            if let Some(length) = resp.content_length() {
+                let supports_ranges = resp
+                    .headers()
+                    .get(reqwest::header::ACCEPT_RANGES)
+                    .and_then(|v| v.to_str().ok())
+                    .is_some_and(|v| v.contains("bytes"));
+                if length >= CHUNK_DOWNLOAD_THRESHOLD && supports_ranges {
+                    drop(resp);
+                    return self
+                        .download_file_chunked(url, path, headers, length, num_chunks, pr)
+                        .await;
+                }
+            }
+        }
+
         if let Some(length) = resp.content_length()
             && let Some(pr) = pr
         {
@@ -325,6 +349,160 @@ impl Client {
             }
         }
         file.persist(path)?;
+        Ok(())
+    }
+
+    /// Download a file using parallel range requests for improved throughput.
+    /// Each chunk is retried independently using the configured `http_retries` backoff.
+    async fn download_file_chunked(
+        &self,
+        url: Url,
+        path: &Path,
+        headers: &HeaderMap,
+        total_size: u64,
+        num_chunks: u64,
+        pr: Option<&dyn SingleReport>,
+    ) -> Result<()> {
+        debug!(
+            "downloading {} in {} chunks ({} bytes)",
+            &url, num_chunks, total_size
+        );
+
+        let parent = path.parent().unwrap();
+        file::create_dir_all(parent)?;
+        let tmp_file = tempfile::NamedTempFile::with_prefix_in(path, parent)?;
+        tmp_file.as_file().set_len(total_size)?;
+        let file = Arc::new(Mutex::new(tmp_file));
+
+        // Per-chunk progress counters; reset on retry so the sum stays accurate.
+        let chunk_progress: Vec<Arc<AtomicU64>> = (0..num_chunks)
+            .map(|_| Arc::new(AtomicU64::new(0)))
+            .collect();
+
+        if let Some(pr) = pr {
+            pr.set_length(total_size);
+            pr.set_position(0);
+        }
+
+        // Prepare headers for chunk requests: same auth/replacements as send_once,
+        // plus Accept-Encoding: identity to ensure byte ranges map 1:1 to file offsets.
+        let mut chunk_url = url.clone();
+        apply_url_replacements(&mut chunk_url);
+        let mut chunk_headers = headers.clone();
+        chunk_headers.extend(netrc_headers(&chunk_url));
+        chunk_headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
+
+        let client = self.reqwest.clone();
+        let retries = Settings::get().http_retries;
+        let chunk_size = total_size / num_chunks;
+
+        let mut join_set = JoinSet::new();
+        for i in 0..num_chunks {
+            let start = i * chunk_size;
+            let end = if i == num_chunks - 1 {
+                total_size - 1 // last chunk takes the remainder
+            } else {
+                (i + 1) * chunk_size - 1
+            };
+
+            let client = client.clone();
+            let url = chunk_url.clone();
+            let headers = chunk_headers.clone();
+            let file = file.clone();
+            let my_progress = chunk_progress[i as usize].clone();
+
+            join_set.spawn(async move {
+                Retry::spawn(default_backoff_strategy(retries), || {
+                    let client = client.clone();
+                    let url = url.clone();
+                    let headers = headers.clone();
+                    let file = file.clone();
+                    let my_progress = my_progress.clone();
+                    async move {
+                        // Reset this chunk's progress on each retry attempt.
+                        my_progress.store(0, Ordering::Relaxed);
+
+                        let range_value = format!("bytes={start}-{end}");
+                        debug!("requesting range {range_value} for {url}");
+                        let resp = client
+                            .request(Method::GET, url.as_str())
+                            .headers(headers)
+                            .header(RANGE, &range_value)
+                            .send()
+                            .await?;
+
+                        if resp.status() != StatusCode::PARTIAL_CONTENT {
+                            bail!(
+                                "server returned {} instead of 206 for range request to {}",
+                                resp.status(),
+                                url
+                            );
+                        }
+
+                        let mut offset = start;
+                        let mut resp = resp;
+                        while let Some(data) = resp.chunk().await? {
+                            {
+                                let mut f = file.lock().unwrap();
+                                f.seek(SeekFrom::Start(offset))?;
+                                f.write_all(&data)?;
+                            }
+                            offset += data.len() as u64;
+                            my_progress.fetch_add(data.len() as u64, Ordering::Relaxed);
+                        }
+
+                        Ok::<(), eyre::Report>(())
+                    }
+                })
+                .await
+            });
+        }
+
+        // Poll for progress updates while waiting for chunks to complete.
+        let mut interval = tokio::time::interval(Duration::from_millis(100));
+        loop {
+            tokio::select! {
+                result = join_set.join_next() => {
+                    match result {
+                        None => break, // all chunks finished
+                        Some(Ok(Ok(()))) => {}  // chunk succeeded
+                        Some(Ok(Err(e))) => {
+                            // A chunk exhausted its retries — abort the rest.
+                            join_set.abort_all();
+                            return Err(e);
+                        }
+                        Some(Err(e)) => {
+                            join_set.abort_all();
+                            return Err(e.into());
+                        }
+                    }
+                }
+                _ = interval.tick() => {
+                    if let Some(pr) = pr {
+                        let total: u64 = chunk_progress.iter()
+                            .map(|p| p.load(Ordering::Relaxed))
+                            .sum();
+                        pr.set_position(total);
+                    }
+                }
+            }
+        }
+
+        // Final progress update.
+        if let Some(pr) = pr {
+            let total: u64 = chunk_progress
+                .iter()
+                .map(|p| p.load(Ordering::Relaxed))
+                .sum();
+            pr.set_position(total);
+        }
+
+        // Persist the fully-written temp file to its final path.
+        let tmp_file = Arc::try_unwrap(file)
+            .map_err(|_| eyre::eyre!("chunked download: failed to reclaim temp file"))?
+            .into_inner()
+            .unwrap();
+        tmp_file.persist(path)?;
         Ok(())
     }
 

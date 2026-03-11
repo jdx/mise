@@ -755,6 +755,12 @@ This setting is useful when:
 env = "MISE_HOOK_ENV_CHPWD_ONLY"
 type = "Bool"
 
+[http_download_chunks]
+default = 1
+description = "Number of parallel chunks for downloading large files (>10MB). Set to 1 to disable chunked downloads."
+env = "MISE_HTTP_DOWNLOAD_CHUNKS"
+type = "Integer"
+
 [http_retries]
 default = 0
 description = "Number of retries for HTTP requests in mise."

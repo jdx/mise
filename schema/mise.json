@@ -822,6 +822,11 @@
             }
           }
         },
+        "http_download_chunks": {
+          "default": 1,
+          "description": "Number of parallel chunks for downloading large files (>10MB). Set to 1 to disable chunked downloads.",
+          "type": "number"
+        },
         "http_retries": {
           "default": 0,
           "description": "Number of retries for HTTP requests in mise.",
