@@ -34,7 +34,7 @@ packages:
         asset: actdocs_{{trimV .Version}}_{{.OS}}_{{.Arch}}
         format: raw
         github_artifact_attestations:
-          signer-workflow: tmknom/release-workflows/.github/workflows/go.yml
+          signer_workflow: tmknom/release-workflows/.github/workflows/go.yml
         checksum:
           type: github_release
           asset: actdocs_{{trimV .Version}}_checksums.txt

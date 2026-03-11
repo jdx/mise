@@ -160,6 +160,32 @@ packages:
           - goos: windows
             format: zip
             asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+      - version_constraint: semver("<= 2.66.1")
+        asset: chezmoi_{{trimV .Version}}_{{.OS}}-glibc_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: chezmoi_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --signature
+              - https://github.com/twpayne/chezmoi/releases/download/{{.Version}}/chezmoi_{{trimV .Version}}_checksums.txt.sig
+              - --key
+              - https://github.com/twpayne/chezmoi/releases/download/{{.Version}}/chezmoi_cosign.pub
+        overrides:
+          - goos: linux
+            goarch: arm64
+            format: tar.zst
+            asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.pkg.{{.Format}}
+            files:
+              - name: chezmoi
+                src: usr/bin/chezmoi
+          - goos: darwin
+            asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+          - goos: windows
+            format: zip
+            asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
       - version_constraint: semver("<= 2.67.1")
         asset: chezmoi_{{trimV .Version}}_{{.OS}}-glibc_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -186,6 +212,7 @@ packages:
           - goos: windows
             format: zip
             asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        github_immutable_release: true
       - version_constraint: semver("<= 2.68.1")
         asset: chezmoi_{{trimV .Version}}_{{.OS}}-glibc_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -213,6 +240,7 @@ packages:
           - goos: windows
             format: zip
             asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        github_immutable_release: true
       - version_constraint: "true"
         asset: chezmoi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -229,3 +257,4 @@ packages:
         overrides:
           - goos: windows
             format: zip
+        github_immutable_release: true

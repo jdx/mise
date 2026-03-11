@@ -1,5 +1,44 @@
 # Changelog
 
+## [2026.3.8](https://github.com/jdx/mise/compare/v2026.3.7..v2026.3.8) - 2026-03-11
+
+### 🐛 Bug Fixes
+
+- **(backend)** skip cosign provenance in lockfile for opts-only aqua tools by @jdx in [#8559](https://github.com/jdx/mise/pull/8559)
+- **(exec)** resolve wrapper recursion when shims are in PATH by @jdx in [#8560](https://github.com/jdx/mise/pull/8560)
+
+### 📦 Registry
+
+- add turbo by @igas in [#8553](https://github.com/jdx/mise/pull/8553)
+- add workmux by @ifraixedes in [#8555](https://github.com/jdx/mise/pull/8555)
+
+### Chore
+
+- **(tmux)** use aqua backend for tmux by @himkt in [#8558](https://github.com/jdx/mise/pull/8558)
+
+### New Contributors
+
+- @himkt made their first contribution in [#8558](https://github.com/jdx/mise/pull/8558)
+- @ifraixedes made their first contribution in [#8555](https://github.com/jdx/mise/pull/8555)
+- @igas made their first contribution in [#8553](https://github.com/jdx/mise/pull/8553)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`raaymax/lazytail`](https://github.com/raaymax/lazytail)
+
+#### Updated Packages (8)
+
+- [`caarlos0/fork-cleaner`](https://github.com/caarlos0/fork-cleaner)
+- [`containerd/containerd`](https://github.com/containerd/containerd)
+- [`containerd/containerd/static`](https://github.com/containerd/containerd/static)
+- [`hellux/jotdown`](https://github.com/hellux/jotdown)
+- [`suzuki-shunsuke/cmdx`](https://github.com/suzuki-shunsuke/cmdx)
+- [`suzuki-shunsuke/ghir`](https://github.com/suzuki-shunsuke/ghir)
+- [`tmknom/actdocs`](https://github.com/tmknom/actdocs)
+- [`twpayne/chezmoi`](https://github.com/twpayne/chezmoi)
+
 ## [2026.3.7](https://github.com/jdx/mise/compare/v2026.3.6..v2026.3.7) - 2026-03-10
 
 ### 🐛 Bug Fixes

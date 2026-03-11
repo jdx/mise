@@ -32,7 +32,7 @@ packages:
         asset: containerd-static-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         github_artifact_attestations:
-          signer-workflow: containerd/containerd/.github/workflows/release.yml
+          signer_workflow: containerd/containerd/.github/workflows/release.yml
         checksum:
           type: github_release
           asset: "{{.Asset}}.sha256sum"

@@ -114,7 +114,7 @@ packages:
         format: tar.gz
         windows_arm_emulation: true
         github_artifact_attestations:
-          signer-workflow: containerd/containerd/.github/workflows/release.yml
+          signer_workflow: containerd/containerd/.github/workflows/release.yml
         checksum:
           type: github_release
           asset: "{{.Asset}}.sha256sum"
