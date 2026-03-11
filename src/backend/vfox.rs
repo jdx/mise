@@ -125,7 +125,11 @@ impl Backend for VfoxBackend {
             return Ok(tv);
         }
 
-        // Check lockfile provenance expectation before verification
+        // Check lockfile provenance expectation before verification.
+        // Safety: .take() removes provenance from tv before install. If install
+        // fails, tv is discarded via ?, so the removed value is never observed.
+        // If this function is ever refactored to recover from install errors,
+        // locked_provenance must be restored to tv before retrying.
         let platform_key = self.get_platform_key();
         let locked_provenance = tv
             .lock_platforms
