@@ -1,0 +1,3 @@
+backends = ["github:raine/workmux", "cargo:workmux"]
+description = "git worktrees + tmux windows for zero-friction parallel dev"
+test = { cmd = "workmux --version", expected = "workmux {{version}}" }
