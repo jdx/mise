@@ -189,24 +189,37 @@ where
     }
     let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
     let program = program.to_executable();
-    // Strip shims directory from PATH for program resolution only, to prevent
-    // recursive shim execution. Wrapper scripts may call `mise x -- tool`,
-    // which re-enters Exec. If shims remain in PATH (due to
-    // not_found_auto_install), the wrapper is found again instead of the real
-    // tool, causing an infinite loop that grows PATH until E2BIG.
-    // The child process still inherits the full PATH (with shims) so
-    // subprocesses can find tools via shims.
     let program = if program.to_string_lossy().contains('/') {
         // Already a path, no need to resolve
         program
     } else {
         let cwd = crate::dirs::CWD.clone().unwrap_or_default();
         let lookup_path = env.get(&*env::PATH_KEY).map(|path_val| {
+            // For program resolution, reorder PATH so that paths added by mise
+            // (tool bins, _.path entries) come before paths from the original
+            // system PATH. This prevents wrapper scripts in the system PATH
+            // (e.g. .devcontainer/bin/tool) from being found before the real
+            // tool binary, which would cause infinite recursion and E2BIG.
+            //
+            // User-configured paths (_.path/venv) maintain their position
+            // relative to tool paths since both are "mise-added".
+            // The child process still inherits the full unmodified PATH.
             let shims_dir = &*crate::dirs::SHIMS;
-            let filtered: Vec<_> = std::env::split_paths(&OsString::from(path_val))
-                .filter(|p| p != shims_dir)
+            let pristine: std::collections::HashSet<_> = crate::env::PATH.iter().collect();
+            let all_paths: Vec<_> = std::env::split_paths(&OsString::from(path_val)).collect();
+            // Mise-added paths first (preserving relative order)
+            let mise_added: Vec<_> = all_paths
+                .iter()
+                .filter(|p| !pristine.contains(p))
+                .cloned()
                 .collect();
-            std::env::join_paths(&filtered).unwrap()
+            // Then original system paths (minus shims)
+            let original: Vec<_> = all_paths
+                .iter()
+                .filter(|p| pristine.contains(p) && *p != shims_dir)
+                .cloned()
+                .collect();
+            std::env::join_paths(mise_added.iter().chain(original.iter())).unwrap()
         });
         match which::which_in(&program, lookup_path, cwd) {
             Ok(resolved) => resolved.into_os_string(),
@@ -229,27 +242,50 @@ where
     }
     let cwd = crate::dirs::CWD.clone().unwrap_or_default();
     let program = program.to_executable();
-    // Strip shims directory from PATH for program resolution only, to prevent
-    // recursive shim execution. On Windows, "file" mode shim scripts call
-    // `mise x -- tool`, which re-enters Exec. If shims remain in PATH (due to
-    // not_found_auto_install), which::which_in resolves "tool" back to the shim,
-    // causing an infinite loop. The child process still inherits the full PATH
-    // (with shims) so subprocesses can find tools via shims.
+    // Reorder PATH for program resolution: mise-added paths first, then
+    // original system paths (minus shims). See Unix version for full rationale.
     let lookup_path = env.get(&*env::PATH_KEY).map(|path_val| {
-        // Compare with ~ expansion, normalized separators, and case-insensitive
-        // to handle Windows path variations (e.g. ~/.local/share/mise\shims vs
-        // C:\Users\user\.local\share\mise\shims)
         let shims_normalized = crate::dirs::SHIMS
             .to_string_lossy()
             .to_lowercase()
             .replace('/', "\\");
-        let filtered: Vec<_> = std::env::split_paths(&OsString::from(path_val))
-            .filter(|p| {
-                let expanded = crate::file::replace_path(p);
-                expanded.to_string_lossy().to_lowercase().replace('/', "\\") != shims_normalized
+        let is_shims = |p: &std::path::PathBuf| {
+            let expanded = crate::file::replace_path(p);
+            expanded.to_string_lossy().to_lowercase().replace('/', "\\") == shims_normalized
+        };
+        let pristine: std::collections::HashSet<_> = crate::env::PATH
+            .iter()
+            .map(|p| {
+                crate::file::replace_path(p)
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .replace('/', "\\")
             })
             .collect();
-        std::env::join_paths(&filtered).unwrap()
+        let all_paths: Vec<_> = std::env::split_paths(&OsString::from(path_val)).collect();
+        let mise_added: Vec<_> = all_paths
+            .iter()
+            .filter(|p| {
+                let normalized = crate::file::replace_path(p)
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .replace('/', "\\");
+                !pristine.contains(&normalized)
+            })
+            .cloned()
+            .collect();
+        let original: Vec<_> = all_paths
+            .iter()
+            .filter(|p| {
+                let normalized = crate::file::replace_path(p)
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .replace('/', "\\");
+                pristine.contains(&normalized) && !is_shims(p)
+            })
+            .cloned()
+            .collect();
+        std::env::join_paths(mise_added.iter().chain(original.iter())).unwrap()
     });
     let program = which::which_in(program, lookup_path, cwd)?;
     let cmd = cmd::cmd(program, args);
