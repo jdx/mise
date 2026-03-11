@@ -28,6 +28,7 @@ packages:
           asset: multiple.intoto.jsonl
         github_artifact_attestations:
           signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
+        github_immutable_release: true
         overrides:
           - goos: windows
             format: zip

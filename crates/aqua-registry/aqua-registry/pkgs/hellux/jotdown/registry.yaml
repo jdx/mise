@@ -4,6 +4,8 @@ packages:
     repo_owner: hellux
     repo_name: jotdown
     description: A Djot parser library
+    search_words:
+      - djot
     version_constraint: "false"
     version_overrides:
       - version_constraint: "true"
