@@ -387,19 +387,12 @@ impl Client {
 
         let parent = path.parent().ok_or_else(|| eyre::eyre!("path has no parent: {}", path.display()))?;
         file::create_dir_all(parent)?;
-        let tmp_file = tempfile::NamedTempFile::with_prefix_in(path, parent)?;
+        let tmp_file = tempfile::NamedTempFile::with_prefix_in(
+            path.file_name().unwrap_or(std::ffi::OsStr::new(".mise-download")),
+            parent,
+        )?;
         tmp_file.as_file().set_len(total_size)?;
         let file = Arc::new(Mutex::new(tmp_file));
-
-        // Per-chunk progress counters; reset on retry so the sum stays accurate.
-        let chunk_progress: Vec<Arc<AtomicU64>> = (0..num_chunks)
-            .map(|_| Arc::new(AtomicU64::new(0)))
-            .collect();
-
-        if let Some(pr) = pr {
-            pr.set_length(total_size);
-            pr.set_position(0);
-        }
 
         // Prepare headers for chunk requests: same auth/replacements as send_once,
         // plus Accept-Encoding: identity to ensure byte ranges map 1:1 to file offsets.
@@ -411,9 +404,19 @@ impl Client {
 
         let client = self.reqwest.clone();
         let retries = Settings::get().http_retries;
-        // Ensure at least 1 byte per chunk to prevent division yielding 0-size chunks.
-        let num_chunks = num_chunks.min(total_size);
+        // Clamp chunks: at least 1 byte per chunk, max 16 concurrent connections.
+        let num_chunks = num_chunks.min(total_size).min(16);
         let chunk_size = total_size / num_chunks;
+
+        // Per-chunk progress counters; reset on retry so the sum stays accurate.
+        let chunk_progress: Vec<Arc<AtomicU64>> = (0..num_chunks)
+            .map(|_| Arc::new(AtomicU64::new(0)))
+            .collect();
+
+        if let Some(pr) = pr {
+            pr.set_length(total_size);
+            pr.set_position(0);
+        }
 
         let mut join_set = JoinSet::new();
         for i in 0..num_chunks {
@@ -468,6 +471,14 @@ impl Client {
                             }
                             offset += data.len() as u64;
                             my_progress.fetch_add(data.len() as u64, Ordering::Relaxed);
+                        }
+
+                        let expected = end - start + 1;
+                        let received = offset - start;
+                        if received != expected {
+                            bail!(
+                                "chunk {start}-{end}: expected {expected} bytes, received {received}"
+                            );
                         }
 
                         Ok::<(), eyre::Report>(())
