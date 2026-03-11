@@ -335,13 +335,15 @@ impl Client {
                     .and_then(|v| v.to_str().ok())
                     .and_then(|v| v.parse::<u64>().ok());
                 if let Some(length) = length
-                    && length >= CHUNK_DOWNLOAD_THRESHOLD && supports_ranges {
-                        // Use the response URL — it reflects any HTTP→HTTPS upgrade.
-                        let final_url = head_resp.url().clone();
-                        return self
-                            .download_file_chunked(final_url, path, headers, length, num_chunks, pr)
-                            .await;
-                    }
+                    && length >= CHUNK_DOWNLOAD_THRESHOLD
+                    && supports_ranges
+                {
+                    // Use the response URL — it reflects any HTTP→HTTPS upgrade.
+                    let final_url = head_resp.url().clone();
+                    return self
+                        .download_file_chunked(final_url, path, headers, length, num_chunks, pr)
+                        .await;
+                }
             }
         }
 
