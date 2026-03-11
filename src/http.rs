@@ -316,19 +316,20 @@ impl Client {
 
         let num_chunks = Settings::get().http_download_chunks.max(1) as u64;
         if num_chunks > 1
-            && let Some(length) = resp.content_length() {
-                let supports_ranges = resp
-                    .headers()
-                    .get(reqwest::header::ACCEPT_RANGES)
-                    .and_then(|v| v.to_str().ok())
-                    .is_some_and(|v| v.contains("bytes"));
-                if length >= CHUNK_DOWNLOAD_THRESHOLD && supports_ranges {
-                    drop(resp);
-                    return self
-                        .download_file_chunked(url, path, headers, length, num_chunks, pr)
-                        .await;
-                }
+            && let Some(length) = resp.content_length()
+        {
+            let supports_ranges = resp
+                .headers()
+                .get(reqwest::header::ACCEPT_RANGES)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|v| v.contains("bytes"));
+            if length >= CHUNK_DOWNLOAD_THRESHOLD && supports_ranges {
+                drop(resp);
+                return self
+                    .download_file_chunked(url, path, headers, length, num_chunks, pr)
+                    .await;
             }
+        }
 
         if let Some(length) = resp.content_length()
             && let Some(pr) = pr
