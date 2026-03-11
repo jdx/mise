@@ -747,7 +747,7 @@ mod tests {
     use url::Url;
 
     // Mutex to ensure tests don't interfere with each other when modifying global settings
-    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static TEST_SETTINGS_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     // Helper to create test settings with specific URL replacements
     fn with_test_settings<F, R>(replacements: IndexMap<String, String>, test_fn: F) -> R
@@ -755,7 +755,7 @@ mod tests {
         F: FnOnce() -> R,
     {
         // Lock to prevent parallel tests from interfering with global settings
-        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+        let _guard = TEST_SETTINGS_LOCK.blocking_lock();
 
         // Create settings with custom URL replacements
         let mut settings = crate::config::settings::SettingsPartial::empty();
@@ -926,7 +926,7 @@ mod tests {
     #[test]
     fn test_no_settings_configured() {
         // Test the real apply_url_replacements function with no settings override
-        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+        let _guard = TEST_SETTINGS_LOCK.blocking_lock();
         crate::config::Settings::reset(None);
 
         let mut url = Url::parse("https://github.com/owner/repo").unwrap();
@@ -1034,7 +1034,7 @@ mod tests {
         F: FnOnce() -> Fut,
         Fut: std::future::Future<Output = ()>,
     {
-        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+        let _guard = TEST_SETTINGS_LOCK.lock().await;
         let mut settings = crate::config::settings::SettingsPartial::empty();
         settings.http_download_chunks = Some(num_chunks);
         settings.http_retries = Some(0);
