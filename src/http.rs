@@ -397,6 +397,8 @@ impl Client {
 
         let client = self.reqwest.clone();
         let retries = Settings::get().http_retries;
+        // Ensure at least 1 byte per chunk to prevent division yielding 0-size chunks.
+        let num_chunks = num_chunks.min(total_size);
         let chunk_size = total_size / num_chunks;
 
         let mut join_set = JoinSet::new();
