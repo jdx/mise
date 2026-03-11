@@ -260,6 +260,16 @@ this that no other tasks are running at the same time.
 In the future we could have a property like `single = true` or something that prevents multiple tasks
 from running at the same time. If that sounds useful, search/file a ticket.
 
+### `interactive`
+
+- **Type**: `bool`
+- **Default**: `false`
+
+Connects the task directly to the shell's stdin/stdout/stderr. Instead of the broad `raw` setting that forces
+single-threaded execution (by setting `jobs = 1`), `interactive` tasks acquire an exclusive global write lock,
+ensuring sole access to standard I/O. Concurrently, non-interactive tasks can proceed in parallel, significantly
+enhancing task concurrency and user experience for interactive processes without sacrificing system stability.
+
 ### `sources`
 
 - **Type**: `string | string[]`
