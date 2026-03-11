@@ -671,11 +671,15 @@ impl AquaBackend {
         }
 
         // Check for cosign (nested under checksum config, requires checksum enabled)
+        // Only record cosign provenance if we can actually verify it natively
+        // (key-based or bundle-based). Tools that only use opts require the external
+        // cosign CLI which we don't shell out to.
         if settings.aqua.cosign
             && let Some(checksum) = &pkg.checksum
             && checksum.enabled()
             && let Some(cosign) = checksum.cosign.as_ref()
             && cosign.enabled != Some(false)
+            && (cosign.key.is_some() || cosign.bundle.is_some())
         {
             return Some(ProvenanceType::Cosign);
         }
@@ -1534,6 +1538,8 @@ impl AquaBackend {
                         }
                     }
                 }
+            } else {
+                debug!("cosign for {tv} uses opts-only config, skipping native verification");
             }
         }
         Ok(())
