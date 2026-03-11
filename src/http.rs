@@ -371,7 +371,7 @@ impl Client {
             &url, num_chunks, total_size
         );
 
-        let parent = path.parent().unwrap();
+        let parent = path.parent().ok_or_else(|| eyre::eyre!("path has no parent: {}", path.display()))?;
         file::create_dir_all(parent)?;
         let tmp_file = tempfile::NamedTempFile::with_prefix_in(path, parent)?;
         tmp_file.as_file().set_len(total_size)?;
@@ -446,7 +446,7 @@ impl Client {
                         let mut resp = resp;
                         while let Some(data) = resp.chunk().await? {
                             {
-                                let mut f = file.lock().unwrap();
+                                let mut f = file.lock().map_err(|e| eyre::eyre!("mutex poisoned: {e}"))?;
                                 f.seek(SeekFrom::Start(offset))?;
                                 f.write_all(&data)?;
                             }
@@ -460,6 +460,14 @@ impl Client {
                 .await
             });
         }
+
+        let update_progress = |pr: &dyn SingleReport| {
+            let total: u64 = chunk_progress
+                .iter()
+                .map(|p| p.load(Ordering::Relaxed))
+                .sum();
+            pr.set_position(total);
+        };
 
         // Poll for progress updates while waiting for chunks to complete.
         let mut interval = tokio::time::interval(Duration::from_millis(100));
@@ -482,10 +490,7 @@ impl Client {
                 }
                 _ = interval.tick() => {
                     if let Some(pr) = pr {
-                        let total: u64 = chunk_progress.iter()
-                            .map(|p| p.load(Ordering::Relaxed))
-                            .sum();
-                        pr.set_position(total);
+                        update_progress(pr);
                     }
                 }
             }
@@ -493,18 +498,14 @@ impl Client {
 
         // Final progress update.
         if let Some(pr) = pr {
-            let total: u64 = chunk_progress
-                .iter()
-                .map(|p| p.load(Ordering::Relaxed))
-                .sum();
-            pr.set_position(total);
+            update_progress(pr);
         }
 
         // Persist the fully-written temp file to its final path.
         let tmp_file = Arc::try_unwrap(file)
             .map_err(|_| eyre::eyre!("chunked download: failed to reclaim temp file"))?
             .into_inner()
-            .unwrap();
+            .map_err(|e| eyre::eyre!("mutex poisoned: {e}"))?;
         tmp_file.persist(path)?;
         Ok(())
     }
