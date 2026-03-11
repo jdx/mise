@@ -31,16 +31,17 @@ if [[ "$(uname -s)" == "Linux" ]]; then
 	# Verify Python is NOT in the .mise-bins directory
 	assert_not_contains "echo '$bins'" "Python"
 	assert_not_contains "echo '$bins'" "python"
+fi
 
-	# Verify symlink_bins=true still exposes the main binary when the aqua registry entry has no `files` field.
-	cat <<EOF >mise.toml
+# Test that symlink_bins=true still exposes the main binary when the aqua registry entry has an empty `files` field.
+cat <<EOF >mise.toml
 [tools]
 "aqua:casey/just" = { version = "1.46.0", symlink_bins = true }
 EOF
 
-	assert "mise install"
+assert "mise install"
 
-	just_root="$(mise where aqua:casey/just@1.46.0)"
-	assert_directory_exists "$just_root/.mise-bins"
-	assert "mise which just" "$just_root/.mise-bins/just"
-fi
+just_root="$(mise where aqua:casey/just@1.46.0)"
+assert_directory_exists "$just_root/.mise-bins"
+assert "mise which just" "$just_root/.mise-bins/just"
+assert_contains "mise x -- just --version" "just 1.46.0"
