@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# Regression test: a wrapper script that calls `mise x -- tool` should not
+# cause infinite recursion when BOTH the wrapper directory AND the shims
+# directory are in PATH, with the wrapper directory appearing first.
+#
+# This is the scenario that occurs in devcontainers where .devcontainer/bin
+# contains wrapper scripts and mise shims are also in PATH. The PathEnv
+# ordering puts "pre-shims" paths (including the wrapper dir) before
+# mise-managed tool paths, so `which` finds the wrapper instead of the
+# real binary, causing infinite recursion until E2BIG.
+
+# 1. Install a mise-managed tool
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "latest"
+EOF
+mise i
+
+# 2. Create a wrapper script that calls `mise x -- dummy` (simulating
+#    .devcontainer/bin/dummy or similar)
+wrapperdir="$HOME/wrapper_bin"
+mkdir -p "$wrapperdir"
+cat >"$wrapperdir/dummy" <<WRAPPER
+#!/bin/sh
+exec mise x -- dummy
+WRAPPER
+chmod +x "$wrapperdir/dummy"
+
+# 3. Put the wrapper directory BEFORE shims in PATH. This is the key
+#    difference from test_exec_wrapper_recursion: with shims in PATH,
+#    PathEnv classifies the wrapper dir as "pre" (before shims), and
+#    tool bins go into "mise" which comes after "pre". So the wrapper
+#    is found before the real binary.
+shimdir="$MISE_DATA_DIR/shims"
+mkdir -p "$shimdir"
+export PATH="$wrapperdir:$shimdir:$PATH"
+
+output="$(run_with_timeout 10 mise x -- dummy)" || {
+	echo "ERROR: mise x -- dummy timed out or failed (likely infinite recursion)"
+	exit 1
+}
+
+# Should get real dummy output, not hang
+assert_contains "echo '$output'" "This is Dummy"
