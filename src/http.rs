@@ -319,6 +319,9 @@ impl Client {
         file::create_dir_all(parent)?;
         let mut file = tempfile::NamedTempFile::with_prefix_in(path, parent)?;
         while let Some(chunk) = resp.chunk().await? {
+            if crate::ui::ctrlc::is_cancelled() {
+                bail!("download cancelled by user");
+            }
             file.write_all(&chunk)?;
             if let Some(pr) = pr {
                 pr.inc(chunk.len() as u64);
