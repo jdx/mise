@@ -26,6 +26,7 @@ use crate::{env, file, github, minisign};
 use async_trait::async_trait;
 use eyre::{ContextCompat, Result, bail, eyre};
 use indexmap::IndexSet;
+use indoc::formatdoc;
 use itertools::Itertools;
 use regex::Regex;
 use std::borrow::Cow;
@@ -1605,7 +1606,23 @@ impl AquaBackend {
             make_executable = true;
         } else if format == "raw" {
             file::create_dir_all(&install_path)?;
-            file::copy(&tarball_path, first_bin_path)?;
+            if filename.ends_with(".jar") {
+                // JAR files cannot be executed directly; store the jar alongside
+                // the bin and create a small shell wrapper that invokes java -jar.
+                let jar_path = first_bin_path.with_extension("jar");
+                file::copy(&tarball_path, &jar_path)?;
+                let wrapper = formatdoc! {r#"
+                    #!/bin/sh
+                    if [ -n "$JAVA_HOME" ]; then
+                      exec "$JAVA_HOME/bin/java" -jar "{jar_path}" "$@"
+                    else
+                      exec java -jar "{jar_path}" "$@"
+                    fi
+                "#, jar_path = jar_path.display()};
+                file::write(first_bin_path, &wrapper)?;
+            } else {
+                file::copy(&tarball_path, first_bin_path)?;
+            }
             make_executable = true;
         } else if format.starts_with("tar") {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
