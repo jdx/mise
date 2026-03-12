@@ -244,6 +244,51 @@ impl Backend for UnifiedGitBackend {
         Ok(versions)
     }
 
+    async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
+        if Settings::get().offline() {
+            trace!("Skipping latest stable version due to offline mode");
+            return Ok(None);
+        }
+
+        let repo = self.ba.tool_name();
+        let opts = config
+            .get_tool_opts(&self.ba)
+            .await?
+            .unwrap_or_else(|| self.ba.opts());
+        let api_url = self.get_api_url(&opts);
+        let version_prefix = opts.get("version_prefix");
+
+        let latest_tag = if self.is_gitlab() {
+            // GitLab doesn't have a "latest" endpoint
+            return self.latest_version(config, Some("latest".into())).await;
+        } else if self.is_forgejo() {
+            match forgejo::get_release_for_url(&api_url, &repo, "latest").await {
+                Ok(r) => Some(r.tag_name),
+                Err(e) => {
+                    debug!("Failed to fetch latest Forgejo release for {repo}: {e}");
+                    None
+                }
+            }
+        } else {
+            match github::get_release_for_url(&api_url, &repo, "latest").await {
+                Ok(r) => Some(r.tag_name),
+                Err(e) => {
+                    debug!("Failed to fetch latest GitHub release for {repo}: {e}");
+                    None
+                }
+            }
+        };
+
+        let latest_version = latest_tag
+            .filter(|tag| version_prefix.is_none_or(|p| tag.starts_with(p)))
+            .map(|tag| self.strip_version_prefix(&tag, &opts));
+
+        match latest_version {
+            Some(version) => Ok(Some(version)),
+            None => self.latest_version(config, Some("latest".into())).await,
+        }
+    }
+
     async fn install_version_(
         &self,
         ctx: &InstallContext,

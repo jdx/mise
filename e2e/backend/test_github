@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Test use of release/latest endpoint for GitHub backend
+assert_not_empty "mise latest github:unikraft/kraftkit"
+
 # Test basic GitHub backend functionality with real tools
 cat <<EOF >mise.toml
 [tools]
