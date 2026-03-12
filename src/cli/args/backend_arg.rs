@@ -262,6 +262,21 @@ impl BackendArg {
             }
         }
 
+        // For non-explicit short-name tools that are not plugins, use registry's
+        // current backend type. This mirrors the auto-switch logic in full()
+        // to ensure backend_type() and full() return consistent results.
+        if !self.short.contains(':') && !self.resolution.explicit {
+            let short = unalias_backend(&self.short);
+            if install_state::get_plugin_type(short).is_none() {
+                if let Some(registry_full) = REGISTRY
+                    .get(short)
+                    .and_then(|rt| rt.backends().first().cloned())
+                {
+                    return BackendType::guess(registry_full);
+                }
+            }
+        }
+
         // Only check install state for non-plugin:tool format entries
         if !self.short.contains(':')
             && let Ok(Some(backend_type)) = install_state::backend_type(&self.short)
