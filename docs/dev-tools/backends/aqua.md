@@ -46,11 +46,11 @@ to use the aqua backend. To see these tools, run `mise registry | grep aqua:`.
 
 ### `symlink_bins`
 
-Some tools bundle dependencies that you may not want exposed on PATH. For example, `aws-cli` bundles
+Some tools bundle extra executables that you may not want exposed on PATH. For example, `aws-cli` bundles
 Python, which can conflict with your intended Python version.
 
-Setting `symlink_bins = true` creates a filtered bin directory containing symlinks only to the binaries
-explicitly defined in the aqua registry, preventing bundled dependencies from being exposed.
+Setting `symlink_bins = true` creates a filtered `.mise-bins` directory and exposes only the binaries mise
+intends to expose for that Aqua package, instead of every discovered executable from the install.
 
 ```toml
 [tools]
@@ -59,9 +59,10 @@ aws-cli = { version = "latest", symlink_bins = true }
 
 When enabled:
 
-- Only binaries defined in the aqua registry's `files` field are exposed (e.g., `aws` and `aws_completer` for aws-cli)
-- A `.mise-bins` subdirectory is created with symlinks to these specific binaries
-- Bundled dependencies like Python are not added to PATH
+- If the aqua registry defines a `files` field, only those binaries are exposed (e.g., `aws` and `aws_completer` for aws-cli)
+- Otherwise, mise falls back to exposing the inferred primary binary for the package
+- A `.mise-bins` subdirectory is created with symlinks to the exposed binaries
+- Bundled dependencies and other extra executables, such as Python in `aws-cli`, are not added to PATH
 
 ## Settings
 

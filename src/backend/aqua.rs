@@ -1692,6 +1692,21 @@ impl AquaBackend {
     }
 
     fn srcs(&self, pkg: &AquaPackage, tv: &ToolVersion) -> Result<Vec<(PathBuf, PathBuf)>> {
+        if pkg.files.is_empty() {
+            let fallback_name = pkg
+                .name
+                .as_deref()
+                .and_then(|n| n.split('/').next_back())
+                .unwrap_or(&pkg.repo_name);
+
+            let mut path = tv.install_path().join(fallback_name);
+            if cfg!(windows) && pkg.complete_windows_ext {
+                path = path.with_extension("exe");
+            }
+
+            return Ok(vec![(path.clone(), path)]);
+        }
+
         let files: Vec<(PathBuf, PathBuf)> = pkg
             .files
             .iter()
