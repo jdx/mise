@@ -320,7 +320,8 @@ impl Task {
         let info = file::read_to_string(path)?
             .lines()
             .filter_map(|line| {
-                regex!(r"^(?:#|//|::)(?:MISE| ?\[MISE\]) ([a-z0-9_.-]+=[^\n]+)$").captures(line)
+                regex!(r"^(?:#|//|::)(?:MISE| ?\[MISE\]) ([a-z0-9_.-]+\s*=\s*[^\n]+)$")
+                    .captures(line)
             })
             .map(|captures| captures.extract().1)
             .map(|[toml]| {
@@ -1707,6 +1708,37 @@ echo "hello world"
         expected.aliases = vec!["b".to_string()];
         expected.sources = vec!["Cargo.toml".to_string(), "src/**/*.rs".to_string()];
         assert_eq!(result.unwrap(), expected);
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_from_path_env_file_with_spaces_around_equals() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let config = Config::get().await.unwrap();
+        let ts = config.get_toolset().await.unwrap();
+        let temp_dir = tempdir().unwrap();
+        let task_path = temp_dir.path().join("hello");
+        let env_path = temp_dir.path().join("env.yaml");
+
+        fs::write(&env_path, "USR: World!\n").unwrap();
+        fs::write(
+            &task_path,
+            r#"#!/usr/bin/env bash
+#MISE env._.file = "env.yaml"
+echo "Hello $USR"
+"#,
+        )
+        .unwrap();
+
+        let task = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path())
+            .await
+            .unwrap();
+        let (env, task_env) = task.render_env(&config, ts).await.unwrap();
+
+        assert_eq!(task_env, vec![("USR".to_string(), "World!".to_string())]);
+        assert_eq!(env.get("USR"), Some(&"World!".to_string()));
     }
 
     #[tokio::test]
