@@ -10,7 +10,7 @@ use crate::file::{TarFormat, TarOptions, display_path};
 use crate::git::{CloneOptions, Git};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{Result, lock_file::LockFile};
@@ -542,6 +542,18 @@ impl PythonPlugin {
             .map(|(_, tag, filename)| (tag, filename));
         Ok(result)
     }
+
+    fn detect_precompiled_provenance(&self) -> Option<ProvenanceType> {
+        let settings = Settings::get();
+        let enabled = settings
+            .python
+            .github_attestations
+            .unwrap_or(settings.github_attestations);
+        if !enabled {
+            return None;
+        }
+        Some(ProvenanceType::GithubAttestations)
+    }
 }
 
 #[async_trait]
@@ -724,12 +736,13 @@ impl Backend for PythonPlugin {
         );
         let checksum = fetch_checksum_from_shasums(&shasums_url, &filename).await;
 
+        // Detect provenance for precompiled binaries
+        let provenance = self.detect_precompiled_provenance();
+
         Ok(PlatformInfo {
             url: Some(url),
             checksum,
-            size: None,
-            url_api: None,
-            conda_deps: None,
+            provenance,
             ..Default::default()
         })
     }
