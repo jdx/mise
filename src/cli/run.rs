@@ -359,7 +359,6 @@ impl Run {
 
     async fn parallelize_tasks(mut self, mut config: Arc<Config>, tasks: Vec<Task>) -> Result<()> {
         time!("parallelize_tasks start");
-        ctrlc::exit_on_ctrl_c(false);
 
         // Step 1: Prepare tasks (resolve dependencies, fetch, validate)
         let tasks = self.prepare_tasks(&config, tasks).await?;
@@ -374,6 +373,9 @@ impl Run {
 
         // Step 4: Create TaskExecutor after tool installation
         self.setup_executor()?;
+
+        // Disable exit-on-ctrl-c so tasks can handle SIGINT gracefully
+        ctrlc::exit_on_ctrl_c(false);
 
         let timer = std::time::Instant::now();
         let this = Arc::new(self);
