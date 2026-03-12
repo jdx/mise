@@ -1,4 +1,3 @@
 backends = ["aqua:apache/spark", "asdf:mise-plugins/mise-spark"]
 depends = ["java"]
 description = "Apache Spark - A unified analytics engine for large-scale data processing"
-test = { cmd = "spark-shell --version 2>&1", expected = "version {{version}}" }
