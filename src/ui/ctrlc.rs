@@ -30,6 +30,7 @@ pub fn init() {
 
 pub fn exit_on_ctrl_c(do_exit: bool) {
     EXIT.store(do_exit, Ordering::Relaxed);
+    CANCELLED.store(false, Ordering::Relaxed);
 }
 
 /// Returns true if ctrl-c has been received
