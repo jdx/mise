@@ -18,7 +18,7 @@ use crate::hooks::mise_env::{MiseEnvContext, MiseEnvResult};
 use crate::hooks::mise_path::MisePathContext;
 use crate::hooks::parse_legacy_file::ParseLegacyFileResponse;
 use crate::hooks::post_install::PostInstallContext;
-use crate::hooks::pre_install::PreInstall;
+use crate::hooks::pre_install::{PreInstall, PreInstallAttestation, VerifiedAttestation};
 use crate::http::CLIENT;
 use crate::metadata::Metadata;
 use crate::plugin::Plugin;
@@ -30,6 +30,8 @@ use crate::sdk_info::SdkInfo;
 pub struct InstallResult {
     /// The SHA256 checksum if one was provided and verified
     pub sha256: Option<String>,
+    /// The type of attestation that was successfully verified (if any)
+    pub verified_attestation: Option<VerifiedAttestation>,
 }
 
 #[derive(Debug)]
@@ -165,9 +167,10 @@ impl Vfox {
         let pre_install = sdk.pre_install(version).await?;
         let install_dir = install_dir.as_ref();
         trace!("{pre_install:?}");
+        let mut verified_attestation = None;
         if let Some(url) = pre_install.url.as_ref().map(|s| Url::from_str(s)) {
             let file = self.download(&url?, &sdk, version).await?;
-            self.verify(&pre_install, &file).await?;
+            verified_attestation = self.verify(&pre_install, &file).await?;
             self.extract(&file, install_dir)?;
         }
 
@@ -183,6 +186,7 @@ impl Vfox {
 
         Ok(InstallResult {
             sha256: pre_install.sha256,
+            verified_attestation,
         })
     }
 
@@ -201,6 +205,25 @@ impl Vfox {
     ) -> Result<PreInstall> {
         let sdk = self.get_sdk(sdk)?;
         sdk.pre_install_for_platform(version, os, arch).await
+    }
+
+    /// Returns the download URL and the highest-priority verified attestation type
+    /// declared by the plugin for the given platform, without performing actual
+    /// verification or installation.
+    pub async fn pre_install_provenance_for_platform(
+        &self,
+        sdk: &str,
+        version: &str,
+        os: &str,
+        arch: &str,
+    ) -> Result<(Option<String>, Option<VerifiedAttestation>)> {
+        let pre = self
+            .pre_install_for_platform(sdk, version, os, arch)
+            .await?;
+        let att = pre.attestation.and_then(attestation_to_verified);
+        // Note: pre.sha256 / pre.sha512 are intentionally not returned here;
+        // checksum verification only happens during `mise install`, not `mise lock`.
+        Ok((pre.url, att))
     }
 
     pub async fn metadata(&self, sdk: &str) -> Result<Metadata> {
@@ -342,7 +365,11 @@ impl Vfox {
         Ok(path)
     }
 
-    async fn verify(&self, pre_install: &PreInstall, file: &Path) -> Result<()> {
+    async fn verify(
+        &self,
+        pre_install: &PreInstall,
+        file: &Path,
+    ) -> Result<Option<VerifiedAttestation>> {
         self.log_emit(format!("Verifying {file:?} checksum"));
         if let Some(sha256) = &pre_install.sha256 {
             xx::hash::ensure_checksum_sha256(file, sha256)?;
@@ -356,6 +383,7 @@ impl Vfox {
         if let Some(_md5) = &pre_install.md5 {
             unimplemented!("md5")
         }
+        let mut verified: Option<VerifiedAttestation> = None;
         if let Some(attestation) = &pre_install.attestation {
             self.log_emit(format!("Verify {file:?} attestation"));
             if let Some(owner) = &attestation.github_owner
@@ -372,6 +400,14 @@ impl Vfox {
                     attestation.github_signer_workflow.as_deref(),
                 )
                 .await?;
+                // All configured verifications always execute (no short-circuit).
+                // Priority only affects which variant is *recorded* in `verified`.
+                // GitHub attestations have the highest recording priority.
+                verified = Some(VerifiedAttestation::GithubAttestations {
+                    owner: owner.clone(),
+                    repo: repo.clone(),
+                    signer_workflow: attestation.github_signer_workflow.clone(),
+                });
             }
 
             if let Some(sig_or_bundle_path) = &attestation.cosign_sig_or_bundle_path {
@@ -386,15 +422,34 @@ impl Vfox {
                     sigstore_verification::verify_cosign_signature(file, sig_or_bundle_path)
                         .await?;
                 }
+                // Cosign has the lowest recording priority: only record it if no
+                // higher-priority verification was already recorded.
+                if verified.is_none() {
+                    verified = Some(VerifiedAttestation::Cosign {
+                        sig_or_bundle_path: sig_or_bundle_path.clone(),
+                        public_key_path: attestation.cosign_public_key_path.clone(),
+                    });
+                }
             }
 
             if let Some(provenance_path) = &attestation.slsa_provenance_path {
                 let min_level = attestation.slsa_min_level.unwrap_or(1u8);
                 sigstore_verification::verify_slsa_provenance(file, provenance_path, min_level)
                     .await?;
+                // SLSA has mid-tier recording priority: record it unless GitHub
+                // attestation (higher priority) was already recorded.
+                // Note: if Cosign also passed, SLSA supersedes it (SLSA > Cosign).
+                if !matches!(
+                    verified,
+                    Some(VerifiedAttestation::GithubAttestations { .. })
+                ) {
+                    verified = Some(VerifiedAttestation::Slsa {
+                        provenance_path: provenance_path.clone(),
+                    });
+                }
             }
         }
-        Ok(())
+        Ok(verified)
     }
 
     fn extract(&self, file: &Path, install_dir: &Path) -> Result<()> {
@@ -436,6 +491,36 @@ impl Vfox {
         }
         Ok(())
     }
+}
+
+/// Convert a `PreInstallAttestation` to the highest-priority `VerifiedAttestation` variant
+/// declared by the plugin. Priority: GitHub > SLSA > Cosign.
+///
+/// This is used by `pre_install_provenance_for_platform` to report what *type* of attestation
+/// the plugin declares, without actually performing sigstore verification.
+fn attestation_to_verified(att: PreInstallAttestation) -> Option<VerifiedAttestation> {
+    // GitHub attestations have the highest priority
+    if let Some(owner) = att.github_owner
+        && let Some(repo) = att.github_repo
+    {
+        return Some(VerifiedAttestation::GithubAttestations {
+            owner,
+            repo,
+            signer_workflow: att.github_signer_workflow,
+        });
+    }
+    // SLSA is second priority
+    if let Some(provenance_path) = att.slsa_provenance_path {
+        return Some(VerifiedAttestation::Slsa { provenance_path });
+    }
+    // Cosign is third priority
+    if let Some(sig_or_bundle_path) = att.cosign_sig_or_bundle_path {
+        return Some(VerifiedAttestation::Cosign {
+            sig_or_bundle_path,
+            public_key_path: att.cosign_public_key_path,
+        });
+    }
+    None
 }
 
 impl Default for Vfox {

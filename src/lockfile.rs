@@ -65,6 +65,9 @@ pub struct LockfileTool {
 /// The ordering is significant: during verification, higher-priority mechanisms
 /// are tried first, and the lockfile records whichever succeeds.
 /// SLSA carries an optional URL for the provenance file (.intoto.jsonl).
+///
+/// If adding or reordering variants, also update `VerifiedAttestation` in
+/// `crates/vfox/src/hooks/pre_install.rs`.
 #[derive(Debug, Clone, strum::Display, strum::EnumIs)]
 #[strum(serialize_all = "kebab-case")]
 pub enum ProvenanceType {
