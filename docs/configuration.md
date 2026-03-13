@@ -494,11 +494,12 @@ in rust
 
 This is used for temporary storage such as when installing tools.
 
-### `MISE_SYSTEM_DIR`
+### `MISE_SYSTEM_CONFIG_DIR`
 
 Default: `/etc/mise`
 
 This is the directory where mise stores system-wide configuration.
+`MISE_SYSTEM_DIR` is also supported as a legacy alias.
 
 ### `MISE_GLOBAL_CONFIG_FILE`
 

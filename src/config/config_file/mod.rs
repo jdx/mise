@@ -68,7 +68,7 @@ pub trait ConfigFile: Debug + Send + Sync {
         match p.parent() {
             Some(dir) => match dir {
                 dir if dir.starts_with(*dirs::CONFIG) => None,
-                dir if dir.starts_with(*dirs::SYSTEM) => None,
+                dir if dir.starts_with(*dirs::SYSTEM_CONFIG) => None,
                 dir if dir == *dirs::HOME => None,
                 _ => Some(config_root::config_root(p)),
             },
