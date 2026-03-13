@@ -131,7 +131,7 @@ impl ToolVersion {
         // Check shared install directories if the primary path doesn't exist
         if !path.exists() && !matches!(&self.request, ToolRequest::Path { .. }) {
             let tool_dir_name = heck::ToKebabCase::to_kebab_case(self.ba().short.as_str());
-            for shared_dir in env::MISE_SHARED_INSTALL_DIRS.iter() {
+            for shared_dir in env::shared_install_dirs() {
                 let shared_path = shared_dir.join(&tool_dir_name).join(&pathname);
                 if shared_path.exists() {
                     CACHE.insert(self.clone(), shared_path.clone());

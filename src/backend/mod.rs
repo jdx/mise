@@ -685,7 +685,7 @@ pub trait Backend: Debug + Send + Sync {
                 return Some(path);
             }
             // Also check shared install directories
-            for shared_dir in env::MISE_SHARED_INSTALL_DIRS.iter() {
+            for shared_dir in env::shared_install_dirs() {
                 let shared = shared_dir
                     .canonicalize()
                     .unwrap_or(shared_dir.to_path_buf());

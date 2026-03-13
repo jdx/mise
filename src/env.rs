@@ -124,6 +124,9 @@ pub static MISE_PLUGINS_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_PLUGINS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("plugins")));
 pub static MISE_SHIMS_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_SHIMS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("shims")));
+/// Shared install directories parsed from the environment variable.
+/// This is the early/fallback source; prefer `shared_install_dirs()` which also
+/// reads from Settings (config files) when available.
 pub static MISE_SHARED_INSTALL_DIRS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
     var("MISE_SHARED_INSTALL_DIRS")
         .ok()
@@ -136,6 +139,19 @@ pub static MISE_SHARED_INSTALL_DIRS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
         })
         .unwrap_or_default()
 });
+
+/// Returns the list of shared install directories, reading from Settings (config files)
+/// when available, falling back to the environment variable.
+pub fn shared_install_dirs() -> Vec<PathBuf> {
+    use crate::config::Settings;
+    if let std::result::Result::Ok(settings) = Settings::try_get()
+        && let Some(ref dirs) = settings.shared_install_dirs
+        && !dirs.is_empty()
+    {
+        return dirs.clone();
+    }
+    MISE_SHARED_INSTALL_DIRS.clone()
+}
 
 pub static MISE_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
     var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME")

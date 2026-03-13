@@ -271,15 +271,16 @@ impl ToolRequest {
                 // Fall back to shared install directories
                 found.or_else(|| {
                     let tool_dir_name = heck::ToKebabCase::to_kebab_case(backend.short.as_str());
-                    for shared_dir in env::MISE_SHARED_INSTALL_DIRS.iter() {
+                    for shared_dir in env::shared_install_dirs().iter() {
                         let shared_tool_dir = shared_dir.join(&tool_dir_name);
                         if let Ok(installs) = file::ls(&shared_tool_dir)
                             && let Some(p) = installs.iter().find(|p| {
                                 !is_runtime_symlink(p)
                                     && p.file_name().unwrap().to_string_lossy().starts_with(prefix)
-                            }) {
-                                return Some(p.clone());
-                            }
+                            })
+                        {
+                            return Some(p.clone());
+                        }
                     }
                     None
                 })
@@ -354,16 +355,12 @@ impl ToolRequest {
     }
 }
 
-/// subtracts sub from orig and removes suffix
-/// e.g. version_sub("18.2.3", "2") -> "16"
-/// e.g. version_sub("18.2.3", "0.1") -> "18.1"
-/// e.g. version_sub("2.79.0", "0.0.1") -> "2.78" (underflow, returns prefix)
 /// If `primary_path` doesn't exist, check shared install directories for an existing install.
 /// Returns the shared path if found, otherwise the original primary path.
 fn resolve_shared_install_path(primary_path: PathBuf, short: &str, pathname: &str) -> PathBuf {
     if !primary_path.exists() {
         let tool_dir_name = heck::ToKebabCase::to_kebab_case(short);
-        for shared_dir in env::MISE_SHARED_INSTALL_DIRS.iter() {
+        for shared_dir in env::shared_install_dirs().iter() {
             let shared_path = shared_dir.join(&tool_dir_name).join(pathname);
             if shared_path.exists() {
                 return shared_path;
@@ -373,6 +370,10 @@ fn resolve_shared_install_path(primary_path: PathBuf, short: &str, pathname: &st
     primary_path
 }
 
+/// subtracts sub from orig and removes suffix
+/// e.g. version_sub("18.2.3", "2") -> "16"
+/// e.g. version_sub("18.2.3", "0.1") -> "18.1"
+/// e.g. version_sub("2.79.0", "0.0.1") -> "2.78" (underflow, returns prefix)
 pub fn version_sub(orig: &str, sub: &str) -> String {
     let mut orig = Version::new(orig).unwrap();
     let sub = Version::new(sub).unwrap();
