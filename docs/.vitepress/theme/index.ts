@@ -3,11 +3,13 @@ import DefaultTheme from "vitepress/theme";
 import { enhanceAppWithTabs } from "vitepress-plugin-tabs/client";
 import "virtual:group-icons.css";
 import "./custom.css";
+import Layout from "./Layout.vue";
 import { onMounted } from "vue";
 import { data as starsData } from "../stars.data";
 
 export default {
   extends: DefaultTheme,
+  Layout,
   enhanceApp({ app }) {
     enhanceAppWithTabs(app);
   },

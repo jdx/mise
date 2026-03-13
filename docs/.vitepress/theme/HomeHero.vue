@@ -6,8 +6,23 @@
       <div class="gradient-orb orb-3"></div>
     </div>
     <div class="hero-content">
+      <div class="hero-chef-logo">
+        <img
+          class="chef-logo chef-logo-light"
+          src="/logo-full-light.svg"
+          alt="mise"
+          width="280"
+          height="136"
+        />
+        <img
+          class="chef-logo chef-logo-dark"
+          src="/logo-full-dark.svg"
+          alt="mise"
+          width="280"
+          height="136"
+        />
+      </div>
       <div class="hero-logo">
-        <div class="logo-text">mise</div>
         <div class="logo-subtitle">en-place</div>
       </div>
       <p class="hero-tagline">
@@ -88,14 +103,14 @@
   position: absolute;
   border-radius: 50%;
   filter: blur(100px);
-  opacity: 0.4;
+  opacity: 0.35;
   animation: float 20s infinite ease-in-out;
 }
 
 .orb-1 {
   width: 600px;
   height: 600px;
-  background: linear-gradient(135deg, #00d9ff, #0097a7);
+  background: linear-gradient(135deg, #8B2252, #C75B7A);
   top: -200px;
   left: -100px;
   animation-delay: 0s;
@@ -104,7 +119,7 @@
 .orb-2 {
   width: 500px;
   height: 500px;
-  background: linear-gradient(135deg, #52e892, #2bc760);
+  background: linear-gradient(135deg, #C5975B, #D4A76A);
   bottom: -150px;
   right: -150px;
   animation-delay: 5s;
@@ -113,7 +128,7 @@
 .orb-3 {
   width: 400px;
   height: 400px;
-  background: linear-gradient(135deg, #ff9100, #cc7300);
+  background: linear-gradient(135deg, #8FA86E, #6B7F4E);
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
@@ -141,20 +156,32 @@
   margin: 0 auto;
 }
 
-.hero-logo {
-  margin-bottom: 24px;
+.hero-chef-logo {
+  margin-bottom: 16px;
   animation: fadeInDown 0.8s ease-out;
 }
 
-.logo-text {
-  font-size: clamp(3rem, 10vw, 5rem);
-  font-weight: 900;
-  background: linear-gradient(135deg, #00d9ff 0%, #52e892 50%, #ff9100 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  letter-spacing: -0.02em;
-  line-height: 1;
+.chef-logo {
+  max-width: 280px;
+  height: auto;
+}
+
+/* Show/hide based on color mode */
+.chef-logo-dark {
+  display: none;
+}
+
+.dark .chef-logo-light {
+  display: none;
+}
+
+.dark .chef-logo-dark {
+  display: inline;
+}
+
+.hero-logo {
+  margin-bottom: 24px;
+  animation: fadeInDown 0.8s ease-out 0.1s both;
 }
 
 .logo-subtitle {
@@ -241,14 +268,14 @@
 }
 
 .action-button.primary {
-  background: linear-gradient(135deg, #00d9ff, #0097a7);
+  background: linear-gradient(135deg, #8B2252, #722F37);
   color: white;
-  box-shadow: 0 4px 20px rgba(0, 217, 255, 0.3);
+  box-shadow: 0 4px 20px rgba(139, 34, 82, 0.3);
 }
 
 .action-button.primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 30px rgba(0, 217, 255, 0.4);
+  box-shadow: 0 8px 30px rgba(139, 34, 82, 0.4);
 }
 
 .action-button.secondary {
@@ -288,7 +315,7 @@
 .stat-value {
   font-size: 1.75rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #00d9ff, #52e892);
+  background: linear-gradient(135deg, #8B2252, #C5975B);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -329,6 +356,10 @@
     padding: 48px 16px 64px;
   }
 
+  .chef-logo {
+    max-width: 200px;
+  }
+
   .hero-actions {
     flex-direction: column;
     align-items: center;
@@ -353,5 +384,12 @@
 
 .dark .stat:hover {
   background: rgba(255, 255, 255, 0.05);
+}
+
+.dark .stat-value {
+  background: linear-gradient(135deg, #C75B7A, #D4A76A);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 </style>

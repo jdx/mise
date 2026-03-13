@@ -16,14 +16,14 @@ export default withMermaid(
     description: "mise-en-place documentation",
     lang: "en-US",
     lastUpdated: true,
-    appearance: "dark",
+    appearance: true,
     mermaid: {},
     sitemap: {
       hostname: "https://mise.jdx.dev",
     },
     themeConfig: {
       // https://vitepress.dev/reference/default-theme-config
-      logo: "/logo.svg",
+      logo: { light: "/logo-light.svg", dark: "/logo-dark.svg" },
       outline: "deep",
       nav: [
         { text: "mise-versions", link: "https://mise-versions.jdx.dev/" },
@@ -336,7 +336,7 @@ export default withMermaid(
       [
         "link",
         {
-          href: "https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap",
+          href: "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=JetBrains+Mono:wght@400;500;600;700&display=swap",
           rel: "stylesheet",
         },
       ],
