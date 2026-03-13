@@ -124,11 +124,13 @@ pub static MISE_PLUGINS_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_PLUGINS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("plugins")));
 pub static MISE_SHIMS_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_SHIMS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("shims")));
-/// System-level shared install directory, always checked when it exists.
-pub static MISE_SYSTEM_INSTALLS_DIR: Lazy<PathBuf> = Lazy::new(|| {
-    var_path("MISE_SYSTEM_INSTALLS_DIR")
-        .unwrap_or_else(|| PathBuf::from("/usr/local/share/mise/installs"))
+/// System-level data directory (like MISE_DATA_DIR but for system-wide tools).
+pub static MISE_SYSTEM_DATA_DIR: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("MISE_SYSTEM_DATA_DIR").unwrap_or_else(|| PathBuf::from("/usr/local/share/mise"))
 });
+/// System-level installs directory, derived from MISE_SYSTEM_DATA_DIR.
+pub static MISE_SYSTEM_INSTALLS_DIR: Lazy<PathBuf> =
+    Lazy::new(|| MISE_SYSTEM_DATA_DIR.join("installs"));
 
 /// Extra shared install directories parsed from the environment variable.
 /// This is the early/fallback source; prefer `shared_install_dirs()` which also
@@ -147,7 +149,7 @@ static MISE_SHARED_INSTALL_DIRS_ENV: Lazy<Vec<PathBuf>> = Lazy::new(|| {
 });
 
 /// Returns the list of shared install directories to search.
-/// Includes the system installs dir (`/usr/local/share/mise/installs`) plus any
+/// Includes the system installs dir (`MISE_SYSTEM_DATA_DIR/installs`) plus any
 /// user-configured dirs from Settings (config files) or the environment variable.
 /// The user's primary install dir is NOT included here — it is checked separately.
 pub fn shared_install_dirs() -> Vec<PathBuf> {

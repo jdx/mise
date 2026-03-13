@@ -1614,9 +1614,9 @@ are checked after the primary install directory (`~/.local/share/mise/installs`)
 looking for installed tools. They are read-only—mise will never install tools into these
 directories.
 
-The system directory `/usr/local/share/mise/installs` (or `MISE_SYSTEM_INSTALLS_DIR`) is
+The system directory `/usr/local/share/mise/installs` (or `MISE_SYSTEM_DATA_DIR/installs`) is
 always checked automatically when it exists—you do not need to add it here. To populate it,
-run: `MISE_INSTALLS_DIR=/usr/local/share/mise/installs mise install node@20`
+run: `mise install --system node@20`
 
 This is useful for shared environments like Docker containers or bastion hosts where a
 base set of tools is pre-installed in a shared location, and users can install additional

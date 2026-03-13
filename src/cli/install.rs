@@ -77,7 +77,7 @@ pub struct Install {
 
     /// [experimental] Install tool(s) to the system-wide shared directory
     ///
-    /// Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_INSTALLS_DIR).
+    /// Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
     /// May require elevated permissions (e.g. sudo).
     #[clap(long, verbatim_doc_comment, conflicts_with = "shared")]
     system: bool,
