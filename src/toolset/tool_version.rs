@@ -21,6 +21,14 @@ use jiff::Timestamp;
 #[cfg(windows)]
 use path_absolutize::Absolutize;
 
+static INSTALL_PATH_CACHE: LazyLock<DashMap<ToolVersion, PathBuf>> = LazyLock::new(DashMap::new);
+
+/// Clear the install_path cache. Called when install state is reset
+/// to avoid stale paths (e.g. shared dir paths after a new install).
+pub fn reset_install_path_cache() {
+    INSTALL_PATH_CACHE.clear();
+}
+
 /// represents a single version of a tool for a particular plugin
 #[derive(Debug, Clone)]
 pub struct ToolVersion {
@@ -103,8 +111,7 @@ impl ToolVersion {
         if let Some(p) = &self.install_path {
             return p.clone();
         }
-        static CACHE: LazyLock<DashMap<ToolVersion, PathBuf>> = LazyLock::new(DashMap::new);
-        if let Some(p) = CACHE.get(self) {
+        if let Some(p) = INSTALL_PATH_CACHE.get(self) {
             return p.clone();
         }
         let pathname = match &self.request {
@@ -135,7 +142,7 @@ impl ToolVersion {
             env::find_in_shared_installs(path, &self.ba().short, &pathname)
         };
 
-        CACHE.insert(self.clone(), path.clone());
+        INSTALL_PATH_CACHE.insert(self.clone(), path.clone());
         path
     }
     pub fn cache_path(&self) -> PathBuf {

@@ -550,6 +550,7 @@ pub fn reset() {
     *INSTALL_STATE_TOOLS
         .lock()
         .expect("INSTALL_STATE_TOOLS lock failed") = None;
+    super::tool_version::reset_install_path_cache();
 }
 
 #[cfg(test)]
