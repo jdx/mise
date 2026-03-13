@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: facebook
+    repo_name: ktfmt
+    description: A program that reformats Kotlin source code to comply with the common community standard for Kotlin code conventions
+    asset: ktfmt-{{trimV .Version}}-with-dependencies.jar
+    format: raw
+    complete_windows_ext: false
