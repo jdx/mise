@@ -783,6 +783,7 @@ cmd set help="Set environment variables in mise.toml" {
         long_help "The TOML file to update\n\nCan be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.\nDefaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`."
         arg <FILE>
     }
+    flag --no-redact help="Show raw values instead of redacting secrets"
     flag --prompt help="Prompt for environment variable values"
     flag "--remove --rm --unset" help="Remove the environment variable from config file" var=#true hide=#true {
         long_help "Remove the environment variable from config file\n\nCan be used multiple times."

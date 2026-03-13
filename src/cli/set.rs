@@ -1,5 +1,6 @@
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use super::args::EnvVarArg;
 use crate::agecrypt;
@@ -70,6 +71,10 @@ pub struct Set {
     /// Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`.
     #[clap(long, verbatim_doc_comment, required = false, value_hint = clap::ValueHint::AnyPath)]
     file: Option<PathBuf>,
+
+    /// Show raw values instead of redacting secrets
+    #[clap(long)]
+    no_redact: bool,
 
     /// Prompt for environment variable values
     #[clap(long)]
@@ -225,14 +230,26 @@ impl Set {
     }
 
     async fn complete(&self) -> Result<()> {
-        for ev in self.cur_env().await? {
+        let config = Config::get().await?;
+        for ev in self.cur_env(&config).await? {
             println!("{}", ev.key);
         }
         Ok(())
     }
 
     async fn list_all(self) -> Result<()> {
-        let env = self.cur_env().await?;
+        let config = Config::get().await?;
+        // Ensure env_results (and thus env-based redactions) are loaded
+        // even when --file or -E bypasses env_with_sources() in cur_env().
+        if !self.no_redact {
+            let _ = config.env_results().await?;
+        }
+        let mut env = self.cur_env(&config).await?;
+        if !self.no_redact {
+            for row in &mut env {
+                row.value = config.redact(&row.value);
+            }
+        }
         let mut table = tabled::Table::new(env);
         table::default_style(&mut table, false);
         miseprintln!("{table}");
@@ -307,10 +324,10 @@ impl Set {
         Ok(())
     }
 
-    async fn cur_env(&self) -> Result<Vec<Row>> {
+    async fn cur_env(&self, config: &Arc<Config>) -> Result<Vec<Row>> {
         let rows = if let Some(file) = &self.file {
-            let config = MiseToml::from_file(file).unwrap_or_default();
-            config
+            let mise_toml = MiseToml::from_file(file).unwrap_or_default();
+            mise_toml
                 .env_entries()?
                 .into_iter()
                 .filter_map(|ed| match ed {
@@ -330,8 +347,8 @@ impl Set {
         } else if self.env.is_some() {
             // When -E flag is used, read from the environment-specific file
             let filename = self.filename()?;
-            let config = MiseToml::from_file(&filename).unwrap_or_default();
-            config
+            let mise_toml = MiseToml::from_file(&filename).unwrap_or_default();
+            mise_toml
                 .env_entries()?
                 .into_iter()
                 .filter_map(|ed| match ed {
@@ -349,8 +366,7 @@ impl Set {
                 })
                 .collect()
         } else {
-            Config::get()
-                .await?
+            config
                 .env_with_sources()
                 .await?
                 .iter()

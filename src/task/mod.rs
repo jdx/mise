@@ -1058,6 +1058,19 @@ impl Task {
             },
         )
         .await?;
+        // Register task-specific redactions with the global redactor
+        // Include config-level redaction patterns so they also cover task-specific env vars
+        let redact_keys = config
+            .redaction_keys()
+            .into_iter()
+            .chain(env_results.redactions.iter().cloned());
+        let task_env_map: EnvMap = env_results
+            .env
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect();
+        config.add_redactions(redact_keys, &task_env_map);
+
         let task_env = env_results.env.into_iter().map(|(k, (v, _))| (k, v));
         // Apply the resolved environment variables
         env.extend(task_env.clone());
