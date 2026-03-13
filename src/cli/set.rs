@@ -366,9 +366,15 @@ impl Set {
                     },
                     source: display_path(source),
                 }),
-                EnvDirective::Age { key, value, .. } => Some(Row {
+                EnvDirective::Age {
                     key,
-                    value: if redact {
+                    value,
+                    options,
+                    ..
+                } => Some(Row {
+                    key,
+                    // Age defaults to redacting unless explicitly redact=false
+                    value: if redact && options.redact != Some(false) {
                         "[redacted]".to_string()
                     } else {
                         value
