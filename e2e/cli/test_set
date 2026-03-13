@@ -89,3 +89,16 @@ EOF
 assert_contains "mise set --file mise.toml" "[redacted]"
 assert_not_contains "mise set --file mise.toml" "file_secret_val"
 assert_contains "mise set --file mise.toml --no-redact" "file_secret_val"
+
+# Test redaction with --file pointing outside config hierarchy
+tmpfile="$(mktemp)"
+cat <<EOF >"$tmpfile"
+[env]
+OUT_SECRET = {value = "out_of_hierarchy_secret", redact = true}
+OUT_NORMAL = "out_normal"
+EOF
+assert_contains "mise set --file $tmpfile" "[redacted]"
+assert_not_contains "mise set --file $tmpfile" "out_of_hierarchy_secret"
+assert_contains "mise set --file $tmpfile" "out_normal"
+assert_contains "mise set --file $tmpfile --no-redact" "out_of_hierarchy_secret"
+rm -f "$tmpfile"

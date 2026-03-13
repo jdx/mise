@@ -325,46 +325,15 @@ impl Set {
     }
 
     async fn cur_env(&self, config: &Arc<Config>) -> Result<Vec<Row>> {
+        let redact = !self.no_redact;
         let rows = if let Some(file) = &self.file {
             let mise_toml = MiseToml::from_file(file).unwrap_or_default();
-            mise_toml
-                .env_entries()?
-                .into_iter()
-                .filter_map(|ed| match ed {
-                    EnvDirective::Val(key, value, _) => Some(Row {
-                        key,
-                        value,
-                        source: display_path(file),
-                    }),
-                    EnvDirective::Age { key, value, .. } => Some(Row {
-                        key,
-                        value,
-                        source: display_path(file),
-                    }),
-                    _ => None,
-                })
-                .collect()
+            Self::rows_from_directives(mise_toml.env_entries()?, file, redact)
         } else if self.env.is_some() {
             // When -E flag is used, read from the environment-specific file
             let filename = self.filename()?;
             let mise_toml = MiseToml::from_file(&filename).unwrap_or_default();
-            mise_toml
-                .env_entries()?
-                .into_iter()
-                .filter_map(|ed| match ed {
-                    EnvDirective::Val(key, value, _) => Some(Row {
-                        key,
-                        value,
-                        source: display_path(&filename),
-                    }),
-                    EnvDirective::Age { key, value, .. } => Some(Row {
-                        key,
-                        value,
-                        source: display_path(&filename),
-                    }),
-                    _ => None,
-                })
-                .collect()
+            Self::rows_from_directives(mise_toml.env_entries()?, &filename, redact)
         } else {
             config
                 .env_with_sources()
@@ -378,6 +347,37 @@ impl Set {
                 .collect()
         };
         Ok(rows)
+    }
+
+    fn rows_from_directives(
+        directives: Vec<EnvDirective>,
+        source: &Path,
+        redact: bool,
+    ) -> Vec<Row> {
+        directives
+            .into_iter()
+            .filter_map(|ed| match ed {
+                EnvDirective::Val(key, value, opts) => Some(Row {
+                    key,
+                    value: if redact && opts.redact.unwrap_or(false) {
+                        "[redacted]".to_string()
+                    } else {
+                        value
+                    },
+                    source: display_path(source),
+                }),
+                EnvDirective::Age { key, value, .. } => Some(Row {
+                    key,
+                    value: if redact {
+                        "[redacted]".to_string()
+                    } else {
+                        value
+                    },
+                    source: display_path(source),
+                }),
+                _ => None,
+            })
+            .collect()
     }
 
     fn filename(&self) -> Result<PathBuf> {
