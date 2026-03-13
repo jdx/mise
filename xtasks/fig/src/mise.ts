@@ -2259,6 +2259,11 @@ const completionSpec: Fig.Spec = {
           },
         },
         {
+          name: "--no-redact",
+          description: "Show raw values instead of redacting secrets",
+          isRepeatable: false,
+        },
+        {
           name: "--prompt",
           description: "Prompt for environment variable values",
           isRepeatable: false,
