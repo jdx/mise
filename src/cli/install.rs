@@ -9,9 +9,11 @@ use crate::duration::parse_into_timestamp;
 use crate::hooks::Hooks;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset};
 use crate::{config, env, exit, hooks};
+use clap::ValueHint;
 use eyre::Result;
 use itertools::Itertools;
 use jiff::Timestamp;
+use std::path::PathBuf;
 
 /// Install a tool version
 ///
@@ -65,6 +67,20 @@ pub struct Install {
     /// Sets --jobs=1
     #[clap(long, overrides_with = "jobs")]
     raw: bool,
+
+    /// [experimental] Install tool(s) to a shared directory
+    ///
+    /// Installs to the specified directory instead of the default install location.
+    /// May require elevated permissions depending on the path.
+    #[clap(long, verbatim_doc_comment, value_hint = ValueHint::DirPath, conflicts_with = "system")]
+    shared: Option<PathBuf>,
+
+    /// [experimental] Install tool(s) to the system-wide shared directory
+    ///
+    /// Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_INSTALLS_DIR).
+    /// May require elevated permissions (e.g. sudo).
+    #[clap(long, verbatim_doc_comment, conflicts_with = "shared")]
+    system: bool,
 }
 
 impl Install {
@@ -203,6 +219,11 @@ impl Install {
     }
 
     fn install_opts(&self) -> Result<InstallOptions> {
+        let install_dir = if self.system {
+            Some(env::MISE_SYSTEM_INSTALLS_DIR.clone())
+        } else {
+            self.shared.clone()
+        };
         Ok(InstallOptions {
             force: self.force,
             jobs: self.jobs,
@@ -215,6 +236,7 @@ impl Install {
             },
             dry_run: self.is_dry_run(),
             locked: Settings::get().locked,
+            install_dir,
             ..Default::default()
         })
     }

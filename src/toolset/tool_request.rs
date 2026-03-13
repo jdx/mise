@@ -228,7 +228,7 @@ impl ToolRequest {
                 backend, version, ..
             } => {
                 let path = backend.installs_path.join(version);
-                Some(resolve_shared_install_path(path, &backend.short, version))
+                Some(env::find_in_shared_installs(path, &backend.short, version))
             }
             Self::Ref {
                 backend,
@@ -238,7 +238,11 @@ impl ToolRequest {
             } => {
                 let pathname = format!("{ref_type}-{ref_}");
                 let path = backend.installs_path.join(&pathname);
-                Some(resolve_shared_install_path(path, &backend.short, &pathname))
+                Some(env::find_in_shared_installs(
+                    path,
+                    &backend.short,
+                    &pathname,
+                ))
             }
             Self::Sub {
                 backend,
@@ -252,7 +256,7 @@ impl ToolRequest {
                 .map(|v| {
                     let pathname = version_sub(&v, sub.as_str());
                     let path = backend.installs_path.join(&pathname);
-                    resolve_shared_install_path(path, &backend.short, &pathname)
+                    env::find_in_shared_installs(path, &backend.short, &pathname)
                 }),
             Self::Prefix {
                 backend, prefix, ..
@@ -353,21 +357,6 @@ impl ToolRequest {
         }
         self.ba().is_os_supported()
     }
-}
-
-/// If `primary_path` doesn't exist, check shared install directories for an existing install.
-/// Returns the shared path if found, otherwise the original primary path.
-fn resolve_shared_install_path(primary_path: PathBuf, short: &str, pathname: &str) -> PathBuf {
-    if !primary_path.exists() {
-        let tool_dir_name = heck::ToKebabCase::to_kebab_case(short);
-        for shared_dir in env::shared_install_dirs().iter() {
-            let shared_path = shared_dir.join(&tool_dir_name).join(pathname);
-            if shared_path.exists() {
-                return shared_path;
-            }
-        }
-    }
-    primary_path
 }
 
 /// subtracts sub from orig and removes suffix

@@ -129,16 +129,11 @@ impl ToolVersion {
         }
 
         // Check shared install directories if the primary path doesn't exist
-        if !path.exists() && !matches!(&self.request, ToolRequest::Path { .. }) {
-            let tool_dir_name = heck::ToKebabCase::to_kebab_case(self.ba().short.as_str());
-            for shared_dir in env::shared_install_dirs() {
-                let shared_path = shared_dir.join(&tool_dir_name).join(&pathname);
-                if shared_path.exists() {
-                    CACHE.insert(self.clone(), shared_path.clone());
-                    return shared_path;
-                }
-            }
-        }
+        let path = if matches!(&self.request, ToolRequest::Path { .. }) {
+            path
+        } else {
+            env::find_in_shared_installs(path, &self.ba().short, &pathname)
+        };
 
         CACHE.insert(self.clone(), path.clone());
         path

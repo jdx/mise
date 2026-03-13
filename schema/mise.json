@@ -1286,7 +1286,7 @@
           }
         },
         "shared_install_dirs": {
-          "description": "Additional read-only directories to search for installed tool versions.",
+          "description": "[experimental] Additional read-only directories to search for installed tool versions.",
           "type": "array",
           "items": {
             "type": "string"

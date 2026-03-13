@@ -293,7 +293,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
     }
 
     // Scan shared install directories (read-only fallback directories)
-    for shared_dir in env::MISE_SHARED_INSTALL_DIRS.iter() {
+    for shared_dir in env::shared_install_dirs_early() {
         if !shared_dir.is_dir() {
             continue;
         }
@@ -311,12 +311,12 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             },
             Err(_) => Default::default(),
         };
-        let shared_subdirs = match file::dir_subdirs(shared_dir) {
+        let shared_subdirs = match file::dir_subdirs(&shared_dir) {
             std::result::Result::Ok(d) => d,
             Err(err) => {
                 warn!(
                     "reading shared install dir {} failed: {err:?}",
-                    display_path(shared_dir)
+                    display_path(&shared_dir)
                 );
                 continue;
             }
