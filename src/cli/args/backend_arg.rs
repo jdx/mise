@@ -158,6 +158,16 @@ impl BackendArg {
         }
     }
 
+    /// Returns the kebab-cased directory name used for this tool's install path.
+    /// This is the canonical name used on the filesystem (e.g. "github-user-repo").
+    pub fn tool_dir_name(&self) -> String {
+        self.installs_path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string()
+    }
+
     pub fn backend(&self) -> Result<ABackend> {
         // TODO: see above about hash key
         // let backend = self.backend.get_or_try_init(|| {

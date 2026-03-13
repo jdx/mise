@@ -228,7 +228,11 @@ impl ToolRequest {
                 backend, version, ..
             } => {
                 let path = backend.installs_path.join(version);
-                Some(env::find_in_shared_installs(path, &backend.short, version))
+                Some(env::find_in_shared_installs(
+                    path,
+                    &backend.tool_dir_name(),
+                    version,
+                ))
             }
             Self::Ref {
                 backend,
@@ -240,7 +244,7 @@ impl ToolRequest {
                 let path = backend.installs_path.join(&pathname);
                 Some(env::find_in_shared_installs(
                     path,
-                    &backend.short,
+                    &backend.tool_dir_name(),
                     &pathname,
                 ))
             }
@@ -256,7 +260,7 @@ impl ToolRequest {
                 .map(|v| {
                     let pathname = version_sub(&v, sub.as_str());
                     let path = backend.installs_path.join(&pathname);
-                    env::find_in_shared_installs(path, &backend.short, &pathname)
+                    env::find_in_shared_installs(path, &backend.tool_dir_name(), &pathname)
                 }),
             Self::Prefix {
                 backend, prefix, ..
@@ -274,7 +278,7 @@ impl ToolRequest {
                 };
                 // Fall back to shared install directories
                 found.or_else(|| {
-                    let tool_dir_name = heck::ToKebabCase::to_kebab_case(backend.short.as_str());
+                    let tool_dir_name = backend.tool_dir_name();
                     for shared_dir in env::shared_install_dirs().iter() {
                         let shared_tool_dir = shared_dir.join(&tool_dir_name);
                         if let Ok(installs) = file::ls(&shared_tool_dir)

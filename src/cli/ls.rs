@@ -565,43 +565,26 @@ async fn version_status_from(
     config: &Arc<Config>,
     (ls, p, tv, source): (&Ls, &dyn Backend, &ToolVersion, &ToolSource),
 ) -> VersionStatus {
-    // Check for symlinks directly for display purposes (separate from upgrade-skip logic)
-    let install_path = tv.install_path();
-    if install_path.is_symlink() && !is_runtime_symlink(&install_path) {
-        VersionStatus::Symlink(tv.version.clone(), !source.is_unknown())
-    } else if !p.is_version_installed(config, tv, true) {
-        VersionStatus::Missing(tv.version.clone())
-    } else {
-        let category = env::install_path_category(&install_path);
-        if category != env::InstallPathCategory::Local {
-            let label = match category {
-                env::InstallPathCategory::System => "system",
-                env::InstallPathCategory::Shared => "shared",
-                _ => unreachable!(),
-            };
-            return VersionStatus::Shared(tv.version.clone(), !source.is_unknown(), label);
-        }
-        if !source.is_unknown() {
-            let outdated = if ls.outdated {
-                p.is_version_outdated(config, tv).await
-            } else {
-                false
-            };
-            VersionStatus::Active(tv.version.clone(), outdated)
-        } else {
-            VersionStatus::Inactive(tv.version.clone())
-        }
-    }
+    resolve_version_status(config, ls, p, tv, !source.is_unknown()).await
 }
 
 async fn version_status_from_sources(
     config: &Arc<Config>,
     (ls, p, tv, has_sources): (&Ls, &dyn Backend, &ToolVersion, bool),
 ) -> VersionStatus {
-    // Check for symlinks directly for display purposes (separate from upgrade-skip logic)
+    resolve_version_status(config, ls, p, tv, has_sources).await
+}
+
+async fn resolve_version_status(
+    config: &Arc<Config>,
+    ls: &Ls,
+    p: &dyn Backend,
+    tv: &ToolVersion,
+    active: bool,
+) -> VersionStatus {
     let install_path = tv.install_path();
     if install_path.is_symlink() && !is_runtime_symlink(&install_path) {
-        VersionStatus::Symlink(tv.version.clone(), has_sources)
+        VersionStatus::Symlink(tv.version.clone(), active)
     } else if !p.is_version_installed(config, tv, true) {
         VersionStatus::Missing(tv.version.clone())
     } else {
@@ -612,9 +595,9 @@ async fn version_status_from_sources(
                 env::InstallPathCategory::Shared => "shared",
                 _ => unreachable!(),
             };
-            return VersionStatus::Shared(tv.version.clone(), has_sources, label);
+            return VersionStatus::Shared(tv.version.clone(), active, label);
         }
-        if has_sources {
+        if active {
             let outdated = if ls.outdated {
                 p.is_version_outdated(config, tv).await
             } else {

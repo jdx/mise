@@ -139,7 +139,7 @@ impl ToolVersion {
         let path = if matches!(&self.request, ToolRequest::Path { .. }) {
             path
         } else {
-            env::find_in_shared_installs(path, &self.ba().short, &pathname)
+            env::find_in_shared_installs(path, &self.ba().tool_dir_name(), &pathname)
         };
 
         INSTALL_PATH_CACHE.insert(self.clone(), path.clone());

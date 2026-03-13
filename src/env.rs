@@ -139,12 +139,10 @@ pub static MISE_SYSTEM_INSTALLS_DIR: Lazy<PathBuf> =
 /// This is the early/fallback source; prefer `shared_install_dirs()` which also
 /// reads from Settings (config files) when available.
 static MISE_SHARED_INSTALL_DIRS_ENV: Lazy<Vec<PathBuf>> = Lazy::new(|| {
-    var("MISE_SHARED_INSTALL_DIRS")
-        .ok()
+    var_os("MISE_SHARED_INSTALL_DIRS")
         .map(|v| {
-            v.split(':')
-                .filter(|p| !p.is_empty())
-                .map(PathBuf::from)
+            std::env::split_paths(&v)
+                .filter(|p| !p.as_os_str().is_empty())
                 .map(replace_path)
                 .collect()
         })
@@ -209,13 +207,17 @@ pub enum InstallPathCategory {
 }
 
 /// Look up a tool version in shared install directories.
-/// Returns the first shared path where `<shared_dir>/<tool_kebab>/<pathname>` exists,
+/// `tool_dir_name` should be the kebab-cased directory name (e.g. from `ba.installs_path`).
+/// Returns the first shared path where `<shared_dir>/<tool_dir_name>/<pathname>` exists,
 /// or `primary_path` if not found in any shared directory.
-pub fn find_in_shared_installs(primary_path: PathBuf, short: &str, pathname: &str) -> PathBuf {
+pub fn find_in_shared_installs(
+    primary_path: PathBuf,
+    tool_dir_name: &str,
+    pathname: &str,
+) -> PathBuf {
     if !primary_path.exists() {
-        let tool_dir_name = heck::ToKebabCase::to_kebab_case(short);
         for shared_dir in shared_install_dirs() {
-            let shared_path = shared_dir.join(&tool_dir_name).join(pathname);
+            let shared_path = shared_dir.join(tool_dir_name).join(pathname);
             if shared_path.exists() {
                 return shared_path;
             }
