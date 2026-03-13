@@ -512,11 +512,12 @@ impl Doctor {
         let mise_bin_parent = env::MISE_BIN.parent().and_then(|p| p.canonicalize().ok());
 
         // Find the index of the first mise-managed path in the current PATH
-        let first_mise_idx = current_path.iter().position(|p| {
-            let resolved = resolve(p);
-            mise_paths_resolved.contains(&resolved)
-                || mise_bin_parent.as_ref().is_some_and(|bp| bp == &resolved)
-        });
+        // Note: mise_bin_parent is intentionally excluded here — it's a directory like
+        // /opt/homebrew/bin that happens to contain the mise binary, not a mise tool path.
+        // Including it would mask the exact PATH ordering issue we're trying to detect.
+        let first_mise_idx = current_path
+            .iter()
+            .position(|p| mise_paths_resolved.contains(&resolve(p)));
 
         let Some(first_mise_idx) = first_mise_idx else {
             // No mise paths found in current PATH at all — this is already
