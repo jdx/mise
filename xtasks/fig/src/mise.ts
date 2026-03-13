@@ -1445,6 +1445,20 @@ const completionSpec: Fig.Spec = {
             "Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1",
           isRepeatable: false,
         },
+        {
+          name: "--shared",
+          description: "[experimental] Install tool(s) to a shared directory",
+          isRepeatable: false,
+          args: {
+            name: "shared",
+          },
+        },
+        {
+          name: "--system",
+          description:
+            "[experimental] Install tool(s) to the system-wide shared directory",
+          isRepeatable: false,
+        },
       ],
       args: {
         name: "tool@version",
