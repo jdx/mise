@@ -1,13 +1,10 @@
 ---
-# https://vitepress.dev/reference/default-theme-home-page
 layout: home
 title: Home
 
 hero:
   name: mise-en-place
-  tagline: |
-    The front-end to your dev env
-    <span class="formerly">Pronounced "MEEZ ahn plahs"</span>
+  tagline: The front-end to your dev env
   actions:
     - theme: brand
       text: Getting Started
@@ -22,21 +19,14 @@ hero:
 features:
   - title: Dev Tools
     link: /dev-tools/
-    icon: 🛠️
-    details: mise is a polyglot tool version manager. It replaces tools like asdf, nvm, pyenv, rbenv, etc.
+    icon: 🔪
+    details: A polyglot tool version manager. Replaces asdf, nvm, pyenv, rbenv, and more — one tool for every language.
   - title: Environments
-    details: mise allows you to switch sets of env vars in different project directories. It can replace direnv.
-    icon: ⚙
+    details: Switch sets of environment variables per project directory. A smarter, simpler replacement for direnv.
+    icon: 🫕
     link: /environments/
   - title: Tasks
     link: /tasks/
-    details: mise is a task runner that can replace make, or npm scripts.
-    icon: ⚡
+    details: A powerful task runner that replaces make and npm scripts. Define, compose, and run with ease.
+    icon: 🍳
 ---
-
-<style>
-.formerly {
-    font-size: 0.7em;
-    color: #666;
-}
-</style>
