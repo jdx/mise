@@ -273,14 +273,13 @@ impl ToolRequest {
                     let tool_dir_name = heck::ToKebabCase::to_kebab_case(backend.short.as_str());
                     for shared_dir in env::MISE_SHARED_INSTALL_DIRS.iter() {
                         let shared_tool_dir = shared_dir.join(&tool_dir_name);
-                        if let Ok(installs) = file::ls(&shared_tool_dir) {
-                            if let Some(p) = installs.iter().find(|p| {
+                        if let Ok(installs) = file::ls(&shared_tool_dir)
+                            && let Some(p) = installs.iter().find(|p| {
                                 !is_runtime_symlink(p)
                                     && p.file_name().unwrap().to_string_lossy().starts_with(prefix)
                             }) {
                                 return Some(p.clone());
                             }
-                        }
                     }
                     None
                 })
