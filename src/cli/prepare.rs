@@ -67,7 +67,11 @@ impl Prepare {
             .build(&config)
             .await?;
 
-        ts.install_missing_versions(&mut config, &InstallOptions::default())
+        let install_opts = InstallOptions {
+            missing_args_only: false,
+            ..Default::default()
+        };
+        ts.install_missing_versions(&mut config, &install_opts)
             .await?;
 
         // Get toolset environment with PATH

@@ -275,6 +275,7 @@ impl Run {
         let opts = InstallOptions {
             jobs: self.jobs,
             raw: self.raw,
+            missing_args_only: false,
             ..Default::default()
         };
         let _ = ts.install_missing_versions(&mut config, &opts).await?;
