@@ -275,6 +275,9 @@ impl Run {
         let opts = InstallOptions {
             jobs: self.jobs,
             raw: self.raw,
+            missing_args_only: !Settings::get().task.run_auto_install,
+            skip_auto_install: !Settings::get().task.run_auto_install
+                || !Settings::get().auto_install,
             ..Default::default()
         };
         let _ = ts.install_missing_versions(&mut config, &opts).await?;

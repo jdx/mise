@@ -71,23 +71,28 @@ pub struct PrepareCommand {
 impl PrepareCommand {
     /// Create a PrepareCommand from a run string like "npm install"
     ///
-    /// Uses shell-aware parsing to handle quoted arguments correctly.
+    /// Wraps the command with `sh -c` (matching task execution behavior)
+    /// so shell features like pipes, redirects, and `&&` work.
     pub fn from_string(
         run: &str,
         project_root: &Path,
         config: &rule::PrepareProviderConfig,
     ) -> Result<Self> {
-        let parts = shell_words::split(run).map_err(|e| eyre::eyre!("invalid command: {e}"))?;
-
-        if parts.is_empty() {
+        if run.trim().is_empty() {
             bail!("prepare run command cannot be empty");
         }
 
-        let (program, args) = parts.split_first().unwrap();
+        let shell = Settings::get().default_inline_shell()?;
+        let (program, shell_args) = shell.split_first().ok_or_else(|| {
+            eyre::eyre!("default inline shell is empty; check unix_default_inline_shell_args / windows_default_inline_shell_args")
+        })?;
+
+        let mut args: Vec<String> = shell_args.to_vec();
+        args.push(run.to_string());
 
         Ok(Self {
             program: program.to_string(),
-            args: args.to_vec(),
+            args,
             env: config.env.clone(),
             cwd: config
                 .dir
