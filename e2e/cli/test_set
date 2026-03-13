@@ -51,3 +51,54 @@ assert_fail "printf 'val' | mise set --stdin KEY1 KEY2"
 
 # Test --stdin fails with KEY=VALUE syntax
 assert_fail "printf 'val' | mise set --stdin KEY1=value"
+
+# Test that `mise set` redacts values marked with redact=true
+rm -f mise.toml
+cat <<EOF >mise.toml
+[env]
+SECRET = {value = "my_secret_value", redact = true}
+NORMAL = "normal_value"
+EOF
+assert_contains "mise set" "[redacted]"
+assert_not_contains "mise set" "my_secret_value"
+assert_contains "mise set" "normal_value"
+
+# Test --no-redact shows raw values
+assert_contains "mise set --no-redact" "my_secret_value"
+assert_not_contains "mise set --no-redact" "[redacted]"
+
+# Test redactions array with mise set
+rm -f mise.toml
+cat <<EOF >mise.toml
+redactions = ["DB_*"]
+[env]
+DB_PASSWORD = "super_secret"
+USERNAME = "john"
+EOF
+assert_contains "mise set" "[redacted]"
+assert_not_contains "mise set" "super_secret"
+assert_contains "mise set" "john"
+assert_contains "mise set --no-redact" "super_secret"
+
+# Test redaction with --file flag
+rm -f mise.toml
+cat <<EOF >mise.toml
+[env]
+FILE_SECRET = {value = "file_secret_val", redact = true}
+EOF
+assert_contains "mise set --file mise.toml" "[redacted]"
+assert_not_contains "mise set --file mise.toml" "file_secret_val"
+assert_contains "mise set --file mise.toml --no-redact" "file_secret_val"
+
+# Test redaction with --file pointing outside config hierarchy
+tmpfile="$(mktemp)"
+cat <<EOF >"$tmpfile"
+[env]
+OUT_SECRET = {value = "out_of_hierarchy_secret", redact = true}
+OUT_NORMAL = "out_normal"
+EOF
+assert_contains "mise set --file $tmpfile" "[redacted]"
+assert_not_contains "mise set --file $tmpfile" "out_of_hierarchy_secret"
+assert_contains "mise set --file $tmpfile" "out_normal"
+assert_contains "mise set --file $tmpfile --no-redact" "out_of_hierarchy_secret"
+rm -f "$tmpfile"

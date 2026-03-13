@@ -59,6 +59,10 @@ The TOML file to update
 Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
 Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`.
 
+### `--no-redact`
+
+Show raw values instead of redacting secrets
+
 ### `--prompt`
 
 Prompt for environment variable values

@@ -67,3 +67,22 @@ SECRET_WITH_TOOLS = { value = "tools_secret", tools = true, redact = true }
 run = 'echo secret: $SECRET_WITH_TOOLS'
 TOML
 assert "mise run a" "secret: [redacted]"
+
+# Test task-specific env._.file with redactions pattern
+echo '{ "NOTIFY_AVATAR": "task_file_secret" }' >.env.json
+cat <<'TOML' >mise.toml
+redactions = ["NOTIFY_*"]
+[tasks.a]
+run = "echo secret: $NOTIFY_AVATAR"
+env._.file = ".env.json"
+TOML
+assert "mise run a" "secret: [redacted]"
+
+# Test task-specific env._.file with redact=true
+echo '{ "TASK_SECRET": "task_secret_val" }' >.env.json
+cat <<'TOML' >mise.toml
+[tasks.a]
+run = "echo secret: $TASK_SECRET"
+env._.file = {path = ".env.json", redact = true}
+TOML
+assert "mise run a" "secret: [redacted]"
