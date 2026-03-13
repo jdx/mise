@@ -187,6 +187,27 @@ pub fn shared_install_dirs_early() -> Vec<PathBuf> {
     result
 }
 
+/// Categorize an install path as system, shared, or local.
+pub fn install_path_category(path: &Path) -> InstallPathCategory {
+    if path.starts_with(&*MISE_SYSTEM_INSTALLS_DIR) {
+        InstallPathCategory::System
+    } else if shared_install_dirs().iter().any(|d| path.starts_with(d)) {
+        InstallPathCategory::Shared
+    } else {
+        InstallPathCategory::Local
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InstallPathCategory {
+    /// Primary user install dir
+    Local,
+    /// System-level (/usr/local/share/mise/installs)
+    System,
+    /// User-configured shared dir
+    Shared,
+}
+
 /// Look up a tool version in shared install directories.
 /// Returns the first shared path where `<shared_dir>/<tool_kebab>/<pathname>` exists,
 /// or `primary_path` if not found in any shared directory.

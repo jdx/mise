@@ -13,6 +13,7 @@ use crate::cli::args::BackendArg;
 use crate::cli::prune;
 use crate::config;
 use crate::config::Config;
+use crate::env;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequestSet, ToolSource, ToolVersion, Toolset};
 use crate::ui::table::MiseTable;
@@ -442,6 +443,15 @@ impl Row {
                 }
                 cell
             }
+            VersionStatus::Shared(version, active, label) => {
+                let mut cell = Cell::new(format!("{version} ({label})"));
+                if *active {
+                    cell = cell.fg(Color::Cyan);
+                } else {
+                    cell = cell.fg(Color::Cyan).add_attribute(Attribute::Dim);
+                }
+                cell
+            }
         }
     }
     fn display_source(&self) -> Cell {
@@ -532,9 +542,10 @@ async fn json_tool_version_from(
         },
         sources: if all_sources { sources } else { None },
         installed: !matches!(vs, VersionStatus::Missing(_)),
-        active: match vs {
+        active: match &vs {
             VersionStatus::Active(_, _) => true,
-            VersionStatus::Symlink(_, active) => active,
+            VersionStatus::Symlink(_, active) => *active,
+            VersionStatus::Shared(_, active, _) => *active,
             _ => false,
         },
     }
@@ -546,6 +557,8 @@ enum VersionStatus {
     Inactive(String),
     Missing(String),
     Symlink(String, bool),
+    /// Version from a shared or system install directory
+    Shared(String, bool, &'static str),
 }
 
 async fn version_status_from(
@@ -558,15 +571,26 @@ async fn version_status_from(
         VersionStatus::Symlink(tv.version.clone(), !source.is_unknown())
     } else if !p.is_version_installed(config, tv, true) {
         VersionStatus::Missing(tv.version.clone())
-    } else if !source.is_unknown() {
-        let outdated = if ls.outdated {
-            p.is_version_outdated(config, tv).await
-        } else {
-            false
-        };
-        VersionStatus::Active(tv.version.clone(), outdated)
     } else {
-        VersionStatus::Inactive(tv.version.clone())
+        let category = env::install_path_category(&install_path);
+        if category != env::InstallPathCategory::Local {
+            let label = match category {
+                env::InstallPathCategory::System => "system",
+                env::InstallPathCategory::Shared => "shared",
+                _ => unreachable!(),
+            };
+            return VersionStatus::Shared(tv.version.clone(), !source.is_unknown(), label);
+        }
+        if !source.is_unknown() {
+            let outdated = if ls.outdated {
+                p.is_version_outdated(config, tv).await
+            } else {
+                false
+            };
+            VersionStatus::Active(tv.version.clone(), outdated)
+        } else {
+            VersionStatus::Inactive(tv.version.clone())
+        }
     }
 }
 
@@ -580,15 +604,26 @@ async fn version_status_from_sources(
         VersionStatus::Symlink(tv.version.clone(), has_sources)
     } else if !p.is_version_installed(config, tv, true) {
         VersionStatus::Missing(tv.version.clone())
-    } else if has_sources {
-        let outdated = if ls.outdated {
-            p.is_version_outdated(config, tv).await
-        } else {
-            false
-        };
-        VersionStatus::Active(tv.version.clone(), outdated)
     } else {
-        VersionStatus::Inactive(tv.version.clone())
+        let category = env::install_path_category(&install_path);
+        if category != env::InstallPathCategory::Local {
+            let label = match category {
+                env::InstallPathCategory::System => "system",
+                env::InstallPathCategory::Shared => "shared",
+                _ => unreachable!(),
+            };
+            return VersionStatus::Shared(tv.version.clone(), has_sources, label);
+        }
+        if has_sources {
+            let outdated = if ls.outdated {
+                p.is_version_outdated(config, tv).await
+            } else {
+                false
+            };
+            VersionStatus::Active(tv.version.clone(), outdated)
+        } else {
+            VersionStatus::Inactive(tv.version.clone())
+        }
     }
 }
 
