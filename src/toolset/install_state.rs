@@ -68,14 +68,17 @@ fn manifest_path() -> PathBuf {
 
 /// Read the consolidated manifest file. Returns empty map if it doesn't exist.
 fn read_manifest() -> Manifest {
-    let path = manifest_path();
-    match file::read_to_string(&path) {
+    read_manifest_from(&manifest_path())
+}
+
+fn read_manifest_from(path: &Path) -> Manifest {
+    match file::read_to_string(path) {
         std::result::Result::Ok(body) => match toml::from_str(&body) {
             std::result::Result::Ok(m) => m,
             Err(err) => {
                 warn!(
                     "failed to parse manifest at {}: {err:#}",
-                    display_path(&path)
+                    display_path(path)
                 );
                 Default::default()
             }
@@ -86,9 +89,12 @@ fn read_manifest() -> Manifest {
 
 /// Write the consolidated manifest file.
 fn write_manifest(manifest: &Manifest) -> Result<()> {
-    let path = manifest_path();
+    write_manifest_to(&manifest_path(), manifest)
+}
+
+fn write_manifest_to(path: &Path, manifest: &Manifest) -> Result<()> {
     let body = toml::to_string_pretty(manifest)?;
-    file::write(&path, body.trim())?;
+    file::write(path, body.trim())?;
     Ok(())
 }
 
@@ -481,7 +487,13 @@ pub async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
 }
 
 /// Writes backend metadata to the consolidated manifest file.
+/// Uses the primary installs dir manifest by default.
 pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
+    write_backend_meta_to(ba, &manifest_path())
+}
+
+/// Writes backend metadata to a manifest at a specific install path.
+pub fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> {
     let full = ba.full_without_opts();
     let explicit = ba.has_explicit_backend();
 
@@ -496,7 +508,7 @@ pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
     }
 
     let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
-    let mut manifest = read_manifest();
+    let mut manifest = read_manifest_from(path);
     manifest.insert(
         ba.short.to_kebab_case(),
         ManifestTool {
@@ -506,7 +518,7 @@ pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
             opts: opts_map,
         },
     );
-    write_manifest(&manifest)?;
+    write_manifest_to(path, &manifest)?;
     Ok(())
 }
 
