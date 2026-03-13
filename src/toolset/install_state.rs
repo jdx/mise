@@ -304,19 +304,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             continue;
         }
         let shared_manifest_path = shared_dir.join(".mise-installs.toml");
-        let shared_manifest: Manifest = match file::read_to_string(&shared_manifest_path) {
-            std::result::Result::Ok(body) => match toml::from_str(&body) {
-                std::result::Result::Ok(m) => m,
-                Err(err) => {
-                    warn!(
-                        "failed to parse shared manifest at {}: {err:#}",
-                        display_path(&shared_manifest_path)
-                    );
-                    Default::default()
-                }
-            },
-            Err(_) => Default::default(),
-        };
+        let shared_manifest = read_manifest_from(&shared_manifest_path);
         let shared_subdirs = match file::dir_subdirs(&shared_dir) {
             std::result::Result::Ok(d) => d,
             Err(err) => {

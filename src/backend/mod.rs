@@ -1073,10 +1073,12 @@ pub trait Backend: Debug + Send + Sync {
         let install_path = tv.install_path();
         if install_path.starts_with(*dirs::INSTALLS) {
             install_state::write_backend_meta(self.ba())?;
-        } else if let Some(installs_dir) = install_path.parent().and_then(|p| p.parent()) {
+        } else if env::install_path_category(&install_path) != env::InstallPathCategory::Local {
             // For --system/--shared installs, write manifest to the target installs dir
-            let manifest = installs_dir.join(".mise-installs.toml");
-            install_state::write_backend_meta_to(self.ba(), &manifest)?;
+            if let Some(installs_dir) = install_path.parent().and_then(|p| p.parent()) {
+                let manifest = installs_dir.join(".mise-installs.toml");
+                install_state::write_backend_meta_to(self.ba(), &manifest)?;
+            }
         }
 
         self.cleanup_install_dirs(&tv);
