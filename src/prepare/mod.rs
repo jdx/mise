@@ -83,7 +83,9 @@ impl PrepareCommand {
         }
 
         let shell = Settings::get().default_inline_shell()?;
-        let (program, shell_args) = shell.split_first().unwrap();
+        let (program, shell_args) = shell.split_first().ok_or_else(|| {
+            eyre::eyre!("default inline shell is empty; check unix_default_inline_shell_args / windows_default_inline_shell_args")
+        })?;
 
         let mut args: Vec<String> = shell_args.to_vec();
         args.push(run.to_string());
