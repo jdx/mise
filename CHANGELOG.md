@@ -1,5 +1,62 @@
 # Changelog
 
+## [2026.3.9](https://github.com/jdx/mise/compare/v2026.3.8..v2026.3.9) - 2026-03-13
+
+### 🚀 Features
+
+- **(github)** use release latest endpoint to get latest release by @roele in [#8516](https://github.com/jdx/mise/pull/8516)
+- **(install)** add shared and system install directories by @jdx in [#8581](https://github.com/jdx/mise/pull/8581)
+- **(vfox)** add provenance metadata to lockfile for tool plugins by @malept in [#8544](https://github.com/jdx/mise/pull/8544)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** expose main binary when files field is empty and symlink_bins is enabled by @AlexanderTheGrey in [#8550](https://github.com/jdx/mise/pull/8550)
+- **(env)** redact secrets in `mise set` listing and task-specific env by @jdx in [#8583](https://github.com/jdx/mise/pull/8583)
+- **(prepare)** install config tools before running prepare steps by @jdx in [#8582](https://github.com/jdx/mise/pull/8582)
+- **(task)** allow ctrl-c to interrupt tool downloads during `mise run` by @jdx in [#8571](https://github.com/jdx/mise/pull/8571)
+- **(tasks)** add file task header parser support for spaces around = by @roele in [#8574](https://github.com/jdx/mise/pull/8574)
+
+### 📚 Documentation
+
+- **(task)** add property description for interactive by @roele in [#8562](https://github.com/jdx/mise/pull/8562)
+- add missing `</bold>` closing tag by @muzimuzhi in [#8564](https://github.com/jdx/mise/pull/8564)
+- rebrand site with new chef logo and warm culinary palette by @jdx in [#8587](https://github.com/jdx/mise/pull/8587)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:alpine docker digest to de4657e by @renovate[bot] in [#8577](https://github.com/jdx/mise/pull/8577)
+- update ghcr.io/jdx/mise:copr docker digest to eef29a2 by @renovate[bot] in [#8578](https://github.com/jdx/mise/pull/8578)
+- update ghcr.io/jdx/mise:rpm docker digest to 5a96587 by @renovate[bot] in [#8580](https://github.com/jdx/mise/pull/8580)
+- update ghcr.io/jdx/mise:deb docker digest to 464cf7c by @renovate[bot] in [#8579](https://github.com/jdx/mise/pull/8579)
+
+### 📦 Registry
+
+- fix flatc version test mismatch by @jdx in [#8588](https://github.com/jdx/mise/pull/8588)
+
+### Chore
+
+- **(registry)** skip spark test-tool by @jdx in [#8572](https://github.com/jdx/mise/pull/8572)
+
+### New Contributors
+
+- @AlexanderTheGrey made their first contribution in [#8550](https://github.com/jdx/mise/pull/8550)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (6)
+
+- [`bahdotsh/mdterm`](https://github.com/bahdotsh/mdterm)
+- [`callumalpass/mdbase-lsp`](https://github.com/callumalpass/mdbase-lsp)
+- [`facebook/ktfmt`](https://github.com/facebook/ktfmt)
+- [`gurgeous/tennis`](https://github.com/gurgeous/tennis)
+- [`tektoncd/pipelines-as-code`](https://github.com/tektoncd/pipelines-as-code)
+- [`weedonandscott/trolley`](https://github.com/weedonandscott/trolley)
+
+#### Updated Packages (2)
+
+- [`apple/container`](https://github.com/apple/container)
+- [`cocogitto/cocogitto`](https://github.com/cocogitto/cocogitto)
+
 ## [2026.3.8](https://github.com/jdx/mise/compare/v2026.3.7..v2026.3.8) - 2026-03-11
 
 ### 🐛 Bug Fixes
