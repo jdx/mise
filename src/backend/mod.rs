@@ -980,7 +980,7 @@ pub trait Backend: Debug + Send + Sync {
     async fn install_version(
         &self,
         ctx: InstallContext,
-        tv: ToolVersion,
+        mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
         // Check for --locked mode: if enabled and no lockfile URL exists, fail early
         // Exempt tool stubs from lockfile requirements since they are ephemeral
@@ -1025,6 +1025,15 @@ pub trait Backend: Debug + Send + Sync {
 
         if let Some(plugin) = self.plugin() {
             plugin.is_installed_err()?;
+        }
+
+        // If --force and the install path resolved to a shared dir (but wasn't explicitly
+        // set via --system/--shared), redirect to primary dir to avoid modifying shared installs.
+        if ctx.force
+            && tv.install_path.is_none()
+            && env::install_path_category(&tv.install_path()) != env::InstallPathCategory::Local
+        {
+            tv.install_path = Some(tv.ba().installs_path.join(tv.tv_pathname()));
         }
 
         let will_uninstall = ctx.force && self.is_version_installed(&ctx.config, &tv, true);

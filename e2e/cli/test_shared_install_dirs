@@ -40,6 +40,14 @@ primary_install="$MISE_DATA_DIR/installs/tiny/2.0.0"
 mise install tiny@2.0.0
 assert_fail "ls $primary_install"
 
+# --force installs into primary dir, not the shared dir
+mise install --force tiny@2.0.0
+assert_contains "ls $primary_install" "VERSION"
+# Shared dir should be untouched
+assert_contains "ls $shared_dir/tiny/2.0.0" "VERSION"
+# Clean up the primary copy for the next test
+rm -rf "$primary_install"
+
 # Primary version (1.0.1) can be uninstalled without affecting shared version (2.0.0)
 mise uninstall tiny@1.0.1
 assert_fail "ls $MISE_DATA_DIR/installs/tiny/1.0.1"
