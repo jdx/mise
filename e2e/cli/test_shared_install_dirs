@@ -35,5 +35,15 @@ assert_contains "mise ls tiny --installed" "1.0.1"
 echo -e "[tools]\ntiny = \"2.0.0\"" >mise.toml
 assert "mise x -- tiny" "2.0.0"
 
+# Verify shared version is treated as already installed (no re-install to primary)
+primary_install="$MISE_DATA_DIR/installs/tiny/2.0.0"
+mise install tiny@2.0.0
+assert_fail "ls $primary_install"
+
+# Primary version (1.0.1) can be uninstalled without affecting shared version (2.0.0)
+mise uninstall tiny@1.0.1
+assert_fail "ls $MISE_DATA_DIR/installs/tiny/1.0.1"
+assert "mise x -- tiny" "2.0.0"
+
 # Clean up
 rm -rf "$shared_dir" mise.toml
