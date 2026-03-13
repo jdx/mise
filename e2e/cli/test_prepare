@@ -295,7 +295,7 @@ assert_contains "cat .explain_out" "Provider: explain_test"
 assert_contains "cat .explain_out" "Auto: yes"
 assert_contains "cat .explain_out" "Sources:"
 assert_contains "cat .explain_out" "Outputs:"
-assert_contains "cat .explain_out" "Command: echo explain_ran"
+assert_contains "cat .explain_out" "echo explain_ran"
 assert_contains "cat .explain_out" "stale"
 
 # Test --explain with fresh output (run prepare first to establish state)

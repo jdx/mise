@@ -12,7 +12,7 @@ tiny = "1"
 auto = true
 sources = ["input.txt"]
 outputs = ["output.txt"]
-run = "bash -c 'rtx-tiny > output.txt'"
+run = "rtx-tiny > output.txt"
 EOF
 
 touch input.txt
