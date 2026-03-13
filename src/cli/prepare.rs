@@ -167,7 +167,7 @@ impl Prepare {
 
         // Command
         if let Ok(cmd) = provider.prepare_command() {
-            miseprintln!("Command: {} {}", cmd.program, cmd.args.join(" "));
+            miseprintln!("Command: {}", cmd.description);
         }
 
         // Verdict
