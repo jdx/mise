@@ -532,11 +532,45 @@ impl Lockfile {
                  {content}"
             );
 
+            // Resolve the symlink target first, before writing the temp file
+            let target = if path.is_symlink() {
+                // If the existing lockfile is a symlink, resolve it and update the target instead
+                // of replacing the symlink
+                trace!(
+                    "lockfile {} is a symlink, updating target instead of replacing",
+                    display_path(path)
+                );
+
+                match fs::canonicalize(path) {
+                    Ok(link_target) => {
+                        trace!(
+                            "resolved lockfile symlink {} to {}",
+                            display_path(&path),
+                            display_path(&link_target)
+                        );
+                        link_target
+                    }
+                    Err(e) => {
+                        // Dangling symlink – fall back to overwriting the symlink itself
+                        // TODO: Maybe instead of overwriting, we should create the new lockfile at
+                        // the symlink's target path?
+                        warn!(
+                            "lockfile {} is a dangling symlink ({}), overwriting the symlink itself",
+                            display_path(path),
+                            e
+                        );
+                        path.to_path_buf()
+                    }
+                }
+            } else {
+                path.to_path_buf()
+            };
             // Use atomic write: write to temp file, then rename
             // This prevents partial writes from corrupting the lockfile
-            let temp_path = path.with_extension("lock.tmp");
+            // Write temp file alongside the real target (guarantees same-filesystem rename)
+            let temp_path = target.with_extension("lock.tmp");
             file::write(&temp_path, &content)?;
-            fs::rename(&temp_path, path)?;
+            fs::rename(&temp_path, target)?;
 
             invalidate_caches();
         }
