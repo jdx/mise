@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::config::settings::Settings;
 use crate::toolset::tool_version::ResolveOptions;
 
@@ -16,6 +18,8 @@ pub struct InstallOptions {
     pub dry_run: bool,
     /// require lockfile URLs to be present; fail if not
     pub locked: bool,
+    /// Override the install directory (e.g. for --system or --shared)
+    pub install_dir: Option<PathBuf>,
 }
 
 impl Default for InstallOptions {
@@ -31,6 +35,7 @@ impl Default for InstallOptions {
             resolve_options: Default::default(),
             dry_run: false,
             locked: Settings::get().locked,
+            install_dir: None,
         }
     }
 }

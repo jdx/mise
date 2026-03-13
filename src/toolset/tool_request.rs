@@ -11,6 +11,7 @@ use xx::file;
 
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
+use crate::env;
 use crate::lockfile::LockfileTool;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::tool_version::ResolveOptions;
@@ -225,13 +226,28 @@ impl ToolRequest {
         match self {
             Self::Version {
                 backend, version, ..
-            } => Some(backend.installs_path.join(version)),
+            } => {
+                let path = backend.installs_path.join(version);
+                Some(env::find_in_shared_installs(
+                    path,
+                    &backend.tool_dir_name(),
+                    version,
+                ))
+            }
             Self::Ref {
                 backend,
                 ref_,
                 ref_type,
                 ..
-            } => Some(backend.installs_path.join(format!("{ref_type}-{ref_}"))),
+            } => {
+                let pathname = format!("{ref_type}-{ref_}");
+                let path = backend.installs_path.join(&pathname);
+                Some(env::find_in_shared_installs(
+                    path,
+                    &backend.tool_dir_name(),
+                    &pathname,
+                ))
+            }
             Self::Sub {
                 backend,
                 sub,
@@ -241,19 +257,42 @@ impl ToolRequest {
                 .local_resolve(config, orig_version)
                 .inspect_err(|e| warn!("ToolRequest.local_resolve: {e:#}"))
                 .unwrap_or_default()
-                .map(|v| backend.installs_path.join(version_sub(&v, sub.as_str()))),
+                .map(|v| {
+                    let pathname = version_sub(&v, sub.as_str());
+                    let path = backend.installs_path.join(&pathname);
+                    env::find_in_shared_installs(path, &backend.tool_dir_name(), &pathname)
+                }),
             Self::Prefix {
                 backend, prefix, ..
-            } => match file::ls(&backend.installs_path) {
-                Ok(installs) => installs
-                    .iter()
-                    .find(|p| {
-                        !is_runtime_symlink(p)
-                            && p.file_name().unwrap().to_string_lossy().starts_with(prefix)
-                    })
-                    .cloned(),
-                Err(_) => None,
-            },
+            } => {
+                // Check primary install path first
+                let found = match file::ls(&backend.installs_path) {
+                    Ok(installs) => installs
+                        .iter()
+                        .find(|p| {
+                            !is_runtime_symlink(p)
+                                && p.file_name().unwrap().to_string_lossy().starts_with(prefix)
+                        })
+                        .cloned(),
+                    Err(_) => None,
+                };
+                // Fall back to shared install directories
+                found.or_else(|| {
+                    let tool_dir_name = backend.tool_dir_name();
+                    for shared_dir in env::shared_install_dirs().iter() {
+                        let shared_tool_dir = shared_dir.join(&tool_dir_name);
+                        if let Ok(installs) = file::ls(&shared_tool_dir)
+                            && let Some(p) = installs.iter().find(|p| {
+                                !is_runtime_symlink(p)
+                                    && p.file_name().unwrap().to_string_lossy().starts_with(prefix)
+                            })
+                        {
+                            return Some(p.clone());
+                        }
+                    }
+                    None
+                })
+            }
             Self::Path { path, .. } => Some(path.clone()),
             Self::System { .. } => None,
         }

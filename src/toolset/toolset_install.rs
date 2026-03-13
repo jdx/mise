@@ -453,7 +453,11 @@ impl Toolset {
     ) -> Result<ToolVersion> {
         let mpr = MultiProgressReport::get();
 
-        let tv = tr.resolve(config, &opts.resolve_options).await?;
+        let mut tv = tr.resolve(config, &opts.resolve_options).await?;
+        if let Some(dir) = &opts.install_dir {
+            let tool_dir_name = tv.ba().tool_dir_name();
+            tv.install_path = Some(dir.join(tool_dir_name).join(tv.tv_pathname()));
+        }
         let backend = tr.backend()?;
 
         let ctx = InstallContext {

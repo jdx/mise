@@ -58,6 +58,20 @@ This is useful for scripts to check if tools need to be installed.
 
 Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 
+### `--shared <SHARED>`
+
+[experimental] Install tool(s) to a shared directory
+
+Installs to the specified directory instead of the default install location.
+May require elevated permissions depending on the path.
+
+### `--system`
+
+[experimental] Install tool(s) to the system-wide shared directory
+
+Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
+May require elevated permissions (e.g. sudo).
+
 Examples:
 
 ```

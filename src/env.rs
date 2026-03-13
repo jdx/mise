@@ -112,8 +112,11 @@ pub static MISE_STATE_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_STATE_DIR").unwrap_or_else(|| XDG_STATE_HOME.join("mise")));
 pub static MISE_TMP_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_TMP_DIR").unwrap_or_else(|| temp_dir().join("mise")));
-pub static MISE_SYSTEM_DIR: Lazy<PathBuf> =
-    Lazy::new(|| var_path("MISE_SYSTEM_DIR").unwrap_or_else(|| PathBuf::from("/etc/mise")));
+pub static MISE_SYSTEM_CONFIG_DIR: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("MISE_SYSTEM_CONFIG_DIR")
+        .or_else(|| var_path("MISE_SYSTEM_DIR"))
+        .unwrap_or_else(|| PathBuf::from("/etc/mise"))
+});
 
 // data subdirs
 pub static MISE_INSTALLS_DIR: Lazy<PathBuf> =
@@ -124,6 +127,104 @@ pub static MISE_PLUGINS_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_PLUGINS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("plugins")));
 pub static MISE_SHIMS_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_SHIMS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("shims")));
+/// System-level data directory (like MISE_DATA_DIR but for system-wide tools).
+pub static MISE_SYSTEM_DATA_DIR: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("MISE_SYSTEM_DATA_DIR").unwrap_or_else(|| PathBuf::from("/usr/local/share/mise"))
+});
+/// System-level installs directory, derived from MISE_SYSTEM_DATA_DIR.
+pub static MISE_SYSTEM_INSTALLS_DIR: Lazy<PathBuf> =
+    Lazy::new(|| MISE_SYSTEM_DATA_DIR.join("installs"));
+
+/// Extra shared install directories parsed from the environment variable.
+/// This is the early/fallback source; prefer `shared_install_dirs()` which also
+/// reads from Settings (config files) when available.
+static MISE_SHARED_INSTALL_DIRS_ENV: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+    var_os("MISE_SHARED_INSTALL_DIRS")
+        .map(|v| {
+            std::env::split_paths(&v)
+                .filter(|p| !p.as_os_str().is_empty())
+                .map(replace_path)
+                .collect()
+        })
+        .unwrap_or_default()
+});
+
+/// Returns the list of shared install directories to search.
+/// Includes the system installs dir (`MISE_SYSTEM_DATA_DIR/installs`) plus any
+/// user-configured dirs from Settings (config files) or the environment variable.
+/// The user's primary install dir is NOT included here — it is checked separately.
+pub fn shared_install_dirs() -> Vec<PathBuf> {
+    use crate::config::Settings;
+    let user_dirs = if let std::result::Result::Ok(settings) = Settings::try_get()
+        && let Some(ref dirs) = settings.shared_install_dirs
+        && !dirs.is_empty()
+    {
+        dirs.clone()
+    } else {
+        MISE_SHARED_INSTALL_DIRS_ENV.clone()
+    };
+    let system = &*MISE_SYSTEM_INSTALLS_DIR;
+    // System dir first (if it exists and isn't the user's own install dir),
+    // then user-configured dirs.
+    let mut result = Vec::new();
+    if system.is_dir() && *system != *MISE_INSTALLS_DIR {
+        result.push(system.clone());
+    }
+    result.extend(user_dirs);
+    result
+}
+
+/// Early-boot variant used by install_state::init_tools() before Settings is loaded.
+pub fn shared_install_dirs_early() -> Vec<PathBuf> {
+    let system = &*MISE_SYSTEM_INSTALLS_DIR;
+    let mut result = Vec::new();
+    if system.is_dir() && *system != *MISE_INSTALLS_DIR {
+        result.push(system.clone());
+    }
+    result.extend(MISE_SHARED_INSTALL_DIRS_ENV.iter().cloned());
+    result
+}
+
+/// Categorize an install path as system, shared, or local.
+pub fn install_path_category(path: &Path) -> InstallPathCategory {
+    if path.starts_with(&*MISE_SYSTEM_INSTALLS_DIR) {
+        InstallPathCategory::System
+    } else if shared_install_dirs().iter().any(|d| path.starts_with(d)) {
+        InstallPathCategory::Shared
+    } else {
+        InstallPathCategory::Local
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InstallPathCategory {
+    /// Primary user install dir
+    Local,
+    /// System-level (/usr/local/share/mise/installs)
+    System,
+    /// User-configured shared dir
+    Shared,
+}
+
+/// Look up a tool version in shared install directories.
+/// `tool_dir_name` should be the kebab-cased directory name (e.g. from `ba.installs_path`).
+/// Returns the first shared path where `<shared_dir>/<tool_dir_name>/<pathname>` exists,
+/// or `primary_path` if not found in any shared directory.
+pub fn find_in_shared_installs(
+    primary_path: PathBuf,
+    tool_dir_name: &str,
+    pathname: &str,
+) -> PathBuf {
+    if !primary_path.exists() {
+        for shared_dir in shared_install_dirs() {
+            let shared_path = shared_dir.join(tool_dir_name).join(pathname);
+            if shared_path.exists() {
+                return shared_path;
+            }
+        }
+    }
+    primary_path
+}
 
 pub static MISE_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
     var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME")

@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+# Test that MISE_SHARED_INSTALL_DIRS allows fallback to shared directories
+
+# Install tiny into the primary directory
+mise install tiny@1.0.1
+
+# Verify it's installed
+assert_contains "mise ls tiny" "1.0.1"
+
+# Create a shared install directory with a different version
+shared_dir="$PWD/tmp/shared-installs"
+mkdir -p "$shared_dir/tiny/2.0.0/bin"
+echo "2.0.0" >"$shared_dir/tiny/2.0.0/VERSION"
+cat >"$shared_dir/tiny/2.0.0/bin/tiny" <<'SCRIPT'
+#!/usr/bin/env bash
+echo "2.0.0"
+SCRIPT
+chmod +x "$shared_dir/tiny/2.0.0/bin/tiny"
+
+# Write a manifest for the shared directory
+cat >"$shared_dir/.mise-installs.toml" <<'TOML'
+[tiny]
+short = "tiny"
+full = "asdf:tiny"
+explicit_backend = true
+TOML
+
+# Set shared install dirs and verify the version from the shared dir is visible
+export MISE_SHARED_INSTALL_DIRS="$shared_dir"
+assert_contains "mise ls tiny --installed" "2.0.0"
+assert_contains "mise ls tiny --installed" "1.0.1"
+
+# Use the shared version by setting it in config
+echo -e "[tools]\ntiny = \"2.0.0\"" >mise.toml
+assert "mise x -- tiny" "2.0.0"
+
+# Verify shared version is treated as already installed (no re-install to primary)
+primary_install="$MISE_DATA_DIR/installs/tiny/2.0.0"
+mise install tiny@2.0.0
+assert_fail "ls $primary_install"
+
+# --force installs into primary dir, not the shared dir
+mise install --force tiny@2.0.0
+assert_contains "ls $primary_install" "VERSION"
+# Shared dir should be untouched
+assert_contains "ls $shared_dir/tiny/2.0.0" "VERSION"
+# Clean up the primary copy for the next test
+rm -rf "$primary_install"
+
+# Primary version (1.0.1) can be uninstalled without affecting shared version (2.0.0)
+mise uninstall tiny@1.0.1
+assert_fail "ls $MISE_DATA_DIR/installs/tiny/1.0.1"
+assert "mise x -- tiny" "2.0.0"
+
+# Clean up
+rm -rf "$shared_dir" mise.toml

@@ -4,7 +4,7 @@ use crate::file::display_path;
 use crate::git::Git;
 use crate::plugins::PluginType;
 use crate::toolset::{EPHEMERAL_OPT_KEYS, parse_tool_options};
-use crate::{dirs, file, runtime_symlinks};
+use crate::{dirs, env, file, runtime_symlinks};
 use eyre::{Ok, Result};
 use heck::ToKebabCase;
 use itertools::Itertools;
@@ -68,14 +68,17 @@ fn manifest_path() -> PathBuf {
 
 /// Read the consolidated manifest file. Returns empty map if it doesn't exist.
 fn read_manifest() -> Manifest {
-    let path = manifest_path();
-    match file::read_to_string(&path) {
+    read_manifest_from(&manifest_path())
+}
+
+fn read_manifest_from(path: &Path) -> Manifest {
+    match file::read_to_string(path) {
         std::result::Result::Ok(body) => match toml::from_str(&body) {
             std::result::Result::Ok(m) => m,
             Err(err) => {
                 warn!(
                     "failed to parse manifest at {}: {err:#}",
-                    display_path(&path)
+                    display_path(path)
                 );
                 Default::default()
             }
@@ -86,9 +89,12 @@ fn read_manifest() -> Manifest {
 
 /// Write the consolidated manifest file.
 fn write_manifest(manifest: &Manifest) -> Result<()> {
-    let path = manifest_path();
+    write_manifest_to(&manifest_path(), manifest)
+}
+
+fn write_manifest_to(path: &Path, manifest: &Manifest) -> Result<()> {
     let body = toml::to_string_pretty(manifest)?;
-    file::write(&path, body.trim())?;
+    file::write(path, body.trim())?;
     Ok(())
 }
 
@@ -292,6 +298,84 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
         }
     }
 
+    // Scan shared install directories (read-only fallback directories)
+    for shared_dir in env::shared_install_dirs_early() {
+        if !shared_dir.is_dir() {
+            continue;
+        }
+        let shared_manifest_path = shared_dir.join(".mise-installs.toml");
+        let shared_manifest = read_manifest_from(&shared_manifest_path);
+        let shared_subdirs = match file::dir_subdirs(&shared_dir) {
+            std::result::Result::Ok(d) => d,
+            Err(err) => {
+                warn!(
+                    "reading shared install dir {} failed: {err:?}",
+                    display_path(&shared_dir)
+                );
+                continue;
+            }
+        };
+        for dir_name in shared_subdirs {
+            let dir = shared_dir.join(&dir_name);
+            let versions: Vec<String> = file::dir_subdirs(&dir)
+                .unwrap_or_else(|err| {
+                    warn!("reading versions in {} failed: {err:?}", display_path(&dir));
+                    Default::default()
+                })
+                .into_iter()
+                .filter(|v| !v.starts_with('.'))
+                .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
+                .filter(|v| !dir.join(v).join("incomplete").exists())
+                .sorted_by_cached_key(|v| {
+                    let normalized = normalize_version_for_sort(v);
+                    (Versioning::new(normalized), v.to_string())
+                })
+                .collect();
+
+            if versions.is_empty() {
+                continue;
+            }
+
+            let (short, full, explicit_backend, opts) =
+                if let Some(mt) = shared_manifest.get(&dir_name) {
+                    (
+                        mt.short.clone(),
+                        mt.full.clone(),
+                        mt.explicit_backend,
+                        mt.opts.clone(),
+                    )
+                } else {
+                    (dir_name.clone(), None, true, BTreeMap::new())
+                };
+
+            // Merge with existing tool entry or create new one
+            let tool = tools
+                .entry(short.clone())
+                .or_insert_with(|| InstallStateTool {
+                    short: short.clone(),
+                    full: full.clone(),
+                    versions: Vec::new(),
+                    explicit_backend,
+                    opts: opts.clone(),
+                });
+            // Add versions from shared dir that aren't already present
+            for v in versions {
+                if !tool.versions.contains(&v) {
+                    tool.versions.push(v);
+                }
+            }
+            // Re-sort after merging
+            tool.versions.sort_by_cached_key(|v| {
+                let normalized = normalize_version_for_sort(v);
+                (Versioning::new(normalized), v.to_string())
+            });
+            // Fill in metadata if not yet set
+            if tool.full.is_none() {
+                tool.full = full;
+            }
+        }
+    }
+
     for (short, pt) in init_plugins().await?.iter() {
         let full = match pt {
             PluginType::Asdf => format!("asdf:{short}"),
@@ -391,7 +475,13 @@ pub async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
 }
 
 /// Writes backend metadata to the consolidated manifest file.
+/// Uses the primary installs dir manifest by default.
 pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
+    write_backend_meta_to(ba, &manifest_path())
+}
+
+/// Writes backend metadata to a manifest at a specific install path.
+pub fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> {
     let full = ba.full_without_opts();
     let explicit = ba.has_explicit_backend();
 
@@ -406,7 +496,7 @@ pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
     }
 
     let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
-    let mut manifest = read_manifest();
+    let mut manifest = read_manifest_from(path);
     manifest.insert(
         ba.short.to_kebab_case(),
         ManifestTool {
@@ -416,7 +506,7 @@ pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
             opts: opts_map,
         },
     );
-    write_manifest(&manifest)?;
+    write_manifest_to(path, &manifest)?;
     Ok(())
 }
 
@@ -460,6 +550,7 @@ pub fn reset() {
     *INSTALL_STATE_TOOLS
         .lock()
         .expect("INSTALL_STATE_TOOLS lock failed") = None;
+    super::tool_version::reset_install_path_cache();
 }
 
 #[cfg(test)]

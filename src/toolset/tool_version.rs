@@ -8,6 +8,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::backend::ABackend;
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
+use crate::env;
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
@@ -19,6 +20,14 @@ use eyre::{Result, bail};
 use jiff::Timestamp;
 #[cfg(windows)]
 use path_absolutize::Absolutize;
+
+static INSTALL_PATH_CACHE: LazyLock<DashMap<ToolVersion, PathBuf>> = LazyLock::new(DashMap::new);
+
+/// Clear the install_path cache. Called when install state is reset
+/// to avoid stale paths (e.g. shared dir paths after a new install).
+pub fn reset_install_path_cache() {
+    INSTALL_PATH_CACHE.clear();
+}
 
 /// represents a single version of a tool for a particular plugin
 #[derive(Debug, Clone)]
@@ -102,15 +111,14 @@ impl ToolVersion {
         if let Some(p) = &self.install_path {
             return p.clone();
         }
-        static CACHE: LazyLock<DashMap<ToolVersion, PathBuf>> = LazyLock::new(DashMap::new);
-        if let Some(p) = CACHE.get(self) {
+        if let Some(p) = INSTALL_PATH_CACHE.get(self) {
             return p.clone();
         }
         let pathname = match &self.request {
             ToolRequest::Path { path: p, .. } => p.to_string_lossy().to_string(),
             _ => self.tv_pathname(),
         };
-        let path = self.ba().installs_path.join(pathname);
+        let path = self.ba().installs_path.join(&pathname);
 
         // handle non-symlinks on windows
         // TODO: make this a utility function in xx
@@ -126,7 +134,15 @@ impl ToolVersion {
                 }
             }
         }
-        CACHE.insert(self.clone(), path.clone());
+
+        // Check shared install directories if the primary path doesn't exist
+        let path = if matches!(&self.request, ToolRequest::Path { .. }) {
+            path
+        } else {
+            env::find_in_shared_installs(path, &self.ba().tool_dir_name(), &pathname)
+        };
+
+        INSTALL_PATH_CACHE.insert(self.clone(), path.clone());
         path
     }
     pub fn cache_path(&self) -> PathBuf {

@@ -1285,6 +1285,13 @@
             }
           }
         },
+        "shared_install_dirs": {
+          "description": "[experimental] Additional read-only directories to search for installed tool versions.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "shorthands_file": {
           "description": "Path to a file containing custom tool shorthands.",
           "type": "string"

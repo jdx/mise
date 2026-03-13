@@ -681,8 +681,17 @@ pub trait Backend: Debug + Send + Sync {
             let installs = dirs::INSTALLS
                 .canonicalize()
                 .unwrap_or(dirs::INSTALLS.to_path_buf());
-            if target.starts_with(installs) {
+            if target.starts_with(&installs) {
                 return Some(path);
+            }
+            // Also check shared install directories
+            for shared_dir in env::shared_install_dirs() {
+                let shared = shared_dir
+                    .canonicalize()
+                    .unwrap_or(shared_dir.to_path_buf());
+                if target.starts_with(&shared) {
+                    return Some(path);
+                }
             }
         }
         None
@@ -971,7 +980,7 @@ pub trait Backend: Debug + Send + Sync {
     async fn install_version(
         &self,
         ctx: InstallContext,
-        tv: ToolVersion,
+        mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
         // Check for --locked mode: if enabled and no lockfile URL exists, fail early
         // Exempt tool stubs from lockfile requirements since they are ephemeral
@@ -1018,6 +1027,15 @@ pub trait Backend: Debug + Send + Sync {
             plugin.is_installed_err()?;
         }
 
+        // If --force and the install path resolved to a shared dir (but wasn't explicitly
+        // set via --system/--shared), redirect to primary dir to avoid modifying shared installs.
+        if ctx.force
+            && tv.install_path.is_none()
+            && env::install_path_category(&tv.install_path()) != env::InstallPathCategory::Local
+        {
+            tv.install_path = Some(tv.ba().installs_path.join(tv.tv_pathname()));
+        }
+
         let will_uninstall = ctx.force && self.is_version_installed(&ctx.config, &tv, true);
 
         // Query backend for operation count and set up progress tracking
@@ -1061,9 +1079,15 @@ pub trait Backend: Debug + Send + Sync {
             }
         };
 
-        if tv.install_path().starts_with(*dirs::INSTALLS) {
-            // this will be false only for `install-into`
+        let install_path = tv.install_path();
+        if install_path.starts_with(*dirs::INSTALLS) {
             install_state::write_backend_meta(self.ba())?;
+        } else if env::install_path_category(&install_path) != env::InstallPathCategory::Local {
+            // For --system/--shared installs, write manifest to the target installs dir
+            if let Some(installs_dir) = install_path.parent().and_then(|p| p.parent()) {
+                let manifest = installs_dir.join(".mise-installs.toml");
+                install_state::write_backend_meta_to(self.ba(), &manifest)?;
+            }
         }
 
         self.cleanup_install_dirs(&tv);
