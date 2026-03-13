@@ -1,6 +1,6 @@
 use eyre::{Result, bail};
 
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::prepare::{PrepareEngine, PrepareOptions, PrepareStepResult};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 
@@ -69,6 +69,7 @@ impl Prepare {
 
         let install_opts = InstallOptions {
             missing_args_only: false,
+            skip_auto_install: !Settings::get().auto_install,
             ..Default::default()
         };
         ts.install_missing_versions(&mut config, &install_opts)
