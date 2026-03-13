@@ -534,8 +534,8 @@ impl Doctor {
         // that's not a problematic entry — it's just where mise itself is installed.
         let paths_display = current_path[..first_mise_idx]
             .iter()
-            .filter(|p| !mise_bin_parent.as_ref().is_some_and(|bp| bp == &resolve(p)))
-            .map(|p| display_path(p))
+            .filter(|p| mise_bin_parent.as_ref().is_none_or(|bp| bp != &resolve(p)))
+            .map(display_path)
             .join("\n  ");
 
         if paths_display.is_empty() {
