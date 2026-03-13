@@ -681,8 +681,17 @@ pub trait Backend: Debug + Send + Sync {
             let installs = dirs::INSTALLS
                 .canonicalize()
                 .unwrap_or(dirs::INSTALLS.to_path_buf());
-            if target.starts_with(installs) {
+            if target.starts_with(&installs) {
                 return Some(path);
+            }
+            // Also check shared install directories
+            for shared_dir in env::MISE_SHARED_INSTALL_DIRS.iter() {
+                let shared = shared_dir
+                    .canonicalize()
+                    .unwrap_or(shared_dir.to_path_buf());
+                if target.starts_with(&shared) {
+                    return Some(path);
+                }
             }
         }
         None

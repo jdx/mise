@@ -124,6 +124,18 @@ pub static MISE_PLUGINS_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_PLUGINS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("plugins")));
 pub static MISE_SHIMS_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_SHIMS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("shims")));
+pub static MISE_SHARED_INSTALL_DIRS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+    var("MISE_SHARED_INSTALL_DIRS")
+        .ok()
+        .map(|v| {
+            v.split(':')
+                .filter(|p| !p.is_empty())
+                .map(PathBuf::from)
+                .map(replace_path)
+                .collect()
+        })
+        .unwrap_or_default()
+});
 
 pub static MISE_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
     var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME")

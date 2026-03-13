@@ -8,6 +8,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::backend::ABackend;
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
+use crate::env;
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
@@ -110,7 +111,7 @@ impl ToolVersion {
             ToolRequest::Path { path: p, .. } => p.to_string_lossy().to_string(),
             _ => self.tv_pathname(),
         };
-        let path = self.ba().installs_path.join(pathname);
+        let path = self.ba().installs_path.join(&pathname);
 
         // handle non-symlinks on windows
         // TODO: make this a utility function in xx
@@ -126,6 +127,19 @@ impl ToolVersion {
                 }
             }
         }
+
+        // Check shared install directories if the primary path doesn't exist
+        if !path.exists() && !matches!(&self.request, ToolRequest::Path { .. }) {
+            let tool_dir_name = heck::ToKebabCase::to_kebab_case(self.ba().short.as_str());
+            for shared_dir in env::MISE_SHARED_INSTALL_DIRS.iter() {
+                let shared_path = shared_dir.join(&tool_dir_name).join(&pathname);
+                if shared_path.exists() {
+                    CACHE.insert(self.clone(), shared_path.clone());
+                    return shared_path;
+                }
+            }
+        }
+
         CACHE.insert(self.clone(), path.clone());
         path
     }

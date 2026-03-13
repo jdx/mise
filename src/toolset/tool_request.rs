@@ -11,6 +11,7 @@ use xx::file;
 
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
+use crate::env;
 use crate::lockfile::LockfileTool;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::tool_version::ResolveOptions;
@@ -225,13 +226,20 @@ impl ToolRequest {
         match self {
             Self::Version {
                 backend, version, ..
-            } => Some(backend.installs_path.join(version)),
+            } => {
+                let path = backend.installs_path.join(version);
+                Some(resolve_shared_install_path(path, &backend.short, version))
+            }
             Self::Ref {
                 backend,
                 ref_,
                 ref_type,
                 ..
-            } => Some(backend.installs_path.join(format!("{ref_type}-{ref_}"))),
+            } => {
+                let pathname = format!("{ref_type}-{ref_}");
+                let path = backend.installs_path.join(&pathname);
+                Some(resolve_shared_install_path(path, &backend.short, &pathname))
+            }
             Self::Sub {
                 backend,
                 sub,
@@ -241,19 +249,42 @@ impl ToolRequest {
                 .local_resolve(config, orig_version)
                 .inspect_err(|e| warn!("ToolRequest.local_resolve: {e:#}"))
                 .unwrap_or_default()
-                .map(|v| backend.installs_path.join(version_sub(&v, sub.as_str()))),
+                .map(|v| {
+                    let pathname = version_sub(&v, sub.as_str());
+                    let path = backend.installs_path.join(&pathname);
+                    resolve_shared_install_path(path, &backend.short, &pathname)
+                }),
             Self::Prefix {
                 backend, prefix, ..
-            } => match file::ls(&backend.installs_path) {
-                Ok(installs) => installs
-                    .iter()
-                    .find(|p| {
-                        !is_runtime_symlink(p)
-                            && p.file_name().unwrap().to_string_lossy().starts_with(prefix)
-                    })
-                    .cloned(),
-                Err(_) => None,
-            },
+            } => {
+                // Check primary install path first
+                let found = match file::ls(&backend.installs_path) {
+                    Ok(installs) => installs
+                        .iter()
+                        .find(|p| {
+                            !is_runtime_symlink(p)
+                                && p.file_name().unwrap().to_string_lossy().starts_with(prefix)
+                        })
+                        .cloned(),
+                    Err(_) => None,
+                };
+                // Fall back to shared install directories
+                found.or_else(|| {
+                    let tool_dir_name = heck::ToKebabCase::to_kebab_case(backend.short.as_str());
+                    for shared_dir in env::MISE_SHARED_INSTALL_DIRS.iter() {
+                        let shared_tool_dir = shared_dir.join(&tool_dir_name);
+                        if let Ok(installs) = file::ls(&shared_tool_dir) {
+                            if let Some(p) = installs.iter().find(|p| {
+                                !is_runtime_symlink(p)
+                                    && p.file_name().unwrap().to_string_lossy().starts_with(prefix)
+                            }) {
+                                return Some(p.clone());
+                            }
+                        }
+                    }
+                    None
+                })
+            }
             Self::Path { path, .. } => Some(path.clone()),
             Self::System { .. } => None,
         }
@@ -328,6 +359,21 @@ impl ToolRequest {
 /// e.g. version_sub("18.2.3", "2") -> "16"
 /// e.g. version_sub("18.2.3", "0.1") -> "18.1"
 /// e.g. version_sub("2.79.0", "0.0.1") -> "2.78" (underflow, returns prefix)
+/// If `primary_path` doesn't exist, check shared install directories for an existing install.
+/// Returns the shared path if found, otherwise the original primary path.
+fn resolve_shared_install_path(primary_path: PathBuf, short: &str, pathname: &str) -> PathBuf {
+    if !primary_path.exists() {
+        let tool_dir_name = heck::ToKebabCase::to_kebab_case(short);
+        for shared_dir in env::MISE_SHARED_INSTALL_DIRS.iter() {
+            let shared_path = shared_dir.join(&tool_dir_name).join(pathname);
+            if shared_path.exists() {
+                return shared_path;
+            }
+        }
+    }
+    primary_path
+}
+
 pub fn version_sub(orig: &str, sub: &str) -> String {
     let mut orig = Version::new(orig).unwrap();
     let sub = Version::new(sub).unwrap();
