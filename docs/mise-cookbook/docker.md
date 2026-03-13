@@ -33,6 +33,44 @@ docker build -t debian-mise .
 docker run -it --rm debian-mise
 ```
 
+## Shared tools in multi-user containers
+
+For toolbox containers or bastion hosts where tools should be pre-installed for all users,
+use `mise install --system` to install tools into `/usr/local/share/mise/installs`.
+Each user's mise will automatically find these system-level tools without any configuration.
+
+```Dockerfile [Dockerfile]
+FROM debian:13-slim
+
+RUN apt-get update  \
+    && apt-get -y --no-install-recommends install  \
+        sudo curl git ca-certificates build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
+
+# Install mise
+RUN curl https://mise.run | sh
+
+# Pre-install tools to the system-wide shared directory
+RUN mise install --system node@22 python@3.13
+```
+
+Users in the container will see these tools automatically:
+
+```shell
+$ mise ls
+node    22.0.0 (system)
+python  3.13.0 (system)
+```
+
+Users can install additional versions in their own directory — those take priority over
+system versions. To customize the system directory, set `MISE_SYSTEM_DATA_DIR`.
+
+You can also configure additional shared directories with `MISE_SHARED_INSTALL_DIRS`
+(colon-separated paths) or the `shared_install_dirs` setting.
+
 ## Task to run mise in a Docker container
 
 This can be useful if you need to reproduce an issue you're having with mise in a clean environment.
