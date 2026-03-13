@@ -529,21 +529,18 @@ impl Doctor {
             return;
         }
 
-        // Collect non-mise paths that appear before the first mise path
-        let preceding_paths: Vec<&PathBuf> = current_path[..first_mise_idx]
+        // Everything before first_mise_idx is by definition not a mise-managed path.
+        // Filter out the mise binary's own directory (e.g. /opt/homebrew/bin) since
+        // that's not a problematic entry — it's just where mise itself is installed.
+        let paths_display = current_path[..first_mise_idx]
             .iter()
-            .filter(|p| {
-                let resolved = resolve(p);
-                !mise_paths_resolved.contains(&resolved)
-                    && !mise_bin_parent.as_ref().is_some_and(|bp| bp == &resolved)
-            })
-            .collect();
+            .filter(|p| !mise_bin_parent.as_ref().is_some_and(|bp| bp == &resolve(p)))
+            .map(|p| display_path(p))
+            .join("\n  ");
 
-        if preceding_paths.is_empty() {
+        if paths_display.is_empty() {
             return;
         }
-
-        let paths_display = preceding_paths.iter().map(|p| display_path(p)).join("\n  ");
         self.warnings.push(formatdoc!(
             r#"mise tool paths are not first in PATH. These paths take precedence:
               {paths_display}
