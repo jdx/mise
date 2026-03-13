@@ -78,6 +78,41 @@ version.
 | Install location     | `DOTNET_ROOT`          | `installs/dotnet/<version>/` |
 | Multi-targeting      | Works out of the box   | Requires switching versions  |
 
+## Runtime-only Installs
+
+By default, mise installs the full .NET SDK. If you only need to _run_ .NET applications without building them and without the added overhead of the SDK, you can install just the runtime using the `runtime` inline option:
+
+```sh
+mise use dotnet[runtime=dotnet]@8.0.14
+dotnet --list-runtimes
+```
+
+### Valid runtime values
+
+| Value          | Framework                    | Use case                 |
+| -------------- | ---------------------------- | ------------------------ |
+| dotnet         | Microsoft.NETCore.App        | Console apps, libraries  |
+| aspnetcore     | Microsoft.AspNetCore.App     | ASP.NET Core web apps    |
+| windowsdesktop | Microsoft.WindowsDesktop.App | WPF / WinForms (Windows) |
+
+### Example: mix SDK and runtime
+
+You can install a full SDK for development alongside a runtime for a production-like environment:
+
+```toml
+[tools]
+dotnet = ["9", { version = "8.0.14", runtime = "dotnet" }]
+```
+
+::: warning
+- **Version numbers are runtime versions**, not SDK versions. For example, `8.0.14` refers to .NET Runtime 8.0.14, not SDK 8.0.14. Check the [.NET release notes](https://github.com/dotnet/core/tree/main/release-notes) for available runtime versions.
+- Runtime-only installs do **not** include the SDK build tools. Commands like `dotnet build` and `dotnet publish` will not be available, and `dotnet --version` will not report an SDK version.
+:::
+
+::: tip
+Only exact runtime versions are supported (e.g., `dotnet[runtime=dotnet]@8.0.14`). Channel syntax like `@8` is not currently supported for runtime installs, as it resolves against SDK versions rather than runtime versions.
+:::
+
 ## Environment Variables
 
 The plugin sets the following environment variables:
