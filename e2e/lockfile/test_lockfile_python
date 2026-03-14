@@ -20,7 +20,16 @@ assert_contains "cat mise.lock" "\"platforms.$MISE_PLATFORM\""
 assert_contains "cat mise.lock" "github.com/astral-sh/python-build-standalone/releases/download"
 assert_contains "cat mise.lock" "sha256:"
 
-echo "Lockfile content:"
+echo "Lockfile content after mise lock:"
+cat mise.lock
+
+echo "=== Testing that mise install populates lockfile URL and checksum ==="
+rm -f mise.lock
+mise install python
+assert_contains "cat mise.lock" "github.com/astral-sh/python-build-standalone/releases/download"
+assert_contains "cat mise.lock" "sha256:"
+
+echo "Lockfile content after mise install:"
 cat mise.lock
 
 echo "=== Testing checksum verification rejects corrupted checksums ==="
