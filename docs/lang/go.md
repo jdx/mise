@@ -43,6 +43,8 @@ github.com/daixiang0/gci # allows comments
 github.com/jesseduffield/lazygit
 ```
 
+You can specify a non-default location of this file by setting a `MISE_GO_DEFAULT_PACKAGES_FILE` variable.
+
 ## Settings
 
 <script setup>
