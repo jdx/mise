@@ -654,7 +654,7 @@ mod tests {
             "1.7.1",
             Some("aqua:jqlang/jq"),
             &BTreeMap::new(),
-            "linux-x64",
+            "macos-x64",
             PlatformInfo {
                 checksum: Some("sha256:jq".to_string()),
                 ..Default::default()
@@ -665,10 +665,10 @@ mod tests {
 
         cmd.prune_stale_versions_for_targeted_tools(&mut lockfile, &tools);
 
-        // dummy@1.0.0 should be removed, jq@1.7.1 should remain
+        // dummy@1.0.0 (linux-x64) should be removed, jq@1.7.1 (macos-x64) should remain
         assert_eq!(
             lockfile.all_platform_keys(),
-            std::collections::BTreeSet::from(["linux-x64".to_string()])
+            std::collections::BTreeSet::from(["macos-x64".to_string()])
         );
     }
 
