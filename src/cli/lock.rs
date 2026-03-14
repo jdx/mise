@@ -120,10 +120,13 @@ impl Lock {
 
             if self.dry_run {
                 self.show_dry_run(&tools, &target_platforms)?;
+                let lockfile = Lockfile::read(lockfile_path)?;
                 if self.is_unfiltered_lock_run() {
-                    let lockfile = Lockfile::read(lockfile_path)?;
                     let stale_tools = self.stale_entries_if_pruned(&lockfile, &tools);
                     self.show_stale_prune_message(lockfile_path, &stale_tools, true)?;
+                } else {
+                    let stale_versions = self.stale_versions_if_pruned(&lockfile, &tools);
+                    self.show_stale_version_prune_message(lockfile_path, &stale_versions, true)?;
                 }
                 continue;
             }
@@ -131,7 +134,9 @@ impl Lock {
             // Process tools and update lockfile
             let mut lockfile = Lockfile::read(lockfile_path)?;
             self.prune_stale_entries_if_needed(&mut lockfile, &tools);
+            let stale_versions = self.stale_versions_if_pruned(&lockfile, &tools);
             self.prune_stale_versions_for_targeted_tools(&mut lockfile, &tools);
+            self.show_stale_version_prune_message(lockfile_path, &stale_versions, false)?;
             let results = self
                 .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
                 .await?;
@@ -212,6 +217,60 @@ impl Lock {
         }
         let (configured_tools, configured_backends) = self.configured_tool_selectors(tools);
         self.stale_entries_for_selectors(lockfile, &configured_tools, &configured_backends)
+    }
+
+    fn stale_versions_if_pruned(
+        &self,
+        lockfile: &Lockfile,
+        tools: &[LockTool],
+    ) -> BTreeMap<String, Vec<String>> {
+        let mut stale: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        let mut current_versions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (ba, tv) in tools {
+            current_versions
+                .entry(ba.short.clone())
+                .or_default()
+                .insert(tv.version.clone());
+        }
+        for (short, versions) in &current_versions {
+            let stale_versions = lockfile.stale_tool_versions(short, versions);
+            if !stale_versions.is_empty() {
+                stale.insert(short.clone(), stale_versions);
+            }
+        }
+        stale
+    }
+
+    fn show_stale_version_prune_message(
+        &self,
+        lockfile_path: &Path,
+        stale_versions: &BTreeMap<String, Vec<String>>,
+        dry_run: bool,
+    ) -> Result<()> {
+        if stale_versions.is_empty() {
+            return Ok(());
+        }
+        let total: usize = stale_versions.values().map(|v| v.len()).sum();
+        let entry_word = if total == 1 { "entry" } else { "entries" };
+        let (icon, message) = if dry_run {
+            (style("→").yellow(), "Dry run - would prune")
+        } else {
+            (style("✓").green(), "Pruned")
+        };
+        let details: Vec<String> = stale_versions
+            .iter()
+            .flat_map(|(short, versions)| versions.iter().map(move |v| format!("{short}@{v}")))
+            .collect();
+        miseprintln!(
+            "{} {} {} stale version {} from {}: {}",
+            icon,
+            message,
+            total,
+            entry_word,
+            style(display_path(lockfile_path)).cyan(),
+            details.join(", ")
+        );
+        Ok(())
     }
 
     fn configured_tool_selectors(

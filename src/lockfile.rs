@@ -634,6 +634,24 @@ impl Lockfile {
         self.cleanup_unreferenced_conda_packages();
     }
 
+    /// Return versions of a tool that would be removed by `retain_tool_versions`.
+    pub fn stale_tool_versions(
+        &self,
+        short: &str,
+        keep_versions: &BTreeSet<String>,
+    ) -> Vec<String> {
+        self.tools
+            .get(short)
+            .map(|tools| {
+                tools
+                    .iter()
+                    .filter(|t| !keep_versions.contains(&t.version))
+                    .map(|t| t.version.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Return tool keys that would be removed by `retain_tools_by_short_or_backend`.
     pub fn stale_tool_shorts(
         &self,
