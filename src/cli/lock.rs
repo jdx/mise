@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -131,6 +131,7 @@ impl Lock {
             // Process tools and update lockfile
             let mut lockfile = Lockfile::read(lockfile_path)?;
             self.prune_stale_entries_if_needed(&mut lockfile, &tools);
+            self.prune_stale_versions_for_targeted_tools(&mut lockfile, &tools);
             let results = self
                 .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
                 .await?;
@@ -180,6 +181,25 @@ impl Lock {
             lockfile.retain_tools_by_short_or_backend(&configured_tools, &configured_backends);
         }
         stale_tools
+    }
+
+    /// For filtered runs, prune lockfile entries whose version no longer matches
+    /// any resolved version of the targeted tool. This prevents stale version
+    /// entries from accumulating when a tool's resolved version changes.
+    fn prune_stale_versions_for_targeted_tools(&self, lockfile: &mut Lockfile, tools: &[LockTool]) {
+        if self.is_unfiltered_lock_run() {
+            return; // unfiltered runs handle pruning via prune_stale_entries_if_needed
+        }
+        let mut current_versions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (ba, tv) in tools {
+            current_versions
+                .entry(ba.short.clone())
+                .or_default()
+                .insert(tv.version.clone());
+        }
+        for (short, versions) in &current_versions {
+            lockfile.retain_tool_versions(short, versions);
+        }
     }
 
     fn stale_entries_if_pruned(
@@ -589,6 +609,79 @@ mod tests {
         let pruned = cmd.prune_stale_entries_if_needed(&mut lockfile, &tools);
         assert!(pruned.is_empty());
 
+        assert_eq!(
+            lockfile.all_platform_keys(),
+            std::collections::BTreeSet::from(["linux-x64".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_filtered_run_prunes_stale_version() {
+        // Simulate: lockfile has dummy@1.0.0, resolved version is now 2.0.0
+        let cmd = lock_cmd(&["dummy"]);
+        let mut lockfile = lockfile_with_dummy(); // has dummy@1.0.0
+        let tools = vec![configured_tool("dummy", "2.0.0")];
+
+        cmd.prune_stale_versions_for_targeted_tools(&mut lockfile, &tools);
+
+        // Old version entry should be removed
+        assert!(lockfile.all_platform_keys().is_empty());
+    }
+
+    #[test]
+    fn test_filtered_run_preserves_current_version() {
+        // Simulate: lockfile has dummy@1.0.0, resolved version is still 1.0.0
+        let cmd = lock_cmd(&["dummy"]);
+        let mut lockfile = lockfile_with_dummy(); // has dummy@1.0.0
+        let tools = vec![configured_tool("dummy", "1.0.0")];
+
+        cmd.prune_stale_versions_for_targeted_tools(&mut lockfile, &tools);
+
+        // Entry should still be there
+        assert_eq!(
+            lockfile.all_platform_keys(),
+            std::collections::BTreeSet::from(["linux-x64".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_filtered_run_preserves_non_targeted_tools() {
+        // Simulate: lockfile has dummy@1.0.0 and jq@1.7.1, filter targets only dummy
+        let cmd = lock_cmd(&["dummy"]);
+        let mut lockfile = lockfile_with_dummy(); // has dummy@1.0.0
+        lockfile.set_platform_info(
+            "jq",
+            "1.7.1",
+            Some("aqua:jqlang/jq"),
+            &BTreeMap::new(),
+            "linux-x64",
+            PlatformInfo {
+                checksum: Some("sha256:jq".to_string()),
+                ..Default::default()
+            },
+        );
+        // Resolve dummy to a new version; jq is not targeted
+        let tools = vec![configured_tool("dummy", "2.0.0")];
+
+        cmd.prune_stale_versions_for_targeted_tools(&mut lockfile, &tools);
+
+        // dummy@1.0.0 should be removed, jq@1.7.1 should remain
+        assert_eq!(
+            lockfile.all_platform_keys(),
+            std::collections::BTreeSet::from(["linux-x64".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_unfiltered_run_skips_version_pruning() {
+        // Unfiltered runs should not prune versions (handled by prune_stale_entries_if_needed)
+        let cmd = lock_cmd(&[]);
+        let mut lockfile = lockfile_with_dummy(); // has dummy@1.0.0
+        let tools = vec![configured_tool("dummy", "2.0.0")];
+
+        cmd.prune_stale_versions_for_targeted_tools(&mut lockfile, &tools);
+
+        // Entry should still be there (unfiltered run skips this method)
         assert_eq!(
             lockfile.all_platform_keys(),
             std::collections::BTreeSet::from(["linux-x64".to_string()])

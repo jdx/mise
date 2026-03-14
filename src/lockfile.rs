@@ -622,6 +622,18 @@ impl Lockfile {
         self.cleanup_unreferenced_conda_packages();
     }
 
+    /// Remove entries for a tool whose version is not in the given set.
+    /// Used to prune stale version entries during filtered `mise lock <tool>` runs.
+    pub fn retain_tool_versions(&mut self, short: &str, keep_versions: &BTreeSet<String>) {
+        if let Some(tools) = self.tools.get_mut(short) {
+            tools.retain(|t| keep_versions.contains(&t.version));
+            if tools.is_empty() {
+                self.tools.remove(short);
+            }
+        }
+        self.cleanup_unreferenced_conda_packages();
+    }
+
     /// Return tool keys that would be removed by `retain_tools_by_short_or_backend`.
     pub fn stale_tool_shorts(
         &self,
