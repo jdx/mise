@@ -193,6 +193,21 @@ impl Backend for DotnetPlugin {
                 if sdk_dir.exists() {
                     file::remove_all(&sdk_dir)?;
                 }
+                // Defensive fallback: when a runtime install is uninstalled, the
+                // `runtime` option may be lost during uninstall resolution (the
+                // `unique_by` dedup in `get_requested_tool_versions` can drop the
+                // options-bearing ToolVersion in favor of a bare one). In that case,
+                // we land here in the SDK branch with a runtime version string.
+                // Scan shared/ to clean up any matching framework directories.
+                let shared_dir = dotnet_root().join("shared");
+                if shared_dir.exists() {
+                    for entry in shared_dir.read_dir()? {
+                        let framework_dir = entry?.path().join(&tv.version);
+                        if framework_dir.exists() {
+                            file::remove_all(&framework_dir)?;
+                        }
+                    }
+                }
             }
         }
         Ok(())

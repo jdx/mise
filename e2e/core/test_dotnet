@@ -24,6 +24,10 @@ assert_not_contains "mise x dotnet@8.0.408 -- dotnet --list-runtimes" "Microsoft
 # Test runtime-only install: version NOT bundled by SDK 8.0.408, `--list-runtimes`
 assert_contains "mise x dotnet[runtime=dotnet]@8.0.13 -- dotnet --list-runtimes" "Microsoft.NETCore.App 8.0.13"
 
+# Test runtime uninstall cleans up shared directory
+mise uninstall "dotnet[runtime=dotnet]@8.0.13"
+assert_not_contains "mise x dotnet@8.0.408 -- dotnet --list-runtimes" "Microsoft.NETCore.App 8.0.13"
+
 # Prepare by removing any stale install and test (uncached) invalid runtime option returns a validation error
 mise uninstall "dotnet[runtime=invalid]@8.0.12" 2>/dev/null || mise uninstall "dotnet@8.0.12" 2>/dev/null || true
 assert_fail_contains "mise x dotnet[runtime=invalid]@8.0.12 -- true" "Invalid runtime option"
