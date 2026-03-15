@@ -5,10 +5,18 @@ set -euo pipefail
 export MISE_EXPERIMENTAL=1
 
 # Test: Install docker-compose via HTTP backend
-# The binary name should be automatically cleaned from docker-compose-linux-x86_64 to docker-compose
+# The binary name should be automatically cleaned (e.g. docker-compose-darwin-aarch64 -> docker-compose).
+# Use per-platform URLs so the downloaded binary is executable on the current host.
 cat >mise.toml <<EOF
-[tools]
-"http:docker-compose" = { version = "2.29.1", url = "https://github.com/docker/compose/releases/download/v{version}/docker-compose-linux-x86_64" }
+[tools."http:docker-compose"]
+version = "2.29.1"
+
+[tools."http:docker-compose".platforms]
+macos-arm64 = { url = "https://github.com/docker/compose/releases/download/v{version}/docker-compose-darwin-aarch64" }
+macos-x64 = { url = "https://github.com/docker/compose/releases/download/v{version}/docker-compose-darwin-x86_64" }
+linux-arm64 = { url = "https://github.com/docker/compose/releases/download/v{version}/docker-compose-linux-aarch64" }
+linux-x64 = { url = "https://github.com/docker/compose/releases/download/v{version}/docker-compose-linux-x86_64" }
+windows-x64 = { url = "https://github.com/docker/compose/releases/download/v{version}/docker-compose-windows-x86_64.exe" }
 EOF
 
 assert_succeed "mise install -f http:docker-compose"
