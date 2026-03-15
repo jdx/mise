@@ -72,6 +72,13 @@ impl HookEnv {
             config.watch_files().await?
         };
 
+        // For the slow-path check, include watch_files from the previous session to detect
+        // changes to files from tools=true plugins (not yet available via config.watch_files()).
+        let watch_files: BTreeSet<WatchFilePattern> = watch_files
+            .into_iter()
+            .chain(PREV_SESSION.watch_files.iter().map(|p| p.as_path().into()))
+            .collect();
+
         if !self.force && hook_env::should_exit_early(watch_files.clone(), self.reason) {
             trace!("should_exit_early true");
             return Ok(());
@@ -81,7 +88,8 @@ impl HookEnv {
         miseprint!("{}", hook_env::clear_old_env(&*shell))?;
 
         // Use env_with_path_and_split which handles caching internally
-        let (mut mise_env, user_paths, tool_paths) = ts.env_with_path_and_split(&config).await?;
+        let (mut mise_env, user_paths, tool_paths, tool_watch_files) =
+            ts.env_with_path_and_split(&config).await?;
         mise_env.remove(&*PATH_KEY);
 
         // Create config_paths from user_paths for display_status and build_session
@@ -115,6 +123,12 @@ impl HookEnv {
             .shell_aliases
             .iter()
             .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect();
+
+        // Include tool plugin watch_files in the session for the next prompt's fast-path check.
+        let watch_files: BTreeSet<WatchFilePattern> = watch_files
+            .into_iter()
+            .chain(tool_watch_files.iter().map(|p| p.as_path().into()))
             .collect();
 
         patches.extend(self.build_path_operations(&user_paths, &tool_paths, &__MISE_DIFF.path)?);

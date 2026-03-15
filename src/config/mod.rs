@@ -807,6 +807,7 @@ impl Config {
             .flatten()
             .chain(env_results.env_files.iter().map(|p| p.as_path().into()))
             .chain(env_results.env_scripts.iter().map(|p| p.as_path().into()))
+            .chain(env_results.watch_files.iter().map(|p| p.as_path().into()))
             .chain(
                 Settings::get()
                     .env_files()

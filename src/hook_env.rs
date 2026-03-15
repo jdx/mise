@@ -350,10 +350,10 @@ pub struct HookEnvSession {
     /// that should be watched for changes.
     #[serde(default)]
     pub tera_files: Vec<PathBuf>,
-    /// Resolved file paths from [[watch_files]] config patterns.
+    /// Resolved file paths from [[watch_files]] config patterns and env plugin watch_files.
     /// Stored so the fast-path can detect changes without loading config.
     #[serde(default)]
-    watch_files: Vec<PathBuf>,
+    pub watch_files: Vec<PathBuf>,
     dir: Option<PathBuf>,
     env_var_hash: String,
     latest_update: u128,
