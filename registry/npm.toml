@@ -1,5 +1,6 @@
-backends = ["npm:npm"]
+backends = ["aqua:npm/cli", "npm:npm"]
+depends = ["node"]
 description = "the package manager for JavaScript"
 idiomatic_files = ["package.json"]
 overrides = ["node"]
-test = { cmd = "npm --version", expected = "{{version}}" }
+test = { cmd = "node --version && npm --version", expected = "{{version}}" }
