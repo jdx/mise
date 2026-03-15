@@ -1,0 +1,4 @@
+aliases = ["vp"]
+backends = ["npm:vite-plus"]
+description = "The Unified Toolchain for the Web"
+test = { cmd = "vp --version", expected = "vp v{{version}}" }
