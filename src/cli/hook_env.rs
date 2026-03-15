@@ -74,12 +74,14 @@ impl HookEnv {
 
         // For the slow-path check, include watch_files from the previous session to detect
         // changes to files from tools=true plugins (not yet available via config.watch_files()).
-        let watch_files: BTreeSet<WatchFilePattern> = watch_files
-            .into_iter()
+        // We use a separate variable to ensure deleted watch_files don't persist indefinitely.
+        let slow_path_watch_files: BTreeSet<WatchFilePattern> = watch_files
+            .iter()
+            .cloned()
             .chain(PREV_SESSION.watch_files.iter().map(|p| p.as_path().into()))
             .collect();
 
-        if !self.force && hook_env::should_exit_early(watch_files.clone(), self.reason) {
+        if !self.force && hook_env::should_exit_early(slow_path_watch_files, self.reason) {
             trace!("should_exit_early true");
             return Ok(());
         }
