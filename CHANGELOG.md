@@ -1,5 +1,23 @@
 # Changelog
 
+## [2026.3.10](https://github.com/jdx/mise/compare/v2026.3.9..v2026.3.10) - 2026-03-15
+
+### 📚 Documentation
+
+- switch body font to DM Sans and darken dark mode background by @jdx in [6e3ad34](https://github.com/jdx/mise/commit/6e3ad3436369f144943da8166e330514ba4c6240)
+- use Cormorant Garamond for headers and Roc Grotesk for body text by @jdx in [010812a](https://github.com/jdx/mise/commit/010812ac19e14101c9225221da534fd83a4e0060)
+
+### 📦 Registry
+
+- add viteplus (npm:vite-plus) by @risu729 in [#8594](https://github.com/jdx/mise/pull/8594)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`alltuner/mise-completions-sync`](https://github.com/alltuner/mise-completions-sync)
+- [`jorgelbg/pinentry-touchid`](https://github.com/jorgelbg/pinentry-touchid)
+
 ## [2026.3.9](https://github.com/jdx/mise/compare/v2026.3.8..v2026.3.9) - 2026-03-13
 
 ### 🚀 Features
