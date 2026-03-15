@@ -2582,6 +2582,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
+name = "fetchurl-sdk"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0136473397044fa5e50c510ab732c323e9ca826e56158a16f0e1aed48e6a5a8c"
+dependencies = [
+ "digest",
+ "rand 0.8.5",
+ "sha1",
+ "sha2",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "ff"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5452,9 +5465,11 @@ dependencies = [
  "exec",
  "expr-lang",
  "eyre",
+ "fetchurl-sdk",
  "filetime",
  "flate2",
  "fslock",
+ "futures-util",
  "fuzzy-matcher",
  "gix",
  "glob",
