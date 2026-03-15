@@ -1,0 +1,4 @@
+backends = ["aqua:facebook/ktfmt"]
+depends = ["java"]
+description = "A program that reformats Kotlin source code to comply with the common community standard for Kotlin code conventions"
+test = { cmd = "ktfmt --version", expected = "ktfmt version {{version}}" }
