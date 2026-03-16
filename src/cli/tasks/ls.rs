@@ -138,7 +138,7 @@ impl TasksLs {
         for t in tasks {
             let name = t.display_name.replace(":", "\\:");
             let description = t.description.replace(":", "\\:");
-            println!("{name}:{description}",);
+            calm_io::stdoutln!("{name}:{description}")?;
         }
         Ok(())
     }
