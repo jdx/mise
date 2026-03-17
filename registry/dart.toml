@@ -6,7 +6,7 @@ full = "http:dart"
 [backends.options]
 url = "https://storage.googleapis.com/dart-archive/channels/stable/release/{{ version }}/sdk/dartsdk-{{ os() }}-{{ arch() }}-release.zip"
 version_list_url = "https://storage.googleapis.com/storage/v1/b/dart-archive/o?prefix=channels/stable/release/&delimiter=/"
-version_regex = "channels/stable/release/(\\d+\\.\\d+\\.\\d+)/"
+version_expr = 'fromJSON(body).prefixes | filter({ # matches "^channels/stable/release/(\\d+\\.\\d+\\.\\d+)/$" }) | map({split(#, "/")[3]}) | sortVersions()'
 
 [[backends]]
 full = "asdf:mise-plugins/mise-dart"
