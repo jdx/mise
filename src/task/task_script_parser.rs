@@ -782,7 +782,9 @@ impl TaskScriptParser {
             let mut tera_ctx = task.tera_ctx(config).await?;
             self.inject_extra_vars(&mut tera_ctx);
             tera_ctx.insert("env", &env);
-            tera_ctx.insert("usage", &Self::make_usage_ctx(&m));
+            let mut usage_map = Self::make_usage_ctx_from_spec_defaults(spec);
+            usage_map.extend(Self::make_usage_ctx(&m));
+            tera_ctx.insert("usage", &usage_map);
             out.push(Self::render_script_with_context(
                 &mut tera, script, &tera_ctx,
             )?);
@@ -798,7 +800,7 @@ impl TaskScriptParser {
             use tera::Value;
             use usage::parse::ParseValue::*;
             match val {
-                MultiBool(v) => Value::Array(v.iter().map(|b| Value::Bool(*b)).collect()),
+                MultiBool(v) => Value::Number(serde_json::Number::from(v.len())),
                 MultiString(v) => {
                     Value::Array(v.iter().map(|s| Value::String(s.clone())).collect())
                 }
@@ -866,8 +868,7 @@ impl TaskScriptParser {
                     .collect();
                 tera::Value::Array(defaults)
             } else if flag.count {
-                // Count flags: represent as an array of bools
-                tera::Value::Array(Vec::new())
+                tera::Value::Number(serde_json::Number::from(0))
             } else if let Some(default) = flag.default.first() {
                 // if it is not parseable as a boolean, treat it as a string
                 default
@@ -1301,9 +1302,9 @@ mod tests {
 
         assert_eq!(parsed_scripts, vec!["echo arg:test_value2"]);
 
-        // Negative case: referencing an undefined usage flag should cause rendering to fail
+        // flag defaults to false when not provided
         let scripts_with_missing_flag = vec!["echo flag:{{ usage.bar }}".to_string()];
-        let result = parser
+        let parsed_scripts = parser
             .parse_run_scripts_with_args(
                 &config,
                 &task,
@@ -1311,33 +1312,6 @@ mod tests {
                 &Default::default(),
                 &["only_arg_value".to_string()], // no --bar flag provided
                 &spec,
-            )
-            .await;
-        assert!(
-            result.is_err(),
-            "expected parsing to fail when template references usage.bar but flag was not provided"
-        );
-        // Need to explicitly set default value for flags to avoid errors when accessing undefined usage flags
-        // If a default value is set in the usage spec, referencing the flag in the script should not error,
-        // and the value should be the default when the flag is not provided.
-        let mut spec_with_default_flag = spec.clone();
-        if let Some(bar_flag) = spec_with_default_flag
-            .cmd
-            .flags
-            .iter_mut()
-            .find(|f| f.name == "bar")
-        {
-            bar_flag.default = vec!["false".to_string()];
-        }
-        // Now referencing usage.bar should render successfully, resolving to the default
-        let parsed_scripts = parser
-            .parse_run_scripts_with_args(
-                &config,
-                &task,
-                &scripts_with_missing_flag,
-                &Default::default(),
-                &["only_arg_value".to_string()],
-                &spec_with_default_flag,
             )
             .await
             .unwrap();
@@ -1385,5 +1359,340 @@ mod tests {
             vec!["echo count=2 first=one second=two"],
             "expected MultiString arg to be exposed as an array in the usage map"
         );
+    }
+
+    /// Parse a usage spec and render a template with the given args.
+    async fn render_usage(usage_kdl: &str, template: &str, args: &[&str]) -> String {
+        let config = Config::get().await.unwrap();
+        let task = Task {
+            usage: usage_kdl.to_string(),
+            ..Default::default()
+        };
+        let parser = TaskScriptParser::new(None);
+        let scripts = vec![template.to_string()];
+        let (_, spec) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+        let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        let parsed = parser
+            .parse_run_scripts_with_args(
+                &config,
+                &task,
+                &scripts,
+                &Default::default(),
+                &args,
+                &spec,
+            )
+            .await
+            .unwrap();
+        parsed.into_iter().next().unwrap()
+    }
+
+    /// Same as `render_usage` but with a custom env map.
+    async fn render_usage_with_env(
+        usage_kdl: &str,
+        template: &str,
+        args: &[&str],
+        env: &EnvMap,
+    ) -> String {
+        let config = Config::get().await.unwrap();
+        let task = Task {
+            usage: usage_kdl.to_string(),
+            ..Default::default()
+        };
+        let parser = TaskScriptParser::new(None);
+        let scripts = vec![template.to_string()];
+        let (_, spec) = parser
+            .parse_run_scripts(&config, &task, &scripts, env)
+            .await
+            .unwrap();
+        let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        parser
+            .parse_run_scripts_with_args(&config, &task, &scripts, env, &args, &spec)
+            .await
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_usage_arg_renders() {
+        assert_eq!(
+            render_usage(r#"arg "<file>""#, "echo {{ usage.file }}", &["test.txt"]).await,
+            "echo test.txt"
+        );
+        assert_eq!(
+            render_usage(
+                "arg \"<src>\"\narg \"<dst>\"",
+                "echo {{ usage.src }} {{ usage.dst }}",
+                &["a", "b"]
+            )
+            .await,
+            "echo a b"
+        );
+        assert_eq!(
+            render_usage(
+                r#"arg "<file>" default="f.txt""#,
+                "echo {{ usage.file }}",
+                &[]
+            )
+            .await,
+            "echo f.txt"
+        );
+        assert_eq!(
+            render_usage(
+                r#"arg "<file>" default="f.txt""#,
+                "echo {{ usage.file }}",
+                &["o.txt"]
+            )
+            .await,
+            "echo o.txt"
+        );
+        assert_eq!(
+            render_usage(
+                r#"arg "<file>" var=#true"#,
+                "echo {{ usage.file | join(sep=' ') }}",
+                &["a", "b", "c"]
+            )
+            .await,
+            "echo a b c"
+        );
+        assert_eq!(
+            render_usage(
+                r#"arg "<file>" double_dash="required""#,
+                "echo {{ usage.file }}",
+                &["--", "f.txt"]
+            )
+            .await,
+            "echo f.txt"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_usage_arg_defaults_for_unprovided() {
+        assert_eq!(
+            render_usage(r#"arg "[file]""#, "echo '{{ usage.file }}'", &[]).await,
+            "echo ''"
+        );
+        assert_eq!(
+            render_usage(r#"arg "[file]""#, "echo '{{ usage.file }}'", &["x"]).await,
+            "echo 'x'"
+        );
+        assert_eq!(
+            render_usage(
+                r#"arg "[file]" var=#true"#,
+                "echo {{ usage.file | length }}",
+                &[]
+            )
+            .await,
+            "echo 0"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_usage_arg_env() {
+        let env = EnvMap::from_iter(vec![("MY_FILE".to_string(), "env.txt".to_string())]);
+        assert_eq!(
+            render_usage_with_env(
+                r#"arg "<file>" env="MY_FILE""#,
+                "echo {{ usage.file }}",
+                &[],
+                &env
+            )
+            .await,
+            "echo env.txt"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_usage_flag_renders() {
+        assert_eq!(
+            render_usage(
+                r#"flag "-u --user <user>""#,
+                "echo {{ usage.user }}",
+                &["--user", "alice"]
+            )
+            .await,
+            "echo alice"
+        );
+        assert_eq!(
+            render_usage(
+                r#"flag "-u --user <user>""#,
+                "echo {{ usage.user }}",
+                &["-u", "bob"]
+            )
+            .await,
+            "echo bob"
+        );
+        assert_eq!(
+            render_usage(
+                r#"flag "--file <file>" default="f.txt""#,
+                "echo {{ usage.file }}",
+                &[]
+            )
+            .await,
+            "echo f.txt"
+        );
+        assert_eq!(
+            render_usage(
+                r#"flag "--color" default=#true"#,
+                "echo {{ usage.color }}",
+                &[]
+            )
+            .await,
+            "echo true"
+        );
+        assert_eq!(
+            render_usage(
+                "flag \"--shell <shell>\" {\n    choices \"bash\" \"zsh\" \"fish\"\n}",
+                "echo {{ usage.shell }}",
+                &["--shell", "zsh"]
+            )
+            .await,
+            "echo zsh"
+        );
+        assert_eq!(
+            render_usage(
+                r#"flag "--include <pattern>" var=#true"#,
+                "echo {{ usage.include | join(sep=',') }}",
+                &["--include", "*.rs", "--include", "*.toml"]
+            )
+            .await,
+            "echo *.rs,*.toml"
+        );
+        assert_eq!(
+            render_usage(
+                r#"flag "--color" negate="--no-color" default=#true"#,
+                "echo {{ usage.color }}",
+                &[]
+            )
+            .await,
+            "echo true"
+        );
+        assert_eq!(
+            render_usage(
+                r#"flag "--color" negate="--no-color" default=#true"#,
+                "echo {{ usage.color }}",
+                &["--no-color"]
+            )
+            .await,
+            "echo false"
+        );
+        assert_eq!(
+            render_usage(
+                r#"flag "--dry-run""#,
+                "echo {{ usage.dry_run }}",
+                &["--dry-run"]
+            )
+            .await,
+            "echo true"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_usage_flag_defaults_for_unprovided() {
+        assert_eq!(
+            render_usage(
+                r#"flag "-f --force""#,
+                "echo {{ usage.force }}",
+                &["--force"]
+            )
+            .await,
+            "echo true"
+        );
+        assert_eq!(
+            render_usage(r#"flag "-f --force""#, "echo {{ usage.force }}", &[]).await,
+            "echo false"
+        );
+        assert_eq!(
+            render_usage(
+                r#"flag "-v --verbose" count=#true"#,
+                "echo {{ usage.verbose }}",
+                &["-vvv"]
+            )
+            .await,
+            "echo 3"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_usage_combined() {
+        let spec = "arg \"<src>\"\narg \"[dst]\" default=\"out.txt\"\nflag \"-f --force\"\nflag \"-v --verbose\" count=#true\nflag \"--mode <mode>\" {\n    choices \"copy\" \"move\" \"link\"\n}";
+        assert_eq!(
+            render_usage(
+                spec,
+                "echo {{ usage.src }} {{ usage.dst }} {{ usage.force }} {{ usage.mode }}",
+                &["input.txt", "--force", "--mode", "copy"]
+            )
+            .await,
+            "echo input.txt out.txt true copy"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_usage_script_directives() {
+        fn parse_script_from_str(script: &str) -> usage::Spec {
+            use std::io::Write;
+            let mut tmp = tempfile::NamedTempFile::new().unwrap();
+            tmp.write_all(script.as_bytes()).unwrap();
+            tmp.flush().unwrap();
+            usage::Spec::parse_script(tmp.path()).unwrap()
+        }
+        let spec = parse_script_from_str(
+            "#!/usr/bin/env bash\n#USAGE flag \"--user <user>\"\n#USAGE arg \"<file>\"\necho hello\n",
+        );
+        assert_eq!(spec.cmd.flags[0].name, "user");
+        assert_eq!(spec.cmd.args[0].name, "file");
+        let spec = parse_script_from_str(
+            "#!/usr/bin/env bash\n#USAGE flag \"--shell <shell>\" {\n#USAGE     choices \"bash\" \"zsh\" \"fish\"\n#USAGE }\necho hello\n",
+        );
+        assert_eq!(
+            spec.cmd.flags[0]
+                .arg
+                .as_ref()
+                .unwrap()
+                .choices
+                .as_ref()
+                .unwrap()
+                .choices,
+            vec!["bash", "zsh", "fish"]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_usage_empty_and_spec_only() {
+        let config = Config::get().await.unwrap();
+        let task = Task {
+            usage: "".to_string(),
+            ..Default::default()
+        };
+        let parser = TaskScriptParser::new(None);
+        let (parsed, spec) = parser
+            .parse_run_scripts(
+                &config,
+                &task,
+                &["echo hello".to_string()],
+                &Default::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(parsed, vec!["echo hello"]);
+        assert!(spec.cmd.args.is_empty() && spec.cmd.flags.is_empty());
+        let task = Task {
+            usage: "arg \"<file>\"\nflag \"--verbose\"".to_string(),
+            ..Default::default()
+        };
+        let spec = parser
+            .parse_run_scripts_for_spec_only(
+                &config,
+                &task,
+                &["echo {{ usage.file }}".to_string()],
+            )
+            .await
+            .unwrap();
+        assert_eq!(spec.cmd.args.len(), 1);
+        assert_eq!(spec.cmd.flags.len(), 1);
     }
 }
