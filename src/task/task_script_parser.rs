@@ -819,65 +819,78 @@ impl TaskScriptParser {
             let tera_val = to_tera_value(val);
             usage_ctx.insert(flag.name.to_snake_case(), tera_val);
         }
+
+        // expose selected subcommand as {{ usage.cmd }}
+        if let Some(subcmd) = subcommand_name_from_parse(&usage.cmds) {
+            usage_ctx.insert("cmd".to_string(), tera::Value::String(subcmd));
+        }
+
         usage_ctx
     }
 
-    /// Build a usage context hashmap from a `usage::Spec`, using default values
-    /// defined in the spec or sensible fallbacks when no defaults are provided.
-    /// Only needed for deprecated parsing of run scripts for collecting the spec.
-    ///
-    /// - Args:
-    ///   - Non-var args use an empty string.
-    ///   - Var args use an empty array.
-    /// - Flags:
-    ///   - Value flags (`var = true`) use an empty array.
-    ///   - Count flags (`count = true`) use a `Vec<bool>` whose length is
-    ///     derived from the default (parsed as a usize) or an empty array.
-    ///   - Simple flags use `false`.
+    /// Build a usage context hashmap from a `usage::Spec` using default values
+    /// or sensible fallbacks. Recurses into subcommands so that `{{ usage.X }}`
+    /// references don't error during the initial template render (which is only
+    /// used for deprecated spec collection — actual execution re-renders via
+    /// `parse_run_scripts_with_args` with real parsed values).
     pub fn make_usage_ctx_from_spec_defaults(spec: &usage::Spec) -> HashMap<String, tera::Value> {
         let mut usage_ctx: HashMap<String, tera::Value> = HashMap::new();
 
-        // Args
-        for arg in &spec.cmd.args {
-            let name = arg.name.to_snake_case();
-            let value = if arg.var {
-                // Variadic args are arrays (possibly with defaults)
-                let defaults: Vec<tera::Value> = arg
-                    .default
-                    .iter()
-                    .map(|s| tera::Value::String(s.clone()))
-                    .collect();
-                tera::Value::Array(defaults)
-            } else if let Some(default) = arg.default.first() {
-                tera::Value::String(default.clone())
-            } else {
-                tera::Value::String(String::new())
-            };
-            usage_ctx.insert(name, value);
+        fn collect_cmd_defaults(cmd: &usage::SpecCommand, ctx: &mut HashMap<String, tera::Value>) {
+            for arg in &cmd.args {
+                let name = arg.name.to_snake_case();
+                if ctx.contains_key(&name) {
+                    continue;
+                }
+                let value = if arg.var {
+                    let defaults: Vec<tera::Value> = arg
+                        .default
+                        .iter()
+                        .map(|s| tera::Value::String(s.clone()))
+                        .collect();
+                    tera::Value::Array(defaults)
+                } else if let Some(default) = arg.default.first() {
+                    tera::Value::String(default.clone())
+                } else {
+                    tera::Value::String(String::new())
+                };
+                ctx.insert(name, value);
+            }
+
+            for flag in &cmd.flags {
+                let name = flag.name.to_snake_case();
+                if ctx.contains_key(&name) {
+                    continue;
+                }
+                let value = if flag.var {
+                    let defaults: Vec<tera::Value> = flag
+                        .default
+                        .iter()
+                        .map(|s| tera::Value::String(s.clone()))
+                        .collect();
+                    tera::Value::Array(defaults)
+                } else if flag.count {
+                    tera::Value::Number(serde_json::Number::from(0))
+                } else if let Some(default) = flag.default.first() {
+                    default
+                        .parse::<bool>()
+                        .map_or_else(|_| tera::Value::String(default.clone()), tera::Value::Bool)
+                } else {
+                    tera::Value::Bool(false)
+                };
+                ctx.insert(name, value);
+            }
+
+            // SpecCommand::subcommands is an IndexMap, so iteration order is deterministic
+            for subcmd in cmd.subcommands.values() {
+                collect_cmd_defaults(subcmd, ctx);
+            }
         }
 
-        // Flags
-        for flag in &spec.cmd.flags {
-            let name = flag.name.to_snake_case();
-            let value = if flag.var {
-                // Variadic flags are arrays (possibly with defaults)
-                let defaults: Vec<tera::Value> = flag
-                    .default
-                    .iter()
-                    .map(|s| tera::Value::String(s.clone()))
-                    .collect();
-                tera::Value::Array(defaults)
-            } else if flag.count {
-                tera::Value::Number(serde_json::Number::from(0))
-            } else if let Some(default) = flag.default.first() {
-                // if it is not parseable as a boolean, treat it as a string
-                default
-                    .parse::<bool>()
-                    .map_or_else(|_| tera::Value::String(default.clone()), tera::Value::Bool)
-            } else {
-                tera::Value::Bool(false)
-            };
-            usage_ctx.insert(name, value);
+        collect_cmd_defaults(&spec.cmd, &mut usage_ctx);
+
+        if !spec.cmd.subcommands.is_empty() {
+            usage_ctx.insert("cmd".to_string(), tera::Value::String(String::new()));
         }
 
         usage_ctx
@@ -885,7 +898,18 @@ impl TaskScriptParser {
 }
 
 pub fn has_any_args_defined(spec: &usage::Spec) -> bool {
-    !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty()
+    !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() || !spec.cmd.subcommands.is_empty()
+}
+
+/// Extract the selected subcommand name from parsed commands.
+/// `cmds[0]` is the root command; subsequent entries are subcommands.
+pub fn subcommand_name_from_parse(cmds: &[usage::SpecCommand]) -> Option<String> {
+    if cmds.len() > 1 {
+        let names: Vec<String> = cmds.iter().skip(1).map(|c| c.name.clone()).collect();
+        Some(names.join(" "))
+    } else {
+        None
+    }
 }
 
 fn shell_from_shebang(script: &str) -> Option<Vec<String>> {
@@ -1419,10 +1443,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_usage_arg_renders() {
+        // Required arg
         assert_eq!(
             render_usage(r#"arg "<file>""#, "echo {{ usage.file }}", &["test.txt"]).await,
             "echo test.txt"
         );
+        // Multiple args
         assert_eq!(
             render_usage(
                 "arg \"<src>\"\narg \"<dst>\"",
@@ -1432,6 +1458,7 @@ mod tests {
             .await,
             "echo a b"
         );
+        // Default value
         assert_eq!(
             render_usage(
                 r#"arg "<file>" default="f.txt""#,
@@ -1450,6 +1477,7 @@ mod tests {
             .await,
             "echo o.txt"
         );
+        // Variadic
         assert_eq!(
             render_usage(
                 r#"arg "<file>" var=#true"#,
@@ -1459,6 +1487,7 @@ mod tests {
             .await,
             "echo a b c"
         );
+        // Double-dash required
         assert_eq!(
             render_usage(
                 r#"arg "<file>" double_dash="required""#,
@@ -1472,6 +1501,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_usage_arg_defaults_for_unprovided() {
+        // Optional arg defaults to empty string (not an error)
         assert_eq!(
             render_usage(r#"arg "[file]""#, "echo '{{ usage.file }}'", &[]).await,
             "echo ''"
@@ -1480,6 +1510,7 @@ mod tests {
             render_usage(r#"arg "[file]""#, "echo '{{ usage.file }}'", &["x"]).await,
             "echo 'x'"
         );
+        // Variadic optional defaults to empty array
         assert_eq!(
             render_usage(
                 r#"arg "[file]" var=#true"#,
@@ -1508,6 +1539,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_usage_flag_renders() {
+        // Short + long with value
         assert_eq!(
             render_usage(
                 r#"flag "-u --user <user>""#,
@@ -1526,6 +1558,7 @@ mod tests {
             .await,
             "echo bob"
         );
+        // Default value
         assert_eq!(
             render_usage(
                 r#"flag "--file <file>" default="f.txt""#,
@@ -1535,6 +1568,7 @@ mod tests {
             .await,
             "echo f.txt"
         );
+        // Boolean default true
         assert_eq!(
             render_usage(
                 r#"flag "--color" default=#true"#,
@@ -1544,6 +1578,7 @@ mod tests {
             .await,
             "echo true"
         );
+        // Choices
         assert_eq!(
             render_usage(
                 "flag \"--shell <shell>\" {\n    choices \"bash\" \"zsh\" \"fish\"\n}",
@@ -1553,6 +1588,7 @@ mod tests {
             .await,
             "echo zsh"
         );
+        // Variadic flag
         assert_eq!(
             render_usage(
                 r#"flag "--include <pattern>" var=#true"#,
@@ -1562,6 +1598,7 @@ mod tests {
             .await,
             "echo *.rs,*.toml"
         );
+        // Negate flag
         assert_eq!(
             render_usage(
                 r#"flag "--color" negate="--no-color" default=#true"#,
@@ -1580,6 +1617,7 @@ mod tests {
             .await,
             "echo false"
         );
+        // Hyphenated -> snake_case
         assert_eq!(
             render_usage(
                 r#"flag "--dry-run""#,
@@ -1593,6 +1631,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_usage_flag_defaults_for_unprovided() {
+        // Boolean flag defaults to false (not an error)
         assert_eq!(
             render_usage(
                 r#"flag "-f --force""#,
@@ -1606,6 +1645,7 @@ mod tests {
             render_usage(r#"flag "-f --force""#, "echo {{ usage.force }}", &[]).await,
             "echo false"
         );
+        // Count flag defaults to 0
         assert_eq!(
             render_usage(
                 r#"flag "-v --verbose" count=#true"#,
@@ -1614,6 +1654,53 @@ mod tests {
             )
             .await,
             "echo 3"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_usage_cmd_renders() {
+        let spec = "cmd \"install\" {\n    arg \"<package>\"\n    flag \"--force\"\n}\ncmd \"remove\" {\n    arg \"<package>\"\n}";
+        // Subcommand routing
+        assert_eq!(
+            render_usage(
+                spec,
+                "echo {{ usage.cmd }} {{ usage.package }} {{ usage.force }}",
+                &["install", "foo", "--force"]
+            )
+            .await,
+            "echo install foo true"
+        );
+        // Different subcommand
+        let spec2 =
+            "cmd \"build\" {\n    arg \"<target>\"\n}\ncmd \"test\" {\n    arg \"<target>\"\n}";
+        assert_eq!(
+            render_usage(
+                spec2,
+                "echo {{ usage.cmd }}:{{ usage.target }}",
+                &["test", "all"]
+            )
+            .await,
+            "echo test:all"
+        );
+        assert_eq!(
+            render_usage(
+                spec2,
+                "echo {{ usage.cmd }}:{{ usage.target }}",
+                &["build", "release"]
+            )
+            .await,
+            "echo build:release"
+        );
+        // No subcommand selected — cmd defaults to empty
+        let spec3 = "arg \"<name>\"\ncmd \"sub\" {\n    arg \"<x>\"\n}";
+        assert_eq!(
+            render_usage(
+                spec3,
+                "echo cmd={{ usage.cmd }} name={{ usage.name }}",
+                &["hello"]
+            )
+            .await,
+            "echo cmd= name=hello"
         );
     }
 
@@ -1640,11 +1727,13 @@ mod tests {
             tmp.flush().unwrap();
             usage::Spec::parse_script(tmp.path()).unwrap()
         }
+        // Flag + arg from #USAGE directives
         let spec = parse_script_from_str(
             "#!/usr/bin/env bash\n#USAGE flag \"--user <user>\"\n#USAGE arg \"<file>\"\necho hello\n",
         );
         assert_eq!(spec.cmd.flags[0].name, "user");
         assert_eq!(spec.cmd.args[0].name, "file");
+        // Multi-line KDL with choices
         let spec = parse_script_from_str(
             "#!/usr/bin/env bash\n#USAGE flag \"--shell <shell>\" {\n#USAGE     choices \"bash\" \"zsh\" \"fish\"\n#USAGE }\necho hello\n",
         );
@@ -1663,6 +1752,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_usage_empty_and_spec_only() {
+        // Empty spec
         let config = Config::get().await.unwrap();
         let task = Task {
             usage: "".to_string(),
@@ -1680,16 +1770,13 @@ mod tests {
             .unwrap();
         assert_eq!(parsed, vec!["echo hello"]);
         assert!(spec.cmd.args.is_empty() && spec.cmd.flags.is_empty());
+        // Spec-only parsing
         let task = Task {
             usage: "arg \"<file>\"\nflag \"--verbose\"".to_string(),
             ..Default::default()
         };
         let spec = parser
-            .parse_run_scripts_for_spec_only(
-                &config,
-                &task,
-                &["echo {{ usage.file }}".to_string()],
-            )
+            .parse_run_scripts_for_spec_only(&config, &task, &["echo {{ usage.file }}".to_string()])
             .await
             .unwrap();
         assert_eq!(spec.cmd.args.len(), 1);

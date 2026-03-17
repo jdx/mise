@@ -8,6 +8,7 @@ use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_output_handler::OutputHandler;
+use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{save_checksum, sources_are_fresh, task_cwd};
 use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
 use crate::toolset::env_cache::CachedEnv;
@@ -941,7 +942,10 @@ impl TaskExecutor {
         let (spec, _) = task
             .parse_usage_spec_with_vars(config, self.cd.clone(), env, extra_vars)
             .await?;
-        if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
+        if !spec.cmd.args.is_empty()
+            || !spec.cmd.flags.is_empty()
+            || !spec.cmd.subcommands.is_empty()
+        {
             let args: Vec<String> = get_args();
             trace!("Parsing usage spec for {:?}", args);
             // Pass env vars to Parser so it can resolve env= defaults in usage specs
@@ -955,8 +959,17 @@ impl TaskExecutor {
                 trace!("Adding key {} value {} in env", k, v);
                 env.insert(k, v);
             }
+            // always export $usage_cmd when spec has subcommands so
+            // shell scripts with `set -u` don't fail when none is chosen
+            if !spec.cmd.subcommands.is_empty() {
+                env.entry("usage_cmd".to_string()).or_default();
+            }
+            if let Some(subcmd) = subcommand_name_from_parse(&po.cmds) {
+                trace!("Adding key usage_cmd value {} in env", subcmd);
+                env.insert("usage_cmd".to_string(), subcmd);
+            }
         } else {
-            trace!("Usage spec has no args or flags");
+            trace!("Usage spec has no args, flags, or subcommands");
         }
 
         Ok(())
