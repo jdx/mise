@@ -1112,9 +1112,9 @@ fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<St
         .map(ffi::OsStr::to_string_lossy)
         .map(|s| s.replace(':', "_"))
         .join(":");
-    if let Some((prefix, last)) = name.rsplit_once(':')
+    if let Some((parent, last)) = name.rsplit_once(':')
         && strip_extension(last) == "_default" {
-            return Ok(prefix.to_string());
+            return Ok(parent.to_string());
         }
     Ok(name)
 }
