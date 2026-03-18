@@ -1,0 +1,4 @@
+backends = ["vfox:kheeklab/mise-liferay-blade"]
+depends = ["java"]
+description = "Liferay Blade CLI"
+test = { cmd = "blade version", expected = "{{version}}" }
