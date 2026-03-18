@@ -1113,9 +1113,10 @@ fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<St
         .map(|s| s.replace(':', "_"))
         .join(":");
     if let Some((parent, last)) = name.rsplit_once(':')
-        && strip_extension(last) == "_default" {
-            return Ok(parent.to_string());
-        }
+        && strip_extension(last) == "_default"
+    {
+        return Ok(parent.to_string());
+    }
     Ok(name)
 }
 
