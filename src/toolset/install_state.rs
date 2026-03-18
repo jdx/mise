@@ -34,6 +34,7 @@ pub struct InstallStateTool {
     pub versions: Vec<String>,
     pub explicit_backend: bool,
     pub opts: BTreeMap<String, toml::Value>,
+    pub installs_path: Option<PathBuf>,
 }
 
 /// Entry in the consolidated manifest file (.mise-installs.toml).
@@ -285,6 +286,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             versions,
             explicit_backend,
             opts,
+            installs_path: Some(dir),
         };
         time!("init_tools {short}");
         tools.insert(short, tool);
@@ -357,6 +359,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                     versions: Vec::new(),
                     explicit_backend,
                     opts: opts.clone(),
+                    installs_path: Some(dir),
                 });
             // Add versions from shared dir that aren't already present
             for v in versions {
@@ -390,6 +393,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                 versions: Default::default(),
                 explicit_backend: true,
                 opts: BTreeMap::new(),
+                installs_path: None,
             });
         tool.full = Some(full);
     }
