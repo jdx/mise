@@ -1,0 +1,3 @@
+backends = ["github:tweag/ormolu"]
+description = "A formatter for Haskell source code"
+test = { cmd = "ormolu --version", expected = "ormolu {{version}}" }
