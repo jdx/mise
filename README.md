@@ -2,7 +2,10 @@
 
 <h1 align="center">
   <a href="https://mise.jdx.dev">
-    <img src="docs/public/logo.svg" alt="mise" width="256" height="256" />
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/public/logo-dark.svg" />
+      <img src="docs/public/logo-light.svg" alt="mise" width="256" height="256" />
+    </picture>
     <br>
     mise-en-place
   </a>
