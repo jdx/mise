@@ -1,6 +1,7 @@
 mod path;
 
 use crate::{exit, plugins::PluginEnum};
+use std::collections::HashSet;
 use std::{collections::BTreeMap, sync::Arc};
 
 use crate::backend::backend_type::BackendType;
@@ -119,6 +120,7 @@ impl Doctor {
         self.analyze_shims(&config, ts).await;
         self.analyze_plugins();
         self.analyze_backend_mismatches();
+        self.check_path_ordering(ts, &config).await;
         data.insert(
             "paths".into(),
             self.paths(ts)
@@ -331,6 +333,7 @@ impl Doctor {
                 self.analyze_shims(config, &ts).await;
                 self.analyze_toolset(&ts).await?;
                 self.analyze_paths(&ts).await?;
+                self.check_path_ordering(&ts, config).await;
             }
             Err(err) => self.errors.push(format!("failed to load toolset: {err}")),
         }
@@ -473,6 +476,77 @@ impl Doctor {
 
         info::section("path", paths)?;
         Ok(())
+    }
+
+    /// Check that mise tool paths appear before system paths in the current PATH.
+    /// This detects cases where shell configuration (e.g. brew, system profile) has
+    /// inserted entries before mise's paths, causing system tools to shadow mise-managed ones.
+    async fn check_path_ordering(&mut self, ts: &Toolset, config: &Arc<Config>) {
+        if !env::is_activated() {
+            return;
+        }
+
+        // Get all mise-managed paths (tool installs, env._.path, UV venv, MISE_ADD_PATH, etc.)
+        let mise_paths = match ts.final_env(config).await {
+            Ok((_env, env_results)) => match ts.list_final_paths(config, env_results).await {
+                Ok(paths) => paths,
+                Err(_) => return,
+            },
+            Err(_) => return,
+        };
+        if mise_paths.is_empty() {
+            return;
+        }
+
+        let current_path = &*env::PATH_NON_PRISTINE;
+        if current_path.is_empty() {
+            return;
+        }
+
+        let resolve = |p: &PathBuf| p.canonicalize().unwrap_or_else(|_| p.clone());
+
+        // Resolve all mise-managed paths for comparison
+        let mise_paths_resolved: HashSet<PathBuf> = mise_paths.iter().map(resolve).collect();
+
+        // Also exclude the mise binary's own directory
+        let mise_bin_parent = env::MISE_BIN.parent().and_then(|p| p.canonicalize().ok());
+
+        // Find the index of the first mise-managed path in the current PATH
+        // Note: mise_bin_parent is intentionally excluded here — it's a directory like
+        // /opt/homebrew/bin that happens to contain the mise binary, not a mise tool path.
+        // Including it would mask the exact PATH ordering issue we're trying to detect.
+        let first_mise_idx = current_path
+            .iter()
+            .position(|p| mise_paths_resolved.contains(&resolve(p)));
+
+        let Some(first_mise_idx) = first_mise_idx else {
+            // No mise paths found in current PATH at all — this is already
+            // covered by the activation check
+            return;
+        };
+
+        if first_mise_idx == 0 {
+            return;
+        }
+
+        // Everything before first_mise_idx is by definition not a mise-managed path.
+        // Filter out the mise binary's own directory (e.g. /opt/homebrew/bin) since
+        // that's not a problematic entry — it's just where mise itself is installed.
+        let paths_display = current_path[..first_mise_idx]
+            .iter()
+            .filter(|p| mise_bin_parent.as_ref().is_none_or(|bp| bp != &resolve(p)))
+            .map(display_path)
+            .join("\n  ");
+
+        if paths_display.is_empty() {
+            return;
+        }
+        self.warnings.push(formatdoc!(
+            r#"mise tool paths are not first in PATH. These paths take precedence:
+              {paths_display}
+            This may cause system-installed tools to be used instead of mise-managed versions.
+            Ensure `mise activate` runs after other PATH modifications in your shell rc file."#
+        ));
     }
 }
 
