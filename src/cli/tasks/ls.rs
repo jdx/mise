@@ -165,6 +165,15 @@ impl TasksLs {
             for (name, complete) in task_spec.complete {
                 task_spec.cmd.complete.insert(name, complete);
             }
+            // Ensure that completions after -- work.
+            task_spec.cmd.args.push(
+                usage::SpecArgBuilder::new()
+                    .name("-- ARGS_LAST")
+                    .help("Arguments to pass to the tasks. Use \":::\" to separate tasks.")
+                    .hide(true)
+                    .var(true)
+                    .build(),
+            );
             usage
                 .cmd
                 .subcommands
