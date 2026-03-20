@@ -2,4 +2,3 @@ aliases = ["qwen-code"]
 backends = ["npm:@qwen-code/qwen-code"]
 description = "Qwen Code, an AI coding assistant for CLI and IDE"
 test = { cmd = "qwen --version", expected = "{{version}}" }
-
