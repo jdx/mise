@@ -191,7 +191,9 @@ Use `rename_exe` for archives where the binary inside has a different name than 
 
 ### `bin_path`
 
+::: v-pre
 Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports Tera templating with variables like `{{ version }}`, `{{ os }}`, `{{ arch }}`, and arch aliases (`{{ darwin_os }}`, `{{ amd64_arch }}`, `{{ x86_64_arch }}`, `{{ gnu_arch }}`):
+:::
 
 ```toml
 [tools."gitlab:gitlab-org/gitlab-runner"]
@@ -257,4 +259,5 @@ export MISE_GITLAB_ENTERPRISE_TOKEN="your-token"
 <script setup>
 import Settings from '/components/settings.vue';
 </script>
+
 <Settings child="gitlab" :level="3" />

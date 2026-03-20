@@ -197,7 +197,9 @@ Without this option, mise's autodetection might select .app bundles on macOS, wh
 
 ### `bin_path`
 
+::: v-pre
 Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports Tera templating with variables like `{{ version }}`, `{{ os }}`, `{{ arch }}`, and arch aliases (`{{ darwin_os }}`, `{{ amd64_arch }}`, `{{ x86_64_arch }}`, `{{ gnu_arch }}`):
+:::
 
 ```toml
 [tools."github:cli/cli"]
@@ -255,4 +257,5 @@ export MISE_GITHUB_ENTERPRISE_TOKEN="your-token"
 <script setup>
 import Settings from '/components/settings.vue';
 </script>
+
 <Settings child="github" :level="3" />
