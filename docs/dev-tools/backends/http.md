@@ -364,7 +364,7 @@ The [expr-lang](https://expr-lang.org/) library provides built-in functions incl
 
 ### `bin_path`
 
-Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports templating with `{{version}}`:
+Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports templating with <code v-pre>{{version}}</code>:
 
 ```toml
 [tools."http:my-tool"]
