@@ -2472,26 +2472,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_repo_url_ssh() {
-        let config = Config::reset().await.unwrap();
-        // SSH URLs should be recognized as valid repository URLs
-        assert!(
-            config
-                .get_repo_url("ssh://git@gitlab.dev/mobile/asdf-gitique.git")
-                .is_some()
-        );
-        assert!(
-            config
-                .get_repo_url("git@github.com:user/repo.git")
-                .is_some()
-        );
-        assert!(config.get_repo_url("git://example.com/repo.git").is_some());
-        assert!(config.get_repo_url("http://example.com/repo.git").is_some());
-        assert!(
-            config
-                .get_repo_url("https://example.com/repo.git")
-                .is_some()
-        );
+    async fn test_get_repo_url_ssh() -> Result<()> {
+        let config = Config::reset().await?;
+        let urls = [
+            "ssh://git@gitlab.dev/mobile/asdf-gitique.git",
+            "git@github.com:user/repo.git",
+            "git://example.com/repo.git",
+            "http://example.com/repo.git",
+            "https://example.com/repo.git",
+        ];
+
+        for url in urls {
+            assert!(
+                config.get_repo_url(url).is_some(),
+                "URL should be considered valid: {url}"
+            );
+        }
+        Ok(())
     }
 
     #[tokio::test]
