@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+export __MISE_DIFF="[]"
+
+# mise shell without a version should error
+assert_fail "mise shell node"
+assert_fail_contains "mise shell node" "no version specified for tool node"
