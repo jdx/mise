@@ -1844,7 +1844,7 @@ async fn load_local_tasks_with_context(
                         let includes = task_includes_for_dir(&subdir, &config.config_files);
                         for include in includes {
                             let mut subdir_tasks =
-                                load_tasks_includes(&config, &include, &subdir).await?;
+                                load_tasks_includes(&config, &include, &subdir, &None).await?;
                             if is_global_task_include_path(&include) {
                                 mark_tasks_as_global(&mut subdir_tasks);
                             }
@@ -2183,9 +2183,10 @@ async fn load_tasks_includes(
     config: &Arc<Config>,
     root: &Path,
     config_root: &Path,
+    task_config_dir: &Option<String>,
 ) -> Result<Vec<Task>> {
     if root.is_file() && root.extension().map(|e| e == "toml").unwrap_or(false) {
-        load_task_file(config, root, config_root).await
+        load_task_file(config, root, config_root, task_config_dir).await
     } else if root.is_dir() {
         let files = WalkDir::new(root)
             .follow_links(true)
@@ -2212,7 +2213,15 @@ async fn load_tasks_includes(
             let root = root.clone();
             let config_root = config_root.clone();
             let config = config.clone();
-            tasks.push(Task::from_path(&config, &path, &root, &config_root).await?);
+            let mut task = Task::from_path(&config, &path, &root, &config_root).await?;
+            if task.dir.is_none()
+                && let Some(ref dir) = *task_config_dir
+            {
+                let mut tera = crate::tera::get_tera(Some(config_root.as_ref()));
+                let tera_ctx = task.tera_ctx(&config).await?;
+                task.dir = Some(tera.render_str(dir, &tera_ctx)?);
+            }
+            tasks.push(task);
         }
         Ok(tasks)
     } else {
@@ -2290,6 +2299,7 @@ async fn load_file_tasks(
     let mut tasks = vec![];
     let config_root = Arc::new(config_root.to_path_buf());
     let cf_root = cf.config_root();
+    let task_config_dir = cf.task_config().dir.clone();
 
     for include in includes {
         let paths = if include.starts_with("git::") {
@@ -2298,7 +2308,8 @@ async fn load_file_tasks(
             expand_task_include(&cf_root, &include)
         };
         for path in paths {
-            let mut loaded = load_tasks_includes(config, &path, &config_root).await?;
+            let mut loaded =
+                load_tasks_includes(config, &path, &config_root, &task_config_dir).await?;
             if is_global_task_include_path(&path) {
                 mark_tasks_as_global(&mut loaded);
             }
@@ -2363,9 +2374,15 @@ pub async fn load_tasks_in_dir(
         config_tasks.extend(load_config_tasks(config, (*cf).clone(), &dir, templates).await?);
     }
 
+    // Find task_config.dir from the nearest config that defines it
+    let task_config_dir = configs
+        .iter()
+        .rev()
+        .find_map(|cf| cf.task_config().dir.clone());
+
     let mut file_tasks = vec![];
     for p in task_includes_for_dir(dir, config_files) {
-        let mut loaded = load_tasks_includes(config, &p, dir).await?;
+        let mut loaded = load_tasks_includes(config, &p, dir, &task_config_dir).await?;
         if is_global_task_include_path(&p) {
             mark_tasks_as_global(&mut loaded);
         }
@@ -2374,7 +2391,8 @@ pub async fn load_tasks_in_dir(
 
     for include in git_includes {
         let resolved = resolve_git_url_to_path(&include).await?;
-        file_tasks.extend(load_tasks_includes(config, &resolved, dir).await?);
+        let loaded = load_tasks_includes(config, &resolved, dir, &task_config_dir).await?;
+        file_tasks.extend(loaded);
     }
 
     let mut tasks = file_tasks
@@ -2397,6 +2415,7 @@ async fn load_task_file(
     config: &Arc<Config>,
     path: &Path,
     config_root: &Path,
+    task_config_dir: &Option<String>,
 ) -> Result<Vec<Task>> {
     let raw = file::read_to_string_async(path).await?;
     let mut tasks = toml::from_str::<Tasks>(&raw)
@@ -2406,6 +2425,9 @@ async fn load_task_file(
         task.name = name.clone();
         task.config_source = path.to_path_buf();
         task.config_root = Some(config_root.to_path_buf());
+        if task.dir.is_none() {
+            task.dir = task_config_dir.clone();
+        }
     }
     let mut out = vec![];
     for (_, mut task) in tasks {
@@ -2506,7 +2528,7 @@ vars = { target = "linux" }
 "#,
         )?;
 
-        let tasks = load_task_file(&config, &tasks_toml, temp_dir.path()).await?;
+        let tasks = load_task_file(&config, &tasks_toml, temp_dir.path(), &None).await?;
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].name, "build");
         assert_eq!(tasks[0].description, "linux");
