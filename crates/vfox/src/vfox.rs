@@ -561,6 +561,7 @@ mod tests {
                 cache_dir: PathBuf::from("test/cache"),
                 download_dir: PathBuf::from("test/downloads"),
                 install_dir: PathBuf::from("test/installs"),
+                skip_verification: false,
                 log_tx: None,
             }
         }
