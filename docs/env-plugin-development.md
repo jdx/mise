@@ -99,6 +99,24 @@ end
 When `cmd.exec()` is called from `MiseEnv` or `MisePath` hooks, it inherits the mise-constructed environment — including `_.path` entries and environment variables from preceding directives. If the module directive is configured with `tools = true` (e.g., `_.my-plugin = { tools = true }`), tool installation bin paths are also included, so mise-managed tools are directly callable (e.g., `cmd.exec("node --version")`).
 :::
 
+::: tip
+Variables returned by `MiseEnv` are available in <span v-pre>`{{env.VAR}}`</span> Tera templates in
+subsequent directives. Use `[[env]]` blocks to control ordering:
+
+```toml
+[[env]]
+_.my-plugin = {}
+
+[[env]]
+CONN = "host={{env.PLUGIN_HOST}}"
+```
+
+If the plugin directive uses `tools = true`, any directive that references its variables must also
+use `tools = true` — otherwise the referencing directive is evaluated in an earlier pass before the
+plugin has run. See [Environment plugin vars in templates](/environments/#environment-plugin-vars-in-templates)
+for details.
+:::
+
 **Return value**: Either a simple array of env keys, or a table with caching metadata.
 
 Simple format - array of tables, each with:

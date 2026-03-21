@@ -67,3 +67,47 @@ _.test-tera-ctx = {}
 EOF
 
 assert_contains "mise env -s bash" 'PLUGIN_HOST=db.example.com'
+
+# ── tools = true (lazy) variants ──────────────────────────────────────
+# Directives with tools = true are resolved in a second pass, after tool
+# installation.  The same Tera-context propagation must work there too.
+
+# Test 4: both module and consumer are lazy (tools = true) — same pass
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[[env]]
+_.test-tera-ctx = { tools = true }
+
+[[env]]
+DERIVED = { value = "host={{env.PLUGIN_HOST}}", tools = true }
+EOF
+
+assert_contains "mise env -s bash" 'PLUGIN_SECRET=s3cret'
+assert_contains "mise env -s bash" 'DERIVED=host=db.example.com'
+
+# Test 5: module is non-lazy (pass 1), consumer is lazy (pass 2) — the
+# pass-1 env is fed into pass-2's initial Tera context, so module vars
+# are visible.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[[env]]
+_.test-tera-ctx = {}
+
+[[env]]
+DERIVED = { value = "host={{env.PLUGIN_HOST}}", tools = true }
+EOF
+
+assert_contains "mise env -s bash" 'DERIVED=host=db.example.com'
+
+# Test 6: module is lazy (pass 2), consumer is non-lazy (pass 1) — the
+# consumer runs before the module, so the plugin var is NOT available.
+# Tera raises a "variable not found" error because PLUGIN_HOST does not
+# exist in the pass-1 context.  This documents the expected limitation:
+# lazy module vars cannot be referenced by non-lazy directives.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[[env]]
+_.test-tera-ctx = { tools = true }
+
+[[env]]
+DERIVED = "host={{env.PLUGIN_HOST}}"
+EOF
+
+assert_fail "mise env -s bash" "env.PLUGIN_HOST"

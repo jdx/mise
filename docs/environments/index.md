@@ -561,6 +561,38 @@ LD_LIBRARY_PATH = "/some/path:{{env.MY_PROJ_LIB}}"
 
 Of course the ordering matters when doing this.
 
+### Environment plugin vars in templates
+
+Variables returned by [environment plugins](#environment-plugins) (`env._.<plugin-name>`) are
+also available in <span v-pre>`{{env.VAR}}`</span> Tera templates in subsequent directives. Use
+`[[env]]` to control ordering:
+
+```toml
+[[env]]
+_.my-secrets-plugin = { vault_url = "https://vault.example.com" }
+
+[[env]]
+DATABASE_URL = "postgres://{{env.DB_USER}}:{{env.DB_PASS}}@localhost/mydb"
+```
+
+When using `tools = true` on an environment plugin, the consuming directive must also use
+`tools = true` — otherwise it runs in an earlier evaluation pass before the plugin has executed:
+
+```toml
+[[env]]
+_.my-plugin = { tools = true }
+
+[[env]]
+# works — both directives are evaluated in the same (post-tools) pass
+DERIVED = { value = "prefix-{{env.PLUGIN_VAR}}", tools = true }
+```
+
+::: warning
+A non-lazy directive cannot reference variables from a lazy (`tools = true`) plugin. The non-lazy
+directive is evaluated before tools are installed, so the plugin has not run yet and the variable
+does not exist in the Tera context.
+:::
+
 ## Shell-style variable expansion
 
 As a simpler alternative to Tera templates for referencing env vars, you can use shell-style `$VAR` syntax
