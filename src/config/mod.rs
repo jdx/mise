@@ -2303,14 +2303,7 @@ async fn load_file_tasks(
             if is_global_task_include_path(&path) {
                 mark_tasks_as_global(&mut loaded);
             }
-            // Inherit task_config.dir from the parent config file
-            if let Some(ref dir) = task_config_dir {
-                for task in &mut loaded {
-                    if task.dir.is_none() {
-                        task.dir = Some(dir.clone());
-                    }
-                }
-            }
+            inherit_task_config_dir(&mut loaded, &task_config_dir);
             tasks.extend(loaded);
         }
     }
@@ -2384,27 +2377,14 @@ pub async fn load_tasks_in_dir(
         if is_global_task_include_path(&p) {
             mark_tasks_as_global(&mut loaded);
         }
-        // Inherit task_config.dir from the parent config file
-        if let Some(ref dir) = task_config_dir {
-            for task in &mut loaded {
-                if task.dir.is_none() {
-                    task.dir = Some(dir.clone());
-                }
-            }
-        }
+        inherit_task_config_dir(&mut loaded, &task_config_dir);
         file_tasks.extend(loaded);
     }
 
     for include in git_includes {
         let resolved = resolve_git_url_to_path(&include).await?;
         let mut loaded = load_tasks_includes(config, &resolved, dir).await?;
-        if let Some(ref dir) = task_config_dir {
-            for task in &mut loaded {
-                if task.dir.is_none() {
-                    task.dir = Some(dir.clone());
-                }
-            }
-        }
+        inherit_task_config_dir(&mut loaded, &task_config_dir);
         file_tasks.extend(loaded);
     }
 
@@ -2451,6 +2431,16 @@ async fn load_task_file(
 
 fn mark_tasks_as_global(tasks: &mut [Task]) {
     tasks.iter_mut().for_each(|task| task.global = true);
+}
+
+fn inherit_task_config_dir(tasks: &mut [Task], task_config_dir: &Option<String>) {
+    if let Some(dir) = task_config_dir {
+        for task in tasks {
+            if task.dir.is_none() {
+                task.dir = Some(dir.clone());
+            }
+        }
+    }
 }
 
 #[cfg(test)]
