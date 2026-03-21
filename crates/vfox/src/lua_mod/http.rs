@@ -173,13 +173,29 @@ async fn try_head(lua: &Lua, input: Table) -> Result<MultiValue> {
 }
 
 async fn try_download_file(_lua: &Lua, input: MultiValue) -> Result<MultiValue> {
-    let t: &Table = input.iter().next().unwrap().as_table().unwrap();
+    let t = match input.front().and_then(|v| v.as_table()) {
+        Some(t) => t,
+        None => {
+            return Ok(MultiValue::from_vec(vec![
+                Value::Nil,
+                Value::String(_lua.create_string("first argument must be a table")?),
+            ]));
+        }
+    };
     let url: String = t.get("url").into_lua_err()?;
     let headers = match t.get::<Option<Table>>("headers").into_lua_err()? {
         Some(tbl) => into_headers(&tbl)?,
         None => HeaderMap::default(),
     };
-    let path: String = input.iter().nth(1).unwrap().to_string()?;
+    let path = match input.get(1).and_then(|v| v.to_string().ok()) {
+        Some(p) => p,
+        None => {
+            return Ok(MultiValue::from_vec(vec![
+                Value::Nil,
+                Value::String(_lua.create_string("second argument must be a string path")?),
+            ]));
+        }
+    };
     let resp = match CLIENT.get(&url).headers(headers).send().await {
         Ok(resp) => resp,
         Err(e) => {
@@ -219,7 +235,7 @@ async fn try_download_file(_lua: &Lua, input: MultiValue) -> Result<MultiValue> 
             Value::String(_lua.create_string(e.to_string())?),
         ]));
     }
-    Ok(MultiValue::from_vec(vec![Value::Nil]))
+    Ok(MultiValue::from_vec(vec![Value::Boolean(true), Value::Nil]))
 }
 
 fn get_headers(lua: &Lua, headers: &reqwest::header::HeaderMap) -> Result<Table> {
@@ -507,14 +523,14 @@ mod tests {
 
         lua.load(mlua::chunk! {
             local http = require("http")
-            local err = http.try_download_file({ url = $url, headers = {} }, $path_str)
+            local ok, err = http.try_download_file({ url = $url, headers = {} }, $path_str)
+            assert(ok == true, "expected true, got: " .. tostring(ok))
             assert(err == nil, "expected no error, got: " .. tostring(err))
         })
         .exec_async()
         .await
         .unwrap();
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         let content = tokio::fs::read_to_string(&file_path).await.unwrap();
         assert_eq!(content, test_content);
     }
