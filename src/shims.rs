@@ -23,7 +23,7 @@ use tokio::task::JoinSet;
 
 // executes as if it was a shim if the command is not "mise", e.g.: "node"
 pub async fn handle_shim() -> Result<()> {
-    if !is_in_shims_dir() || cfg!(test) {
+    if !*env::IS_RUNNING_AS_SHIM {
         return Ok(());
     }
     let bin_name = *env::MISE_BIN_NAME;
