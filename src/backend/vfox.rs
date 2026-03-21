@@ -100,15 +100,6 @@ impl Backend for VfoxBackend {
         let mut tv = tv;
         self.ensure_plugin_installed(&ctx.config).await?;
         let (mut vfox, log_rx) = self.plugin.vfox();
-        // Skip provenance verification if the lockfile already has a provenance entry for
-        // this platform — re-verifying would just be redundant API calls. Unlike aqua/github,
-        // the vfox backend doesn't populate PlatformInfo.checksum, so we check provenance alone.
-        let platform_key = self.get_platform_key();
-        let has_lockfile_provenance = tv
-            .lock_platforms
-            .get(&platform_key)
-            .is_some_and(|pi| pi.provenance.is_some());
-        vfox.skip_verification = has_lockfile_provenance;
         thread::spawn(|| {
             for line in log_rx {
                 // TODO: put this in ctx.pr.set_message()
@@ -133,6 +124,16 @@ impl Backend for VfoxBackend {
             .wrap_err("Backend install method failed")?;
             return Ok(tv);
         }
+
+        // Skip provenance verification if the lockfile already has a provenance entry for
+        // this platform — re-verifying would just be redundant API calls. Unlike aqua/github,
+        // the vfox backend doesn't populate PlatformInfo.checksum, so we check provenance alone.
+        let platform_key = self.get_platform_key();
+        let has_lockfile_provenance = tv
+            .lock_platforms
+            .get(&platform_key)
+            .is_some_and(|pi| pi.provenance.is_some());
+        vfox.skip_verification = has_lockfile_provenance;
 
         // Save expected provenance before take() so we can detect type changes afterward,
         // then clear it so we can detect whether install re-sets it.
