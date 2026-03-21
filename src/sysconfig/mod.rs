@@ -173,19 +173,18 @@ fn find_sysconfigdata(
     suffix: &str,
 ) -> Result<PathBuf, Error> {
     // Find the `lib` directory in the Python installation.
-    let lib_with_suffix = real_prefix
-        .join("lib")
-        .join(format!("python{major}.{minor}{suffix}"));
-    let lib_without_suffix = real_prefix
-        .join("lib")
-        .join(format!("python{major}.{minor}"));
-    let lib = if lib_with_suffix.exists() {
-        lib_with_suffix
-    } else if lib_without_suffix.exists() {
-        lib_without_suffix
-    } else {
-        return Err(Error::MissingLib);
-    };
+    // Try candidates in order: with suffix, without suffix, and with "t" suffix
+    // (free-threaded Python uses e.g. `python3.14t` as its lib directory name).
+    let candidates = [
+        format!("python{major}.{minor}{suffix}"),
+        format!("python{major}.{minor}"),
+        format!("python{major}.{minor}t"),
+    ];
+    let lib = candidates
+        .iter()
+        .map(|c| real_prefix.join("lib").join(c))
+        .find(|p| p.exists())
+        .ok_or(Error::MissingLib)?;
 
     // Probe the `lib` directory for `_sysconfigdata_`.
     for entry in lib.read_dir()? {
