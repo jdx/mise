@@ -134,17 +134,29 @@ impl Backend for VfoxBackend {
             return Ok(tv);
         }
 
-        // Skip the provenance take/enforce cycle when lockfile already has integrity data,
-        // to avoid false downgrade errors from skipped verification.
-        let locked_provenance = if !has_lockfile_provenance {
+        // Save the expected provenance discriminant so we can detect type changes
+        // even when attestation runs (i.e. plugin has no sha256/sha512).
+        let expected_provenance = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|pi| pi.provenance.clone());
+
+        // When verification will be fully skipped (has provenance + plugin has checksums),
+        // take() the provenance so the enforce check below is skipped — there's no new
+        // result to compare against.
+        if has_lockfile_provenance {
+            // The vfox crate's skip_verification only suppresses attestation when the
+            // plugin also provides sha256/sha512. If it doesn't, attestation still runs
+            // and we need the enforce check, so only take() when we know it'll be skipped.
+            // We can't know has_checksum here (it's inside vfox.install), so we always
+            // preserve expected_provenance above and use it for enforcement below.
+        } else {
             // Safety: .take() removes provenance from tv before install. If install
             // fails, tv is discarded via ?, so the removed value is never observed.
             tv.lock_platforms
                 .get_mut(&platform_key)
-                .and_then(|pi| pi.provenance.take())
-        } else {
-            None
-        };
+                .and_then(|pi| pi.provenance.take());
+        }
 
         // Use default vfox behavior for traditional plugins
         let result = vfox
@@ -158,8 +170,12 @@ impl Backend for VfoxBackend {
             pi.provenance = Some(provenance);
         }
 
-        // Enforce lockfile provenance — prevent downgrade attacks
-        if let Some(ref expected) = locked_provenance {
+        // Enforce lockfile provenance — prevent downgrade attacks.
+        // When attestation was skipped (has_lockfile_provenance + plugin has checksums),
+        // result.verified_attestation is None so nothing overwrites provenance and this
+        // check is trivially satisfied. When attestation ran (no checksums), we compare
+        // the new result against what the lockfile expected.
+        if let Some(ref expected) = expected_provenance {
             let got = tv
                 .lock_platforms
                 .get(&platform_key)
