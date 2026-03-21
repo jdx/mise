@@ -32,6 +32,8 @@ pub struct InstallResult {
     pub sha256: Option<String>,
     /// The type of attestation that was successfully verified (if any)
     pub verified_attestation: Option<VerifiedAttestation>,
+    /// Whether a checksum (sha256/sha512) was verified during install
+    pub checksum_verified: bool,
 }
 
 #[derive(Debug)]
@@ -187,9 +189,11 @@ impl Vfox {
             .await?;
         }
 
+        let checksum_verified = pre_install.sha256.is_some() || pre_install.sha512.is_some();
         Ok(InstallResult {
             sha256: pre_install.sha256,
             verified_attestation,
+            checksum_verified,
         })
     }
 

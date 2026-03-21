@@ -153,14 +153,15 @@ impl Backend for VfoxBackend {
             let provenance = verified_attestation_to_provenance(att);
             let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
             pi.provenance = Some(provenance);
-        } else if let Some(ref expected) = expected_provenance {
-            // Attestation didn't run or produced no result. If we intentionally skipped
-            // (has_lockfile_provenance + plugin has checksums), restore the expected
-            // provenance. Otherwise got remains None and the enforce check catches it.
-            if has_lockfile_provenance {
-                let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
-                pi.provenance = Some(expected.clone());
-            }
+        } else if let Some(ref expected) = expected_provenance
+            && result.checksum_verified
+        {
+            // Attestation didn't run or produced no result, but the plugin's checksums
+            // verified integrity. Restore expected provenance so the enforce check passes.
+            // When the plugin has no checksums, we leave got=None so the enforce check
+            // catches the missing attestation as a potential downgrade.
+            let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
+            pi.provenance = Some(expected.clone());
         }
 
         // Enforce lockfile provenance — prevent downgrade attacks.
