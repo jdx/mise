@@ -340,9 +340,10 @@ impl Backend for AquaBackend {
         // Validate lockfile URL matches expected asset pattern from registry
         // This handles cases where the registry format changed (e.g., raw binary -> tar.gz)
         // Only validate for GithubRelease packages - other types use fixed URL formats
+        // In locked mode, trust the lockfile URL without validation to avoid API calls
         let validated_url = if let Some(ref url) = existing_platform {
-            if pkg.r#type != AquaPackageType::GithubRelease {
-                existing_platform // Skip validation for non-release package types
+            if ctx.locked || pkg.r#type != AquaPackageType::GithubRelease {
+                existing_platform // Trust lockfile URL in locked mode or for non-release types
             } else {
                 let cached_filename = get_filename_from_url(url);
                 let cached_filename_lower = cached_filename.to_lowercase();
@@ -399,6 +400,12 @@ impl Backend for AquaBackend {
                 tv.version.clone()
             };
             (url, v, filename, None)
+        } else if ctx.locked {
+            bail!(
+                "No lockfile URL found for {} on platform {} (--locked mode requires pre-resolved URLs)",
+                self.id,
+                platform_key
+            );
         } else {
             let (url, v, digest) = if let Some(v_prefixed) = v_prefixed {
                 // Try v-prefixed version first because most aqua packages use v-prefixed versions
