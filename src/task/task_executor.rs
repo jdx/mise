@@ -349,11 +349,12 @@ impl TaskExecutor {
                     args: entry_args,
                     env: entry_env,
                 } => {
-                    let mut resolved_spec = crate::task::resolve_task_pattern(spec, Some(task));
-                    if !entry_args.is_empty() {
-                        resolved_spec.push(' ');
-                        resolved_spec.push_str(&entry_args.join(" "));
-                    }
+                    let resolved_spec = crate::task::resolve_task_pattern(spec, Some(task));
+                    let override_args = if entry_args.is_empty() {
+                        None
+                    } else {
+                        Some(entry_args.clone())
+                    };
                     let combined_env: Vec<(String, String)> = task_env
                         .iter()
                         .cloned()
@@ -364,6 +365,7 @@ impl TaskExecutor {
                         config,
                         &[resolved_spec],
                         &combined_env,
+                        override_args.as_deref(),
                         sched_tx.clone(),
                         completed_tasks,
                     )
@@ -379,6 +381,7 @@ impl TaskExecutor {
                         config,
                         &resolved_tasks,
                         task_env,
+                        None,
                         sched_tx.clone(),
                         completed_tasks,
                     )
@@ -394,6 +397,7 @@ impl TaskExecutor {
         config: &Arc<Config>,
         specs: &[String],
         task_env: &[(String, String)],
+        override_args: Option<&[String]>,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         completed_tasks: &HashSet<TaskKey>,
     ) -> Result<()> {
@@ -423,7 +427,9 @@ impl TaskExecutor {
             ensure!(!matches.is_empty(), "task not found: {}", name);
             for t in matches {
                 let mut t = (*t).clone();
-                t.args = args.clone();
+                t.args = override_args
+                    .map(|a| a.to_vec())
+                    .unwrap_or_else(|| args.clone());
                 if self.skip_deps {
                     t.depends.clear();
                     t.depends_post.clear();

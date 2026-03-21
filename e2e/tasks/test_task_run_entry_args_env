@@ -34,6 +34,7 @@ run = [{ task = "greet", args = ["a", "b"], env = { FOO = "test" } }]
 EOF
 
 assert_contains "mise run all" "FOO=test"
+assert_contains "mise run all" "a b"
 
 # Test mixing script and task entries with args/env
 cat <<EOF >mise.toml

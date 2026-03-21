@@ -102,7 +102,9 @@ impl std::hash::Hash for RunEntry {
                 1u8.hash(state);
                 task.hash(state);
                 args.hash(state);
-                for (k, v) in env {
+                let mut pairs: Vec<_> = env.iter().collect();
+                pairs.sort_by_key(|(k, _)| k.as_str());
+                for (k, v) in pairs {
                     k.hash(state);
                     v.hash(state);
                 }
