@@ -552,7 +552,26 @@ impl EnvResults {
                         }
                         env_map.insert(env::PATH_KEY.to_string(), path_env.to_string());
                     }
+                    let env_before: IndexMap<String, (String, PathBuf)> = r.env.clone();
                     Self::module(&mut r, config, source, name, &value, redact, env_map).await?;
+                    // Merge entries that this module call added or changed into
+                    // the local `env` so they are visible in the Tera context
+                    // for subsequent directives.  Keys unchanged in `r.env`
+                    // (same value before and after this call) are skipped, which
+                    // preserves any Val/File/Source override in `env` applied
+                    // after a prior module emitted the same value.  When a
+                    // module emits a *different* value the merge writes it
+                    // through — "later directive wins", consistent with all
+                    // other directive pairs.
+                    for (k, (v, src)) in &r.env {
+                        let added_or_changed = match env_before.get(k) {
+                            Some((old_v, _)) => old_v != v,
+                            None => true,
+                        };
+                        if added_or_changed {
+                            env.insert(k.clone(), (v.clone(), Some(src.clone())));
+                        }
+                    }
                 }
             };
         }
