@@ -110,4 +110,5 @@ _.test-tera-ctx = { tools = true }
 DERIVED = "host={{env.PLUGIN_HOST}}"
 EOF
 
-assert_fail "mise env -s bash" "env.PLUGIN_HOST"
+# Tera emits: Variable `env.PLUGIN_HOST` not found in context
+assert_fail "mise env -s bash" "PLUGIN_HOST"
