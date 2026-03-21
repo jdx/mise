@@ -1,0 +1,3 @@
+backends = ["github:rtk-ai/rtk"]
+description = "High-performance CLI proxy that reduces LLM token consumption by 60-90%"
+test = { cmd = "rtk --version", expected = "rtk {{version}}" }
