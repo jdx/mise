@@ -464,9 +464,7 @@ pub static CLICOLOR_FORCE: Lazy<Option<bool>> =
 pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
     if *CLICOLOR_FORCE == Some(true) {
         Some(true)
-    } else if *NO_COLOR {
-        Some(false)
-    } else if var_is_false("MISE_COLOR") {
+    } else if *NO_COLOR || var_is_false("MISE_COLOR") {
         Some(false)
     } else if let Ok(v) = var("CLICOLOR") {
         Some(v != "0")
