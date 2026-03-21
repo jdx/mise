@@ -241,11 +241,7 @@ For GitHub Enterprise or self-hosted GitHub instances, specify the API URL:
 
 ## Self-hosted GitHub
 
-If you are using a self-hosted GitHub instance, set the `api_url` tool option and optionally the `MISE_GITHUB_ENTERPRISE_TOKEN` environment variable for authentication:
-
-```sh
-export MISE_GITHUB_ENTERPRISE_TOKEN="your-token"
-```
+If you are using a self-hosted GitHub instance, set the `api_url` tool option. For authentication, see [GitHub Tokens](/dev-tools/github-tokens.html#github-enterprise).
 
 ## Supported GitHub Syntax
 
