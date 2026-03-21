@@ -37,9 +37,22 @@ packages:
         supported_envs:
           - linux
           - darwin
+      - version_constraint: semver("< 2.0.0")
+        asset: killport-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-gnu
+          linux: linux-gnu
       - version_constraint: "true"
         asset: killport-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
+        files:
+          - name: killport
+            src: "{{.AssetWithoutExt}}/killport"
         windows_arm_emulation: true
         replacements:
           amd64: x86_64
