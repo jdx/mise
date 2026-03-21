@@ -561,11 +561,11 @@ impl EnvResults {
                     // to avoid clobbering Val/File/Source overrides that were
                     // applied between module calls.
                     for (k, (v, src)) in &r.env {
-                        let dominated = match env_before.get(k) {
+                        let added_or_changed = match env_before.get(k) {
                             Some((old_v, _)) => old_v != v,
                             None => true,
                         };
-                        if dominated {
+                        if added_or_changed {
                             env.insert(k.clone(), (v.clone(), Some(src.clone())));
                         }
                     }
