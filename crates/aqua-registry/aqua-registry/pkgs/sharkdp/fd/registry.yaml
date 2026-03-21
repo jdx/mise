@@ -4,45 +4,69 @@ packages:
     repo_owner: sharkdp
     repo_name: fd
     description: A simple, fast and user-friendly alternative to 'find'
+    files:
+      - name: fd
+        src: "{{.AssetWithoutExt}}/fd"
     version_constraint: "false"
     version_overrides:
+      - version_constraint: Version == "v10.4.0"
+        no_asset: true
       - version_constraint: Version == "v1.1.0"
         asset: fd
         format: raw
-        windows_arm_emulation: true
         supported_envs:
-          - windows
-          - linux/amd64
-      - version_constraint: semver("<= 3.1.0")
-        asset: fd
-        supported_envs:
-          - linux/amd64
+          - windows/amd64
       - version_constraint: Version == "v4.0.0"
         asset: fd-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
+        format: zip
         windows_arm_emulation: true
-        files:
-          - name: fd
-            src: "{{.AssetWithoutExt}}/fd"
         replacements:
           amd64: x86_64
           windows: pc-windows-msvc
         overrides:
+          - goos: linux
+            format: tar.gz
           - goos: windows
-            format: zip
             files:
               - name: fd
         supported_envs:
           - linux/amd64
-          - windows
+          - windows/amd64
+      - version_constraint: Version == "v10.0.0"
+        asset: fd-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+      - version_constraint: Version == "v10.3.0"
+        asset: fd-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 3.1.0")
+        error_message: The version is too old. Please upgrade to a newer version.
       - version_constraint: semver("<= 8.2.1")
         asset: fd-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
         windows_arm_emulation: true
-        files:
-          - name: fd
-            src: "{{.AssetWithoutExt}}/fd"
         replacements:
           amd64: x86_64
           darwin: apple-darwin
@@ -62,9 +86,6 @@ packages:
         format: tar.gz
         rosetta2: true
         windows_arm_emulation: true
-        files:
-          - name: fd
-            src: "{{.AssetWithoutExt}}/fd"
         replacements:
           amd64: x86_64
           darwin: apple-darwin
@@ -81,32 +102,10 @@ packages:
               linux: unknown-linux-gnu
           - goos: windows
             format: zip
-      - version_constraint: Version == "v10.0.0"
-        asset: fd-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        files:
-          - name: fd
-            src: "{{.AssetWithoutExt}}/fd"
-        replacements:
-          amd64: x86_64
-          darwin: apple-darwin
-          linux: unknown-linux-musl
-          windows: pc-windows-msvc
-        overrides:
-          - goos: linux
-            replacements:
-              arm64: aarch64
-          - goos: windows
-            format: zip
-      - version_constraint: "true"
+      - version_constraint: semver("<= 10.2.0")
         asset: fd-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
-        files:
-          - name: fd
-            src: "{{.AssetWithoutExt}}/fd"
         replacements:
           amd64: x86_64
           arm64: aarch64
@@ -116,3 +115,22 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: "true"
+        asset: fd-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows

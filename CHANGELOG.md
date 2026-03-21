@@ -1,5 +1,96 @@
 # Changelog
 
+## [2026.3.10](https://github.com/jdx/mise/compare/v2026.3.9..v2026.3.10) - 2026-03-21
+
+### 🐛 Bug Fixes
+
+- **(bootstrap)** preserve argv[0] for shim dispatch by @tak848 in [#8521](https://github.com/jdx/mise/pull/8521)
+- **(config)** resolve trust hash collision for same-name directories by @tdragon in [#8628](https://github.com/jdx/mise/pull/8628)
+- **(docs)** fix width of tools table by @himkt in [#8625](https://github.com/jdx/mise/pull/8625)
+- **(docs)** prevent homepage hero atmosphere overflow by @nygmaaa in [#8642](https://github.com/jdx/mise/pull/8642)
+- **(doctor)** detect PATH ordering issues when mise is activated by @jdx in [#8585](https://github.com/jdx/mise/pull/8585)
+- **(git)** use origin as remote name by @bentinata in [#8626](https://github.com/jdx/mise/pull/8626)
+- **(installer)** normalize current version before comparison by @tak848 in [#8649](https://github.com/jdx/mise/pull/8649)
+- **(lockfile)** Resolve symlink when updating lockfiles by @chancez in [#8589](https://github.com/jdx/mise/pull/8589)
+- **(python)** verify checksums for precompiled binary downloads by @malept in [#8593](https://github.com/jdx/mise/pull/8593)
+- **(python)** exclude freethreaded builds from precompiled selection by @jdx in [#8672](https://github.com/jdx/mise/pull/8672)
+- **(rust)** resolve relative CARGO_HOME/RUSTUP_HOME to absolute paths by @simonepri in [#8604](https://github.com/jdx/mise/pull/8604)
+- **(task)** correctly resolve task name for _default files with extensions by @youta1119 in [#8646](https://github.com/jdx/mise/pull/8646)
+- **(tasks)** global file tasks not properly marked as such by @roele in [#8618](https://github.com/jdx/mise/pull/8618)
+- **(tasks)** handle broken pipe in table print and task completion output by @vmaleze in [#8608](https://github.com/jdx/mise/pull/8608)
+- use dark/light logo variants in README for GitHub dark mode by @jdx in [#8656](https://github.com/jdx/mise/pull/8656)
+- failing rebuild of runtime symlinks for shared tools by @roele in [#8647](https://github.com/jdx/mise/pull/8647)
+- add spaces around current element operator in flutter version_expr by @roele in [#8616](https://github.com/jdx/mise/pull/8616)
+- complete task arguments correctly by @KevSlashNull in [#8601](https://github.com/jdx/mise/pull/8601)
+- remove hidden `--prefix`, `--interleave` from `mise run` by @nkakouros in [#8669](https://github.com/jdx/mise/pull/8669)
+
+### 📚 Documentation
+
+- switch body font to DM Sans and darken dark mode background by @jdx in [6e3ad34](https://github.com/jdx/mise/commit/6e3ad3436369f144943da8166e330514ba4c6240)
+- use Cormorant Garamond for headers and Roc Grotesk for body text by @jdx in [010812a](https://github.com/jdx/mise/commit/010812ac19e14101c9225221da534fd83a4e0060)
+- resolve chaotic heading hierarchy in task-arguments.md by @muzimuzhi in [#8644](https://github.com/jdx/mise/pull/8644)
+- add missing `v-pre` directive to Tera `{{ }}` expressions by @eitamal in [#8659](https://github.com/jdx/mise/pull/8659)
+
+### 🧪 Testing
+
+- fix test_java and mark as slow by @roele in [#8634](https://github.com/jdx/mise/pull/8634)
+
+### 📦️ Dependency Updates
+
+- update docker/dockerfile:1 docker digest to 4a43a54 by @renovate[bot] in [#8657](https://github.com/jdx/mise/pull/8657)
+- update ghcr.io/jdx/mise:alpine docker digest to 2584470 by @renovate[bot] in [#8658](https://github.com/jdx/mise/pull/8658)
+- update ghcr.io/jdx/mise:deb docker digest to c9fcb75 by @renovate[bot] in [#8661](https://github.com/jdx/mise/pull/8661)
+- update ghcr.io/jdx/mise:copr docker digest to 799d8ef by @renovate[bot] in [#8660](https://github.com/jdx/mise/pull/8660)
+- update aws-lc-rs/aws-lc-sys and rustls-webpki by @jdx in [#8674](https://github.com/jdx/mise/pull/8674)
+- update rust crate tar to v0.4.45 [security] by @renovate[bot] in [#8668](https://github.com/jdx/mise/pull/8668)
+
+### 📦 Registry
+
+- add viteplus (npm:vite-plus) by @risu729 in [#8594](https://github.com/jdx/mise/pull/8594)
+- remove backend.options for podman by @roele in [#8633](https://github.com/jdx/mise/pull/8633)
+- add pi.dev coding agent by @dector in [#8635](https://github.com/jdx/mise/pull/8635)
+- add ormolu ([github:tweag/ormolu](https://github.com/tweag/ormolu)) by @3w36zj6 in [#8617](https://github.com/jdx/mise/pull/8617)
+- use version_expr for dart and sort versions by @roele in [#8631](https://github.com/jdx/mise/pull/8631)
+- fix go-getter and mysql CI failures by @jdx in [#8662](https://github.com/jdx/mise/pull/8662)
+- add qwen (npm:@qwen-code/qwen-code) by @jianglu in [#8667](https://github.com/jdx/mise/pull/8667)
+- add hlint ([github:ndmitchell/hlint](https://github.com/ndmitchell/hlint)) by @3w36zj6 in [#8670](https://github.com/jdx/mise/pull/8670)
+
+### New Contributors
+
+- @nkakouros made their first contribution in [#8669](https://github.com/jdx/mise/pull/8669)
+- @jianglu made their first contribution in [#8667](https://github.com/jdx/mise/pull/8667)
+- @tak848 made their first contribution in [#8521](https://github.com/jdx/mise/pull/8521)
+- @bentinata made their first contribution in [#8626](https://github.com/jdx/mise/pull/8626)
+- @tdragon made their first contribution in [#8628](https://github.com/jdx/mise/pull/8628)
+- @nygmaaa made their first contribution in [#8642](https://github.com/jdx/mise/pull/8642)
+- @youta1119 made their first contribution in [#8646](https://github.com/jdx/mise/pull/8646)
+- @chancez made their first contribution in [#8589](https://github.com/jdx/mise/pull/8589)
+- @dector made their first contribution in [#8635](https://github.com/jdx/mise/pull/8635)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (8)
+
+- [`acsandmann/rift`](https://github.com/acsandmann/rift)
+- [`alltuner/mise-completions-sync`](https://github.com/alltuner/mise-completions-sync)
+- [`atlassian.com/acli`](https://github.com/atlassian.com/acli)
+- [`berbicanes/apiark`](https://github.com/berbicanes/apiark)
+- [`gitlab.com/graphviz/graphviz`](https://github.com/gitlab.com/graphviz/graphviz)
+- [`jorgelbg/pinentry-touchid`](https://github.com/jorgelbg/pinentry-touchid)
+- [`terraprovider/statebridge`](https://github.com/terraprovider/statebridge)
+- [`vercel-labs/agent-browser`](https://github.com/vercel-labs/agent-browser)
+
+#### Updated Packages (8)
+
+- [`UpCloudLtd/upcloud-cli`](https://github.com/UpCloudLtd/upcloud-cli)
+- [`aquaproj/registry-tool`](https://github.com/aquaproj/registry-tool)
+- [`go-swagger/go-swagger`](https://github.com/go-swagger/go-swagger)
+- [`gopinath-langote/1build`](https://github.com/gopinath-langote/1build)
+- [`jkfran/killport`](https://github.com/jkfran/killport)
+- [`sassman/t-rec-rs`](https://github.com/sassman/t-rec-rs)
+- [`sharkdp/fd`](https://github.com/sharkdp/fd)
+- [`temporalio/cli`](https://github.com/temporalio/cli)
+
 ## [2026.3.9](https://github.com/jdx/mise/compare/v2026.3.8..v2026.3.9) - 2026-03-13
 
 ### 🚀 Features
