@@ -584,7 +584,7 @@ _.my-plugin = { tools = true }
 
 [[env]]
 # works — both directives are evaluated in the same (post-tools) pass
-DERIVED = { value = "prefix-{{env.PLUGIN_VAR}}", tools = true }
+DERIVED = { value = "prefix-{{env.PLUGIN_HOST}}", tools = true }
 ```
 
 ::: warning
