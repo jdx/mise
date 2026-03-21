@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+# Test that .tool-versions files with Tera templates require trust verification
+# This prevents silent arbitrary code execution from untrusted .tool-versions files
+
+# Ensure we start untrusted
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+# Create a .tool-versions file with Tera exec template
+cat <<'EOF' >.tool-versions
+{{ exec(command="echo PWNED > /tmp/mise-trust-test-marker") }}tiny 3.1.0
+EOF
+
+# Verify the trust check blocks execution
+output=$(MISE_YES=0 mise ls 2>&1 || true)
+
+# The exec command should NOT have run
+if [[ -f /tmp/mise-trust-test-marker ]]; then
+	rm -f /tmp/mise-trust-test-marker
+	echo "FAIL: Tera exec() ran in untrusted .tool-versions file"
+	exit 1
+fi
+
+# Should get a trust-related error
+if echo "$output" | grep -qi "trust"; then
+	echo "PASS: Untrusted .tool-versions with templates is blocked"
+else
+	echo "FAIL: Expected trust-related error, got: $output"
+	exit 1
+fi
+
+rm -f /tmp/mise-trust-test-marker
+
+# Also test that plain .tool-versions (no templates) still works without trust
+cat <<'EOF' >.tool-versions
+tiny 3.1.0
+EOF
+
+mise i tiny
+assert_contains "mise ls tiny" "3.1.0"
+
+# Test that trusted .tool-versions with templates works
+cat <<'EOF' >.tool-versions
+{{ exec(command="echo 3.1.0") }}tiny 3.1.0
+EOF
+
+mise trust
+mise i tiny
+assert_contains "mise ls tiny" "3.1.0"
