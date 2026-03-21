@@ -344,13 +344,26 @@ impl TaskExecutor {
                         self.exec_script(&script, &args, task, env, prefix).await?;
                     }
                 }
-                RunEntry::SingleTask { task: spec } => {
-                    let resolved_spec = crate::task::resolve_task_pattern(spec, Some(task));
+                RunEntry::SingleTask {
+                    task: spec,
+                    args: entry_args,
+                    env: entry_env,
+                } => {
+                    let mut resolved_spec = crate::task::resolve_task_pattern(spec, Some(task));
+                    if !entry_args.is_empty() {
+                        resolved_spec.push(' ');
+                        resolved_spec.push_str(&entry_args.join(" "));
+                    }
+                    let combined_env: Vec<(String, String)> = task_env
+                        .iter()
+                        .cloned()
+                        .chain(entry_env.iter().map(|(k, v)| (k.clone(), v.clone())))
+                        .collect();
                     guard = None; // drop lock before waiting on sub-tasks
                     self.inject_and_wait(
                         config,
                         &[resolved_spec],
-                        task_env,
+                        &combined_env,
                         sched_tx.clone(),
                         completed_tasks,
                     )

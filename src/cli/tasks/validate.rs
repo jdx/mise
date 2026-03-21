@@ -547,7 +547,9 @@ impl TasksValidate {
                         });
                     }
                 }
-                crate::task::RunEntry::SingleTask { task: task_name } => {
+                crate::task::RunEntry::SingleTask {
+                    task: task_name, ..
+                } => {
                     // Check if referenced task exists (by name, display_name, or alias)
                     if !Self::task_exists(all_tasks, task_name) {
                         issues.push(ValidationIssue {
