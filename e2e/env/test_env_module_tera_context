@@ -55,3 +55,15 @@ DERIVED = "host={{env.PLUGIN_HOST}}"
 EOF
 
 assert_contains "mise env -s bash" 'DERIVED=host=override.example.com'
+
+# Test 3: Module wins over a PRIOR Val for the same key (later directive wins,
+# consistent with how File/Source/Val all override earlier directives).
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[[env]]
+PLUGIN_HOST = "user-override.example.com"
+
+[[env]]
+_.test-tera-ctx = {}
+EOF
+
+assert_contains "mise env -s bash" 'PLUGIN_HOST=db.example.com'
