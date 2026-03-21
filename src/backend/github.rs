@@ -617,16 +617,18 @@ impl UnifiedGitBackend {
         if has_checksum {
             verify_artifact(tv, &file_path, opts, Some(ctx.pr.as_ref()))?;
         }
-        self.verify_checksum(ctx, tv, &file_path)?;
 
-        // Skip provenance verification if the lockfile already has both a checksum and
-        // provenance entry for this platform — the artifact integrity is already guaranteed
-        // by the checksum, so re-verifying attestations would just be redundant API calls.
+        // Check before verify_checksum, which may generate a new checksum from the
+        // downloaded file. We only want to skip provenance when the lockfile already
+        // had integrity data before this install.
         let platform_key = self.get_platform_key();
         let has_lockfile_integrity = tv
             .lock_platforms
             .get(&platform_key)
             .is_some_and(|pi| pi.checksum.is_some() && pi.provenance.is_some());
+
+        self.verify_checksum(ctx, tv, &file_path)?;
+
         if !has_lockfile_integrity {
             let provenance_result = self
                 .verify_attestations_or_slsa(ctx, tv, &file_path)
