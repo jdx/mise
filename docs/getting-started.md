@@ -344,5 +344,5 @@ See [autocompletion](/installing-mise.html#autocompletion) to learn how to set u
 ### GitHub API rate limiting {#github-api-rate-limiting}
 
 ::: warning
-Many tools in mise require the GitHub API. Unauthenticated requests are often rate limited — if you see 4xx errors, set `MISE_GITHUB_TOKEN` or `GITHUB_TOKEN` to a [personal access token](https://github.com/settings/tokens/new?description=MISE_GITHUB_TOKEN) (no scopes required).
+Many tools in mise require the GitHub API. Unauthenticated requests are often rate limited — if you see 4xx errors, see [GitHub Tokens](/dev-tools/github-tokens.html) for how to configure authentication.
 :::
