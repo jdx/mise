@@ -2215,7 +2215,11 @@ async fn load_tasks_includes(
             let config = config.clone();
             let mut task = Task::from_path(&config, &path, &root, &config_root).await?;
             if task.dir.is_none() {
-                task.dir = task_config_dir.clone();
+                if let Some(ref dir) = *task_config_dir {
+                    let mut tera = crate::tera::get_tera(Some(config_root.as_ref()));
+                    let tera_ctx = task.tera_ctx(&config).await?;
+                    task.dir = Some(tera.render_str(dir, &tera_ctx)?);
+                }
             }
             tasks.push(task);
         }

@@ -36,5 +36,7 @@ assert "mise run b" "$(pwd)/mywork"
 # File task should inherit task_config.dir
 assert "mise run c" "$(pwd)/mywork"
 
-# tasks ls --json should report the resolved dir for inherited tasks
+# tasks ls --json should report the resolved dir for all inherited tasks
+# Check file task specifically to ensure template is rendered, not stored raw
+assert_not_contains "mise tasks ls --json" "{{config_root}}"
 assert_contains "mise tasks ls --json" "$(pwd)/mywork"
