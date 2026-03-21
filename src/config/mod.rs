@@ -388,7 +388,7 @@ impl Config {
             .get(plugin_name)
             .map(|full| registry::full_to_url(&full[0]))
             .or_else(|| {
-                if plugin_name.starts_with("https://") || plugin_name.split('/').count() == 2 {
+                if registry::url_like(plugin_name) || plugin_name.split('/').count() == 2 {
                     Some(registry::full_to_url(plugin_name))
                 } else {
                     None
@@ -2468,6 +2468,26 @@ mod tests {
         assert!(result.contains_key(&file2_path));
         assert!(!result.contains_key(&sub_dir));
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_repo_url_ssh() -> Result<()> {
+        let config = Config::reset().await?;
+        let urls = [
+            "ssh://git@gitlab.dev/mobile/asdf-gitique.git",
+            "git@github.com:user/repo.git",
+            "git://example.com/repo.git",
+            "http://example.com/repo.git",
+            "https://example.com/repo.git",
+        ];
+
+        for url in urls {
+            assert!(
+                config.get_repo_url(url).is_some(),
+                "URL should be considered valid: {url}"
+            );
+        }
         Ok(())
     }
 
