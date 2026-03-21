@@ -315,25 +315,31 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
 
     let use_gh_cli = Settings::get().github.gh_cli_tokens;
 
-    if url.host_str() == Some("api.github.com") {
-        let gh_token = use_gh_cli.then(|| GH_HOSTS.get("github.com")).flatten();
-        if let Some(token) = env::GITHUB_TOKEN
-            .as_deref()
-            .or(gh_token.map(|t| t.as_str()))
-        {
-            set_headers(token);
-        }
+    let host = url.host_str();
+    let is_github_com = host == Some("api.github.com")
+        || host == Some("github.com")
+        || host.is_some_and(|h| h.ends_with(".githubusercontent.com"));
+
+    let gh_cli_host = if host == Some("api.github.com") {
+        Some("github.com")
     } else {
-        let gh_token = use_gh_cli
-            .then(|| url.host_str().and_then(|h| GH_HOSTS.get(h)))
-            .flatten();
-        if let Some(token) = env::MISE_GITHUB_ENTERPRISE_TOKEN
-            .as_deref()
-            .or(env::GITHUB_TOKEN.as_deref())
-            .or(gh_token.map(|t| t.as_str()))
-        {
-            set_headers(token);
-        }
+        host
+    };
+    let gh_token = use_gh_cli
+        .then(|| gh_cli_host.and_then(|h| GH_HOSTS.get(h)))
+        .flatten();
+
+    let enterprise_token = if !is_github_com {
+        env::MISE_GITHUB_ENTERPRISE_TOKEN.as_deref()
+    } else {
+        None
+    };
+
+    if let Some(token) = enterprise_token
+        .or(env::GITHUB_TOKEN.as_deref())
+        .or(gh_token.map(|t| t.as_str()))
+    {
+        set_headers(token);
     }
 
     if url.path().contains("/releases/assets/") {
@@ -394,6 +400,4 @@ fn read_gh_hosts() -> Option<HashMap<String, String>> {
 #[derive(Deserialize)]
 struct GhHostEntry {
     oauth_token: Option<String>,
-    #[serde(flatten)]
-    _extra: HashMap<String, serde_yaml::Value>,
 }
