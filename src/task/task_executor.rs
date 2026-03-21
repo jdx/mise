@@ -355,17 +355,22 @@ impl TaskExecutor {
                     } else {
                         Some(entry_args.clone())
                     };
-                    let combined_env: Vec<(String, String)> = task_env
+                    let override_env: Vec<(String, String)> = entry_env
                         .iter()
-                        .cloned()
-                        .chain(entry_env.iter().map(|(k, v)| (k.clone(), v.clone())))
+                        .map(|(k, v)| (k.clone(), v.clone()))
                         .collect();
+                    let override_env_ref = if override_env.is_empty() {
+                        None
+                    } else {
+                        Some(override_env.as_slice())
+                    };
                     guard = None; // drop lock before waiting on sub-tasks
                     self.inject_and_wait(
                         config,
                         &[resolved_spec],
-                        &combined_env,
+                        task_env,
                         override_args.as_deref(),
+                        override_env_ref,
                         sched_tx.clone(),
                         completed_tasks,
                     )
@@ -381,6 +386,7 @@ impl TaskExecutor {
                         config,
                         &resolved_tasks,
                         task_env,
+                        None,
                         None,
                         sched_tx.clone(),
                         completed_tasks,
@@ -398,6 +404,7 @@ impl TaskExecutor {
         specs: &[String],
         task_env: &[(String, String)],
         override_args: Option<&[String]>,
+        override_env: Option<&[(String, String)]>,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         completed_tasks: &HashSet<TaskKey>,
     ) -> Result<()> {
@@ -430,6 +437,16 @@ impl TaskExecutor {
                 t.args = override_args
                     .map(|a| a.to_vec())
                     .unwrap_or_else(|| args.clone());
+                // Apply entry-level env via with_dependency_env (high priority,
+                // consistent with depends/depends_post) so it overrides the
+                // sub-task's own declared env.
+                if let Some(env) = override_env {
+                    let env_directives: Vec<EnvDirective> = env
+                        .iter()
+                        .map(|(k, v)| EnvDirective::Val(k.clone(), v.clone(), Default::default()))
+                        .collect();
+                    t = t.with_dependency_env(&env_directives);
+                }
                 if self.skip_deps {
                     t.depends.clear();
                     t.depends_post.clear();
