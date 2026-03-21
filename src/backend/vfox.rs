@@ -128,16 +128,18 @@ impl Backend for VfoxBackend {
             return Ok(tv);
         }
 
-        // Check lockfile provenance expectation before verification.
-        // Safety: .take() removes provenance from tv before install. If install
-        // fails, tv is discarded via ?, so the removed value is never observed.
-        // If this function is ever refactored to recover from install errors,
-        // locked_provenance must be restored to tv before retrying.
+        // In locked mode, provenance was already verified when the lockfile was created.
+        // Skip the provenance take/enforce cycle to avoid false downgrade errors.
         let platform_key = self.get_platform_key();
-        let locked_provenance = tv
-            .lock_platforms
-            .get_mut(&platform_key)
-            .and_then(|pi| pi.provenance.take());
+        let locked_provenance = if !ctx.locked {
+            // Safety: .take() removes provenance from tv before install. If install
+            // fails, tv is discarded via ?, so the removed value is never observed.
+            tv.lock_platforms
+                .get_mut(&platform_key)
+                .and_then(|pi| pi.provenance.take())
+        } else {
+            None
+        };
 
         // Use default vfox behavior for traditional plugins
         let result = vfox
@@ -151,7 +153,7 @@ impl Backend for VfoxBackend {
             pi.provenance = Some(provenance);
         }
 
-        // Enforce lockfile provenance — prevent downgrade attacks
+        // Enforce lockfile provenance — prevent downgrade attacks (skipped in locked mode)
         if let Some(ref expected) = locked_provenance {
             let got = tv
                 .lock_platforms

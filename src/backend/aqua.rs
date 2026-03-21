@@ -995,12 +995,25 @@ impl AquaBackend {
         filename: &str,
     ) -> Result<()> {
         // In locked mode, provenance was already verified when the lockfile was created.
-        // The checksum in the lockfile guarantees artifact integrity, so skip all
-        // provenance verification to avoid unnecessary API calls.
-        if ctx.locked {
-            return Ok(());
+        // Skip provenance verification to avoid unnecessary API calls, but still run
+        // the local checksum check at the end of this function.
+        if !ctx.locked {
+            self.verify_provenance(ctx, tv, pkg, v, filename).await?;
         }
 
+        let tarball_path = tv.download_path().join(filename);
+        self.verify_checksum(ctx, tv, &tarball_path)?;
+        Ok(())
+    }
+
+    async fn verify_provenance(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        pkg: &AquaPackage,
+        v: &str,
+        filename: &str,
+    ) -> Result<()> {
         // Check if the lockfile expects provenance for this platform, then clear it
         // so we can detect whether verification actually re-set it
         let platform_key = self.get_platform_key();
@@ -1120,8 +1133,6 @@ impl AquaBackend {
             }
         }
 
-        let tarball_path = tv.download_path().join(filename);
-        self.verify_checksum(ctx, tv, &tarball_path)?;
         Ok(())
     }
 
