@@ -994,10 +994,15 @@ impl AquaBackend {
         v: &str,
         filename: &str,
     ) -> Result<()> {
-        // In locked mode, provenance was already verified when the lockfile was created.
-        // Skip provenance verification to avoid unnecessary API calls, but still run
-        // the local checksum check at the end of this function.
-        if !ctx.locked {
+        // Skip provenance verification if the lockfile already has both a checksum and
+        // provenance entry for this platform — the artifact integrity is already guaranteed
+        // by the checksum, so re-verifying attestations would just be redundant API calls.
+        let platform_key = self.get_platform_key();
+        let has_lockfile_integrity = tv
+            .lock_platforms
+            .get(&platform_key)
+            .is_some_and(|pi| pi.checksum.is_some() && pi.provenance.is_some());
+        if !has_lockfile_integrity {
             self.verify_provenance(ctx, tv, pkg, v, filename).await?;
         }
 

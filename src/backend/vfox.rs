@@ -100,9 +100,14 @@ impl Backend for VfoxBackend {
         let mut tv = tv;
         self.ensure_plugin_installed(&ctx.config).await?;
         let (mut vfox, log_rx) = self.plugin.vfox();
-        // In locked mode, provenance was already verified when the lockfile was created.
-        // Skip attestation verification to avoid unnecessary API calls.
-        vfox.skip_verification = ctx.locked;
+        // Skip provenance verification if the lockfile already has both a checksum and
+        // provenance entry for this platform — re-verifying would just be redundant API calls.
+        let platform_key = self.get_platform_key();
+        let has_lockfile_integrity = tv
+            .lock_platforms
+            .get(&platform_key)
+            .is_some_and(|pi| pi.checksum.is_some() && pi.provenance.is_some());
+        vfox.skip_verification = has_lockfile_integrity;
         thread::spawn(|| {
             for line in log_rx {
                 // TODO: put this in ctx.pr.set_message()
@@ -128,10 +133,9 @@ impl Backend for VfoxBackend {
             return Ok(tv);
         }
 
-        // In locked mode, provenance was already verified when the lockfile was created.
-        // Skip the provenance take/enforce cycle to avoid false downgrade errors.
-        let platform_key = self.get_platform_key();
-        let locked_provenance = if !ctx.locked {
+        // Skip the provenance take/enforce cycle when lockfile already has integrity data,
+        // to avoid false downgrade errors from skipped verification.
+        let locked_provenance = if !has_lockfile_integrity {
             // Safety: .take() removes provenance from tv before install. If install
             // fails, tv is discarded via ?, so the removed value is never observed.
             tv.lock_platforms
@@ -153,7 +157,7 @@ impl Backend for VfoxBackend {
             pi.provenance = Some(provenance);
         }
 
-        // Enforce lockfile provenance — prevent downgrade attacks (skipped in locked mode)
+        // Enforce lockfile provenance — prevent downgrade attacks
         if let Some(ref expected) = locked_provenance {
             let got = tv
                 .lock_platforms
