@@ -74,15 +74,47 @@ pub use deps::{Deps, TaskKey};
 use task_dep::TaskDep;
 use task_sources::{RawOutputTemplates, TaskOutputs};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum RunEntry {
     /// Shell script entry
     Script(String),
-    /// Run a single task with optional args
-    SingleTask { task: String },
+    /// Run a single task with optional args and env
+    SingleTask {
+        task: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        args: Vec<String>,
+        #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+        env: IndexMap<String, String>,
+    },
     /// Run multiple tasks in parallel
     TaskGroup { tasks: Vec<String> },
+}
+
+impl std::hash::Hash for RunEntry {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            RunEntry::Script(s) => {
+                0u8.hash(state);
+                s.hash(state);
+            }
+            RunEntry::SingleTask { task, args, env } => {
+                1u8.hash(state);
+                task.hash(state);
+                args.hash(state);
+                let mut pairs: Vec<_> = env.iter().collect();
+                pairs.sort_by_key(|(k, _)| k.as_str());
+                for (k, v) in pairs {
+                    k.hash(state);
+                    v.hash(state);
+                }
+            }
+            RunEntry::TaskGroup { tasks } => {
+                2u8.hash(state);
+                tasks.hash(state);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
@@ -199,7 +231,16 @@ impl Display for RunEntry {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             RunEntry::Script(s) => write!(f, "{}", s),
-            RunEntry::SingleTask { task } => write!(f, "task: {task}"),
+            RunEntry::SingleTask { task, args, env } => {
+                for (k, v) in env {
+                    write!(f, "{}={} ", k, v)?;
+                }
+                write!(f, "task: {task}")?;
+                if !args.is_empty() {
+                    write!(f, " {}", args.join(" "))?;
+                }
+                Ok(())
+            }
             RunEntry::TaskGroup { tasks } => write!(f, "tasks: {}", tasks.join(", ")),
         }
     }

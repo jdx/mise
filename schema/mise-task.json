@@ -688,8 +688,22 @@
           "additionalProperties": false,
           "properties": {
             "task": {
-              "description": "single task name (with optional args) to run",
+              "description": "single task name to run",
               "type": "string"
+            },
+            "args": {
+              "description": "arguments to pass to the task",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "env": {
+              "description": "environment variables to set for the task",
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
             }
           },
           "required": ["task"]
