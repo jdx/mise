@@ -134,29 +134,14 @@ impl Backend for VfoxBackend {
             return Ok(tv);
         }
 
-        // Save the expected provenance discriminant so we can detect type changes
-        // even when attestation runs (i.e. plugin has no sha256/sha512).
+        // Save expected provenance before take() so we can detect type changes afterward,
+        // then clear it so we can detect whether install re-sets it.
+        // Safety: .take() removes provenance from tv before install. If install
+        // fails, tv is discarded via ?, so the removed value is never observed.
         let expected_provenance = tv
             .lock_platforms
-            .get(&platform_key)
-            .and_then(|pi| pi.provenance.clone());
-
-        // When verification will be fully skipped (has provenance + plugin has checksums),
-        // take() the provenance so the enforce check below is skipped — there's no new
-        // result to compare against.
-        if has_lockfile_provenance {
-            // The vfox crate's skip_verification only suppresses attestation when the
-            // plugin also provides sha256/sha512. If it doesn't, attestation still runs
-            // and we need the enforce check, so only take() when we know it'll be skipped.
-            // We can't know has_checksum here (it's inside vfox.install), so we always
-            // preserve expected_provenance above and use it for enforcement below.
-        } else {
-            // Safety: .take() removes provenance from tv before install. If install
-            // fails, tv is discarded via ?, so the removed value is never observed.
-            tv.lock_platforms
-                .get_mut(&platform_key)
-                .and_then(|pi| pi.provenance.take());
-        }
+            .get_mut(&platform_key)
+            .and_then(|pi| pi.provenance.take());
 
         // Use default vfox behavior for traditional plugins
         let result = vfox
@@ -168,13 +153,20 @@ impl Backend for VfoxBackend {
             let provenance = verified_attestation_to_provenance(att);
             let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
             pi.provenance = Some(provenance);
+        } else if let Some(ref expected) = expected_provenance {
+            // Attestation didn't run or produced no result. If we intentionally skipped
+            // (has_lockfile_provenance + plugin has checksums), restore the expected
+            // provenance. Otherwise got remains None and the enforce check catches it.
+            if has_lockfile_provenance {
+                let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
+                pi.provenance = Some(expected.clone());
+            }
         }
 
         // Enforce lockfile provenance — prevent downgrade attacks.
-        // When attestation was skipped (has_lockfile_provenance + plugin has checksums),
-        // result.verified_attestation is None so nothing overwrites provenance and this
-        // check is trivially satisfied. When attestation ran (no checksums), we compare
-        // the new result against what the lockfile expected.
+        // If a plugin removed its attestation config, got is None and this triggers.
+        // If attestation type changed, the discriminant mismatch triggers.
+        // If verification was skipped, expected was restored above so this passes.
         if let Some(ref expected) = expected_provenance {
             let got = tv
                 .lock_platforms
