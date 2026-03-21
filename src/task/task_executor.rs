@@ -453,6 +453,11 @@ impl TaskExecutor {
                             &env_map,
                             config_root,
                         )?;
+                    } else {
+                        trace!(
+                            "re_render_with_env skipped: task {} has no config_root",
+                            t.name
+                        );
                     }
                 }
                 if self.skip_deps {
