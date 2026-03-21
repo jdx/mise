@@ -398,6 +398,7 @@ impl TaskExecutor {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn inject_and_wait(
         &self,
         config: &Arc<Config>,
