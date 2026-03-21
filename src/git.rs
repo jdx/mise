@@ -151,6 +151,8 @@ impl Git {
         let mut cmd = CmdLineRunner::new("git")
             .arg("clone")
             .arg("-q")
+            .arg("-o")
+            .arg("origin")
             .arg("-c")
             .arg("core.autocrlf=false")
             .arg("--depth")

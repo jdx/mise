@@ -2,8 +2,16 @@
 
 echo "tasks.mylocal = { run = 'echo mylocal' }" >mise.toml
 echo "tasks.myglobal = { run = 'echo myglobal' }" >~/.config/mise/config.toml
+mkdir -p ~/.config/mise/tasks
+cat <<'EOF' >~/.config/mise/tasks/myglobalfile
+#!/usr/bin/env bash
+echo myglobalfile
+EOF
+chmod +x ~/.config/mise/tasks/myglobalfile
 
 assert "mise tasks" "myglobal
+myglobalfile
 mylocal"
 assert "mise tasks --local" "mylocal"
-assert "mise tasks --global" "myglobal"
+assert "mise tasks --global" "myglobal
+myglobalfile"

@@ -1112,11 +1112,12 @@ fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<St
         .map(ffi::OsStr::to_string_lossy)
         .map(|s| s.replace(':', "_"))
         .join(":");
-    if let Some(name) = name.strip_suffix(":_default") {
-        Ok(name.to_string())
-    } else {
-        Ok(name)
+    if let Some((parent, last)) = name.rsplit_once(':')
+        && strip_extension(last) == "_default"
+    {
+        return Ok(parent.to_string());
     }
+    Ok(name)
 }
 
 /// Extract monorepo path from a task name
@@ -1634,6 +1635,11 @@ mod tests {
             (("/.mise/tasks", "/.mise/tasks/a/b/c"), "a:b:c"),
             (("/.mise/tasks", "/.mise/tasks/a:b"), "a_b"),
             (("/.mise/tasks", "/.mise/tasks/a:b/c"), "a_b:c"),
+            (("/.mise/tasks", "/.mise/tasks/a/_default"), "a"),
+            (("/.mise/tasks", "/.mise/tasks/a/_default.sh"), "a"),
+            (("/.mise/tasks", "/.mise/tasks/a/_default.js"), "a"),
+            (("/.mise/tasks", "/.mise/tasks/a/b/_default"), "a:b"),
+            (("/.mise/tasks", "/.mise/tasks/a/b/_default.sh"), "a:b"),
         ];
 
         for ((root, path), expected) in test_cases {

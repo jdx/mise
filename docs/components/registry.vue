@@ -118,14 +118,14 @@ export default {
 
 .full-width th:nth-child(1),
 .full-width td:nth-child(1) {
-  min-width: 40%;
-  width: 50%;
+  min-width: 25%;
+  width: 25%;
 }
 
 .full-width th:nth-child(2),
 .full-width td:nth-child(2) {
-  min-width: 40%;
-  width: 50%;
+  min-width: 55%;
+  width: 55%;
 }
 
 .full-width th:nth-child(3),

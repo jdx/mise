@@ -110,10 +110,12 @@ get_checksum() {
   arch=$3
   ext=$4
   url="https://github.com/jdx/mise/releases/download/v${version}/SHASUMS256.txt"
+  current_version="$MISE_CURRENT_VERSION"
+  current_version="${current_version#v}"
 
   # For current version use static checksum otherwise
   # use checksum from releases
-  if [ "$version" = "$MISE_CURRENT_VERSION" ]; then
+  if [ "$version" = "$current_version" ]; then
     checksum_linux_x86_64="$MISE_CHECKSUM_LINUX_X86_64"
     checksum_linux_x86_64_musl="$MISE_CHECKSUM_LINUX_X86_64_MUSL"
     checksum_linux_arm64="$MISE_CHECKSUM_LINUX_ARM64"
@@ -242,13 +244,15 @@ download_file() {
 install_mise() {
   version="${MISE_VERSION:-$MISE_CURRENT_VERSION}"
   version="${version#v}"
+  current_version="$MISE_CURRENT_VERSION"
+  current_version="${current_version#v}"
   os="${MISE_INSTALL_OS:-$(get_os)}"
   arch="${MISE_INSTALL_ARCH:-$(get_arch)}"
   ext="${MISE_INSTALL_EXT:-$(get_ext)}"
   install_path="${MISE_INSTALL_PATH:-$HOME/.local/bin/mise}"
   install_dir="$(dirname "$install_path")"
   install_from_github="${MISE_INSTALL_FROM_GITHUB:-}"
-  if [ "$version" != "$MISE_CURRENT_VERSION" ] || [ "$install_from_github" = "1" ] || [ "$install_from_github" = "true" ]; then
+  if [ "$version" != "$current_version" ] || [ "$install_from_github" = "1" ] || [ "$install_from_github" = "true" ]; then
     tarball_url="https://github.com/jdx/mise/releases/download/v${version}/mise-v${version}-${os}-${arch}.${ext}"
   elif [ -n "${MISE_TARBALL_URL-}" ]; then
     tarball_url="$MISE_TARBALL_URL"

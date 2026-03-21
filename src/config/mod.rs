@@ -1663,6 +1663,11 @@ fn default_task_includes() -> Vec<String> {
     ]
 }
 
+fn is_global_task_include_path(path: &Path) -> bool {
+    path.starts_with(dirs::CONFIG.join("tasks"))
+        || path.starts_with(dirs::SYSTEM_CONFIG.join("tasks"))
+}
+
 #[async_backtrace::framed]
 pub async fn rebuild_shims_and_runtime_symlinks(
     config: &Arc<Config>,
@@ -1840,6 +1845,9 @@ async fn load_local_tasks_with_context(
                         for include in includes {
                             let mut subdir_tasks =
                                 load_tasks_includes(&config, &include, &subdir).await?;
+                            if is_global_task_include_path(&include) {
+                                mark_tasks_as_global(&mut subdir_tasks);
+                            }
                             prefix_monorepo_task_names(&mut subdir_tasks, &subdir, &monorepo_root);
                             for task in subdir_tasks {
                                 task_map.insert(task.name.clone(), task);
@@ -2290,7 +2298,11 @@ async fn load_file_tasks(
             expand_task_include(&cf_root, &include)
         };
         for path in paths {
-            tasks.extend(load_tasks_includes(config, &path, &config_root).await?);
+            let mut loaded = load_tasks_includes(config, &path, &config_root).await?;
+            if is_global_task_include_path(&path) {
+                mark_tasks_as_global(&mut loaded);
+            }
+            tasks.extend(loaded);
         }
     }
     Ok(tasks)
@@ -2353,7 +2365,11 @@ pub async fn load_tasks_in_dir(
 
     let mut file_tasks = vec![];
     for p in task_includes_for_dir(dir, config_files) {
-        file_tasks.extend(load_tasks_includes(config, &p, dir).await?);
+        let mut loaded = load_tasks_includes(config, &p, dir).await?;
+        if is_global_task_include_path(&p) {
+            mark_tasks_as_global(&mut loaded);
+        }
+        file_tasks.extend(loaded);
     }
 
     for include in git_includes {
@@ -2400,6 +2416,10 @@ async fn load_task_file(
         out.push(task);
     }
     Ok(out)
+}
+
+fn mark_tasks_as_global(tasks: &mut [Task]) {
+    tasks.iter_mut().for_each(|task| task.global = true);
 }
 
 #[cfg(test)]
