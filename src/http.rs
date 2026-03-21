@@ -434,20 +434,7 @@ pub fn error_code(e: &Report) -> Option<u16> {
 }
 
 fn github_headers(url: &Url) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    if url.host_str() == Some("api.github.com")
-        && let Some(token) = &*env::GITHUB_TOKEN
-    {
-        headers.insert(
-            reqwest::header::AUTHORIZATION,
-            HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
-        );
-        headers.insert(
-            "x-github-api-version",
-            HeaderValue::from_static("2022-11-28"),
-        );
-    }
-    headers
+    crate::github::get_headers(url.as_str())
 }
 
 /// Get HTTP Basic authentication headers from netrc file for the given URL

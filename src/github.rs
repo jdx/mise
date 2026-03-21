@@ -1,4 +1,5 @@
 use crate::cache::{CacheManager, CacheManagerBuilder};
+use crate::config::Settings;
 use crate::{dirs, duration, env};
 use eyre::Result;
 use heck::ToKebabCase;
@@ -312,15 +313,27 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
         );
     };
 
+    let use_gh_cli = Settings::get().github.gh_cli_tokens;
+
     if url.host_str() == Some("api.github.com") {
-        if let Some(token) = env::GITHUB_TOKEN.as_ref() {
+        let gh_token = use_gh_cli.then(|| GH_HOSTS.get("github.com")).flatten();
+        if let Some(token) = env::GITHUB_TOKEN
+            .as_deref()
+            .or(gh_token.map(|t| t.as_str()))
+        {
             set_headers(token);
         }
-    } else if let Some(token) = env::MISE_GITHUB_ENTERPRISE_TOKEN
-        .as_ref()
-        .or(env::GITHUB_TOKEN.as_ref())
-    {
-        set_headers(token);
+    } else {
+        let gh_token = use_gh_cli
+            .then(|| url.host_str().and_then(|h| GH_HOSTS.get(h)))
+            .flatten();
+        if let Some(token) = env::MISE_GITHUB_ENTERPRISE_TOKEN
+            .as_deref()
+            .or(env::GITHUB_TOKEN.as_deref())
+            .or(gh_token.map(|t| t.as_str()))
+        {
+            set_headers(token);
+        }
     }
 
     if url.path().contains("/releases/assets/") {
@@ -331,4 +344,31 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     }
 
     headers
+}
+
+/// Tokens read from the gh CLI hosts config (~/.config/gh/hosts.yml).
+/// Maps hostname (e.g. "github.com") to oauth_token.
+static GH_HOSTS: Lazy<HashMap<String, String>> = Lazy::new(|| read_gh_hosts().unwrap_or_default());
+
+fn read_gh_hosts() -> Option<HashMap<String, String>> {
+    let config_dir = std::env::var("GH_CONFIG_DIR")
+        .map(PathBuf::from)
+        .ok()
+        .or_else(|| Some(dirs::HOME.join(".config/gh")))?;
+    let hosts_path = config_dir.join("hosts.yml");
+    let contents = std::fs::read_to_string(&hosts_path).ok()?;
+    let hosts: HashMap<String, GhHostEntry> = serde_yaml::from_str(&contents).ok()?;
+    Some(
+        hosts
+            .into_iter()
+            .filter_map(|(host, entry)| entry.oauth_token.map(|token| (host, token)))
+            .collect(),
+    )
+}
+
+#[derive(Deserialize)]
+struct GhHostEntry {
+    oauth_token: Option<String>,
+    #[serde(flatten)]
+    _extra: HashMap<String, serde_yaml::Value>,
 }
