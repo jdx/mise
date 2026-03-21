@@ -434,7 +434,17 @@ pub fn error_code(e: &Report) -> Option<u16> {
 }
 
 fn github_headers(url: &Url) -> HeaderMap {
-    crate::github::get_headers(url.as_str())
+    let is_github = url.host_str().is_some_and(|h| {
+        h == "api.github.com"
+            || h == "github.com"
+            || h.ends_with(".githubusercontent.com")
+            || crate::github::is_gh_host(h)
+    });
+    if is_github {
+        crate::github::get_headers(url.as_str())
+    } else {
+        HeaderMap::new()
+    }
 }
 
 /// Get HTTP Basic authentication headers from netrc file for the given URL

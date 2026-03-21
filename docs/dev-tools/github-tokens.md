@@ -6,15 +6,26 @@ Many tools in mise are hosted on GitHub, and mise uses the GitHub API to list ve
 
 mise checks the following sources in order. The first token found wins:
 
-| Source                         | Applies to                   |
-| ------------------------------ | ---------------------------- |
-| `MISE_GITHUB_TOKEN` env var    | github.com                   |
-| `GITHUB_API_TOKEN` env var     | github.com                   |
-| `GITHUB_TOKEN` env var         | github.com                   |
-| gh CLI token (from hosts.yml)  | github.com                   |
-| `MISE_GITHUB_ENTERPRISE_TOKEN` | GitHub Enterprise            |
-| `GITHUB_TOKEN` env var         | GitHub Enterprise (fallback) |
-| gh CLI token (from hosts.yml)  | GitHub Enterprise            |
+**github.com:**
+
+| Priority | Source                        |
+| -------- | ----------------------------- |
+| 1        | `MISE_GITHUB_TOKEN` env var   |
+| 2        | `GITHUB_API_TOKEN` env var    |
+| 3        | `GITHUB_TOKEN` env var        |
+| 4        | gh CLI token (from hosts.yml) |
+
+**GitHub Enterprise hosts:**
+
+| Priority | Source                                                             |
+| -------- | ------------------------------------------------------------------ |
+| 1        | `MISE_GITHUB_ENTERPRISE_TOKEN` env var                             |
+| 2        | `MISE_GITHUB_TOKEN` / `GITHUB_API_TOKEN` / `GITHUB_TOKEN` env vars |
+| 3        | gh CLI token (from hosts.yml, matched by hostname)                 |
+
+::: tip
+The github.com env vars (`MISE_GITHUB_TOKEN`, etc.) are also used as a fallback for GHE when `MISE_GITHUB_ENTERPRISE_TOKEN` is not set. If you need different tokens for github.com and a GHE instance, set `MISE_GITHUB_ENTERPRISE_TOKEN` explicitly or use the gh CLI integration.
+:::
 
 ## Setting a Token via Environment Variable
 

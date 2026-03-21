@@ -346,6 +346,11 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     headers
 }
 
+/// Returns true if the given hostname has a token in the gh CLI hosts config.
+pub fn is_gh_host(host: &str) -> bool {
+    GH_HOSTS.contains_key(host)
+}
+
 /// Tokens read from the gh CLI hosts config (~/.config/gh/hosts.yml).
 /// Maps hostname (e.g. "github.com") to oauth_token.
 static GH_HOSTS: Lazy<HashMap<String, String>> = Lazy::new(|| read_gh_hosts().unwrap_or_default());
@@ -354,10 +359,30 @@ fn read_gh_hosts() -> Option<HashMap<String, String>> {
     let config_dir = std::env::var("GH_CONFIG_DIR")
         .map(PathBuf::from)
         .ok()
-        .or_else(|| Some(dirs::HOME.join(".config/gh")))?;
+        .or_else(|| {
+            std::env::var("XDG_CONFIG_HOME")
+                .map(|xdg| PathBuf::from(xdg).join("gh"))
+                .ok()
+        })
+        .unwrap_or_else(|| dirs::HOME.join(".config/gh"));
     let hosts_path = config_dir.join("hosts.yml");
-    let contents = std::fs::read_to_string(&hosts_path).ok()?;
-    let hosts: HashMap<String, GhHostEntry> = serde_yaml::from_str(&contents).ok()?;
+    let contents = match std::fs::read_to_string(&hosts_path) {
+        Ok(c) => c,
+        Err(e) => {
+            trace!("gh hosts.yml not readable at {}: {e}", hosts_path.display());
+            return None;
+        }
+    };
+    let hosts: HashMap<String, GhHostEntry> = match serde_yaml::from_str(&contents) {
+        Ok(h) => h,
+        Err(e) => {
+            debug!(
+                "failed to parse gh hosts.yml at {}: {e}",
+                hosts_path.display()
+            );
+            return None;
+        }
+    };
     Some(
         hosts
             .into_iter()
