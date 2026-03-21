@@ -1844,7 +1844,7 @@ async fn load_local_tasks_with_context(
                         let includes = task_includes_for_dir(&subdir, &config.config_files);
                         for include in includes {
                             let mut subdir_tasks =
-                                load_tasks_includes(&config, &include, &subdir).await?;
+                                load_tasks_includes(&config, &include, &subdir, &None).await?;
                             if is_global_task_include_path(&include) {
                                 mark_tasks_as_global(&mut subdir_tasks);
                             }
@@ -2183,9 +2183,10 @@ async fn load_tasks_includes(
     config: &Arc<Config>,
     root: &Path,
     config_root: &Path,
+    task_config_dir: &Option<String>,
 ) -> Result<Vec<Task>> {
     if root.is_file() && root.extension().map(|e| e == "toml").unwrap_or(false) {
-        load_task_file(config, root, config_root).await
+        load_task_file(config, root, config_root, task_config_dir).await
     } else if root.is_dir() {
         let files = WalkDir::new(root)
             .follow_links(true)
@@ -2212,7 +2213,11 @@ async fn load_tasks_includes(
             let root = root.clone();
             let config_root = config_root.clone();
             let config = config.clone();
-            tasks.push(Task::from_path(&config, &path, &root, &config_root).await?);
+            let mut task = Task::from_path(&config, &path, &root, &config_root).await?;
+            if task.dir.is_none() {
+                task.dir = task_config_dir.clone();
+            }
+            tasks.push(task);
         }
         Ok(tasks)
     } else {
@@ -2299,11 +2304,11 @@ async fn load_file_tasks(
             expand_task_include(&cf_root, &include)
         };
         for path in paths {
-            let mut loaded = load_tasks_includes(config, &path, &config_root).await?;
+            let mut loaded =
+                load_tasks_includes(config, &path, &config_root, &task_config_dir).await?;
             if is_global_task_include_path(&path) {
                 mark_tasks_as_global(&mut loaded);
             }
-            inherit_task_config_dir(&mut loaded, &task_config_dir);
             tasks.extend(loaded);
         }
     }
@@ -2373,18 +2378,16 @@ pub async fn load_tasks_in_dir(
 
     let mut file_tasks = vec![];
     for p in task_includes_for_dir(dir, config_files) {
-        let mut loaded = load_tasks_includes(config, &p, dir).await?;
+        let mut loaded = load_tasks_includes(config, &p, dir, &task_config_dir).await?;
         if is_global_task_include_path(&p) {
             mark_tasks_as_global(&mut loaded);
         }
-        inherit_task_config_dir(&mut loaded, &task_config_dir);
         file_tasks.extend(loaded);
     }
 
     for include in git_includes {
         let resolved = resolve_git_url_to_path(&include).await?;
-        let mut loaded = load_tasks_includes(config, &resolved, dir).await?;
-        inherit_task_config_dir(&mut loaded, &task_config_dir);
+        let loaded = load_tasks_includes(config, &resolved, dir, &task_config_dir).await?;
         file_tasks.extend(loaded);
     }
 
@@ -2408,6 +2411,7 @@ async fn load_task_file(
     config: &Arc<Config>,
     path: &Path,
     config_root: &Path,
+    task_config_dir: &Option<String>,
 ) -> Result<Vec<Task>> {
     let raw = file::read_to_string_async(path).await?;
     let mut tasks = toml::from_str::<Tasks>(&raw)
@@ -2417,6 +2421,9 @@ async fn load_task_file(
         task.name = name.clone();
         task.config_source = path.to_path_buf();
         task.config_root = Some(config_root.to_path_buf());
+        if task.dir.is_none() {
+            task.dir = task_config_dir.clone();
+        }
     }
     let mut out = vec![];
     for (_, mut task) in tasks {
@@ -2431,16 +2438,6 @@ async fn load_task_file(
 
 fn mark_tasks_as_global(tasks: &mut [Task]) {
     tasks.iter_mut().for_each(|task| task.global = true);
-}
-
-fn inherit_task_config_dir(tasks: &mut [Task], task_config_dir: &Option<String>) {
-    if let Some(dir) = task_config_dir {
-        for task in tasks {
-            if task.dir.is_none() {
-                task.dir = Some(dir.clone());
-            }
-        }
-    }
 }
 
 #[cfg(test)]

@@ -35,3 +35,6 @@ assert "mise run b" "$(pwd)/mywork"
 
 # File task should inherit task_config.dir
 assert "mise run c" "$(pwd)/mywork"
+
+# tasks ls --json should report the resolved dir for inherited tasks
+assert_contains "mise tasks ls --json" "$(pwd)/mywork"
