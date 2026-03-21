@@ -99,7 +99,10 @@ impl Backend for VfoxBackend {
     ) -> eyre::Result<ToolVersion> {
         let mut tv = tv;
         self.ensure_plugin_installed(&ctx.config).await?;
-        let (vfox, log_rx) = self.plugin.vfox();
+        let (mut vfox, log_rx) = self.plugin.vfox();
+        // In locked mode, provenance was already verified when the lockfile was created.
+        // Skip attestation verification to avoid unnecessary API calls.
+        vfox.skip_verification = ctx.locked;
         thread::spawn(|| {
             for line in log_rx {
                 // TODO: put this in ctx.pr.set_message()

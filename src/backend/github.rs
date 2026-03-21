@@ -619,16 +619,20 @@ impl UnifiedGitBackend {
         }
         self.verify_checksum(ctx, tv, &file_path)?;
 
-        // Verify attestations or SLSA (check attestations first, fall back to SLSA)
-        let provenance_result = self
-            .verify_attestations_or_slsa(ctx, tv, &file_path)
-            .await?;
+        // In locked mode, provenance was already verified when the lockfile was created.
+        // The checksum in the lockfile guarantees artifact integrity, so skip
+        // provenance verification to avoid unnecessary API calls.
+        if !ctx.locked {
+            let provenance_result = self
+                .verify_attestations_or_slsa(ctx, tv, &file_path)
+                .await?;
 
-        // Record provenance verification result in lock_platforms
-        if let Some(provenance_type) = provenance_result {
-            let platform_key = self.get_platform_key();
-            let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-            platform_info.provenance = Some(provenance_type);
+            // Record provenance verification result in lock_platforms
+            if let Some(provenance_type) = provenance_result {
+                let platform_key = self.get_platform_key();
+                let platform_info = tv.lock_platforms.entry(platform_key).or_default();
+                platform_info.provenance = Some(provenance_type);
+            }
         }
 
         ctx.pr.next_operation();

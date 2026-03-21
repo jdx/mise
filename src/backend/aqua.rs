@@ -994,6 +994,13 @@ impl AquaBackend {
         v: &str,
         filename: &str,
     ) -> Result<()> {
+        // In locked mode, provenance was already verified when the lockfile was created.
+        // The checksum in the lockfile guarantees artifact integrity, so skip all
+        // provenance verification to avoid unnecessary API calls.
+        if ctx.locked {
+            return Ok(());
+        }
+
         // Check if the lockfile expects provenance for this platform, then clear it
         // so we can detect whether verification actually re-set it
         let platform_key = self.get_platform_key();

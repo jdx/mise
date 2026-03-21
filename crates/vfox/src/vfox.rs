@@ -41,6 +41,9 @@ pub struct Vfox {
     pub plugin_dir: PathBuf,
     pub cache_dir: PathBuf,
     pub download_dir: PathBuf,
+    /// When true, skip attestation/provenance verification during install.
+    /// Used in --locked mode where provenance was already verified at lock time.
+    pub skip_verification: bool,
     log_tx: Option<mpsc::Sender<String>>,
 }
 
@@ -384,7 +387,9 @@ impl Vfox {
             unimplemented!("md5")
         }
         let mut verified: Option<VerifiedAttestation> = None;
-        if let Some(attestation) = &pre_install.attestation {
+        if let Some(attestation) = &pre_install.attestation
+            && !self.skip_verification
+        {
             self.log_emit(format!("Verify {file:?} attestation"));
             if let Some(owner) = &attestation.github_owner
                 && let Some(repo) = &attestation.github_repo
@@ -531,6 +536,7 @@ impl Default for Vfox {
             cache_dir: home().join(".version-fox/cache"),
             download_dir: home().join(".version-fox/downloads"),
             install_dir: home().join(".version-fox/installs"),
+            skip_verification: false,
             log_tx: None,
         }
     }
