@@ -3,6 +3,8 @@
 # Test that .tool-versions files with Tera templates require trust verification
 # This prevents silent arbitrary code execution from untrusted .tool-versions files
 
+trap 'rm -f /tmp/mise-trust-test-marker' EXIT
+
 # Ensure we start untrusted
 export MISE_TRUSTED_CONFIG_PATHS=""
 
@@ -11,12 +13,11 @@ cat <<'EOF' >.tool-versions
 {{ exec(command="echo PWNED > /tmp/mise-trust-test-marker") }}tiny 3.1.0
 EOF
 
-# Verify the trust check blocks execution
-output=$(MISE_YES=0 mise ls 2>&1 || true)
+# Use MISE_PARANOID=1 to bypass CI auto-trust (ci_info::is_ci() skips trust checks)
+output=$(MISE_YES=0 MISE_PARANOID=1 mise ls 2>&1 || true)
 
 # The exec command should NOT have run
 if [[ -f /tmp/mise-trust-test-marker ]]; then
-	rm -f /tmp/mise-trust-test-marker
 	echo "FAIL: Tera exec() ran in untrusted .tool-versions file"
 	exit 1
 fi
@@ -29,8 +30,6 @@ else
 	exit 1
 fi
 
-rm -f /tmp/mise-trust-test-marker
-
 # Also test that plain .tool-versions (no templates) still works without trust
 cat <<'EOF' >.tool-versions
 tiny 3.1.0
@@ -39,11 +38,11 @@ EOF
 mise i tiny
 assert_contains "mise ls tiny" "3.1.0"
 
-# Test that trusted .tool-versions with templates works
+# Test that trusted .tool-versions with templates works after mise trust
 cat <<'EOF' >.tool-versions
-{{ exec(command="echo 3.1.0") }}tiny 3.1.0
+tiny {{exec(command="echo 3.1.0")}}
 EOF
 
-mise trust
-mise i tiny
-assert_contains "mise ls tiny" "3.1.0"
+MISE_PARANOID=1 mise trust
+MISE_PARANOID=1 mise i tiny
+assert_contains "MISE_PARANOID=1 mise ls tiny" "3.1.0"
