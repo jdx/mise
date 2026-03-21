@@ -30,3 +30,4 @@ jobs:
             build
             registry
             revert
+            security
