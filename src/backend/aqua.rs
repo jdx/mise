@@ -997,12 +997,16 @@ impl AquaBackend {
         // Skip provenance verification if the lockfile already has both a checksum and
         // provenance entry for this platform — the artifact integrity is already guaranteed
         // by the checksum, so re-verifying attestations would just be redundant API calls.
+        // However, still check that the recorded provenance type's setting is enabled —
+        // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
         let platform_key = self.get_platform_key();
         let has_lockfile_integrity = tv
             .lock_platforms
             .get(&platform_key)
             .is_some_and(|pi| pi.checksum.is_some() && pi.provenance.is_some());
-        if !has_lockfile_integrity {
+        if has_lockfile_integrity {
+            self.ensure_provenance_setting_enabled(tv, &platform_key)?;
+        } else {
             self.verify_provenance(ctx, tv, pkg, v, filename).await?;
         }
 
@@ -1138,6 +1142,40 @@ impl AquaBackend {
             }
         }
 
+        Ok(())
+    }
+
+    /// When skipping full provenance re-verification (lockfile has checksum+provenance),
+    /// check that the setting for the recorded provenance type is still enabled.
+    /// Disabling a verification setting while the lockfile expects it is a downgrade.
+    fn ensure_provenance_setting_enabled(
+        &self,
+        tv: &ToolVersion,
+        platform_key: &str,
+    ) -> Result<()> {
+        let provenance = tv
+            .lock_platforms
+            .get(platform_key)
+            .and_then(|pi| pi.provenance.as_ref());
+        let Some(provenance) = provenance else {
+            return Ok(());
+        };
+        let settings = Settings::get();
+        let disabled = match provenance {
+            ProvenanceType::GithubAttestations => {
+                !settings.github_attestations || !settings.aqua.github_attestations
+            }
+            ProvenanceType::Slsa { .. } => !settings.slsa || !settings.aqua.slsa,
+            ProvenanceType::Cosign => !settings.aqua.cosign,
+            ProvenanceType::Minisign => !settings.aqua.minisign,
+        };
+        if disabled {
+            return Err(eyre!(
+                "Lockfile requires {provenance} provenance for {tv} but the corresponding \
+                 verification setting is disabled. This may indicate a downgrade attack. \
+                 Enable the setting or update the lockfile."
+            ));
+        }
         Ok(())
     }
 

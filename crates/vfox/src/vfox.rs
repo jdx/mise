@@ -178,6 +178,8 @@ impl Vfox {
             let file = self.download(&url?, &sdk, version).await?;
             verified_attestation = self.verify(&pre_install, &file).await?;
             self.extract(&file, install_dir)?;
+            // Note: sha1/md5 intentionally excluded — they are unimplemented! and
+            // not considered strong enough to satisfy the checksum_verified semantic.
             checksum_verified = pre_install.sha256.is_some() || pre_install.sha512.is_some();
         }
 

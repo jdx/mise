@@ -629,7 +629,11 @@ impl UnifiedGitBackend {
 
         self.verify_checksum(ctx, tv, &file_path)?;
 
-        if !has_lockfile_integrity {
+        if has_lockfile_integrity {
+            // Still check that the recorded provenance type's setting is enabled —
+            // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
+            self.ensure_provenance_setting_enabled(tv, &platform_key)?;
+        } else {
             let provenance_result = self
                 .verify_attestations_or_slsa(ctx, tv, &file_path)
                 .await?;
@@ -1225,6 +1229,38 @@ impl UnifiedGitBackend {
     ///
     /// Returns `Ok(Some((type, url)))` if provenance was verified successfully,
     /// or `Ok(None)` if no provenance was found (not an error).
+    /// When skipping full provenance re-verification (lockfile has checksum+provenance),
+    /// check that the setting for the recorded provenance type is still enabled.
+    fn ensure_provenance_setting_enabled(
+        &self,
+        tv: &ToolVersion,
+        platform_key: &str,
+    ) -> Result<()> {
+        let provenance = tv
+            .lock_platforms
+            .get(platform_key)
+            .and_then(|pi| pi.provenance.as_ref());
+        let Some(provenance) = provenance else {
+            return Ok(());
+        };
+        let settings = Settings::get();
+        let disabled = match provenance {
+            ProvenanceType::GithubAttestations => {
+                !settings.github_attestations || !settings.github.github_attestations
+            }
+            ProvenanceType::Slsa { .. } => !settings.slsa || !settings.github.slsa,
+            _ => false, // github backend only supports attestations and SLSA
+        };
+        if disabled {
+            return Err(eyre::eyre!(
+                "Lockfile requires {provenance} provenance for {tv} but the corresponding \
+                 verification setting is disabled. This may indicate a downgrade attack. \
+                 Enable the setting or update the lockfile."
+            ));
+        }
+        Ok(())
+    }
+
     async fn verify_attestations_or_slsa(
         &self,
         ctx: &InstallContext,
