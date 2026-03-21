@@ -2524,7 +2524,7 @@ vars = { target = "linux" }
 "#,
         )?;
 
-        let tasks = load_task_file(&config, &tasks_toml, temp_dir.path()).await?;
+        let tasks = load_task_file(&config, &tasks_toml, temp_dir.path(), &None).await?;
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].name, "build");
         assert_eq!(tasks[0].description, "linux");
