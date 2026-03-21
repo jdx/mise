@@ -387,8 +387,11 @@ impl Vfox {
             unimplemented!("md5")
         }
         let mut verified: Option<VerifiedAttestation> = None;
+        // Only skip attestation verification when the plugin provides a checksum
+        // (sha256/sha512) — otherwise there would be no integrity check at all.
+        let has_checksum = pre_install.sha256.is_some() || pre_install.sha512.is_some();
         if let Some(attestation) = &pre_install.attestation
-            && !self.skip_verification
+            && !(self.skip_verification && has_checksum)
         {
             self.log_emit(format!("Verify {file:?} attestation"));
             if let Some(owner) = &attestation.github_owner
