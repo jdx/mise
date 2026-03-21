@@ -173,10 +173,12 @@ impl Vfox {
         let install_dir = install_dir.as_ref();
         trace!("{pre_install:?}");
         let mut verified_attestation = None;
+        let mut checksum_verified = false;
         if let Some(url) = pre_install.url.as_ref().map(|s| Url::from_str(s)) {
             let file = self.download(&url?, &sdk, version).await?;
             verified_attestation = self.verify(&pre_install, &file).await?;
             self.extract(&file, install_dir)?;
+            checksum_verified = pre_install.sha256.is_some() || pre_install.sha512.is_some();
         }
 
         if sdk.get_metadata()?.hooks.contains("post_install") {
@@ -188,8 +190,6 @@ impl Vfox {
             })
             .await?;
         }
-
-        let checksum_verified = pre_install.sha256.is_some() || pre_install.sha512.is_some();
         Ok(InstallResult {
             sha256: pre_install.sha256,
             verified_attestation,
