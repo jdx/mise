@@ -361,17 +361,34 @@ pub fn is_gh_host(host: &str) -> bool {
 /// Maps hostname (e.g. "github.com") to oauth_token.
 static GH_HOSTS: Lazy<HashMap<String, String>> = Lazy::new(|| read_gh_hosts().unwrap_or_default());
 
+/// Resolve the path to gh CLI's hosts.yml, matching gh's own config resolution:
+/// 1. $GH_CONFIG_DIR/hosts.yml
+/// 2. $XDG_CONFIG_HOME/gh/hosts.yml (env::XDG_CONFIG_HOME handles the fallback to ~/.config)
+/// 3. ~/Library/Application Support/gh/hosts.yml (macOS native path from Go's os.UserConfigDir)
+fn gh_hosts_path() -> Option<PathBuf> {
+    // Explicit GH_CONFIG_DIR takes priority
+    if let Ok(dir) = std::env::var("GH_CONFIG_DIR") {
+        return Some(PathBuf::from(dir).join("hosts.yml"));
+    }
+    // Try XDG path (env::XDG_CONFIG_HOME falls back to ~/.config)
+    let xdg_path = env::XDG_CONFIG_HOME.join("gh/hosts.yml");
+    if xdg_path.exists() {
+        return Some(xdg_path);
+    }
+    // Try macOS native config dir
+    #[cfg(target_os = "macos")]
+    {
+        let macos_path = dirs::HOME.join("Library/Application Support/gh/hosts.yml");
+        if macos_path.exists() {
+            return Some(macos_path);
+        }
+    }
+    // Fall back to XDG path even if it doesn't exist (will produce a trace log)
+    Some(xdg_path)
+}
+
 fn read_gh_hosts() -> Option<HashMap<String, String>> {
-    let config_dir = std::env::var("GH_CONFIG_DIR")
-        .map(PathBuf::from)
-        .ok()
-        .or_else(|| {
-            std::env::var("XDG_CONFIG_HOME")
-                .map(|xdg| PathBuf::from(xdg).join("gh"))
-                .ok()
-        })
-        .unwrap_or_else(|| dirs::HOME.join(".config/gh"));
-    let hosts_path = config_dir.join("hosts.yml");
+    let hosts_path = gh_hosts_path()?;
     let contents = match std::fs::read_to_string(&hosts_path) {
         Ok(c) => c,
         Err(e) => {

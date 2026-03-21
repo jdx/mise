@@ -39,7 +39,13 @@ Or, if you already have `GITHUB_TOKEN` set (common in GitHub Actions), mise will
 
 ## gh CLI Integration
 
-If you use the [GitHub CLI](https://cli.github.com/) (`gh`), mise can read tokens directly from its config file (`~/.config/gh/hosts.yml` or `$GH_CONFIG_DIR/hosts.yml`). This is enabled by default and kicks in when no token environment variable is set.
+If you use the [GitHub CLI](https://cli.github.com/) (`gh`), mise can read tokens directly from its `hosts.yml` config file. This is enabled by default and kicks in when no token environment variable is set.
+
+mise looks for `hosts.yml` in these locations (first match wins):
+
+1. `$GH_CONFIG_DIR/hosts.yml`
+2. `$XDG_CONFIG_HOME/gh/hosts.yml` (defaults to `~/.config/gh/hosts.yml`)
+3. `~/Library/Application Support/gh/hosts.yml` (macOS only)
 
 This is especially useful for **GitHub Enterprise** — the gh CLI stores per-host tokens, so mise can authenticate to multiple GHE instances without juggling environment variables:
 
@@ -76,7 +82,7 @@ For self-hosted GitHub instances, set the `api_url` [tool option](/dev-tools/bac
 For authentication, mise checks (in order):
 
 1. `MISE_GITHUB_ENTERPRISE_TOKEN` env var
-2. `GITHUB_TOKEN` env var
+2. `MISE_GITHUB_TOKEN` / `GITHUB_API_TOKEN` / `GITHUB_TOKEN` env vars
 3. gh CLI token for the API hostname
 
 If you have **multiple** GHE instances, `MISE_GITHUB_ENTERPRISE_TOKEN` (a single value) won't work. Use the gh CLI integration instead:
