@@ -161,14 +161,9 @@ HTTP status client error (403 Forbidden) for url
 ```
 
 This can happen if the tool is hosted on GitHub, and you've hit the API rate limit. This is especially
-common running mise in a CI environment like GitHub Actions. If you don't have a `GITHUB_TOKEN`
-set, the rate limit is quite low. You can fix this by creating a GitHub token (which needs no scopes)
-by going to [https://github.com/settings/tokens/new](https://github.com/settings/tokens/new?description=MISE_GITHUB_TOKEN) and setting it as an environment variable. You can
-use any of the following (in order of preference):
+common running mise in a CI environment like GitHub Actions.
 
-- `MISE_GITHUB_TOKEN`
-- `GITHUB_TOKEN`
-- `GITHUB_API_TOKEN`
+See [GitHub Tokens](/dev-tools/github-tokens.html) for how to configure authentication and avoid rate limits.
 
 ## Auto-install on command not found handler does not work for new tools
 

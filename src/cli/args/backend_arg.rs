@@ -86,13 +86,17 @@ impl From<InstallStateTool> for BackendArg {
             }
         }
 
-        Self::new_raw(
+        let mut tool = Self::new_raw(
             short,
             ist.full,
             tool_name,
             opts,
             BackendResolution::new(ist.explicit_backend),
-        )
+        );
+        if let Some(installs_path) = ist.installs_path {
+            tool.installs_path = installs_path;
+        }
+        tool
     }
 }
 

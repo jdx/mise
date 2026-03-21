@@ -820,7 +820,9 @@ provenance = "slsa"
 [tools.sops."platforms.macos-arm64"]
 checksum = "sha256:3a23c388e2d7b9beff306f4817d197698b1d9ddf01c10020470c94225435e901"
 url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.darwin.arm64"
-provenance = "slsa"
+
+[tools.sops."platforms.macos-arm64".provenance.slsa]
+url = "https://github.com/getsops/sops/releases/download/v3.12.1/sops-v3.12.1.intoto.jsonl"
 
 [tools.sops."platforms.macos-x64"]
 checksum = "sha256:d6d296499e08d62325d933e4572fe8b6b9b11d0c08ee00d09b518a2731814c7b"

@@ -10,7 +10,9 @@ assert_json_partial_array "mise tasks ls --json" "name,description,source" "[
     \"source\": \"$PWD/mise-tasks/test.sh\"
   }
 ]"
-assert "mise tasks ls --usage" 'cmd test help=sh'
+assert "mise tasks ls --usage" 'cmd test help=sh {
+    arg "[-- ARGS_LAST]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks." required=#false var=#true hide=#true
+}'
 
 assert "mise tasks add --file test --description no-sh"
 assert "mise tasks ls" "test     no-sh
@@ -45,8 +47,12 @@ assert_json_partial_array "mise tasks ls --json" "name,description,source" "$(
 EOF
 )"
 
-assert "mise tasks ls --usage" 'cmd test help=no-sh
-cmd test.sh help=sh'
+assert "mise tasks ls --usage" 'cmd test help=no-sh {
+    arg "[-- ARGS_LAST]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks." required=#false var=#true hide=#true
+}
+cmd test.sh help=sh {
+    arg "[-- ARGS_LAST]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks." required=#false var=#true hide=#true
+}'
 
 touch script.sh
 chmod +x script.sh

@@ -1,0 +1,3 @@
+backends = ["github:badlogic/pi-mono", "npm:@mariozechner/pi-coding-agent"]
+description = "Pi is a minimal terminal coding harness"
+test = { cmd = "pi --version", expected = "{{version}}" }

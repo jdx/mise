@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: vercel-labs
+    repo_name: agent-browser
+    description: Browser automation CLI for AI agents
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.7.0")
+        asset: agent-browser-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          windows: win32
+      - version_constraint: semver("<= 0.7.4")
+        no_asset: true
+      - version_constraint: semver("<= 0.20.1")
+        asset: agent-browser-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          windows: win32
+      - version_constraint: "true"
+        asset: agent-browser-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          windows: win32
+        overrides:
+          - goos: linux
+            goarch: amd64
+            asset: agent-browser-{{.OS}}-musl-{{.Arch}}

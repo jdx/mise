@@ -464,7 +464,7 @@ pub static CLICOLOR_FORCE: Lazy<Option<bool>> =
 pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
     if *CLICOLOR_FORCE == Some(true) {
         Some(true)
-    } else if *NO_COLOR {
+    } else if *NO_COLOR || var_is_false("MISE_COLOR") {
         Some(false)
     } else if let Ok(v) = var("CLICOLOR") {
         Some(v != "0")
@@ -642,41 +642,43 @@ fn environment(args: &[String]) -> Vec<String> {
 
     // Get environment value from args or env vars
     // Precedence: CLI args > env vars > .miserc.toml
-    if *IS_RUNNING_AS_SHIM {
+    let from_args = if *IS_RUNNING_AS_SHIM {
         // When running as shim, ignore command line args and use env vars only
-        None
+        vec![]
     } else {
         // Try to get from command line args first
         args.windows(2)
             .take_while(|window| !window.iter().any(|a| a == "--"))
-            .find_map(|window| {
+            .filter_map(|window| {
                 if arg_defs.contains(&*window[0]) {
                     Some(window[1].clone())
                 } else {
                     None
                 }
             })
-    }
-    .map(|s| {
-        s.split(',')
-            .filter(|s| !s.is_empty())
-            .map(String::from)
-            .collect()
-    })
-    .or_else(|| {
-        var("MISE_ENV")
-            .ok()
-            .or_else(|| var("MISE_PROFILE").ok())
-            .or_else(|| var("MISE_ENVIRONMENT").ok())
-            .map(|s| {
+            .flat_map(|s| {
                 s.split(',')
                     .filter(|s| !s.is_empty())
                     .map(String::from)
-                    .collect()
+                    .collect::<Vec<_>>()
             })
-    })
-    .or_else(|| miserc::get_env().cloned())
-    .unwrap_or_default()
+            .collect()
+    };
+    if !from_args.is_empty() {
+        return from_args;
+    }
+    var("MISE_ENV")
+        .ok()
+        .or_else(|| var("MISE_PROFILE").ok())
+        .or_else(|| var("MISE_ENVIRONMENT").ok())
+        .map(|s| {
+            s.split(',')
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .collect()
+        })
+        .or_else(|| miserc::get_env().cloned())
+        .unwrap_or_default()
 }
 
 fn log_file_level() -> Option<LevelFilter> {

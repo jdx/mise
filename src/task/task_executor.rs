@@ -8,6 +8,7 @@ use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_output_handler::OutputHandler;
+use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{save_checksum, sources_are_fresh, task_cwd};
 use crate::task::{Deps, FailedTasks, GetMatchingExt, Task};
 use crate::toolset::env_cache::CachedEnv;
@@ -344,13 +345,33 @@ impl TaskExecutor {
                         self.exec_script(&script, &args, task, env, prefix).await?;
                     }
                 }
-                RunEntry::SingleTask { task: spec } => {
+                RunEntry::SingleTask {
+                    task: spec,
+                    args: entry_args,
+                    env: entry_env,
+                } => {
                     let resolved_spec = crate::task::resolve_task_pattern(spec, Some(task));
+                    let override_args = if entry_args.is_empty() {
+                        None
+                    } else {
+                        Some(entry_args.clone())
+                    };
+                    let override_env: Vec<(String, String)> = entry_env
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect();
+                    let override_env_ref = if override_env.is_empty() {
+                        None
+                    } else {
+                        Some(override_env.as_slice())
+                    };
                     guard = None; // drop lock before waiting on sub-tasks
                     self.inject_and_wait(
                         config,
                         &[resolved_spec],
                         task_env,
+                        override_args.as_deref(),
+                        override_env_ref,
                         sched_tx.clone(),
                         completed_tasks,
                     )
@@ -366,6 +387,8 @@ impl TaskExecutor {
                         config,
                         &resolved_tasks,
                         task_env,
+                        None,
+                        None,
                         sched_tx.clone(),
                         completed_tasks,
                     )
@@ -376,11 +399,14 @@ impl TaskExecutor {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn inject_and_wait(
         &self,
         config: &Arc<Config>,
         specs: &[String],
         task_env: &[(String, String)],
+        override_args: Option<&[String]>,
+        override_env: Option<&[(String, String)]>,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         completed_tasks: &HashSet<TaskKey>,
     ) -> Result<()> {
@@ -410,7 +436,32 @@ impl TaskExecutor {
             ensure!(!matches.is_empty(), "task not found: {}", name);
             for t in matches {
                 let mut t = (*t).clone();
-                t.args = args.clone();
+                t.args = override_args
+                    .map(|a| a.to_vec())
+                    .unwrap_or_else(|| args.clone());
+                // Apply entry-level env via with_dependency_env (high priority,
+                // consistent with depends/depends_post) so it overrides the
+                // sub-task's own declared env.
+                if let Some(env) = override_env {
+                    let env_directives: Vec<EnvDirective> = env
+                        .iter()
+                        .map(|(k, v)| EnvDirective::Val(k.clone(), v.clone(), Default::default()))
+                        .collect();
+                    t = t.with_dependency_env(&env_directives);
+                    if let Some(config_root) = &t.config_root {
+                        let env_map: IndexMap<String, String> = env.iter().cloned().collect();
+                        t.outputs.re_render_with_env(
+                            &t.raw_outputs.clone(),
+                            &env_map,
+                            config_root,
+                        )?;
+                    } else {
+                        trace!(
+                            "re_render_with_env skipped: task {} has no config_root",
+                            t.name
+                        );
+                    }
+                }
                 if self.skip_deps {
                     t.depends.clear();
                     t.depends_post.clear();
@@ -941,7 +992,10 @@ impl TaskExecutor {
         let (spec, _) = task
             .parse_usage_spec_with_vars(config, self.cd.clone(), env, extra_vars)
             .await?;
-        if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
+        if !spec.cmd.args.is_empty()
+            || !spec.cmd.flags.is_empty()
+            || !spec.cmd.subcommands.is_empty()
+        {
             let args: Vec<String> = get_args();
             trace!("Parsing usage spec for {:?}", args);
             // Pass env vars to Parser so it can resolve env= defaults in usage specs
@@ -955,8 +1009,17 @@ impl TaskExecutor {
                 trace!("Adding key {} value {} in env", k, v);
                 env.insert(k, v);
             }
+            // always export $usage_cmd when spec has subcommands so
+            // shell scripts with `set -u` don't fail when none is chosen
+            if !spec.cmd.subcommands.is_empty() {
+                env.entry("usage_cmd".to_string()).or_default();
+            }
+            if let Some(subcmd) = subcommand_name_from_parse(&po.cmds) {
+                trace!("Adding key usage_cmd value {} in env", subcmd);
+                env.insert("usage_cmd".to_string(), subcmd);
+            }
         } else {
-            trace!("Usage spec has no args or flags");
+            trace!("Usage spec has no args, flags, or subcommands");
         }
 
         Ok(())

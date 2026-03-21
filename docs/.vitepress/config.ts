@@ -66,6 +66,7 @@ export default withMermaid(
             { text: "Tool Aliases", link: "/dev-tools/aliases" },
             { text: "Tool Stubs", link: "/dev-tools/tool-stubs" },
             { text: "Registry", link: "/registry" },
+            { text: "GitHub Tokens", link: "/dev-tools/github-tokens" },
             { text: "mise.lock Lockfile", link: "/dev-tools/mise-lock" },
             { text: "Prepare", link: "/dev-tools/prepare" },
             {
@@ -308,7 +309,7 @@ export default withMermaid(
           sizes: "32x32",
         },
       ],
-      ["link", { rel: "icon", href: "/logo.svg", type: "image/svg+xml" }],
+      ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
       [
         "link",
         {

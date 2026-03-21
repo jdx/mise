@@ -82,18 +82,6 @@ pub struct Run {
     #[clap(long, short, verbatim_doc_comment)]
     pub force: bool,
 
-    /// Print directly to stdout/stderr instead of by line
-    /// Defaults to true if --jobs == 1
-    /// Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
-    #[clap(
-        long,
-        short,
-        verbatim_doc_comment,
-        hide = true,
-        overrides_with = "prefix"
-    )]
-    pub interleave: bool,
-
     /// Number of tasks to run in parallel
     /// [default: 4]
     /// Configure with `jobs` config or `MISE_JOBS` env var
@@ -115,18 +103,6 @@ pub struct Run {
     /// - `silent` - Don't show any output including stdout and stderr from the task except for errors
     #[clap(short, long, verbatim_doc_comment, env = "MISE_TASK_OUTPUT")]
     pub output: Option<TaskOutput>,
-
-    /// Print stdout/stderr by line, prefixed with the task's label
-    /// Defaults to true if --jobs > 1
-    /// Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
-    #[clap(
-        long,
-        short,
-        verbatim_doc_comment,
-        hide = true,
-        overrides_with = "interleave"
-    )]
-    pub prefix: bool,
 
     /// Don't show extra output
     #[clap(long, short, verbatim_doc_comment, env = "MISE_QUIET")]
@@ -542,8 +518,6 @@ impl Run {
     fn setup_output_and_validate(&mut self, tasks: &Deps) -> Result<()> {
         // Initialize OutputHandler AFTER is_linear is determined
         let output_config = crate::task::task_output_handler::OutputHandlerConfig {
-            prefix: self.prefix,
-            interleave: self.interleave,
             output: self.output,
             silent: self.silent,
             quiet: self.quiet,

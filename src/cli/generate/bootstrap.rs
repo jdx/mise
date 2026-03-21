@@ -102,7 +102,7 @@ __mise_bootstrap() {{
     test -f "$MISE_INSTALL_PATH" || install
 }}
 __mise_bootstrap
-exec "$MISE_INSTALL_PATH" "$@"
+exec -a "$0" "$MISE_INSTALL_PATH" "$@"
 "#
         );
         Ok(script.trim().to_string())

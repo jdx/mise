@@ -358,7 +358,7 @@ pub fn is_trusted(path: &Path) -> bool {
     {
         let mut current = parent;
         while let Some(dir) = current.parent() {
-            let monorepo_marker = trust_path(dir).with_extension("monorepo");
+            let monorepo_marker = with_appended_extension(&trust_path(dir), "monorepo");
             if monorepo_marker.exists() {
                 add_trusted(canonicalized_path.to_path_buf());
                 return true;
@@ -440,7 +440,7 @@ pub fn trust(path: &Path) -> Result<()> {
         file::make_symlink_or_file(path.canonicalize()?.as_path(), &hashed_path)?;
     }
     if Settings::get().paranoid {
-        let trust_hash_path = hashed_path.with_extension("hash");
+        let trust_hash_path = with_appended_extension(&hashed_path, "hash");
         let hash = hash::file_hash_sha256(path, None)?;
         file::write(trust_hash_path, hash)?;
     }
@@ -451,7 +451,7 @@ pub fn trust(path: &Path) -> Result<()> {
 pub fn mark_as_monorepo_root(path: &Path) -> Result<()> {
     let config_root = config_trust_root(path);
     let hashed_path = trust_path(&config_root);
-    let monorepo_marker = hashed_path.with_extension("monorepo");
+    let monorepo_marker = with_appended_extension(&hashed_path, "monorepo");
     if !monorepo_marker.exists() {
         file::create_dir_all(monorepo_marker.parent().unwrap())?;
         file::write(&monorepo_marker, "")?;
@@ -463,7 +463,15 @@ pub fn untrust(path: &Path) -> eyre::Result<()> {
     rm_ignored(path.to_path_buf())?;
     let hashed_path = trust_path(path);
     if hashed_path.exists() {
-        file::remove_file(hashed_path)?;
+        file::remove_file(&hashed_path)?;
+    }
+    let hash_path = with_appended_extension(&hashed_path, "hash");
+    if hash_path.exists() {
+        file::remove_file(&hash_path)?;
+    }
+    let monorepo_path = with_appended_extension(&hashed_path, "monorepo");
+    if monorepo_path.exists() {
+        file::remove_file(&monorepo_path)?;
     }
     Ok(())
 }
@@ -475,6 +483,20 @@ fn trust_path(path: &Path) -> PathBuf {
 
 fn ignore_path(path: &Path) -> PathBuf {
     dirs::IGNORED_CONFIGS.join(hashed_path_filename(path))
+}
+
+/// Appends an extension to a path without replacing existing dots in the filename.
+/// Unlike `Path::with_extension`, this preserves the full filename.
+/// e.g. "foo-bar.toml-abc123" + "hash" → "foo-bar.toml-abc123.hash"
+///
+/// NOTE: This changes the filename convention for .hash and .monorepo files.
+/// Existing files from prior versions will not be found, requiring a one-time
+/// re-trust of previously trusted configs after upgrade.
+fn with_appended_extension(path: &Path, ext: &str) -> PathBuf {
+    let mut os_string = path.as_os_str().to_owned();
+    os_string.push(".");
+    os_string.push(ext);
+    PathBuf::from(os_string)
 }
 
 /// creates the filename portion of trust/ignore files, e.g.:
@@ -510,7 +532,7 @@ fn hashed_path_filename(path: &Path) -> String {
 
 fn trust_file_hash(path: &Path) -> eyre::Result<bool> {
     let trust_path = trust_path(path);
-    let trust_hash_path = trust_path.with_extension("hash");
+    let trust_hash_path = with_appended_extension(&trust_path, "hash");
     if !trust_hash_path.exists() {
         return Ok(false);
     }
@@ -621,5 +643,21 @@ mod tests {
             detect_config_file_type(Path::new("/foo/bar/rust-toolchain.toml")).await,
             Some(ConfigFileType::IdiomaticVersion(_))
         ));
+    }
+
+    #[test]
+    fn test_with_appended_extension() {
+        let path = Path::new("/tmp/trusted/infra-mise.toml-a1b2c3d4e5f67890");
+        let result = with_appended_extension(path, "hash");
+        assert_eq!(
+            result,
+            Path::new("/tmp/trusted/infra-mise.toml-a1b2c3d4e5f67890.hash")
+        );
+
+        let result2 = with_appended_extension(path, "monorepo");
+        assert_eq!(
+            result2,
+            Path::new("/tmp/trusted/infra-mise.toml-a1b2c3d4e5f67890.monorepo")
+        );
     }
 }

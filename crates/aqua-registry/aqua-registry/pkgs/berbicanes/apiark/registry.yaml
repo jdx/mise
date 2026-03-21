@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: berbicanes
+    repo_name: apiark
+    description: Privacy-first API platform built with Tauri v2. No login, no cloud, ~60 MB RAM. A lightweight Postman alternative
+    asset: apiark-cli-{{.OS}}-{{.Arch}}
+    search_words:
+      - HTTP Client
+      - API Testing
+      - REST
+      - gRPC
+      - WebSocket
+      - SSE
+      - MQTT
+      - Postman
+    format: raw
+    windows_arm_emulation: true
+    replacements:
+      amd64: x86_64
+      darwin: macos
+    supported_envs:
+      - darwin
+      - windows
+      - amd64

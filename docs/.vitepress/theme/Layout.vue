@@ -78,6 +78,8 @@ function copyInstall() {
   inset: 0;
   pointer-events: none;
   z-index: 0;
+  overflow: clip;
+  contain: paint;
 }
 
 .hero-glow {

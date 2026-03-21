@@ -739,6 +739,11 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "gh_cli_tokens": {
+              "default": true,
+              "description": "Read GitHub tokens from the gh CLI's hosts.yml config.",
+              "type": "boolean"
+            },
             "github_attestations": {
               "default": true,
               "description": "Enable GitHub Artifact Attestations verification for github backend tools.",
@@ -1633,8 +1638,22 @@
           "additionalProperties": false,
           "properties": {
             "task": {
-              "description": "single task name (with optional args) to run",
+              "description": "single task name to run",
               "type": "string"
+            },
+            "args": {
+              "description": "arguments to pass to the task",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "env": {
+              "description": "environment variables to set for the task",
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
             }
           },
           "required": ["task"]

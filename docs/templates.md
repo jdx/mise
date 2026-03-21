@@ -88,7 +88,7 @@ Tera also supports powerful [expressions](https://keats.github.io/tera/docs/#exp
   - `and`
   - `or`
   - `not`
-- concatenation `~`, e.g. <code v-pre>{{ "hello " ~ 'world' ~ \`!\` }</code>
+- concatenation `~`, e.g. <code v-pre>{{ "hello " ~ 'world' ~ \`!\` }}</code>
 - in checking, e.g. <span v-pre>`{{ some_var in [1, 2, 3] }}`</span>
 
 Tera also supports control structures such as <span v-pre>`if`</span> and

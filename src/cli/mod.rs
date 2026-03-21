@@ -112,17 +112,12 @@ pub struct Cli {
     /// Force the operation
     #[clap(long, short, hide = true)]
     pub force: bool,
-    /// Set the log output verbosity
-    #[clap(long, short, hide = true, overrides_with = "prefix")]
-    pub interleave: bool,
     /// How many jobs to run in parallel [default: 8]
     #[clap(long, short, global = true, env = "MISE_JOBS")]
     pub jobs: Option<usize>,
     /// Dry run, don't actually do anything
     #[clap(short = 'n', long, hide = true)]
     pub dry_run: bool,
-    #[clap(long, short, hide = true, overrides_with = "interleave")]
-    pub prefix: bool,
     /// Set the profile (environment)
     #[clap(short = 'P', long, global = true, hide = true, conflicts_with = "env")]
     pub profile: Option<Vec<String>>,
@@ -652,12 +647,10 @@ impl Cli {
                         continue_on_error: self.continue_on_error,
                         dry_run: self.dry_run,
                         force: self.force,
-                        interleave: self.interleave,
                         is_linear: false,
                         jobs: self.jobs,
                         no_timings: self.no_timings,
                         output: self.output,
-                        prefix: self.prefix,
                         shell: self.shell,
                         quiet: self.quiet,
                         silent: self.silent,

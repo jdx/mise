@@ -1,4 +1,5 @@
 use crate::cache::{CacheManager, CacheManagerBuilder};
+use crate::config::Settings;
 use crate::{dirs, duration, env};
 use eyre::Result;
 use heck::ToKebabCase;
@@ -312,13 +313,31 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
         );
     };
 
-    if url.host_str() == Some("api.github.com") {
-        if let Some(token) = env::GITHUB_TOKEN.as_ref() {
-            set_headers(token);
-        }
-    } else if let Some(token) = env::MISE_GITHUB_ENTERPRISE_TOKEN
-        .as_ref()
-        .or(env::GITHUB_TOKEN.as_ref())
+    let use_gh_cli = Settings::get().github.gh_cli_tokens;
+
+    let host = url.host_str();
+    let is_github_com = host == Some("api.github.com")
+        || host == Some("github.com")
+        || host.is_some_and(|h| h.ends_with(".githubusercontent.com"));
+
+    let gh_cli_host = if host == Some("api.github.com") {
+        Some("github.com")
+    } else {
+        host
+    };
+    let gh_token = use_gh_cli
+        .then(|| gh_cli_host.and_then(|h| GH_HOSTS.get(h)))
+        .flatten();
+
+    let enterprise_token = if !is_github_com {
+        env::MISE_GITHUB_ENTERPRISE_TOKEN.as_deref()
+    } else {
+        None
+    };
+
+    if let Some(token) = enterprise_token
+        .or(env::GITHUB_TOKEN.as_deref())
+        .or(gh_token.map(|t| t.as_str()))
     {
         set_headers(token);
     }
@@ -331,4 +350,71 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     }
 
     headers
+}
+
+/// Returns true if the given hostname has a token in the gh CLI hosts config.
+pub fn is_gh_host(host: &str) -> bool {
+    GH_HOSTS.contains_key(host)
+}
+
+/// Tokens read from the gh CLI hosts config (~/.config/gh/hosts.yml).
+/// Maps hostname (e.g. "github.com") to oauth_token.
+static GH_HOSTS: Lazy<HashMap<String, String>> = Lazy::new(|| read_gh_hosts().unwrap_or_default());
+
+/// Resolve the path to gh CLI's hosts.yml, matching gh's own config resolution:
+/// 1. $GH_CONFIG_DIR/hosts.yml
+/// 2. $XDG_CONFIG_HOME/gh/hosts.yml (env::XDG_CONFIG_HOME handles the fallback to ~/.config)
+/// 3. ~/Library/Application Support/gh/hosts.yml (macOS native path from Go's os.UserConfigDir)
+fn gh_hosts_path() -> Option<PathBuf> {
+    // Explicit GH_CONFIG_DIR takes priority
+    if let Ok(dir) = std::env::var("GH_CONFIG_DIR") {
+        return Some(PathBuf::from(dir).join("hosts.yml"));
+    }
+    // Try XDG path (env::XDG_CONFIG_HOME falls back to ~/.config)
+    let xdg_path = env::XDG_CONFIG_HOME.join("gh/hosts.yml");
+    if xdg_path.exists() {
+        return Some(xdg_path);
+    }
+    // Try macOS native config dir
+    #[cfg(target_os = "macos")]
+    {
+        let macos_path = dirs::HOME.join("Library/Application Support/gh/hosts.yml");
+        if macos_path.exists() {
+            return Some(macos_path);
+        }
+    }
+    // Fall back to XDG path even if it doesn't exist (will produce a trace log)
+    Some(xdg_path)
+}
+
+fn read_gh_hosts() -> Option<HashMap<String, String>> {
+    let hosts_path = gh_hosts_path()?;
+    let contents = match std::fs::read_to_string(&hosts_path) {
+        Ok(c) => c,
+        Err(e) => {
+            trace!("gh hosts.yml not readable at {}: {e}", hosts_path.display());
+            return None;
+        }
+    };
+    let hosts: HashMap<String, GhHostEntry> = match serde_yaml::from_str(&contents) {
+        Ok(h) => h,
+        Err(e) => {
+            debug!(
+                "failed to parse gh hosts.yml at {}: {e}",
+                hosts_path.display()
+            );
+            return None;
+        }
+    };
+    Some(
+        hosts
+            .into_iter()
+            .filter_map(|(host, entry)| entry.oauth_token.map(|token| (host, token)))
+            .collect(),
+    )
+}
+
+#[derive(Deserialize)]
+struct GhHostEntry {
+    oauth_token: Option<String>,
 }

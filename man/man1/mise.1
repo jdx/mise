@@ -20,16 +20,11 @@ Set the environment for loading `mise.<ENV>.toml`
 \fB\-f, \-\-force\fR
 Force the operation
 .TP
-\fB\-i, \-\-interleave\fR
-Set the log output verbosity
-.TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 How many jobs to run in parallel [default: 8]
 .TP
 \fB\-n, \-\-dry\-run\fR
 Dry run, don't actually do anything
-.TP
-\fB\-p, \-\-prefix\fR
 .TP
 \fB\-P, \-\-profile\fR \fI<PROFILE>\fR
 Set the profile (environment)
@@ -1833,11 +1828,6 @@ Change to this directory before executing the command
 \fB\-f, \-\-force\fR
 Force the tasks to run even if outputs are up to date
 .TP
-\fB\-i, \-\-interleave\fR
-Print directly to stdout/stderr instead of by line
-Defaults to true if \-\-jobs == 1
-Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
-.TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of tasks to run in parallel
 [default: 4]
@@ -1856,11 +1846,6 @@ Change how tasks information is output when running tasks
 \- `keep\-order` \- Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
 \- `quiet` \- Don't show extra output
 \- `silent` \- Don't show any output including stdout and stderr from the task except for errors
-.TP
-\fB\-p, \-\-prefix\fR
-Print stdout/stderr by line, prefixed with the task's label
-Defaults to true if \-\-jobs > 1
-Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
 .TP
 \fB\-q, \-\-quiet\fR
 Don't show extra output
@@ -2564,11 +2549,6 @@ Change to this directory before executing the command
 \fB\-f, \-\-force\fR
 Force the tasks to run even if outputs are up to date
 .TP
-\fB\-i, \-\-interleave\fR
-Print directly to stdout/stderr instead of by line
-Defaults to true if \-\-jobs == 1
-Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
-.TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of tasks to run in parallel
 [default: 4]
@@ -2587,11 +2567,6 @@ Change how tasks information is output when running tasks
 \- `keep\-order` \- Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
 \- `quiet` \- Don't show extra output
 \- `silent` \- Don't show any output including stdout and stderr from the task except for errors
-.TP
-\fB\-p, \-\-prefix\fR
-Print stdout/stderr by line, prefixed with the task's label
-Defaults to true if \-\-jobs > 1
-Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
 .TP
 \fB\-q, \-\-quiet\fR
 Don't show extra output

@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+# Test passing args and env via run entry objects
+
+# Test run entry with args
+cat <<EOF >mise.toml
+[tasks.greet]
+run = 'echo hello'
+
+[tasks.all]
+run = [{ task = "greet", args = ["world", "foo"] }]
+EOF
+
+assert_contains "mise run all" "hello world foo"
+
+# Test run entry with env
+cat <<EOF >mise.toml
+[tasks.show-env]
+run = 'echo "FOO=\$FOO BAR=\$BAR"'
+
+[tasks.all]
+run = [{ task = "show-env", env = { FOO = "hello", BAR = "world" } }]
+EOF
+
+assert_contains "mise run all" "FOO=hello BAR=world"
+
+# Test run entry with both args and env
+cat <<EOF >mise.toml
+[tasks.greet]
+run = 'echo "FOO=\$FOO"'
+
+[tasks.all]
+run = [{ task = "greet", args = ["a", "b"], env = { FOO = "test" } }]
+EOF
+
+assert_contains "mise run all" "FOO=test"
+assert_contains "mise run all" "a b"
+
+# Test mixing script and task entries with args/env
+cat <<EOF >mise.toml
+[tasks.greet]
+run = 'echo "FOO=\$FOO"'
+
+[tasks.all]
+run = [
+  "echo step1",
+  { task = "greet", env = { FOO = "bar" } },
+]
+EOF
+
+assert_contains "mise run all" "step1"
+assert_contains "mise run all" "FOO=bar"

@@ -197,7 +197,9 @@ Without this option, mise's autodetection might select .app bundles on macOS, wh
 
 ### `bin_path`
 
+::: v-pre
 Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports Tera templating with variables like `{{ version }}`, `{{ os }}`, `{{ arch }}`, and arch aliases (`{{ darwin_os }}`, `{{ amd64_arch }}`, `{{ x86_64_arch }}`, `{{ gnu_arch }}`):
+:::
 
 ```toml
 [tools."github:cli/cli"]
@@ -239,11 +241,7 @@ For GitHub Enterprise or self-hosted GitHub instances, specify the API URL:
 
 ## Self-hosted GitHub
 
-If you are using a self-hosted GitHub instance, set the `api_url` tool option and optionally the `MISE_GITHUB_ENTERPRISE_TOKEN` environment variable for authentication:
-
-```sh
-export MISE_GITHUB_ENTERPRISE_TOKEN="your-token"
-```
+If you are using a self-hosted GitHub instance, set the `api_url` tool option. For authentication, see [GitHub Tokens](/dev-tools/github-tokens.html#github-enterprise).
 
 ## Supported GitHub Syntax
 
@@ -255,4 +253,5 @@ export MISE_GITHUB_ENTERPRISE_TOKEN="your-token"
 <script setup>
 import Settings from '/components/settings.vue';
 </script>
+
 <Settings child="github" :level="3" />

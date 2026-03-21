@@ -1,4 +1,4 @@
-use color_eyre::eyre::{Result, eyre};
+use color_eyre::eyre::{Result, bail, eyre};
 use console::style;
 use heck::ToShoutySnakeCase;
 use indoc::formatdoc;
@@ -55,6 +55,15 @@ impl Shell {
                 print!("{op}");
             }
             return Ok(());
+        }
+
+        for ta in &self.tool {
+            if ta.tvr.is_none() {
+                bail!(
+                    "no version specified for tool {tool}\nuse `mise shell {tool}@VERSION` to set a version",
+                    tool = ta.ba.short,
+                );
+            }
         }
 
         let mut ts = ToolsetBuilder::new()
