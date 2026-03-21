@@ -362,7 +362,7 @@ mod tests {
             content,
             None,
             None,
-            Some(r#"fromJSON(body).releases | filter({#.channel == "stable"}) | map({#.version}) | sortVersions()"#),
+            Some(r#"fromJSON(body).releases | filter({ #.channel == "stable" }) | map({ #.version }) | sortVersions()"#),
         )
         .unwrap();
         assert_eq!(versions, vec!["1.0.0", "3.38.6", "3.38.7"]);
@@ -394,7 +394,7 @@ mod tests {
             content,
             None,
             None,
-            Some(r#"sortVersions(filter(keys(fromJSON(body)), {# matches "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z\\.-]+)?$"}))"#),
+            Some(r#"sortVersions(filter(keys(fromJSON(body)), { # matches "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z\\.-]+)?$" }))"#),
         )
         .unwrap();
         assert_eq!(versions, vec!["1.0.0", "1.1.0", "1.2.0-rc1"]);

@@ -2,9 +2,13 @@
 
 assert "mise tasks add --file foo:bar:baz -- echo baz"
 assert "mise tasks add --file foo:bar -- echo bar"
+assert "mise tasks add --file foo:_default.sh -- echo foo"
 ls -lR .
 
-assert "mise tasks" "foo:bar
+assert "mise tasks" "foo
+foo:bar
 foo:bar:baz"
 assert "mise tasks run foo:bar:baz" "baz"
 assert "mise tasks run foo:bar" "bar"
+
+assert "mise tasks run foo" "foo"

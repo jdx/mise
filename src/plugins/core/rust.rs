@@ -359,21 +359,35 @@ fn rustup_path() -> PathBuf {
 }
 
 fn rustup_home() -> PathBuf {
-    Settings::get()
+    let path = Settings::get()
         .rust
         .rustup_home
         .clone()
         .or(env::var_path("RUSTUP_HOME"))
-        .unwrap_or(dirs::HOME.join(".rustup"))
+        .unwrap_or(dirs::HOME.join(".rustup"));
+    if path.is_relative() {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(&path))
+            .unwrap_or(path)
+    } else {
+        path
+    }
 }
 
 fn cargo_home() -> PathBuf {
-    Settings::get()
+    let path = Settings::get()
         .rust
         .cargo_home
         .clone()
         .or(env::var_path("CARGO_HOME"))
-        .unwrap_or(dirs::HOME.join(".cargo"))
+        .unwrap_or(dirs::HOME.join(".cargo"));
+    if path.is_relative() {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(&path))
+            .unwrap_or(path)
+    } else {
+        path
+    }
 }
 
 fn cargo_bin() -> PathBuf {

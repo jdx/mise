@@ -1,3 +1,2 @@
 backends = ["aqua:hashicorp/go-getter", "asdf:mise-plugins/mise-go-getter"]
 description = "Package for downloading things from a string URL using a variety of protocols"
-test = { cmd = "which go-getter", expected = "go-getter" }

@@ -203,6 +203,7 @@ impl PythonPlugin {
                 let versions = raw
                     .lines()
                     .filter(|v| v.contains(&platform))
+                    .filter(|v| flavor.is_some() || !v.contains("freethreaded"))
                     .flat_map(|v| {
                         // cpython-3.9.5+20210525 or cpython-3.9.5rc3+20210525
                         regex!(r"^cpython-(\d+\.\d+\.[\da-z]+)\+(\d+).*")
@@ -227,7 +228,7 @@ impl PythonPlugin {
     async fn install_precompiled(
         &self,
         ctx: &InstallContext,
-        tv: &ToolVersion,
+        tv: &mut ToolVersion,
     ) -> eyre::Result<()> {
         let precompiled_versions = self.fetch_precompiled_remote_versions().await?;
         let precompile_info = precompiled_versions
@@ -285,6 +286,13 @@ impl PythonPlugin {
         ctx.pr.set_message(format!("download {filename}"));
         HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
             .await?;
+
+        {
+            let platform_key = self.get_platform_key();
+            let pi = tv.lock_platforms.entry(platform_key).or_default();
+            pi.url = Some(url.clone());
+        }
+        self.verify_checksum(ctx, tv, &tarball_path)?;
 
         file::remove_all(&install)?;
         file::untar(
@@ -496,6 +504,7 @@ impl PythonPlugin {
         let result = raw
             .lines()
             .filter(|v| v.contains(&platform))
+            .filter(|v| flavor.is_some() || !v.contains("freethreaded"))
             .flat_map(|v| {
                 regex!(r"^cpython-(\d+\.\d+\.[\da-z]+)\+(\d+).*")
                     .captures(v)
@@ -586,9 +595,13 @@ impl Backend for PythonPlugin {
         ])
     }
 
-    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+    async fn install_version_(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> Result<ToolVersion> {
         if cfg!(windows) || Settings::get().python.compile != Some(true) {
-            self.install_precompiled(ctx, &tv).await?;
+            self.install_precompiled(ctx, &mut tv).await?;
         } else {
             self.install_compiled(ctx, &tv).await?;
         }

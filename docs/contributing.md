@@ -670,7 +670,7 @@ test = [
 ```
 
 The test command should be reliable and the output pattern should use
-`{{version}}` to match any version number.
+<code v-pre>{{version}}</code> to match any version number.
 
 ### Registry Examples
 
