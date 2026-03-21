@@ -2290,6 +2290,7 @@ async fn load_file_tasks(
     let mut tasks = vec![];
     let config_root = Arc::new(config_root.to_path_buf());
     let cf_root = cf.config_root();
+    let task_config_dir = cf.task_config().dir.clone();
 
     for include in includes {
         let paths = if include.starts_with("git::") {
@@ -2301,6 +2302,14 @@ async fn load_file_tasks(
             let mut loaded = load_tasks_includes(config, &path, &config_root).await?;
             if is_global_task_include_path(&path) {
                 mark_tasks_as_global(&mut loaded);
+            }
+            // Inherit task_config.dir from the parent config file
+            if let Some(ref dir) = task_config_dir {
+                for task in &mut loaded {
+                    if task.dir.is_none() {
+                        task.dir = Some(dir.clone());
+                    }
+                }
             }
             tasks.extend(loaded);
         }
@@ -2363,18 +2372,40 @@ pub async fn load_tasks_in_dir(
         config_tasks.extend(load_config_tasks(config, (*cf).clone(), &dir, templates).await?);
     }
 
+    // Find task_config.dir from the nearest config that defines it
+    let task_config_dir = configs
+        .iter()
+        .rev()
+        .find_map(|cf| cf.task_config().dir.clone());
+
     let mut file_tasks = vec![];
     for p in task_includes_for_dir(dir, config_files) {
         let mut loaded = load_tasks_includes(config, &p, dir).await?;
         if is_global_task_include_path(&p) {
             mark_tasks_as_global(&mut loaded);
         }
+        // Inherit task_config.dir from the parent config file
+        if let Some(ref dir) = task_config_dir {
+            for task in &mut loaded {
+                if task.dir.is_none() {
+                    task.dir = Some(dir.clone());
+                }
+            }
+        }
         file_tasks.extend(loaded);
     }
 
     for include in git_includes {
         let resolved = resolve_git_url_to_path(&include).await?;
-        file_tasks.extend(load_tasks_includes(config, &resolved, dir).await?);
+        let mut loaded = load_tasks_includes(config, &resolved, dir).await?;
+        if let Some(ref dir) = task_config_dir {
+            for task in &mut loaded {
+                if task.dir.is_none() {
+                    task.dir = Some(dir.clone());
+                }
+            }
+        }
+        file_tasks.extend(loaded);
     }
 
     let mut tasks = file_tasks
