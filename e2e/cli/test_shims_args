@@ -12,7 +12,7 @@ mise reshim
 # The dummy shim should execute the underlying tool, not mise itself.
 # If shim detection is broken, mise would try to parse these as its own args.
 assert_contains "dummy hello world" "This is Dummy 1.0.0!"
-assert_fail "dummy 2>&1 | grep -q 'mise manages dev tools'"
+assert_not_contains "dummy" "mise manages dev tools"
 
 # Verify that flags which collide with mise flags are passed through to the tool.
 # -j is mise's --jobs flag; if the shim is not detected, mise parses "-json" as
