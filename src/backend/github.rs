@@ -1223,14 +1223,9 @@ impl UnifiedGitBackend {
         Ok(())
     }
 
-    /// Verify artifact using GitHub artifact attestations or SLSA provenance.
-    /// Tries attestations first, falls back to SLSA if no attestations found.
-    /// If verification is attempted and fails, it's a hard error.
-    ///
-    /// Returns `Ok(Some((type, url)))` if provenance was verified successfully,
-    /// or `Ok(None)` if no provenance was found (not an error).
     /// When skipping full provenance re-verification (lockfile has checksum+provenance),
     /// check that the setting for the recorded provenance type is still enabled.
+    /// Disabling a verification setting while the lockfile expects it is a downgrade.
     fn ensure_provenance_setting_enabled(
         &self,
         tv: &ToolVersion,
@@ -1249,7 +1244,14 @@ impl UnifiedGitBackend {
                 !settings.github_attestations || !settings.github.github_attestations
             }
             ProvenanceType::Slsa { .. } => !settings.slsa || !settings.github.slsa,
-            _ => false, // github backend only supports attestations and SLSA
+            // The github backend only writes GithubAttestations and Slsa; reaching here
+            // means a lockfile was hand-edited or migrated incorrectly.
+            _ => {
+                return Err(eyre::eyre!(
+                    "Lockfile has unexpected provenance type {provenance} for github backend tool {tv}. \
+                     Update the lockfile to remove the stale provenance entry."
+                ));
+            }
         };
         if disabled {
             return Err(eyre::eyre!(
@@ -1261,6 +1263,12 @@ impl UnifiedGitBackend {
         Ok(())
     }
 
+    /// Verify artifact using GitHub artifact attestations or SLSA provenance.
+    /// Tries attestations first, falls back to SLSA if no attestations found.
+    /// If verification is attempted and fails, it's a hard error.
+    ///
+    /// Returns `Ok(Some((type, url)))` if provenance was verified successfully,
+    /// or `Ok(None)` if no provenance was found (not an error).
     async fn verify_attestations_or_slsa(
         &self,
         ctx: &InstallContext,
