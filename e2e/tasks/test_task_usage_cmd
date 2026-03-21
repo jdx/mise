@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+
+# Test usage `cmd` (subcommand) support in task definitions
+
+# Basic subcommand routing with env vars ($usage_cmd, $usage_*)
+cat <<'EOF' >mise.toml
+[tasks.deploy]
+description = "Deploy task with subcommands"
+usage = '''
+cmd "staging" {
+    arg "<version>"
+    flag "--dry-run"
+}
+cmd "production" {
+    arg "<version>"
+    flag "--approve"
+}
+'''
+run = '''
+echo "cmd=$usage_cmd version=$usage_version"
+'''
+EOF
+
+assert "mise run deploy staging v1.0" "cmd=staging version=v1.0"
+assert "mise run deploy production v2.0" "cmd=production version=v2.0"
+
+# Subcommand with Tera templates ({{ usage.cmd }}, {{ usage.* }})
+cat <<'EOF' >mise.toml
+[tasks.manage]
+description = "Manage resources"
+usage = '''
+cmd "create" {
+    arg "<name>"
+    flag "--type <type>" default="default"
+}
+cmd "delete" {
+    arg "<name>"
+    flag "--force"
+}
+'''
+run = '''
+echo "action={{ usage.cmd }} name={{ usage.name }} type={{ usage.type }}"
+{% if usage.force %}
+echo "force=true"
+{% endif %}
+'''
+EOF
+
+assert "mise run manage create myresource" "action=create name=myresource type=default"
+assert "mise run manage create myresource --type custom" "action=create name=myresource type=custom"
+assert "mise run manage delete myresource --force" "\
+action=delete name=myresource type=default
+force=true"
+
+# Subcommand with alias
+cat <<'EOF' >mise.toml
+[tasks.db]
+description = "Database operations"
+usage = '''
+cmd "migrate" {
+    alias "m"
+    flag "--seed"
+}
+'''
+run = '''
+echo "cmd=$usage_cmd"
+'''
+EOF
+
+assert "mise run db migrate" "cmd=migrate"
+assert "mise run db m" "cmd=migrate"
+
+# No subcommand selected — usage.cmd defaults to empty
+cat <<'EOF' >mise.toml
+[tasks.tool]
+description = "Tool with optional subcommand"
+usage = '''
+arg "<input>"
+cmd "check" {
+    arg "<target>"
+}
+'''
+run = '''
+echo "cmd={{ usage.cmd }} input={{ usage.input }}"
+'''
+EOF
+
+assert "mise run tool hello" "cmd= input=hello"
+
+# Mixed: root-level arg + subcommand with its own arg
+cat <<'EOF' >mise.toml
+[tasks.mixed]
+description = "Root args and subcommands together"
+usage = '''
+arg "<env>"
+cmd "deploy" {
+    arg "<version>"
+}
+cmd "rollback" {
+    arg "<version>"
+}
+'''
+run = '''
+echo "cmd=$usage_cmd env=$usage_env version=$usage_version"
+'''
+EOF
+
+assert "mise run mixed staging" "cmd= env=staging version="
+assert "mise run mixed deploy v1.0" "cmd=deploy env= version=v1.0"
+
+# File-based task with #USAGE cmd
+mkdir -p mise-tasks
+cat <<'SCRIPT' >mise-tasks/runner
+#!/usr/bin/env bash
+#USAGE cmd "lint" {
+#USAGE     arg "<path>"
+#USAGE }
+#USAGE cmd "test" {
+#USAGE     arg "<path>"
+#USAGE     flag "--coverage"
+#USAGE }
+
+echo "cmd=$usage_cmd path=$usage_path"
+SCRIPT
+chmod +x mise-tasks/runner
+
+assert "mise run runner lint src/" "cmd=lint path=src/"
+assert "mise run runner test src/ --coverage" "cmd=test path=src/"
+
+rm -rf mise-tasks
+
+# Root-level flags with subcommands require global=#true
+cat <<'EOF' >mise.toml
+[tasks.build]
+description = "Build with parallelism"
+usage = '''
+flag "-p --parallel <parallel>" default="1" global=#true
+cmd "debug" {
+    arg "<target>"
+}
+cmd "release" {
+    arg "<target>"
+}
+'''
+run = 'echo "cmd=$usage_cmd target=$usage_target parallel=$usage_parallel"'
+EOF
+
+assert "mise run build debug myapp --parallel 4" "cmd=debug target=myapp parallel=4"
+assert "mise run build debug myapp -p 4" "cmd=debug target=myapp parallel=4"
+assert "mise run build debug myapp -p4" "cmd=debug target=myapp parallel=4"
+assert "mise run build -p 4 release myapp" "cmd=release target=myapp parallel=4"
+assert "mise run build debug myapp" "cmd=debug target=myapp parallel=1"
