@@ -100,14 +100,15 @@ impl Backend for VfoxBackend {
         let mut tv = tv;
         self.ensure_plugin_installed(&ctx.config).await?;
         let (mut vfox, log_rx) = self.plugin.vfox();
-        // Skip provenance verification if the lockfile already has both a checksum and
-        // provenance entry for this platform — re-verifying would just be redundant API calls.
+        // Skip provenance verification if the lockfile already has a provenance entry for
+        // this platform — re-verifying would just be redundant API calls. Unlike aqua/github,
+        // the vfox backend doesn't populate PlatformInfo.checksum, so we check provenance alone.
         let platform_key = self.get_platform_key();
-        let has_lockfile_integrity = tv
+        let has_lockfile_provenance = tv
             .lock_platforms
             .get(&platform_key)
-            .is_some_and(|pi| pi.checksum.is_some() && pi.provenance.is_some());
-        vfox.skip_verification = has_lockfile_integrity;
+            .is_some_and(|pi| pi.provenance.is_some());
+        vfox.skip_verification = has_lockfile_provenance;
         thread::spawn(|| {
             for line in log_rx {
                 // TODO: put this in ctx.pr.set_message()
@@ -135,7 +136,7 @@ impl Backend for VfoxBackend {
 
         // Skip the provenance take/enforce cycle when lockfile already has integrity data,
         // to avoid false downgrade errors from skipped verification.
-        let locked_provenance = if !has_lockfile_integrity {
+        let locked_provenance = if !has_lockfile_provenance {
             // Safety: .take() removes provenance from tv before install. If install
             // fails, tv is discarded via ?, so the removed value is never observed.
             tv.lock_platforms
