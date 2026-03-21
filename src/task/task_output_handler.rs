@@ -172,8 +172,6 @@ fn print_stderr(prefix: &str, line: &str) {
 
 /// Configuration for OutputHandler
 pub struct OutputHandlerConfig {
-    pub prefix: bool,
-    pub interleave: bool,
     pub output: Option<TaskOutput>,
     pub silent: bool,
     pub quiet: bool,
@@ -189,8 +187,6 @@ pub struct OutputHandler {
     pub timed_outputs: Arc<Mutex<IndexMap<String, (SystemTime, String)>>>,
 
     // Configuration from CLI args
-    prefix: bool,
-    interleave: bool,
     output: Option<TaskOutput>,
     silent: bool,
     quiet: bool,
@@ -205,8 +201,6 @@ impl Clone for OutputHandler {
             keep_order_state: self.keep_order_state.clone(),
             task_prs: self.task_prs.clone(),
             timed_outputs: self.timed_outputs.clone(),
-            prefix: self.prefix,
-            interleave: self.interleave,
             output: self.output,
             silent: self.silent,
             quiet: self.quiet,
@@ -223,8 +217,6 @@ impl OutputHandler {
             keep_order_state: Arc::new(Mutex::new(KeepOrderState::new())),
             task_prs: IndexMap::new(),
             timed_outputs: Arc::new(Mutex::new(IndexMap::new())),
-            prefix: config.prefix,
-            interleave: config.interleave,
             output: config.output,
             silent: config.silent,
             quiet: config.quiet,
@@ -278,12 +270,7 @@ impl OutputHandler {
             return TaskOutput::Quiet;
         }
 
-        // CLI flags (--prefix, --interleave) override config settings
-        if self.prefix {
-            TaskOutput::Prefix
-        } else if self.interleave {
-            TaskOutput::Interleave
-        } else if let Some(output) = Settings::get().task.output {
+        if let Some(output) = Settings::get().task.output {
             // Silent/quiet from config override raw (output suppression takes precedence)
             // Other modes (prefix, etc.) allow raw to take precedence for stdin/stdout
             if output.is_silent() || output.is_quiet() {
