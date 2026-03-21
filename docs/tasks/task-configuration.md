@@ -265,10 +265,10 @@ from running at the same time. If that sounds useful, search/file a ticket.
 - **Type**: `bool`
 - **Default**: `false`
 
-Connects the task directly to the shell's stdin/stdout/stderr. Instead of the broad `raw` setting that forces
-single-threaded execution (by setting `jobs = 1`), `interactive` tasks acquire an exclusive global write lock,
-ensuring sole access to standard I/O. Concurrently, non-interactive tasks can proceed in parallel, significantly
-enhancing task concurrency and user experience for interactive processes without sacrificing system stability.
+Connects the task directly to the shell's stdin/stdout/stderr. Interactive tasks acquire an exclusive lock,
+ensuring sole access to standard I/O — while an interactive task is running, all other tasks (both interactive
+and non-interactive) are blocked. Non-interactive tasks can still run in parallel with each other. This is more
+targeted than the broad `raw` setting which forces single-threaded execution globally (by setting `jobs = 1`).
 
 ### `sources`
 
