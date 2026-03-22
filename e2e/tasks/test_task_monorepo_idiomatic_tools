@@ -47,8 +47,8 @@ assert_contains "mise run //packages/app1:check" "v1.0.1"
 echo "=== Test 2: Monorepo task with explicit tools ==="
 assert_contains "mise run //packages/app2:check" "v2.0.1"
 
-# Test 3: Running from within the subdir should also work
-echo "=== Test 3: Running from within subdir with idiomatic file ==="
-assert_contains "mise run -C packages/app1 :check" "v1.0.1"
+# Test 3: Monorepo syntax from within the subdir still uses load_config_hierarchy_from_dir
+echo "=== Test 3: Monorepo syntax from within subdir with idiomatic file ==="
+assert_contains "mise run -C packages/app1 //packages/app1:check" "v1.0.1"
 
 echo "=== All idiomatic tool monorepo tests passed! ==="
