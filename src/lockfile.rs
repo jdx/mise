@@ -1074,6 +1074,7 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
 
     let settings = Settings::get();
     let jobs = settings.jobs;
+    let mut all_provenance_errors: Vec<String> = Vec::new();
 
     for (lockfile_path, versions) in versions_by_lockfile {
         // Only update existing lockfiles (consistent with update_lockfiles)
@@ -1148,9 +1149,11 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
 
         lockfile.save(&lockfile_path)?;
 
-        if !provenance_errors.is_empty() {
-            return Err(eyre!("{}", provenance_errors.join("\n")));
-        }
+        all_provenance_errors.extend(provenance_errors);
+    }
+
+    if !all_provenance_errors.is_empty() {
+        return Err(eyre!("{}", all_provenance_errors.join("\n")));
     }
 
     Ok(())
@@ -1253,9 +1256,11 @@ pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) 
             && let Some(tools) = lockfile.tools.get(&short)
         {
             // Find the highest prior version with provenance on this platform
+            // (only github backend entries — provenance from aqua/vfox is expected to vary)
             let prior = tools
                 .iter()
                 .filter(|t| t.version != version)
+                .filter(|t| t.backend.as_ref().is_some_and(|b| b.starts_with("github:")))
                 .filter(|t| {
                     t.platforms
                         .get(&platform_key)
