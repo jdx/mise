@@ -32,6 +32,11 @@ pub struct Lock {
     #[clap(value_name = "TOOL", verbatim_doc_comment)]
     pub tool: Vec<ToolArg>,
 
+    /// Include global config lockfile (~/.config/mise/mise.lock)
+    /// By default, only project-level configs are locked
+    #[clap(long, short, verbatim_doc_comment)]
+    pub global: bool,
+
     /// Number of jobs to run in parallel
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
@@ -50,11 +55,6 @@ pub struct Lock {
     /// Use for tools defined in .local.toml configs
     #[clap(long, verbatim_doc_comment)]
     pub local: bool,
-
-    /// Include global config lockfile (~/.config/mise/mise.lock)
-    /// By default, only project-level configs are locked
-    #[clap(long, short, verbatim_doc_comment)]
-    pub global: bool,
 }
 
 impl Lock {

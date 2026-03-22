@@ -21,6 +21,11 @@ If not specified, all tools in lockfile will be updated
 
 ## Flags
 
+### `-g --global`
+
+Include global config lockfile (~/.config/mise/mise.lock)
+By default, only project-level configs are locked
+
 ### `-j --jobs <JOBS>`
 
 Number of jobs to run in parallel
@@ -39,11 +44,6 @@ If not specified, all platforms already in lockfile will be updated
 
 Update mise.local.lock instead of mise.lock
 Use for tools defined in .local.toml configs
-
-### `-g --global`
-
-Include global config lockfile (~/.config/mise/mise.lock)
-By default, only project-level configs are locked
 
 Examples:
 
