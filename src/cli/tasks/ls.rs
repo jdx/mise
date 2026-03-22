@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
-use crate::config::Config;
-use crate::file::display_rel_path;
+use crate::config::{self, Config};
+use crate::dirs;
+use crate::file::{self, display_rel_path};
 use crate::task::Task;
 use crate::task::task_fetcher::TaskFetcher;
 use crate::ui::table::MiseTable;
@@ -121,6 +122,23 @@ impl TasksLs {
         // always pass no_cache=false as the command doesn't take no-cache argument
         // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
         TaskFetcher::new(false).fetch_tasks(&mut tasks).await?;
+
+        if tasks.is_empty() && !cfg!(windows) {
+            if let Some(cwd) = &*dirs::CWD {
+                let includes = config::task_includes_for_dir(cwd, &config.config_files);
+                let has_non_exec = includes.iter().filter(|d| d.is_dir()).any(|d| {
+                    walkdir::WalkDir::new(d)
+                        .into_iter()
+                        .filter_map(|e| e.ok())
+                        .any(|e| e.file_type().is_file() && !file::is_executable(e.path()))
+                });
+                if has_non_exec {
+                    warn!(
+                        "no tasks found, but non-executable files exist in task directories.\nFiles must be executable to be detected as tasks. Run `chmod +x` on the task files to fix this."
+                    );
+                }
+            }
+        }
 
         if self.complete {
             return self.complete(tasks);

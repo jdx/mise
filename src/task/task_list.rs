@@ -123,6 +123,47 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
             }
         }
 
+        // Check if there are non-executable files in task include directories
+        if !cfg!(windows) {
+            if let Some(cwd) = &*dirs::CWD {
+                let includes = config::task_includes_for_dir(cwd, &config.config_files);
+                let non_exec_files: Vec<PathBuf> = includes
+                    .iter()
+                    .filter(|d| d.is_dir())
+                    .flat_map(|d| {
+                        walkdir::WalkDir::new(d)
+                            .into_iter()
+                            .filter_map(|e| e.ok())
+                            .filter(|e| e.file_type().is_file())
+                            .map(|e| e.path().to_path_buf())
+                            .filter(|p| !file::is_executable(p))
+                            .collect::<Vec<_>>()
+                    })
+                    .collect();
+                if !non_exec_files.is_empty() {
+                    let dirs_with_files: Vec<String> = includes
+                        .iter()
+                        .filter(|d| d.is_dir())
+                        .map(|d| display_path(d))
+                        .collect();
+                    bail!(
+                        "no tasks defined in {}, but found {} non-executable file(s) in {}.\n\
+                        Files must be executable to be detected as tasks.\n\
+                        Run `chmod +x` on the task files to fix this, e.g.:\n  chmod +x {}",
+                        display_path(dirs::CWD.clone().unwrap_or_default()),
+                        non_exec_files.len(),
+                        dirs_with_files.join(", "),
+                        non_exec_files
+                            .iter()
+                            .take(5)
+                            .map(|p| display_path(p))
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                    );
+                }
+            }
+        }
+
         bail!(
             "no tasks defined in {}. Are you in a project directory?",
             display_path(dirs::CWD.clone().unwrap_or_default())
