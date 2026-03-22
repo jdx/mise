@@ -95,7 +95,8 @@ impl TaskContextBuilder {
                 task_dir.display()
             );
 
-            let config_paths = crate::config::load_config_hierarchy_from_dir(task_dir)?;
+            let (config_paths, idiomatic_filenames) =
+                crate::config::load_config_hierarchy_from_dir(task_dir).await?;
             trace!(
                 "task {} found {} config files in hierarchy",
                 task.name,
@@ -103,7 +104,8 @@ impl TaskContextBuilder {
             );
 
             let task_config_files =
-                crate::config::load_config_files_from_paths(&config_paths).await?;
+                crate::config::load_config_files_from_paths(&config_paths, &idiomatic_filenames)
+                    .await?;
 
             let task_ts = ToolsetBuilder::new()
                 .with_config_files(task_config_files)
@@ -170,10 +172,14 @@ impl TaskContextBuilder {
                 task_dir.display()
             );
 
-            let config_paths = crate::config::load_config_hierarchy_from_dir(task_dir)?;
+            let (config_paths, idiomatic_filenames) =
+                crate::config::load_config_hierarchy_from_dir(task_dir).await?;
             trace!("Found {} config files in hierarchy", config_paths.len());
 
-            Some(crate::config::load_config_files_from_paths(&config_paths).await?)
+            Some(
+                crate::config::load_config_files_from_paths(&config_paths, &idiomatic_filenames)
+                    .await?,
+            )
         } else {
             None
         };
