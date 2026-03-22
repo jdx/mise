@@ -477,6 +477,7 @@ impl Lock {
                     pr.set_position(completed);
                     if let Err(e) = lockfile::apply_lock_result(lockfile, resolution) {
                         provenance_errors.push(e.to_string());
+                        results.push((short, platform_key, false));
                     } else {
                         results.push((short, platform_key, ok));
                     }
