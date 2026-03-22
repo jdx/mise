@@ -185,7 +185,10 @@ impl Toolset {
         // Add mise.lock files to watch_files
         for p in config.config_files.keys() {
             if let Some(parent) = p.parent() {
-                watch_files.push(parent.join("mise.lock"));
+                let lockfile = parent.join("mise.lock");
+                if lockfile.exists() {
+                    watch_files.push(lockfile);
+                }
             }
         }
 
@@ -225,6 +228,19 @@ impl Toolset {
             .map(|p| (p.clone(), get_file_mtime(p).unwrap_or(0)))
             .collect();
 
+        // Treat sibling mise.lock files as config inputs for cache invalidation
+        // to ensure creation, deletion, and modification of lock files forces
+        // a fresh env/watch_files computation.
+        let config_lockfiles: Vec<(PathBuf, u64)> = config
+            .config_files
+            .keys()
+            .filter_map(|p| {
+                let lockfile = p.parent()?.join("mise.lock");
+                let mtime = get_file_mtime(&lockfile)?;
+                Some((lockfile, mtime))
+            })
+            .collect();
+
         // Collect tool versions
         let tool_versions: Vec<(String, String)> = self
             .list_current_versions()
@@ -241,7 +257,7 @@ impl Toolset {
             .unwrap_or_default();
 
         Ok(CachedEnv::compute_cache_key(
-            &config_files,
+            &[config_files, config_lockfiles].concat(),
             &tool_versions,
             &settings_hash,
             &base_path,

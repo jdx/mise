@@ -794,7 +794,16 @@ impl Config {
             .map(|(p, cf)| {
                 let mut watch_files: Vec<WatchFilePattern> = vec![p.as_path().into()];
                 if let Some(parent) = p.parent() {
-                    watch_files.push(parent.join("mise.lock").into());
+                    let lockfile = parent.join("mise.lock");
+
+                    // Only watch lockfiles that currently exist to prevent missing optional
+                    // mise.lock files from keeping hook-env from stabilizing. If one is created
+                    // later, should_exit_early_fast() will notice the parent directory mtime
+                    // change, force a slow-path run, and this watch set will then include the new
+                    // lockfile on that recomputation.
+                    if lockfile.exists() {
+                        watch_files.push(lockfile.into());
+                    }
                 }
                 watch_files.extend(cf.watch_files()?.iter().map(|wf| WatchFilePattern {
                     root: cf.project_root().map(|pr| pr.to_path_buf()),
