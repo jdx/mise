@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.echo-args]
+run = 'echo args:'
+
+[tasks.hello]
+run = 'echo hello'
+
+[tasks.check-tiny]
+# tiny is not installed, so this would fail without --skip-tools
+# if tools were being installed, mise would try to install tiny
+tools = { tiny = "1.0.0" }
+run = 'echo ran'
+EOF
+
+# --skip-tools before task name is a mise flag (skips tool install, task runs)
+assert "mise run --skip-tools hello" "hello"
+
+# --skip-tools after task name is a task arg (passed through to task)
+assert "mise run echo-args --skip-tools" "args: --skip-tools"
+
+# verify --skip-tools skips task-level tool installation
+# task declares tools = { tiny = "1.0.0" } but --skip-tools prevents install attempt
+assert "mise run --skip-tools check-tiny" "ran"
