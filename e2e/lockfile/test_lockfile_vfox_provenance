@@ -5,7 +5,6 @@ export MISE_LOCKFILE=1
 detect_platform
 PLATFORM="$MISE_PLATFORM"
 
-echo "=== Testing mise lock writes URL for vfox tool ==="
 cat <<EOF >mise.toml
 [tools]
 "vfox:version-fox/vfox-cmake" = "3.30.2"
