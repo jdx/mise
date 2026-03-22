@@ -464,7 +464,7 @@ impl Lock {
                     }
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
-                    lockfile::apply_lock_result(lockfile, resolution);
+                    lockfile::apply_lock_result(lockfile, resolution)?;
                     results.push((short, platform_key, ok));
                 }
                 Err(e) => {

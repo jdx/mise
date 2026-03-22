@@ -1030,7 +1030,7 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
                     if let Err(msg) = &resolution.4 {
                         debug!("auto-lock: {msg}");
                     }
-                    apply_lock_result(&mut lockfile, resolution);
+                    apply_lock_result(&mut lockfile, resolution)?;
                 }
                 Err(e) => {
                     debug!("auto-lock task failed: {}", e);
@@ -1126,11 +1126,14 @@ pub async fn resolve_tool_lock_info(
 
 /// Apply a lock resolution result to a lockfile, updating platform info and conda packages.
 /// Only applies data when the resolution succeeded (info is `Ok`).
-pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) {
+///
+/// Returns an error if a github backend tool loses provenance on version upgrade,
+/// which could indicate a supply chain attack.
+pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) -> Result<()> {
     let (short, version, backend, platform, info, options, conda_packages) = result;
     let platform_key = platform.to_key();
     if let Ok(ref info) = info {
-        // For github backend tools, warn if a prior version had provenance but the new
+        // For github backend tools, error if a prior version had provenance but the new
         // version does not. This could indicate a supply chain attack where an attacker
         // publishes a release without attestations.
         if info.provenance.is_none() && backend.starts_with("github:") {
@@ -1145,11 +1148,11 @@ pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) 
                     }
                 });
                 if let Some(prov) = prior_provenance {
-                    warn!(
+                    return Err(eyre!(
                         "{short}@{version} has no provenance verification on {platform_key}, \
                          but a prior version had {prov}. This could indicate a supply chain \
                          attack. Verify the release is authentic before proceeding."
-                    );
+                    ));
                 }
             }
         }
@@ -1165,6 +1168,7 @@ pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) 
     for (basename, pkg_info) in conda_packages {
         lockfile.set_conda_package(&platform_key, &basename, pkg_info);
     }
+    Ok(())
 }
 
 /// Merge tool entries with deduplication by (version, options).
