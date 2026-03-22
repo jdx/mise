@@ -453,7 +453,7 @@ impl Lock {
         // Defer provenance errors until after all results are applied so unaffected
         // tools' entries aren't lost.
         let mut completed = 0;
-        let mut provenance_err: Option<eyre::Report> = None;
+        let mut provenance_errors: Vec<String> = Vec::new();
         while let Some(result) = jset.join_next().await {
             completed += 1;
             match result {
@@ -468,7 +468,7 @@ impl Lock {
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
                     if let Err(e) = lockfile::apply_lock_result(lockfile, resolution) {
-                        provenance_err = Some(e);
+                        provenance_errors.push(e.to_string());
                     } else {
                         results.push((short, platform_key, ok));
                     }
@@ -481,8 +481,8 @@ impl Lock {
 
         pr.finish_with_message(format!("{} platform entries", total_tasks));
 
-        if let Some(e) = provenance_err {
-            return Err(e);
+        if !provenance_errors.is_empty() {
+            return Err(eyre::eyre!("{}", provenance_errors.join("\n")));
         }
 
         Ok(results)

@@ -905,9 +905,14 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         existing_lockfile.save(&lockfile_path)?;
     }
 
-    // Return first provenance error after all lockfiles have been saved
-    if let Some(e) = provenance_errors.into_iter().next() {
-        return Err(e);
+    // Return all provenance errors after all lockfiles have been saved
+    if !provenance_errors.is_empty() {
+        let combined = provenance_errors
+            .into_iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Err(eyre!("{combined}"));
     }
 
     Ok(())
@@ -915,22 +920,32 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
 
 /// Check if any github backend tool is losing provenance when upgrading versions.
 /// Compares the highest prior version's provenance against new version entries.
+///
+/// Only checks the current platform because new `LockfileTool` entries (from
+/// `ToolVersionList`) only have `lock_platforms` populated for the platform where
+/// installation ran. Checking other platforms would produce false positives.
 fn check_provenance_regression(
     existing_lockfile: &Lockfile,
     new_tools: &HashMap<String, Vec<LockfileTool>>,
 ) -> Result<()> {
+    let current_platform = Platform::current().to_key();
+
     for (short, new_entries) in new_tools {
         let existing = match existing_lockfile.tools.get(short) {
             Some(entries) => entries,
             None => continue,
         };
 
-        // Find the highest existing version that has provenance on any platform
+        // Find the highest existing version that has provenance on the current platform
         // and uses the github backend
         let prior_with_provenance = existing
             .iter()
             .filter(|t| t.backend.as_ref().is_some_and(|b| b.starts_with("github:")))
-            .filter(|t| t.platforms.values().any(|pi| pi.provenance.is_some()))
+            .filter(|t| {
+                t.platforms
+                    .get(&current_platform)
+                    .is_some_and(|pi| pi.provenance.is_some())
+            })
             .max_by(|a, b| {
                 versions::Versioning::new(&a.version).cmp(&versions::Versioning::new(&b.version))
             });
@@ -940,31 +955,28 @@ fn check_provenance_regression(
             None => continue,
         };
 
+        let prior_pi = &prior.platforms[&current_platform];
+        let prov = prior_pi.provenance.as_ref().unwrap();
+
         // Check if any new version (different from the prior) lacks provenance
         for new_entry in new_entries {
             if new_entry.version == prior.version {
                 continue;
             }
 
-            // Check each platform where the prior version had provenance
-            for (platform_key, prior_pi) in &prior.platforms {
-                if let Some(prov) = &prior_pi.provenance {
-                    let new_has_provenance = new_entry
-                        .platforms
-                        .get(platform_key)
-                        .is_some_and(|pi| pi.provenance.is_some());
+            let new_has_provenance = new_entry
+                .platforms
+                .get(&current_platform)
+                .is_some_and(|pi| pi.provenance.is_some());
 
-                    if !new_has_provenance {
-                        return Err(eyre!(
-                            "{short}@{} has no provenance verification on {platform_key}, \
-                             but {}@{} had {prov}. This could indicate a supply chain \
-                             attack. Verify the release is authentic before proceeding.",
-                            new_entry.version,
-                            short,
-                            prior.version,
-                        ));
-                    }
-                }
+            if !new_has_provenance {
+                return Err(eyre!(
+                    "{short}@{} has no provenance verification on {current_platform}, \
+                     but {short}@{} had {prov}. This could indicate a supply chain \
+                     attack. Verify the release is authentic before proceeding.",
+                    new_entry.version,
+                    prior.version,
+                ));
             }
         }
     }
@@ -1096,16 +1108,17 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
         }
 
         // Collect results and update lockfile
+        // Defer provenance errors until after saving so unaffected tools' entries aren't lost.
+        let mut provenance_errors: Vec<String> = Vec::new();
         while let Some(result) = jset.join_next().await {
             match result {
                 Ok(resolution) => {
                     if let Err(msg) = &resolution.4 {
                         debug!("auto-lock: {msg}");
                     }
-                    // Provenance regression is checked in update_lockfiles (which
-                    // runs before auto-lock). Ignore errors here — the old version
-                    // entries have already been removed by merge_tool_entries.
-                    let _ = apply_lock_result(&mut lockfile, resolution);
+                    if let Err(e) = apply_lock_result(&mut lockfile, resolution) {
+                        provenance_errors.push(e.to_string());
+                    }
                 }
                 Err(e) => {
                     debug!("auto-lock task failed: {}", e);
@@ -1114,6 +1127,10 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
         }
 
         lockfile.save(&lockfile_path)?;
+
+        if !provenance_errors.is_empty() {
+            return Err(eyre!("{}", provenance_errors.join("\n")));
+        }
     }
 
     Ok(())
