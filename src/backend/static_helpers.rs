@@ -679,23 +679,55 @@ pub fn rename_executable_in_dir(
     }
 
     // First pass: Find executables in the directory (non-recursive for top level)
+    // When tool_name is available, prefer the executable matching it to avoid
+    // renaming the wrong binary when multiple executables are present.
+    let mut fallback_path: Option<PathBuf> = None;
     for path in file::ls(dir)? {
         if path.is_file() && file::is_executable(&path) {
             let file_name = path.file_name().unwrap().to_string_lossy();
             if should_skip_file(&file_name, false) {
                 continue;
             }
-            let target_path_with_extension =
-                keep_required_extensions(dir, &file_name, new_name, target_path);
-
-            file::rename(&path, &target_path_with_extension)?;
-            debug!(
-                "Renamed {} to {}",
-                path.display(),
-                target_path_with_extension.display()
-            );
-            return Ok(());
+            if let Some(tool_name) = tool_name {
+                if file_name.contains(tool_name) || *file_name == *tool_name {
+                    let target_path_with_extension =
+                        keep_required_extensions(dir, &file_name, new_name, target_path);
+                    file::rename(&path, &target_path_with_extension)?;
+                    debug!(
+                        "Renamed {} to {}",
+                        path.display(),
+                        target_path_with_extension.display()
+                    );
+                    return Ok(());
+                }
+                if fallback_path.is_none() {
+                    fallback_path = Some(path);
+                }
+            } else {
+                let target_path_with_extension =
+                    keep_required_extensions(dir, &file_name, new_name, target_path);
+                file::rename(&path, &target_path_with_extension)?;
+                debug!(
+                    "Renamed {} to {}",
+                    path.display(),
+                    target_path_with_extension.display()
+                );
+                return Ok(());
+            }
         }
+    }
+    // If tool_name was set but no executable matched, fall back to the first executable
+    if let Some(path) = fallback_path {
+        let file_name = path.file_name().unwrap().to_string_lossy();
+        let target_path_with_extension =
+            keep_required_extensions(dir, &file_name, new_name, target_path.clone());
+        file::rename(&path, &target_path_with_extension)?;
+        debug!(
+            "Renamed {} to {} (fallback)",
+            path.display(),
+            target_path_with_extension.display()
+        );
+        return Ok(());
     }
 
     // Second pass: Find non-executable files by name matching (for ZIP archives without exec bit)
