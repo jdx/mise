@@ -21,6 +21,11 @@ If not specified, all tools in lockfile will be updated
 
 ## Flags
 
+### `-g --global`
+
+Include global config lockfile (~/.config/mise/mise.lock)
+By default, only project-level configs are locked
+
 ### `-j --jobs <JOBS>`
 
 Number of jobs to run in parallel
@@ -48,4 +53,5 @@ mise lock node python           # update only node and python
 mise lock --platform linux-x64  # update only linux-x64 platform
 mise lock --dry-run             # show what would be updated
 mise lock --local               # update mise.local.lock for local configs
+mise lock --global              # include global config lockfile
 ```

@@ -32,6 +32,11 @@ pub struct Lock {
     #[clap(value_name = "TOOL", verbatim_doc_comment)]
     pub tool: Vec<ToolArg>,
 
+    /// Include global config lockfile (~/.config/mise/mise.lock)
+    /// By default, only project-level configs are locked
+    #[clap(long, short, verbatim_doc_comment)]
+    pub global: bool,
+
     /// Number of jobs to run in parallel
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
@@ -250,6 +255,12 @@ impl Lock {
         let mut targets: indexmap::IndexMap<PathBuf, Vec<PathBuf>> = indexmap::IndexMap::new();
         for (path, cf) in config.config_files.iter() {
             if !cf.source().is_mise_toml() {
+                continue;
+            }
+            if crate::config::system_config_files().contains(path) {
+                continue;
+            }
+            if !self.global && crate::config::global_config_files().contains(path) {
                 continue;
             }
             let (lockfile_path, is_local) = lockfile::lockfile_path_for_config(path);
@@ -475,6 +486,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise lock --platform linux-x64</bold>  # update only linux-x64 platform
     $ <bold>mise lock --dry-run</bold>             # show what would be updated
     $ <bold>mise lock --local</bold>               # update mise.local.lock for local configs
+    $ <bold>mise lock --global</bold>              # include global config lockfile
 "#
 );
 
@@ -498,6 +510,7 @@ mod tests {
             dry_run: false,
             platform: vec![],
             local: false,
+            global: false,
         }
     }
 
