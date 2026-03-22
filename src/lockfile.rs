@@ -847,7 +847,7 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
     debug!("updating {} lockfiles", lockfile_configs.len());
 
     // Process each lockfile, deferring provenance errors until all lockfiles are saved.
-    let mut provenance_errors: Vec<eyre::Report> = Vec::new();
+    let mut provenance_errors: Vec<String> = Vec::new();
 
     for (lockfile_path, configs) in lockfile_configs {
         // Only update existing lockfiles - creation is done elsewhere (e.g., by `mise lock`)
@@ -882,12 +882,16 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         // Check for provenance regression before merging (which drops old version entries).
         // For github backend tools, error if the highest prior version had provenance but
         // the new version does not — this could indicate a supply chain attack.
-        if let Err(e) = check_provenance_regression(&existing_lockfile, &tools_by_short) {
-            provenance_errors.push(e);
-        }
+        // Regressing tools are excluded from merge to preserve the old provenance entry.
+        let (regressing_tools, regression_errors) =
+            check_provenance_regression(&existing_lockfile, &tools_by_short);
+        provenance_errors.extend(regression_errors);
 
-        // Process each tool with deduplication
+        // Process each tool with deduplication, skipping regressing tools
         for (short, entries) in tools_by_short {
+            if regressing_tools.contains(&short) {
+                continue;
+            }
             let merged_tools = merge_tool_entries(entries, existing_lockfile.tools.get(&short));
             existing_lockfile.tools.insert(short, merged_tools);
         }
@@ -907,12 +911,7 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
 
     // Return all provenance errors after all lockfiles have been saved
     if !provenance_errors.is_empty() {
-        let combined = provenance_errors
-            .into_iter()
-            .map(|e| e.to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
-        return Err(eyre!("{combined}"));
+        return Err(eyre!("{}", provenance_errors.join("\n")));
     }
 
     Ok(())
@@ -924,11 +923,17 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
 /// Only checks the current platform because new `LockfileTool` entries (from
 /// `ToolVersionList`) only have `lock_platforms` populated for the platform where
 /// installation ran. Checking other platforms would produce false positives.
+///
+/// Returns the set of regressing tool short names and their error messages.
+/// Regressing tools should be excluded from merge/save to preserve the old
+/// provenance-verified entry in the lockfile.
 fn check_provenance_regression(
     existing_lockfile: &Lockfile,
     new_tools: &HashMap<String, Vec<LockfileTool>>,
-) -> Result<()> {
+) -> (HashSet<String>, Vec<String>) {
     let current_platform = Platform::current().to_key();
+    let mut regressing = HashSet::new();
+    let mut errors = Vec::new();
 
     for (short, new_entries) in new_tools {
         let existing = match existing_lockfile.tools.get(short) {
@@ -959,9 +964,17 @@ fn check_provenance_regression(
         let prov = prior_pi.provenance.as_ref().unwrap();
 
         // Check if any new version (different from the prior) lacks provenance
+        // and also uses the github backend
         for new_entry in new_entries {
             if new_entry.version == prior.version {
                 continue;
+            }
+
+            // Skip if the new entry uses a non-github backend (e.g., migrated to aqua)
+            if let Some(ref backend) = new_entry.backend {
+                if !backend.starts_with("github:") {
+                    continue;
+                }
             }
 
             let new_has_provenance = new_entry
@@ -970,17 +983,17 @@ fn check_provenance_regression(
                 .is_some_and(|pi| pi.provenance.is_some());
 
             if !new_has_provenance {
-                return Err(eyre!(
+                regressing.insert(short.clone());
+                errors.push(format!(
                     "{short}@{} has no provenance verification on {current_platform}, \
                      but {short}@{} had {prov}. This could indicate a supply chain \
                      attack. Verify the release is authentic before proceeding.",
-                    new_entry.version,
-                    prior.version,
+                    new_entry.version, prior.version,
                 ));
             }
         }
     }
-    Ok(())
+    (regressing, errors)
 }
 
 /// Determine target platforms using an already-loaded lockfile (used by auto-lock).
