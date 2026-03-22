@@ -24,9 +24,13 @@ pub fn find_non_executable_task_files(includes: &[PathBuf]) -> Vec<PathBuf> {
         .iter()
         .filter(|d| d.is_dir())
         .flat_map(|d| {
+            let root = d.clone();
             walkdir::WalkDir::new(d)
                 .into_iter()
-                .filter_entry(|e| !e.file_name().to_string_lossy().starts_with('.'))
+                // skip hidden directories, but allow the root itself to be hidden (e.g. .mise-tasks)
+                .filter_entry(move |e| {
+                    e.path() == root || !e.file_name().to_string_lossy().starts_with('.')
+                })
                 .filter_map(|e| e.ok())
                 .filter(|e| e.file_type().is_file() && !file::is_executable(e.path()))
                 .map(|e| e.path().to_path_buf())

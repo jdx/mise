@@ -27,6 +27,7 @@ assert_fail_contains "mise run build" "chmod +x"
 
 # mise tasks ls should warn about non-executable files
 assert_contains "mise tasks 2>&1" "non-executable"
+assert_contains "mise tasks 2>&1" "chmod +x"
 
 # After making files executable, tasks should work
 chmod +x mise-tasks/build mise-tasks/test
