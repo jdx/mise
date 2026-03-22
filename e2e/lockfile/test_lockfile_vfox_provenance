@@ -16,8 +16,3 @@ mise lock --platform "$PLATFORM"
 assert "test -f mise.lock"
 assert_contains "cat mise.lock" "url ="
 assert_contains "cat mise.lock" "\"platforms.$PLATFORM\""
-
-echo "=== Cleanup ==="
-rm -f mise.lock mise.toml
-
-echo "mise vfox lockfile provenance tests passed!"
