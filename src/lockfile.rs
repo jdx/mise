@@ -896,14 +896,8 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
     Ok(())
 }
 
-/// Determine target platforms for lockfile operations.
-/// Returns the 5 common platforms + current platform + any existing platforms in the lockfile.
-pub fn determine_target_platforms(lockfile_path: &Path) -> Vec<Platform> {
-    let lockfile = Lockfile::read(lockfile_path).ok();
-    determine_target_platforms_from_lockfile(lockfile.as_ref())
-}
-
-/// Determine target platforms using an already-loaded lockfile.
+/// Determine target platforms using an already-loaded lockfile (used by auto-lock).
+/// Returns all common platforms + current platform + any existing platforms in the lockfile.
 fn determine_target_platforms_from_lockfile(lockfile: Option<&Lockfile>) -> Vec<Platform> {
     let mut platforms: BTreeSet<Platform> = Platform::common_platforms().into_iter().collect();
     platforms.insert(Platform::current());
@@ -916,6 +910,32 @@ fn determine_target_platforms_from_lockfile(lockfile: Option<&Lockfile>) -> Vec<
             }
         }
     }
+    platforms.into_iter().collect()
+}
+
+/// Determine target platforms from an existing lockfile for explicit `mise lock` calls.
+/// If the lockfile already has platform entries, only those are targeted.
+/// Otherwise, falls back to all common platforms + current platform.
+pub fn determine_existing_platforms(lockfile_path: &Path) -> Vec<Platform> {
+    if let Ok(lockfile) = Lockfile::read(lockfile_path) {
+        let existing_keys = lockfile.all_platform_keys();
+        if !existing_keys.is_empty() {
+            let mut platforms: BTreeSet<Platform> = BTreeSet::new();
+            for platform_key in existing_keys {
+                if let Ok(p) = Platform::parse(&platform_key)
+                    && p.validate().is_ok()
+                {
+                    platforms.insert(p);
+                }
+            }
+            if !platforms.is_empty() {
+                return platforms.into_iter().collect();
+            }
+        }
+    }
+    // No lockfile, no platforms yet, or no valid platform keys — use common defaults
+    let mut platforms: BTreeSet<Platform> = Platform::common_platforms().into_iter().collect();
+    platforms.insert(Platform::current());
     platforms.into_iter().collect()
 }
 
