@@ -7,5 +7,4 @@ backends = [
   "cargo:usage-cli",
 ]
 description = "A specification for CLIs"
-os = ["linux", "macos", "freebsd", "windows"]
 test = { cmd = "usage --version", expected = "usage-cli {{version}}" }
