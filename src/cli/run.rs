@@ -157,8 +157,6 @@ pub struct Run {
     pub skip_deps: bool,
 
     /// Skip installing tools before running tasks
-    ///
-    /// Can also be set via the `task.run_auto_install` setting
     #[clap(long, verbatim_doc_comment)]
     pub skip_tools: bool,
 

@@ -123,8 +123,6 @@ Run only the specified tasks skipping all dependencies
 
 Skip installing tools before running tasks
 
-Can also be set via the `task.run_auto_install` setting
-
 ### `--timeout <TIMEOUT>`
 
 Timeout for the task to complete
