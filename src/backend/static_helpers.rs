@@ -679,23 +679,61 @@ pub fn rename_executable_in_dir(
     }
 
     // First pass: Find executables in the directory (non-recursive for top level)
+    // When tool_name is available, prefer an exact match, then a substring match,
+    // then fall back to the first executable found.
+    let mut substring_match: Option<PathBuf> = None;
+    let mut fallback_path: Option<PathBuf> = None;
     for path in file::ls(dir)? {
         if path.is_file() && file::is_executable(&path) {
             let file_name = path.file_name().unwrap().to_string_lossy();
             if should_skip_file(&file_name, false) {
                 continue;
             }
-            let target_path_with_extension =
-                keep_required_extensions(dir, &file_name, new_name, target_path);
-
-            file::rename(&path, &target_path_with_extension)?;
-            debug!(
-                "Renamed {} to {}",
-                path.display(),
-                target_path_with_extension.display()
-            );
-            return Ok(());
+            if let Some(tool_name) = tool_name {
+                if *file_name == *tool_name {
+                    let target_path_with_extension =
+                        keep_required_extensions(dir, &file_name, new_name, target_path);
+                    file::rename(&path, &target_path_with_extension)?;
+                    debug!(
+                        "Renamed {} to {}",
+                        path.display(),
+                        target_path_with_extension.display()
+                    );
+                    return Ok(());
+                }
+                if file_name.contains(tool_name) {
+                    if substring_match.is_none() {
+                        substring_match = Some(path);
+                    }
+                } else if fallback_path.is_none() {
+                    fallback_path = Some(path);
+                }
+            } else {
+                let target_path_with_extension =
+                    keep_required_extensions(dir, &file_name, new_name, target_path);
+                file::rename(&path, &target_path_with_extension)?;
+                debug!(
+                    "Renamed {} to {}",
+                    path.display(),
+                    target_path_with_extension.display()
+                );
+                return Ok(());
+            }
         }
+    }
+    // Prefer substring match over arbitrary fallback
+    let best_match = substring_match.or(fallback_path);
+    if let Some(path) = best_match {
+        let file_name = path.file_name().unwrap().to_string_lossy();
+        let target_path_with_extension =
+            keep_required_extensions(dir, &file_name, new_name, target_path.clone());
+        file::rename(&path, &target_path_with_extension)?;
+        debug!(
+            "Renamed {} to {} (fallback)",
+            path.display(),
+            target_path_with_extension.display()
+        );
+        return Ok(());
     }
 
     // Second pass: Find non-executable files by name matching (for ZIP archives without exec bit)
