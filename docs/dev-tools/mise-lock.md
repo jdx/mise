@@ -281,6 +281,17 @@ mise install
 mise use node@$(jq -r '.engines.node' package.json)
 ```
 
+## Minimum Release Age
+
+In addition to lockfiles, mise supports the [`install_before`](/configuration/settings.html#install_before) setting to limit supply chain risk by only installing versions that have been available for a minimum amount of time:
+
+```toml
+[settings]
+install_before = "7d"  # only resolve to versions released more than 7 days ago
+```
+
+This pairs well with lockfiles — use `install_before` to avoid picking up brand-new releases, and lockfiles to pin the exact versions you've vetted.
+
 ## See Also
 
 - [Configuration Settings](/configuration/settings) - All available settings
