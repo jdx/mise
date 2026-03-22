@@ -7,6 +7,9 @@ PLATFORM="$MISE_PLATFORM"
 
 # Test: upgrading a github backend tool from a version with provenance to one without
 # should error about potential supply chain attack.
+#
+# NOTE: This test depends on github:jdx/usage releases 1.5.0 and 1.6.0 existing.
+# If either is removed, the test will fail with a resolution error.
 
 # Use a github backend tool (usage) that does NOT have attestations.
 # First, lock an older version and inject provenance to simulate a prior verified install.
@@ -25,10 +28,11 @@ awk -v platform="$PLATFORM" '
 ' mise.lock >mise.lock.tmp && mv mise.lock.tmp mise.lock
 assert_contains "cat mise.lock" 'provenance = "github-attestations"'
 
-# Now upgrade to a newer version — mise lock should fail because provenance was lost
+# Now upgrade to a newer version — mise lock should fail because provenance was lost.
+# The error should mention the prior version that had provenance.
 cat <<EOF >mise.toml
 [tools]
 "github:jdx/usage" = "1.6.0"
 EOF
 
-assert_fail_contains "mise lock --platform $PLATFORM 2>&1" "supply chain"
+assert_fail_contains "mise lock --platform \"$PLATFORM\" 2>&1" "supply chain"
