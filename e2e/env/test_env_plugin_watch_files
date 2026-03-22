@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+
+# Test that env plugin watch_files are tracked in the session and env cache,
+# so that modifying a watched file triggers hook-env to re-evaluate.
+#
+# See: https://github.com/jdx/mise/discussions/8603
+#
+# There are four meaningfully different code paths depending on:
+#   - tools=false: plugin runs in config.load_env() via NonToolsOnly;
+#     watch_files flow through config.watch_files() into the slow-path check.
+#   - tools=true: plugin runs in toolset.load_post_env() via ToolsOnly;
+#     watch_files come back as env_watch_files from env_with_path_and_split()
+#     and the slow-path relies on PREV_SESSION.watch_files to detect changes.
+#   - cache=off: watch_files computed fresh each time.
+#   - cache=on: watch_files stored in CachedEnv; cache must invalidate on change.
+#
+# We test all four combinations to ensure full coverage.
+
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+
+setup_plugin() {
+	local plugin_name=$1
+	local data_file=$2
+	local env_var=$3
+
+	local plugin_dir="$MISE_DATA_DIR/plugins/$plugin_name"
+	mkdir -p "$plugin_dir/hooks"
+
+	cat >"$plugin_dir/metadata.lua" <<-EOFMETA
+		PLUGIN = {}
+		PLUGIN.name = "$plugin_name"
+		PLUGIN.version = "1.0.0"
+		PLUGIN.homepage = "https://example.com"
+		PLUGIN.license = "MIT"
+		PLUGIN.description = "Test plugin for watch_files tracking"
+		PLUGIN.minRuntimeVersion = "0.3.0"
+	EOFMETA
+
+	cat >"$plugin_dir/hooks/mise_env.lua" <<-EOFHOOK
+		function PLUGIN:MiseEnv(ctx)
+		    local f = io.open("$data_file", "r")
+		    local value = f:read("*all"):gsub("%s+$", "")
+		    f:close()
+		    return {
+		        env = {{key = "$env_var", value = value}},
+		        cacheable = true,
+		        watch_files = {"$data_file"}
+		    }
+		end
+	EOFHOOK
+}
+
+# Assert that hook-env produces no output (fast-path).
+assert_hook_env_is_stable() {
+	local msg=$1
+	output=$(mise hook-env -s bash)
+	if [[ -z $output ]]; then
+		ok "$msg"
+	else
+		fail "$msg but got: '$output'"
+	fi
+}
+
+# Runs a test scenario with both plugins active: activate, verify initial
+# values, modify one watched file at a time, verify hook-env detects the
+# change and updates the value.
+run_watch_files_test() {
+	local label=$1
+
+	unset TEST_WATCH_NONTOOL TEST_WATCH_TOOL
+	unset __MISE_SESSION __MISE_DIFF
+	rm -rf "$MISE_STATE_DIR/env-cache" "$MISE_CACHE_DIR"
+
+	# Reset data files
+	echo "initial_nontool" >"$DATA_FILE_A"
+	echo "initial_tool" >"$DATA_FILE_B"
+
+	# Activate runs hook-env and establishes the initial session.
+	eval "$(mise activate bash)"
+
+	# Verify initial values
+	if [[ $TEST_WATCH_NONTOOL == "initial_nontool" ]]; then
+		ok "$label: nontool initial value set"
+	else
+		fail "$label: expected TEST_WATCH_NONTOOL=initial_nontool, got '$TEST_WATCH_NONTOOL'"
+	fi
+	if [[ $TEST_WATCH_TOOL == "initial_tool" ]]; then
+		ok "$label: tool initial value set"
+	else
+		fail "$label: expected TEST_WATCH_TOOL=initial_tool, got '$TEST_WATCH_TOOL'"
+	fi
+
+	# Fast-path should work (nothing changed)
+	assert_hook_env_is_stable "$label: fast-path works when nothing changed"
+
+	# Modify the nontool watched file (tools=false plugin)
+	sleep 1
+	echo "updated_nontool" >"$DATA_FILE_A"
+
+	# hook-env should detect the change
+	output=$(mise hook-env -s bash)
+	if [[ $output == *"__MISE_SESSION"* ]]; then
+		ok "$label: nontool watch_files change bypasses fast-path"
+	else
+		fail "$label: nontool watch_files change should bypass fast-path but got: '$output'"
+	fi
+
+	# Eval and verify updated value
+	eval "$output"
+	if [[ $TEST_WATCH_NONTOOL == "updated_nontool" ]]; then
+		ok "$label: nontool updated value picked up"
+	else
+		fail "$label: expected TEST_WATCH_NONTOOL=updated_nontool, got '$TEST_WATCH_NONTOOL'"
+	fi
+
+	# Fast-path should stabilise
+	assert_hook_env_is_stable "$label: fast-path works after nontool update"
+
+	# Modify the tool watched file (tools=true plugin)
+	sleep 1
+	echo "updated_tool" >"$DATA_FILE_B"
+
+	# hook-env should detect the change
+	output=$(mise hook-env -s bash)
+	if [[ $output == *"__MISE_SESSION"* ]]; then
+		ok "$label: tool watch_files change bypasses fast-path"
+	else
+		fail "$label: tool watch_files change should bypass fast-path but got: '$output'"
+	fi
+
+	# Eval and verify updated value
+	eval "$output"
+	if [[ $TEST_WATCH_TOOL == "updated_tool" ]]; then
+		ok "$label: tool updated value picked up"
+	else
+		fail "$label: expected TEST_WATCH_TOOL=updated_tool, got '$TEST_WATCH_TOOL'"
+	fi
+
+	# Fast-path should stabilise
+	assert_hook_env_is_stable "$label: fast-path works after tool update"
+}
+
+# --- Setup plugins and data files ---
+
+DATA_FILE_A="$MISE_DATA_DIR/watch_test_data_a"
+DATA_FILE_B="$MISE_DATA_DIR/watch_test_data_b"
+setup_plugin "test-watch-nontool" "$DATA_FILE_A" "TEST_WATCH_NONTOOL"
+setup_plugin "test-watch-tool" "$DATA_FILE_B" "TEST_WATCH_TOOL"
+
+# --- Shared config: both plugin types active ---
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[env]
+_.test-watch-nontool = { tools = false }
+_.test-watch-tool = { tools = true }
+EOF
+
+# --- Test 1: cache=off ---
+
+export MISE_ENV_CACHE=0
+run_watch_files_test "cache=off"
+
+# --- Test 2: cache=on ---
+
+export MISE_ENV_CACHE=1
+run_watch_files_test "cache=on"
