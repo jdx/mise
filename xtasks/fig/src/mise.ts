@@ -1534,6 +1534,12 @@ const completionSpec: Fig.Spec = {
         "Update lockfile checksums and URLs for all specified platforms",
       options: [
         {
+          name: ["-g", "--global"],
+          description:
+            "Include global config lockfile (~/.config/mise/mise.lock)\nBy default, only project-level configs are locked",
+          isRepeatable: false,
+        },
+        {
           name: ["-j", "--jobs"],
           description: "Number of jobs to run in parallel",
           isRepeatable: false,
