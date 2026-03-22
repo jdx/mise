@@ -963,10 +963,17 @@ fn check_provenance_regression(
         let prior_pi = &prior.platforms[&current_platform];
         let prov = prior_pi.provenance.as_ref().unwrap();
 
-        // Check if any new version (different from the prior) lacks provenance
-        // and also uses the github backend
+        // Check if any new version (higher than the prior) lacks provenance
+        // and also uses the github backend. Intentional downgrades to versions
+        // that predate attestation support are allowed.
+        let prior_ver = versions::Versioning::new(&prior.version);
         for new_entry in new_entries {
             if new_entry.version == prior.version {
+                continue;
+            }
+
+            // Skip downgrades — only flag upgrades that lose provenance
+            if versions::Versioning::new(&new_entry.version) <= prior_ver {
                 continue;
             }
 
@@ -1259,13 +1266,19 @@ pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) 
                         .cmp(&versions::Versioning::new(&b.version))
                 });
             if let Some(prior) = prior {
-                let prov = prior.platforms[&platform_key].provenance.as_ref().unwrap();
-                return Err(eyre!(
-                    "{short}@{version} has no provenance verification on {platform_key}, \
-                     but {short}@{} had {prov}. This could indicate a supply chain \
-                     attack. Verify the release is authentic before proceeding.",
-                    prior.version,
-                ));
+                // Only flag upgrades — intentional downgrades to versions that
+                // predate attestation support are allowed.
+                let is_upgrade =
+                    versions::Versioning::new(&version) > versions::Versioning::new(&prior.version);
+                if is_upgrade {
+                    let prov = prior.platforms[&platform_key].provenance.as_ref().unwrap();
+                    return Err(eyre!(
+                        "{short}@{version} has no provenance verification on {platform_key}, \
+                         but {short}@{} had {prov}. This could indicate a supply chain \
+                         attack. Verify the release is authentic before proceeding.",
+                        prior.version,
+                    ));
+                }
             }
         }
         lockfile.set_platform_info(
