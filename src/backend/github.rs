@@ -1231,36 +1231,21 @@ impl UnifiedGitBackend {
         tv: &ToolVersion,
         platform_key: &str,
     ) -> Result<()> {
-        let provenance = tv
-            .lock_platforms
-            .get(platform_key)
-            .and_then(|pi| pi.provenance.as_ref());
-        let Some(provenance) = provenance else {
-            return Ok(());
-        };
-        let settings = Settings::get();
-        let disabled = match provenance {
-            ProvenanceType::GithubAttestations => {
-                !settings.github_attestations || !settings.github.github_attestations
-            }
-            ProvenanceType::Slsa { .. } => !settings.slsa || !settings.github.slsa,
-            // The github backend only writes GithubAttestations and Slsa; reaching here
-            // means a lockfile was hand-edited or migrated incorrectly.
-            _ => {
-                return Err(eyre::eyre!(
+        super::ensure_provenance_setting_enabled(tv, platform_key, |provenance| {
+            let settings = Settings::get();
+            match provenance {
+                ProvenanceType::GithubAttestations => {
+                    Ok(!settings.github_attestations || !settings.github.github_attestations)
+                }
+                ProvenanceType::Slsa { .. } => Ok(!settings.slsa || !settings.github.slsa),
+                // The github backend only writes GithubAttestations and Slsa; reaching here
+                // means a lockfile was hand-edited or migrated incorrectly.
+                _ => Err(eyre::eyre!(
                     "Lockfile has unexpected provenance type {provenance} for github backend tool {tv}. \
                      Update the lockfile to remove the stale provenance entry."
-                ));
+                )),
             }
-        };
-        if disabled {
-            return Err(eyre::eyre!(
-                "Lockfile requires {provenance} provenance for {tv} but the corresponding \
-                 verification setting is disabled. This may indicate a downgrade attack. \
-                 Enable the setting or update the lockfile."
-            ));
-        }
-        Ok(())
+        })
     }
 
     /// Verify artifact using GitHub artifact attestations or SLSA provenance.

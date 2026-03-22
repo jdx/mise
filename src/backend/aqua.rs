@@ -1153,30 +1153,17 @@ impl AquaBackend {
         tv: &ToolVersion,
         platform_key: &str,
     ) -> Result<()> {
-        let provenance = tv
-            .lock_platforms
-            .get(platform_key)
-            .and_then(|pi| pi.provenance.as_ref());
-        let Some(provenance) = provenance else {
-            return Ok(());
-        };
-        let settings = Settings::get();
-        let disabled = match provenance {
-            ProvenanceType::GithubAttestations => {
-                !settings.github_attestations || !settings.aqua.github_attestations
-            }
-            ProvenanceType::Slsa { .. } => !settings.slsa || !settings.aqua.slsa,
-            ProvenanceType::Cosign => !settings.aqua.cosign,
-            ProvenanceType::Minisign => !settings.aqua.minisign,
-        };
-        if disabled {
-            return Err(eyre!(
-                "Lockfile requires {provenance} provenance for {tv} but the corresponding \
-                 verification setting is disabled. This may indicate a downgrade attack. \
-                 Enable the setting or update the lockfile."
-            ));
-        }
-        Ok(())
+        super::ensure_provenance_setting_enabled(tv, platform_key, |provenance| {
+            let settings = Settings::get();
+            Ok(match provenance {
+                ProvenanceType::GithubAttestations => {
+                    !settings.github_attestations || !settings.aqua.github_attestations
+                }
+                ProvenanceType::Slsa { .. } => !settings.slsa || !settings.aqua.slsa,
+                ProvenanceType::Cosign => !settings.aqua.cosign,
+                ProvenanceType::Minisign => !settings.aqua.minisign,
+            })
+        })
     }
 
     async fn verify_minisign(
