@@ -733,7 +733,9 @@ cmd run restart_token=::: help="Run task(s)" {
         long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
     }
     flag --skip-deps help="Run only the specified tasks skipping all dependencies"
-    flag --skip-tools help="Skip installing tools before running tasks"
+    flag --skip-tools help="Skip installing tools before running tasks" {
+        long_help "Skip installing tools before running tasks\n\nCan also be set via the `task.run_auto_install` setting"
+    }
     flag --timeout help="Timeout for the task to complete\ne.g.: 30s, 5m" {
         arg <TIMEOUT>
     }
@@ -1045,7 +1047,9 @@ cmd tasks help="Manage tasks" {
             long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
         }
         flag --skip-deps help="Run only the specified tasks skipping all dependencies"
-        flag --skip-tools help="Skip installing tools before running tasks"
+        flag --skip-tools help="Skip installing tools before running tasks" {
+            long_help "Skip installing tools before running tasks\n\nCan also be set via the `task.run_auto_install` setting"
+        }
         flag --timeout help="Timeout for the task to complete\ne.g.: 30s, 5m" {
             arg <TIMEOUT>
         }
