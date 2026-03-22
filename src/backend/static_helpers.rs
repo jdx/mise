@@ -701,8 +701,10 @@ pub fn rename_executable_in_dir(
                     );
                     return Ok(());
                 }
-                if file_name.contains(tool_name) && substring_match.is_none() {
-                    substring_match = Some(path);
+                if file_name.contains(tool_name) {
+                    if substring_match.is_none() {
+                        substring_match = Some(path);
+                    }
                 } else if fallback_path.is_none() {
                     fallback_path = Some(path);
                 }
