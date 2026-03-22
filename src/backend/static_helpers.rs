@@ -679,8 +679,9 @@ pub fn rename_executable_in_dir(
     }
 
     // First pass: Find executables in the directory (non-recursive for top level)
-    // When tool_name is available, prefer the executable matching it to avoid
-    // renaming the wrong binary when multiple executables are present.
+    // When tool_name is available, prefer an exact match, then a substring match,
+    // then fall back to the first executable found.
+    let mut substring_match: Option<PathBuf> = None;
     let mut fallback_path: Option<PathBuf> = None;
     for path in file::ls(dir)? {
         if path.is_file() && file::is_executable(&path) {
@@ -689,7 +690,7 @@ pub fn rename_executable_in_dir(
                 continue;
             }
             if let Some(tool_name) = tool_name {
-                if file_name.contains(tool_name) || *file_name == *tool_name {
+                if *file_name == *tool_name {
                     let target_path_with_extension =
                         keep_required_extensions(dir, &file_name, new_name, target_path);
                     file::rename(&path, &target_path_with_extension)?;
@@ -700,7 +701,9 @@ pub fn rename_executable_in_dir(
                     );
                     return Ok(());
                 }
-                if fallback_path.is_none() {
+                if file_name.contains(tool_name) && substring_match.is_none() {
+                    substring_match = Some(path);
+                } else if fallback_path.is_none() {
                     fallback_path = Some(path);
                 }
             } else {
@@ -716,8 +719,9 @@ pub fn rename_executable_in_dir(
             }
         }
     }
-    // If tool_name was set but no executable matched, fall back to the first executable
-    if let Some(path) = fallback_path {
+    // Prefer substring match over arbitrary fallback
+    let best_match = substring_match.or(fallback_path);
+    if let Some(path) = best_match {
         let file_name = path.file_name().unwrap().to_string_lossy();
         let target_path_with_extension =
             keep_required_extensions(dir, &file_name, new_name, target_path.clone());
