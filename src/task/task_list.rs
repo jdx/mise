@@ -16,6 +16,24 @@ use std::iter::once;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+/// Find non-executable files in task include directories.
+/// These are files that likely should be tasks but are missing the executable bit.
+/// Skips hidden files (e.g., .gitkeep, .DS_Store) to match load_tasks_includes behavior.
+pub fn find_non_executable_task_files(includes: &[PathBuf]) -> Vec<PathBuf> {
+    includes
+        .iter()
+        .filter(|d| d.is_dir())
+        .flat_map(|d| {
+            walkdir::WalkDir::new(d)
+                .into_iter()
+                .filter_entry(|e| !e.file_name().to_string_lossy().starts_with('.'))
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().is_file() && !file::is_executable(e.path()))
+                .map(|e| e.path().to_path_buf())
+        })
+        .collect()
+}
+
 /// Split a task spec into name and args
 /// e.g., "task arg1 arg2" -> ("task", vec!["arg1", "arg2"])
 pub fn split_task_spec(spec: &str) -> (&str, Vec<String>) {
@@ -125,41 +143,32 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
 
         // Check if there are non-executable files in task include directories
         if !cfg!(windows)
-            && let Some(cwd) = &*dirs::CWD {
-                let includes = config::task_includes_for_dir(cwd, &config.config_files);
-                let non_exec_files: Vec<PathBuf> = includes
+            && let Some(cwd) = &*dirs::CWD
+        {
+            let includes = config::task_includes_for_dir(cwd, &config.config_files);
+            let non_exec_files = find_non_executable_task_files(&includes);
+            if !non_exec_files.is_empty() {
+                let dirs_with_files: Vec<String> = includes
                     .iter()
                     .filter(|d| d.is_dir())
-                    .flat_map(|d| {
-                        walkdir::WalkDir::new(d)
-                            .into_iter()
-                            .filter_map(|e| e.ok())
-                            .filter(|e| e.file_type().is_file() && !file::is_executable(e.path()))
-                            .map(|e| e.path().to_path_buf())
-                    })
+                    .map(display_path)
                     .collect();
-                if !non_exec_files.is_empty() {
-                    let dirs_with_files: Vec<String> = includes
-                        .iter()
-                        .filter(|d| d.is_dir())
-                        .map(display_path)
-                        .collect();
-                    bail!(
-                        "no tasks defined in {}, but found {} non-executable file(s) in {}.\n\
+                bail!(
+                    "no tasks defined in {}, but found {} non-executable file(s) in {}.\n\
                         Files must be executable to be detected as tasks.\n\
                         Run `chmod +x` on the task files to fix this, e.g.:\n  chmod +x {}",
-                        display_path(dirs::CWD.clone().unwrap_or_default()),
-                        non_exec_files.len(),
-                        dirs_with_files.join(", "),
-                        non_exec_files
-                            .iter()
-                            .take(5)
-                            .map(display_path)
-                            .collect::<Vec<_>>()
-                            .join(" "),
-                    );
-                }
+                    display_path(dirs::CWD.clone().unwrap_or_default()),
+                    non_exec_files.len(),
+                    dirs_with_files.join(", "),
+                    non_exec_files
+                        .iter()
+                        .take(5)
+                        .map(display_path)
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                );
             }
+        }
 
         bail!(
             "no tasks defined in {}. Are you in a project directory?",

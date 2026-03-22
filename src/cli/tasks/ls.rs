@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use crate::config::{self, Config};
 use crate::dirs;
-use crate::file::{self, display_rel_path};
+use crate::file::display_rel_path;
 use crate::task::Task;
 use crate::task::task_fetcher::TaskFetcher;
+use crate::task::task_list::find_non_executable_task_files;
 use crate::ui::table::MiseTable;
 use comfy_table::{Attribute, Cell, Row};
 use eyre::Result;
@@ -106,9 +107,9 @@ impl TasksLs {
             None
         };
 
-        let tasks = config
-            .tasks_with_context(ctx.as_ref())
-            .await?
+        let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
+
+        let tasks = all_tasks
             .values()
             .filter(|t| self.hidden || !t.hide)
             .filter(|t| !self.local || !t.global)
@@ -123,21 +124,19 @@ impl TasksLs {
         // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
         TaskFetcher::new(false).fetch_tasks(&mut tasks).await?;
 
-        if tasks.is_empty() && !cfg!(windows)
-            && let Some(cwd) = &*dirs::CWD {
-                let includes = config::task_includes_for_dir(cwd, &config.config_files);
-                let has_non_exec = includes.iter().filter(|d| d.is_dir()).any(|d| {
-                    walkdir::WalkDir::new(d)
-                        .into_iter()
-                        .filter_map(|e| e.ok())
-                        .any(|e| e.file_type().is_file() && !file::is_executable(e.path()))
-                });
-                if has_non_exec {
-                    warn!(
-                        "no tasks found, but non-executable files exist in task directories.\nFiles must be executable to be detected as tasks. Run `chmod +x` on the task files to fix this."
-                    );
-                }
+        // Warn about non-executable files only when there are truly no tasks at all
+        // (not just filtered out by --hidden/--local/--global)
+        if all_tasks.is_empty()
+            && !cfg!(windows)
+            && let Some(cwd) = &*dirs::CWD
+        {
+            let includes = config::task_includes_for_dir(cwd, &config.config_files);
+            if !find_non_executable_task_files(&includes).is_empty() {
+                warn!(
+                    "no tasks found, but non-executable files exist in task directories.\nFiles must be executable to be detected as tasks. Run `chmod +x` on the task files to fix this."
+                );
             }
+        }
 
         if self.complete {
             return self.complete(tasks);
