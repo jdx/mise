@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+# Regression test: shim must pass through flags like "-j" that overlap with
+# mise's own CLI flags (e.g. --jobs / -j). See:
+# https://github.com/jdx/mise/discussions/8641
+
+export PATH="$MISE_DATA_DIR/shims:$PATH"
+
+mise use -g dummy@1.0.0
+mise reshim
+
+# The dummy shim should execute the underlying tool, not mise itself.
+# If shim detection is broken, mise would try to parse these as its own args.
+assert_contains "dummy hello world" "This is Dummy 1.0.0!"
+assert_not_contains "dummy" "mise manages dev tools"
+
+# Verify that flags which collide with mise flags are passed through to the tool.
+# -j is mise's --jobs flag; if the shim is not detected, mise parses "-json" as
+# "-j son" and errors with "invalid value 'son' for '--jobs'".
+assert_contains "dummy -json foo" "This is Dummy 1.0.0!"
