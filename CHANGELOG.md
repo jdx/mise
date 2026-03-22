@@ -1,5 +1,15 @@
 # Changelog
 
+## [2026.3.12](https://github.com/jdx/mise/compare/v2026.3.11..v2026.3.12) - 2026-03-22
+
+### 🐛 Bug Fixes
+
+- **(completions)** update zsh completions for usage v3.1.0 by @jdx in [#8715](https://github.com/jdx/mise/pull/8715)
+
+### Security
+
+- **(lock)** block github tool upgrade when provenance is lost by @jdx in [#8706](https://github.com/jdx/mise/pull/8706)
+
 ## [2026.3.11](https://github.com/jdx/mise/compare/v2026.3.10..v2026.3.11) - 2026-03-22
 
 ### 🚀 Features
