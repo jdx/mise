@@ -1151,10 +1151,14 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
 
 /// Load config hierarchy from a specific directory (for monorepo tasks)
 /// This loads all config files from start_dir up through parent directories,
-/// including MISE_ENV-specific configs and idiomatic version files
-pub async fn load_config_hierarchy_from_dir(start_dir: &Path) -> Result<Vec<PathBuf>> {
+/// including MISE_ENV-specific configs and idiomatic version files.
+/// Returns (paths, idiomatic_filenames) so callers can pass the map to
+/// load_config_files_from_paths without a redundant second computation.
+pub async fn load_config_hierarchy_from_dir(
+    start_dir: &Path,
+) -> Result<(Vec<PathBuf>, BTreeMap<String, Vec<String>>)> {
     if Settings::no_config() {
-        return Ok(vec![]);
+        return Ok((vec![], BTreeMap::new()));
     }
 
     let idiomatic_files = load_idiomatic_filenames().await;
@@ -1200,7 +1204,7 @@ pub async fn load_config_hierarchy_from_dir(start_dir: &Path) -> Result<Vec<Path
         })
         .collect();
 
-    Ok(paths)
+    Ok((paths, idiomatic_files))
 }
 
 pub fn is_global_config(path: &Path) -> bool {
@@ -1437,9 +1441,13 @@ async fn load_all_config_files(
 }
 
 /// Load config files from a list of paths (for monorepo task config contexts)
-pub async fn load_config_files_from_paths(config_paths: &[PathBuf]) -> Result<ConfigMap> {
+/// Accepts a pre-computed idiomatic filenames map to avoid redundant computation
+/// when called after load_config_hierarchy_from_dir.
+pub async fn load_config_files_from_paths(
+    config_paths: &[PathBuf],
+    idiomatic_filenames: &BTreeMap<String, Vec<String>>,
+) -> Result<ConfigMap> {
     backend::load_tools().await?;
-    let idiomatic_filenames = load_idiomatic_filenames().await;
     let mut config_map = ConfigMap::default();
 
     for f in config_paths.iter().unique() {
