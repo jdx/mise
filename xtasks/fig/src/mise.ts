@@ -2144,6 +2144,11 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--skip-tools",
+          description: "Skip installing tools before running tasks",
+          isRepeatable: false,
+        },
+        {
           name: "--timeout",
           description: "Timeout for the task to complete\ne.g.: 30s, 5m",
           isRepeatable: false,
@@ -2982,6 +2987,11 @@ const completionSpec: Fig.Spec = {
               name: "--skip-deps",
               description:
                 "Run only the specified tasks skipping all dependencies",
+              isRepeatable: false,
+            },
+            {
+              name: "--skip-tools",
+              description: "Skip installing tools before running tasks",
               isRepeatable: false,
             },
             {

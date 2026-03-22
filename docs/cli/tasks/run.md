@@ -133,6 +133,10 @@ Default to always hide with `MISE_TASK_TIMINGS=0`
 
 Run only the specified tasks skipping all dependencies
 
+### `--skip-tools`
+
+Skip installing tools before running tasks
+
 ### `--timeout <TIMEOUT>`
 
 Timeout for the task to complete
