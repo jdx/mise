@@ -937,6 +937,9 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
             continue;
         }
         if let Some(source_path) = tv.request.source().path() {
+            if crate::config::is_global_config(source_path) {
+                continue;
+            }
             let (lockfile_path, _) = lockfile_path_for_config(source_path);
             versions_by_lockfile
                 .entry(lockfile_path)
