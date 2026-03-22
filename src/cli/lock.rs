@@ -257,7 +257,10 @@ impl Lock {
             if !cf.source().is_mise_toml() {
                 continue;
             }
-            if !self.global && crate::config::is_global_config(path) {
+            if crate::config::system_config_files().contains(path) {
+                continue;
+            }
+            if !self.global && crate::config::global_config_files().contains(path) {
                 continue;
             }
             let (lockfile_path, is_local) = lockfile::lockfile_path_for_config(path);
