@@ -123,8 +123,8 @@ impl TasksLs {
         // MISE_TASK_REMOTE_NO_CACHE env var is still respected if set
         TaskFetcher::new(false).fetch_tasks(&mut tasks).await?;
 
-        if tasks.is_empty() && !cfg!(windows) {
-            if let Some(cwd) = &*dirs::CWD {
+        if tasks.is_empty() && !cfg!(windows)
+            && let Some(cwd) = &*dirs::CWD {
                 let includes = config::task_includes_for_dir(cwd, &config.config_files);
                 let has_non_exec = includes.iter().filter(|d| d.is_dir()).any(|d| {
                     walkdir::WalkDir::new(d)
@@ -138,7 +138,6 @@ impl TasksLs {
                     );
                 }
             }
-        }
 
         if self.complete {
             return self.complete(tasks);

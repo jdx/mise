@@ -124,8 +124,8 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
         }
 
         // Check if there are non-executable files in task include directories
-        if !cfg!(windows) {
-            if let Some(cwd) = &*dirs::CWD {
+        if !cfg!(windows)
+            && let Some(cwd) = &*dirs::CWD {
                 let includes = config::task_includes_for_dir(cwd, &config.config_files);
                 let non_exec_files: Vec<PathBuf> = includes
                     .iter()
@@ -142,7 +142,7 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
                     let dirs_with_files: Vec<String> = includes
                         .iter()
                         .filter(|d| d.is_dir())
-                        .map(|d| display_path(d))
+                        .map(display_path)
                         .collect();
                     bail!(
                         "no tasks defined in {}, but found {} non-executable file(s) in {}.\n\
@@ -154,13 +154,12 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
                         non_exec_files
                             .iter()
                             .take(5)
-                            .map(|p| display_path(p))
+                            .map(display_path)
                             .collect::<Vec<_>>()
                             .join(" "),
                     );
                 }
             }
-        }
 
         bail!(
             "no tasks defined in {}. Are you in a project directory?",
