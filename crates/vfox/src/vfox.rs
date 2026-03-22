@@ -43,8 +43,10 @@ pub struct Vfox {
     pub plugin_dir: PathBuf,
     pub cache_dir: PathBuf,
     pub download_dir: PathBuf,
-    /// When true, skip attestation/provenance verification during install.
-    /// Used in --locked mode where provenance was already verified at lock time.
+    /// When true, skip attestation verification during install if the plugin also provides
+    /// a sha256/sha512 checksum (so checksum integrity still applies). If the plugin has
+    /// no checksums, attestation always runs regardless of this flag.
+    /// Set by the caller when the lockfile already has a provenance entry from a prior install.
     pub skip_verification: bool,
     log_tx: Option<mpsc::Sender<String>>,
 }
