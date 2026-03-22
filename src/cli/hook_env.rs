@@ -90,7 +90,7 @@ impl HookEnv {
         miseprint!("{}", hook_env::clear_old_env(&*shell))?;
 
         // Use env_with_path_and_split which handles caching internally
-        let (mut mise_env, user_paths, tool_paths, tool_watch_files) =
+        let (mut mise_env, user_paths, tool_paths, env_watch_files) =
             ts.env_with_path_and_split(&config).await?;
         mise_env.remove(&*PATH_KEY);
 
@@ -127,10 +127,14 @@ impl HookEnv {
             .map(|(k, (v, _))| (k.clone(), v.clone()))
             .collect();
 
-        // Include tool plugin watch_files in the session for the next prompt's fast-path check.
+        // Include env watch_files in the session for the next prompt's fast-path check.
+        // On cache miss, env_watch_files contains only plugin-returned watch_files.
+        // On cache hit, it contains the full CachedEnv.watch_files set (config files,
+        // env_files, env_scripts, mise.lock files, and plugin watch_files). The BTreeSet
+        // deduplicates any overlap with the config-level watch_files above.
         let watch_files: BTreeSet<WatchFilePattern> = watch_files
             .into_iter()
-            .chain(tool_watch_files.iter().map(|p| p.as_path().into()))
+            .chain(env_watch_files.iter().map(|p| p.as_path().into()))
             .collect();
 
         patches.extend(self.build_path_operations(&user_paths, &tool_paths, &__MISE_DIFF.path)?);

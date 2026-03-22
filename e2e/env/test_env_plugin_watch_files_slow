@@ -9,7 +9,7 @@
 #   - tools=false: plugin runs in config.load_env() via NonToolsOnly;
 #     watch_files flow through config.watch_files() into the slow-path check.
 #   - tools=true: plugin runs in toolset.load_post_env() via ToolsOnly;
-#     watch_files come back as tool_watch_files from env_with_path_and_split()
+#     watch_files come back as env_watch_files from env_with_path_and_split()
 #     and the slow-path relies on PREV_SESSION.watch_files to detect changes.
 #   - cache=off: watch_files computed fresh each time.
 #   - cache=on: watch_files stored in CachedEnv; cache must invalidate on change.
