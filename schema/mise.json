@@ -868,7 +868,7 @@
           }
         },
         "install_before": {
-          "description": "Only install versions released before this date",
+          "description": "Minimum release age / supply chain protection — only install versions released before this date",
           "type": "string"
         },
         "java": {
