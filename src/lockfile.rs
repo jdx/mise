@@ -928,10 +928,12 @@ pub fn determine_existing_platforms(lockfile_path: &Path) -> Vec<Platform> {
                     platforms.insert(p);
                 }
             }
-            return platforms.into_iter().collect();
+            if !platforms.is_empty() {
+                return platforms.into_iter().collect();
+            }
         }
     }
-    // No lockfile or no platforms yet — use common defaults
+    // No lockfile, no platforms yet, or no valid platform keys — use common defaults
     let mut platforms: BTreeSet<Platform> = Platform::common_platforms().into_iter().collect();
     platforms.insert(Platform::current());
     platforms.into_iter().collect()
