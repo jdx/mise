@@ -1024,13 +1024,17 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
         }
 
         // Collect results and update lockfile
+        // Defer provenance errors until after saving so unaffected tools' entries aren't lost.
+        let mut provenance_err: Option<eyre::Report> = None;
         while let Some(result) = jset.join_next().await {
             match result {
                 Ok(resolution) => {
                     if let Err(msg) = &resolution.4 {
                         debug!("auto-lock: {msg}");
                     }
-                    apply_lock_result(&mut lockfile, resolution)?;
+                    if let Err(e) = apply_lock_result(&mut lockfile, resolution) {
+                        provenance_err = Some(e);
+                    }
                 }
                 Err(e) => {
                     debug!("auto-lock task failed: {}", e);
@@ -1039,6 +1043,10 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
         }
 
         lockfile.save(&lockfile_path)?;
+
+        if let Some(e) = provenance_err {
+            return Err(e);
+        }
     }
 
     Ok(())
