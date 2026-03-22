@@ -1,0 +1,6 @@
+backends = [
+  "github:lazynop/lazyenv",
+  "go:github.com/lazynop/lazyenv",
+]
+description = "TUI for managing .env files"
+test = { cmd = "lazyenv --version", expected = "{{version}}" }
