@@ -1129,14 +1129,37 @@ pub async fn resolve_tool_lock_info(
 pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) {
     let (short, version, backend, platform, info, options, conda_packages) = result;
     let platform_key = platform.to_key();
-    if let Ok(info) = info {
+    if let Ok(ref info) = info {
+        // For github backend tools, warn if a prior version had provenance but the new
+        // version does not. This could indicate a supply chain attack where an attacker
+        // publishes a release without attestations.
+        if info.provenance.is_none() && backend.starts_with("github:") {
+            if let Some(tools) = lockfile.tools.get(&short) {
+                let prior_provenance = tools.iter().find_map(|t| {
+                    if t.version != version {
+                        t.platforms
+                            .get(&platform_key)
+                            .and_then(|pi| pi.provenance.as_ref())
+                    } else {
+                        None
+                    }
+                });
+                if let Some(prov) = prior_provenance {
+                    warn!(
+                        "{short}@{version} has no provenance verification on {platform_key}, \
+                         but a prior version had {prov}. This could indicate a supply chain \
+                         attack. Verify the release is authentic before proceeding."
+                    );
+                }
+            }
+        }
         lockfile.set_platform_info(
             &short,
             &version,
             Some(&backend),
             &options,
             &platform_key,
-            info,
+            info.clone(),
         );
     }
     for (basename, pkg_info) in conda_packages {
