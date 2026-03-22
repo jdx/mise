@@ -50,6 +50,11 @@ pub struct Lock {
     /// Use for tools defined in .local.toml configs
     #[clap(long, verbatim_doc_comment)]
     pub local: bool,
+
+    /// Include global config lockfile (~/.config/mise/mise.lock)
+    /// By default, only project-level configs are locked
+    #[clap(long, short, verbatim_doc_comment)]
+    pub global: bool,
 }
 
 impl Lock {
@@ -250,6 +255,9 @@ impl Lock {
         let mut targets: indexmap::IndexMap<PathBuf, Vec<PathBuf>> = indexmap::IndexMap::new();
         for (path, cf) in config.config_files.iter() {
             if !cf.source().is_mise_toml() {
+                continue;
+            }
+            if !self.global && crate::config::is_global_config(path) {
                 continue;
             }
             let (lockfile_path, is_local) = lockfile::lockfile_path_for_config(path);
@@ -475,6 +483,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise lock --platform linux-x64</bold>  # update only linux-x64 platform
     $ <bold>mise lock --dry-run</bold>             # show what would be updated
     $ <bold>mise lock --local</bold>               # update mise.local.lock for local configs
+    $ <bold>mise lock --global</bold>              # include global config lockfile
 "#
 );
 
@@ -498,6 +507,7 @@ mod tests {
             dry_run: false,
             platform: vec![],
             local: false,
+            global: false,
         }
     }
 

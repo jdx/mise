@@ -40,6 +40,11 @@ If not specified, all platforms already in lockfile will be updated
 Update mise.local.lock instead of mise.lock
 Use for tools defined in .local.toml configs
 
+### `-g --global`
+
+Include global config lockfile (~/.config/mise/mise.lock)
+By default, only project-level configs are locked
+
 Examples:
 
 ```
@@ -48,4 +53,5 @@ mise lock node python           # update only node and python
 mise lock --platform linux-x64  # update only linux-x64 platform
 mise lock --dry-run             # show what would be updated
 mise lock --local               # update mise.local.lock for local configs
+mise lock --global              # include global config lockfile
 ```

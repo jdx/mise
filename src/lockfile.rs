@@ -834,6 +834,9 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         if !cf.source().is_mise_toml() {
             continue;
         }
+        if crate::config::is_global_config(config_path) {
+            continue;
+        }
         let (lockfile_path, _is_local) = lockfile_path_for_config(config_path);
         lockfile_configs
             .entry(lockfile_path)
