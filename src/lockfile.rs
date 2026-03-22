@@ -917,7 +917,7 @@ fn determine_target_platforms_from_lockfile(lockfile: Option<&Lockfile>) -> Vec<
 /// If the lockfile already has platform entries, only those are targeted.
 /// Otherwise, falls back to all common platforms + current platform.
 pub fn determine_existing_platforms(lockfile_path: &Path) -> Vec<Platform> {
-    if let Some(lockfile) = Lockfile::read(lockfile_path).ok() {
+    if let Ok(lockfile) = Lockfile::read(lockfile_path) {
         let existing_keys = lockfile.all_platform_keys();
         if !existing_keys.is_empty() {
             let mut platforms: BTreeSet<Platform> = BTreeSet::new();
