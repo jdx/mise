@@ -76,7 +76,7 @@ impl<'a> TaskToolInstaller<'a> {
         dir: &Path,
         task_name: &str,
     ) -> Result<Vec<crate::toolset::ToolRequest>> {
-        let config_paths = crate::config::load_config_hierarchy_from_dir(dir)?;
+        let config_paths = crate::config::load_config_hierarchy_from_dir(dir).await?;
         let task_config_files = crate::config::load_config_files_from_paths(&config_paths).await?;
 
         let mut tool_requests: Vec<crate::toolset::ToolRequest> = vec![];

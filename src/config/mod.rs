@@ -1151,13 +1151,18 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
 
 /// Load config hierarchy from a specific directory (for monorepo tasks)
 /// This loads all config files from start_dir up through parent directories,
-/// including MISE_ENV-specific configs
-pub fn load_config_hierarchy_from_dir(start_dir: &Path) -> Result<Vec<PathBuf>> {
+/// including MISE_ENV-specific configs and idiomatic version files
+pub async fn load_config_hierarchy_from_dir(start_dir: &Path) -> Result<Vec<PathBuf>> {
     if Settings::no_config() {
         return Ok(vec![]);
     }
 
-    let config_filenames = DEFAULT_CONFIG_FILENAMES.iter().cloned().collect_vec();
+    let idiomatic_files = load_idiomatic_filenames().await;
+    let config_filenames: Vec<String> = idiomatic_files
+        .keys()
+        .cloned()
+        .chain(DEFAULT_CONFIG_FILENAMES.iter().cloned())
+        .collect();
 
     // Get all directories from start_dir up to root/ceiling
     let dirs = all_dirs_from(start_dir)?;

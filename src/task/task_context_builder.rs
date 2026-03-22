@@ -95,7 +95,7 @@ impl TaskContextBuilder {
                 task_dir.display()
             );
 
-            let config_paths = crate::config::load_config_hierarchy_from_dir(task_dir)?;
+            let config_paths = crate::config::load_config_hierarchy_from_dir(task_dir).await?;
             trace!(
                 "task {} found {} config files in hierarchy",
                 task.name,
@@ -170,7 +170,7 @@ impl TaskContextBuilder {
                 task_dir.display()
             );
 
-            let config_paths = crate::config::load_config_hierarchy_from_dir(task_dir)?;
+            let config_paths = crate::config::load_config_hierarchy_from_dir(task_dir).await?;
             trace!("Found {} config files in hierarchy", config_paths.len());
 
             Some(crate::config::load_config_files_from_paths(&config_paths).await?)
