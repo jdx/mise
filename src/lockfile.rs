@@ -977,11 +977,13 @@ fn check_provenance_regression(
                 continue;
             }
 
-            // Skip if the new entry uses a non-github backend (e.g., migrated to aqua)
-            if let Some(ref backend) = new_entry.backend {
-                if !backend.starts_with("github:") {
-                    continue;
-                }
+            // Skip if the new entry is not using the github backend
+            if !new_entry
+                .backend
+                .as_ref()
+                .is_some_and(|b| b.starts_with("github:"))
+            {
+                continue;
             }
 
             let new_has_provenance = new_entry
