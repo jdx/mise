@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# Test that non-executable files in mise-tasks/ give a helpful error message
+# Issue: https://github.com/jdx/mise/discussions/8614
+
+# Create a mise-tasks directory with non-executable files
+mkdir -p mise-tasks
+cat <<'EOF' >mise-tasks/build
+#!/usr/bin/env bash
+echo "building"
+EOF
+cat <<'EOF' >mise-tasks/test
+#!/usr/bin/env bash
+echo "testing"
+EOF
+
+# Ensure files are NOT executable
+chmod -x mise-tasks/build mise-tasks/test
+
+# Create a minimal mise.toml so the directory is recognized as a project
+cat <<EOF >mise.toml
+EOF
+
+# Running a task should give a helpful error mentioning non-executable files
+assert_fail_contains "mise run build" "non-executable"
+assert_fail_contains "mise run build" "chmod +x"
+
+# mise tasks ls should warn about non-executable files
+assert_contains "mise tasks 2>&1" "non-executable"
+assert_contains "mise tasks 2>&1" "chmod +x"
+
+# After making files executable, tasks should work
+chmod +x mise-tasks/build mise-tasks/test
+assert_contains "mise tasks" "build"
+assert_contains "mise tasks" "test"
+assert "mise run build" "building"
