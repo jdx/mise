@@ -917,8 +917,54 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
     Ok(())
 }
 
+/// Check if a single tool version is losing provenance relative to prior lockfile entries.
+///
+/// Returns an error message if a github backend tool upgrade loses provenance,
+/// or None if the check passes. Used by both `check_provenance_regression` and
+/// `apply_lock_result` to avoid duplicating the detection logic.
+fn check_single_tool_provenance(
+    existing_tools: Option<&Vec<LockfileTool>>,
+    short: &str,
+    version: &str,
+    backend: &str,
+    platform_key: &str,
+    new_provenance: Option<&ProvenanceType>,
+) -> Option<String> {
+    if new_provenance.is_some() || !backend.starts_with("github:") {
+        return None;
+    }
+
+    let tools = existing_tools?;
+
+    // Find the highest prior github version with provenance on this platform
+    let prior = tools
+        .iter()
+        .filter(|t| t.version != version)
+        .filter(|t| t.backend.as_ref().is_some_and(|b| b.starts_with("github:")))
+        .filter(|t| {
+            t.platforms
+                .get(platform_key)
+                .is_some_and(|pi| pi.provenance.is_some())
+        })
+        .max_by(|a, b| {
+            versions::Versioning::new(&a.version).cmp(&versions::Versioning::new(&b.version))
+        })?;
+
+    // Only flag upgrades — intentional downgrades are allowed
+    if versions::Versioning::new(version) <= versions::Versioning::new(&prior.version) {
+        return None;
+    }
+
+    let prov = prior.platforms[platform_key].provenance.as_ref().unwrap();
+    Some(format!(
+        "{short}@{version} has no provenance verification on {platform_key}, \
+         but {short}@{} had {prov}. This could indicate a supply chain \
+         attack. Verify the release is authentic before proceeding.",
+        prior.version,
+    ))
+}
+
 /// Check if any github backend tool is losing provenance when upgrading versions.
-/// Compares the highest prior version's provenance against new version entries.
 ///
 /// Only checks the current platform because new `LockfileTool` entries (from
 /// `ToolVersionList`) only have `lock_platforms` populated for the platform where
@@ -936,69 +982,23 @@ fn check_provenance_regression(
     let mut errors = Vec::new();
 
     for (short, new_entries) in new_tools {
-        let existing = match existing_lockfile.tools.get(short) {
-            Some(entries) => entries,
-            None => continue,
-        };
-
-        // Find the highest existing version that has provenance on the current platform
-        // and uses the github backend
-        let prior_with_provenance = existing
-            .iter()
-            .filter(|t| t.backend.as_ref().is_some_and(|b| b.starts_with("github:")))
-            .filter(|t| {
-                t.platforms
-                    .get(&current_platform)
-                    .is_some_and(|pi| pi.provenance.is_some())
-            })
-            .max_by(|a, b| {
-                versions::Versioning::new(&a.version).cmp(&versions::Versioning::new(&b.version))
-            });
-
-        let prior = match prior_with_provenance {
-            Some(p) => p,
-            None => continue,
-        };
-
-        let prior_pi = &prior.platforms[&current_platform];
-        let prov = prior_pi.provenance.as_ref().unwrap();
-
-        // Check if any new version (higher than the prior) lacks provenance
-        // and also uses the github backend. Intentional downgrades to versions
-        // that predate attestation support are allowed.
-        let prior_ver = versions::Versioning::new(&prior.version);
         for new_entry in new_entries {
-            if new_entry.version == prior.version {
-                continue;
-            }
-
-            // Skip downgrades — only flag upgrades that lose provenance
-            if versions::Versioning::new(&new_entry.version) <= prior_ver {
-                continue;
-            }
-
-            // Skip if the new entry is not using the github backend
-            if !new_entry
-                .backend
-                .as_ref()
-                .is_some_and(|b| b.starts_with("github:"))
-            {
-                continue;
-            }
-
-            let new_has_provenance = new_entry
+            let backend = new_entry.backend.as_deref().unwrap_or("");
+            let new_provenance = new_entry
                 .platforms
                 .get(&current_platform)
-                .is_some_and(|pi| pi.provenance.is_some());
+                .and_then(|pi| pi.provenance.as_ref());
 
-            if !new_has_provenance {
+            if let Some(err) = check_single_tool_provenance(
+                existing_lockfile.tools.get(short),
+                short,
+                &new_entry.version,
+                backend,
+                &current_platform,
+                new_provenance,
+            ) {
                 regressing.insert(short.clone());
-                errors.push(format!(
-                    "{short}@{} has no provenance verification on {current_platform}, \
-                     but {short}@{} had {prov}. This could indicate a supply chain \
-                     attack. Verify the release is authentic before proceeding.",
-                    new_entry.version, prior.version,
-                ));
+                errors.push(err);
             }
         }
     }
@@ -1250,43 +1250,15 @@ pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) 
     let (short, version, backend, platform, info, options, conda_packages) = result;
     let platform_key = platform.to_key();
     if let Ok(ref info) = info {
-        // For github backend tools, error if a prior version had provenance but the new
-        // version does not. This could indicate a supply chain attack where an attacker
-        // publishes a release without attestations.
-        if info.provenance.is_none()
-            && backend.starts_with("github:")
-            && let Some(tools) = lockfile.tools.get(&short)
-        {
-            // Find the highest prior version with provenance on this platform
-            // (only github backend entries — provenance from aqua/vfox is expected to vary)
-            let prior = tools
-                .iter()
-                .filter(|t| t.version != version)
-                .filter(|t| t.backend.as_ref().is_some_and(|b| b.starts_with("github:")))
-                .filter(|t| {
-                    t.platforms
-                        .get(&platform_key)
-                        .is_some_and(|pi| pi.provenance.is_some())
-                })
-                .max_by(|a, b| {
-                    versions::Versioning::new(&a.version)
-                        .cmp(&versions::Versioning::new(&b.version))
-                });
-            if let Some(prior) = prior {
-                // Only flag upgrades — intentional downgrades to versions that
-                // predate attestation support are allowed.
-                let is_upgrade =
-                    versions::Versioning::new(&version) > versions::Versioning::new(&prior.version);
-                if is_upgrade {
-                    let prov = prior.platforms[&platform_key].provenance.as_ref().unwrap();
-                    return Err(eyre!(
-                        "{short}@{version} has no provenance verification on {platform_key}, \
-                         but {short}@{} had {prov}. This could indicate a supply chain \
-                         attack. Verify the release is authentic before proceeding.",
-                        prior.version,
-                    ));
-                }
-            }
+        if let Some(err) = check_single_tool_provenance(
+            lockfile.tools.get(&short),
+            &short,
+            &version,
+            &backend,
+            &platform_key,
+            info.provenance.as_ref(),
+        ) {
+            return Err(eyre!("{err}"));
         }
         lockfile.set_platform_info(
             &short,

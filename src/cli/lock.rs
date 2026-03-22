@@ -72,6 +72,7 @@ impl Lock {
         // Collect distinct lockfile targets from config files
         let lockfile_targets = self.get_lockfile_targets(&config);
         let mut has_lock_targets = false;
+        let mut all_provenance_errors: Vec<String> = Vec::new();
 
         for (lockfile_path, config_paths) in &lockfile_targets {
             let tools = self.get_tools_to_lock(&config, ts, lockfile_path, config_paths);
@@ -136,11 +137,12 @@ impl Lock {
             // Process tools and update lockfile
             let mut lockfile = Lockfile::read(lockfile_path)?;
             self.prune_stale_entries_if_needed(&mut lockfile, &tools);
-            let results = self
+            let (results, provenance_errors) = self
                 .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
                 .await?;
 
-            // Save lockfile
+            // Save lockfile before raising provenance errors so non-regressing
+            // tools' entries are preserved
             lockfile.write(lockfile_path)?;
 
             // Print summary
@@ -157,10 +159,16 @@ impl Lock {
                 style("✓").green(),
                 style(display_path(lockfile_path)).cyan()
             );
+
+            all_provenance_errors.extend(provenance_errors);
         }
 
         if !has_lock_targets {
             miseprintln!("{} No tools configured to lock", style("!").yellow());
+        }
+
+        if !all_provenance_errors.is_empty() {
+            return Err(eyre::eyre!("{}", all_provenance_errors.join("\n")));
         }
 
         Ok(())
@@ -405,7 +413,7 @@ impl Lock {
         tools: &[LockTool],
         platforms: &[Platform],
         lockfile: &mut Lockfile,
-    ) -> Result<Vec<(String, String, bool)>> {
+    ) -> Result<(Vec<(String, String, bool)>, Vec<String>)> {
         let jobs = self.jobs.unwrap_or(settings.jobs);
         let semaphore = Arc::new(Semaphore::new(jobs));
         let mut jset: JoinSet<LockResolutionResult> = JoinSet::new();
@@ -481,11 +489,7 @@ impl Lock {
 
         pr.finish_with_message(format!("{} platform entries", total_tasks));
 
-        if !provenance_errors.is_empty() {
-            return Err(eyre::eyre!("{}", provenance_errors.join("\n")));
-        }
-
-        Ok(results)
+        Ok((results, provenance_errors))
     }
 }
 
