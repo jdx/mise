@@ -1454,7 +1454,7 @@ pub async fn load_config_files_from_paths(
         if f.is_dir() {
             continue;
         }
-        let cf = match parse_config_file(f, &idiomatic_filenames).await {
+        let cf = match parse_config_file(f, idiomatic_filenames).await {
             Ok(cfg) => cfg,
             Err(err) => {
                 return Err(err.wrap_err(format!(
