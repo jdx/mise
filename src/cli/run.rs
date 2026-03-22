@@ -156,6 +156,10 @@ pub struct Run {
     #[clap(long, verbatim_doc_comment, env = "MISE_TASK_SKIP_DEPENDS")]
     pub skip_deps: bool,
 
+    /// Skip installing tools before running tasks
+    #[clap(long, verbatim_doc_comment)]
+    pub skip_tools: bool,
+
     /// Timeout for the task to complete
     /// e.g.: 30s, 5m
     #[clap(long, verbatim_doc_comment)]
@@ -256,7 +260,9 @@ impl Run {
                 || !Settings::get().auto_install,
             ..Default::default()
         };
-        let _ = ts.install_missing_versions(&mut config, &opts).await?;
+        if !self.skip_tools {
+            let _ = ts.install_missing_versions(&mut config, &opts).await?;
+        }
 
         if !self.skip_deps {
             self.skip_deps = Settings::get().task.skip_depends;
@@ -348,7 +354,9 @@ impl Run {
         self.output = Some(self.output(None));
 
         // Step 3: Install tools needed by tasks
-        self.install_task_tools(&mut config, &tasks).await?;
+        if !self.skip_tools {
+            self.install_task_tools(&mut config, &tasks).await?;
+        }
 
         // Step 4: Create TaskExecutor after tool installation
         self.setup_executor()?;

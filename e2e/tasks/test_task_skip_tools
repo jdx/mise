@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.echo-args]
+run = 'echo args:'
+
+[tasks.hello]
+run = 'echo hello'
+EOF
+
+# --skip-tools before task name is a mise flag (skips tool install, task runs)
+assert "mise run --skip-tools hello" "hello"
+
+# --skip-tools after task name is a task arg (passed through to task)
+assert "mise run echo-args --skip-tools" "args: --skip-tools"

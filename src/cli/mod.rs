@@ -664,6 +664,7 @@ impl Cli {
                         no_cache: Default::default(),
                         timeout: None,
                         skip_deps: false,
+                        skip_tools: false,
                         no_prepare: false,
                         fresh_env: false,
                     })));
