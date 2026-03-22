@@ -72,6 +72,7 @@ impl Lock {
         // Collect distinct lockfile targets from config files
         let lockfile_targets = self.get_lockfile_targets(&config);
         let mut has_lock_targets = false;
+        let mut all_provenance_errors: Vec<String> = Vec::new();
 
         for (lockfile_path, config_paths) in &lockfile_targets {
             let tools = self.get_tools_to_lock(&config, ts, lockfile_path, config_paths);
@@ -136,11 +137,12 @@ impl Lock {
             // Process tools and update lockfile
             let mut lockfile = Lockfile::read(lockfile_path)?;
             self.prune_stale_entries_if_needed(&mut lockfile, &tools);
-            let results = self
+            let (results, provenance_errors) = self
                 .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
                 .await?;
 
-            // Save lockfile
+            // Save lockfile before raising provenance errors so non-regressing
+            // tools' entries are preserved
             lockfile.write(lockfile_path)?;
 
             // Print summary
@@ -157,10 +159,16 @@ impl Lock {
                 style("✓").green(),
                 style(display_path(lockfile_path)).cyan()
             );
+
+            all_provenance_errors.extend(provenance_errors);
         }
 
         if !has_lock_targets {
             miseprintln!("{} No tools configured to lock", style("!").yellow());
+        }
+
+        if !all_provenance_errors.is_empty() {
+            return Err(eyre::eyre!("{}", all_provenance_errors.join("\n")));
         }
 
         Ok(())
@@ -405,7 +413,7 @@ impl Lock {
         tools: &[LockTool],
         platforms: &[Platform],
         lockfile: &mut Lockfile,
-    ) -> Result<Vec<(String, String, bool)>> {
+    ) -> Result<(Vec<(String, String, bool)>, Vec<String>)> {
         let jobs = self.jobs.unwrap_or(settings.jobs);
         let semaphore = Arc::new(Semaphore::new(jobs));
         let mut jset: JoinSet<LockResolutionResult> = JoinSet::new();
@@ -450,7 +458,10 @@ impl Lock {
         }
 
         // Collect all results
+        // Defer provenance errors until after all results are applied so unaffected
+        // tools' entries aren't lost.
         let mut completed = 0;
+        let mut provenance_errors: Vec<String> = Vec::new();
         while let Some(result) = jset.join_next().await {
             completed += 1;
             match result {
@@ -464,8 +475,12 @@ impl Lock {
                     }
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
-                    lockfile::apply_lock_result(lockfile, resolution);
-                    results.push((short, platform_key, ok));
+                    if let Err(e) = lockfile::apply_lock_result(lockfile, resolution) {
+                        provenance_errors.push(e.to_string());
+                        results.push((short, platform_key, false));
+                    } else {
+                        results.push((short, platform_key, ok));
+                    }
                 }
                 Err(e) => {
                     warn!("Task failed: {}", e);
@@ -474,7 +489,8 @@ impl Lock {
         }
 
         pr.finish_with_message(format!("{} platform entries", total_tasks));
-        Ok(results)
+
+        Ok((results, provenance_errors))
     }
 }
 

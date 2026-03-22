@@ -846,7 +846,9 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
 
     debug!("updating {} lockfiles", lockfile_configs.len());
 
-    // Process each lockfile
+    // Process each lockfile, deferring provenance errors until all lockfiles are saved.
+    let mut provenance_errors: Vec<String> = Vec::new();
+
     for (lockfile_path, configs) in lockfile_configs {
         // Only update existing lockfiles - creation is done elsewhere (e.g., by `mise lock`)
         if !lockfile_path.exists() {
@@ -877,8 +879,19 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
             }
         }
 
-        // Process each tool with deduplication
+        // Check for provenance regression before merging (which drops old version entries).
+        // For github backend tools, error if the highest prior version had provenance but
+        // the new version does not — this could indicate a supply chain attack.
+        // Regressing tools are excluded from merge to preserve the old provenance entry.
+        let (regressing_tools, regression_errors) =
+            check_provenance_regression(&existing_lockfile, &tools_by_short);
+        provenance_errors.extend(regression_errors);
+
+        // Process each tool with deduplication, skipping regressing tools
         for (short, entries) in tools_by_short {
+            if regressing_tools.contains(&short) {
+                continue;
+            }
             let merged_tools = merge_tool_entries(entries, existing_lockfile.tools.get(&short));
             existing_lockfile.tools.insert(short, merged_tools);
         }
@@ -896,7 +909,100 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         existing_lockfile.save(&lockfile_path)?;
     }
 
+    // Return all provenance errors after all lockfiles have been saved
+    if !provenance_errors.is_empty() {
+        return Err(eyre!("{}", provenance_errors.join("\n")));
+    }
+
     Ok(())
+}
+
+/// Check if a single tool version is losing provenance relative to prior lockfile entries.
+///
+/// Returns an error message if a github backend tool upgrade loses provenance,
+/// or None if the check passes. Used by both `check_provenance_regression` and
+/// `apply_lock_result` to avoid duplicating the detection logic.
+fn check_single_tool_provenance(
+    existing_tools: Option<&Vec<LockfileTool>>,
+    short: &str,
+    version: &str,
+    backend: &str,
+    platform_key: &str,
+    new_provenance: Option<&ProvenanceType>,
+) -> Option<String> {
+    if new_provenance.is_some() || !backend.starts_with("github:") {
+        return None;
+    }
+
+    let tools = existing_tools?;
+
+    // Find the highest prior github version with provenance on this platform
+    let prior = tools
+        .iter()
+        .filter(|t| t.version != version)
+        .filter(|t| t.backend.as_ref().is_some_and(|b| b.starts_with("github:")))
+        .filter(|t| {
+            t.platforms
+                .get(platform_key)
+                .is_some_and(|pi| pi.provenance.is_some())
+        })
+        .max_by(|a, b| {
+            versions::Versioning::new(&a.version).cmp(&versions::Versioning::new(&b.version))
+        })?;
+
+    // Only flag upgrades — intentional downgrades are allowed
+    if versions::Versioning::new(version) <= versions::Versioning::new(&prior.version) {
+        return None;
+    }
+
+    let prov = prior.platforms[platform_key].provenance.as_ref().unwrap();
+    Some(format!(
+        "{short}@{version} has no provenance verification on {platform_key}, \
+         but {short}@{} had {prov}. This could indicate a supply chain \
+         attack. Verify the release is authentic before proceeding.",
+        prior.version,
+    ))
+}
+
+/// Check if any github backend tool is losing provenance when upgrading versions.
+///
+/// Only checks the current platform because new `LockfileTool` entries (from
+/// `ToolVersionList`) only have `lock_platforms` populated for the platform where
+/// installation ran. Checking other platforms would produce false positives.
+///
+/// Returns the set of regressing tool short names and their error messages.
+/// Regressing tools should be excluded from merge/save to preserve the old
+/// provenance-verified entry in the lockfile.
+fn check_provenance_regression(
+    existing_lockfile: &Lockfile,
+    new_tools: &HashMap<String, Vec<LockfileTool>>,
+) -> (HashSet<String>, Vec<String>) {
+    let current_platform = Platform::current().to_key();
+    let mut regressing = HashSet::new();
+    let mut errors = Vec::new();
+
+    for (short, new_entries) in new_tools {
+        for new_entry in new_entries {
+            let backend = new_entry.backend.as_deref().unwrap_or("");
+            let new_provenance = new_entry
+                .platforms
+                .get(&current_platform)
+                .and_then(|pi| pi.provenance.as_ref());
+
+            if let Some(err) = check_single_tool_provenance(
+                existing_lockfile.tools.get(short),
+                short,
+                &new_entry.version,
+                backend,
+                &current_platform,
+                new_provenance,
+            ) {
+                regressing.insert(short.clone());
+                errors.push(err);
+            }
+        }
+    }
+    (regressing, errors)
 }
 
 /// Determine target platforms using an already-loaded lockfile (used by auto-lock).
@@ -970,6 +1076,7 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
 
     let settings = Settings::get();
     let jobs = settings.jobs;
+    let mut all_provenance_errors: Vec<String> = Vec::new();
 
     for (lockfile_path, versions) in versions_by_lockfile {
         // Only update existing lockfiles (consistent with update_lockfiles)
@@ -1024,13 +1131,17 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
         }
 
         // Collect results and update lockfile
+        // Defer provenance errors until after saving so unaffected tools' entries aren't lost.
+        let mut provenance_errors: Vec<String> = Vec::new();
         while let Some(result) = jset.join_next().await {
             match result {
                 Ok(resolution) => {
                     if let Err(msg) = &resolution.4 {
                         debug!("auto-lock: {msg}");
                     }
-                    apply_lock_result(&mut lockfile, resolution);
+                    if let Err(e) = apply_lock_result(&mut lockfile, resolution) {
+                        provenance_errors.push(e.to_string());
+                    }
                 }
                 Err(e) => {
                     debug!("auto-lock task failed: {}", e);
@@ -1039,6 +1150,12 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
         }
 
         lockfile.save(&lockfile_path)?;
+
+        all_provenance_errors.extend(provenance_errors);
+    }
+
+    if !all_provenance_errors.is_empty() {
+        return Err(eyre!("{}", all_provenance_errors.join("\n")));
     }
 
     Ok(())
@@ -1126,22 +1243,36 @@ pub async fn resolve_tool_lock_info(
 
 /// Apply a lock resolution result to a lockfile, updating platform info and conda packages.
 /// Only applies data when the resolution succeeded (info is `Ok`).
-pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) {
+///
+/// Returns an error if a github backend tool loses provenance on version upgrade,
+/// which could indicate a supply chain attack.
+pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) -> Result<()> {
     let (short, version, backend, platform, info, options, conda_packages) = result;
     let platform_key = platform.to_key();
-    if let Ok(info) = info {
+    if let Ok(ref info) = info {
+        if let Some(err) = check_single_tool_provenance(
+            lockfile.tools.get(&short),
+            &short,
+            &version,
+            &backend,
+            &platform_key,
+            info.provenance.as_ref(),
+        ) {
+            return Err(eyre!("{err}"));
+        }
         lockfile.set_platform_info(
             &short,
             &version,
             Some(&backend),
             &options,
             &platform_key,
-            info,
+            info.clone(),
         );
     }
     for (basename, pkg_info) in conda_packages {
         lockfile.set_conda_package(&platform_key, &basename, pkg_info);
     }
+    Ok(())
 }
 
 /// Merge tool entries with deduplication by (version, options).

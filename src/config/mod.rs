@@ -1703,9 +1703,9 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     });
     if !new_versions.is_empty() {
         measure!("auto-locking platforms", {
-            if let Err(e) = lockfile::auto_lock_new_versions(config, new_versions).await {
-                warn!("failed to auto-lock platforms for new versions: {e}");
-            }
+            lockfile::auto_lock_new_versions(config, new_versions)
+                .await
+                .wrap_err("failed to auto-lock platforms for new versions")?;
         });
     }
 
