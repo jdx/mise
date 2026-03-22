@@ -15,7 +15,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path_env::PathEnv;
 use crate::platform::Platform;
 use crate::plugins::core::CORE_PLUGINS;
@@ -1704,6 +1704,31 @@ pub fn http_install_operation_count(
         count += 1;
     }
     count
+}
+
+/// Check that the provenance type recorded in the lockfile is still enabled in settings.
+/// `is_disabled` receives the provenance type and returns `Ok(true)` when the corresponding
+/// setting is off, or `Err` for provenance types unexpected in the calling backend.
+pub fn ensure_provenance_setting_enabled(
+    tv: &ToolVersion,
+    platform_key: &str,
+    is_disabled: impl FnOnce(&ProvenanceType) -> Result<bool>,
+) -> Result<()> {
+    let provenance = tv
+        .lock_platforms
+        .get(platform_key)
+        .and_then(|pi| pi.provenance.as_ref());
+    let Some(provenance) = provenance else {
+        return Ok(());
+    };
+    if is_disabled(provenance)? {
+        return Err(eyre!(
+            "Lockfile requires {provenance} provenance for {tv} but the corresponding \
+             verification setting is disabled. This may indicate a downgrade attack. \
+             Enable the setting or update the lockfile."
+        ));
+    }
+    Ok(())
 }
 
 fn find_match_in_list(list: &[String], query: &str) -> Option<String> {

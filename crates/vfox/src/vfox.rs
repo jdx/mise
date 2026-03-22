@@ -32,6 +32,8 @@ pub struct InstallResult {
     pub sha256: Option<String>,
     /// The type of attestation that was successfully verified (if any)
     pub verified_attestation: Option<VerifiedAttestation>,
+    /// Whether a checksum (sha256/sha512) was verified during install
+    pub checksum_verified: bool,
 }
 
 #[derive(Debug)]
@@ -41,6 +43,11 @@ pub struct Vfox {
     pub plugin_dir: PathBuf,
     pub cache_dir: PathBuf,
     pub download_dir: PathBuf,
+    /// When true, skip attestation verification during install if the plugin also provides
+    /// a sha256/sha512 checksum (so checksum integrity still applies). If the plugin has
+    /// no checksums, attestation always runs regardless of this flag.
+    /// Set by the caller when the lockfile already has a provenance entry from a prior install.
+    pub skip_verification: bool,
     log_tx: Option<mpsc::Sender<String>>,
 }
 
@@ -168,10 +175,14 @@ impl Vfox {
         let install_dir = install_dir.as_ref();
         trace!("{pre_install:?}");
         let mut verified_attestation = None;
+        let mut checksum_verified = false;
         if let Some(url) = pre_install.url.as_ref().map(|s| Url::from_str(s)) {
             let file = self.download(&url?, &sdk, version).await?;
             verified_attestation = self.verify(&pre_install, &file).await?;
             self.extract(&file, install_dir)?;
+            // Note: sha1/md5 intentionally excluded — they are unimplemented! and
+            // not considered strong enough to satisfy the checksum_verified semantic.
+            checksum_verified = pre_install.sha256.is_some() || pre_install.sha512.is_some();
         }
 
         if sdk.get_metadata()?.hooks.contains("post_install") {
@@ -183,10 +194,10 @@ impl Vfox {
             })
             .await?;
         }
-
         Ok(InstallResult {
             sha256: pre_install.sha256,
             verified_attestation,
+            checksum_verified,
         })
     }
 
@@ -384,7 +395,12 @@ impl Vfox {
             unimplemented!("md5")
         }
         let mut verified: Option<VerifiedAttestation> = None;
-        if let Some(attestation) = &pre_install.attestation {
+        // Only skip attestation verification when the plugin provides a checksum
+        // (sha256/sha512) — otherwise there would be no integrity check at all.
+        let has_checksum = pre_install.sha256.is_some() || pre_install.sha512.is_some();
+        if let Some(attestation) = &pre_install.attestation
+            && !(self.skip_verification && has_checksum)
+        {
             self.log_emit(format!("Verify {file:?} attestation"));
             if let Some(owner) = &attestation.github_owner
                 && let Some(repo) = &attestation.github_repo
@@ -531,6 +547,7 @@ impl Default for Vfox {
             cache_dir: home().join(".version-fox/cache"),
             download_dir: home().join(".version-fox/downloads"),
             install_dir: home().join(".version-fox/installs"),
+            skip_verification: false,
             log_tx: None,
         }
     }
@@ -555,6 +572,7 @@ mod tests {
                 cache_dir: PathBuf::from("test/cache"),
                 download_dir: PathBuf::from("test/downloads"),
                 install_dir: PathBuf::from("test/installs"),
+                skip_verification: false,
                 log_tx: None,
             }
         }

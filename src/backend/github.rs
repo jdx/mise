@@ -617,18 +617,32 @@ impl UnifiedGitBackend {
         if has_checksum {
             verify_artifact(tv, &file_path, opts, Some(ctx.pr.as_ref()))?;
         }
+
+        // Check before verify_checksum, which may generate a new checksum from the
+        // downloaded file. We only want to skip provenance when the lockfile already
+        // had integrity data before this install.
+        let platform_key = self.get_platform_key();
+        let has_lockfile_integrity = tv
+            .lock_platforms
+            .get(&platform_key)
+            .is_some_and(|pi| pi.checksum.is_some() && pi.provenance.is_some());
+
         self.verify_checksum(ctx, tv, &file_path)?;
 
-        // Verify attestations or SLSA (check attestations first, fall back to SLSA)
-        let provenance_result = self
-            .verify_attestations_or_slsa(ctx, tv, &file_path)
-            .await?;
+        if has_lockfile_integrity {
+            // Still check that the recorded provenance type's setting is enabled —
+            // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
+            self.ensure_provenance_setting_enabled(tv, &platform_key)?;
+        } else {
+            let provenance_result = self
+                .verify_attestations_or_slsa(ctx, tv, &file_path)
+                .await?;
 
-        // Record provenance verification result in lock_platforms
-        if let Some(provenance_type) = provenance_result {
-            let platform_key = self.get_platform_key();
-            let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-            platform_info.provenance = Some(provenance_type);
+            // Record provenance verification result in lock_platforms
+            if let Some(provenance_type) = provenance_result {
+                let platform_info = tv.lock_platforms.entry(platform_key).or_default();
+                platform_info.provenance = Some(provenance_type);
+            }
         }
 
         ctx.pr.next_operation();
@@ -1207,6 +1221,31 @@ impl UnifiedGitBackend {
             }
         }
         Ok(())
+    }
+
+    /// When skipping full provenance re-verification (lockfile has checksum+provenance),
+    /// check that the setting for the recorded provenance type is still enabled.
+    /// Disabling a verification setting while the lockfile expects it is a downgrade.
+    fn ensure_provenance_setting_enabled(
+        &self,
+        tv: &ToolVersion,
+        platform_key: &str,
+    ) -> Result<()> {
+        super::ensure_provenance_setting_enabled(tv, platform_key, |provenance| {
+            let settings = Settings::get();
+            match provenance {
+                ProvenanceType::GithubAttestations => {
+                    Ok(!settings.github_attestations || !settings.github.github_attestations)
+                }
+                ProvenanceType::Slsa { .. } => Ok(!settings.slsa || !settings.github.slsa),
+                // The github backend only writes GithubAttestations and Slsa; reaching here
+                // means a lockfile was hand-edited or migrated incorrectly.
+                _ => Err(eyre::eyre!(
+                    "Lockfile has unexpected provenance type {provenance} for github backend tool {tv}. \
+                     Update the lockfile to remove the stale provenance entry."
+                )),
+            }
+        })
     }
 
     /// Verify artifact using GitHub artifact attestations or SLSA provenance.
