@@ -1136,25 +1136,27 @@ pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) 
         // For github backend tools, error if a prior version had provenance but the new
         // version does not. This could indicate a supply chain attack where an attacker
         // publishes a release without attestations.
-        if info.provenance.is_none() && backend.starts_with("github:")
-            && let Some(tools) = lockfile.tools.get(&short) {
-                let prior_provenance = tools.iter().find_map(|t| {
-                    if t.version != version {
-                        t.platforms
-                            .get(&platform_key)
-                            .and_then(|pi| pi.provenance.as_ref())
-                    } else {
-                        None
-                    }
-                });
-                if let Some(prov) = prior_provenance {
-                    return Err(eyre!(
-                        "{short}@{version} has no provenance verification on {platform_key}, \
+        if info.provenance.is_none()
+            && backend.starts_with("github:")
+            && let Some(tools) = lockfile.tools.get(&short)
+        {
+            let prior_provenance = tools.iter().find_map(|t| {
+                if t.version != version {
+                    t.platforms
+                        .get(&platform_key)
+                        .and_then(|pi| pi.provenance.as_ref())
+                } else {
+                    None
+                }
+            });
+            if let Some(prov) = prior_provenance {
+                return Err(eyre!(
+                    "{short}@{version} has no provenance verification on {platform_key}, \
                          but a prior version had {prov}. This could indicate a supply chain \
                          attack. Verify the release is authentic before proceeding."
-                    ));
-                }
+                ));
             }
+        }
         lockfile.set_platform_info(
             &short,
             &version,
