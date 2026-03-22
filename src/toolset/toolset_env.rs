@@ -336,8 +336,9 @@ impl Toolset {
         let mut env_results = self.load_post_env(config, ctx, &tera_env).await?;
 
         // Include watch_files from tools=false plugins so the env cache tracks all
-        // plugin watch_files, not just tools=true ones. This works because hook-env
-        // calls config.watch_files() before this; other callers get None (no-op).
+        // plugin watch_files, not just tools=true ones. env_results_cached()
+        // returns Some here because self.env(config) above always initialises
+        // config.env via config.env_results().
         if let Some(non_tool_env) = config.env_results_cached() {
             env_results
                 .watch_files
