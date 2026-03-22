@@ -124,18 +124,20 @@ impl Lock {
                 if self.is_unfiltered_lock_run() {
                     let stale_tools = self.stale_entries_if_pruned(&lockfile, &tools);
                     self.show_stale_prune_message(lockfile_path, &stale_tools, true)?;
-                } else {
-                    let stale_versions = self.stale_versions_if_pruned(&lockfile, &tools);
-                    self.show_stale_version_prune_message(lockfile_path, &stale_versions, true)?;
                 }
+                let stale_versions = self.stale_versions_if_pruned(&lockfile, &tools);
+                self.show_stale_version_prune_message(lockfile_path, &stale_versions, true)?;
                 continue;
             }
 
             // Process tools and update lockfile
             let mut lockfile = Lockfile::read(lockfile_path)?;
-            self.prune_stale_entries_if_needed(&mut lockfile, &tools);
+            if self.is_unfiltered_lock_run() {
+                let stale_tools = self.prune_stale_entries_if_needed(&mut lockfile, &tools);
+                self.show_stale_prune_message(lockfile_path, &stale_tools, false)?;
+            }
             let stale_versions = self.stale_versions_if_pruned(&lockfile, &tools);
-            self.prune_stale_versions_for_targeted_tools(&mut lockfile, &tools);
+            self.prune_stale_versions(&mut lockfile, &tools);
             self.show_stale_version_prune_message(lockfile_path, &stale_versions, false)?;
             let results = self
                 .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
@@ -188,13 +190,10 @@ impl Lock {
         stale_tools
     }
 
-    /// For filtered runs, prune lockfile entries whose version no longer matches
-    /// any resolved version of the targeted tool. This prevents stale version
-    /// entries from accumulating when a tool's resolved version changes.
-    fn prune_stale_versions_for_targeted_tools(&self, lockfile: &mut Lockfile, tools: &[LockTool]) {
-        if self.is_unfiltered_lock_run() {
-            return; // unfiltered runs handle pruning via prune_stale_entries_if_needed
-        }
+    /// Prune lockfile entries whose version no longer matches any resolved version
+    /// of the tool. This prevents stale version entries from accumulating when a
+    /// tool's resolved version changes.
+    fn prune_stale_versions(&self, lockfile: &mut Lockfile, tools: &[LockTool]) {
         let mut current_versions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for (ba, tv) in tools {
             current_versions
@@ -681,7 +680,7 @@ mod tests {
         let mut lockfile = lockfile_with_dummy(); // has dummy@1.0.0
         let tools = vec![configured_tool("dummy", "2.0.0")];
 
-        cmd.prune_stale_versions_for_targeted_tools(&mut lockfile, &tools);
+        cmd.prune_stale_versions(&mut lockfile, &tools);
 
         // Old version entry should be removed
         assert!(lockfile.all_platform_keys().is_empty());
@@ -694,7 +693,7 @@ mod tests {
         let mut lockfile = lockfile_with_dummy(); // has dummy@1.0.0
         let tools = vec![configured_tool("dummy", "1.0.0")];
 
-        cmd.prune_stale_versions_for_targeted_tools(&mut lockfile, &tools);
+        cmd.prune_stale_versions(&mut lockfile, &tools);
 
         // Entry should still be there
         assert_eq!(
@@ -722,7 +721,7 @@ mod tests {
         // Resolve dummy to a new version; jq is not targeted
         let tools = vec![configured_tool("dummy", "2.0.0")];
 
-        cmd.prune_stale_versions_for_targeted_tools(&mut lockfile, &tools);
+        cmd.prune_stale_versions(&mut lockfile, &tools);
 
         // dummy@1.0.0 (linux-x64) should be removed, jq@1.7.1 (macos-x64) should remain
         assert_eq!(
@@ -732,15 +731,28 @@ mod tests {
     }
 
     #[test]
-    fn test_unfiltered_run_skips_version_pruning() {
-        // Unfiltered runs should not prune versions (handled by prune_stale_entries_if_needed)
+    fn test_unfiltered_run_prunes_stale_version() {
+        // Unfiltered runs should prune stale versions just like filtered runs
         let cmd = lock_cmd(&[]);
         let mut lockfile = lockfile_with_dummy(); // has dummy@1.0.0
         let tools = vec![configured_tool("dummy", "2.0.0")];
 
-        cmd.prune_stale_versions_for_targeted_tools(&mut lockfile, &tools);
+        cmd.prune_stale_versions(&mut lockfile, &tools);
 
-        // Entry should still be there (unfiltered run skips this method)
+        // Old version entry should be removed
+        assert!(lockfile.all_platform_keys().is_empty());
+    }
+
+    #[test]
+    fn test_unfiltered_run_preserves_current_version() {
+        // Unfiltered runs should preserve current versions
+        let cmd = lock_cmd(&[]);
+        let mut lockfile = lockfile_with_dummy(); // has dummy@1.0.0
+        let tools = vec![configured_tool("dummy", "1.0.0")];
+
+        cmd.prune_stale_versions(&mut lockfile, &tools);
+
+        // Entry should still be there
         assert_eq!(
             lockfile.all_platform_keys(),
             std::collections::BTreeSet::from(["linux-x64".to_string()])
