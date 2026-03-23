@@ -192,13 +192,7 @@ impl Lock {
     /// of the tool. This prevents stale version entries from accumulating when a
     /// tool's resolved version changes.
     fn prune_stale_versions(&self, lockfile: &mut Lockfile, tools: &[LockTool]) {
-        let mut current_versions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        for (ba, tv) in tools {
-            current_versions
-                .entry(ba.short.clone())
-                .or_default()
-                .insert(tv.version.clone());
-        }
+        let current_versions = self.current_tool_versions(tools);
         for (short, versions) in &current_versions {
             lockfile.retain_tool_versions(short, versions);
         }
@@ -222,13 +216,7 @@ impl Lock {
         tools: &[LockTool],
     ) -> BTreeMap<String, Vec<String>> {
         let mut stale: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        let mut current_versions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        for (ba, tv) in tools {
-            current_versions
-                .entry(ba.short.clone())
-                .or_default()
-                .insert(tv.version.clone());
-        }
+        let current_versions = self.current_tool_versions(tools);
         for (short, versions) in &current_versions {
             let stale_versions = lockfile.stale_tool_versions(short, versions);
             if !stale_versions.is_empty() {
@@ -278,6 +266,20 @@ impl Lock {
             tools.iter().map(|(ba, _)| ba.short.clone()).collect();
         let configured_backends: BTreeSet<String> = tools.iter().map(|(ba, _)| ba.full()).collect();
         (configured_tools, configured_backends)
+    }
+
+    fn current_tool_versions(
+        &self,
+        tools: &[LockTool],
+    ) -> BTreeMap<String, BTreeSet<String>> {
+        let mut current_versions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (ba, tv) in tools {
+            current_versions
+                .entry(ba.short.clone())
+                .or_default()
+                .insert(tv.version.clone());
+        }
+        current_versions
     }
 
     fn stale_entries_for_selectors(
