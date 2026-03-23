@@ -134,8 +134,7 @@ impl Lock {
             let mut lockfile = Lockfile::read(lockfile_path)?;
             let stale_tools = self.prune_stale_entries_if_needed(&mut lockfile, &tools);
             self.show_stale_prune_message(lockfile_path, &stale_tools, false)?;
-            let stale_versions = self.stale_versions_if_pruned(&lockfile, &tools);
-            self.prune_stale_versions(&mut lockfile, &tools);
+            let stale_versions = self.prune_stale_versions(&mut lockfile, &tools);
             self.show_stale_version_prune_message(lockfile_path, &stale_versions, false)?;
             let results = self
                 .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
@@ -190,12 +189,22 @@ impl Lock {
 
     /// Prune lockfile entries whose version no longer matches any resolved version
     /// of the tool. This prevents stale version entries from accumulating when a
-    /// tool's resolved version changes.
-    fn prune_stale_versions(&self, lockfile: &mut Lockfile, tools: &[LockTool]) {
+    /// tool's resolved version changes. Returns the stale versions that were pruned.
+    fn prune_stale_versions(
+        &self,
+        lockfile: &mut Lockfile,
+        tools: &[LockTool],
+    ) -> BTreeMap<String, Vec<String>> {
+        let mut stale: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let current_versions = self.current_tool_versions(tools);
         for (short, versions) in &current_versions {
+            let stale_versions = lockfile.stale_tool_versions(short, versions);
+            if !stale_versions.is_empty() {
+                stale.insert(short.clone(), stale_versions);
+            }
             lockfile.retain_tool_versions(short, versions);
         }
+        stale
     }
 
     fn stale_entries_if_pruned(
