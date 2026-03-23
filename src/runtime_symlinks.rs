@@ -25,26 +25,57 @@ pub async fn rebuild(config: &Config) -> Result<()> {
             }
         }
 
-        for installs_dir in &installs_dirs {
-            let symlinks = list_symlinks_for_dir(config, &backend, installs_dir);
-            for (from, to) in symlinks {
-                let from = installs_dir.join(from);
-                if from.exists() {
-                    if is_runtime_symlink(&from)
-                        && file::resolve_symlink(&from)?.unwrap_or_default() != to
-                    {
-                        trace!("Removing existing symlink: {}", from.display());
-                        file::remove_file(&from)?;
-                    } else {
-                        continue;
-                    }
+        // Process user dir (first entry) with normal error propagation
+        if let Some(installs_dir) = installs_dirs.first() {
+            rebuild_symlinks_in_dir(config, &backend, installs_dir)?;
+        }
+        // Process shared/system dirs with permission error tolerance
+        for installs_dir in installs_dirs.iter().skip(1) {
+            if let Err(e) = rebuild_symlinks_in_dir(config, &backend, installs_dir) {
+                if is_permission_error(&e) {
+                    warn!(
+                        "skipping symlink update for {}: {}",
+                        installs_dir.display(),
+                        e
+                    );
+                } else {
+                    return Err(e);
                 }
-                make_symlink_or_file(&to, &from)?;
             }
-            remove_missing_symlinks_in_dir(installs_dir)?;
         }
     }
     Ok(())
+}
+
+fn rebuild_symlinks_in_dir(
+    config: &Config,
+    backend: &Arc<dyn Backend>,
+    installs_dir: &Path,
+) -> Result<()> {
+    let symlinks = list_symlinks_for_dir(config, backend, installs_dir);
+    for (from, to) in symlinks {
+        let from = installs_dir.join(from);
+        if from.exists() {
+            if is_runtime_symlink(&from) && file::resolve_symlink(&from)?.unwrap_or_default() != to
+            {
+                trace!("Removing existing symlink: {}", from.display());
+                file::remove_file(&from)?;
+            } else {
+                continue;
+            }
+        }
+        make_symlink_or_file(&to, &from)?;
+    }
+    remove_missing_symlinks_in_dir(installs_dir)?;
+    Ok(())
+}
+
+fn is_permission_error(e: &eyre::Report) -> bool {
+    e.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|io_err| io_err.kind() == std::io::ErrorKind::PermissionDenied)
+    })
 }
 
 /// Build symlinks for versions found in a specific install directory.
@@ -100,7 +131,6 @@ fn installed_versions_in_dir(installs_dir: &Path) -> Vec<String> {
         .filter(|v| !is_runtime_symlink(&installs_dir.join(v)))
         .filter(|v| !installs_dir.join(v).join("incomplete").exists())
         .filter(|v| !VERSION_REGEX.is_match(v))
-        .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
         .collect()
 }
 
