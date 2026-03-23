@@ -1,5 +1,32 @@
 # Changelog
 
+## [2026.3.13](https://github.com/jdx/mise/compare/v2026.3.12..v2026.3.13) - 2026-03-23
+
+### 🐛 Bug Fixes
+
+- **(env)** improve hook-env watch_files tracking and early-exits by @rpendleton in [#8716](https://github.com/jdx/mise/pull/8716)
+- **(install)** create runtime symlinks in system/shared install directories by @jdx in [#8722](https://github.com/jdx/mise/pull/8722)
+- apply --silent flag to global settings to suppress output by @nkakouros in [#8720](https://github.com/jdx/mise/pull/8720)
+
+### 📦️ Dependency Updates
+
+- ignore RUSTSEC-2026-0066 astral-tokio-tar advisory by @jdx in [#8723](https://github.com/jdx/mise/pull/8723)
+
+### 📦 Registry
+
+- add acli by @ggoggam in [#8721](https://github.com/jdx/mise/pull/8721)
+
+### New Contributors
+
+- @rpendleton made their first contribution in [#8716](https://github.com/jdx/mise/pull/8716)
+- @ggoggam made their first contribution in [#8721](https://github.com/jdx/mise/pull/8721)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (1)
+
+- [`astral-sh/ty`](https://github.com/astral-sh/ty)
+
 ## [2026.3.12](https://github.com/jdx/mise/compare/v2026.3.11..v2026.3.12) - 2026-03-22
 
 ### 🐛 Bug Fixes
