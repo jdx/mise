@@ -313,7 +313,9 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
         );
     };
 
-    let use_gh_cli = Settings::get().github.gh_cli_tokens;
+    let settings = Settings::get();
+    let use_gh_cli = settings.github.gh_cli_tokens;
+    let use_gh_cli_cmd = settings.github.gh_cli_token_from_cmd;
 
     let host = url.host_str();
     let is_github_com = host == Some("api.github.com")
@@ -325,8 +327,15 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     } else {
         host
     };
-    let gh_token = use_gh_cli
-        .then(|| gh_cli_host.and_then(|h| GH_HOSTS.get(h)))
+    let gh_token: Option<String> = use_gh_cli
+        .then(|| {
+            gh_cli_host.and_then(|h| {
+                GH_HOSTS
+                    .get(h)
+                    .cloned()
+                    .or_else(|| use_gh_cli_cmd.then(|| get_gh_token_from_cmd(h)).flatten())
+            })
+        })
         .flatten();
 
     let enterprise_token = if !is_github_com {
@@ -337,7 +346,7 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
 
     if let Some(token) = enterprise_token
         .or(env::GITHUB_TOKEN.as_deref())
-        .or(gh_token.map(|t| t.as_str()))
+        .or(gh_token.as_deref())
     {
         set_headers(token);
     }
@@ -360,6 +369,43 @@ pub fn is_gh_host(host: &str) -> bool {
 /// Tokens read from the gh CLI hosts config (~/.config/gh/hosts.yml).
 /// Maps hostname (e.g. "github.com") to oauth_token.
 static GH_HOSTS: Lazy<HashMap<String, String>> = Lazy::new(|| read_gh_hosts().unwrap_or_default());
+
+/// Cache for tokens obtained from `gh auth token [--hostname <host>]`.
+/// Maps hostname to the token (or None if the command failed / gh is not installed).
+static GH_TOKEN_CMD_CACHE: Lazy<std::sync::Mutex<HashMap<String, Option<String>>>> =
+    Lazy::new(Default::default);
+
+/// Get a GitHub token for `host` by running `gh auth token [--hostname <host>]`.
+/// Results are cached per hostname so the subprocess is only spawned once.
+fn get_gh_token_from_cmd(host: &str) -> Option<String> {
+    let mut cache = GH_TOKEN_CMD_CACHE
+        .lock()
+        .expect("GH_TOKEN_CMD_CACHE mutex poisoned");
+    if let Some(token) = cache.get(host) {
+        return token.clone();
+    }
+    let mut cmd = std::process::Command::new("gh");
+    cmd.args(["auth", "token"]);
+    if host != "github.com" {
+        cmd.args(["--hostname", host]);
+    }
+    let result = cmd.output().ok().and_then(|output| {
+        if output.status.success() {
+            String::from_utf8(output.stdout)
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        } else {
+            trace!(
+                "gh auth token --hostname {host} exited with status {}",
+                output.status
+            );
+            None
+        }
+    });
+    cache.insert(host.to_string(), result.clone());
+    result
+}
 
 /// Resolve the path to gh CLI's hosts.yml, matching gh's own config resolution:
 /// 1. $GH_CONFIG_DIR/hosts.yml

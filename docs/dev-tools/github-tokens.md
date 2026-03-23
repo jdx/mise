@@ -8,20 +8,22 @@ mise checks the following sources in order. The first token found wins:
 
 **github.com:**
 
-| Priority | Source                        |
-| -------- | ----------------------------- |
-| 1        | `MISE_GITHUB_TOKEN` env var   |
-| 2        | `GITHUB_API_TOKEN` env var    |
-| 3        | `GITHUB_TOKEN` env var        |
-| 4        | gh CLI token (from hosts.yml) |
+| Priority | Source                                            |
+| -------- | ------------------------------------------------- |
+| 1        | `MISE_GITHUB_TOKEN` env var                       |
+| 2        | `GITHUB_API_TOKEN` env var                        |
+| 3        | `GITHUB_TOKEN` env var                            |
+| 4        | gh CLI token (from `hosts.yml`)                   |
+| 5        | gh CLI token (from `gh auth token`, opt-in)       |
 
 **GitHub Enterprise hosts:**
 
-| Priority | Source                                                             |
-| -------- | ------------------------------------------------------------------ |
-| 1        | `MISE_GITHUB_ENTERPRISE_TOKEN` env var                             |
-| 2        | `MISE_GITHUB_TOKEN` / `GITHUB_API_TOKEN` / `GITHUB_TOKEN` env vars |
-| 3        | gh CLI token (from hosts.yml, matched by hostname)                 |
+| Priority | Source                                                                    |
+| -------- | ------------------------------------------------------------------------- |
+| 1        | `MISE_GITHUB_ENTERPRISE_TOKEN` env var                                    |
+| 2        | `MISE_GITHUB_TOKEN` / `GITHUB_API_TOKEN` / `GITHUB_TOKEN` env vars       |
+| 3        | gh CLI token (from `hosts.yml`, matched by hostname)                      |
+| 4        | gh CLI token (from `gh auth token --hostname <host>`, opt-in)             |
 
 ::: tip
 The github.com env vars (`MISE_GITHUB_TOKEN`, etc.) are also used as a fallback for GHE when `MISE_GITHUB_ENTERPRISE_TOKEN` is not set. If you need different tokens for github.com and a GHE instance, set `MISE_GITHUB_ENTERPRISE_TOKEN` explicitly or use the gh CLI integration.
@@ -39,7 +41,7 @@ Or, if you already have `GITHUB_TOKEN` set (common in GitHub Actions), mise will
 
 ## gh CLI Integration
 
-If you use the [GitHub CLI](https://cli.github.com/) (`gh`), mise can read tokens directly from its `hosts.yml` config file. This is enabled by default and kicks in when no token environment variable is set.
+If you use the [GitHub CLI](https://cli.github.com/) (`gh`), mise can read tokens from it automatically. This is enabled by default and kicks in when no token environment variable is set.
 
 mise looks for `hosts.yml` in these locations (first match wins):
 
@@ -60,7 +62,7 @@ github.mycompany.com:
 ```
 
 ::: info
-mise reads the config file directly — it does not shell out to `gh`. If your gh CLI uses a credential helper (e.g., macOS Keychain) instead of storing tokens in `hosts.yml`, the token won't be available to mise. In that case, set the token via an environment variable or in mise settings.
+mise reads the config file directly — it does not shell out to `gh` by default. If your gh CLI uses a credential helper (e.g., macOS Keychain or Windows Credential Manager) instead of storing tokens in `hosts.yml`, enable `gh_cli_token_from_cmd` (see below).
 :::
 
 To disable this behavior:
@@ -68,6 +70,23 @@ To disable this behavior:
 ```toml
 [settings.github]
 gh_cli_tokens = false
+```
+
+### `gh auth token` fallback (opt-in)
+
+On some platforms (e.g. **Windows** or **macOS** with Keychain), the gh CLI stores credentials in a system credential helper rather than in `hosts.yml`. In that case you can opt in to having mise run `gh auth token` to retrieve the token:
+
+```toml
+[settings.github]
+gh_cli_token_from_cmd = true
+```
+
+When enabled, mise runs `gh auth token` (or `gh auth token --hostname <host>` for GitHub Enterprise) as a last-resort fallback after checking environment variables and `hosts.yml`. The result is cached in memory for the lifetime of the process.
+
+```sh
+# These are the commands mise may run when gh_cli_token_from_cmd = true:
+gh auth token                            # for github.com
+gh auth token --hostname <host>          # for GitHub Enterprise
 ```
 
 ## GitHub Enterprise
