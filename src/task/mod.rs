@@ -935,8 +935,11 @@ impl Task {
         }
 
         let task_dir = task_cf.get_path().parent().unwrap_or(task_cf.get_path());
-        let config_paths = crate::config::load_config_hierarchy_from_dir(task_dir)?;
-        let task_config_files = crate::config::load_config_files_from_paths(&config_paths).await?;
+        let (config_paths, idiomatic_filenames) =
+            crate::config::load_config_hierarchy_from_dir(task_dir).await?;
+        let task_config_files =
+            crate::config::load_config_files_from_paths(&config_paths, &idiomatic_filenames)
+                .await?;
         let vars_results =
             crate::config::resolve_vars_from_config_files(config, &task_config_files).await?;
         let vars: IndexMap<String, String> = vars_results

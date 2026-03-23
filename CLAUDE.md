@@ -84,6 +84,7 @@ Mise is a Rust CLI tool that manages development environments, tools, tasks, and
 - Unit tests within source files
 - E2E tests in `e2e/` directory organized by feature area (e.g., `e2e/cli/`, `e2e/backend/`)
 - E2E tests are bash scripts using assertion helpers from `e2e/assert.sh` (e.g., `assert`, `assert_contains`, `assert_fail`)
+- E2E tests do not need cleanup steps (rm, etc.) — the test harness handles that
 - Snapshot tests using `insta` crate for CLI output verification
 - Windows-specific tests in `e2e-win/`
 

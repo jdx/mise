@@ -478,8 +478,11 @@ impl Settings {
         if cli.yes {
             s.yes = Some(true);
         }
-        if cli.quiet {
+        if cli.quiet || cli.silent {
             s.quiet = Some(true);
+        }
+        if cli.silent {
+            s.silent = Some(true);
         }
         if cli.trace {
             s.log_level = Some("trace".to_string());

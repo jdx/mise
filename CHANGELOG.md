@@ -1,5 +1,90 @@
 # Changelog
 
+## [2026.3.13](https://github.com/jdx/mise/compare/v2026.3.12..v2026.3.13) - 2026-03-23
+
+### 🐛 Bug Fixes
+
+- **(env)** improve hook-env watch_files tracking and early-exits by @rpendleton in [#8716](https://github.com/jdx/mise/pull/8716)
+- **(install)** create runtime symlinks in system/shared install directories by @jdx in [#8722](https://github.com/jdx/mise/pull/8722)
+- apply --silent flag to global settings to suppress output by @nkakouros in [#8720](https://github.com/jdx/mise/pull/8720)
+
+### 📦️ Dependency Updates
+
+- ignore RUSTSEC-2026-0066 astral-tokio-tar advisory by @jdx in [#8723](https://github.com/jdx/mise/pull/8723)
+
+### 📦 Registry
+
+- add acli by @ggoggam in [#8721](https://github.com/jdx/mise/pull/8721)
+
+### New Contributors
+
+- @rpendleton made their first contribution in [#8716](https://github.com/jdx/mise/pull/8716)
+- @ggoggam made their first contribution in [#8721](https://github.com/jdx/mise/pull/8721)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (1)
+
+- [`astral-sh/ty`](https://github.com/astral-sh/ty)
+
+## [2026.3.12](https://github.com/jdx/mise/compare/v2026.3.11..v2026.3.12) - 2026-03-22
+
+### 🐛 Bug Fixes
+
+- **(completions)** update zsh completions for usage v3.1.0 by @jdx in [#8715](https://github.com/jdx/mise/pull/8715)
+
+### Security
+
+- **(lock)** block github tool upgrade when provenance is lost by @jdx in [#8706](https://github.com/jdx/mise/pull/8706)
+
+## [2026.3.11](https://github.com/jdx/mise/compare/v2026.3.10..v2026.3.11) - 2026-03-22
+
+### 🚀 Features
+
+- **(github)** read tokens from gh CLI hosts.yml config by @jdx in [#8692](https://github.com/jdx/mise/pull/8692)
+- **(task)** support optional `args` and `env` fields in `run` entries by @jdx in [#8687](https://github.com/jdx/mise/pull/8687)
+- **(task)** add --skip-tools flag to mise run by @jdx in [#8699](https://github.com/jdx/mise/pull/8699)
+- **(vfox)** add try_get, try_head, try_download_file to Lua HTTP module by @jdx in [#8697](https://github.com/jdx/mise/pull/8697)
+
+### 🐛 Bug Fixes
+
+- **(config)** recognize SSH and other non-HTTPS URLs in get_repo_url by @modestman in [#8666](https://github.com/jdx/mise/pull/8666)
+- **(docs)** add dark mode support to favicon by @jdx in [#8678](https://github.com/jdx/mise/pull/8678)
+- **(env)** support multiple --env/-E flags by @jdx in [#8686](https://github.com/jdx/mise/pull/8686)
+- **(github)** rename_exe renames correct binary when archive contains multiple executables by @jdx in [#8700](https://github.com/jdx/mise/pull/8700)
+- **(implode)** include system data dir in implode cleanup by @jdx in [#8696](https://github.com/jdx/mise/pull/8696)
+- **(install)** skip GitHub API calls for aqua tools in --locked mode by @jdx in [#8679](https://github.com/jdx/mise/pull/8679)
+- **(install)** skip redundant provenance verification when lockfile has integrity data by @jdx in [#8688](https://github.com/jdx/mise/pull/8688)
+- **(lock)** respect existing platforms in lockfile when running `mise lock` by @jdx in [#8708](https://github.com/jdx/mise/pull/8708)
+- **(lock)** skip global config lockfile by default by @jdx in [#8707](https://github.com/jdx/mise/pull/8707)
+- **(node)** expand tilde in default_packages_file path by @jdx in [#8709](https://github.com/jdx/mise/pull/8709)
+- **(shell)** error when no version specified instead of silent no-op by @jdx in [#8693](https://github.com/jdx/mise/pull/8693)
+- **(shim)** detect shims by checking shims directory instead of binary name by @jdx in [#8694](https://github.com/jdx/mise/pull/8694)
+- **(task)** inherit task_config.dir for included TOML and file tasks by @jdx in [#8689](https://github.com/jdx/mise/pull/8689)
+- **(task)** strip inline args when validating run.tasks references by @jdx in [#8701](https://github.com/jdx/mise/pull/8701)
+- **(task)** include idiomatic version files in monorepo task toolset by @jdx in [#8702](https://github.com/jdx/mise/pull/8702)
+- **(task)** improve error message when task files are not executable by @jdx in [#8705](https://github.com/jdx/mise/pull/8705)
+- **(test)** update vfox provenance test for checksum-backed skip by @jdx in [#8703](https://github.com/jdx/mise/pull/8703)
+- improve usage spec element support in tasks by @nkakouros in [#8623](https://github.com/jdx/mise/pull/8623)
+- make env plugin (Module) vars available in Tera template context by @victor-founder in [#8682](https://github.com/jdx/mise/pull/8682)
+- respect MISE_COLOR=0 for color_eyre error output by @jdx in [#8690](https://github.com/jdx/mise/pull/8690)
+- add windows support for usage tool registry by @jdx in [#8713](https://github.com/jdx/mise/pull/8713)
+
+### 📚 Documentation
+
+- **(task)** clarify interactive task blocking behavior by @jdx in [#8685](https://github.com/jdx/mise/pull/8685)
+- improve visibility of install_before setting by @jdx in [#8712](https://github.com/jdx/mise/pull/8712)
+
+### 📦 Registry
+
+- add rtk ([github:rtk-ai/rtk](https://github.com/rtk-ai/rtk)) by @bricelalu in [#8683](https://github.com/jdx/mise/pull/8683)
+
+### New Contributors
+
+- @victor-founder made their first contribution in [#8682](https://github.com/jdx/mise/pull/8682)
+- @modestman made their first contribution in [#8666](https://github.com/jdx/mise/pull/8666)
+- @bricelalu made their first contribution in [#8683](https://github.com/jdx/mise/pull/8683)
+
 ## [2026.3.10](https://github.com/jdx/mise/compare/v2026.3.9..v2026.3.10) - 2026-03-21
 
 ### 🐛 Bug Fixes

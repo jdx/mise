@@ -148,6 +148,20 @@ export MISE_AQUA_GITHUB_ATTESTATIONS=false
 export MISE_AQUA_MINISIGN=false
 ```
 
+## Minimum release age
+
+To limit supply chain risk, you can restrict mise to only install versions released before a certain date or duration. This is similar to Renovate's [minimum release age](https://docs.renovatebot.com/key-concepts/minimum-release-age/) concept — newly published versions are ignored until they've been available for a configurable amount of time.
+
+```toml
+# mise.toml
+[settings]
+install_before = "7d"  # only install versions released more than 7 days ago
+```
+
+Supports relative durations (`7d`, `6m`, `1y`) and absolute dates (`2024-06-01`). Only affects fuzzy version resolution (e.g., `node@20` or `latest`) — explicitly pinned versions like `node@22.5.0` bypass the filter.
+
+See [`install_before`](/configuration/settings.html#install_before) for more details.
+
 ## [`mise up --bump`](/cli/upgrade.html)
 
 Use `mise up --bump` to upgrade all software to the latest version and update `mise.toml` files. This keeps the same semver range as before,

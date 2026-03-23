@@ -6,6 +6,27 @@ packages:
     description: An extremely fast Python type checker and language server, written in Rust
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("<= 0.0.23")
+        asset: ty-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: ty
+            src: ty-{{.Arch}}-{{.OS}}/ty
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: ty
       - version_constraint: "true"
         asset: ty-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -27,3 +48,5 @@ packages:
             format: zip
             files:
               - name: ty
+        github_artifact_attestations:
+          signer_workflow: astral-sh/ty/.github/workflows/release.yml

@@ -119,6 +119,13 @@ Default to always hide with `MISE_TASK_TIMINGS=0`
 
 Run only the specified tasks skipping all dependencies
 
+### `--skip-tools`
+
+Skip installing tools before running tasks
+
+Can also be set persistently with the `task.run_auto_install` setting
+or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
+
 ### `--timeout <TIMEOUT>`
 
 Timeout for the task to complete

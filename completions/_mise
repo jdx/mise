@@ -23,11 +23,15 @@ _mise() {
       return 1
   fi
 
-  local spec_file="${TMPDIR:-/tmp}/usage__usage_spec_mise_2026_3_10.spec"
+  local spec_file="${TMPDIR:-/tmp}/usage__usage_spec_mise_2026_3_13.spec"
   if [[ ! -f "$spec_file" ]]; then
     mise usage >| "$spec_file"
   fi
-  _arguments "*: :(($(command usage complete-word --shell zsh -f "$spec_file" -- "${words[@]}" )))"
+  local -a completions=()
+  while IFS= read -r line; do
+    completions+=("$line")
+  done < <(command usage complete-word --shell zsh -f "$spec_file" -- "${words[@]}")
+  _describe 'completions' completions -S ''
   return 0
 }
 

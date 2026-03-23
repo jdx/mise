@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+# Test that optional mise.lock files do not prevent hook-env from stabilizing,
+# while lockfile creation/removal still invalidates the session.
+
+export MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+
+cat >mise.toml <<'EOF'
+[env]
+FOO = "bar"
+EOF
+
+eval "$(mise activate bash)"
+
+# With no lockfile present, hook-env should be stable.
+output=$(mise hook-env -s bash)
+if [[ -z $output ]]; then
+	ok "no lockfile does not destabilize hook-env"
+else
+	fail "no lockfile should not destabilize hook-env but got: '$output'"
+fi
+
+# Creating a lockfile should invalidate once.
+sleep 1
+touch mise.lock
+output=$(mise hook-env -s bash)
+if [[ $output == *"__MISE_SESSION"* ]]; then
+	ok "creating mise.lock invalidates session"
+else
+	fail "creating mise.lock should invalidate session but got: '$output'"
+fi
+eval "$output"
+
+# Should stabilize after picking up the new lockfile.
+output=$(mise hook-env -s bash)
+if [[ -z $output ]]; then
+	ok "hook-env stabilizes after mise.lock creation"
+else
+	fail "hook-env should stabilize after mise.lock creation but got: '$output'"
+fi
+
+# Removing the lockfile should also invalidate once.
+sleep 1
+rm mise.lock
+output=$(mise hook-env -s bash)
+if [[ $output == *"__MISE_SESSION"* ]]; then
+	ok "removing mise.lock invalidates session"
+else
+	fail "removing mise.lock should invalidate session but got: '$output'"
+fi
+eval "$output"
+
+# And then stabilize again.
+output=$(mise hook-env -s bash)
+if [[ -z $output ]]; then
+	ok "hook-env stabilizes after mise.lock removal"
+else
+	fail "hook-env should stabilize after mise.lock removal but got: '$output'"
+fi

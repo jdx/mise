@@ -794,7 +794,16 @@ impl Config {
             .map(|(p, cf)| {
                 let mut watch_files: Vec<WatchFilePattern> = vec![p.as_path().into()];
                 if let Some(parent) = p.parent() {
-                    watch_files.push(parent.join("mise.lock").into());
+                    let lockfile = parent.join("mise.lock");
+
+                    // Only watch lockfiles that currently exist to prevent missing optional
+                    // mise.lock files from keeping hook-env from stabilizing. If one is created
+                    // later, should_exit_early_fast() will notice the parent directory mtime
+                    // change, force a slow-path run, and this watch set will then include the new
+                    // lockfile on that recomputation.
+                    if lockfile.exists() {
+                        watch_files.push(lockfile.into());
+                    }
                 }
                 watch_files.extend(cf.watch_files()?.iter().map(|wf| WatchFilePattern {
                     root: cf.project_root().map(|pr| pr.to_path_buf()),
@@ -807,6 +816,7 @@ impl Config {
             .flatten()
             .chain(env_results.env_files.iter().map(|p| p.as_path().into()))
             .chain(env_results.env_scripts.iter().map(|p| p.as_path().into()))
+            .chain(env_results.watch_files.iter().map(|p| p.as_path().into()))
             .chain(
                 Settings::get()
                     .env_files()
@@ -1151,13 +1161,22 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
 
 /// Load config hierarchy from a specific directory (for monorepo tasks)
 /// This loads all config files from start_dir up through parent directories,
-/// including MISE_ENV-specific configs
-pub fn load_config_hierarchy_from_dir(start_dir: &Path) -> Result<Vec<PathBuf>> {
+/// including MISE_ENV-specific configs and idiomatic version files.
+/// Returns (paths, idiomatic_filenames) so callers can pass the map to
+/// load_config_files_from_paths without a redundant second computation.
+pub async fn load_config_hierarchy_from_dir(
+    start_dir: &Path,
+) -> Result<(Vec<PathBuf>, BTreeMap<String, Vec<String>>)> {
     if Settings::no_config() {
-        return Ok(vec![]);
+        return Ok((vec![], BTreeMap::new()));
     }
 
-    let config_filenames = DEFAULT_CONFIG_FILENAMES.iter().cloned().collect_vec();
+    let idiomatic_files = load_idiomatic_filenames().await;
+    let config_filenames: Vec<String> = idiomatic_files
+        .keys()
+        .cloned()
+        .chain(DEFAULT_CONFIG_FILENAMES.iter().cloned())
+        .collect();
 
     // Get all directories from start_dir up to root/ceiling
     let dirs = all_dirs_from(start_dir)?;
@@ -1195,7 +1214,7 @@ pub fn load_config_hierarchy_from_dir(start_dir: &Path) -> Result<Vec<PathBuf>> 
         })
         .collect();
 
-    Ok(paths)
+    Ok((paths, idiomatic_files))
 }
 
 pub fn is_global_config(path: &Path) -> bool {
@@ -1432,16 +1451,20 @@ async fn load_all_config_files(
 }
 
 /// Load config files from a list of paths (for monorepo task config contexts)
-pub async fn load_config_files_from_paths(config_paths: &[PathBuf]) -> Result<ConfigMap> {
+/// Accepts a pre-computed idiomatic filenames map to avoid redundant computation
+/// when called after load_config_hierarchy_from_dir.
+pub async fn load_config_files_from_paths(
+    config_paths: &[PathBuf],
+    idiomatic_filenames: &BTreeMap<String, Vec<String>>,
+) -> Result<ConfigMap> {
     backend::load_tools().await?;
-    let idiomatic_filenames = load_idiomatic_filenames().await;
     let mut config_map = ConfigMap::default();
 
     for f in config_paths.iter().unique() {
         if f.is_dir() {
             continue;
         }
-        let cf = match parse_config_file(f, &idiomatic_filenames).await {
+        let cf = match parse_config_file(f, idiomatic_filenames).await {
             Ok(cfg) => cfg,
             Err(err) => {
                 return Err(err.wrap_err(format!(
@@ -1690,9 +1713,9 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     });
     if !new_versions.is_empty() {
         measure!("auto-locking platforms", {
-            if let Err(e) = lockfile::auto_lock_new_versions(config, new_versions).await {
-                warn!("failed to auto-lock platforms for new versions: {e}");
-            }
+            lockfile::auto_lock_new_versions(config, new_versions)
+                .await
+                .wrap_err("failed to auto-lock platforms for new versions")?;
         });
     }
 

@@ -339,7 +339,7 @@ impl NodePlugin {
         pr: &dyn SingleReport,
     ) -> Result<()> {
         let settings = Settings::get();
-        let default_packages_file = settings.node.default_packages_file();
+        let default_packages_file = file::replace_path(settings.node.default_packages_file());
         let body = file::read_to_string(&default_packages_file).unwrap_or_default();
         for package in body.lines() {
             let package = package.split('#').next().unwrap_or_default().trim();

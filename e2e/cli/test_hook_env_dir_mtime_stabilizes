@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# Test that after a full hook-env rerun triggered by a config-search path change,
+# the next prompt can take the fast-path instead of repeatedly falling back
+# because ancestor directory mtimes remain newer than the session timestamp.
+
+export MISE_ENV_CACHE=0
+export MISE_TRACE=1
+
+cat >mise.toml <<'EOF'
+[env]
+FOO = "bar"
+EOF
+
+eval "$(mise activate bash 2>/dev/null)"
+
+# Creating a config file in a config-search directory should force a full hook-env run.
+sleep 1
+mkdir -p .config/mise
+cat >.config/mise/config.toml <<'EOF'
+[env]
+BAR = "baz"
+EOF
+output=$(mise hook-env -s bash 2>/dev/null)
+if [[ $output == *"__MISE_SESSION"* ]]; then
+	ok "config-search path change bypasses fast-path once"
+else
+	fail "config-search path change should bypass fast-path but got: '$output'"
+fi
+eval "$output"
+
+# The rerun should update the session timestamp so the next prompt can fast-path.
+# Fast-path exits before logger init, so both stdout and stderr should be empty.
+output=$(mise hook-env -s bash 2>&1)
+if [[ -z $output ]]; then
+	ok "fast-path works after config-search rerun"
+else
+	fail "expected fast-path (no output) after config-search rerun but got: '$output'"
+fi

@@ -847,15 +847,24 @@ rust_type = "BTreeSet<PathBuf>"
 type = "ListPath"
 
 [install_before]
-description = "Only install versions released before this date"
+description = "Minimum release age / supply chain protection — only install versions released before this date"
 docs = """
-Filter tool versions by release date. Supports:
+Filter tool versions by release date to limit supply chain risk. Similar to Renovate's
+[minimum release age](https://docs.renovatebot.com/key-concepts/minimum-release-age/),
+this ensures newly published versions are ignored until they've been available for a
+configurable amount of time — giving the community time to discover compromised releases.
 
+Supports:
+
+- Relative durations: `7d` (7 days ago), `90d` (90 days ago), `6m` (6 months ago), `1y` (1 year ago)
 - Absolute dates: `2024-06-01`, `2024-06-01T12:00:00Z`
-- Relative durations: `90d` (90 days ago), `1y` (1 year ago), `6m` (6 months ago)
 
-This is useful for reproducible builds or security purposes where you want to ensure
-you're only installing versions that existed before a certain point in time.
+Example:
+
+```toml
+[settings]
+install_before = "7d"  # only install versions released more than 7 days ago
+```
 
 Only affects backends that provide release timestamps (aqua, cargo, npm, pipx, and some core plugins).
 Versions without timestamps are included by default.

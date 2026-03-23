@@ -32,6 +32,11 @@ pub struct Lock {
     #[clap(value_name = "TOOL", verbatim_doc_comment)]
     pub tool: Vec<ToolArg>,
 
+    /// Include global config lockfile (~/.config/mise/mise.lock)
+    /// By default, only project-level configs are locked
+    #[clap(long, short, verbatim_doc_comment)]
+    pub global: bool,
+
     /// Number of jobs to run in parallel
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
@@ -67,6 +72,7 @@ impl Lock {
         // Collect distinct lockfile targets from config files
         let lockfile_targets = self.get_lockfile_targets(&config);
         let mut has_lock_targets = false;
+        let mut all_provenance_errors: Vec<String> = Vec::new();
 
         for (lockfile_path, config_paths) in &lockfile_targets {
             let tools = self.get_tools_to_lock(&config, ts, lockfile_path, config_paths);
@@ -136,11 +142,12 @@ impl Lock {
             self.show_stale_prune_message(lockfile_path, &stale_tools, false)?;
             let stale_versions = self.prune_stale_versions(&mut lockfile, &tools);
             self.show_stale_version_prune_message(lockfile_path, &stale_versions, false)?;
-            let results = self
+            let (results, provenance_errors) = self
                 .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
                 .await?;
 
-            // Save lockfile
+            // Save lockfile before raising provenance errors so non-regressing
+            // tools' entries are preserved
             lockfile.write(lockfile_path)?;
 
             // Print summary
@@ -157,10 +164,16 @@ impl Lock {
                 style("✓").green(),
                 style(display_path(lockfile_path)).cyan()
             );
+
+            all_provenance_errors.extend(provenance_errors);
         }
 
         if !has_lock_targets {
             miseprintln!("{} No tools configured to lock", style("!").yellow());
+        }
+
+        if !all_provenance_errors.is_empty() {
+            return Err(eyre::eyre!("{}", all_provenance_errors.join("\n")));
         }
 
         Ok(())
@@ -343,6 +356,12 @@ impl Lock {
             if !cf.source().is_mise_toml() {
                 continue;
             }
+            if crate::config::system_config_files().contains(path) {
+                continue;
+            }
+            if !self.global && crate::config::global_config_files().contains(path) {
+                continue;
+            }
             let (lockfile_path, is_local) = lockfile::lockfile_path_for_config(path);
             if self.local && !is_local {
                 continue;
@@ -358,7 +377,7 @@ impl Lock {
             return Platform::parse_multiple(&self.platform);
         }
 
-        Ok(lockfile::determine_target_platforms(lockfile_path))
+        Ok(lockfile::determine_existing_platforms(lockfile_path))
     }
 
     /// Collect tools that belong to a given lockfile target.
@@ -485,7 +504,7 @@ impl Lock {
         tools: &[LockTool],
         platforms: &[Platform],
         lockfile: &mut Lockfile,
-    ) -> Result<Vec<(String, String, bool)>> {
+    ) -> Result<(Vec<(String, String, bool)>, Vec<String>)> {
         let jobs = self.jobs.unwrap_or(settings.jobs);
         let semaphore = Arc::new(Semaphore::new(jobs));
         let mut jset: JoinSet<LockResolutionResult> = JoinSet::new();
@@ -530,7 +549,10 @@ impl Lock {
         }
 
         // Collect all results
+        // Defer provenance errors until after all results are applied so unaffected
+        // tools' entries aren't lost.
         let mut completed = 0;
+        let mut provenance_errors: Vec<String> = Vec::new();
         while let Some(result) = jset.join_next().await {
             completed += 1;
             match result {
@@ -544,8 +566,12 @@ impl Lock {
                     }
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
-                    lockfile::apply_lock_result(lockfile, resolution);
-                    results.push((short, platform_key, ok));
+                    if let Err(e) = lockfile::apply_lock_result(lockfile, resolution) {
+                        provenance_errors.push(e.to_string());
+                        results.push((short, platform_key, false));
+                    } else {
+                        results.push((short, platform_key, ok));
+                    }
                 }
                 Err(e) => {
                     warn!("Task failed: {}", e);
@@ -554,7 +580,8 @@ impl Lock {
         }
 
         pr.finish_with_message(format!("{} platform entries", total_tasks));
-        Ok(results)
+
+        Ok((results, provenance_errors))
     }
 }
 
@@ -566,6 +593,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise lock --platform linux-x64</bold>  # update only linux-x64 platform
     $ <bold>mise lock --dry-run</bold>             # show what would be updated
     $ <bold>mise lock --local</bold>               # update mise.local.lock for local configs
+    $ <bold>mise lock --global</bold>              # include global config lockfile
 "#
 );
 
@@ -589,6 +617,7 @@ mod tests {
             dry_run: false,
             platform: vec![],
             local: false,
+            global: false,
         }
     }
 
