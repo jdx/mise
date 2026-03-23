@@ -140,11 +140,18 @@ impl Lock {
             let mut lockfile = Lockfile::read(lockfile_path)?;
             let stale_tools = self.prune_stale_entries_if_needed(&mut lockfile, &tools);
             self.show_stale_prune_message(lockfile_path, &stale_tools, false)?;
-            let stale_versions = self.prune_stale_versions(&mut lockfile, &tools);
-            self.show_stale_version_prune_message(lockfile_path, &stale_versions, false)?;
+
+            // Compute stale versions BEFORE process_tools so provenance checks can
+            // compare against old version entries. Actual pruning happens after.
+            let stale_versions = self.stale_versions_if_pruned(&lockfile, &tools);
+
             let (results, provenance_errors) = self
                 .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
                 .await?;
+
+            // Prune stale versions AFTER provenance checks complete
+            self.prune_stale_versions(&mut lockfile, &tools);
+            self.show_stale_version_prune_message(lockfile_path, &stale_versions, false)?;
 
             // Save lockfile before raising provenance errors so non-regressing
             // tools' entries are preserved
@@ -202,18 +209,15 @@ impl Lock {
 
     /// Prune lockfile entries whose version no longer matches any resolved version
     /// of the tool. This prevents stale version entries from accumulating when a
-    /// tool's resolved version changes. Returns the stale versions that were pruned.
-    fn prune_stale_versions(
-        &self,
-        lockfile: &mut Lockfile,
-        tools: &[LockTool],
-    ) -> BTreeMap<String, Vec<String>> {
+    /// tool's resolved version changes.
+    ///
+    /// Note: This must be called AFTER process_tools() so that provenance checks
+    /// can compare against the old version entries before they are removed.
+    fn prune_stale_versions(&self, lockfile: &mut Lockfile, tools: &[LockTool]) {
         let current_versions = self.current_tool_versions(tools);
-        let stale = self.stale_versions_for_current(lockfile, &current_versions);
         for (short, versions) in &current_versions {
             lockfile.retain_tool_versions(short, versions);
         }
-        stale
     }
 
     fn stale_entries_if_pruned(
