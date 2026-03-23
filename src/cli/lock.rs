@@ -132,10 +132,8 @@ impl Lock {
 
             // Process tools and update lockfile
             let mut lockfile = Lockfile::read(lockfile_path)?;
-            if self.is_unfiltered_lock_run() {
-                let stale_tools = self.prune_stale_entries_if_needed(&mut lockfile, &tools);
-                self.show_stale_prune_message(lockfile_path, &stale_tools, false)?;
-            }
+            let stale_tools = self.prune_stale_entries_if_needed(&mut lockfile, &tools);
+            self.show_stale_prune_message(lockfile_path, &stale_tools, false)?;
             let stale_versions = self.stale_versions_if_pruned(&lockfile, &tools);
             self.prune_stale_versions(&mut lockfile, &tools);
             self.show_stale_version_prune_message(lockfile_path, &stale_versions, false)?;
