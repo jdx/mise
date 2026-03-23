@@ -223,29 +223,9 @@ pub fn should_exit_early_fast() -> bool {
     }
     // Check if any directory in the config search path has been modified
     // This catches new config files created anywhere in the hierarchy
-    if let Some(cwd) = &*dirs::CWD
-        && let Ok(ancestor_dirs) = file::all_dirs(cwd, &env::MISE_CEILING_PATHS)
-    {
-        // Config subdirectories that might contain config files
-        let config_subdirs = DEFAULT_CONFIG_FILENAMES
-            .iter()
-            .map(|f| Path::new(f).parent().and_then(|p| p.to_str()).unwrap_or(""))
-            .unique()
-            .collect::<Vec<_>>();
-        for dir in ancestor_dirs {
-            for subdir in &config_subdirs {
-                let check_dir = if subdir.is_empty() {
-                    dir.clone()
-                } else {
-                    dir.join(subdir)
-                };
-                if let Ok(metadata) = check_dir.metadata()
-                    && let Ok(modified) = metadata.modified()
-                    && mtime_to_millis(modified) > PREV_SESSION.latest_update
-                {
-                    return false;
-                }
-            }
+    for modified in config_search_dir_mtimes() {
+        if mtime_to_millis(modified) > PREV_SESSION.latest_update {
+            return false;
         }
     }
     // Filesystem checks passed - update the last check timestamp so subsequent
@@ -350,10 +330,10 @@ pub struct HookEnvSession {
     /// that should be watched for changes.
     #[serde(default)]
     pub tera_files: Vec<PathBuf>,
-    /// Resolved file paths from [[watch_files]] config patterns.
+    /// Resolved file paths from [[watch_files]] config patterns and env plugin watch_files.
     /// Stored so the fast-path can detect changes without loading config.
     #[serde(default)]
-    watch_files: Vec<PathBuf>,
+    pub watch_files: Vec<PathBuf>,
     dir: Option<PathBuf>,
     env_var_hash: String,
     latest_update: u128,
@@ -374,6 +354,34 @@ pub fn deserialize<T: serde::de::DeserializeOwned>(raw: String) -> Result<T> {
     Ok(rmp_serde::from_slice(&writer[..])?)
 }
 
+/// Collect mtimes for config-search ancestor directories.
+/// Used by both `should_exit_early_fast` and `build_session` to avoid divergence.
+fn config_search_dir_mtimes() -> Vec<SystemTime> {
+    let mut mtimes = Vec::new();
+    if let Some(cwd) = &*dirs::CWD
+        && let Ok(ancestor_dirs) = file::all_dirs(cwd, &env::MISE_CEILING_PATHS)
+    {
+        let config_subdirs = DEFAULT_CONFIG_FILENAMES
+            .iter()
+            .map(|f| Path::new(f).parent().and_then(|p| p.to_str()).unwrap_or(""))
+            .unique()
+            .collect::<Vec<_>>();
+        for dir in ancestor_dirs {
+            for subdir in &config_subdirs {
+                let check_dir = if subdir.is_empty() {
+                    dir.clone()
+                } else {
+                    dir.join(subdir)
+                };
+                if let Ok(Ok(modified)) = check_dir.metadata().map(|m| m.modified()) {
+                    mtimes.push(modified);
+                }
+            }
+        }
+    }
+    mtimes
+}
+
 pub async fn build_session(
     config: &Arc<Config>,
     env: EnvMap,
@@ -389,12 +397,22 @@ pub async fn build_session(
             max_modtime = std::cmp::max(modified, max_modtime);
         }
     }
+
     // Include tera template files in max_modtime so latest_update reflects
     // their mtimes even when watch_files comes from env_cache
     for tf in &config.tera_files {
         if let Ok(Ok(modified)) = tf.metadata().map(|m| m.modified()) {
             max_modtime = std::cmp::max(modified, max_modtime);
         }
+    }
+
+    // Keep latest_update aligned with the fast-path checks so a full hook-env run
+    // can stabilize subsequent prompts instead of repeatedly falling back.
+    if let Ok(Ok(modified)) = dirs::DATA.metadata().map(|m| m.modified()) {
+        max_modtime = std::cmp::max(modified, max_modtime);
+    }
+    for modified in config_search_dir_mtimes() {
+        max_modtime = std::cmp::max(modified, max_modtime);
     }
 
     let loaded_configs: IndexSet<PathBuf> = config.config_files.keys().cloned().collect();
