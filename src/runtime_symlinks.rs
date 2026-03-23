@@ -74,7 +74,12 @@ fn is_permission_error(e: &eyre::Report) -> bool {
     e.chain().any(|cause| {
         cause
             .downcast_ref::<std::io::Error>()
-            .is_some_and(|io_err| io_err.kind() == std::io::ErrorKind::PermissionDenied)
+            .is_some_and(|io_err| {
+                matches!(
+                    io_err.kind(),
+                    std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::ReadOnlyFilesystem
+                )
+            })
     })
 }
 
@@ -131,6 +136,7 @@ fn installed_versions_in_dir(installs_dir: &Path) -> Vec<String> {
         .filter(|v| !is_runtime_symlink(&installs_dir.join(v)))
         .filter(|v| !installs_dir.join(v).join("incomplete").exists())
         .filter(|v| !VERSION_REGEX.is_match(v))
+        .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
         .collect()
 }
 
