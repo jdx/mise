@@ -209,7 +209,7 @@ impl Lock {
         tools: &[LockTool],
     ) -> BTreeMap<String, Vec<String>> {
         let current_versions = self.current_tool_versions(tools);
-        let stale = self.stale_versions_for_current(&lockfile, &current_versions);
+        let stale = self.stale_versions_for_current(lockfile, &current_versions);
         for (short, versions) in &current_versions {
             lockfile.retain_tool_versions(short, versions);
         }
@@ -294,10 +294,7 @@ impl Lock {
         (configured_tools, configured_backends)
     }
 
-    fn current_tool_versions(
-        &self,
-        tools: &[LockTool],
-    ) -> BTreeMap<String, BTreeSet<String>> {
+    fn current_tool_versions(&self, tools: &[LockTool]) -> BTreeMap<String, BTreeSet<String>> {
         let mut current_versions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for (ba, tv) in tools {
             current_versions
