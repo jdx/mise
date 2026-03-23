@@ -44,6 +44,8 @@ pub fn invalidate_caches() {
 #[serde(deny_unknown_fields)]
 pub struct Lockfile {
     #[serde(skip)]
+    pub mise_version: Option<String>,
+    #[serde(skip)]
     tools: BTreeMap<String, Vec<LockfileTool>>,
     /// Shared conda packages: platform -> basename -> CondaPackageInfo
     /// Basename includes version+build (e.g., "ncurses-6.4-h7ea286d_0")
@@ -443,6 +445,12 @@ impl Lockfile {
 
         let mut lockfile = Lockfile::default();
 
+        if let Some(toml::Value::Table(mut metadata)) = table.remove("metadata") {
+            if let Some(toml::Value::String(version)) = metadata.remove("mise_version") {
+                lockfile.mise_version = Some(version);
+            }
+        }
+
         for (short, value) in tools {
             let versions = match value {
                 toml::Value::Array(arr) => arr
@@ -477,6 +485,13 @@ impl Lockfile {
 
     fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let mut lockfile = toml::Table::new();
+
+        let mut metadata = toml::Table::new();
+        metadata.insert(
+            "mise_version".to_string(),
+            toml::Value::String(env!("CARGO_PKG_VERSION").to_string()),
+        );
+        lockfile.insert("metadata".to_string(), toml::Value::Table(metadata));
 
         // Write conda-packages section first (before tools for nicer ordering)
         if !self.conda_packages.is_empty() {
@@ -2430,5 +2445,26 @@ backend = "conda:jq"
             ..Default::default()
         };
         assert!(!info.is_empty());
+    }
+
+    #[test]
+    fn test_metadata_serialization() {
+        let mut lockfile = Lockfile::default();
+        let temp_dir = std::env::temp_dir();
+        let test_lockfile = temp_dir.join("test_metadata.lock");
+
+        // Add a dummy tool so it's not considered empty
+        lockfile.tools.insert("dummy".to_string(), vec![]);
+        
+        lockfile.save(&test_lockfile).unwrap();
+        let content = std::fs::read_to_string(&test_lockfile).unwrap();
+        
+        assert!(content.contains("[metadata]"));
+        assert!(content.contains("mise_version ="));
+        
+        let reloaded = Lockfile::read(&test_lockfile).unwrap();
+        assert_eq!(reloaded.mise_version.unwrap(), env!("CARGO_PKG_VERSION"));
+        
+        let _ = std::fs::remove_file(&test_lockfile);
     }
 }
