@@ -195,13 +195,9 @@ impl Lock {
         lockfile: &mut Lockfile,
         tools: &[LockTool],
     ) -> BTreeMap<String, Vec<String>> {
-        let mut stale: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let current_versions = self.current_tool_versions(tools);
+        let stale = self.stale_versions_for_current(&lockfile, &current_versions);
         for (short, versions) in &current_versions {
-            let stale_versions = lockfile.stale_tool_versions(short, versions);
-            if !stale_versions.is_empty() {
-                stale.insert(short.clone(), stale_versions);
-            }
             lockfile.retain_tool_versions(short, versions);
         }
         stale
@@ -224,9 +220,17 @@ impl Lock {
         lockfile: &Lockfile,
         tools: &[LockTool],
     ) -> BTreeMap<String, Vec<String>> {
-        let mut stale: BTreeMap<String, Vec<String>> = BTreeMap::new();
         let current_versions = self.current_tool_versions(tools);
-        for (short, versions) in &current_versions {
+        self.stale_versions_for_current(lockfile, &current_versions)
+    }
+
+    fn stale_versions_for_current(
+        &self,
+        lockfile: &Lockfile,
+        current_versions: &BTreeMap<String, BTreeSet<String>>,
+    ) -> BTreeMap<String, Vec<String>> {
+        let mut stale: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (short, versions) in current_versions {
             let stale_versions = lockfile.stale_tool_versions(short, versions);
             if !stale_versions.is_empty() {
                 stale.insert(short.clone(), stale_versions);
