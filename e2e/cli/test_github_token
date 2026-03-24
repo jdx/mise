@@ -5,9 +5,6 @@
 # Clear any pre-existing token env vars
 unset GITHUB_TOKEN GITHUB_API_TOKEN MISE_GITHUB_TOKEN MISE_GITHUB_ENTERPRISE_TOKEN
 
-# Disable git credential fill for most tests (to test other sources in isolation)
-export MISE_GITHUB_USE_GIT_CREDENTIALS=false
-
 # Test 1: No token configured — should return (none)
 assert_contains "mise github token" "(none)"
 

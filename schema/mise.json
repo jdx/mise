@@ -755,7 +755,7 @@
               "type": "boolean"
             },
             "use_git_credentials": {
-              "default": true,
+              "default": false,
               "description": "Use git credential helpers to obtain GitHub tokens.",
               "type": "boolean"
             }

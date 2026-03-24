@@ -15,7 +15,7 @@ mise checks the following sources in order. The first token found wins:
 | 3        | `GITHUB_TOKEN` env var          |
 | 4        | `github_tokens.toml` (per-host) |
 | 5        | gh CLI token (from `hosts.yml`) |
-| 6        | `git credential fill` (opt-out) |
+| 6        | `git credential fill` (opt-in) |
 
 **GitHub Enterprise hosts:**
 
@@ -25,7 +25,7 @@ mise checks the following sources in order. The first token found wins:
 | 2        | `MISE_GITHUB_TOKEN` / `GITHUB_API_TOKEN` / `GITHUB_TOKEN` env vars |
 | 3        | `github_tokens.toml` (per-host)                                    |
 | 4        | gh CLI token (from `hosts.yml`, matched by hostname)               |
-| 5        | `git credential fill` (opt-out)                                    |
+| 5        | `git credential fill` (opt-in)                                    |
 
 ::: tip
 The github.com env vars (`MISE_GITHUB_TOKEN`, etc.) are also used as a fallback for GHE when `MISE_GITHUB_ENTERPRISE_TOKEN` is not set. If you need different tokens for github.com and a GHE instance, set `MISE_GITHUB_ENTERPRISE_TOKEN` explicitly or use the gh CLI integration.
@@ -98,21 +98,21 @@ gh_cli_tokens = false
 
 ## Git Credential Helpers
 
-mise can use your existing git credential helpers to obtain GitHub tokens. This is enabled by default and acts as a last-resort fallback after all other token sources.
+mise can use your existing git credential helpers to obtain GitHub tokens. This is **opt-in** and acts as a last-resort fallback after all other token sources.
 
 This is especially useful for:
 
-- **Coder/devcontainer environments** where tokens are provided via git credential helpers (e.g., `coder external-auth`)
+- **Devcontainer environments** where tokens are provided via git credential helpers
 - **macOS/Windows** where `gh auth login` stores tokens in the system keyring rather than `hosts.yml`
 - Any environment where git already has credentials configured
 
 mise runs `git credential fill` with `GIT_TERMINAL_PROMPT=0` (to prevent interactive prompts) and caches the result per host for the session.
 
-To disable this behavior:
+To enable this behavior:
 
 ```toml
 [settings.github]
-use_git_credentials = false
+use_git_credentials = true
 ```
 
 ## Debugging Token Resolution
