@@ -128,6 +128,14 @@ export const commands: { [key: string]: Command } = {
       },
     },
   },
+  github: {
+    hide: false,
+    subcommands: {
+      token: {
+        hide: false,
+      },
+    },
+  },
   global: {
     hide: true,
   },

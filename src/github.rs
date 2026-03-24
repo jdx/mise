@@ -350,9 +350,7 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     };
 
     // 1. Enterprise token (non-github.com only)
-    if !is_ghcom
-        && let Some(token) = env::MISE_GITHUB_ENTERPRISE_TOKEN.as_deref()
-    {
+    if !is_ghcom && let Some(token) = env::MISE_GITHUB_ENTERPRISE_TOKEN.as_deref() {
         return Some((
             token.to_string(),
             TokenSource::EnvVar("MISE_GITHUB_ENTERPRISE_TOKEN"),

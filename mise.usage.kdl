@@ -413,6 +413,14 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
         arg <OUTPUT> help="Output file path for the tool stub"
     }
 }
+cmd github subcommand_required=#true help="GitHub related commands" {
+    cmd token help="Display the GitHub token mise will use for a given host" {
+        long_help "Display the GitHub token mise will use for a given host\n\nShows which token source mise would use, useful for debugging\nauthentication issues. The token is masked by default."
+        after_long_help "Examples:\n\n    $ mise github token\n    github.com: ghp_…xxxx (source: GITHUB_TOKEN)\n\n    $ mise github token --unmask\n    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)\n\n    $ mise github token github.mycompany.com\n    github.mycompany.com: (none)\n"
+        flag --unmask help="Show the full unmasked token"
+        arg "[HOST]" help="GitHub hostname" required=#false default=github.com
+    }
+}
 cmd global hide=#true help="Sets/gets the global tool version(s)" {
     long_help "Sets/gets the global tool version(s)\n\nDisplays the contents of global config after writing.\nThe file is `$HOME/.config/mise/config.toml` by default. It can be changed with `$MISE_GLOBAL_CONFIG_FILE`.\nIf `$MISE_GLOBAL_CONFIG_FILE` is set to anything that ends in `.toml`, it will be parsed as `mise.toml`.\nOtherwise, it will be parsed as a `.tool-versions` file.\n\nUse MISE_ASDF_COMPAT=1 to default the global config to ~/.tool-versions\n\nUse `mise local` to set a tool version locally in the current directory."
     after_long_help "Examples:\n    # set the current version of node to 20.x\n    # will use a fuzzy version (e.g.: 20) in .tool-versions file\n    $ mise global --fuzzy node@20\n\n    # set the current version of node to 20.x\n    # will use a precise version (e.g.: 20.0.0) in .tool-versions file\n    $ mise global --pin node@20\n\n    # show the current version of node in ~/.tool-versions\n    $ mise global node\n    20.0.0\n"

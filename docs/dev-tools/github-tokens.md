@@ -8,24 +8,24 @@ mise checks the following sources in order. The first token found wins:
 
 **github.com:**
 
-| Priority | Source                            |
-| -------- | --------------------------------- |
-| 1        | `MISE_GITHUB_TOKEN` env var       |
-| 2        | `GITHUB_API_TOKEN` env var        |
-| 3        | `GITHUB_TOKEN` env var            |
-| 4        | `github_tokens.toml` (per-host)   |
-| 5        | gh CLI token (from `hosts.yml`)   |
-| 6        | `git credential fill` (opt-out)   |
+| Priority | Source                          |
+| -------- | ------------------------------- |
+| 1        | `MISE_GITHUB_TOKEN` env var     |
+| 2        | `GITHUB_API_TOKEN` env var      |
+| 3        | `GITHUB_TOKEN` env var          |
+| 4        | `github_tokens.toml` (per-host) |
+| 5        | gh CLI token (from `hosts.yml`) |
+| 6        | `git credential fill` (opt-out) |
 
 **GitHub Enterprise hosts:**
 
-| Priority | Source                                                              |
-| -------- | ------------------------------------------------------------------- |
-| 1        | `MISE_GITHUB_ENTERPRISE_TOKEN` env var                              |
+| Priority | Source                                                             |
+| -------- | ------------------------------------------------------------------ |
+| 1        | `MISE_GITHUB_ENTERPRISE_TOKEN` env var                             |
 | 2        | `MISE_GITHUB_TOKEN` / `GITHUB_API_TOKEN` / `GITHUB_TOKEN` env vars |
-| 3        | `github_tokens.toml` (per-host)                                     |
-| 4        | gh CLI token (from `hosts.yml`, matched by hostname)                |
-| 5        | `git credential fill` (opt-out)                                     |
+| 3        | `github_tokens.toml` (per-host)                                    |
+| 4        | gh CLI token (from `hosts.yml`, matched by hostname)               |
+| 5        | `git credential fill` (opt-out)                                    |
 
 ::: tip
 The github.com env vars (`MISE_GITHUB_TOKEN`, etc.) are also used as a fallback for GHE when `MISE_GITHUB_ENTERPRISE_TOKEN` is not set. If you need different tokens for github.com and a GHE instance, set `MISE_GITHUB_ENTERPRISE_TOKEN` explicitly or use the gh CLI integration.
