@@ -42,6 +42,7 @@ run = 'echo "confdtask"'
 EOF
 
 assert "mise tasks ls" "confdtask
+do-not-show
 filetask2
 filetask3
 lint
@@ -49,6 +50,7 @@ test
 test-with-args"
 
 assert "mise tasks -x ls" "confdtask          ./.config/mise/conf.d/confdtask-config.toml
+do-not-show        ./.mise/tasks/do-not-show
 filetask2          ./mytasks/filetask2
 filetask3          ./mytasks/filetask3.sh
 lint               ./mise.toml
@@ -85,6 +87,32 @@ assert_json "mise tasks ls --json" "$(
    ],
    "args": [],
    "file": null
+ },
+ {
+   "name": "do-not-show",
+   "aliases": [],
+   "description": "",
+   "source": "$(pwd)/.mise/tasks/do-not-show",
+   "depends": [],
+   "depends_post": [],
+   "wait_for": [],
+   "env": [],
+   "dir": null,
+   "hide": false,
+   "global": false,
+   "raw": false,
+   "interactive": false,
+   "sources": [],
+   "outputs": [],
+   "shell": null,
+   "quiet": false,
+   "silent": false,
+   "tools": {},
+   "usage": "",
+   "timeout": null,
+   "run": [],
+   "args": [],
+   "file": "$(pwd)/.mise/tasks/do-not-show"
  },
  {
    "name": "filetask2",
