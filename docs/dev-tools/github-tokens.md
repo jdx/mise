@@ -105,7 +105,7 @@ You can configure a custom shell command that mise runs to obtain a GitHub token
 credential_command = "op read 'op://Private/GitHub Token/credential'"
 ```
 
-mise executes this command via `sh -c` and reads the token from stdout. When set, this replaces the `git credential fill` fallback — `use_git_credentials` is not required. Results are cached per session.
+mise executes this command via `sh -c` and reads the token from stdout. The hostname is passed as `$1`, so the command can return different tokens for different hosts (e.g., `github.com` vs a GHE instance). When set, this replaces the `git credential fill` fallback — `use_git_credentials` is not required. Results are cached per host per session.
 
 ## Git Credential Helpers
 

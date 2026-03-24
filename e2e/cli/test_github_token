@@ -59,6 +59,9 @@ assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' MISE_GITHU
 # Test 8c: env var still beats credential_command
 assert_contains "GITHUB_TOKEN=env-wins MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' mise github token --unmask" "env-wins"
 
+# Test 8d: credential_command receives host as $1
+assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo token-for-\$1' mise github token ghe.example.com --unmask" "token-for-ghe.example.com"
+
 # Test 9: git credential fill
 
 # Create a standalone credential helper script

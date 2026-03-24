@@ -616,11 +616,13 @@ default = ""
 description = "Shell command to run to obtain a GitHub token for mise."
 docs = """
 When set, mise executes this command via `sh -c` and reads the token
-from stdout. This replaces the `git credential fill` fallback and does
-not require `github.use_git_credentials` to be enabled.
+from stdout. The hostname is passed as `$1`, making the command
+host-aware for GitHub Enterprise environments. This replaces the
+`git credential fill` fallback and does not require
+`github.use_git_credentials` to be enabled.
 
 The command should print a single token to stdout. Trailing whitespace
-is trimmed. Results are cached per session.
+is trimmed. Results are cached per host per session.
 
 Example: `op read "op://Private/GitHub Token/credential"`
 """

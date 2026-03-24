@@ -386,9 +386,10 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     // 5. credential_command OR git credential fill
     let credential_command = &settings.github.credential_command;
     if !credential_command.is_empty() {
-        if let Some(token) = get_credential_command_token(credential_command) {
+        if let Some(token) = get_credential_command_token(credential_command, lookup_host) {
             return Some((token, TokenSource::CredentialCommand));
         }
+        debug!("credential_command returned no token; git credential fill will not be tried");
     } else if settings.github.use_git_credentials
         && let Some(token) = get_git_credential_token(lookup_host)
     {
@@ -545,42 +546,53 @@ struct GhHostEntry {
 // ── credential_command ──────────────────────────────────────────────
 
 /// Cache for tokens obtained from `credential_command`.
-static CREDENTIAL_COMMAND_CACHE: Lazy<std::sync::Mutex<Option<Option<String>>>> =
+/// Maps hostname to the token (or None if the command failed).
+static CREDENTIAL_COMMAND_CACHE: Lazy<std::sync::Mutex<HashMap<String, Option<String>>>> =
     Lazy::new(Default::default);
 
 /// Get a GitHub token by running the user's `credential_command` setting.
-/// The result is cached so the command is only spawned once per session.
-fn get_credential_command_token(cmd: &str) -> Option<String> {
+/// The host is passed as `$1` to the command. Results are cached per host.
+fn get_credential_command_token(cmd: &str, host: &str) -> Option<String> {
     let mut cache = CREDENTIAL_COMMAND_CACHE
         .lock()
         .expect("CREDENTIAL_COMMAND_CACHE mutex poisoned");
-    if let Some(token) = cache.as_ref() {
+    if let Some(token) = cache.get(host) {
         return token.clone();
     }
     let result = std::process::Command::new("sh")
-        .args(["-c", cmd])
+        .arg("-c")
+        .arg(cmd)
+        .arg("mise-credential-helper") // $0
+        .arg(host) // $1
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
         .output()
         .ok()
-        .filter(|output| output.status.success())
         .and_then(|output| {
+            if !output.status.success() {
+                if let Ok(err) = String::from_utf8(output.stderr) {
+                    if !err.trim().is_empty() {
+                        debug!("credential_command stderr: {}", err.trim());
+                    }
+                }
+                return None;
+            }
             String::from_utf8(output.stdout)
                 .ok()
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
         });
     trace!(
-        "credential_command: {}",
+        "credential_command for {host}: {}",
         if result.is_some() {
             "found"
         } else {
             "not found"
         }
     );
-    *cache = Some(result.clone());
+    cache.insert(host.to_string(), result.clone());
     result
 }
 
