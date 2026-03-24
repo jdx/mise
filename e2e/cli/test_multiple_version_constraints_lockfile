@@ -58,7 +58,7 @@ assert_contains "cat mise.lock" 'version = "1.1.0"'
 assert_contains "cat mise.lock" 'version = "3.1.0"'
 
 # Count how many versions are in the lockfile
-lockfile_versions=$(grep -c "version =" mise.lock || echo 0)
+lockfile_versions=$(grep -c "^version =" mise.lock || echo 0)
 echo "Number of versions in lockfile: $lockfile_versions"
 assert "echo $lockfile_versions" "3"
 
