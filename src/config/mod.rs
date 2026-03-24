@@ -2313,11 +2313,10 @@ async fn load_file_tasks(
     cf: Arc<dyn ConfigFile>,
     config_root: &Path,
 ) -> Result<Vec<Task>> {
-    let includes = cf
-        .task_config()
-        .includes
-        .clone()
-        .unwrap_or_else(default_task_includes);
+    let mut includes = default_task_includes();
+    if let Some(cf_includes) = cf.task_config().includes.clone() {
+        includes.extend(cf_includes);
+    }
 
     let mut tasks = vec![];
     let config_root = Arc::new(config_root.to_path_buf());
@@ -2345,33 +2344,27 @@ async fn load_file_tasks(
 pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBuf> {
     let configs = configs_at_root(dir, config_files);
 
-    // Find the first config that has explicit task_config.includes
-    // and resolve paths relative to that config file's directory
-    let (includes, resolve_dir) = configs
-        .iter()
-        .rev()
-        .find_map(|cf| {
-            cf.task_config().includes.clone().map(|includes| {
-                // Resolve relative paths from the config root, not the config file's directory
-                (includes, cf.config_root())
-            })
-        })
-        .unwrap_or_else(|| {
-            // Default includes should be resolved relative to the search directory
-            (default_task_includes(), dir.to_path_buf())
-        });
+    let mut includes = Vec::new();
 
-    includes
-        .into_iter()
-        .flat_map(|p| {
-            // Git URLs are handled by load_file_tasks, not here
-            if p.starts_with("git::") {
-                return vec![];
+    // Default includes should be resolved relative to the search directory
+    for p in default_task_includes() {
+        if !p.starts_with("git::") {
+            includes.extend(expand_task_include(dir, &p));
+        }
+    }
+
+    for cf in configs.iter().rev() {
+        if let Some(cf_includes) = cf.task_config().includes.as_ref() {
+            let resolve_dir = cf.config_root();
+            for p in cf_includes {
+                if !p.starts_with("git::") {
+                    includes.extend(expand_task_include(&resolve_dir, p));
+                }
             }
-            expand_task_include(&resolve_dir, &p)
-        })
-        .unique()
-        .collect::<Vec<_>>()
+        }
+    }
+
+    includes.into_iter().unique().collect::<Vec<_>>()
 }
 
 pub async fn load_tasks_in_dir(
