@@ -739,6 +739,11 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "credential_command": {
+              "default": "",
+              "description": "Shell command to run to obtain a GitHub token for mise.",
+              "type": "string"
+            },
             "gh_cli_tokens": {
               "default": true,
               "description": "Read GitHub tokens from the gh CLI's hosts.yml config.",
