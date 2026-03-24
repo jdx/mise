@@ -245,7 +245,7 @@ impl TestTool {
         } else {
             cmd!("sh", "-c", cmd)
         };
-        cmd = cmd.stdout_capture();
+        cmd = cmd.stderr_to_stdout().stdout_capture();
         for (k, v) in env.iter() {
             cmd = cmd.env(k, v);
         }
@@ -286,9 +286,10 @@ impl TestTool {
         let expected = tera.render_str(expected, &ctx)?;
         let stdout = String::from_utf8(res.stdout)?;
         miseprintln!("{}", stdout.trim_end());
-        if !stdout.contains(&expected) {
+        let clean_stdout = console::strip_ansi_codes(&stdout);
+        if !clean_stdout.contains(&expected) {
             return Err(eyre!(
-                "expected output not found: {expected}, got: {stdout}"
+                "expected output not found: {expected}, got: {clean_stdout}"
             ));
         }
         Ok(())

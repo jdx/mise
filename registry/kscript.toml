@@ -1,4 +1,4 @@
 backends = ["github:kscripting/kscript", "asdf:edgelevel/asdf-kscript"]
 depends = ["kotlin"]
 description = "Scripting enhancements for Kotlin"
-test = { cmd = "kscript --version 2>&1", expected = "Version   : {{version}}" }
+test = { cmd = "kscript --version", expected = "Version   : {{version}}" }
