@@ -389,11 +389,10 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
         if let Some(token) = get_credential_command_token(credential_command) {
             return Some((token, TokenSource::CredentialCommand));
         }
-    } else if settings.github.use_git_credentials {
-        if let Some(token) = get_git_credential_token(lookup_host) {
+    } else if settings.github.use_git_credentials
+        && let Some(token) = get_git_credential_token(lookup_host) {
             return Some((token, TokenSource::GitCredential));
         }
-    }
 
     None
 }
