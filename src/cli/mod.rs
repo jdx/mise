@@ -27,6 +27,7 @@ pub mod exec;
 mod external;
 mod fmt;
 mod generate;
+mod github;
 mod global;
 mod hook_env;
 mod hook_not_found;
@@ -214,6 +215,7 @@ pub enum Commands {
     Exec(exec::Exec),
     Fmt(fmt::Fmt),
     Generate(generate::Generate),
+    Github(github::Github),
     Global(global::Global),
     HookEnv(hook_env::HookEnv),
     HookNotFound(hook_not_found::HookNotFound),
@@ -282,6 +284,7 @@ impl Commands {
             Self::Exec(cmd) => cmd.run().await,
             Self::Fmt(cmd) => cmd.run(),
             Self::Generate(cmd) => cmd.run().await,
+            Self::Github(cmd) => cmd.run().await,
             Self::Global(cmd) => cmd.run().await,
             Self::HookEnv(cmd) => cmd.run().await,
             Self::HookNotFound(cmd) => cmd.run().await,
