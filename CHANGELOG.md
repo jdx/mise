@@ -1,5 +1,29 @@
 # Changelog
 
+## [2026.3.14](https://github.com/jdx/mise/compare/v2026.3.13..v2026.3.14) - 2026-03-24
+
+### 🚀 Features
+
+- **(github)** add github_tokens.toml, git credential fill, and `mise github token` command by @jdx in [#8742](https://github.com/jdx/mise/pull/8742)
+- **(registry)** add tart by @mnm364 in [#8727](https://github.com/jdx/mise/pull/8727)
+
+### 🐛 Bug Fixes
+
+- **(python)** respect precompiled flavor when excluding freethreaded builds by @risu729 in [#8745](https://github.com/jdx/mise/pull/8745)
+- **(shim)** revert shims directory check that caused hangs on macOS by @jdx in [e1b8ca4](https://github.com/jdx/mise/commit/e1b8ca4c1378e019a71778d57f2044b5b1073ed9)
+
+### 📚 Documentation
+
+- **(python)** swap docs for python.precompiled_arch and python.precompiled_os by @risu729 in [#8744](https://github.com/jdx/mise/pull/8744)
+
+### 🧪 Testing
+
+- **(test_tool)** redirect stderr to stdout and strip ansi codes by @risu729 in [#8738](https://github.com/jdx/mise/pull/8738)
+
+### New Contributors
+
+- @rtharston made their first contribution in [#8731](https://github.com/jdx/mise/pull/8731)
+
 ## [2026.3.13](https://github.com/jdx/mise/compare/v2026.3.12..v2026.3.13) - 2026-03-23
 
 ### 🐛 Bug Fixes
