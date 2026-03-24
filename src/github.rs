@@ -390,22 +390,24 @@ fn get_gh_token_from_cmd(host: &str) -> Option<String> {
         cmd.args(["--hostname", host]);
     }
     let result = cmd.output().ok().and_then(|output| {
+        if host == "github.com" {
+            trace!(
+                "gh auth token exited with status {}",
+                output.status
+            );
+        } else {
+            trace!(
+                "gh auth token --hostname {host} exited with status {}",
+                output.status
+            );
+        }
         if output.status.success() {
             String::from_utf8(output.stdout)
                 .ok()
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
-            if host == "github.com" {
-                trace!(
-                    "gh auth token exited with status {}",
-                    output.status
-                );
-            } else {
-                trace!(
-                    "gh auth token --hostname {host} exited with status {}",
-                    output.status
-                );
-            }
+        } else {
+            None
         }
     });
     cache.insert(host.to_string(), result.clone());
