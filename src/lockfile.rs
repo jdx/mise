@@ -446,10 +446,9 @@ impl Lockfile {
 
         let mut lockfile = Lockfile::default();
 
-        if let Some(toml::Value::Table(mut metadata)) = table.remove("metadata")
-        if let Some(metadata) = table.get("metadata").and_then(|v| v.as_table()) {
-            if let Some(version) = metadata.get("mise_version").and_then(|v| v.as_str()) {
-                lockfile.mise_version = Some(version.to_string());
+        if let Some(toml::Value::Table(mut metadata)) = table.remove("metadata") {
+            if let Some(toml::Value::String(version)) = metadata.remove("mise_version") {
+                lockfile.mise_version = Some(version);
             }
         }
         for (short, value) in tools {
@@ -2465,7 +2464,7 @@ backend = "conda:jq"
 
         let reloaded = Lockfile::read(&test_lockfile).unwrap();
         assert_eq!(reloaded.mise_version.unwrap(), env!("CARGO_PKG_VERSION"));
-        assert_eq!(reloaded.mise_version.expect("mise_version should be present"), env!("CARGO_PKG_VERSION"));
+
         let _ = std::fs::remove_file(&test_lockfile);
     }
 }
