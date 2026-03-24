@@ -23,10 +23,11 @@ use tokio::task::JoinSet;
 
 // executes as if it was a shim if the command is not "mise", e.g.: "node"
 pub async fn handle_shim() -> Result<()> {
-    if *env::MISE_TOOL_STUB || !*env::IS_RUNNING_AS_SHIM {
+    // TODO: instead, check if bin is in shims dir
+    let bin_name = *env::MISE_BIN_NAME;
+    if env::is_mise_binary(bin_name) || cfg!(test) {
         return Ok(());
     }
-    let bin_name = *env::MISE_BIN_NAME;
     let mut config = Config::get().await?;
     let mut args = env::ARGS.read().unwrap().clone();
     env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
@@ -591,16 +592,4 @@ async fn err_no_version_set(
         msg.push_str("Install all missing tools with: mise install\n");
         Err(eyre!(msg.trim().to_string()))
     }
-}
-
-/// Check if the current process is running as a shim by verifying that a file
-/// with the same name as argv[0] exists in the shims directory.
-/// This is more robust than checking the binary name with `is_mise_binary()`,
-/// since package managers may rename the mise binary (e.g. "mise-2026.3.7")
-/// which would incorrectly match the "mise-" prefix.
-pub fn is_in_shims_dir() -> bool {
-    let bin_name = *env::MISE_BIN_NAME;
-    let shim_path = dirs::SHIMS.join(bin_name);
-    // is_symlink() catches broken symlinks that .exists() would miss
-    shim_path.is_symlink() || shim_path.exists()
 }
