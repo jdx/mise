@@ -123,47 +123,50 @@ export function generateLlmsTxt(siteConfig: {
   sitemap?: { hostname?: string };
 }): void {
   try {
-  const baseUrl = (
-    siteConfig.sitemap?.hostname || "https://mise.jdx.dev"
-  ).replace(/\/$/, "");
+    const baseUrl = (
+      siteConfig.sitemap?.hostname || "https://mise.jdx.dev"
+    ).replace(/\/$/, "");
 
-  const sorted = [...pages.values()].sort((a, b) =>
-    a.relativePath.localeCompare(b.relativePath),
-  );
+    const sorted = [...pages.values()].sort((a, b) =>
+      a.relativePath.localeCompare(b.relativePath),
+    );
 
-  for (const p of sorted) {
-    const filePath = resolve(siteConfig.outDir, p.relativePath);
-    mkdirSync(dirname(filePath), { recursive: true });
-    writeFileSync(filePath, `# ${p.title}\n\n${stripLeadingH1(p.markdown)}\n`);
+    for (const p of sorted) {
+      const filePath = resolve(siteConfig.outDir, p.relativePath);
+      mkdirSync(dirname(filePath), { recursive: true });
+      writeFileSync(
+        filePath,
+        `# ${p.title}\n\n${stripLeadingH1(p.markdown)}\n`,
+      );
+    }
+
+    const index = [
+      "# mise-en-place",
+      "",
+      "> mise is a polyglot tool version manager that replaces tools like asdf, nvm, pyenv, rbenv, etc. It also manages environment variables and tasks.",
+      "",
+      "## Documentation",
+      "",
+      ...sorted.map((p) => `- [${p.title}](${baseUrl}/${p.relativePath})`),
+      "",
+    ].join("\n");
+
+    writeFileSync(resolve(siteConfig.outDir, "llms.txt"), index);
+
+    const full = sorted
+      .map(
+        (p) =>
+          `# ${p.title}\n\nURL: ${baseUrl}/${p.relativePath}\n\n${stripLeadingH1(p.markdown)}`,
+      )
+      .join("\n\n---\n\n");
+
+    writeFileSync(resolve(siteConfig.outDir, "llms-full.txt"), full);
+
+    const sizeKB = (Buffer.byteLength(full) / 1024).toFixed(0);
+    console.log(
+      `[llms.txt] Generated ${pages.size} .md files + llms.txt + llms-full.txt (${sizeKB}KB)`,
+    );
+  } finally {
+    pages.clear();
   }
-
-  const index = [
-    "# mise-en-place",
-    "",
-    "> mise is a polyglot tool version manager that replaces tools like asdf, nvm, pyenv, rbenv, etc. It also manages environment variables and tasks.",
-    "",
-    "## Documentation",
-    "",
-    ...sorted.map((p) => `- [${p.title}](${baseUrl}/${p.relativePath})`),
-    "",
-  ].join("\n");
-
-  writeFileSync(resolve(siteConfig.outDir, "llms.txt"), index);
-
-  const full = sorted
-    .map(
-      (p) =>
-        `# ${p.title}\n\nURL: ${baseUrl}/${p.relativePath}\n\n${stripLeadingH1(p.markdown)}`,
-    )
-    .join("\n\n---\n\n");
-
-  writeFileSync(resolve(siteConfig.outDir, "llms-full.txt"), full);
-
-  const sizeKB = (Buffer.byteLength(full) / 1024).toFixed(0);
-  console.log(
-    `[llms.txt] Generated ${pages.size} .md files + llms.txt + llms-full.txt (${sizeKB}KB)`,
-  );
-} finally {
-  pages.clear();
-}
 }
