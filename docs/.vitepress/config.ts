@@ -8,6 +8,7 @@ import { tabsMarkdownPlugin } from "vitepress-plugin-tabs";
 import { withMermaid } from "vitepress-plugin-mermaid";
 import kdlGrammar from "./grammars/kdl.tmLanguage.json";
 import miseTomlGrammar from "./grammars/mise-toml.tmLanguage.json";
+import { collectPage, generateLlmsTxt } from "./llms";
 
 // https://vitepress.dev/reference/site-config
 export default withMermaid(
@@ -384,6 +385,12 @@ export default withMermaid(
         },
       ],
     ],
+    transformHtml(code, id, ctx) {
+      collectPage(code, id, ctx);
+    },
+    buildEnd(siteConfig) {
+      generateLlmsTxt(siteConfig);
+    },
     transformPageData(pageData) {
       const canonicalUrl = `https://mise.jdx.dev/${pageData.relativePath}`
         .replace(/index\.md$/, "")
