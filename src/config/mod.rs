@@ -2348,6 +2348,7 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBu
 
     // Default includes should be resolved relative to the search directory
     for p in default_task_includes() {
+        // Git URLs are handled by load_file_tasks, not here
         if !p.starts_with("git::") {
             includes.extend(expand_task_include(dir, &p));
         }
@@ -2357,6 +2358,7 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBu
         if let Some(cf_includes) = cf.task_config().includes.as_ref() {
             let resolve_dir = cf.config_root();
             for p in cf_includes {
+                // Git URLs are handled by load_file_tasks, not here
                 if !p.starts_with("git::") {
                     includes.extend(expand_task_include(&resolve_dir, p));
                 }
