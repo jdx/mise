@@ -374,11 +374,10 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
 
     // 3. credential_command
     let credential_command = &settings.github.credential_command;
-    if !credential_command.is_empty() {
-        if let Some(token) = get_credential_command_token(credential_command, lookup_host) {
+    if !credential_command.is_empty()
+        && let Some(token) = get_credential_command_token(credential_command, lookup_host) {
             return Some((token, TokenSource::CredentialCommand));
         }
-    }
 
     // 4. github_tokens.toml
     if let Some(token) = MISE_GITHUB_TOKENS.get(lookup_host) {
