@@ -419,9 +419,11 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     headers
 }
 
-/// Returns true if the given hostname has a token available from any source.
+/// Returns true if the given hostname has a token available from a non-env-var source.
+/// Used by http.rs to decide whether to attach GitHub auth headers to requests.
 pub fn is_gh_host(host: &str) -> bool {
-    GH_HOSTS.contains_key(host) || MISE_GITHUB_TOKENS.contains_key(host)
+    MISE_GITHUB_TOKENS.contains_key(host)
+        || (Settings::get().github.gh_cli_tokens && GH_HOSTS.contains_key(host))
 }
 
 // ── github_tokens.toml ──────────────────────────────────────────────
