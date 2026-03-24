@@ -203,7 +203,10 @@ impl PythonPlugin {
                 let versions = raw
                     .lines()
                     .filter(|v| v.contains(&platform))
-                    .filter(|v| flavor.is_some() || !v.contains("freethreaded"))
+                    .filter(|v| {
+                        flavor.as_ref().is_some_and(|f| f.contains("freethreaded"))
+                            || !v.contains("freethreaded")
+                    })
                     .flat_map(|v| {
                         // cpython-3.9.5+20210525 or cpython-3.9.5rc3+20210525
                         regex!(r"^cpython-(\d+\.\d+\.[\da-z]+)\+(\d+).*")
@@ -504,7 +507,10 @@ impl PythonPlugin {
         let result = raw
             .lines()
             .filter(|v| v.contains(&platform))
-            .filter(|v| flavor.is_some() || !v.contains("freethreaded"))
+            .filter(|v| {
+                flavor.as_ref().is_some_and(|f| f.contains("freethreaded"))
+                    || !v.contains("freethreaded")
+            })
             .flat_map(|v| {
                 regex!(r"^cpython-(\d+\.\d+\.[\da-z]+)\+(\d+).*")
                     .captures(v)
