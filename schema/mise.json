@@ -753,6 +753,11 @@
               "default": true,
               "description": "Enable SLSA provenance verification for github backend tools.",
               "type": "boolean"
+            },
+            "use_git_credentials": {
+              "default": false,
+              "description": "Use git credential helpers to obtain GitHub tokens.",
+              "type": "boolean"
             }
           }
         },

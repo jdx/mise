@@ -438,7 +438,7 @@ fn github_headers(url: &Url) -> HeaderMap {
         h == "api.github.com"
             || h == "github.com"
             || h.ends_with(".githubusercontent.com")
-            || (crate::config::Settings::get().github.gh_cli_tokens && crate::github::is_gh_host(h))
+            || crate::github::is_gh_host(h)
     });
     if is_github {
         crate::github::get_headers(url.as_str())

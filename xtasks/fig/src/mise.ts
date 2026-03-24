@@ -1356,6 +1356,29 @@ const completionSpec: Fig.Spec = {
       ],
     },
     {
+      name: "github",
+      description: "GitHub related commands",
+      subcommands: [
+        {
+          name: "token",
+          description:
+            "Display the GitHub token mise will use for a given host",
+          options: [
+            {
+              name: "--unmask",
+              description: "Show the full unmasked token",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "host",
+            description: "GitHub hostname",
+            isOptional: true,
+          },
+        },
+      ],
+    },
+    {
       name: "implode",
       description: "Removes mise CLI and all related data",
       options: [
