@@ -8,22 +8,22 @@ mise checks the following sources in order. The first token found wins:
 
 **github.com:**
 
-| Priority | Source                                            |
-| -------- | ------------------------------------------------- |
-| 1        | `MISE_GITHUB_TOKEN` env var                       |
-| 2        | `GITHUB_API_TOKEN` env var                        |
-| 3        | `GITHUB_TOKEN` env var                            |
-| 4        | gh CLI token (from `hosts.yml`)                   |
-| 5        | gh CLI token (from `gh auth token`, opt-in)       |
+| Priority | Source                                      |
+| -------- | ------------------------------------------- |
+| 1        | `MISE_GITHUB_TOKEN` env var                 |
+| 2        | `GITHUB_API_TOKEN` env var                  |
+| 3        | `GITHUB_TOKEN` env var                      |
+| 4        | gh CLI token (from `hosts.yml`)             |
+| 5        | gh CLI token (from `gh auth token`, opt-in) |
 
 **GitHub Enterprise hosts:**
 
-| Priority | Source                                                                    |
-| -------- | ------------------------------------------------------------------------- |
-| 1        | `MISE_GITHUB_ENTERPRISE_TOKEN` env var                                    |
-| 2        | `MISE_GITHUB_TOKEN` / `GITHUB_API_TOKEN` / `GITHUB_TOKEN` env vars       |
-| 3        | gh CLI token (from `hosts.yml`, matched by hostname)                      |
-| 4        | gh CLI token (from `gh auth token --hostname <host>`, opt-in)             |
+| Priority | Source                                                             |
+| -------- | ------------------------------------------------------------------ |
+| 1        | `MISE_GITHUB_ENTERPRISE_TOKEN` env var                             |
+| 2        | `MISE_GITHUB_TOKEN` / `GITHUB_API_TOKEN` / `GITHUB_TOKEN` env vars |
+| 3        | gh CLI token (from `hosts.yml`, matched by hostname)               |
+| 4        | gh CLI token (from `gh auth token --hostname <host>`, opt-in)      |
 
 ::: tip
 The github.com env vars (`MISE_GITHUB_TOKEN`, etc.) are also used as a fallback for GHE when `MISE_GITHUB_ENTERPRISE_TOKEN` is not set. If you need different tokens for github.com and a GHE instance, set `MISE_GITHUB_ENTERPRISE_TOKEN` explicitly or use the gh CLI integration.

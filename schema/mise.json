@@ -739,6 +739,11 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "gh_cli_token_from_cmd": {
+              "default": false,
+              "description": "Run `gh auth token` to obtain a GitHub token when none is found in hosts.yml.",
+              "type": "boolean"
+            },
             "gh_cli_tokens": {
               "default": true,
               "description": "Read GitHub tokens from the gh CLI's hosts.yml config.",
