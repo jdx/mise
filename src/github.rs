@@ -360,7 +360,11 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
 
     // 2. Standard env vars (checked individually for correct precedence and source reporting)
     for var_name in &["MISE_GITHUB_TOKEN", "GITHUB_API_TOKEN", "GITHUB_TOKEN"] {
-        if let Some(token) = std::env::var(var_name).ok().filter(|t| !t.is_empty()) {
+        if let Some(token) = std::env::var(var_name)
+            .ok()
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+        {
             return Some((token, TokenSource::EnvVar(var_name)));
         }
     }
@@ -539,12 +543,17 @@ static GIT_CREDENTIAL_CACHE: Lazy<std::sync::Mutex<HashMap<String, Option<String
 /// Get a GitHub token for `host` by running `git credential fill`.
 /// Results are cached per hostname so the subprocess is only spawned once.
 fn get_git_credential_token(host: &str) -> Option<String> {
-    let mut cache = GIT_CREDENTIAL_CACHE
-        .lock()
-        .expect("GIT_CREDENTIAL_CACHE mutex poisoned");
-    if let Some(token) = cache.get(host) {
-        return token.clone();
+    // Check cache first, releasing the lock before any I/O
+    {
+        let cache = GIT_CREDENTIAL_CACHE
+            .lock()
+            .expect("GIT_CREDENTIAL_CACHE mutex poisoned");
+        if let Some(token) = cache.get(host) {
+            return token.clone();
+        }
     }
+
+    // Spawn subprocess without holding the lock
     let input = format!("protocol=https\nhost={host}\n\n");
     let result = std::process::Command::new("git")
         .args(["credential", "fill"])
@@ -576,6 +585,11 @@ fn get_git_credential_token(host: &str) -> Option<String> {
             "not found"
         }
     );
+
+    // Re-acquire lock to store result
+    let mut cache = GIT_CREDENTIAL_CACHE
+        .lock()
+        .expect("GIT_CREDENTIAL_CACHE mutex poisoned");
     cache.insert(host.to_string(), result.clone());
     result
 }
