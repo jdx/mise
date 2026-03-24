@@ -573,9 +573,10 @@ fn get_credential_command_token(cmd: &str, host: &str) -> Option<String> {
         .and_then(|output| {
             if !output.status.success() {
                 if let Ok(err) = String::from_utf8(output.stderr)
-                    && !err.trim().is_empty() {
-                        debug!("credential_command stderr: {}", err.trim());
-                    }
+                    && !err.trim().is_empty()
+                {
+                    debug!("credential_command stderr: {}", err.trim());
+                }
                 return None;
             }
             String::from_utf8(output.stdout)
