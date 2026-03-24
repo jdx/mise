@@ -337,9 +337,10 @@ fn canonical_host(host: Option<&str>) -> Option<&str> {
 /// Priority:
 /// 1. `MISE_GITHUB_ENTERPRISE_TOKEN` env var (non-github.com only)
 /// 2. `MISE_GITHUB_TOKEN` / `GITHUB_API_TOKEN` / `GITHUB_TOKEN` env vars
-/// 3. `github_tokens.toml` (per-host)
-/// 4. gh CLI token (from `hosts.yml`)
-/// 5. `credential_command` (if set) OR `git credential fill` (if enabled)
+/// 3. `credential_command` (if set)
+/// 4. `github_tokens.toml` (per-host)
+/// 5. gh CLI token (from `hosts.yml`)
+/// 6. `git credential fill` (if enabled)
 pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     let settings = Settings::get();
 
@@ -371,26 +372,28 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
         }
     }
 
-    // 3. github_tokens.toml
+    // 3. credential_command
+    let credential_command = &settings.github.credential_command;
+    if !credential_command.is_empty()
+        && let Some(token) = get_credential_command_token(credential_command, lookup_host)
+    {
+        return Some((token, TokenSource::CredentialCommand));
+    }
+
+    // 4. github_tokens.toml
     if let Some(token) = MISE_GITHUB_TOKENS.get(lookup_host) {
         return Some((token.clone(), TokenSource::TokensFile));
     }
 
-    // 4. gh CLI hosts.yml
+    // 5. gh CLI hosts.yml
     if settings.github.gh_cli_tokens
         && let Some(token) = GH_HOSTS.get(lookup_host)
     {
         return Some((token.clone(), TokenSource::GhCli));
     }
 
-    // 5. credential_command OR git credential fill
-    let credential_command = &settings.github.credential_command;
-    if !credential_command.is_empty() {
-        if let Some(token) = get_credential_command_token(credential_command, lookup_host) {
-            return Some((token, TokenSource::CredentialCommand));
-        }
-        debug!("credential_command returned no token; git credential fill will not be tried");
-    } else if settings.github.use_git_credentials
+    // 6. git credential fill
+    if settings.github.use_git_credentials
         && let Some(token) = get_git_credential_token(lookup_host)
     {
         return Some((token, TokenSource::GitCredential));
