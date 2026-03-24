@@ -43,6 +43,7 @@ pub fn invalidate_caches() {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Lockfile {
+    /// mise version that last generated this lockfile (populated on read, for external consumers only).
     #[serde(skip)]
     pub mise_version: Option<String>,
     #[serde(skip)]
@@ -446,11 +447,11 @@ impl Lockfile {
         let mut lockfile = Lockfile::default();
 
         if let Some(toml::Value::Table(mut metadata)) = table.remove("metadata")
-            && let Some(toml::Value::String(version)) = metadata.remove("mise_version")
-        {
-            lockfile.mise_version = Some(version);
+        if let Some(metadata) = table.get("metadata").and_then(|v| v.as_table()) {
+            if let Some(version) = metadata.get("mise_version").and_then(|v| v.as_str()) {
+                lockfile.mise_version = Some(version.to_string());
+            }
         }
-
         for (short, value) in tools {
             let versions = match value {
                 toml::Value::Array(arr) => arr
@@ -2464,7 +2465,7 @@ backend = "conda:jq"
 
         let reloaded = Lockfile::read(&test_lockfile).unwrap();
         assert_eq!(reloaded.mise_version.unwrap(), env!("CARGO_PKG_VERSION"));
-
+        assert_eq!(reloaded.mise_version.expect("mise_version should be present"), env!("CARGO_PKG_VERSION"));
         let _ = std::fs::remove_file(&test_lockfile);
     }
 }
