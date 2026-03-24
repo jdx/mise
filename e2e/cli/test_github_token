@@ -54,21 +54,19 @@ assert_contains "GITHUB_TOKEN=ghp_abcdefghijklmnop mise github token" "ghp_"
 # Test 8: git credential fill
 rm "$HOME/.config/gh/hosts.yml"
 
-# Create a credential helper script in the test home
-cat >"$HOME/git-credential-test" <<'SCRIPT'
-#!/usr/bin/env bash
+# Create a standalone credential helper script
+cat >"$HOME/git-cred-helper" <<'SCRIPT'
+#!/bin/sh
 echo "password=git-cred-token"
 SCRIPT
-chmod +x "$HOME/git-credential-test"
+chmod +x "$HOME/git-cred-helper"
 
-# Write a gitconfig and point GIT_CONFIG_GLOBAL at it so git picks it up
-cat >"$HOME/test-gitconfig" <<GITCFG
-[credential]
-	helper = $HOME/git-credential-test
-GITCFG
+# Write a gitconfig referencing the script by absolute path
+git config -f "$HOME/test-gitconfig" credential.helper "$HOME/git-cred-helper"
 
-assert_contains "GIT_CONFIG_GLOBAL=$HOME/test-gitconfig MISE_GITHUB_USE_GIT_CREDENTIALS=true mise github token --unmask" "git-cred-token"
-assert_contains "GIT_CONFIG_GLOBAL=$HOME/test-gitconfig MISE_GITHUB_USE_GIT_CREDENTIALS=true mise github token --unmask" "git credential fill"
+GIT_CRED_ENV="GIT_CONFIG_GLOBAL=$HOME/test-gitconfig GIT_CONFIG_NOSYSTEM=1 MISE_GITHUB_USE_GIT_CREDENTIALS=true"
+assert_contains "$GIT_CRED_ENV mise github token --unmask" "git-cred-token"
+assert_contains "$GIT_CRED_ENV mise github token --unmask" "git credential fill"
 
 # Test 9: git credential disabled via setting
-assert_contains "GIT_CONFIG_GLOBAL=$HOME/test-gitconfig MISE_GITHUB_USE_GIT_CREDENTIALS=false mise github token" "(none)"
+assert_contains "GIT_CONFIG_GLOBAL=$HOME/test-gitconfig GIT_CONFIG_NOSYSTEM=1 MISE_GITHUB_USE_GIT_CREDENTIALS=false mise github token" "(none)"
