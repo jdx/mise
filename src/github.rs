@@ -395,12 +395,17 @@ fn get_gh_token_from_cmd(host: &str) -> Option<String> {
                 .ok()
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
-        } else {
-            trace!(
-                "gh auth token --hostname {host} exited with status {}",
-                output.status
-            );
-            None
+            if host == "github.com" {
+                trace!(
+                    "gh auth token exited with status {}",
+                    output.status
+                );
+            } else {
+                trace!(
+                    "gh auth token --hostname {host} exited with status {}",
+                    output.status
+                );
+            }
         }
     });
     cache.insert(host.to_string(), result.clone());
