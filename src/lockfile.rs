@@ -446,11 +446,10 @@ impl Lockfile {
 
         let mut lockfile = Lockfile::default();
 
-        if let Some(toml::Value::Table(mut metadata)) = table.remove("metadata") {
-            if let Some(toml::Value::String(version)) = metadata.remove("mise_version") {
+        if let Some(toml::Value::Table(mut metadata)) = table.remove("metadata")
+            && let Some(toml::Value::String(version)) = metadata.remove("mise_version") {
                 lockfile.mise_version = Some(version);
             }
-        }
         for (short, value) in tools {
             let versions = match value {
                 toml::Value::Array(arr) => arr
