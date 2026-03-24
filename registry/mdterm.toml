@@ -1,0 +1,3 @@
+backends = ["github:bahdotsh/mdterm", "cargo:mdterm"]
+description = "A terminal-based Markdown. Renders Markdown files with syntax highlighting, styled formatting, and interactive navigation."
+test = { cmd = "mdterm -V", expected = "mdterm {{version}}" }
