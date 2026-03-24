@@ -39,6 +39,8 @@ fn mask_token(token: &str) -> String {
     let len = token.len();
     if len <= 4 {
         "*".repeat(len)
+    } else if len <= 8 {
+        format!("{}…", &token[..4])
     } else {
         format!("{}…{}", &token[..4], &token[len - 4..])
     }

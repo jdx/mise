@@ -739,11 +739,6 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "use_git_credentials": {
-              "default": true,
-              "description": "Use git credential helpers to obtain GitHub tokens.",
-              "type": "boolean"
-            },
             "gh_cli_tokens": {
               "default": true,
               "description": "Read GitHub tokens from the gh CLI's hosts.yml config.",
@@ -757,6 +752,11 @@
             "slsa": {
               "default": true,
               "description": "Enable SLSA provenance verification for github backend tools.",
+              "type": "boolean"
+            },
+            "use_git_credentials": {
+              "default": true,
+              "description": "Use git credential helpers to obtain GitHub tokens.",
               "type": "boolean"
             }
           }

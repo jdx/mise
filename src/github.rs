@@ -357,16 +357,11 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
         ));
     }
 
-    // 2. Standard env vars
-    if let Some(token) = env::GITHUB_TOKEN.as_deref() {
-        let source = if std::env::var("MISE_GITHUB_TOKEN").is_ok() {
-            "MISE_GITHUB_TOKEN"
-        } else if std::env::var("GITHUB_API_TOKEN").is_ok() {
-            "GITHUB_API_TOKEN"
-        } else {
-            "GITHUB_TOKEN"
-        };
-        return Some((token.to_string(), TokenSource::EnvVar(source)));
+    // 2. Standard env vars (checked individually for correct precedence and source reporting)
+    for var_name in &["MISE_GITHUB_TOKEN", "GITHUB_API_TOKEN", "GITHUB_TOKEN"] {
+        if let Some(token) = std::env::var(var_name).ok().filter(|t| !t.is_empty()) {
+            return Some((token, TokenSource::EnvVar(var_name)));
+        }
     }
 
     // 3. github_tokens.toml

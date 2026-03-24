@@ -611,26 +611,6 @@ description = "Timeout in seconds for HTTP requests to fetch new tool versions i
 env = "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT"
 type = "Duration"
 
-[github.use_git_credentials]
-default = true
-description = "Use git credential helpers to obtain GitHub tokens."
-docs = """
-When enabled, mise will run `git credential fill` to obtain GitHub tokens
-using the credential helpers configured in your `.gitconfig`.
-
-This covers tokens stored in system keyrings (macOS Keychain, Windows
-Credential Manager), Coder external auth, and any other git credential
-helper.
-
-Used as a last resort — after environment variables, `github_tokens.toml`,
-and gh CLI tokens are checked. Results are cached per host for the
-duration of the session.
-
-Set to `false` to disable this behavior.
-"""
-env = "MISE_GITHUB_USE_GIT_CREDENTIALS"
-type = "Bool"
-
 [github.gh_cli_tokens]
 default = true
 description = "Read GitHub tokens from the gh CLI's hosts.yml config."
@@ -667,6 +647,26 @@ When enabled, mise will verify the supply-chain integrity of downloaded tools
 using SLSA provenance attestations.
 """
 env = "MISE_GITHUB_SLSA"
+type = "Bool"
+
+[github.use_git_credentials]
+default = true
+description = "Use git credential helpers to obtain GitHub tokens."
+docs = """
+When enabled, mise will run `git credential fill` to obtain GitHub tokens
+using the credential helpers configured in your `.gitconfig`.
+
+This covers tokens stored in system keyrings (macOS Keychain, Windows
+Credential Manager), Coder external auth, and any other git credential
+helper.
+
+Used as a last resort — after environment variables, `github_tokens.toml`,
+and gh CLI tokens are checked. Results are cached per host for the
+duration of the session.
+
+Set to `false` to disable this behavior.
+"""
+env = "MISE_GITHUB_USE_GIT_CREDENTIALS"
 type = "Bool"
 
 [github_attestations]
