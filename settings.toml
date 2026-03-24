@@ -616,8 +616,8 @@ default = false
 description = "Run `gh auth token` to obtain a GitHub token when none is found in hosts.yml."
 docs = """
 When enabled, mise will run `gh auth token` (or `gh auth token --hostname <host>`
-for GitHub Enterprise) as a last-resort fallback to obtain a GitHub token when no
-token is found via environment variables or the gh CLI `hosts.yml` config file.
+for GitHub Enterprise) to obtain a GitHub token when no token is found via
+environment variables or the gh CLI `hosts.yml` config file.
 
 This is useful on platforms where the gh CLI stores credentials in a system
 credential helper (e.g. macOS Keychain or Windows Credential Manager) rather
