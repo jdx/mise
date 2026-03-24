@@ -1368,8 +1368,11 @@ optional = true
 type = "Path"
 
 [python.precompiled_arch]
-default_docs = '"apple-darwin" | "unknown-linux-gnu" | "unknown-linux-musl"'
+default_docs = '"x86_64_v3" | "aarch64"'
 description = "Specify the architecture to use for precompiled binaries."
+docs = """
+Specify the architecture to use for precompiled binaries. If on an old CPU, you may want to set this to "x86_64" for the most compatible binaries. See https://gregoryszorc.com/docs/python-build-standalone/main/running.html for more information.
+"""
 env = "MISE_PYTHON_PRECOMPILED_ARCH"
 optional = true
 type = "String"
@@ -1387,11 +1390,8 @@ optional = true
 type = "String"
 
 [python.precompiled_os]
-default_docs = '"x86_64_v3" | "aarch64"'
+default_docs = '"apple-darwin" | "unknown-linux-gnu" | "unknown-linux-musl"'
 description = "Specify the OS to use for precompiled binaries."
-docs = """
-Specify the architecture to use for precompiled binaries. If on an old CPU, you may want to set this to "x86_64" for the most compatible binaries. See https://gregoryszorc.com/docs/python-build-standalone/main/running.html for more information.
-"""
 env = "MISE_PYTHON_PRECOMPILED_OS"
 optional = true
 type = "String"
