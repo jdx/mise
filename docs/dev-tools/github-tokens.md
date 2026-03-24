@@ -8,14 +8,15 @@ mise checks the following sources in order. The first token found wins:
 
 **github.com:**
 
-| Priority | Source                                        |
-| -------- | --------------------------------------------- |
-| 1        | `MISE_GITHUB_TOKEN` env var                   |
-| 2        | `GITHUB_API_TOKEN` env var                    |
-| 3        | `GITHUB_TOKEN` env var                        |
-| 4        | `github_tokens.toml` (per-host)               |
-| 5        | gh CLI token (from `hosts.yml`)               |
-| 6        | `credential_command` or `git credential fill` |
+| Priority | Source                             |
+| -------- | ---------------------------------- |
+| 1        | `MISE_GITHUB_TOKEN` env var        |
+| 2        | `GITHUB_API_TOKEN` env var         |
+| 3        | `GITHUB_TOKEN` env var             |
+| 4        | `credential_command` (if set)      |
+| 5        | `github_tokens.toml` (per-host)    |
+| 6        | gh CLI token (from `hosts.yml`)    |
+| 7        | `git credential fill` (if enabled) |
 
 **GitHub Enterprise hosts:**
 
@@ -23,9 +24,10 @@ mise checks the following sources in order. The first token found wins:
 | -------- | ------------------------------------------------------------------ |
 | 1        | `MISE_GITHUB_ENTERPRISE_TOKEN` env var                             |
 | 2        | `MISE_GITHUB_TOKEN` / `GITHUB_API_TOKEN` / `GITHUB_TOKEN` env vars |
-| 3        | `github_tokens.toml` (per-host)                                    |
-| 4        | gh CLI token (from `hosts.yml`, matched by hostname)               |
-| 5        | `credential_command` or `git credential fill`                      |
+| 3        | `credential_command` (if set)                                      |
+| 4        | `github_tokens.toml` (per-host)                                    |
+| 5        | gh CLI token (from `hosts.yml`, matched by hostname)               |
+| 6        | `git credential fill` (if enabled)                                 |
 
 ::: tip
 The github.com env vars (`MISE_GITHUB_TOKEN`, etc.) are also used as a fallback for GHE when `MISE_GITHUB_ENTERPRISE_TOKEN` is not set. If you need different tokens for github.com and a GHE instance, set `MISE_GITHUB_ENTERPRISE_TOKEN` explicitly or use the gh CLI integration.
@@ -54,7 +56,7 @@ token = "ghp_xxxxxxxxxxxx"
 token = "ghp_yyyyyyyyyyyy"
 ```
 
-This file is checked after environment variables but before the gh CLI's `hosts.yml`, making it useful when:
+This file is checked after environment variables and `credential_command` but before the gh CLI's `hosts.yml`, making it useful when:
 
 - You don't use the gh CLI, or
 - The gh CLI token has restricted scope (e.g., Coder-provisioned tokens scoped to specific orgs) and you need a broader token for mise, or
@@ -105,7 +107,7 @@ You can configure a custom shell command that mise runs to obtain a GitHub token
 credential_command = "op read 'op://Private/GitHub Token/credential'"
 ```
 
-mise executes this command via `sh -c` and reads the token from stdout. The hostname is passed as `$1`, so the command can return different tokens for different hosts (e.g., `github.com` vs a GHE instance). When set, this replaces the `git credential fill` fallback — `use_git_credentials` is not required. Results are cached per host per session.
+mise executes this command via `sh -c` and reads the token from stdout. The hostname is passed as `$1`, so the command can return different tokens for different hosts (e.g., `github.com` vs a GHE instance). This is checked before `github_tokens.toml` and gh CLI tokens, so it takes priority over file-based sources. Results are cached per host per session.
 
 ## Git Credential Helpers
 
@@ -149,9 +151,10 @@ For authentication, mise checks (in order):
 
 1. `MISE_GITHUB_ENTERPRISE_TOKEN` env var
 2. `MISE_GITHUB_TOKEN` / `GITHUB_API_TOKEN` / `GITHUB_TOKEN` env vars
-3. `github_tokens.toml` for the API hostname
-4. gh CLI token for the API hostname
-5. `credential_command` or `git credential fill` for the API hostname
+3. `credential_command` for the API hostname
+4. `github_tokens.toml` for the API hostname
+5. gh CLI token for the API hostname
+6. `git credential fill` for the API hostname
 
 If you have **multiple** GHE instances, `MISE_GITHUB_ENTERPRISE_TOKEN` (a single value) won't work. Use `github_tokens.toml`, the gh CLI integration, `credential_command`, or git credential helpers instead:
 

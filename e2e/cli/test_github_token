@@ -48,18 +48,29 @@ assert_contains "mise github token --unmask" "gh CLI"
 assert_not_contains "GITHUB_TOKEN=ghp_abcdefghijklmnop mise github token" "ghp_abcdefghijklmnop"
 assert_contains "GITHUB_TOKEN=ghp_abcdefghijklmnop mise github token" "ghp_"
 
-# Test 8: credential_command
-rm "$HOME/.config/gh/hosts.yml"
+# Test 8: credential_command (with gh CLI hosts.yml still present)
+# credential_command should beat gh CLI token
 assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' mise github token --unmask" "cred-cmd-token"
 assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' mise github token --unmask" "credential_command"
+rm "$HOME/.config/gh/hosts.yml"
 
-# Test 8b: credential_command takes priority over git credential fill
+# Test 8b: credential_command beats github_tokens.toml
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/github_tokens.toml" <<'EOF'
+[tokens."github.com"]
+token = "toml-test-token"
+EOF
+assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' mise github token --unmask" "cred-cmd-token"
+assert_not_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' mise github token --unmask" "toml-test-token"
+rm "$MISE_CONFIG_DIR/github_tokens.toml"
+
+# Test 8c: credential_command takes priority over git credential fill
 assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' MISE_GITHUB_USE_GIT_CREDENTIALS=true mise github token --unmask" "cred-cmd-token"
 
-# Test 8c: env var still beats credential_command
+# Test 8d: env var still beats credential_command
 assert_contains "GITHUB_TOKEN=env-wins MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' mise github token --unmask" "env-wins"
 
-# Test 8d: credential_command receives host as $1
+# Test 8e: credential_command receives host as $1
 assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo token-for-\$1' mise github token ghe.example.com --unmask" "token-for-ghe.example.com"
 
 # Test 9: git credential fill
