@@ -61,14 +61,14 @@ echo "password=git-cred-token"
 SCRIPT
 chmod +x "$HOME/git-credential-test"
 
-# Point git at a custom config that uses our helper
-cat >"$HOME/.gitconfig" <<GITCFG
+# Write a gitconfig and point GIT_CONFIG_GLOBAL at it so git picks it up
+cat >"$HOME/test-gitconfig" <<GITCFG
 [credential]
 	helper = $HOME/git-credential-test
 GITCFG
 
-assert_contains "MISE_GITHUB_USE_GIT_CREDENTIALS=true mise github token --unmask" "git-cred-token"
-assert_contains "MISE_GITHUB_USE_GIT_CREDENTIALS=true mise github token --unmask" "git credential fill"
+assert_contains "GIT_CONFIG_GLOBAL=$HOME/test-gitconfig MISE_GITHUB_USE_GIT_CREDENTIALS=true mise github token --unmask" "git-cred-token"
+assert_contains "GIT_CONFIG_GLOBAL=$HOME/test-gitconfig MISE_GITHUB_USE_GIT_CREDENTIALS=true mise github token --unmask" "git credential fill"
 
 # Test 9: git credential disabled via setting
-assert_contains "MISE_GITHUB_USE_GIT_CREDENTIALS=false mise github token" "(none)"
+assert_contains "GIT_CONFIG_GLOBAL=$HOME/test-gitconfig MISE_GITHUB_USE_GIT_CREDENTIALS=false mise github token" "(none)"
