@@ -21,7 +21,8 @@ assert "mise uninstall --all"
 assert "mise unuse tiny"
 assert "mise lock"
 
-# empty lockfile should just have header and tools section
-assert "cat mise.lock" "$LOCKFILE_HEADER
-
-[tools]"
+# empty lockfile should have header, metadata and tools section
+assert_contains "cat mise.lock" "$LOCKFILE_HEADER"
+assert_contains "cat mise.lock" "[metadata]"
+assert_contains "cat mise.lock" "mise_version ="
+assert_contains "cat mise.lock" "[tools]"
