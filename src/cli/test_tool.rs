@@ -289,7 +289,7 @@ impl TestTool {
         let clean_stdout = console::strip_ansi_codes(&stdout);
         if !clean_stdout.contains(&expected) {
             return Err(eyre!(
-                "expected output not found: {expected}, got: {stdout}"
+                "expected output not found: {expected}, got: {clean_stdout}"
             ));
         }
         Ok(())
