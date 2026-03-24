@@ -1,4 +1,4 @@
 backends = ["conda:sbt", "asdf:mise-plugins/mise-sbt"]
 depends = ["java"]
 description = "sbt, the interactive build tool"
-test = { cmd = "sbt --version 2>&1", expected = "sbt" }
+test = { cmd = "sbt --version", expected = "sbt" }
