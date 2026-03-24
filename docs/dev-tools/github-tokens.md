@@ -41,7 +41,7 @@ Or, if you already have `GITHUB_TOKEN` set (common in GitHub Actions), mise will
 
 ## gh CLI Integration
 
-If you use the [GitHub CLI](https://cli.github.com/) (`gh`), mise can read tokens from it automatically. This is enabled by default and kicks in when no token environment variable is set.
+If you use the [GitHub CLI](https://cli.github.com/) (`gh`), mise can read tokens from it automatically. This kicks in when no token environment variable is set.
 
 mise looks for `hosts.yml` in these locations (first match wins):
 
@@ -72,7 +72,7 @@ To disable this behavior:
 gh_cli_tokens = false
 ```
 
-### `gh auth token` fallback (opt-in)
+### `gh auth token` (opt-in)
 
 On some platforms (e.g. **Windows** or **macOS** with Keychain), the gh CLI stores credentials in a system credential helper rather than in `hosts.yml`. In that case you can opt in to having mise run `gh auth token` to retrieve the token:
 
@@ -81,7 +81,7 @@ On some platforms (e.g. **Windows** or **macOS** with Keychain), the gh CLI stor
 gh_cli_token_from_cmd = true
 ```
 
-When enabled, mise runs `gh auth token` (or `gh auth token --hostname <host>` for GitHub Enterprise) as a last-resort fallback after checking environment variables and `hosts.yml`. The result is cached in memory for the lifetime of the process.
+When enabled, mise runs `gh auth token` (or `gh auth token --hostname <host>` for GitHub Enterprise) after checking environment variables and `hosts.yml`.
 
 ```sh
 # These are the commands mise may run when gh_cli_token_from_cmd = true:
