@@ -48,8 +48,18 @@ assert_contains "mise github token --unmask" "gh CLI"
 assert_not_contains "GITHUB_TOKEN=ghp_abcdefghijklmnop mise github token" "ghp_abcdefghijklmnop"
 assert_contains "GITHUB_TOKEN=ghp_abcdefghijklmnop mise github token" "ghp_"
 
-# Test 8: git credential fill
+# Test 8: credential_command
 rm "$HOME/.config/gh/hosts.yml"
+assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' mise github token --unmask" "cred-cmd-token"
+assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' mise github token --unmask" "credential_command"
+
+# Test 8b: credential_command takes priority over git credential fill
+assert_contains "MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' MISE_GITHUB_USE_GIT_CREDENTIALS=true mise github token --unmask" "cred-cmd-token"
+
+# Test 8c: env var still beats credential_command
+assert_contains "GITHUB_TOKEN=env-wins MISE_GITHUB_CREDENTIAL_COMMAND='echo cred-cmd-token' mise github token --unmask" "env-wins"
+
+# Test 9: git credential fill
 
 # Create a standalone credential helper script
 cat >"$HOME/git-cred-helper" <<'SCRIPT'
@@ -66,5 +76,5 @@ GIT_CRED_ENV="GIT_CONFIG_NOSYSTEM=1 MISE_GITHUB_USE_GIT_CREDENTIALS=true"
 assert_contains "$GIT_CRED_ENV mise github token --unmask" "git-cred-token"
 assert_contains "$GIT_CRED_ENV mise github token --unmask" "git credential fill"
 
-# Test 9: git credential disabled via setting
+# Test 10: git credential disabled via setting
 assert_contains "GIT_CONFIG_NOSYSTEM=1 MISE_GITHUB_USE_GIT_CREDENTIALS=false mise github token" "(none)"

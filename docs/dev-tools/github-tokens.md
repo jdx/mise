@@ -8,14 +8,14 @@ mise checks the following sources in order. The first token found wins:
 
 **github.com:**
 
-| Priority | Source                          |
-| -------- | ------------------------------- |
-| 1        | `MISE_GITHUB_TOKEN` env var     |
-| 2        | `GITHUB_API_TOKEN` env var      |
-| 3        | `GITHUB_TOKEN` env var          |
-| 4        | `github_tokens.toml` (per-host) |
-| 5        | gh CLI token (from `hosts.yml`) |
-| 6        | `git credential fill` (opt-in)  |
+| Priority | Source                                        |
+| -------- | --------------------------------------------- |
+| 1        | `MISE_GITHUB_TOKEN` env var                   |
+| 2        | `GITHUB_API_TOKEN` env var                    |
+| 3        | `GITHUB_TOKEN` env var                        |
+| 4        | `github_tokens.toml` (per-host)               |
+| 5        | gh CLI token (from `hosts.yml`)               |
+| 6        | `credential_command` or `git credential fill` |
 
 **GitHub Enterprise hosts:**
 
@@ -25,7 +25,7 @@ mise checks the following sources in order. The first token found wins:
 | 2        | `MISE_GITHUB_TOKEN` / `GITHUB_API_TOKEN` / `GITHUB_TOKEN` env vars |
 | 3        | `github_tokens.toml` (per-host)                                    |
 | 4        | gh CLI token (from `hosts.yml`, matched by hostname)               |
-| 5        | `git credential fill` (opt-in)                                     |
+| 5        | `credential_command` or `git credential fill`                      |
 
 ::: tip
 The github.com env vars (`MISE_GITHUB_TOKEN`, etc.) are also used as a fallback for GHE when `MISE_GITHUB_ENTERPRISE_TOKEN` is not set. If you need different tokens for github.com and a GHE instance, set `MISE_GITHUB_ENTERPRISE_TOKEN` explicitly or use the gh CLI integration.
@@ -96,6 +96,17 @@ To disable this behavior:
 gh_cli_tokens = false
 ```
 
+## Credential Command
+
+You can configure a custom shell command that mise runs to obtain a GitHub token. This is useful when you want a credential source that only mise uses, without affecting git:
+
+```toml
+[settings.github]
+credential_command = "op read 'op://Private/GitHub Token/credential'"
+```
+
+mise executes this command via `sh -c` and reads the token from stdout. When set, this replaces the `git credential fill` fallback — `use_git_credentials` is not required. Results are cached per session.
+
 ## Git Credential Helpers
 
 mise can use your existing git credential helpers to obtain GitHub tokens. This is **opt-in** and acts as a last-resort fallback after all other token sources.
@@ -140,9 +151,9 @@ For authentication, mise checks (in order):
 2. `MISE_GITHUB_TOKEN` / `GITHUB_API_TOKEN` / `GITHUB_TOKEN` env vars
 3. `github_tokens.toml` for the API hostname
 4. gh CLI token for the API hostname
-5. `git credential fill` for the API hostname
+5. `credential_command` or `git credential fill` for the API hostname
 
-If you have **multiple** GHE instances, `MISE_GITHUB_ENTERPRISE_TOKEN` (a single value) won't work. Use `github_tokens.toml`, the gh CLI integration, or git credential helpers instead:
+If you have **multiple** GHE instances, `MISE_GITHUB_ENTERPRISE_TOKEN` (a single value) won't work. Use `github_tokens.toml`, the gh CLI integration, `credential_command`, or git credential helpers instead:
 
 ```sh
 gh auth login --hostname github.mycompany.com
