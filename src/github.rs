@@ -321,10 +321,11 @@ impl fmt::Display for TokenSource {
 }
 
 /// Normalize a URL hostname to the canonical host used for token lookups.
-/// Maps "api.github.com" to "github.com"; leaves other hosts unchanged.
+/// Maps "api.github.com" and "*.githubusercontent.com" to "github.com".
 fn canonical_host(host: Option<&str>) -> Option<&str> {
     match host {
         Some("api.github.com") => Some("github.com"),
+        Some(h) if h.ends_with(".githubusercontent.com") => Some("github.com"),
         other => other,
     }
 }
@@ -343,7 +344,7 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     let is_ghcom = host == "github.com"
         || host == "api.github.com"
         || host.ends_with(".githubusercontent.com");
-    let lookup_host = if host == "api.github.com" {
+    let lookup_host = if host == "api.github.com" || host.ends_with(".githubusercontent.com") {
         "github.com"
     } else {
         host
