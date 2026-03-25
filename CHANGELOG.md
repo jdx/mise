@@ -1,5 +1,15 @@
 # Changelog
 
+## [2026.3.15](https://github.com/jdx/mise/compare/v2026.3.14..v2026.3.15) - 2026-03-25
+
+### 🚀 Features
+
+- **(github)** add `credential_command` setting for custom token retrieval by @jdx in [#8746](https://github.com/jdx/mise/pull/8746)
+
+### 🐛 Bug Fixes
+
+- **(github)** raise credential_command priority above github_tokens.toml and gh CLI by @jdx in [#8748](https://github.com/jdx/mise/pull/8748)
+
 ## [2026.3.14](https://github.com/jdx/mise/compare/v2026.3.13..v2026.3.14) - 2026-03-24
 
 ### 🚀 Features
