@@ -556,18 +556,34 @@ impl AssetMatcher {
             .create_picker()
             .ok_or_else(|| eyre::eyre!("Target OS and arch must be set for auto-detection"))?;
 
-        let best = picker.pick_best_asset(assets).ok_or_else(|| {
+        if let Some(best) = picker.pick_best_asset(assets) {
+            return Ok(MatchedAsset { name: best });
+        }
+
+        // Single-asset fallback: if only one installable (non-metadata) asset exists, use it
+        let installable: Vec<&String> = assets
+            .iter()
+            .filter(|a| picker.score_asset(a) >= 0)
+            .collect();
+        if installable.len() == 1 {
+            let asset_name = installable[0].clone();
             let os = self.target_os.as_deref().unwrap_or("unknown");
             let arch = self.target_arch.as_deref().unwrap_or("unknown");
-            eyre::eyre!(
-                "No matching asset found for platform {}-{}\nAvailable assets:\n{}",
-                os,
-                arch,
-                assets.join("\n")
-            )
-        })?;
+            warn!(
+                "No platform-specific asset found for {}-{}, using the only available asset: {}",
+                os, arch, asset_name
+            );
+            return Ok(MatchedAsset { name: asset_name });
+        }
 
-        Ok(MatchedAsset { name: best })
+        let os = self.target_os.as_deref().unwrap_or("unknown");
+        let arch = self.target_arch.as_deref().unwrap_or("unknown");
+        Err(eyre::eyre!(
+            "No matching asset found for platform {}-{}\nAvailable assets:\n{}",
+            os,
+            arch,
+            assets.join("\n")
+        ))
     }
 }
 
@@ -1380,5 +1396,88 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
 
         let picked = picker.pick_best_asset(&assets).unwrap();
         assert_eq!(picked, "rust-analyzer-x86_64-apple-darwin.gz");
+    }
+
+    // ========== Single-Asset Fallback Tests ==========
+
+    #[test]
+    fn test_single_asset_fallback_no_platform_info() {
+        // When there is only one installable asset with no platform info in its name,
+        // it should be used as a fallback (e.g., `foo.exe` on Windows x64)
+        use crate::backend::platform_target::PlatformTarget;
+        use crate::platform::Platform;
+
+        let platform = Platform::parse("windows-x64").unwrap();
+        let target = PlatformTarget::new(platform);
+        let assets = vec!["foo.exe".to_string()];
+
+        let result = AssetMatcher::new()
+            .for_target(&target)
+            .pick_from(&assets)
+            .unwrap();
+        assert_eq!(
+            result.name, "foo.exe",
+            "Should fall back to the only available asset when no platform-specific asset exists"
+        );
+    }
+
+    #[test]
+    fn test_single_asset_fallback_with_checksum() {
+        // When the only "asset" besides a checksum file is a single binary,
+        // the binary should be used as a fallback
+        use crate::backend::platform_target::PlatformTarget;
+        use crate::platform::Platform;
+
+        let platform = Platform::parse("linux-x64").unwrap();
+        let target = PlatformTarget::new(platform);
+        let assets = vec!["mytool".to_string(), "mytool.sha256".to_string()];
+
+        let result = AssetMatcher::new()
+            .for_target(&target)
+            .pick_from(&assets)
+            .unwrap();
+        assert_eq!(
+            result.name, "mytool",
+            "Should fall back to the binary, ignoring the checksum file"
+        );
+    }
+
+    #[test]
+    fn test_no_fallback_when_multiple_unmatched_assets() {
+        // When there are multiple installable assets but none match the platform,
+        // it should still fail (not silently pick the wrong one)
+        use crate::backend::platform_target::PlatformTarget;
+        use crate::platform::Platform;
+
+        let platform = Platform::parse("linux-arm64").unwrap();
+        let target = PlatformTarget::new(platform);
+        let assets = vec![
+            "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
+            "tool-1.0.0-darwin-arm64.tar.gz".to_string(),
+            "tool-1.0.0-windows-x86_64.zip".to_string(),
+        ];
+
+        let result = AssetMatcher::new().for_target(&target).pick_from(&assets);
+        assert!(
+            result.is_err(),
+            "Should fail when multiple assets exist but none match the target platform"
+        );
+    }
+
+    #[test]
+    fn test_no_fallback_when_only_metadata_asset() {
+        // When the only asset is a metadata/checksum file (score < 0), there is no valid fallback
+        use crate::backend::platform_target::PlatformTarget;
+        use crate::platform::Platform;
+
+        let platform = Platform::parse("linux-x64").unwrap();
+        let target = PlatformTarget::new(platform);
+        let assets = vec!["checksums.txt".to_string()];
+
+        let result = AssetMatcher::new().for_target(&target).pick_from(&assets);
+        assert!(
+            result.is_err(),
+            "Should fail when the only available asset is a metadata/checksum file"
+        );
     }
 }
