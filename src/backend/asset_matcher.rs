@@ -566,14 +566,9 @@ impl AssetMatcher {
             .filter(|a| picker.score_asset(a) >= 0)
             .collect();
         if installable.len() == 1 {
-            let asset_name = installable[0].clone();
-            let os = self.target_os.as_deref().unwrap_or("unknown");
-            let arch = self.target_arch.as_deref().unwrap_or("unknown");
-            warn!(
-                "No platform-specific asset found for {}-{}, using the only available asset: {}",
-                os, arch, asset_name
-            );
-            return Ok(MatchedAsset { name: asset_name });
+            return Ok(MatchedAsset {
+                name: installable[0].clone(),
+            });
         }
 
         let os = self.target_os.as_deref().unwrap_or("unknown");
