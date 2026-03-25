@@ -1080,7 +1080,12 @@ impl AquaBackend {
                 .get(&platform_key)
                 .is_none_or(|pi| pi.checksum.is_none());
 
-            let needs_cosign = !skip_cosign;
+            let needs_cosign = !skip_cosign
+                && Settings::get().aqua.cosign
+                && checksum
+                    .cosign
+                    .as_ref()
+                    .is_some_and(|c| c.enabled != Some(false));
             // Short-circuit cosign if a higher-priority mechanism already recorded provenance.
             // Safe to cache: provenance is only modified by the single-threaded verification
             // methods above (attestations, slsa, minisign), all of which have completed by now.
@@ -1107,7 +1112,7 @@ impl AquaBackend {
                     .await?;
             }
 
-            if !skip_cosign && !cosign_already_verified && checksum_path.exists() {
+            if needs_cosign && !cosign_already_verified && checksum_path.exists() {
                 self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
                     .await?;
             }
