@@ -235,7 +235,7 @@ across task definition(s).
 
 These functions are task-specific and behave differently depending on the task they are used
 in. In other words, their return values **_may_** (but are not guaranteed to) be consistent
-across executions of any given _task_, and should be expected to be inconsisent across
+across executions of any given _task_, and should be expected to be inconsistent across
 different task definition(s).
 
 For example, `task_source_files()` returns a different set of filepaths depending on the [`sources`](https://mise.jdx.dev/tasks/task-configuration.html#sources) of the task it's called from.
