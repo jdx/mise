@@ -1572,8 +1572,12 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                             toml::Value::Array(arr) => {
                                 options.depends = Some(
                                     arr.iter()
-                                        .map(|v| v.as_str().unwrap().to_string())
-                                        .collect(),
+                                        .map(|v| {
+                                            v.as_str()
+                                                .ok_or_else(|| de::Error::custom("depends array must contain only strings"))
+                                                .map(|s| s.to_string())
+                                        })
+                                        .collect::<Result<Vec<_>, _>>()?,
                                 );
                             }
                             toml::Value::String(s) => {
@@ -1704,8 +1708,12 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                             toml::Value::Array(arr) => {
                                 options.depends = Some(
                                     arr.iter()
-                                        .map(|v| v.as_str().unwrap().to_string())
-                                        .collect(),
+                                        .map(|v| {
+                                            v.as_str()
+                                                .ok_or_else(|| de::Error::custom("depends array must contain only strings"))
+                                                .map(|s| s.to_string())
+                                        })
+                                        .collect::<Result<Vec<_>, _>>()?,
                                 );
                             }
                             toml::Value::String(s) => {

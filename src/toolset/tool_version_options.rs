@@ -62,9 +62,10 @@ fn hash_toml_value<H: std::hash::Hasher>(v: &toml::Value, state: &mut H) {
 
 impl ToolVersionOptions {
     pub fn is_empty(&self) -> bool {
-        self.install_env.is_empty()
-            && self.opts.is_empty()
+        self.os.is_none()
             && self.depends.as_ref().is_none_or(|d| d.is_empty())
+            && self.install_env.is_empty()
+            && self.opts.is_empty()
     }
 
     /// Get a string value for a key. Returns the str for String values,
