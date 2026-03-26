@@ -210,7 +210,7 @@ impl AssetPicker {
         scored_assets.sort_by(|a, b| b.0.cmp(&a.0));
         scored_assets
             .first()
-            .filter(|(score, _)| *score > 0)
+            .filter(|(score, _)| *score >= 0)
             .map(|(_, asset)| asset.clone())
     }
 
@@ -556,29 +556,18 @@ impl AssetMatcher {
             .create_picker()
             .ok_or_else(|| eyre::eyre!("Target OS and arch must be set for auto-detection"))?;
 
-        if let Some(best) = picker.pick_best_asset(assets) {
-            return Ok(MatchedAsset { name: best });
-        }
+        let best = picker.pick_best_asset(assets).ok_or_else(|| {
+            let os = self.target_os.as_deref().unwrap_or("unknown");
+            let arch = self.target_arch.as_deref().unwrap_or("unknown");
+            eyre::eyre!(
+                "No matching asset found for platform {}-{}\nAvailable assets:\n{}",
+                os,
+                arch,
+                assets.join("\n")
+            )
+        })?;
 
-        // Single-asset fallback: if only one installable (non-metadata) asset exists, use it
-        let installable: Vec<&String> = assets
-            .iter()
-            .filter(|a| picker.score_asset(a) >= 0)
-            .collect();
-        if installable.len() == 1 {
-            return Ok(MatchedAsset {
-                name: installable[0].clone(),
-            });
-        }
-
-        let os = self.target_os.as_deref().unwrap_or("unknown");
-        let arch = self.target_arch.as_deref().unwrap_or("unknown");
-        Err(eyre::eyre!(
-            "No matching asset found for platform {}-{}\nAvailable assets:\n{}",
-            os,
-            arch,
-            assets.join("\n")
-        ))
+        Ok(MatchedAsset { name: best })
     }
 }
 
