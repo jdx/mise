@@ -479,6 +479,16 @@ impl Backend for AquaBackend {
         }
 
         let install_path = tv.install_path();
+
+        // For linked versions (external symlinks created via `mise link`),
+        // skip aqua registry lookup — the linked install has its own layout.
+        if let Ok(Some(target)) = file::resolve_symlink(&install_path) {
+            if target.is_absolute() {
+                let bin = install_path.join("bin");
+                return Ok(if bin.is_dir() { vec![bin] } else { vec![install_path] });
+            }
+        }
+
         let cache: CacheManager<Vec<PathBuf>> =
             CacheManagerBuilder::new(tv.cache_path().join("bin_paths.msgpack.z"))
                 .with_fresh_file(install_path.clone())
@@ -503,7 +513,7 @@ impl Backend for AquaBackend {
                     .into_iter()
                     .unique()
                     .filter(|p| p.exists())
-                    .map(|p| p.strip_prefix(&install_path).unwrap().to_path_buf())
+                    .filter_map(|p| p.strip_prefix(&install_path).ok().map(|p| p.to_path_buf()))
                     .collect())
             })
             .await?
