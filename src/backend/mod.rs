@@ -220,6 +220,17 @@ pub fn get(ba: &BackendArg) -> Option<ABackend> {
     let tools_ = tools.as_ref().unwrap();
     if let Some(backend) = tools_.get(&ba.short) {
         Some(backend.clone())
+    } else if Settings::get()
+        .disable_backends
+        .contains(&ba.backend_type().to_string())
+    {
+        None
+    } else if !tool_enabled(
+        &Settings::get().enable_tools(),
+        &Settings::get().disable_tools(),
+        &ba.short,
+    ) {
+        None
     } else if let Some(backend) = arg_to_backend(ba.clone()) {
         let mut tools_ = tools_.deref().clone();
         tools_.insert(ba.short.clone(), backend.clone());

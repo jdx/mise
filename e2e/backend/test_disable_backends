@@ -9,3 +9,18 @@ mise uninstall age
 
 MISE_DISABLE_BACKENDS=aqua mise install age
 ls "$MISE_DATA_DIR/plugins/age"
+
+# Test that disable_backends also works for tools with explicit backend
+# prefixes in config files (not just short-name registry tools).
+# Previously, get() in mod.rs would bypass the disable_backends filter
+# and re-create the backend on demand for explicitly declared tools.
+cat >.mise.toml <<'EOF'
+[tools]
+"aqua:FiloSottile/age" = "latest"
+EOF
+
+# With aqua backend disabled, the explicit aqua: tool should be skipped
+# entirely — mise should not attempt to resolve or install it.
+MISE_DISABLE_BACKENDS=aqua mise install
+assert_fail "mise ls --installed aqua:FiloSottile/age 2>/dev/null | grep age"
+rm .mise.toml
