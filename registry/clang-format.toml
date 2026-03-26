@@ -1,3 +1,7 @@
-backends = ["github:edaniels/clang-format-binaries", "conda:clang-format", "asdf:mise-plugins/mise-llvm"]
+backends = [
+  "github:edaniels/clang-format-binaries",
+  "conda:clang-format",
+  "asdf:mise-plugins/mise-llvm",
+]
 description = "format C/C++/Java/JavaScript/JSON/Objective-C/Protobuf/C# code"
 test = { cmd = "clang-format --version", expected = "clang-format version" }
