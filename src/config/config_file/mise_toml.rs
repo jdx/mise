@@ -1568,9 +1568,10 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                                 return Err(de::Error::custom("os must be a string or array"));
                             }
                         },
-                        "depends" => match v {
-                            toml::Value::Array(arr) => {
-                                options.depends = Some(
+                        "depends" => {
+                            match v {
+                                toml::Value::Array(arr) => {
+                                    options.depends = Some(
                                     arr.iter()
                                         .map(|v| {
                                             v.as_str()
@@ -1579,14 +1580,17 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                                         })
                                         .collect::<Result<Vec<_>, _>>()?,
                                 );
+                                }
+                                toml::Value::String(s) => {
+                                    options.depends = Some(vec![s]);
+                                }
+                                _ => {
+                                    return Err(de::Error::custom(
+                                        "depends must be a string or array",
+                                    ));
+                                }
                             }
-                            toml::Value::String(s) => {
-                                options.depends = Some(vec![s]);
-                            }
-                            _ => {
-                                return Err(de::Error::custom("depends must be a string or array"));
-                            }
-                        },
+                        }
                         "install_env" => match v {
                             toml::Value::Table(env) => {
                                 for (k, v) in env {
@@ -1704,9 +1708,10 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                                 return Err(de::Error::custom("os must be a string or array"));
                             }
                         },
-                        "depends" => match v {
-                            toml::Value::Array(arr) => {
-                                options.depends = Some(
+                        "depends" => {
+                            match v {
+                                toml::Value::Array(arr) => {
+                                    options.depends = Some(
                                     arr.iter()
                                         .map(|v| {
                                             v.as_str()
@@ -1715,14 +1720,17 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                                         })
                                         .collect::<Result<Vec<_>, _>>()?,
                                 );
+                                }
+                                toml::Value::String(s) => {
+                                    options.depends = Some(vec![s]);
+                                }
+                                _ => {
+                                    return Err(de::Error::custom(
+                                        "depends must be a string or array",
+                                    ));
+                                }
                             }
-                            toml::Value::String(s) => {
-                                options.depends = Some(vec![s]);
-                            }
-                            _ => {
-                                return Err(de::Error::custom("depends must be a string or array"));
-                            }
-                        },
+                        }
                         "install_env" => match v {
                             toml::Value::Table(env) => {
                                 for (k, v) in env {
