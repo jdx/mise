@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use eyre::Result;
 use tokio::sync::mpsc;
 
+use crate::cli::args::BackendArg;
 use crate::deps_graph::DepsGraph;
 use crate::toolset::tool_request::ToolRequest;
 
@@ -55,6 +56,26 @@ impl ToolDeps {
                                 if tr_key != other_key {
                                     edges.push((tr_key.clone(), other_key));
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Add edges from user-specified depends in tool options
+        for tr in &requests {
+            let tr_key = tool_key(tr);
+            if let Some(user_deps) = &tr.options().depends {
+                for dep_str in user_deps {
+                    let dep_ba = BackendArg::from(dep_str.as_str());
+                    let dep_fulls = dep_ba.all_fulls();
+                    for other_tr in &requests {
+                        let other_fulls = other_tr.ba().all_fulls();
+                        if dep_fulls.iter().any(|f| other_fulls.contains(f)) {
+                            let other_key = tool_key(other_tr);
+                            if tr_key != other_key {
+                                edges.push((tr_key.clone(), other_key));
                             }
                         }
                     }

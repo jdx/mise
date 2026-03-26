@@ -4,11 +4,12 @@ use indexmap::IndexMap;
 /// be persisted in the manifest or included in `full_with_opts()`.
 // install_env is a named field on ToolVersionOptions (serde puts it in self.install_env),
 // but parse_tool_options() can still place it in opts, so we filter it here as well.
-pub const EPHEMERAL_OPT_KEYS: &[&str] = &["postinstall", "install_env"];
+pub const EPHEMERAL_OPT_KEYS: &[&str] = &["postinstall", "install_env", "depends"];
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct ToolVersionOptions {
     pub os: Option<Vec<String>>,
+    pub depends: Option<Vec<String>>,
     pub install_env: IndexMap<String, String>,
     #[serde(flatten)]
     pub opts: IndexMap<String, toml::Value>,
@@ -22,6 +23,7 @@ impl Eq for ToolVersionOptions {}
 impl std::hash::Hash for ToolVersionOptions {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.os.hash(state);
+        self.depends.hash(state);
 
         // Hash install_env in sorted order for deterministic hashing
         let mut install_env_sorted: Vec<_> = self.install_env.iter().collect();
@@ -60,7 +62,9 @@ fn hash_toml_value<H: std::hash::Hasher>(v: &toml::Value, state: &mut H) {
 
 impl ToolVersionOptions {
     pub fn is_empty(&self) -> bool {
-        self.install_env.is_empty() && self.opts.is_empty()
+        self.install_env.is_empty()
+            && self.opts.is_empty()
+            && self.depends.as_ref().is_none_or(|d| d.is_empty())
     }
 
     /// Get a string value for a key. Returns the str for String values,
@@ -579,5 +583,36 @@ mod tests {
 
         let keys: Vec<_> = tvo.opts.keys().collect();
         assert_eq!(keys, vec!["zebra", "alpha", "beta"]);
+    }
+
+    #[test]
+    fn test_depends_field() {
+        let tvo = ToolVersionOptions {
+            depends: Some(vec!["python".to_string(), "node".to_string()]),
+            ..Default::default()
+        };
+        assert_eq!(
+            tvo.depends,
+            Some(vec!["python".to_string(), "node".to_string()])
+        );
+        assert!(!tvo.is_empty());
+    }
+
+    #[test]
+    fn test_depends_none_is_empty() {
+        let tvo = ToolVersionOptions {
+            depends: None,
+            ..Default::default()
+        };
+        assert!(tvo.is_empty());
+    }
+
+    #[test]
+    fn test_depends_empty_vec_is_empty() {
+        let tvo = ToolVersionOptions {
+            depends: Some(vec![]),
+            ..Default::default()
+        };
+        assert!(tvo.is_empty());
     }
 }

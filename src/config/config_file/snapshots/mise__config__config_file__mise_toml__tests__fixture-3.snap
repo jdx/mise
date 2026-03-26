@@ -10,6 +10,7 @@ ToolRequestSet {
                 version: "1.0.0",
                 options: ToolVersionOptions {
                     os: None,
+                    depends: None,
                     install_env: {},
                     opts: {},
                 },
@@ -24,6 +25,7 @@ ToolRequestSet {
                 version: "18",
                 options: ToolVersionOptions {
                     os: None,
+                    depends: None,
                     install_env: {},
                     opts: {},
                 },
@@ -36,6 +38,7 @@ ToolRequestSet {
                 prefix: "20",
                 options: ToolVersionOptions {
                     os: None,
+                    depends: None,
                     install_env: {},
                     opts: {},
                 },
@@ -49,6 +52,7 @@ ToolRequestSet {
                 ref_type: "ref",
                 options: ToolVersionOptions {
                     os: None,
+                    depends: None,
                     install_env: {},
                     opts: {},
                 },
@@ -61,6 +65,7 @@ ToolRequestSet {
                 path: "~/.nodes/18",
                 options: ToolVersionOptions {
                     os: None,
+                    depends: None,
                     install_env: {},
                     opts: {},
                 },
@@ -75,6 +80,7 @@ ToolRequestSet {
                 prefix: "1.6",
                 options: ToolVersionOptions {
                     os: None,
+                    depends: None,
                     install_env: {},
                     opts: {},
                 },
@@ -89,6 +95,7 @@ ToolRequestSet {
                 version: "0.9.0",
                 options: ToolVersionOptions {
                     os: None,
+                    depends: None,
                     install_env: {},
                     opts: {},
                 },
@@ -103,6 +110,7 @@ ToolRequestSet {
                 version: "3.10.0",
                 options: ToolVersionOptions {
                     os: None,
+                    depends: None,
                     install_env: {},
                     opts: {
                         "venv": String(
@@ -119,6 +127,7 @@ ToolRequestSet {
                 version: "3.9.0",
                 options: ToolVersionOptions {
                     os: None,
+                    depends: None,
                     install_env: {},
                     opts: {},
                 },

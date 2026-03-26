@@ -196,6 +196,31 @@ The `os` field accepts an array of operating system identifiers:
 
 If a tool specifies an `os` restriction and the current operating system is not in the list, mise will skip installing and using that tool.
 
+## Tool Dependencies
+
+You can declare explicit installation dependencies between tools using the `depends` field. This ensures that one tool is fully installed before another begins installing.
+
+```toml
+[tools]
+python = "3.12.11"
+"pipx:ruff" = { version = "latest", depends = ["python"] }
+```
+
+In this example, `pipx:ruff` will wait for `python` to finish installing before it starts.
+
+The `depends` field accepts either a single string or an array of strings:
+
+```toml
+[tools]
+# Single dependency
+"pipx:ruff" = { version = "latest", depends = "python" }
+
+# Multiple dependencies
+"pipx:ruff" = { version = "latest", depends = ["python", "pipx"] }
+```
+
+This is in addition to the automatic dependencies that backends declare (e.g., `pipx` automatically depends on `python` and `uv`). User-specified `depends` lets you add extra ordering constraints for your specific setup.
+
 ## Caching and Performance
 
 mise uses intelligent caching to minimize overhead:

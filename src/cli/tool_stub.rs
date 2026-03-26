@@ -199,6 +199,7 @@ impl ToolStubFile {
 
         let options = ToolVersionOptions {
             os: self.os.clone(),
+            depends: None,
             install_env: self.install_env.clone(),
             opts,
         };
