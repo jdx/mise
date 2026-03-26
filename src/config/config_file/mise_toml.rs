@@ -1580,9 +1580,7 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                                 options.depends = Some(vec![s]);
                             }
                             _ => {
-                                return Err(de::Error::custom(
-                                    "depends must be a string or array",
-                                ));
+                                return Err(de::Error::custom("depends must be a string or array"));
                             }
                         },
                         "install_env" => match v {
@@ -1714,9 +1712,7 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                                 options.depends = Some(vec![s]);
                             }
                             _ => {
-                                return Err(de::Error::custom(
-                                    "depends must be a string or array",
-                                ));
+                                return Err(de::Error::custom("depends must be a string or array"));
                             }
                         },
                         "install_env" => match v {
