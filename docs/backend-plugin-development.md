@@ -412,7 +412,7 @@ end
 The `RUNTIME` object provides:
 
 - `RUNTIME.osType`: Operating system type ("windows", "linux", "darwin")
-- `RUNTIME.archType`: Architecture (amd64, arm64, etc.)
+- `RUNTIME.archType`: Architecture (`"amd64"`, `"arm64"`, `"x86"`, etc.)
 - `RUNTIME.envType`: libc environment type (`"gnu"` on glibc Linux, `"musl"` on musl Linux, `nil` on Windows/macOS and undetected systems)
 - `RUNTIME.version`: vfox runtime version
 - `RUNTIME.pluginDirPath`: Plugin directory path
