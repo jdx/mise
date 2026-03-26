@@ -1,10 +1,11 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
 packages:
   - type: github_release
-    repo_owner: drager
+    repo_owner: wasm-bindgen
     repo_name: wasm-pack
     aliases:
       - name: rustwasm/wasm-pack
+      - name: drager/wasm-pack
     description: your favorite rust -> wasm workflow tool
     version_constraint: "false"
     version_overrides:

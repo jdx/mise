@@ -1,5 +1,30 @@
 # Changelog
 
+## [2026.3.16](https://github.com/jdx/mise/compare/v2026.3.15..v2026.3.16) - 2026-03-26
+
+### 🐛 Bug Fixes
+
+- **(backend)** skip GitHub API call for cosign when disabled or unconfigured by @jdx in [#8753](https://github.com/jdx/mise/pull/8753)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`wasm-bindgen/wasm-pack`](https://github.com/wasm-bindgen/wasm-pack)
+
+#### Updated Packages (10)
+
+- [`Songmu/maltmill`](https://github.com/Songmu/maltmill)
+- [`adhocteam/ssm`](https://github.com/adhocteam/ssm)
+- [`cnosuke/kushi`](https://github.com/cnosuke/kushi)
+- [`goark/depm`](https://github.com/goark/depm)
+- [`google/go-jsonnet`](https://github.com/google/go-jsonnet)
+- [`ipld/go-car`](https://github.com/ipld/go-car)
+- [`nao1215/sqly`](https://github.com/nao1215/sqly)
+- [`sharkdp/vivid`](https://github.com/sharkdp/vivid)
+- [`terraprovider/statebridge`](https://github.com/terraprovider/statebridge)
+- [`zerocore-ai/microsandbox`](https://github.com/zerocore-ai/microsandbox)
+
 ## [2026.3.15](https://github.com/jdx/mise/compare/v2026.3.14..v2026.3.15) - 2026-03-25
 
 ### 🚀 Features
