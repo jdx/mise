@@ -657,18 +657,23 @@ impl AquaBackend {
     /// Detect provenance type from aqua registry package config.
     ///
     /// Returns the highest-priority provenance type that is configured and
-    /// enabled for the package. GithubAttestations is NOT detected here
-    /// because it requires downloading the artifact to query the attestation
-    /// API — it is recorded at install-time after successful verification.
-    ///
-    /// NOTE: For packages with both `slsa_provenance` and `github_artifact_attestations`,
-    /// this returns `Slsa`. Subsequent `mise install` will enforce SLSA verification even
-    /// though attestations would also work. If SLSA verification fails (missing asset,
-    /// format change), the lockfile entry must be deleted and re-locked.
+    /// enabled for the package, based on the `ProvenanceType` priority order:
+    /// GithubAttestations (3) > Slsa (2) > Cosign (1) > Minisign (0).
     fn detect_provenance_type(&self, pkg: &AquaPackage) -> Option<ProvenanceType> {
         let settings = Settings::get();
 
-        // Check for SLSA provenance (highest priority available at lock-time)
+        // Check for GitHub artifact attestations (highest priority)
+        // The registry metadata (enabled flag, signer_workflow) is available at lock-time
+        // without downloading the artifact — detection != verification.
+        if settings.github_attestations
+            && settings.aqua.github_attestations
+            && let Some(att) = &pkg.github_artifact_attestations
+            && att.enabled != Some(false)
+        {
+            return Some(ProvenanceType::GithubAttestations);
+        }
+
+        // Check for SLSA provenance
         if settings.slsa
             && settings.aqua.slsa
             && let Some(slsa) = &pkg.slsa_provenance

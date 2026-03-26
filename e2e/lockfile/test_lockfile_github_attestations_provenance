@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Test: aqua tools with github_artifact_attestations registry config should
+# record provenance = "github-attestations" at lock-time, so that
+# `mise install --locked` skips redundant attestation API calls.
+
+export MISE_LOCKFILE=1
+export MISE_GITHUB_ATTESTATIONS=1
+export MISE_AQUA_GITHUB_ATTESTATIONS=1
+# Disable other provenance mechanisms to isolate the test
+export MISE_AQUA_SLSA=false
+export MISE_AQUA_COSIGN=false
+export MISE_AQUA_MINISIGN=false
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+echo "=== Testing mise lock records github-attestations provenance ==="
+
+# jq >= 1.8.0 has github_artifact_attestations configured in the aqua registry
+# but no SLSA/cosign/minisign, so provenance should be github-attestations
+# (versions < 1.8.0 don't have this config in the registry)
+cat <<EOF >mise.toml
+[tools]
+"aqua:jqlang/jq" = "1.8.1"
+EOF
+
+mise lock --platform "$PLATFORM"
+assert "test -f mise.lock"
+assert_contains "cat mise.lock" 'provenance = "github-attestations"'
+
+echo "=== Testing --locked install skips attestation verification ==="
+# With both checksum and provenance in the lockfile, install should skip
+# the verify_provenance() call entirely (no GitHub API requests needed)
+rm -rf "$MISE_DATA_DIR/installs/aqua-jqlang-jq"
+output=$(mise install --locked 2>&1)
+echo "$output"
+
+# The output should NOT contain the attestation verification message,
+# because the lockfile integrity check (checksum + provenance) skips it
+assert_not_contains "echo \"$output\"" "verify GitHub artifact attestations"
+
+echo "=== Cleanup ==="
+rm -f mise.lock mise.toml
+mise uninstall "aqua:jqlang/jq@1.8.1" || true
+
+echo "github-attestations lockfile provenance test passed!"
