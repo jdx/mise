@@ -208,10 +208,14 @@ impl AssetPicker {
     pub fn pick_best_asset(&self, assets: &[String]) -> Option<String> {
         let mut scored_assets = self.score_all_assets(assets);
         scored_assets.sort_by(|a, b| b.0.cmp(&a.0));
-        scored_assets
-            .first()
-            .filter(|(score, _)| *score >= 0)
-            .map(|(_, asset)| asset.clone())
+        let candidates: Vec<_> = scored_assets.iter().filter(|(s, _)| *s >= 0).collect();
+        match candidates.as_slice() {
+            // Best candidate has a positive score: definite platform match
+            [(score, asset), ..] if *score > 0 => Some(asset.clone()),
+            // Exactly one candidate with score 0: use it as an unambiguous fallback
+            [(_, asset)] => Some(asset.clone()),
+            _ => None,
+        }
     }
 
     /// Picks the best provenance file for the current platform from available assets.
@@ -1462,6 +1466,24 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
         assert!(
             result.is_err(),
             "Should fail when the only available asset is a metadata/checksum file"
+        );
+    }
+
+    #[test]
+    fn test_no_fallback_when_multiple_zero_score_assets() {
+        // When multiple assets all score 0 (no platform info), none is returned —
+        // we only fall back to a score-0 asset when it is the sole candidate.
+        use crate::backend::platform_target::PlatformTarget;
+        use crate::platform::Platform;
+
+        let platform = Platform::parse("linux-x64").unwrap();
+        let target = PlatformTarget::new(platform);
+        let assets = vec!["mytool".to_string(), "README.md".to_string()];
+
+        let result = AssetMatcher::new().for_target(&target).pick_from(&assets);
+        assert!(
+            result.is_err(),
+            "Should fail when multiple assets score 0 — ambiguous fallback should not be silently picked"
         );
     }
 }
