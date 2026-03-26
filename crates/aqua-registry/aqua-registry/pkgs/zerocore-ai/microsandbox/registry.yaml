@@ -5,7 +5,7 @@ packages:
     repo_name: microsandbox
     aliases:
       - name: microsandbox/microsandbox
-    description: Self-Hosted Plaform for Secure Execution of Untrusted User/AI Code
+    description: Self-Hosted Platform for Secure Execution of Untrusted User/AI Code
     files:
       - name: msb
     version_prefix: microsandbox-v

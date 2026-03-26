@@ -27,6 +27,8 @@ packages:
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
+        github_artifact_attestations:
+          signer_workflow: terraprovider/statebridge/\.github/workflows/release\.yml
         overrides:
           - goos: windows
             format: zip
