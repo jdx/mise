@@ -28,7 +28,7 @@ assert_contains "mise prepare --list" "package-lock.json"
 assert_contains "mise prepare --list" "node_modules"
 
 # Test --dry-run shows what would run
-assert_contains "mise prepare --dry-run" "npm"
+assert_contains "mise prepare --dry-run 2>&1" "npm"
 
 # Test alias works
 assert_contains "mise prep --list" "npm"
@@ -50,11 +50,11 @@ assert_contains "mise prepare --list" "codegen"
 assert_contains "mise prepare --list" "schema.graphql"
 
 # Test --only flag
-assert_contains "mise prepare --dry-run --only codegen" "codegen"
-assert_not_contains "mise prepare --dry-run --only codegen" "npm"
+assert_contains "mise prepare --dry-run --only codegen 2>&1" "codegen"
+assert_not_contains "mise prepare --dry-run --only codegen 2>&1" "npm"
 
 # Test --skip flag
-assert_not_contains "mise prepare --dry-run --skip npm" "npm install"
+assert_not_contains "mise prepare --dry-run --skip npm 2>&1" "npm install"
 
 # Test disable in config
 cat >mise.toml <<'EOF'
@@ -100,7 +100,7 @@ EOF
 
 assert_contains "mise prepare --list" "yarn"
 assert_contains "mise prepare --list" "yarn.lock"
-assert_contains "mise prepare --dry-run" "yarn"
+assert_contains "mise prepare --dry-run 2>&1" "yarn"
 
 # Test pnpm provider
 rm -f yarn.lock
@@ -114,7 +114,7 @@ EOF
 
 assert_contains "mise prepare --list" "pnpm"
 assert_contains "mise prepare --list" "pnpm-lock.yaml"
-assert_contains "mise prepare --dry-run" "pnpm"
+assert_contains "mise prepare --dry-run 2>&1" "pnpm"
 
 # Test bun provider (binary lockfile)
 rm -f pnpm-lock.yaml
@@ -126,7 +126,7 @@ EOF
 
 assert_contains "mise prepare --list" "bun"
 assert_contains "mise prepare --list" "bun.lockb"
-assert_contains "mise prepare --dry-run" "bun"
+assert_contains "mise prepare --dry-run 2>&1" "bun"
 
 # Test bun provider (text lockfile)
 rm -f bun.lockb
@@ -155,7 +155,7 @@ EOF
 
 assert_contains "mise prepare --list" "go"
 assert_contains "mise prepare --list" "go.sum"
-assert_contains "mise prepare --dry-run" "go"
+assert_contains "mise prepare --dry-run 2>&1" "go"
 
 # Test pip provider
 rm -f go.sum go.mod
@@ -169,7 +169,7 @@ EOF
 
 assert_contains "mise prepare --list" "pip"
 assert_contains "mise prepare --list" "requirements.txt"
-assert_contains "mise prepare --dry-run" "pip"
+assert_contains "mise prepare --dry-run 2>&1" "pip"
 
 # Test poetry provider
 rm -f requirements.txt
@@ -189,7 +189,7 @@ EOF
 
 assert_contains "mise prepare --list" "poetry"
 assert_contains "mise prepare --list" "poetry.lock"
-assert_contains "mise prepare --dry-run" "poetry"
+assert_contains "mise prepare --dry-run 2>&1" "poetry"
 
 # Test uv provider
 rm -f poetry.lock
@@ -203,7 +203,7 @@ EOF
 
 assert_contains "mise prepare --list" "uv"
 assert_contains "mise prepare --list" "uv.lock"
-assert_contains "mise prepare --dry-run" "uv"
+assert_contains "mise prepare --dry-run 2>&1" "uv"
 
 # Test bundler provider
 rm -f uv.lock pyproject.toml
@@ -221,7 +221,7 @@ EOF
 
 assert_contains "mise prepare --list" "bundler"
 assert_contains "mise prepare --list" "Gemfile.lock"
-assert_contains "mise prepare --dry-run" "bundler"
+assert_contains "mise prepare --dry-run 2>&1" "bundler"
 
 # Test composer provider
 rm -f Gemfile.lock Gemfile
@@ -240,7 +240,7 @@ EOF
 
 assert_contains "mise prepare --list" "composer"
 assert_contains "mise prepare --list" "composer.lock"
-assert_contains "mise prepare --dry-run" "composer"
+assert_contains "mise prepare --dry-run 2>&1" "composer"
 
 # Test freshness detection with content hashing
 rm -f composer.lock composer.json
@@ -258,20 +258,20 @@ EOF
 
 # Test 1: No output directory exists → should be stale (outputs missing)
 rm -rf .venv .mise
-assert_contains "mise prepare --dry-run" "custom_venv"
-assert_contains "mise prepare --dry-run" "outputs missing"
+assert_contains "mise prepare --dry-run 2>&1" "custom_venv"
+assert_contains "mise prepare --dry-run 2>&1" "outputs missing"
 
 # Test 2: Run prepare to establish state, then check freshness
 mkdir -p .venv
-assert_contains "mise prepare --only custom_venv" "Prepared: custom_venv"
+assert_contains "mise prepare --only custom_venv 2>&1" "Prepared: custom_venv"
 
 # Second run: sources unchanged, should be fresh (content hashes match)
-assert_not_contains "mise prepare --dry-run" "custom_venv"
+assert_not_contains "mise prepare --dry-run 2>&1" "custom_venv"
 
 # Test 3: Change source content → should be stale
 echo "flask==3.0.0" >>requirements.txt
-assert_contains "mise prepare --dry-run" "custom_venv"
-assert_contains "mise prepare --dry-run" "requirements.txt changed"
+assert_contains "mise prepare --dry-run 2>&1" "custom_venv"
+assert_contains "mise prepare --dry-run 2>&1" "requirements.txt changed"
 
 # Clean up
 rm -rf .venv requirements.txt .mise
@@ -323,17 +323,17 @@ echo "original content" >src_file.txt
 mkdir -p out_dir
 
 # First run: should execute (no previous state)
-assert_contains "mise prepare --only hash_test" "Prepared: hash_test"
+assert_contains "mise prepare --only hash_test 2>&1" "Prepared: hash_test"
 
 # Second run: sources unchanged, should be fresh (hashes saved in state)
-assert_contains "mise prepare --only hash_test" "up to date"
+assert_contains "mise prepare --only hash_test 2>&1" "up to date"
 
 # Modify source content → should be stale again
 echo "modified content" >src_file.txt
-assert_contains "mise prepare --only hash_test" "Prepared: hash_test"
+assert_contains "mise prepare --only hash_test 2>&1" "Prepared: hash_test"
 
 # Third run after re-prepare: fresh again
-assert_contains "mise prepare --only hash_test" "up to date"
+assert_contains "mise prepare --only hash_test 2>&1" "up to date"
 
 rm -rf src_file.txt out_dir .mise
 
@@ -483,7 +483,7 @@ EOF
 touch tera_input.txt
 
 # Prepare should run successfully
-assert_contains "mise prepare --only env_tera" "env_tera"
+assert_contains "mise prepare --only env_tera 2>&1" "env_tera"
 
 # The output file should contain the rendered value, not the raw template
 assert_contains "cat tera_output.txt" "hello_from_env"
@@ -513,14 +513,14 @@ assert_contains "mise prepare --list" "subdir/package-lock.json"
 
 # Run prepare and verify source hashes are tracked (provider becomes fresh)
 mkdir -p subdir/build_output
-assert_contains "mise prepare --only subdir_custom" "Prepared: subdir_custom"
+assert_contains "mise prepare --only subdir_custom 2>&1" "Prepared: subdir_custom"
 
 # Second run should be fresh (sources hashed correctly via subdir)
-assert_contains "mise prepare --only subdir_custom" "up to date"
+assert_contains "mise prepare --only subdir_custom 2>&1" "up to date"
 
 # Modify source in subdir → should be stale
 echo '{"name": "modified"}' >subdir/package.json
-assert_contains "mise prepare --only subdir_custom" "Prepared: subdir_custom"
+assert_contains "mise prepare --only subdir_custom 2>&1" "Prepared: subdir_custom"
 
 # Clean up
 rm -rf subdir mise.toml .mise

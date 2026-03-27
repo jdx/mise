@@ -81,4 +81,4 @@ fi
 rm -f prepare2.log
 
 # Test dry-run with depends shows what would run
-assert_contains "mise prepare --dry-run" "dep-first"
+assert_contains "mise prepare --dry-run 2>&1" "dep-first"
