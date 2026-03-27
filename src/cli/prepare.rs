@@ -117,7 +117,7 @@ impl Prepare {
                     debug!("Skipped: {}", id);
                 }
                 PrepareStepResult::Failed(id) => {
-                    warn!("Failed: {}", id);
+                    error!("Failed: {}", id);
                 }
             }
         }
