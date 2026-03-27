@@ -105,10 +105,10 @@ impl Prepare {
         for step in &result.steps {
             match step {
                 PrepareStepResult::Ran(id) => {
-                    miseprintln!("Prepared: {}", id);
+                    info!("Prepared: {}", id);
                 }
                 PrepareStepResult::WouldRun(id, reason) => {
-                    miseprintln!("[dry-run] Would prepare: {} ({})", id, reason);
+                    info!("[dry-run] Would prepare: {} ({})", id, reason);
                 }
                 PrepareStepResult::Fresh(id) => {
                     debug!("Fresh: {}", id);
@@ -117,13 +117,13 @@ impl Prepare {
                     debug!("Skipped: {}", id);
                 }
                 PrepareStepResult::Failed(id) => {
-                    miseprintln!("Failed: {}", id);
+                    warn!("Failed: {}", id);
                 }
             }
         }
 
         if !result.had_work() && !self.dry_run {
-            miseprintln!("All dependencies are up to date");
+            info!("All dependencies are up to date");
         }
 
         Ok(())
