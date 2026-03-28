@@ -680,8 +680,7 @@ pub fn path_env_without_shims() -> std::ffi::OsString {
 /// than inheriting the current process's PATH.
 pub fn strip_shims_from_path(path_val: &str) -> String {
     let shim_dir = &*dirs::SHIMS;
-    let filtered = env::split_paths(path_val)
-        .filter(|p| p.as_path() != *shim_dir);
+    let filtered = env::split_paths(path_val).filter(|p| p.as_path() != *shim_dir);
     std::env::join_paths(filtered)
         .unwrap_or_else(|_| std::ffi::OsString::from(path_val))
         .to_string_lossy()

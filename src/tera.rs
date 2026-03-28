@@ -428,10 +428,8 @@ pub fn tera_exec(
                 // evaluate the same template again indefinitely.
                 let mut env_no_shims = env.clone();
                 if let Some(path_val) = env_no_shims.get(&*env::PATH_KEY).cloned() {
-                    env_no_shims.insert(
-                        env::PATH_KEY.to_string(),
-                        strip_shims_from_path(&path_val),
-                    );
+                    env_no_shims
+                        .insert(env::PATH_KEY.to_string(), strip_shims_from_path(&path_val));
                 }
                 let mut cmd: duct::Expression = cmd(&shell[0], args).full_env(&env_no_shims);
                 if let Some(dir) = &dir {
