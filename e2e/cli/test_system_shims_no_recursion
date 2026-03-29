@@ -16,6 +16,7 @@ mkdir -p "$shimdir"
 # The binary inside it is a symlink to the mise binary, exactly like a real
 # system shim created by `mise install --system`.
 sys_shimdir="$(mktemp -d)"
+trap 'rm -rf "$sys_shimdir"' EXIT
 mise_bin="$(command -v mise)"
 ln -s "$mise_bin" "$sys_shimdir/dummy"
 
@@ -33,6 +34,3 @@ output="$(run_with_timeout 10 dummy 2>&1)" && {
 # Should contain a helpful error, not be empty (which would indicate a hang
 # that was killed) or a recursion-induced crash.
 assert_contains "echo '$output'" "dummy"
-
-# Cleanup
-rm -rf "$sys_shimdir"

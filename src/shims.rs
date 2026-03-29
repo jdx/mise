@@ -81,7 +81,14 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf>
     // fallback for "system"
     let mise_bin = fs::canonicalize(&*env::MISE_BIN).unwrap_or_else(|_| env::MISE_BIN.clone());
     let user_shims = fs::canonicalize(*dirs::SHIMS).unwrap_or_default();
-    let sys_shims = fs::canonicalize(env::MISE_SYSTEM_DATA_DIR.join("shims")).unwrap_or_default();
+    let sys_shims = {
+        let p = env::MISE_SYSTEM_DATA_DIR.join("shims");
+        if p.exists() {
+            fs::canonicalize(&p).unwrap_or(p)
+        } else {
+            PathBuf::new()
+        }
+    };
     for path in &*env::PATH {
         let canon_path = fs::canonicalize(path).unwrap_or_default();
         if canon_path == user_shims || canon_path == sys_shims {
