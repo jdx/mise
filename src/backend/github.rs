@@ -287,12 +287,12 @@ impl Backend for UnifiedGitBackend {
                 let rolling = rolling_config.matches(&version);
                 let checksum = if rolling {
                     // Try API digest first; fall back to companion checksum files
-                    let api_digest = self.resolve_rolling_checksum_from_assets(&r.assets, &opts);
-                    if let Some(digest) = api_digest {
-                        Some(digest)
-                    } else {
-                        self.resolve_checksum_from_companion_files(&r.assets, &opts)
-                            .await
+                    match self.resolve_rolling_checksum_from_assets(&r.assets, &opts) {
+                        Some(digest) => Some(digest),
+                        None => {
+                            self.resolve_checksum_from_companion_files(&r.assets, &opts)
+                                .await
+                        }
                     }
                 } else {
                     None
@@ -1320,6 +1320,14 @@ impl UnifiedGitBackend {
         }
     }
 
+    /// Convert GitHub release assets to the generic `Asset` type used by checksum/matching helpers.
+    fn github_assets_to_generic(assets: &[github::GithubAsset]) -> Vec<Asset> {
+        assets
+            .iter()
+            .map(|a| Asset::new(&a.name, &a.browser_download_url))
+            .collect()
+    }
+
     /// Resolve a checksum from companion checksum files (e.g., SHA256SUMS) in release assets.
     ///
     /// Uses `asset_pattern` or `AssetMatcher` auto-detection to identify the target asset,
@@ -1329,17 +1337,10 @@ impl UnifiedGitBackend {
         assets: &[github::GithubAsset],
         opts: &ToolVersionOptions,
     ) -> Option<String> {
-        let assets_with_urls: Vec<Asset> = assets
-            .iter()
-            .map(|a| Asset::new(&a.name, &a.browser_download_url))
-            .collect();
-        let matched_name = self.match_asset_name(&assets_with_urls, opts);
-        if let Some(name) = matched_name {
-            self.try_fetch_checksum_from_assets(&assets_with_urls, &name)
-                .await
-        } else {
-            None
-        }
+        let generic_assets = Self::github_assets_to_generic(assets);
+        let name = self.match_asset_name(&generic_assets, opts)?;
+        self.try_fetch_checksum_from_assets(&generic_assets, &name)
+            .await
     }
 
     /// Match an asset name using explicit `asset_pattern` or auto-detection.
@@ -1362,35 +1363,18 @@ impl UnifiedGitBackend {
         }
     }
 
-    /// Resolve a rolling release checksum from GitHub release assets.
-    /// Uses asset_pattern or AssetMatcher auto-detection to find the matching asset,
-    /// then returns its API digest.
+    /// Resolve a rolling release checksum from GitHub API asset digests.
+    /// Uses `match_asset_name` to find the target asset, then returns its API digest.
     fn resolve_rolling_checksum_from_assets(
         &self,
         assets: &[github::GithubAsset],
         opts: &ToolVersionOptions,
     ) -> Option<String> {
-        // Try explicit pattern first
-        if let Some(pattern) = opts.get("asset_pattern") {
-            return assets
-                .iter()
-                .find(|a| self.matches_pattern(&a.name, pattern))
-                .and_then(|a| a.digest.clone());
-        }
-
-        // Fall back to auto-detection
-        let no_app = get_no_app(opts);
-        let asset_names: Vec<String> = assets.iter().map(|a| a.name.clone()).collect();
-        let target = PlatformTarget::from_current();
-        let matched = asset_matcher::AssetMatcher::new()
-            .for_target(&target)
-            .with_no_app(no_app)
-            .pick_from(&asset_names)
-            .ok()?;
-
+        let generic_assets = Self::github_assets_to_generic(assets);
+        let matched_name = self.match_asset_name(&generic_assets, opts)?;
         assets
             .iter()
-            .find(|a| a.name.eq_ignore_ascii_case(&matched.name))
+            .find(|a| a.name.eq_ignore_ascii_case(&matched_name))
             .and_then(|a| a.digest.clone())
     }
 
