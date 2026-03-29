@@ -243,6 +243,46 @@ For GitHub Enterprise or self-hosted GitHub instances, specify the API URL:
 
 If you are using a self-hosted GitHub instance, set the `api_url` tool option. For authentication, see [GitHub Tokens](/dev-tools/github-tokens.html#github-enterprise).
 
+## Rolling Releases
+
+Some tools publish rolling release tags like `nightly` or `stable` whose content changes over
+time while the tag name stays the same. By default, `mise upgrade` cannot detect changes to
+these tags because the version string doesn't change. Rolling release support solves this by
+tracking asset checksums to detect when a rolling release has been updated.
+
+### `rolling`
+
+Marks the current version as a rolling release. This is the recommended way to enable rolling
+release tracking when you know the specific version you're using is a rolling release.
+
+```toml
+[tools."github:user/tool"]
+version = "nightly"
+rolling = true
+```
+
+When a version is marked as rolling:
+
+- `mise upgrade` detects changes by comparing the asset checksum against the previously installed checksum
+- The version is marked as rolling in `mise outdated` output
+
+### `rolling_regex`
+
+Specifies a regex pattern that matches release tags considered rolling releases. This is
+ideal for registry entries where a tool maintainer knows which tags are inherently rolling:
+
+```toml
+# registry/mytool.toml
+[[backends]]
+full = "github:user/tool"
+
+[backends.options]
+rolling_regex = "^(nightly|stable)$"
+```
+
+Both `rolling` and `rolling_regex` can be used together. A version is treated as rolling if
+either condition matches.
+
 ## Supported GitHub Syntax
 
 - **GitHub shorthand for latest release version:** `github:cli/cli`
