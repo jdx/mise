@@ -44,7 +44,8 @@ const DEFAULT_FORGEJO_API_BASE_URL: &str = "https://codeberg.org/api/v1";
 /// Rolling release configuration parsed from tool options.
 struct RollingConfig {
     regex: Option<Regex>,
-    version: Option<String>,
+    /// When true, all versions are considered rolling (`rolling = true` was set).
+    rolling_flag: bool,
 }
 
 impl RollingConfig {
@@ -57,20 +58,16 @@ impl RollingConfig {
                 None
             }
         });
-        let version = opts
-            .get("rolling")
-            .is_some_and(|v| v == "true")
-            .then(|| opts.get("version").map(|s| s.to_string()))
-            .flatten();
-        Self { regex, version }
+        let rolling_flag = opts.get("rolling").is_some_and(|v| v == "true");
+        Self {
+            regex,
+            rolling_flag,
+        }
     }
 
     /// Check whether a version is a rolling release.
     fn matches(&self, version: &str) -> bool {
-        if self.regex.as_ref().is_some_and(|re| re.is_match(version)) {
-            return true;
-        }
-        self.version.as_deref() == Some(version)
+        self.regex.as_ref().is_some_and(|re| re.is_match(version)) || self.rolling_flag
     }
 }
 
@@ -2017,30 +2014,17 @@ mod tests {
     }
 
     #[test]
-    fn test_is_rolling_version_rolling_true_matching() {
-        let config =
-            RollingConfig::from_opts(&opts_with(&[("rolling", "true"), ("version", "nightly")]));
-        assert!(config.matches("nightly"));
-    }
-
-    #[test]
-    fn test_is_rolling_version_rolling_true_non_matching() {
-        let config =
-            RollingConfig::from_opts(&opts_with(&[("rolling", "true"), ("version", "nightly")]));
-        assert!(!config.matches("v1.0.0"));
-    }
-
-    #[test]
-    fn test_is_rolling_version_rolling_true_no_version_opt() {
+    fn test_is_rolling_version_rolling_true() {
+        // rolling=true marks ALL versions as rolling
         let config = RollingConfig::from_opts(&opts_with(&[("rolling", "true")]));
-        // rolling=true without version option means no specific version is rolling
-        assert!(!config.matches("nightly"));
+        assert!(config.matches("nightly"));
+        assert!(config.matches("v1.0.0"));
+        assert!(config.matches("anything"));
     }
 
     #[test]
     fn test_is_rolling_version_rolling_false() {
-        let config =
-            RollingConfig::from_opts(&opts_with(&[("rolling", "false"), ("version", "nightly")]));
+        let config = RollingConfig::from_opts(&opts_with(&[("rolling", "false")]));
         assert!(!config.matches("nightly"));
     }
 
@@ -2069,18 +2053,17 @@ mod tests {
         let config = RollingConfig::from_opts(&opts_with(&[
             ("rolling_regex", "^nightly$"),
             ("rolling", "true"),
-            ("version", "nightly"),
         ]));
         assert!(config.matches("nightly"));
     }
 
     #[test]
-    fn test_is_rolling_version_regex_miss_falls_through() {
+    fn test_is_rolling_version_regex_miss_falls_through_to_flag() {
         let config = RollingConfig::from_opts(&opts_with(&[
             ("rolling_regex", "^canary$"),
             ("rolling", "true"),
-            ("version", "nightly"),
         ]));
+        // regex misses "nightly" but rolling_flag=true matches everything
         assert!(config.matches("nightly"));
     }
 
