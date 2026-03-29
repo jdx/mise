@@ -58,7 +58,7 @@ mise install
 assert_contains "mise x -- hello-world" "hello world"
 
 # Verify install is a symlink (HTTP backend caching behavior)
-INSTALL_PATH="$MISE_DATA_DIR/installs/http-hello-upgrade/1.0.0"
+INSTALL_PATH="$MISE_DATA_DIR/installs/@http/hello-upgrade/1.0.0"
 if [[ ! -L $INSTALL_PATH ]]; then
 	fail "Expected install path to be a symlink: $INSTALL_PATH"
 fi

@@ -7,13 +7,34 @@ assert_directory_exists "$MISE_CACHE_DIR/tiny"
 assert "mise cache clear tiny"
 assert_directory_not_exists "$MISE_CACHE_DIR/tiny"
 
+# Test cache clear with backend:tool style name
+# The cache dir uses nested structure: npm:prettier -> @npm/prettier
+mkdir -p "$MISE_CACHE_DIR/@npm/prettier"
+echo "test" >"$MISE_CACHE_DIR/@npm/prettier/data"
+assert_directory_exists "$MISE_CACHE_DIR/@npm/prettier"
+assert "mise cache clear npm:prettier"
+assert_directory_not_exists "$MISE_CACHE_DIR/@npm/prettier"
+
 # Test cache clear with github:owner/repo style name
-# The cache dir uses kebab-case: github:owner/repo -> github-owner-repo
-mkdir -p "$MISE_CACHE_DIR/github-test-repo"
-echo "test" >"$MISE_CACHE_DIR/github-test-repo/data"
-assert_directory_exists "$MISE_CACHE_DIR/github-test-repo"
+# github:test/repo -> @github/test-repo
+mkdir -p "$MISE_CACHE_DIR/@github/test-repo"
+echo "test" >"$MISE_CACHE_DIR/@github/test-repo/data"
+assert_directory_exists "$MISE_CACHE_DIR/@github/test-repo"
 assert "mise cache clear github:test/repo"
-assert_directory_not_exists "$MISE_CACHE_DIR/github-test-repo"
+assert_directory_not_exists "$MISE_CACHE_DIR/@github/test-repo"
+
+# Test cache clear with backend name clears all tools under that backend
+mkdir -p "$MISE_CACHE_DIR/@foxhound/base/latest"
+echo "exec_env_data" >"$MISE_CACHE_DIR/@foxhound/base/latest/exec_env_cache"
+mkdir -p "$MISE_CACHE_DIR/@foxhound/lang-python/latest"
+echo "exec_env_data" >"$MISE_CACHE_DIR/@foxhound/lang-python/latest/exec_env_cache"
+mkdir -p "$MISE_CACHE_DIR/@foxhound/lang-lua/latest"
+echo "exec_env_data" >"$MISE_CACHE_DIR/@foxhound/lang-lua/latest/exec_env_cache"
+assert_directory_exists "$MISE_CACHE_DIR/@foxhound/base"
+assert_directory_exists "$MISE_CACHE_DIR/@foxhound/lang-python"
+assert_directory_exists "$MISE_CACHE_DIR/@foxhound/lang-lua"
+assert "mise cache clear foxhound"
+assert_directory_not_exists "$MISE_CACHE_DIR/@foxhound"
 
 # Test cache clear all
 mkdir -p "$MISE_CACHE_DIR/foo"

@@ -1,9 +1,9 @@
+use crate::cli::args::short_to_pathname;
 use crate::dirs::CACHE;
 use crate::file::{display_path, remove_all};
 use crate::toolset::env_cache::CachedEnv;
 use eyre::Result;
 use filetime::set_file_times;
-use heck::ToKebabCase;
 use walkdir::WalkDir;
 
 /// Deletes all cache files in mise
@@ -25,12 +25,25 @@ impl CacheClear {
             Some(plugins) => plugins
                 .iter()
                 .filter_map(|p| {
-                    let kebab = p.to_kebab_case();
-                    if kebab.is_empty() {
+                    let pathname = short_to_pathname(p);
+                    if pathname.as_os_str().is_empty() {
                         warn!("invalid plugin name: {p}");
                         None
                     } else {
-                        Some(CACHE.join(kebab))
+                        let path = CACHE.join(&pathname);
+                        if path.exists() {
+                            Some(path)
+                        } else if !p.contains(':') {
+                            // For bare names (no colon), also try @-prefixed backend container
+                            let at_path = CACHE.join(format!("@{p}"));
+                            if at_path.exists() {
+                                Some(at_path)
+                            } else {
+                                Some(path)
+                            }
+                        } else {
+                            Some(path)
+                        }
                     }
                 })
                 .collect(),

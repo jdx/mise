@@ -100,6 +100,26 @@ impl From<InstallStateTool> for BackendArg {
     }
 }
 
+/// Convert a short tool name to a filesystem pathname.
+///
+/// Backend-qualified names (containing `:`) use an `@`-prefixed nested directory
+/// to avoid collisions with flat tool names (e.g., `pipx` the tool vs `pipx:mkdocs`):
+///   "npm:prettier"                → "@npm/prettier"
+///   "pipx:mkdocs"                 → "@pipx/mkdocs"
+///   "vfox:version-fox/vfox-nodejs" → "@vfox/version-fox-vfox-nodejs"
+///
+/// Simple names stay flat:
+///   "node" → "node"
+pub fn short_to_pathname(short: &str) -> PathBuf {
+    if let Some((backend, tool)) = short.split_once(':') {
+        let backend_part = format!("@{}", backend.to_kebab_case());
+        let tool_part = tool.to_kebab_case();
+        PathBuf::from(backend_part).join(tool_part)
+    } else {
+        PathBuf::from(short.to_kebab_case())
+    }
+}
+
 /// Split a string like `"http:hello[url=...,bin=bin]"` into `("http:hello", "url=...,bin=bin")`.
 /// Returns `None` if no bracketed opts are present.
 pub fn split_bracketed_opts(s: &str) -> Option<(&str, &str)> {
@@ -148,7 +168,7 @@ impl BackendArg {
         opts: Option<ToolVersionOptions>,
         resolution: BackendResolution,
     ) -> Self {
-        let pathname = short.to_kebab_case();
+        let pathname = short_to_pathname(&short);
         Self {
             tool_name,
             short,
@@ -162,14 +182,12 @@ impl BackendArg {
         }
     }
 
-    /// Returns the kebab-cased directory name used for this tool's install path.
-    /// This is the canonical name used on the filesystem (e.g. "github-user-repo").
-    pub fn tool_dir_name(&self) -> String {
+    /// Returns the relative directory path for this tool under the installs base dir.
+    pub fn tool_dir_name(&self) -> PathBuf {
         self.installs_path
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .to_string()
+            .strip_prefix(*dirs::INSTALLS)
+            .unwrap_or(self.installs_path.as_path())
+            .to_path_buf()
     }
 
     pub fn backend(&self) -> Result<ABackend> {
@@ -627,22 +645,25 @@ mod tests {
     #[tokio::test]
     async fn test_backend_arg_pathname() {
         let _config = Config::get().await.unwrap();
-        let t = |s: &str, expected| {
+        let t = |s: &str, expected: PathBuf| {
             let fa: BackendArg = s.into();
-            let actual = fa.installs_path.to_string_lossy();
+            let actual = fa.installs_path;
             let expected = dirs::INSTALLS.join(expected);
-            assert_str_eq!(actual, expected.to_string_lossy());
+            assert_str_eq!(actual.to_string_lossy(), expected.to_string_lossy());
         };
-        t("asdf:node", "asdf-node");
-        t("node", "node");
-        t("cargo:eza", "cargo-eza");
-        t("npm:@antfu/ni", "npm-antfu-ni");
-        t("npm:prettier", "npm-prettier");
+        t("asdf:node", PathBuf::from("@asdf").join("node"));
+        t("node", PathBuf::from("node"));
+        t("cargo:eza", PathBuf::from("@cargo").join("eza"));
+        t("npm:@antfu/ni", PathBuf::from("@npm").join("antfu-ni"));
+        t("npm:prettier", PathBuf::from("@npm").join("prettier"));
         t(
             "vfox:version-fox/vfox-nodejs",
-            "vfox-version-fox-vfox-nodejs",
+            PathBuf::from("@vfox").join("version-fox-vfox-nodejs"),
         );
-        t("vfox:version-fox/nodejs", "vfox-version-fox-nodejs");
+        t(
+            "vfox:version-fox/nodejs",
+            PathBuf::from("@vfox").join("version-fox-nodejs"),
+        );
     }
 
     #[tokio::test]

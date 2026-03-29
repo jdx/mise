@@ -207,12 +207,12 @@ pub enum InstallPathCategory {
 }
 
 /// Look up a tool version in shared install directories.
-/// `tool_dir_name` should be the kebab-cased directory name (e.g. from `ba.installs_path`).
+/// `tool_dir_name` is the relative directory path for the tool (e.g. "node" or "npm/prettier").
 /// Returns the first shared path where `<shared_dir>/<tool_dir_name>/<pathname>` exists,
 /// or `primary_path` if not found in any shared directory.
 pub fn find_in_shared_installs(
     primary_path: PathBuf,
-    tool_dir_name: &str,
+    tool_dir_name: &Path,
     pathname: &str,
 ) -> PathBuf {
     if !primary_path.exists() {

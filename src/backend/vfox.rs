@@ -405,7 +405,7 @@ impl VfoxBackend {
                     .await
                     .wrap_err("Backend exec env method failed")?
                 } else {
-                    vfox.env_keys(&self.pathname, &tv.version, &opts.opts)
+                    vfox.env_keys(&self.pathname, &tv.version, tv.install_path(), &opts.opts)
                         .await?
                 };
 

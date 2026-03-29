@@ -9,10 +9,12 @@ pub struct EnvKeys {
 impl EnvKeys {
     pub async fn run(&self) -> VfoxResult<()> {
         let vfox = Vfox::new();
+        let install_path = vfox.install_dir.join(&self.sdk).join(&self.version);
         let env_keys = vfox
             .env_keys(
                 &self.sdk,
                 &self.version,
+                install_path,
                 serde_json::Value::Object(Default::default()),
             )
             .await?;

@@ -50,7 +50,7 @@ Describe 'vfox' {
         
         # Test using the installed npm tool
         $which = mise where vfox-npm:prettier@3.0.0
-        $which | Should -Match "vfox-npm-prettier"
+        $which | Should -Match "@vfox-npm[\\/]prettier"
         $version = mise x vfox-npm:prettier@3.0.0 -- prettier --version
         $version | Should -Be "3.0.0"
         

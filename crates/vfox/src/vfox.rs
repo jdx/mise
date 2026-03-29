@@ -245,14 +245,12 @@ impl Vfox {
         &self,
         sdk: &str,
         version: &str,
+        install_path: PathBuf,
         options: T,
     ) -> Result<Vec<EnvKey>> {
         debug!("Getting env keys for {sdk} version {version}");
         let sdk = self.get_sdk(sdk)?;
-        let sdk_info = sdk.sdk_info(
-            version.to_string(),
-            self.install_dir.join(&sdk.name).join(version),
-        )?;
+        let sdk_info = sdk.sdk_info(version.to_string(), install_path)?;
         let ctx = EnvKeysContext {
             args: vec![],
             version: version.to_string(),
@@ -582,10 +580,12 @@ mod tests {
     async fn test_env_keys() {
         let vfox = Vfox::test();
         // dummy plugin already exists in plugins/dummy, no need to install
+        let install_path = vfox.install_dir.join("dummy").join("1.0.0");
         let keys = vfox
             .env_keys(
                 "dummy",
                 "1.0.0",
+                install_path,
                 serde_json::Value::Object(Default::default()),
             )
             .await

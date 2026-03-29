@@ -32,7 +32,7 @@ mise install
 assert_contains "mise x -- cowsay --version" "6.1"
 
 # Find the venv directory - could be cowsay/ or venvs/cowsay/
-INSTALL_DIR="$MISE_DATA_DIR/installs/pipx-cowsay/6.1"
+INSTALL_DIR="$MISE_DATA_DIR/installs/@pipx/cowsay/6.1"
 if [[ -d "$INSTALL_DIR/cowsay" ]]; then
 	VENV_DIR="$INSTALL_DIR/cowsay"
 elif [[ -d "$INSTALL_DIR/venvs/cowsay" ]]; then

@@ -28,4 +28,4 @@ mise install
 
 # Assert that mkdocs 1.6.0 has been installed with pipx
 # (mkdocs conveniently returns its installation path in with --version)
-assert_contains "mise x -- mkdocs --version" "/mise/installs/pipx-mkdocs/1.6.0/"
+assert_contains "mise x -- mkdocs --version" "/mise/installs/@pipx/mkdocs/1.6.0/"

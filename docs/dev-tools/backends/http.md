@@ -417,7 +417,7 @@ Example cache directory structure:
 Tool installations are symlinks to the cached extracted content:
 
 ```bash
-~/.local/share/mise/installs/http-my-tool/1.0.0 → ~/.cache/mise/http-tarballs/71f774.../extracted
+~/.local/share/mise/installs/@http/my-tool/1.0.0 → ~/.cache/mise/http-tarballs/71f774.../extracted
 ```
 
 This approach provides several benefits:

@@ -95,12 +95,12 @@ EOF
 mise install
 
 # Debug: show what was installed
-ls -la "$HOME/.local/share/mise/installs/s3-test-tool/1.0.0/" || true
-ls -la "$HOME/.local/share/mise/installs/s3-test-tool/1.0.0/test-tool-1.0.0/bin/" || true
+ls -la "$HOME/.local/share/mise/installs/@s3/test-tool/1.0.0/" || true
+ls -la "$HOME/.local/share/mise/installs/@s3/test-tool/1.0.0/test-tool-1.0.0/bin/" || true
 
 # Debug: check if the binary runs directly
-cat "$HOME/.local/share/mise/installs/s3-test-tool/1.0.0/test-tool-1.0.0/bin/test-tool"
-"$HOME/.local/share/mise/installs/s3-test-tool/1.0.0/test-tool-1.0.0/bin/test-tool" || echo "Direct exec failed with: $?"
+cat "$HOME/.local/share/mise/installs/@s3/test-tool/1.0.0/test-tool-1.0.0/bin/test-tool"
+"$HOME/.local/share/mise/installs/@s3/test-tool/1.0.0/test-tool-1.0.0/bin/test-tool" || echo "Direct exec failed with: $?"
 
 # Debug: check mise bin paths
 mise where s3:test-tool@1.0.0 || true

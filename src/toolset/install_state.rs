@@ -1,5 +1,5 @@
 use crate::backend::backend_type::BackendType;
-use crate::cli::args::BackendArg;
+use crate::cli::args::{BackendArg, short_to_pathname};
 use crate::file::display_path;
 use crate::git::Git;
 use crate::plugins::PluginType;
@@ -42,7 +42,7 @@ pub struct InstallStateTool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ManifestTool {
     /// Original short name (e.g. "github:jdx/mise-test-fixtures").
-    /// May differ from the manifest key (which is the kebab-cased dir name).
+    /// May differ from the manifest key (which is the directory pathname).
     short: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     full: Option<String>,
@@ -190,6 +190,47 @@ async fn init_plugins() -> MutexResult<InstallStatePlugins> {
     Ok(plugins)
 }
 
+/// Enumerate all tool directories under a base directory.
+///
+/// Returns `(dir_name, abs_path)` pairs where `dir_name` is the relative path
+/// used as a manifest key (e.g. "node" for flat tools, "@npm/prettier" for nested).
+///
+/// Directories starting with `@` are backend containers with nested tool subdirs.
+/// All other directories are flat tool directories.
+fn enumerate_tool_dirs(base: &Path) -> Vec<(String, PathBuf)> {
+    let top_dirs = match file::dir_subdirs(base) {
+        std::result::Result::Ok(d) => d,
+        Err(err) => {
+            warn!(
+                "reading install dirs {} failed: {err:?}",
+                display_path(base)
+            );
+            return vec![];
+        }
+    };
+    let mut result = vec![];
+    for dir_name in top_dirs {
+        if dir_name.starts_with('.') {
+            continue;
+        }
+        if dir_name.starts_with('@') {
+            let tool_dir = base.join(&dir_name);
+            if let std::result::Result::Ok(tool_subdirs) = file::dir_subdirs(&tool_dir) {
+                for tool_name in tool_subdirs {
+                    if tool_name.starts_with('.') {
+                        continue;
+                    }
+                    let key = format!("{dir_name}/{tool_name}");
+                    result.push((key, tool_dir.join(&tool_name)));
+                }
+            }
+        } else {
+            result.push((dir_name.clone(), base.join(&dir_name)));
+        }
+    }
+    result
+}
+
 async fn init_tools() -> MutexResult<InstallStateTools> {
     if let Some(tools) = INSTALL_STATE_TOOLS
         .lock()
@@ -202,16 +243,14 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
     // 1. Read manifest (1 syscall)
     let manifest = read_manifest();
 
-    // 2. List install dirs (1 syscall)
-    let subdirs = file::dir_subdirs(&dirs::INSTALLS)?;
+    // 2. List install dirs (1 readdir per top-level dir + 1 per backend container)
+    let tool_dirs = enumerate_tool_dirs(&dirs::INSTALLS);
 
     // 3. For each dir, read versions from filesystem and merge with manifest metadata.
     //    Only clone the manifest for mutation if we actually need to migrate legacy entries.
     let mut updated_manifest: Option<Manifest> = None;
     let mut tools = BTreeMap::new();
-    for dir_name in subdirs {
-        let dir = dirs::INSTALLS.join(&dir_name);
-
+    for (dir_name, dir) in tool_dirs {
         // Read versions from filesystem (1 syscall per tool — unavoidable)
         let versions: Vec<String> = file::dir_subdirs(&dir)
             .unwrap_or_else(|err| {
@@ -277,7 +316,13 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
             );
             (s, full, explicit, BTreeMap::new())
         } else {
-            (dir_name.clone(), None, true, BTreeMap::new())
+            // Convert nested dir path back to short format (e.g., "@npm/prettier" → "npm:prettier")
+            let short = if let Some((backend, tool)) = dir_name.split_once('/') {
+                format!("{}:{tool}", backend.trim_start_matches('@'))
+            } else {
+                dir_name.clone()
+            };
+            (short, None, true, BTreeMap::new())
         };
 
         let tool = InstallStateTool {
@@ -307,18 +352,8 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
         }
         let shared_manifest_path = shared_dir.join(".mise-installs.toml");
         let shared_manifest = read_manifest_from(&shared_manifest_path);
-        let shared_subdirs = match file::dir_subdirs(&shared_dir) {
-            std::result::Result::Ok(d) => d,
-            Err(err) => {
-                warn!(
-                    "reading shared install dir {} failed: {err:?}",
-                    display_path(&shared_dir)
-                );
-                continue;
-            }
-        };
-        for dir_name in shared_subdirs {
-            let dir = shared_dir.join(&dir_name);
+        let shared_tool_dirs = enumerate_tool_dirs(&shared_dir);
+        for (dir_name, dir) in shared_tool_dirs {
             let versions: Vec<String> = file::dir_subdirs(&dir)
                 .unwrap_or_else(|err| {
                     warn!("reading versions in {} failed: {err:?}", display_path(&dir));
@@ -347,7 +382,12 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
                         mt.opts.clone(),
                     )
                 } else {
-                    (dir_name.clone(), None, true, BTreeMap::new())
+                    let short = if let Some((backend, tool)) = dir_name.split_once('/') {
+                        format!("{}:{tool}", backend.trim_start_matches('@'))
+                    } else {
+                        dir_name.clone()
+                    };
+                    (short, None, true, BTreeMap::new())
                 };
 
             // Merge with existing tool entry or create new one
@@ -502,7 +542,9 @@ pub fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> {
     let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
     let mut manifest = read_manifest_from(path);
     manifest.insert(
-        ba.short.to_kebab_case(),
+        short_to_pathname(&ba.short)
+            .to_string_lossy()
+            .replace('\\', "/"),
         ManifestTool {
             short: ba.short.clone(),
             full: Some(full),
@@ -516,7 +558,7 @@ pub fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> {
 
 pub fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
     dirs::CACHE
-        .join(short.to_kebab_case())
+        .join(short_to_pathname(short))
         .join(v)
         .join("incomplete")
 }
@@ -525,7 +567,7 @@ pub fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
 /// Used to track changes in rolling releases (like "nightly")
 fn checksum_file_path(short: &str, v: &str) -> PathBuf {
     dirs::INSTALLS
-        .join(short.to_kebab_case())
+        .join(short_to_pathname(short))
         .join(v)
         .join(".mise.checksum")
 }

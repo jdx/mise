@@ -95,7 +95,7 @@ fi
 
 # Test 5: Verify that install directories are symlinks to cache
 echo "Test 5: Verifying install directories are symlinks to cache"
-INSTALL_DIR="$HOME/.local/share/mise/installs/http-hello-cache1/1.0.0"
+INSTALL_DIR="$HOME/.local/share/mise/installs/@http/hello-cache1/1.0.0"
 if [ ! -L "$INSTALL_DIR" ]; then
 	echo "ERROR: Install directory is not a symlink: $INSTALL_DIR"
 	exit 1

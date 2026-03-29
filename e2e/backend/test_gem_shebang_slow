@@ -7,7 +7,7 @@ mise use gem:ruby-lsp@0.23.0
 
 # Get the Ruby shebang from the gem executable
 # RubyGems creates polyglot scripts: #!/bin/sh on line 1, Ruby shebang after =end
-gem_exec="$MISE_DATA_DIR/installs/gem-ruby-lsp/0.23.0/libexec/bin/ruby-lsp"
+gem_exec="$MISE_DATA_DIR/installs/@gem/ruby-lsp/0.23.0/libexec/bin/ruby-lsp"
 
 # Find the Ruby shebang line (after =end for polyglot scripts)
 shebang=$(awk '/^=end$/{found=1; next} found && /^#!/{print; exit}' "$gem_exec")
