@@ -31,7 +31,8 @@ use crate::task::{Task, TaskTemplate};
 use crate::tera::take_tera_accessed_files;
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
-    ToolRequestSet, ToolRequestSetBuilder, ToolVersion, ToolVersionOptions, Toolset, install_state,
+    ToolRequest, ToolRequestSet, ToolRequestSetBuilder, ToolVersion, ToolVersionOptions, Toolset,
+    install_state,
 };
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
@@ -350,6 +351,28 @@ impl Config {
         self: &Arc<Self>,
         backend_arg: &Arc<BackendArg>,
     ) -> Result<Option<ToolVersionOptions>> {
+        Ok(self
+            .get_first_tool_request(backend_arg)
+            .await?
+            .map(|req| req.options()))
+    }
+
+    /// Get the declared version string for a tool from the first matching tool request.
+    pub async fn get_tool_version(
+        self: &Arc<Self>,
+        backend_arg: &Arc<BackendArg>,
+    ) -> Result<Option<String>> {
+        Ok(self
+            .get_first_tool_request(backend_arg)
+            .await?
+            .map(|req| req.version()))
+    }
+
+    /// Find the first tool request matching a backend arg.
+    async fn get_first_tool_request(
+        self: &Arc<Self>,
+        backend_arg: &Arc<BackendArg>,
+    ) -> Result<Option<ToolRequest>> {
         let trs = self.get_tool_request_set().await?;
         // Try matching by resolved full name first for aliased tools.
         // e.g., ba.short="treesize" resolves to full="gitlab:FBibonne/treesize"
@@ -362,7 +385,7 @@ impl Config {
             .iter()
             .find(|tr| tr.0.short == resolved_ba.short)
             .or_else(|| trs.iter().find(|tr| tr.0.short == backend_arg.short));
-        Ok(tool_request.and_then(|tr| tr.1.first().map(|req| req.options())))
+        Ok(tool_request.and_then(|tr| tr.1.first().cloned()))
     }
 
     pub fn get_repo_url(&self, plugin_name: &str) -> Option<String> {

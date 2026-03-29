@@ -53,11 +53,14 @@ struct RollingConfig {
     regex: Option<Regex>,
     /// When true, all versions are considered rolling (`rolling = true` was set).
     rolling_flag: bool,
+    /// The declared version from the user's tool config (e.g., "nightly").
+    /// Only set when `rolling_flag` is true, used to limit expensive checksum lookups.
+    declared_version: Option<String>,
 }
 
 impl RollingConfig {
     /// Parse rolling release configuration from tool options.
-    fn from_opts(opts: &ToolVersionOptions) -> Self {
+    fn from_opts(opts: &ToolVersionOptions, declared_version: Option<String>) -> Self {
         let regex = opts.get("rolling_regex").and_then(|s| match Regex::new(s) {
             Ok(re) => Some(re),
             Err(e) => {
@@ -69,12 +72,21 @@ impl RollingConfig {
         Self {
             regex,
             rolling_flag,
+            declared_version: if rolling_flag { declared_version } else { None },
         }
     }
 
     /// Check whether a version is a rolling release.
     fn matches(&self, version: &str) -> bool {
         self.regex.as_ref().is_some_and(|re| re.is_match(version)) || self.rolling_flag
+    }
+
+    /// Check whether a version needs an expensive checksum lookup.
+    /// When `rolling_flag` is true, only the declared version needs a checksum —
+    /// other versions are still marked rolling but don't need per-version API calls.
+    fn needs_checksum(&self, version: &str) -> bool {
+        self.regex.as_ref().is_some_and(|re| re.is_match(version))
+            || (self.rolling_flag && self.declared_version.as_deref() == Some(version))
     }
 }
 
@@ -202,7 +214,8 @@ impl Backend for UnifiedGitBackend {
         let version_prefix = opts.get("version_prefix");
 
         // Parse rolling release configuration from tool options
-        let rolling_config = RollingConfig::from_opts(&opts);
+        let declared_version = config.get_tool_version(&self.ba).await?;
+        let rolling_config = RollingConfig::from_opts(&opts, declared_version);
 
         // Derive web URL base from API URL for enterprise support
         let web_url_base = if self.is_gitlab() {
@@ -285,7 +298,7 @@ impl Backend for UnifiedGitBackend {
             for r in &releases {
                 let version = self.strip_version_prefix(&r.tag_name, &opts);
                 let rolling = rolling_config.matches(&version);
-                let checksum = if rolling {
+                let checksum = if rolling && rolling_config.needs_checksum(&version) {
                     // Try API digest first; fall back to companion checksum files
                     match self.resolve_rolling_checksum_from_assets(&r.assets, &opts) {
                         Some(digest) => Some(digest),
@@ -318,7 +331,10 @@ impl Backend for UnifiedGitBackend {
             };
 
             for vi in raw_versions.iter_mut() {
-                if !vi.rolling || vi.checksum.is_some() {
+                if !vi.rolling
+                    || vi.checksum.is_some()
+                    || !rolling_config.needs_checksum(&vi.version)
+                {
                     continue;
                 }
                 let Some(tag) = rolling_tags.get(&vi.version).cloned() else {
@@ -464,25 +480,28 @@ impl Backend for UnifiedGitBackend {
         // Store checksum for rolling version tracking.
         // The digest may come from the resolved asset (GitHub API) or, for lockfile-based
         // installs where asset.digest is None, from the lockfile's PlatformInfo.
-        if RollingConfig::from_opts(&opts).matches(&tv.version) {
+        if RollingConfig::from_opts(&opts, None).matches(&tv.version) {
             let digest = asset.digest.as_deref().or_else(|| {
                 tv.lock_platforms
                     .get(&platform_key)
                     .and_then(|pi| pi.checksum.as_deref())
             });
-            if let Some(digest) = digest
-                && let Err(e) = crate::toolset::install_state::write_checksum(
-                    &self.ba.short,
-                    &tv.version,
-                    digest,
-                )
-            {
-                warn!("failed to write checksum for {}: {e}", tv);
-            } else if digest.is_none() {
-                trace!(
-                    "no digest available for rolling version {}, update detection will be limited",
-                    tv
-                );
+            match digest {
+                Some(digest) => {
+                    if let Err(e) = crate::toolset::install_state::write_checksum(
+                        &self.ba.short,
+                        &tv.version,
+                        digest,
+                    ) {
+                        warn!("failed to write checksum for {}: {e}", tv);
+                    }
+                }
+                None => {
+                    trace!(
+                        "no digest available for rolling version {}, update detection will be limited",
+                        tv
+                    );
+                }
             }
         }
 
@@ -2032,7 +2051,7 @@ mod tests {
 
     #[test]
     fn test_is_rolling_version_no_options() {
-        let config = RollingConfig::from_opts(&opts_with(&[]));
+        let config = RollingConfig::from_opts(&opts_with(&[]), None);
         assert!(!config.matches("nightly"));
         assert!(!config.matches("1.0.0"));
     }
@@ -2040,7 +2059,7 @@ mod tests {
     #[test]
     fn test_is_rolling_version_rolling_true() {
         // rolling=true marks ALL versions as rolling
-        let config = RollingConfig::from_opts(&opts_with(&[("rolling", "true")]));
+        let config = RollingConfig::from_opts(&opts_with(&[("rolling", "true")]), None);
         assert!(config.matches("nightly"));
         assert!(config.matches("v1.0.0"));
         assert!(config.matches("anything"));
@@ -2048,25 +2067,27 @@ mod tests {
 
     #[test]
     fn test_is_rolling_version_rolling_false() {
-        let config = RollingConfig::from_opts(&opts_with(&[("rolling", "false")]));
+        let config = RollingConfig::from_opts(&opts_with(&[("rolling", "false")]), None);
         assert!(!config.matches("nightly"));
     }
 
     #[test]
     fn test_is_rolling_version_regex_match() {
-        let config = RollingConfig::from_opts(&opts_with(&[("rolling_regex", "^nightly-.*")]));
+        let config =
+            RollingConfig::from_opts(&opts_with(&[("rolling_regex", "^nightly-.*")]), None);
         assert!(config.matches("nightly-2025-01-01"));
     }
 
     #[test]
     fn test_is_rolling_version_regex_no_match() {
-        let config = RollingConfig::from_opts(&opts_with(&[("rolling_regex", "^nightly-.*")]));
+        let config =
+            RollingConfig::from_opts(&opts_with(&[("rolling_regex", "^nightly-.*")]), None);
         assert!(!config.matches("v1.0.0"));
     }
 
     #[test]
     fn test_is_rolling_version_regex_invalid() {
-        let config = RollingConfig::from_opts(&opts_with(&[("rolling_regex", "[invalid")]));
+        let config = RollingConfig::from_opts(&opts_with(&[("rolling_regex", "[invalid")]), None);
         // Invalid regex: from_opts returns None for the regex
         assert!(config.regex.is_none());
         assert!(!config.matches("anything"));
@@ -2074,21 +2095,67 @@ mod tests {
 
     #[test]
     fn test_is_rolling_version_regex_takes_priority() {
-        let config = RollingConfig::from_opts(&opts_with(&[
-            ("rolling_regex", "^nightly$"),
-            ("rolling", "true"),
-        ]));
+        let config = RollingConfig::from_opts(
+            &opts_with(&[("rolling_regex", "^nightly$"), ("rolling", "true")]),
+            None,
+        );
         assert!(config.matches("nightly"));
     }
 
     #[test]
     fn test_is_rolling_version_regex_miss_falls_through_to_flag() {
-        let config = RollingConfig::from_opts(&opts_with(&[
-            ("rolling_regex", "^canary$"),
-            ("rolling", "true"),
-        ]));
+        let config = RollingConfig::from_opts(
+            &opts_with(&[("rolling_regex", "^canary$"), ("rolling", "true")]),
+            None,
+        );
         // regex misses "nightly" but rolling_flag=true matches everything
         assert!(config.matches("nightly"));
+    }
+
+    #[test]
+    fn test_needs_checksum_no_options() {
+        let config = RollingConfig::from_opts(&opts_with(&[]), None);
+        assert!(!config.needs_checksum("nightly"));
+    }
+
+    #[test]
+    fn test_needs_checksum_regex() {
+        let config = RollingConfig::from_opts(&opts_with(&[("rolling_regex", "^nightly$")]), None);
+        assert!(config.needs_checksum("nightly"));
+        assert!(!config.needs_checksum("v1.0.0"));
+    }
+
+    #[test]
+    fn test_needs_checksum_rolling_flag_with_declared_version() {
+        // rolling=true with declared_version only resolves checksum for that version
+        let config = RollingConfig::from_opts(
+            &opts_with(&[("rolling", "true")]),
+            Some("nightly".to_string()),
+        );
+        assert!(config.matches("nightly"));
+        assert!(config.matches("v1.0.0"));
+        assert!(config.needs_checksum("nightly"));
+        assert!(!config.needs_checksum("v1.0.0"));
+    }
+
+    #[test]
+    fn test_needs_checksum_rolling_flag_without_declared_version() {
+        // rolling=true without declared_version doesn't resolve any checksums
+        let config = RollingConfig::from_opts(&opts_with(&[("rolling", "true")]), None);
+        assert!(config.matches("nightly"));
+        assert!(!config.needs_checksum("nightly"));
+    }
+
+    #[test]
+    fn test_needs_checksum_regex_plus_flag() {
+        // regex match resolves checksum even if rolling_flag is also set
+        let config = RollingConfig::from_opts(
+            &opts_with(&[("rolling_regex", "^canary$"), ("rolling", "true")]),
+            Some("nightly".to_string()),
+        );
+        assert!(config.needs_checksum("canary")); // regex match
+        assert!(config.needs_checksum("nightly")); // declared_version match
+        assert!(!config.needs_checksum("v1.0.0")); // neither
     }
 
     #[test]
