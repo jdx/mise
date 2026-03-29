@@ -465,15 +465,14 @@ impl Backend for UnifiedGitBackend {
                     .get(&platform_key)
                     .and_then(|pi| pi.checksum.as_deref())
             });
-            if let Some(digest) = digest {
-                if let Err(e) = crate::toolset::install_state::write_checksum(
+            if let Some(digest) = digest
+                && let Err(e) = crate::toolset::install_state::write_checksum(
                     &self.ba.short,
                     &tv.version,
                     digest,
                 ) {
                     warn!("failed to write checksum for {}: {e}", tv);
                 }
-            }
         }
 
         Ok(tv)
