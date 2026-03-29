@@ -470,9 +470,10 @@ impl Backend for UnifiedGitBackend {
                     &self.ba.short,
                     &tv.version,
                     digest,
-                ) {
-                    warn!("failed to write checksum for {}: {e}", tv);
-                }
+                )
+            {
+                warn!("failed to write checksum for {}: {e}", tv);
+            }
         }
 
         Ok(tv)
