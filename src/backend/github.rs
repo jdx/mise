@@ -41,6 +41,39 @@ const DEFAULT_GITHUB_API_BASE_URL: &str = "https://api.github.com";
 const DEFAULT_GITLAB_API_BASE_URL: &str = "https://gitlab.com/api/v4";
 const DEFAULT_FORGEJO_API_BASE_URL: &str = "https://codeberg.org/api/v1";
 
+/// Rolling release configuration parsed from tool options.
+struct RollingConfig {
+    regex: Option<Regex>,
+    version: Option<String>,
+}
+
+impl RollingConfig {
+    /// Parse rolling release configuration from tool options.
+    fn from_opts(opts: &ToolVersionOptions) -> Self {
+        let regex = opts.get("rolling_regex").and_then(|s| match Regex::new(s) {
+            Ok(re) => Some(re),
+            Err(e) => {
+                warn!("Invalid rolling_regex '{s}': {e}");
+                None
+            }
+        });
+        let version = opts
+            .get("rolling")
+            .is_some_and(|v| v == "true")
+            .then(|| opts.get("version").map(|s| s.to_string()))
+            .flatten();
+        Self { regex, version }
+    }
+
+    /// Check whether a version is a rolling release.
+    fn matches(&self, version: &str) -> bool {
+        if self.regex.as_ref().is_some_and(|re| re.is_match(version)) {
+            return true;
+        }
+        self.version.as_deref() == Some(version)
+    }
+}
+
 /// Status returned from verification attempts
 enum VerificationStatus {
     /// No attestations or provenance found (not an error, tool may not have them)
@@ -164,6 +197,9 @@ impl Backend for UnifiedGitBackend {
         let api_url = self.get_api_url(&opts);
         let version_prefix = opts.get("version_prefix");
 
+        // Parse rolling release configuration from tool options
+        let rolling_config = RollingConfig::from_opts(&opts);
+
         // Derive web URL base from API URL for enterprise support
         let web_url_base = if self.is_gitlab() {
             if api_url == DEFAULT_GITLAB_API_BASE_URL {
@@ -189,17 +225,28 @@ impl Backend for UnifiedGitBackend {
             format!("{}/{}", web_url, repo)
         };
 
-        // Get releases with full metadata from GitHub or GitLab
-        let raw_versions: Vec<VersionInfo> = if self.is_gitlab() {
+        // Get releases with full metadata from GitHub or GitLab.
+        // For GitLab/Forgejo, also track tag names of rolling versions for later
+        // checksum resolution (since tag_name isn't stored in VersionInfo).
+        let mut rolling_tags: HashMap<String, String> = HashMap::new();
+        let mut raw_versions: Vec<VersionInfo> = if self.is_gitlab() {
             gitlab::list_releases_from_url(api_url.as_str(), &repo)
                 .await?
                 .into_iter()
                 .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
-                .map(|r| VersionInfo {
-                    version: self.strip_version_prefix(&r.tag_name, &opts),
-                    created_at: r.released_at,
-                    release_url: Some(format!("{}/-/releases/{}", web_url_base, r.tag_name)),
-                    ..Default::default()
+                .map(|r| {
+                    let version = self.strip_version_prefix(&r.tag_name, &opts);
+                    let rolling = rolling_config.matches(&version);
+                    if rolling {
+                        rolling_tags.insert(version.clone(), r.tag_name.clone());
+                    }
+                    VersionInfo {
+                        rolling,
+                        version,
+                        created_at: r.released_at,
+                        release_url: Some(format!("{}/-/releases/{}", web_url_base, r.tag_name)),
+                        ..Default::default()
+                    }
                 })
                 .collect()
         } else if self.is_forgejo() {
@@ -207,11 +254,19 @@ impl Backend for UnifiedGitBackend {
                 .await?
                 .into_iter()
                 .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
-                .map(|r| VersionInfo {
-                    version: self.strip_version_prefix(&r.tag_name, &opts),
-                    created_at: Some(r.created_at),
-                    release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
-                    ..Default::default()
+                .map(|r| {
+                    let version = self.strip_version_prefix(&r.tag_name, &opts);
+                    let rolling = rolling_config.matches(&version);
+                    if rolling {
+                        rolling_tags.insert(version.clone(), r.tag_name.clone());
+                    }
+                    VersionInfo {
+                        rolling,
+                        version,
+                        created_at: Some(r.created_at),
+                        release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
+                        ..Default::default()
+                    }
                 })
                 .collect()
         } else {
@@ -219,14 +274,91 @@ impl Backend for UnifiedGitBackend {
                 .await?
                 .into_iter()
                 .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
-                .map(|r| VersionInfo {
-                    version: self.strip_version_prefix(&r.tag_name, &opts),
-                    created_at: Some(r.created_at),
-                    release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
-                    ..Default::default()
+                .map(|r| {
+                    let version = self.strip_version_prefix(&r.tag_name, &opts);
+                    let rolling = rolling_config.matches(&version);
+                    let checksum = if rolling {
+                        self.resolve_rolling_checksum_from_assets(&r.assets, &opts)
+                    } else {
+                        None
+                    };
+                    VersionInfo {
+                        version,
+                        created_at: Some(r.created_at),
+                        release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
+                        rolling,
+                        checksum,
+                    }
                 })
                 .collect()
         };
+
+        // For GitLab/Forgejo rolling versions, try to resolve checksums from
+        // companion checksum files (e.g., SHA256SUMS) since they lack API digests.
+        if self.is_gitlab() || self.is_forgejo() {
+            let no_app = opts
+                .get("no_app")
+                .and_then(|v| v.parse::<bool>().ok())
+                .unwrap_or(false);
+            let target = PlatformTarget::from_current();
+            let backend_name = if self.is_gitlab() {
+                "GitLab"
+            } else {
+                "Forgejo"
+            };
+
+            for vi in raw_versions.iter_mut() {
+                if !vi.rolling || vi.checksum.is_some() {
+                    continue;
+                }
+                let Some(tag) = rolling_tags.get(&vi.version).cloned() else {
+                    debug!("No original tag found for rolling version {}", vi.version);
+                    continue;
+                };
+                let assets_with_urls = if self.is_gitlab() {
+                    match gitlab::get_release_for_url(&api_url, &repo, &tag).await {
+                        Ok(release) => release
+                            .assets
+                            .links
+                            .iter()
+                            .map(|a| Asset::new(&a.name, &a.direct_asset_url))
+                            .collect::<Vec<_>>(),
+                        Err(e) => {
+                            debug!(
+                                "Failed to fetch {backend_name} release for rolling checksum: {e}"
+                            );
+                            continue;
+                        }
+                    }
+                } else {
+                    match forgejo::get_release_for_url(&api_url, &repo, &tag).await {
+                        Ok(release) => release
+                            .assets
+                            .iter()
+                            .map(|a| Asset::new(&a.name, &a.browser_download_url))
+                            .collect::<Vec<_>>(),
+                        Err(e) => {
+                            debug!(
+                                "Failed to fetch {backend_name} release for rolling checksum: {e}"
+                            );
+                            continue;
+                        }
+                    }
+                };
+
+                let asset_names: Vec<String> =
+                    assets_with_urls.iter().map(|a| a.name.clone()).collect();
+                if let Ok(matched) = asset_matcher::AssetMatcher::new()
+                    .for_target(&target)
+                    .with_no_app(no_app)
+                    .pick_from(&asset_names)
+                {
+                    vi.checksum = self
+                        .try_fetch_checksum_from_assets(&assets_with_urls, &matched.name)
+                        .await;
+                }
+            }
+        }
 
         // Apply common validation and reverse order
         let versions = raw_versions
@@ -306,16 +438,15 @@ impl Backend for UnifiedGitBackend {
         let platform_key = self.get_platform_key();
 
         let asset = if let Some(existing_platform) = tv.lock_platforms.get(&platform_key)
-            && existing_platform.url.is_some()
+            && let Some(url) = &existing_platform.url
         {
             debug!(
                 "Using existing URL from lockfile for platform {}: {}",
-                platform_key,
-                existing_platform.url.clone().unwrap_or_default()
+                platform_key, url
             );
             ReleaseAsset {
-                name: get_filename_from_url(existing_platform.url.as_deref().unwrap_or("")),
-                url: existing_platform.url.clone().unwrap_or_default(),
+                name: get_filename_from_url(url),
+                url: url.clone(),
                 url_api: existing_platform.url_api.clone().unwrap_or_default(),
                 digest: None, // Don't use old digest from lockfile, will be fetched fresh if needed
             }
@@ -327,6 +458,26 @@ impl Backend for UnifiedGitBackend {
         // Download and install
         self.download_and_install(ctx, &mut tv, &asset, &opts)
             .await?;
+
+        // Store checksum for rolling version tracking.
+        // The digest may come from the resolved asset (GitHub API) or, for lockfile-based
+        // installs where asset.digest is None, from the lockfile's PlatformInfo.
+        if RollingConfig::from_opts(&opts).matches(&tv.version) {
+            let digest = asset.digest.as_deref().or_else(|| {
+                tv.lock_platforms
+                    .get(&platform_key)
+                    .and_then(|pi| pi.checksum.as_deref())
+            });
+            if let Some(digest) = digest {
+                if let Err(e) = crate::toolset::install_state::write_checksum(
+                    &self.ba.short,
+                    &tv.version,
+                    digest,
+                ) {
+                    warn!("failed to write checksum for {}: {e}", tv);
+                }
+            }
+        }
 
         Ok(tv)
     }
@@ -837,12 +988,13 @@ impl UnifiedGitBackend {
                     )
                 })?;
 
-            // Try to get checksum from API digest or fetch from release assets
-            let digest = if asset.digest.is_some() {
-                asset.digest
-            } else {
-                self.try_fetch_checksum_from_assets(&assets_with_urls, &asset.name)
-                    .await
+            // Prefer API digest; fall back to fetching from release checksum files
+            let digest = match asset.digest {
+                Some(d) => Some(d),
+                None => {
+                    self.try_fetch_checksum_from_assets(&assets_with_urls, &asset.name)
+                        .await
+                }
             };
 
             return Ok(ReleaseAsset {
@@ -873,12 +1025,13 @@ impl UnifiedGitBackend {
                 )
             })?;
 
-        // Try to get checksum from API digest or fetch from release assets
-        let digest = if asset.digest.is_some() {
-            asset.digest.clone()
-        } else {
-            self.try_fetch_checksum_from_assets(&assets_with_urls, &asset.name)
-                .await
+        // Prefer API digest; fall back to fetching from release checksum files
+        let digest = match &asset.digest {
+            Some(d) => Some(d.clone()),
+            None => {
+                self.try_fetch_checksum_from_assets(&assets_with_urls, &asset.name)
+                    .await
+            }
         };
 
         Ok(ReleaseAsset {
@@ -1029,7 +1182,7 @@ impl UnifiedGitBackend {
                     )
                 })?;
 
-            // Try to get checksum from API digest or fetch from release assets
+            // Forgejo doesn't provide API digests; try fetching from release checksum files
             let digest = self
                 .try_fetch_checksum_from_assets(&assets_with_urls, &asset.name)
                 .await;
@@ -1062,7 +1215,7 @@ impl UnifiedGitBackend {
                 )
             })?;
 
-        // Try to get checksum from API digest or fetch from release assets
+        // Forgejo doesn't provide API digests; try fetching from release checksum files
         let digest = self
             .try_fetch_checksum_from_assets(&assets_with_urls, &asset.name)
             .await;
@@ -1167,6 +1320,41 @@ impl UnifiedGitBackend {
                 None
             }
         }
+    }
+
+    /// Resolve a rolling release checksum from GitHub release assets.
+    /// Uses asset_pattern or AssetMatcher auto-detection to find the matching asset,
+    /// then returns its API digest.
+    fn resolve_rolling_checksum_from_assets(
+        &self,
+        assets: &[github::GithubAsset],
+        opts: &ToolVersionOptions,
+    ) -> Option<String> {
+        // Try explicit pattern first
+        if let Some(pattern) = opts.get("asset_pattern") {
+            return assets
+                .iter()
+                .find(|a| self.matches_pattern(&a.name, pattern))
+                .and_then(|a| a.digest.clone());
+        }
+
+        // Fall back to auto-detection
+        let no_app = opts
+            .get("no_app")
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+        let asset_names: Vec<String> = assets.iter().map(|a| a.name.clone()).collect();
+        let target = PlatformTarget::from_current();
+        let matched = asset_matcher::AssetMatcher::new()
+            .for_target(&target)
+            .with_no_app(no_app)
+            .pick_from(&asset_names)
+            .ok()?;
+
+        assets
+            .iter()
+            .find(|a| a.name.eq_ignore_ascii_case(&matched.name))
+            .and_then(|a| a.digest.clone())
     }
 
     fn get_filter_bins(&self, tv: &ToolVersion) -> Option<Vec<String>> {
@@ -1799,5 +1987,146 @@ mod tests {
     fn test_is_slsa_format_issue_api_error() {
         let err = sigstore_verification::AttestationError::Api("connection refused".to_string());
         assert!(!is_slsa_format_issue(&err));
+    }
+
+    // --- Rolling release tests ---
+
+    fn opts_with(entries: &[(&str, &str)]) -> ToolVersionOptions {
+        let mut opts = ToolVersionOptions::default();
+        for (k, v) in entries {
+            opts.opts
+                .insert(k.to_string(), toml::Value::String(v.to_string()));
+        }
+        opts
+    }
+
+    fn make_asset(name: &str, digest: Option<&str>) -> github::GithubAsset {
+        github::GithubAsset {
+            name: name.to_string(),
+            browser_download_url: format!("https://example.com/{name}"),
+            url: format!("https://api.github.com/repos/test/repo/releases/assets/{name}"),
+            digest: digest.map(String::from),
+        }
+    }
+
+    #[test]
+    fn test_is_rolling_version_no_options() {
+        let config = RollingConfig::from_opts(&opts_with(&[]));
+        assert!(!config.matches("nightly"));
+        assert!(!config.matches("1.0.0"));
+    }
+
+    #[test]
+    fn test_is_rolling_version_rolling_true_matching() {
+        let config =
+            RollingConfig::from_opts(&opts_with(&[("rolling", "true"), ("version", "nightly")]));
+        assert!(config.matches("nightly"));
+    }
+
+    #[test]
+    fn test_is_rolling_version_rolling_true_non_matching() {
+        let config =
+            RollingConfig::from_opts(&opts_with(&[("rolling", "true"), ("version", "nightly")]));
+        assert!(!config.matches("v1.0.0"));
+    }
+
+    #[test]
+    fn test_is_rolling_version_rolling_true_no_version_opt() {
+        let config = RollingConfig::from_opts(&opts_with(&[("rolling", "true")]));
+        // rolling=true without version option means no specific version is rolling
+        assert!(!config.matches("nightly"));
+    }
+
+    #[test]
+    fn test_is_rolling_version_rolling_false() {
+        let config =
+            RollingConfig::from_opts(&opts_with(&[("rolling", "false"), ("version", "nightly")]));
+        assert!(!config.matches("nightly"));
+    }
+
+    #[test]
+    fn test_is_rolling_version_regex_match() {
+        let config = RollingConfig::from_opts(&opts_with(&[("rolling_regex", "^nightly-.*")]));
+        assert!(config.matches("nightly-2025-01-01"));
+    }
+
+    #[test]
+    fn test_is_rolling_version_regex_no_match() {
+        let config = RollingConfig::from_opts(&opts_with(&[("rolling_regex", "^nightly-.*")]));
+        assert!(!config.matches("v1.0.0"));
+    }
+
+    #[test]
+    fn test_is_rolling_version_regex_invalid() {
+        let config = RollingConfig::from_opts(&opts_with(&[("rolling_regex", "[invalid")]));
+        // Invalid regex: from_opts returns None for the regex
+        assert!(config.regex.is_none());
+        assert!(!config.matches("anything"));
+    }
+
+    #[test]
+    fn test_is_rolling_version_regex_takes_priority() {
+        let config = RollingConfig::from_opts(&opts_with(&[
+            ("rolling_regex", "^nightly$"),
+            ("rolling", "true"),
+            ("version", "nightly"),
+        ]));
+        assert!(config.matches("nightly"));
+    }
+
+    #[test]
+    fn test_is_rolling_version_regex_miss_falls_through() {
+        let config = RollingConfig::from_opts(&opts_with(&[
+            ("rolling_regex", "^canary$"),
+            ("rolling", "true"),
+            ("version", "nightly"),
+        ]));
+        assert!(config.matches("nightly"));
+    }
+
+    #[test]
+    fn test_resolve_rolling_checksum_pattern_match() {
+        let backend = create_test_backend();
+        let opts = opts_with(&[("asset_pattern", "tool-*-linux*")]);
+        let assets = vec![
+            make_asset("tool-nightly-linux-x86_64.tar.gz", Some("sha256:abc123")),
+            make_asset("tool-nightly-darwin-x86_64.tar.gz", Some("sha256:def456")),
+        ];
+        assert_eq!(
+            backend.resolve_rolling_checksum_from_assets(&assets, &opts),
+            Some("sha256:abc123".to_string())
+        );
+    }
+
+    #[test]
+    fn test_resolve_rolling_checksum_pattern_no_match() {
+        let backend = create_test_backend();
+        let opts = opts_with(&[("asset_pattern", "nonexistent-*")]);
+        let assets = vec![make_asset("tool-linux.tar.gz", Some("sha256:abc123"))];
+        assert_eq!(
+            backend.resolve_rolling_checksum_from_assets(&assets, &opts),
+            None
+        );
+    }
+
+    #[test]
+    fn test_resolve_rolling_checksum_match_no_digest() {
+        let backend = create_test_backend();
+        let opts = opts_with(&[("asset_pattern", "tool-*")]);
+        let assets = vec![make_asset("tool-linux.tar.gz", None)];
+        assert_eq!(
+            backend.resolve_rolling_checksum_from_assets(&assets, &opts),
+            None
+        );
+    }
+
+    #[test]
+    fn test_resolve_rolling_checksum_empty_assets() {
+        let backend = create_test_backend();
+        let opts = opts_with(&[("asset_pattern", "tool-*")]);
+        assert_eq!(
+            backend.resolve_rolling_checksum_from_assets(&[], &opts),
+            None
+        );
     }
 }
