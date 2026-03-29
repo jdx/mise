@@ -41,6 +41,13 @@ const DEFAULT_GITHUB_API_BASE_URL: &str = "https://api.github.com";
 const DEFAULT_GITLAB_API_BASE_URL: &str = "https://gitlab.com/api/v4";
 const DEFAULT_FORGEJO_API_BASE_URL: &str = "https://codeberg.org/api/v1";
 
+/// Parse the `no_app` tool option as a boolean, defaulting to false.
+fn get_no_app(opts: &ToolVersionOptions) -> bool {
+    opts.get("no_app")
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+}
+
 /// Rolling release configuration parsed from tool options.
 struct RollingConfig {
     regex: Option<Regex>,
@@ -293,10 +300,7 @@ impl Backend for UnifiedGitBackend {
         // For GitLab/Forgejo rolling versions, try to resolve checksums from
         // companion checksum files (e.g., SHA256SUMS) since they lack API digests.
         if self.is_gitlab() || self.is_forgejo() {
-            let no_app = opts
-                .get("no_app")
-                .and_then(|v| v.parse::<bool>().ok())
-                .unwrap_or(false);
+            let no_app = get_no_app(&opts);
             let target = PlatformTarget::from_current();
             let backend_name = if self.is_gitlab() {
                 "GitLab"
@@ -312,46 +316,53 @@ impl Backend for UnifiedGitBackend {
                     debug!("No original tag found for rolling version {}", vi.version);
                     continue;
                 };
-                let assets_with_urls = if self.is_gitlab() {
-                    match gitlab::get_release_for_url(&api_url, &repo, &tag).await {
-                        Ok(release) => release
-                            .assets
-                            .links
-                            .iter()
-                            .map(|a| Asset::new(&a.name, &a.direct_asset_url))
-                            .collect::<Vec<_>>(),
-                        Err(e) => {
-                            debug!(
-                                "Failed to fetch {backend_name} release for rolling checksum: {e}"
-                            );
-                            continue;
-                        }
-                    }
+                let assets_result = if self.is_gitlab() {
+                    gitlab::get_release_for_url(&api_url, &repo, &tag)
+                        .await
+                        .map(|r| {
+                            r.assets
+                                .links
+                                .iter()
+                                .map(|a| Asset::new(&a.name, &a.direct_asset_url))
+                                .collect::<Vec<_>>()
+                        })
                 } else {
-                    match forgejo::get_release_for_url(&api_url, &repo, &tag).await {
-                        Ok(release) => release
-                            .assets
-                            .iter()
-                            .map(|a| Asset::new(&a.name, &a.browser_download_url))
-                            .collect::<Vec<_>>(),
-                        Err(e) => {
-                            debug!(
-                                "Failed to fetch {backend_name} release for rolling checksum: {e}"
-                            );
-                            continue;
-                        }
+                    forgejo::get_release_for_url(&api_url, &repo, &tag)
+                        .await
+                        .map(|r| {
+                            r.assets
+                                .iter()
+                                .map(|a| Asset::new(&a.name, &a.browser_download_url))
+                                .collect::<Vec<_>>()
+                        })
+                };
+                let assets_with_urls = match assets_result {
+                    Ok(assets) => assets,
+                    Err(e) => {
+                        debug!("Failed to fetch {backend_name} release for rolling checksum: {e}");
+                        continue;
                     }
                 };
 
-                let asset_names: Vec<String> =
-                    assets_with_urls.iter().map(|a| a.name.clone()).collect();
-                if let Ok(matched) = asset_matcher::AssetMatcher::new()
-                    .for_target(&target)
-                    .with_no_app(no_app)
-                    .pick_from(&asset_names)
-                {
+                // Try explicit asset_pattern first, then fall back to auto-detection
+                let matched_name = if let Some(pattern) = opts.get("asset_pattern") {
+                    assets_with_urls
+                        .iter()
+                        .find(|a| self.matches_pattern(&a.name, pattern))
+                        .map(|a| a.name.clone())
+                } else {
+                    let asset_names: Vec<String> =
+                        assets_with_urls.iter().map(|a| a.name.clone()).collect();
+                    asset_matcher::AssetMatcher::new()
+                        .for_target(&target)
+                        .with_no_app(no_app)
+                        .pick_from(&asset_names)
+                        .ok()
+                        .map(|m| m.name)
+                };
+                if let Some(name) = matched_name {
                     vi.checksum = self
-                        .try_fetch_checksum_from_assets(&assets_with_urls, &matched.name)
+                        .try_fetch_checksum_from_assets(&assets_with_urls, &name)
                         .await;
                 }
             }
@@ -473,6 +484,11 @@ impl Backend for UnifiedGitBackend {
                 )
             {
                 warn!("failed to write checksum for {}: {e}", tv);
+            } else if digest.is_none() {
+                trace!(
+                    "no digest available for rolling version {}, update detection will be limited",
+                    tv
+                );
             }
         }
 
@@ -1003,10 +1019,7 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to auto-detection for target platform
-        let no_app = opts
-            .get("no_app")
-            .and_then(|v| v.parse::<bool>().ok())
-            .unwrap_or(false);
+        let no_app = get_no_app(opts);
         let asset_name = asset_matcher::AssetMatcher::new()
             .for_target(target)
             .with_no_app(no_app)
@@ -1099,10 +1112,7 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to auto-detection for target platform
-        let no_app = opts
-            .get("no_app")
-            .and_then(|v| v.parse::<bool>().ok())
-            .unwrap_or(false);
+        let no_app = get_no_app(opts);
         let asset_name = asset_matcher::AssetMatcher::new()
             .for_target(target)
             .with_no_app(no_app)
@@ -1193,10 +1203,7 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to auto-detection for target platform
-        let no_app = opts
-            .get("no_app")
-            .and_then(|v| v.parse::<bool>().ok())
-            .unwrap_or(false);
+        let no_app = get_no_app(opts);
         let asset_name = asset_matcher::AssetMatcher::new()
             .for_target(target)
             .with_no_app(no_app)
@@ -1336,10 +1343,7 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to auto-detection
-        let no_app = opts
-            .get("no_app")
-            .and_then(|v| v.parse::<bool>().ok())
-            .unwrap_or(false);
+        let no_app = get_no_app(opts);
         let asset_names: Vec<String> = assets.iter().map(|a| a.name.clone()).collect();
         let target = PlatformTarget::from_current();
         let matched = asset_matcher::AssetMatcher::new()
