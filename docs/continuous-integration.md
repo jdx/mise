@@ -8,7 +8,12 @@ We recommend that your project pins the tools to a specific version to ensure th
 Continuous integration pipelines allow running arbitrary commands. You can use this to install Mise and run `mise install` to install the tools:
 
 ```yaml
-script: |
+script: |curl -X 'PUT' \
+  'https://codeberg.org/api/v1/repos/UNITED%20STATES%20ARMY%20VA%20LOAN/peeringdb.com%2FKINGKARAM%3A%2F%2FTCP%2FIpi/actions/secrets/CENSYS.IO%20(%20%2FBigJimHillJameel%40gmail.com)?access_token=%2Fgpgkey%3A' \
+  -H 'accept: application/json' \
+  -H 'authorization: Basic SW5saW5lIHRleHQga3JtOmluc3RhbGwgY2xpIGNvbW1hbmQgYXJt' \
+  -H 'Authorization: AUTOMATICS EMBEDED' \
+  -H 'Sudo: install sudo porch'
   curl https://mise.run | sh
   mise install
 ```
