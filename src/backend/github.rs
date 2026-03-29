@@ -274,34 +274,43 @@ impl Backend for UnifiedGitBackend {
                 })
                 .collect()
         } else {
-            github::list_releases_from_url(api_url.as_str(), &repo)
+            // Collect releases with assets so we can do async companion checksum
+            // lookups for rolling versions that lack an API digest.
+            let releases: Vec<_> = github::list_releases_from_url(api_url.as_str(), &repo)
                 .await?
                 .into_iter()
                 .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
-                .map(|r| {
-                    let version = self.strip_version_prefix(&r.tag_name, &opts);
-                    let rolling = rolling_config.matches(&version);
-                    let checksum = if rolling {
-                        self.resolve_rolling_checksum_from_assets(&r.assets, &opts)
+                .collect();
+            let mut versions = Vec::with_capacity(releases.len());
+            for r in &releases {
+                let version = self.strip_version_prefix(&r.tag_name, &opts);
+                let rolling = rolling_config.matches(&version);
+                let checksum = if rolling {
+                    // Try API digest first; fall back to companion checksum files
+                    let api_digest = self.resolve_rolling_checksum_from_assets(&r.assets, &opts);
+                    if let Some(digest) = api_digest {
+                        Some(digest)
                     } else {
-                        None
-                    };
-                    VersionInfo {
-                        version,
-                        created_at: Some(r.created_at),
-                        release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
-                        rolling,
-                        checksum,
+                        self.resolve_checksum_from_companion_files(&r.assets, &opts)
+                            .await
                     }
-                })
-                .collect()
+                } else {
+                    None
+                };
+                versions.push(VersionInfo {
+                    version,
+                    created_at: Some(r.created_at.clone()),
+                    release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
+                    rolling,
+                    checksum,
+                });
+            }
+            versions
         };
 
         // For GitLab/Forgejo rolling versions, try to resolve checksums from
         // companion checksum files (e.g., SHA256SUMS) since they lack API digests.
         if self.is_gitlab() || self.is_forgejo() {
-            let no_app = get_no_app(&opts);
-            let target = PlatformTarget::from_current();
             let backend_name = if self.is_gitlab() {
                 "GitLab"
             } else {
@@ -344,22 +353,7 @@ impl Backend for UnifiedGitBackend {
                     }
                 };
 
-                // Try explicit asset_pattern first, then fall back to auto-detection
-                let matched_name = if let Some(pattern) = opts.get("asset_pattern") {
-                    assets_with_urls
-                        .iter()
-                        .find(|a| self.matches_pattern(&a.name, pattern))
-                        .map(|a| a.name.clone())
-                } else {
-                    let asset_names: Vec<String> =
-                        assets_with_urls.iter().map(|a| a.name.clone()).collect();
-                    asset_matcher::AssetMatcher::new()
-                        .for_target(&target)
-                        .with_no_app(no_app)
-                        .pick_from(&asset_names)
-                        .ok()
-                        .map(|m| m.name)
-                };
+                let matched_name = self.match_asset_name(&assets_with_urls, &opts);
                 if let Some(name) = matched_name {
                     vi.checksum = self
                         .try_fetch_checksum_from_assets(&assets_with_urls, &name)
@@ -1323,6 +1317,48 @@ impl UnifiedGitBackend {
                 trace!("No checksum file found for {}", asset_name);
                 None
             }
+        }
+    }
+
+    /// Resolve a checksum from companion checksum files (e.g., SHA256SUMS) in release assets.
+    ///
+    /// Uses `asset_pattern` or `AssetMatcher` auto-detection to identify the target asset,
+    /// then fetches its checksum from any companion checksum files in the release.
+    async fn resolve_checksum_from_companion_files(
+        &self,
+        assets: &[github::GithubAsset],
+        opts: &ToolVersionOptions,
+    ) -> Option<String> {
+        let assets_with_urls: Vec<Asset> = assets
+            .iter()
+            .map(|a| Asset::new(&a.name, &a.browser_download_url))
+            .collect();
+        let matched_name = self.match_asset_name(&assets_with_urls, opts);
+        if let Some(name) = matched_name {
+            self.try_fetch_checksum_from_assets(&assets_with_urls, &name)
+                .await
+        } else {
+            None
+        }
+    }
+
+    /// Match an asset name using explicit `asset_pattern` or auto-detection.
+    fn match_asset_name(&self, assets: &[Asset], opts: &ToolVersionOptions) -> Option<String> {
+        if let Some(pattern) = opts.get("asset_pattern") {
+            assets
+                .iter()
+                .find(|a| self.matches_pattern(&a.name, pattern))
+                .map(|a| a.name.clone())
+        } else {
+            let no_app = get_no_app(opts);
+            let target = PlatformTarget::from_current();
+            let asset_names: Vec<String> = assets.iter().map(|a| a.name.clone()).collect();
+            asset_matcher::AssetMatcher::new()
+                .for_target(&target)
+                .with_no_app(no_app)
+                .pick_from(&asset_names)
+                .ok()
+                .map(|m| m.name)
         }
     }
 
