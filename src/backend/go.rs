@@ -2,14 +2,17 @@ use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
+use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
 use crate::config::Settings;
+use crate::hash::hash_to_str;
 use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion};
 use async_trait::async_trait;
+use dashmap::DashMap;
 use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::{fmt::Debug, sync::Arc};
@@ -18,6 +21,7 @@ use xx::regex;
 #[derive(Debug)]
 pub struct GoBackend {
     ba: Arc<BackendArg>,
+    module_versions_cache: DashMap<String, CacheManager<Option<Vec<VersionInfo>>>>,
 }
 
 #[async_trait]
@@ -185,7 +189,10 @@ pub fn install_time_option_keys() -> Vec<String> {
 
 impl GoBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba: Arc::new(ba) }
+        Self {
+            ba: Arc::new(ba),
+            module_versions_cache: Default::default(),
+        }
     }
 
     async fn fetch_go_module_versions(
@@ -193,38 +200,55 @@ impl GoBackend {
         config: &Arc<Config>,
         mod_path: &str,
     ) -> eyre::Result<Option<Vec<VersionInfo>>> {
-        let raw = match cmd!(
-            "go",
-            "list",
-            "-mod=readonly",
-            "-m",
-            "-versions",
-            "-json",
-            mod_path
-        )
-        .full_env(self.dependency_env(config).await?)
-        .read()
-        {
-            Ok(raw) => raw,
-            Err(_) => return Ok(None),
-        };
+        let cache = self
+            .module_versions_cache
+            .entry(mod_path.to_string())
+            .or_insert_with(|| {
+                let filename = format!("{}.msgpack.z", hash_to_str(&mod_path.to_string()));
+                CacheManagerBuilder::new(
+                    self.ba.cache_path.join("go_module_versions").join(filename),
+                )
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+                .build()
+            });
 
-        let mod_info = match serde_json::from_str::<GoModInfo>(&raw) {
-            Ok(info) => info,
-            Err(_) => return Ok(None),
-        };
+        cache
+            .get_or_try_init_async(async || {
+                let raw = match cmd!(
+                    "go",
+                    "list",
+                    "-mod=readonly",
+                    "-m",
+                    "-versions",
+                    "-json",
+                    mod_path
+                )
+                .full_env(self.dependency_env(config).await?)
+                .read()
+                {
+                    Ok(raw) => raw,
+                    Err(_) => return Ok(None),
+                };
 
-        // remove the leading v from the versions
-        let versions = mod_info
-            .versions
-            .into_iter()
-            .map(|v| VersionInfo {
-                version: v.trim_start_matches('v').to_string(),
-                ..Default::default()
+                let mod_info = match serde_json::from_str::<GoModInfo>(&raw) {
+                    Ok(info) => info,
+                    Err(_) => return Ok(None),
+                };
+
+                // remove the leading v from the versions
+                let versions = mod_info
+                    .versions
+                    .into_iter()
+                    .map(|v| VersionInfo {
+                        version: v.trim_start_matches('v').to_string(),
+                        ..Default::default()
+                    })
+                    .collect();
+
+                Ok(Some(versions))
             })
-            .collect();
-
-        Ok(Some(versions))
+            .await
+            .cloned()
     }
 }
 
