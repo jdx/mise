@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Test GitHub artifact attestations verification for Python precompiled binaries
+# Depends on GitHub Releases and Attestations APIs; may fail due to rate limits or outages.
+
+export MISE_PYTHON_COMPILE=0
+export MISE_PYTHON_GITHUB_ATTESTATIONS=1
+
+# Use a recent Python version that has attestations in python-build-standalone.
+# Older releases (e.g. 3.12.3) predate GitHub attestation support and will fail.
+output=$(mise install python@3.13.5 2>&1) || true
+echo "$output"
+
+# Verify attestation verification was attempted and succeeded
+assert_contains "echo \"$output\"" "verify GitHub artifact attestations"
+assert_contains "echo \"$output\"" "✓ GitHub artifact attestations verified"
+
+# Verify the installed Python works
+assert "mise x python@3.13.5 -- python --version" "Python 3.13.5"

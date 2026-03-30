@@ -15,6 +15,7 @@ assert_fail "pipx"
 
 # Use precompiled python
 export MISE_PYTHON_COMPILE=0
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
 export MISE_PIPX_UVX=1
 
 # Set up a 2-step installation: pipx@1.5.0 > pipx:mkdocs@1.6.0
