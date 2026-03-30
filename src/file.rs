@@ -656,6 +656,37 @@ pub fn which_non_pristine<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     _which(name, &env::PATH_NON_PRISTINE)
 }
 
+/// Build a PATH value with mise shims filtered out, suitable for passing to
+/// subprocesses via `.env("PATH", ...)`. Prevents infinite recursion when a
+/// subprocess (e.g. `gh auth token`, `git credential fill`) resolves to a
+/// mise shim that re-enters mise.
+///
+/// Uses the current process's PATH (`PATH_NON_PRISTINE`). For stripping
+/// shims from an arbitrary PATH string (e.g. from `PRISTINE_ENV`), use
+/// `strip_shims_from_path` instead.
+pub fn path_env_without_shims() -> std::ffi::OsString {
+    let shim_dir = &*dirs::SHIMS;
+    let filtered: Vec<_> = env::PATH_NON_PRISTINE
+        .iter()
+        .filter(|p| p.as_path() != *shim_dir)
+        .cloned()
+        .collect();
+    std::env::join_paths(filtered)
+        .unwrap_or_else(|_| std::env::var_os(&*env::PATH_KEY).unwrap_or_default())
+}
+
+/// Strip mise shims from an arbitrary PATH string. Use this when the
+/// subprocess receives a custom env map (e.g. `PRISTINE_ENV`) rather
+/// than inheriting the current process's PATH.
+pub fn strip_shims_from_path(path_val: &str) -> String {
+    let shim_dir = &*dirs::SHIMS;
+    let filtered = env::split_paths(path_val).filter(|p| p.as_path() != *shim_dir);
+    std::env::join_paths(filtered)
+        .unwrap_or_else(|_| std::ffi::OsString::from(path_val))
+        .to_string_lossy()
+        .into_owned()
+}
+
 /// returns the first executable in PATH, excluding the mise shim directory
 /// use this for internal tool lookups to avoid recursive shim invocations
 /// (shims call `mise exec`, which would re-enter the same code path)
