@@ -695,6 +695,24 @@ impl Backend for PythonPlugin {
         ])
     }
 
+    async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
+        use crate::backend::SecurityFeature;
+
+        let mut features = vec![SecurityFeature::Checksum {
+            algorithm: Some("sha256".to_string()),
+        }];
+
+        // Report GitHub artifact attestations if enabled for precompiled binaries
+        let uses_precompiled = cfg!(windows) || Settings::get().python.compile != Some(true);
+        if uses_precompiled && Self::github_attestations_enabled() {
+            features.push(SecurityFeature::GithubAttestations {
+                signer_workflow: None,
+            });
+        }
+
+        features
+    }
+
     async fn install_version_(
         &self,
         ctx: &InstallContext,
