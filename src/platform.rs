@@ -200,7 +200,12 @@ fn is_musl_system() -> bool {
             }
         }
         // No glibc linker found — check for musl's
-        has_file_prefix("/lib", "ld-musl-")
+        if has_file_prefix("/lib", "ld-musl-") {
+            return true;
+        }
+        // No linker found at all (e.g., scratch/busybox container) —
+        // fall back to the binary's compile-time target
+        cfg!(target_env = "musl")
     });
     *IS_MUSL
 }

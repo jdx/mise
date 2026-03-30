@@ -61,6 +61,11 @@ pub(crate) fn env_type() -> Option<String> {
         if has_file_prefix("/lib", "ld-musl-") {
             return Some("musl".to_string());
         }
+        // No linker found at all (e.g., scratch/busybox container) —
+        // fall back to the binary's compile-time target
+        if cfg!(target_env = "musl") {
+            return Some("musl".to_string());
+        }
         None
     });
     ENV_TYPE.clone()
