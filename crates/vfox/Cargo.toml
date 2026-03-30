@@ -64,8 +64,18 @@ wiremock = "0.6"
 [features]
 default = ["vendored-lua", "native-tls"]
 cli = ["clap", "tokio/full", "env_logger"]
-native-tls = ["xx/native-tls", "xx/http", "reqwest/native-tls", "sigstore-verification/native-tls"]
-rustls = ["xx/rustls", "xx/http", "reqwest/rustls-tls", "sigstore-verification/rustls"]
+native-tls = [
+  "xx/native-tls",
+  "xx/http",
+  "reqwest/native-tls",
+  "sigstore-verification/native-tls",
+]
+rustls = [
+  "xx/rustls",
+  "xx/http",
+  "reqwest/rustls-tls",
+  "sigstore-verification/rustls",
+]
 rustls-native-roots = [
   "reqwest/rustls-tls-native-roots",
   "xx/http",
