@@ -118,15 +118,16 @@ impl Backend for GoBackend {
         // If the original request was `latest`, force `@latest` install for
         // those modules instead of using a parent module's resolved version.
         let mut install_version = tv.version.clone();
-        if tv.request.version() == "latest" && tv.version != "latest"
-            && let Some(versions) = self
+        if tv.request.version() == "latest"
+            && tv.version != "latest"
+            && self
                 .fetch_go_module_versions(&ctx.config, &self.tool_name())
                 .await?
-                && versions.is_empty()
-            {
-                install_version = "latest".to_string();
-                tv.version = install_version.clone();
-            }
+                .is_some_and(|v| v.is_empty())
+        {
+            install_version = "latest".to_string();
+            tv.version = "latest".to_string();
+        }
 
         let opts = self.ba.opts();
 
