@@ -1,5 +1,6 @@
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::config::Settings;
+use crate::file::path_env_without_shims;
 use crate::{dirs, duration, env};
 use eyre::Result;
 use heck::ToKebabCase;
@@ -562,11 +563,13 @@ fn get_credential_command_token(cmd: &str, host: &str) -> Option<String> {
     if let Some(token) = cache.get(host) {
         return token.clone();
     }
+    let path_without_shims = path_env_without_shims();
     let result = std::process::Command::new("sh")
         .arg("-c")
         .arg(cmd)
         .arg("mise-credential-helper") // $0
         .arg(host) // $1
+        .env("PATH", &path_without_shims)
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -617,9 +620,11 @@ fn get_git_credential_token(host: &str) -> Option<String> {
     if let Some(token) = cache.get(host) {
         return token.clone();
     }
+    let path_without_shims = path_env_without_shims();
     let input = format!("protocol=https\nhost={host}\n\n");
     let result = std::process::Command::new("git")
         .args(["credential", "fill"])
+        .env("PATH", &path_without_shims)
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())

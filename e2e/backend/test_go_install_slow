@@ -15,7 +15,7 @@ assert_fail go
 
 cat >>.mise.toml <<EOF
 [tools]
-go = "prefix:1.22"
+go = "prefix:1.24"
 "go:github.com/golangci/golangci-lint/cmd/golangci-lint" = "latest"
 [settings]
 experimental = true
@@ -30,6 +30,9 @@ assert "mise x go:github.com/DarthSim/hivemind@1.1.0 -- hivemind --version" "Hiv
 assert "mise x go:github.com/go-task/task/v3/cmd/task@3.34.1 -- task --version" "Task version: v3.34.1 (h1:yAAxUM54zoaHv+OtDnGgkWSVeiRuaOCn1lPUXPQQA0o=)"
 # See https://github.com/jdx/mise/discussions/6737
 assert "mise x go:github.com/jdx/go-example@e16a340 -- go-example" "hello world"
+
+# Deep sub-module returns no versions from `go list -versions`, so we must keep @latest.
+assert_contains "mise x go:github.com/go-kratos/kratos/cmd/kratos/v2@latest -- bash -c 'kratos --help 2>&1'" "Kratos: An elegant toolkit for Go microservices."
 
 assert_contains "mise x go:github.com/golang-migrate/migrate/v4/cmd/migrate[tags=postgres]@4.18.2 -- bash -c 'migrate --help 2>&1'" "postgres"
 

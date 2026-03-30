@@ -4,6 +4,7 @@
 set -euo pipefail
 
 export MISE_EXPERIMENTAL=1
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
 
 cat >.mise.toml <<EOF
 [tools]
