@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026.3.17](https://github.com/jdx/mise/compare/v2026.3.16..v2026.3.17) - 2026-03-27
+
+### 🐛 Bug Fixes
+
+- **(activate)** always prepend shims to front of PATH in --shims mode by @ctaintor in [#8757](https://github.com/jdx/mise/pull/8757)
+
 ## [2026.3.16](https://github.com/jdx/mise/compare/v2026.3.15..v2026.3.16) - 2026-03-26
 
 ### 🐛 Bug Fixes
