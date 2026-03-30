@@ -34,6 +34,10 @@ impl Backend for GoBackend {
         Ok(vec!["go"])
     }
 
+    fn supports_lockfile_url(&self) -> bool {
+        false
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         // Check if go is available
         self.warn_if_dependency_missing(

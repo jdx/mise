@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+# Regression test: when a .mise.toml uses exec() in [env] to invoke a tool
+# that is a mise shim (e.g. `gh auth token`), the subprocess must not inherit
+# the shims directory in PATH.  Without the fix in tera_exec(), the shim
+# calls `mise exec` which re-evaluates the template, spawning the same
+# command again infinitely → fork bomb.
+
+# Create a fake "gh" shim that mimics real mise shim behavior
+mkdir -p "$MISE_DATA_DIR/shims"
+cat >"$MISE_DATA_DIR/shims/gh" <<'SHIM'
+#!/bin/sh
+# If this shim is invoked, the recursion guard failed.
+echo SHIM_INVOKED >&2
+exit 1
+SHIM
+chmod +x "$MISE_DATA_DIR/shims/gh"
+
+# Create a real "gh" that the exec() template should find
+# (after shims are stripped from PATH).
+realdir="$HOME/realbin"
+mkdir -p "$realdir"
+cat >"$realdir/gh" <<'REAL'
+#!/bin/sh
+# Simulate `gh auth token` returning a token
+echo "ghp_test_token_from_real_gh"
+REAL
+chmod +x "$realdir/gh"
+
+# Put shims BEFORE the real binary in PATH
+export PATH="$MISE_DATA_DIR/shims:$realdir:$PATH"
+
+# Create a .mise.toml that uses exec() to derive an env var — the primary
+# trigger for the fork bomb we observed in the wild.
+cat >mise.toml <<'EOF'
+[env]
+MY_TOKEN = "{{exec(command='gh auth token')}}"
+EOF
+mise trust --yes
+
+# `mise env` evaluates the template. Without the fix, the shim is invoked
+# via exec(), which re-enters mise → infinite recursion (timeout).
+# With the fix, the real gh is found → returns token, no recursion.
+#
+# Use `mise env` directly with assert_contains — this avoids run_with_timeout
+# output capture issues while still timing out naturally if recursion occurs.
+assert_contains "mise env -s bash" "ghp_test_token_from_real_gh"

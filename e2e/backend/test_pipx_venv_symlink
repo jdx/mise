@@ -15,6 +15,7 @@ assert_fail "pipx"
 
 # Use precompiled python and disable uvx to use pipx (which uses mise's Python)
 export MISE_PYTHON_COMPILE=0
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
 export MISE_PIPX_UVX=0
 
 # Set up mise-managed Python and pipx
