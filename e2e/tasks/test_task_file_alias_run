@@ -49,4 +49,3 @@ assert_contains "mise run d" "backend deploy ran"
 # === Test 3: Usage spec includes monorepo-prefixed aliases for completion ===
 output=$(mise tasks --usage 2>&1)
 echo "$output" | grep -q '"//:prl"' || (echo "FAIL: prefixed alias //:prl not in usage spec" && echo "$output" && exit 1)
-
