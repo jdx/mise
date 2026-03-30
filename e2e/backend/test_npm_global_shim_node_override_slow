@@ -33,7 +33,6 @@ EOF
 assert "print-node-ver" "v20.10.0"
 cd ..
 
-# Project-local npm tool uses the project's node
 mkdir -p project-local && cd project-local
 cat >mise.toml <<'EOF'
 [tools]
@@ -42,3 +41,4 @@ node = "22.0.0"
 EOF
 mise reshim
 assert "print-node-ver" "v22.0.0"
+cd ..
