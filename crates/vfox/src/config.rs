@@ -58,13 +58,18 @@ pub(crate) fn env_type() -> Option<String> {
             }
         }
         // No glibc linker found — check for musl's
-        if has_file_prefix("/lib", "ld-musl-") {
-            return Some("musl".to_string());
+        for dir in ["/lib", "/lib64"] {
+            if has_file_prefix(dir, "ld-musl-") {
+                return Some("musl".to_string());
+            }
         }
         // No linker found at all (e.g., scratch/busybox container) —
         // fall back to the binary's compile-time target
         if cfg!(target_env = "musl") {
             return Some("musl".to_string());
+        }
+        if cfg!(target_env = "gnu") {
+            return Some("gnu".to_string());
         }
         None
     });
