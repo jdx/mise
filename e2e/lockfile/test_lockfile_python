@@ -2,6 +2,7 @@
 
 # Test that core:python generates lockfile URLs from python-build-standalone
 export MISE_LOCKFILE=1
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
 
 detect_platform
 
