@@ -1392,6 +1392,18 @@ env = "MISE_PYTHON_DEFAULT_PACKAGES_FILE"
 optional = true
 type = "Path"
 
+[python.github_attestations]
+description = "Enable GitHub Artifact Attestations verification for precompiled Python binaries."
+docs = """
+Override the global `github_attestations` setting for Python precompiled binaries.
+When enabled, mise will verify the authenticity of precompiled Python binaries from astral-sh/python-build-standalone.
+
+Defaults to the global `github_attestations` setting if not specified.
+"""
+env = "MISE_PYTHON_GITHUB_ATTESTATIONS"
+optional = true
+type = "Bool"
+
 [python.patch_url]
 description = "URL to fetch python patches from to pass to python-build."
 env = "MISE_PYTHON_PATCH_URL"

@@ -2,6 +2,7 @@
 
 # Test that core:python generates lockfile URLs from python-build-standalone
 export MISE_LOCKFILE=1
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
 
 detect_platform
 
@@ -49,3 +50,77 @@ assert_fail "mise install python -f" "Checksum mismatch"
 rm -f mise.lock mise.toml
 
 echo "Python lockfile URL test passed!"
+
+echo "=== Testing provenance recorded in lockfile when enabled ==="
+export MISE_PYTHON_GITHUB_ATTESTATIONS=1
+
+cat <<EOF >mise.toml
+[tools]
+python = "3.13.5"
+EOF
+
+mise lock --platform "$MISE_PLATFORM"
+assert "test -f mise.lock"
+assert_contains "cat mise.lock" 'provenance = "github-attestations"'
+
+echo "Lockfile with provenance:"
+cat mise.lock
+
+rm -f mise.lock mise.toml
+unset MISE_PYTHON_GITHUB_ATTESTATIONS
+
+echo "Python provenance lockfile test passed!"
+
+echo "=== Testing provenance NOT recorded when disabled ==="
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
+export MISE_GITHUB_ATTESTATIONS=0
+
+cat <<EOF >mise.toml
+[tools]
+python = "3.13.5"
+EOF
+
+mise lock --platform "$MISE_PLATFORM"
+assert "test -f mise.lock"
+# provenance should not appear in lockfile when disabled
+assert_fail "grep -q 'provenance' mise.lock"
+
+rm -f mise.lock mise.toml
+unset MISE_PYTHON_GITHUB_ATTESTATIONS
+unset MISE_GITHUB_ATTESTATIONS
+
+echo "Python provenance disabled test passed!"
+
+echo "=== Testing provenance downgrade attack detection ==="
+cat <<EOF >mise.toml
+[tools]
+python = "3.13.5"
+EOF
+
+# Generate lockfile with all platforms (so the current platform is included)
+mise lock
+assert "test -f mise.lock"
+
+# Inject provenance into ALL platform sections (simulating a previously-verified install)
+awk '
+    /^provenance/ && in_section { next }
+    { print }
+    /^\[tools\.python\."platforms\./ { in_section=1; print "provenance = \"github-attestations\"" }
+    /^\[/ && !/^\[tools\.python\."platforms\./ { in_section=0 }
+' mise.lock >mise.lock.tmp && mv mise.lock.tmp mise.lock
+assert_contains "cat mise.lock" 'provenance = "github-attestations"'
+
+# Attempt install with provenance verification disabled.
+# The lockfile says provenance was verified, but settings are off,
+# so mise should refuse to install (downgrade/stripping attack).
+rm -rf "$MISE_DATA_DIR/installs/python"
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
+export MISE_GITHUB_ATTESTATIONS=0
+assert_fail_contains "mise install 2>&1" "downgrade attack"
+
+echo "=== Cleanup ==="
+unset MISE_PYTHON_GITHUB_ATTESTATIONS
+unset MISE_GITHUB_ATTESTATIONS
+rm -f mise.lock mise.toml
+
+echo "Python provenance downgrade attack test passed!"

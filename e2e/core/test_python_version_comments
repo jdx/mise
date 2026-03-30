@@ -2,6 +2,7 @@
 
 # Test that .python-version files with comments are parsed correctly
 export MISE_PYTHON_COMPILE=0
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
 
 # Enable idiomatic version files for python
 mise settings set idiomatic_version_file_enable_tools python
