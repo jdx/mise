@@ -902,8 +902,11 @@ pub fn has_any_args_defined(spec: &usage::Spec) -> bool {
 }
 
 /// Check if the spec has any usage directives at all (args, flags, subcommands, or metadata
-/// like long_about/before_help/after_help). Used to decide whether to show usage-based help
+/// like long_about/after_help). Used to decide whether to show usage-based help
 /// vs the generic task help.
+///
+/// Note: before_help/before_help_long are excluded because populate_spec_metadata()
+/// sets before_help_long automatically for tasks with dependencies.
 pub fn has_any_usage_spec(spec: &usage::Spec) -> bool {
     has_any_args_defined(spec)
         || spec.about.is_some()
@@ -911,8 +914,6 @@ pub fn has_any_usage_spec(spec: &usage::Spec) -> bool {
         || spec.about_md.is_some()
         || spec.cmd.help_long.is_some()
         || spec.cmd.help_md.is_some()
-        || spec.cmd.before_help.is_some()
-        || spec.cmd.before_help_long.is_some()
         || spec.cmd.after_help.is_some()
         || spec.cmd.after_help_long.is_some()
         || !spec.cmd.examples.is_empty()
