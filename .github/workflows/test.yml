@@ -58,7 +58,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - shell: pwsh
         run: |
-          cargo build
+          cargo build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update
           cargo build -p mise-shim
           Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - run: mise -v
