@@ -906,9 +906,11 @@ pub fn has_any_args_defined(spec: &usage::Spec) -> bool {
 /// vs the generic task help.
 pub fn has_any_usage_spec(spec: &usage::Spec) -> bool {
     has_any_args_defined(spec)
+        || spec.about.is_some()
         || spec.about_long.is_some()
         || spec.about_md.is_some()
         || spec.cmd.help_long.is_some()
+        || spec.cmd.help_md.is_some()
         || spec.cmd.before_help.is_some()
         || spec.cmd.before_help_long.is_some()
         || spec.cmd.after_help.is_some()
