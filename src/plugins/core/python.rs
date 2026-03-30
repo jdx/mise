@@ -593,7 +593,10 @@ impl PythonPlugin {
     }
 
     fn detect_precompiled_provenance(&self) -> Option<ProvenanceType> {
-        if !Self::github_attestations_enabled() {
+        // Provenance only applies to precompiled binaries, not compiled-from-source.
+        // On Windows, precompiled is always used regardless of compile setting.
+        let uses_precompiled = cfg!(windows) || Settings::get().python.compile != Some(true);
+        if !uses_precompiled || !Self::github_attestations_enabled() {
             return None;
         }
         Some(ProvenanceType::GithubAttestations)
@@ -702,9 +705,7 @@ impl Backend for PythonPlugin {
             algorithm: Some("sha256".to_string()),
         }];
 
-        // Report GitHub artifact attestations if enabled for precompiled binaries
-        let uses_precompiled = cfg!(windows) || Settings::get().python.compile != Some(true);
-        if uses_precompiled && Self::github_attestations_enabled() {
+        if self.detect_precompiled_provenance().is_some() {
             features.push(SecurityFeature::GithubAttestations {
                 signer_workflow: None,
             });
