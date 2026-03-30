@@ -1,6 +1,7 @@
 use crate::exit;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::{
     collections::{BTreeSet, HashSet},
@@ -8,11 +9,13 @@ use std::{
 };
 
 use crate::backend::Backend;
+use crate::backend::backend_type::BackendType;
+use crate::cli::args::ToolArg;
 use crate::cli::exec::Exec;
-use crate::config::{Config, Settings};
+use crate::config::{self, Config, Settings};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
-use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
+use crate::toolset::{ConfigScope, ToolVersion, Toolset, ToolsetBuilder};
 use crate::{backend, dirs, env, fake_asdf, file};
 use color_eyre::eyre::{Result, bail, eyre};
 use eyre::WrapErr;
@@ -20,6 +23,11 @@ use indoc::formatdoc;
 use itertools::Itertools;
 use path_absolutize::Absolutize;
 use tokio::task::JoinSet;
+
+struct ShimResolution {
+    bin: PathBuf,
+    tool: Option<(Arc<dyn Backend>, ToolVersion)>,
+}
 
 // executes as if it was a shim if the command is not "mise", e.g.: "node"
 pub async fn handle_shim() -> Result<()> {
@@ -32,13 +40,13 @@ pub async fn handle_shim() -> Result<()> {
     let mut args = env::ARGS.read().unwrap().clone();
     env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
     trace!("shim[{bin_name}] args: {}", args.join(" "));
-    args[0] = which_shim(&mut config, &env::MISE_BIN_NAME)
-        .await?
-        .to_string_lossy()
-        .to_string();
+    let res = which_shim(&mut config, &env::MISE_BIN_NAME).await?;
+    args[0] = res.bin.to_string_lossy().to_string();
+    let tool_overrides = npm_dep_overrides(&config, res.tool.as_ref()).await;
+
     env::set_var("__MISE_SHIM", "1");
     let exec = Exec {
-        tool: vec![],
+        tool: tool_overrides,
         c: None,
         command: Some(args),
         jobs: None,
@@ -51,7 +59,59 @@ pub async fn handle_shim() -> Result<()> {
     exit(0);
 }
 
-async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf> {
+/// For globally-configured npm tools, returns tool overrides that pin the node
+/// version to the global config. This prevents native module ABI mismatches when
+/// a project pins a different node version than the one used to install the tool.
+async fn npm_dep_overrides(
+    config: &Arc<Config>,
+    tool_info: Option<&(Arc<dyn Backend>, ToolVersion)>,
+) -> Vec<ToolArg> {
+    let Some((backend, tv)) = tool_info else {
+        return vec![];
+    };
+    if backend.get_type() != BackendType::Npm {
+        return vec![];
+    }
+    // Only override for tools from global config. Project-local npm tools should
+    // use whatever node the project specifies.
+    let is_global = tv
+        .request
+        .source()
+        .path()
+        .is_some_and(config::is_global_config);
+    if !is_global {
+        return vec![];
+    }
+    let Ok(global_ts) = ToolsetBuilder::new()
+        .with_scope(ConfigScope::GlobalOnly)
+        .build(config)
+        .await
+    else {
+        return vec![];
+    };
+    let Some((_, node_tv)) = global_ts.which(config, "node").await else {
+        return vec![];
+    };
+    match ToolArg::from_str(&format!("node@{}", node_tv.version)) {
+        Ok(arg) => {
+            trace!(
+                "shim: overriding node to {} for global npm tool {}",
+                node_tv.version,
+                tv.ba()
+            );
+            vec![arg]
+        }
+        Err(e) => {
+            debug!("shim: failed to create node override: {e:#}");
+            vec![]
+        }
+    }
+}
+
+async fn which_shim(
+    config: &mut Arc<Config>,
+    bin_name: &str,
+) -> Result<ShimResolution> {
     let mut ts = ToolsetBuilder::new().build(config).await?;
     if let Some((p, tv)) = ts.which(config, bin_name).await
         && let Some(bin) = p.which(config, &tv, bin_name).await?
@@ -60,7 +120,7 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf>
             "shim[{bin_name}] ToolVersion: {tv} bin: {bin}",
             bin = display_path(&bin)
         );
-        return Ok(bin);
+        return Ok(ShimResolution { bin, tool: Some((p, tv)) });
     }
     if Settings::get().not_found_auto_install {
         for tv in ts
@@ -74,7 +134,7 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf>
                     "shim[{bin_name}] NOT_FOUND ToolVersion: {tv} bin: {bin}",
                     bin = display_path(&bin)
                 );
-                return Ok(bin);
+                return Ok(ShimResolution { bin, tool: Some((p, tv)) });
             }
         }
     }
@@ -88,7 +148,7 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf>
         let bin = path.join(bin_name);
         if bin.exists() {
             trace!("shim[{bin_name}] SYSTEM {bin}", bin = display_path(&bin));
-            return Ok(bin);
+            return Ok(ShimResolution { bin, tool: None });
         }
     }
     let tvs = ts.list_rtvs_with_bin(config, bin_name).await?;
@@ -560,7 +620,7 @@ async fn err_no_version_set(
     ts: Toolset,
     bin_name: &str,
     tvs: Vec<ToolVersion>,
-) -> Result<PathBuf> {
+) -> Result<ShimResolution> {
     if tvs.is_empty() {
         bail!(
             "{bin_name} is not a valid shim. This likely means you uninstalled a tool and the shim does not point to anything. Run `mise use <TOOL>` to reinstall the tool."

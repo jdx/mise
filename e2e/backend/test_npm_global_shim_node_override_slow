@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Test that globally-configured npm tools use the global node version when
+# invoked via shim from a project that pins a different node version.
+# This prevents native module ABI mismatches (NODE_MODULE_VERSION errors).
+
+require_cmd npm
+mise use -g node@20.10.0
+mise install node@22.0.0
+
+tool_dir="$MISE_DATA_DIR/installs/npm-print-node-ver/1.0.0/bin"
+mkdir -p "$tool_dir"
+cat >"$tool_dir/print-node-ver" <<'SCRIPT'
+#!/usr/bin/env node
+console.log(process.version)
+SCRIPT
+chmod +x "$tool_dir/print-node-ver"
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+node = "20.10.0"
+"npm:print-node-ver" = "1.0.0"
+EOF
+mise reshim
+
+export PATH="$MISE_DATA_DIR/shims:$PATH"
+
+# Global npm tool uses global node even when project pins a different version
+mkdir -p project && cd project
+cat >mise.toml <<'EOF'
+[tools]
+node = "22.0.0"
+EOF
+assert "print-node-ver" "v20.10.0"
+cd ..
+
+# Project-local npm tool uses the project's node
+mkdir -p project-local && cd project-local
+cat >mise.toml <<'EOF'
+[tools]
+node = "22.0.0"
+"npm:print-node-ver" = "1.0.0"
+EOF
+mise reshim
+assert "print-node-ver" "v22.0.0"
