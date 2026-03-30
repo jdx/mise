@@ -108,10 +108,7 @@ async fn npm_dep_overrides(
     }
 }
 
-async fn which_shim(
-    config: &mut Arc<Config>,
-    bin_name: &str,
-) -> Result<ShimResolution> {
+async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<ShimResolution> {
     let mut ts = ToolsetBuilder::new().build(config).await?;
     if let Some((p, tv)) = ts.which(config, bin_name).await
         && let Some(bin) = p.which(config, &tv, bin_name).await?
@@ -120,7 +117,10 @@ async fn which_shim(
             "shim[{bin_name}] ToolVersion: {tv} bin: {bin}",
             bin = display_path(&bin)
         );
-        return Ok(ShimResolution { bin, tool: Some((p, tv)) });
+        return Ok(ShimResolution {
+            bin,
+            tool: Some((p, tv)),
+        });
     }
     if Settings::get().not_found_auto_install {
         for tv in ts
@@ -134,7 +134,10 @@ async fn which_shim(
                     "shim[{bin_name}] NOT_FOUND ToolVersion: {tv} bin: {bin}",
                     bin = display_path(&bin)
                 );
-                return Ok(ShimResolution { bin, tool: Some((p, tv)) });
+                return Ok(ShimResolution {
+                    bin,
+                    tool: Some((p, tv)),
+                });
             }
         }
     }
