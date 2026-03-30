@@ -584,13 +584,16 @@ impl PythonPlugin {
         Ok(result)
     }
 
-    fn detect_precompiled_provenance(&self) -> Option<ProvenanceType> {
+    fn github_attestations_enabled() -> bool {
         let settings = Settings::get();
-        let enabled = settings
+        settings
             .python
             .github_attestations
-            .unwrap_or(settings.github_attestations);
-        if !enabled {
+            .unwrap_or(settings.github_attestations)
+    }
+
+    fn detect_precompiled_provenance(&self) -> Option<ProvenanceType> {
+        if !Self::github_attestations_enabled() {
             return None;
         }
         Some(ProvenanceType::GithubAttestations)
@@ -602,14 +605,7 @@ impl PythonPlugin {
         tarball_path: &std::path::Path,
         version: &str,
     ) -> Result<bool> {
-        let settings = Settings::get();
-
-        // Check Python-specific setting, fall back to global
-        let enabled = settings
-            .python
-            .github_attestations
-            .unwrap_or(settings.github_attestations);
-        if !enabled {
+        if !Self::github_attestations_enabled() {
             debug!("GitHub artifact attestations verification disabled for Python");
             return Ok(false);
         }
