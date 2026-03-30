@@ -348,4 +348,28 @@ mod tests {
         assert!(keys.contains(&"macos-arm64".to_string()));
         assert!(keys.contains(&"windows-x64".to_string()));
     }
+
+    #[cfg(all(target_os = "linux", target_env = "musl"))]
+    #[test]
+    fn test_musl_binary_detects_musl() {
+        // A musl-compiled binary should always detect musl, even in
+        // minimal containers with no linker files (scratch, busybox).
+        assert!(
+            is_musl_system(),
+            "musl-compiled binary should detect musl system"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_current_platform_has_qualifier() {
+        // On Linux, the current platform should always have a qualifier
+        // (gnu or musl) — never None. The compile-time fallback ensures this.
+        let platform = Platform::current();
+        assert!(
+            platform.qualifier.is_some(),
+            "Platform::current() should have a qualifier on Linux, got: {}",
+            platform.to_key()
+        );
+    }
 }

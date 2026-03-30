@@ -123,4 +123,30 @@ mod tests {
     fn test_env_type_non_linux_returns_none() {
         assert_eq!(env_type(), None);
     }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_env_type_returns_some_on_linux() {
+        // On any Linux system (glibc or musl), env_type() should return
+        // Some("gnu") or Some("musl") — never None. Even in minimal
+        // containers with no linker, the compile-time fallback applies.
+        let et = env_type();
+        assert!(
+            et.is_some(),
+            "env_type() returned None on Linux — expected Some(\"gnu\") or Some(\"musl\")"
+        );
+    }
+
+    #[cfg(all(target_os = "linux", target_env = "musl"))]
+    #[test]
+    fn test_env_type_musl_binary_returns_musl() {
+        // A musl-compiled binary should always report musl, regardless of
+        // the host system's linker files (covers scratch containers).
+        let et = env_type();
+        assert_eq!(
+            et.as_deref(),
+            Some("musl"),
+            "musl-compiled binary should return Some(\"musl\")"
+        );
+    }
 }
