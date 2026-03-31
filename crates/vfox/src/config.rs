@@ -51,9 +51,13 @@ pub fn arch() -> String {
 pub(crate) fn env_type() -> Option<String> {
     use once_cell::sync::Lazy;
     static ENV_TYPE: Lazy<Option<String>> = Lazy::new(|| {
-        // Allow explicit override via environment variable
+        // Allow explicit override via environment variable (only gnu/musl accepted)
         if let Ok(val) = std::env::var("MISE_LIBC") {
-            return Some(val.to_lowercase());
+            match val.to_lowercase().as_str() {
+                "musl" => return Some("musl".to_string()),
+                "gnu" => return Some("gnu".to_string()),
+                _ => {} // invalid value ignored, fall through to runtime detection
+            }
         }
         // If glibc's dynamic linker exists, this is a glibc system
         for dir in ["/lib", "/lib64"] {

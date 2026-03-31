@@ -193,9 +193,13 @@ impl From<&str> for Platform {
 fn is_musl_system() -> bool {
     use std::sync::LazyLock;
     static IS_MUSL: LazyLock<bool> = LazyLock::new(|| {
-        // Allow explicit override via environment variable
+        // Allow explicit override via environment variable (only gnu/musl accepted)
         if let Ok(val) = std::env::var("MISE_LIBC") {
-            return val.eq_ignore_ascii_case("musl");
+            match val.to_lowercase().as_str() {
+                "musl" => return true,
+                "gnu" => return false,
+                _ => {} // invalid value ignored, fall through to runtime detection
+            }
         }
         // If glibc's dynamic linker exists, this is a glibc system
         for dir in ["/lib", "/lib64"] {
@@ -379,11 +383,24 @@ mod tests {
     }
 
     #[test]
-    fn test_mise_libc_env_var_parsing() {
-        // Verify the MISE_LIBC matching logic works correctly
-        assert!("musl".eq_ignore_ascii_case("musl"));
-        assert!("MUSL".eq_ignore_ascii_case("musl"));
-        assert!(!"gnu".eq_ignore_ascii_case("musl"));
-        assert!(!"GNU".eq_ignore_ascii_case("musl"));
+    fn test_mise_libc_env_var_validation() {
+        // Only "musl" and "gnu" (case-insensitive) are accepted;
+        // invalid values should be ignored (fall through to detection)
+        for (input, is_musl) in [("musl", true), ("MUSL", true), ("gnu", false), ("GNU", false)] {
+            let lower = input.to_lowercase();
+            match lower.as_str() {
+                "musl" => assert!(is_musl, "MISE_LIBC={input} should be musl"),
+                "gnu" => assert!(!is_musl, "MISE_LIBC={input} should be gnu"),
+                _ => unreachable!(),
+            }
+        }
+        // Invalid values should not match either branch
+        for invalid in ["foo", "glibc", "", "musll"] {
+            let lower = invalid.to_lowercase();
+            assert!(
+                lower != "musl" && lower != "gnu",
+                "MISE_LIBC={invalid} should be rejected"
+            );
+        }
     }
 }
