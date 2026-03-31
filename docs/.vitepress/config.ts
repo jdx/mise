@@ -30,6 +30,7 @@ export default withMermaid(
         { text: "Dev Tools", link: "/dev-tools/" },
         { text: "Environments", link: "/environments/" },
         { text: "Tasks", link: "/tasks/" },
+        { text: "Sleeves", link: "/sleeves/" },
       ],
       sidebar: [
         {
@@ -147,6 +148,14 @@ export default withMermaid(
             { text: "Task Configuration", link: "/tasks/task-configuration" },
             { text: "Task Templates", link: "/tasks/templates" },
             { text: "Monorepo Tasks", link: "/tasks/monorepo" },
+          ],
+        },
+        {
+          text: "Sleeves",
+          items: [
+            { text: "Sleeves Overview", link: "/sleeves/" },
+            { text: "Service Catalog", link: "/sleeves/catalog" },
+            { text: "CLI Reference", link: "/sleeves/commands" },
           ],
         },
         {

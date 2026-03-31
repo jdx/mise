@@ -29,4 +29,8 @@ features:
     link: /tasks/
     details: A powerful task runner that replaces make and npm scripts. Define, compose, and run with ease.
     icon: 🍳
+  - title: Sleeves
+    link: /sleeves/
+    details: Provision databases, auth, and analytics from 10+ providers. Credentials sync to your .env automatically.
+    icon: 🧬
 ---
