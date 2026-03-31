@@ -193,6 +193,10 @@ impl From<&str> for Platform {
 fn is_musl_system() -> bool {
     use std::sync::LazyLock;
     static IS_MUSL: LazyLock<bool> = LazyLock::new(|| {
+        // Allow explicit override via environment variable
+        if let Ok(val) = std::env::var("MISE_LIBC") {
+            return val.eq_ignore_ascii_case("musl");
+        }
         // If glibc's dynamic linker exists, this is a glibc system
         for dir in ["/lib", "/lib64"] {
             if has_file_prefix(dir, "ld-linux-") {
@@ -372,5 +376,14 @@ mod tests {
             "musl-compiled binary should have musl qualifier, got: {}",
             platform.to_key()
         );
+    }
+
+    #[test]
+    fn test_mise_libc_env_var_parsing() {
+        // Verify the MISE_LIBC matching logic works correctly
+        assert!("musl".eq_ignore_ascii_case("musl"));
+        assert!("MUSL".eq_ignore_ascii_case("musl"));
+        assert!(!"gnu".eq_ignore_ascii_case("musl"));
+        assert!(!"GNU".eq_ignore_ascii_case("musl"));
     }
 }

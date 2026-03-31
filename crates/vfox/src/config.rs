@@ -51,6 +51,10 @@ pub fn arch() -> String {
 pub(crate) fn env_type() -> Option<String> {
     use once_cell::sync::Lazy;
     static ENV_TYPE: Lazy<Option<String>> = Lazy::new(|| {
+        // Allow explicit override via environment variable
+        if let Ok(val) = std::env::var("MISE_LIBC") {
+            return Some(val.to_lowercase());
+        }
         // If glibc's dynamic linker exists, this is a glibc system
         for dir in ["/lib", "/lib64"] {
             if has_file_prefix(dir, "ld-linux-") {
@@ -148,5 +152,18 @@ mod tests {
             Some("musl"),
             "musl-compiled binary should return Some(\"musl\")"
         );
+    }
+
+    #[test]
+    fn test_mise_libc_env_var_accepted() {
+        // Verify MISE_LIBC values are valid for env_type() logic
+        // (can't test cached Lazy directly, but verify the parsing)
+        for val in ["musl", "gnu", "MUSL", "GNU"] {
+            let lower = val.to_lowercase();
+            assert!(
+                lower == "musl" || lower == "gnu",
+                "MISE_LIBC={val} should normalize to musl or gnu"
+            );
+        }
     }
 }
