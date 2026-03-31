@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# Regression test: when a tool is installed --system (or any scenario where
+# BOTH the user shims dir AND a system shims dir are on PATH), invoking a
+# shim for a tool that is NOT in any config file must NOT recurse infinitely.
+#
+# Root cause: which_shim's PATH fallback skipped only dirs::SHIMS (user shims).
+# If a second mise shims dir (e.g. /usr/local/share/mise/shims) was also on
+# PATH it would be found as the "fallback binary" and exec'd, re-entering the
+# same shim logic — infinite loop.
+
+shimdir="$MISE_DATA_DIR/shims"
+mkdir -p "$shimdir"
+
+# Simulate a second (system-level) shims directory on PATH.
+# The binary inside it is a symlink to the mise binary, exactly like a real
+# system shim created by `mise install --system`.
+sys_shimdir="$(mktemp -d)"
+trap 'rm -rf "$sys_shimdir"' EXIT
+mise_bin="$(command -v mise)"
+ln -s "$mise_bin" "$sys_shimdir/dummy"
+
+# Put both shims dirs on PATH — the user shims dir first, then the fake
+# system shims dir.  This is the exact PATH layout that triggered the bug.
+export PATH="$shimdir:$sys_shimdir:$PATH"
+
+# dummy is not in any config file. The shim must fail fast with a clear
+# error rather than looping forever.
+output="$(run_with_timeout 10 dummy 2>&1)" && {
+	echo "ERROR: dummy should have failed but exited 0"
+	exit 1
+} || true
+
+# Should contain a helpful error, not be empty (which would indicate a hang
+# that was killed) or a recursion-induced crash.
+assert_contains "echo '$output'" "dummy"

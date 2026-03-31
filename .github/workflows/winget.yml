@@ -17,7 +17,7 @@ jobs:
       - run: git remote add microsoft https://github.com/microsoft/winget-pkgs
       - run: git pull --rebase microsoft master
       - run: git push -f origin master
-      - uses: vedantmgoyal9/winget-releaser@main
+      - uses: vedantmgoyal9/winget-releaser@7bd472be23763def6e16bd06cc8b1cdfab0e2fd5 # main
         with:
           identifier: jdx.mise
           max-versions-to-keep: 5

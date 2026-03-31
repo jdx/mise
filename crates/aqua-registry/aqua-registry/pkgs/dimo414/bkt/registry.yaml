@@ -20,7 +20,7 @@ packages:
           - darwin
           - windows
           - amd64
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.8.0")
         asset: bkt.v{{.Version}}.{{.Arch}}-{{.OS}}.{{.Format}}
         format: zip
         rosetta2: true
@@ -38,4 +38,22 @@ packages:
             goarch: arm64
             replacements:
               arm64: aarch64
+              linux: unknown-linux-gnu
+      - version_constraint: "true"
+        asset: bkt.v{{.Version}}.{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
               linux: unknown-linux-gnu

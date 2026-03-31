@@ -914,4 +914,57 @@ mod tests {
         let result = file.src(&pkg, "8.14.3", "darwin", "arm64").unwrap();
         assert_eq!(result, Some("gradle-8.14.3/bin/gradle".to_string()));
     }
+
+    #[test]
+    fn test_aqua_file_src_empty_asset_produces_absolute_path() {
+        // When a linked version name like "brew" matches a wrong version_override
+        // that has no asset field, the package ends up with an empty asset.
+        // The src template "{{.AssetWithoutExt}}/name" then renders to "/name"
+        // which is an absolute path — this caused a StripPrefixError panic
+        // in the aqua backend's list_bin_paths.
+        let pkg = AquaPackage {
+            repo_owner: "mozilla".to_string(),
+            repo_name: "sccache".to_string(),
+            asset: String::new(),
+            ..Default::default()
+        };
+        let file = AquaFile {
+            name: "sccache".to_string(),
+            src: Some("{{.AssetWithoutExt}}/sccache".to_string()),
+        };
+
+        let result = file.src(&pkg, "brew", "darwin", "arm64").unwrap();
+        assert_eq!(result, Some("/sccache".to_string()));
+    }
+
+    #[test]
+    fn test_version_override_non_version_string_matches_semver() {
+        // Non-version strings like "brew" are parsed as valid General versions
+        // by the versions crate, and can match semver constraints unexpectedly.
+        // This documents the root cause of the linked-version panic.
+        let pkg = AquaPackage {
+            version_constraint: "false".to_string(),
+            version_overrides: vec![
+                AquaPackage {
+                    version_constraint: "semver(\"<= 0.2.13\")".to_string(),
+                    error_message: Some("too old".to_string()),
+                    ..Default::default()
+                },
+                AquaPackage {
+                    version_constraint: "true".to_string(),
+                    asset: "tool-{{.Version}}.tar.gz".to_string(),
+                    format: "tar.gz".to_string(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+
+        let result = pkg.version_override(&["brew"]);
+        // "brew" matches semver("<= 0.2.13") instead of "true",
+        // because Versioning::new("brew") parses as General(Alphanum("brew"))
+        // which sorts before numeric versions.
+        assert!(result.error_message.is_some());
+        assert!(result.asset.is_empty());
+    }
 }

@@ -1,5 +1,53 @@
 # Changelog
 
+## [2026.3.18](https://github.com/jdx/mise/compare/v2026.3.17..v2026.3.18) - 2026-03-31
+
+### 🚀 Features
+
+- **(python)** add GitHub provenance verification for prebuilt binaries by @malept in [#8820](https://github.com/jdx/mise/pull/8820)
+
+### 🐛 Bug Fixes
+
+- **(ci)** use rustls-native-roots for Windows CI build by @jdx in [#8822](https://github.com/jdx/mise/pull/8822)
+- **(go)** improve version fetching logic to support deeply nested sub-modules by @roele in [#8823](https://github.com/jdx/mise/pull/8823)
+- **(shim)** prevent infinite recursion when system shims dir is on PATH by @andrewthauer in [#8816](https://github.com/jdx/mise/pull/8816)
+- go backend missing supports_lockfile_url() override by @palootcenas-outreach in [#8790](https://github.com/jdx/mise/pull/8790)
+- strip shims from PATH in credential and template subprocesses by @antonioacg in [#8802](https://github.com/jdx/mise/pull/8802)
+
+### 📚 Documentation
+
+- fix typo in shims documentation for fish by @roele in [#8798](https://github.com/jdx/mise/pull/8798)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:alpine docker digest to 3e6d001 by @renovate[bot] in [#8794](https://github.com/jdx/mise/pull/8794)
+- pin dependencies by @renovate[bot] in [#8793](https://github.com/jdx/mise/pull/8793)
+
+### 📦 Registry
+
+- fix flutter version sorting by @roele in [#8818](https://github.com/jdx/mise/pull/8818)
+- add svgo (npm:svgo) by @3w36zj6 in [#8817](https://github.com/jdx/mise/pull/8817)
+
+### New Contributors
+
+- @antonioacg made their first contribution in [#8802](https://github.com/jdx/mise/pull/8802)
+- @palootcenas-outreach made their first contribution in [#8790](https://github.com/jdx/mise/pull/8790)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`RasKrebs/sonar`](https://github.com/RasKrebs/sonar)
+- [`emacs-eask/cli`](https://github.com/emacs-eask/cli)
+- [`superradcompany/microsandbox`](https://github.com/superradcompany/microsandbox)
+
+#### Updated Packages (4)
+
+- [`dimo414/bkt`](https://github.com/dimo414/bkt)
+- [`lxc/incus`](https://github.com/lxc/incus)
+- [`shinagawa-web/gomarklint`](https://github.com/shinagawa-web/gomarklint)
+- [`updatecli/updatecli`](https://github.com/updatecli/updatecli)
+
 ## [2026.3.17](https://github.com/jdx/mise/compare/v2026.3.16..v2026.3.17) - 2026-03-27
 
 ### 🐛 Bug Fixes

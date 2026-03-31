@@ -62,7 +62,7 @@ pub mod task_tool_installer;
 
 pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax};
 pub use task_output::TaskOutput;
-pub use task_script_parser::has_any_args_defined;
+pub use task_script_parser::{has_any_args_defined, has_any_usage_spec};
 pub use task_template::TaskTemplate;
 
 use crate::config::config_file::ConfigFile;
@@ -2562,5 +2562,43 @@ echo "test"
         // Bare name "test" should still match the "test" task (implicit wildcard)
         let matches = tasks.get_matching("test").unwrap();
         assert!(matches.contains(&&"test".to_string()));
+    }
+
+    #[test]
+    fn test_get_matching_resolves_aliases() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        let mut tasks: BTreeMap<String, String> = BTreeMap::new();
+        tasks.insert("pr:remove".to_string(), "pr:remove".to_string());
+        tasks.insert("prr".to_string(), "pr:remove".to_string());
+
+        let matches = tasks.get_matching("prr").unwrap();
+        assert_eq!(matches, vec![&"pr:remove".to_string()]);
+
+        let matches = tasks.get_matching("pr:remove").unwrap();
+        assert_eq!(matches, vec![&"pr:remove".to_string()]);
+    }
+
+    #[test]
+    fn test_get_matching_resolves_monorepo_aliases() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        let mut tasks: BTreeMap<String, String> = BTreeMap::new();
+        tasks.insert("//:pr:remove".to_string(), "//:pr:remove".to_string());
+        tasks.insert("//:prr".to_string(), "//:pr:remove".to_string());
+        tasks.insert("prr".to_string(), "//:pr:remove".to_string());
+
+        let matches = tasks.get_matching("//:prr").unwrap();
+        assert_eq!(matches, vec![&"//:pr:remove".to_string()]);
+
+        let matches = tasks.get_matching("prr").unwrap();
+        assert_eq!(matches, vec![&"//:pr:remove".to_string()]);
+
+        let matches = tasks.get_matching("//:pr:remove").unwrap();
+        assert_eq!(matches, vec![&"//:pr:remove".to_string()]);
     }
 }

@@ -21,6 +21,7 @@ assert_fail "pipx"
 
 # Use only precompiled python
 export MISE_PYTHON_COMPILE=0
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
 
 # Set up a 3-step installation: python@3.12.3 > pipx@1.5.0 > pipx:mkdocs@1.6.0
 cat >.mise.toml <<EOF

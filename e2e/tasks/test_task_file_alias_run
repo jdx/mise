@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Test that file-based task aliases resolve for `mise run` in monorepo mode
+
+export MISE_EXPERIMENTAL=1
+
+# === Test 1: Monorepo with config_roots=["."] ===
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["."]
+TOML
+
+mkdir -p .mise/tasks/pr
+cat <<'EOF' >.mise/tasks/pr/list
+#!/usr/bin/env bash
+#MISE alias="prl"
+echo "pr-list ran with args: $@"
+EOF
+chmod +x .mise/tasks/pr/list
+
+assert_contains "mise run //:pr:list" "pr-list ran"
+assert_contains "mise run //:prl" "pr-list ran"
+assert_contains "mise run prl" "pr-list ran"
+assert_contains "mise run prl my-arg" "pr-list ran with args: my-arg"
+
+# === Test 2: Monorepo with config_roots including subdirectories ===
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = [".", "projects/*"]
+TOML
+
+mkdir -p projects/backend/.mise/tasks
+cat <<'EOF' >projects/backend/.mise/tasks/deploy
+#!/usr/bin/env bash
+#MISE alias="d"
+echo "backend deploy ran"
+EOF
+chmod +x projects/backend/.mise/tasks/deploy
+cat <<'TOML' >projects/backend/mise.toml
+TOML
+
+assert_contains "mise run prl" "pr-list ran"
+assert_contains "mise run //projects/backend:d" "backend deploy ran"
+assert_contains "mise run d" "backend deploy ran"
+
+# === Test 3: Usage spec includes monorepo-prefixed aliases for completion ===
+output=$(mise tasks --usage 2>&1)
+echo "$output" | grep -q '"//:prl"' || (echo "FAIL: prefixed alias //:prl not in usage spec" && echo "$output" && exit 1)
