@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 export MISE_PYTHON_DEFAULT_PACKAGES_FILE="$HOME/.default-python-packages"
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
 
 cat >.mise.toml <<EOF
 [env._.python]

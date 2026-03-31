@@ -3,6 +3,7 @@
 set -euo pipefail
 
 export MISE_EXPERIMENTAL=1
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
 
 # Test uv is used for manually defined venv
 cat >mise.toml <<EOF

@@ -204,7 +204,9 @@ where
             // User-configured paths (_.path/venv) maintain their position
             // relative to tool paths since both are "mise-added".
             // The child process still inherits the full unmodified PATH.
-            let shims_dir = &*crate::dirs::SHIMS;
+            let user_shims = &*crate::dirs::SHIMS;
+            let sys_shims = crate::env::MISE_SYSTEM_DATA_DIR.join("shims");
+            let is_shims_dir = |p: &std::path::PathBuf| p == user_shims || p == &sys_shims;
             let pristine: std::collections::HashSet<_> = crate::env::PATH.iter().collect();
             let all_paths: Vec<_> = std::env::split_paths(&OsString::from(path_val)).collect();
             // Mise-added paths first (preserving relative order)
@@ -216,7 +218,7 @@ where
             // Then original system paths (minus shims)
             let original: Vec<_> = all_paths
                 .iter()
-                .filter(|p| pristine.contains(p) && *p != shims_dir)
+                .filter(|p| pristine.contains(p) && !is_shims_dir(p))
                 .cloned()
                 .collect();
             std::env::join_paths(mise_added.iter().chain(original.iter())).unwrap()
@@ -249,9 +251,15 @@ where
             .to_string_lossy()
             .to_lowercase()
             .replace('/', "\\");
+        let sys_shims_normalized = crate::env::MISE_SYSTEM_DATA_DIR
+            .join("shims")
+            .to_string_lossy()
+            .to_lowercase()
+            .replace('/', "\\");
         let is_shims = |p: &std::path::PathBuf| {
             let expanded = crate::file::replace_path(p);
-            expanded.to_string_lossy().to_lowercase().replace('/', "\\") == shims_normalized
+            let normalized = expanded.to_string_lossy().to_lowercase().replace('/', "\\");
+            normalized == shims_normalized || normalized == sys_shims_normalized
         };
         let pristine: std::collections::HashSet<_> = crate::env::PATH
             .iter()

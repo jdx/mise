@@ -1,0 +1,3 @@
+backends = ["npm:svgo"]
+description = "command-line application for optimizing vector images"
+test = { cmd = "svgo --version", expected = "{{version}}" }
