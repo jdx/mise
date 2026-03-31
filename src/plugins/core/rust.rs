@@ -231,7 +231,7 @@ impl Backend for RustPlugin {
                 eyre::bail!(
                     "command [\"rustup\", \"check\"] exited with code {}. stderr: {}",
                     exit_code,
-                    stderr
+                    stderr.trim()
                 );
             }
             let out = String::from_utf8_lossy(&result.stdout);
