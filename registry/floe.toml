@@ -1,0 +1,3 @@
+backends = ["github:floeorg/floe"]
+description = "A functional language with full TypeScript interop"
+test = { cmd = "floe --version", expected = "floe {{version}}" }
