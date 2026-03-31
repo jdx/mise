@@ -225,6 +225,13 @@ impl Backend for RustPlugin {
             // rustup check returns exit code 100 when updates are available
             // This is not an error, so we use unchecked() and check status manually
             let result = cmd.stdout_capture().stderr_capture().unchecked().run()?;
+            let exit_code = result.status.code().unwrap_or(-1);
+            if exit_code != 0 && exit_code != 100 {
+                eyre::bail!(
+                    "command [\"rustup\", \"check\"] exited with code {}",
+                    exit_code
+                );
+            }
             let out = String::from_utf8_lossy(&result.stdout);
             for line in out.lines() {
                 if line.starts_with(&self.target_triple(tv))
