@@ -11,7 +11,7 @@ use crate::duration;
 use crate::env;
 use crate::file::display_path;
 use crate::prepare::{PrepareEngine, PrepareOptions};
-use crate::task::has_any_args_defined;
+use crate::task::has_any_usage_spec;
 use crate::task::task_helpers::task_needs_permit;
 use crate::task::task_list::{get_task_lists, resolve_depends};
 use crate::task::task_output::TaskOutput;
@@ -233,8 +233,8 @@ impl Run {
                 // Get usage spec to check if task has defined args/flags
                 let spec = task.parse_usage_spec_for_display(&config).await?;
 
-                if has_any_args_defined(&spec) {
-                    // Task has usage args/flags defined, render help using usage library
+                if has_any_usage_spec(&spec) {
+                    // Task has usage spec defined, render help using usage library
                     println!("{}", usage::docs::cli::render_help(&spec, &spec.cmd, true));
                 } else {
                     // Task has no usage defined, show basic task info
