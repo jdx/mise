@@ -79,6 +79,7 @@ mod semver;
 mod shell;
 mod shims;
 mod shorthands;
+pub(crate) mod sleeves;
 mod sops;
 mod sysconfig;
 pub(crate) mod task;
