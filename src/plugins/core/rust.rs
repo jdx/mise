@@ -227,9 +227,11 @@ impl Backend for RustPlugin {
             let result = cmd.stdout_capture().stderr_capture().unchecked().run()?;
             let exit_code = result.status.code().unwrap_or(-1);
             if exit_code != 0 && exit_code != 100 {
+                let stderr = String::from_utf8_lossy(&result.stderr);
                 eyre::bail!(
-                    "command [\"rustup\", \"check\"] exited with code {}",
-                    exit_code
+                    "command [\"rustup\", \"check\"] exited with code {}. stderr: {}",
+                    exit_code,
+                    stderr
                 );
             }
             let out = String::from_utf8_lossy(&result.stdout);
