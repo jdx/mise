@@ -64,7 +64,7 @@ Do not use /bin/bash or /usr/bin/bash on macOS. bash is complicated, decades old
 Unless you consider yourself an expert on bash and know why I (and Apple for that matter) admonish using bash, just use zsh on macOS.
 :::
 
-On Linux this is read when logging into the machine, so changing it requires logging out and back in for it to work. See #vscode below
+On Linux this is read when logging into the machine, so changing it requires logging out and back in for it to work. See [VSCode](#vscode) below
 for how to get VSCode to read the login file.
 
 This assumes that `mise` is on `PATH`. If it is not, you'll need to use the absolute path (
