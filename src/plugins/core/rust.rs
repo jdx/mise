@@ -222,7 +222,10 @@ impl Backend for RustPlugin {
             for (k, v) in self.exec_env(config, ts, tv).await? {
                 cmd = cmd.env(k, v);
             }
-            let out = cmd.read()?;
+            // rustup check returns exit code 100 when updates are available
+            // This is not an error, so we use unchecked() and check status manually
+            let result = cmd.stdout_capture().stderr_capture().unchecked().run()?;
+            let out = String::from_utf8_lossy(&result.stdout);
             for line in out.lines() {
                 if line.starts_with(&self.target_triple(tv))
                     && let Some(_cap) = v_re.captures(line)
