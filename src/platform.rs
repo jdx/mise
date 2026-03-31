@@ -386,7 +386,12 @@ mod tests {
     fn test_mise_libc_env_var_validation() {
         // Only "musl" and "gnu" (case-insensitive) are accepted;
         // invalid values should be ignored (fall through to detection)
-        for (input, is_musl) in [("musl", true), ("MUSL", true), ("gnu", false), ("GNU", false)] {
+        for (input, is_musl) in [
+            ("musl", true),
+            ("MUSL", true),
+            ("gnu", false),
+            ("GNU", false),
+        ] {
             let lower = input.to_lowercase();
             match lower.as_str() {
                 "musl" => assert!(is_musl, "MISE_LIBC={input} should be musl"),
