@@ -158,16 +158,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_mise_libc_env_var_accepted() {
-        // Verify MISE_LIBC values are valid for env_type() logic
-        // (can't test cached Lazy directly, but verify the parsing)
-        for val in ["musl", "gnu", "MUSL", "GNU"] {
-            let lower = val.to_lowercase();
-            assert!(
-                lower == "musl" || lower == "gnu",
-                "MISE_LIBC={val} should normalize to musl or gnu"
-            );
-        }
-    }
 }
