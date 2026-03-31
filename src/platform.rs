@@ -360,15 +360,16 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", target_env = "musl"))]
     #[test]
-    fn test_current_platform_has_qualifier() {
-        // On Linux, the current platform should always have a qualifier
-        // (gnu or musl) — never None. The compile-time fallback ensures this.
+    fn test_current_platform_has_musl_qualifier() {
+        // A musl-compiled binary should always have the musl qualifier,
+        // even in minimal containers with no linker files.
         let platform = Platform::current();
-        assert!(
-            platform.qualifier.is_some(),
-            "Platform::current() should have a qualifier on Linux, got: {}",
+        assert_eq!(
+            platform.qualifier.as_deref(),
+            Some("musl"),
+            "musl-compiled binary should have musl qualifier, got: {}",
             platform.to_key()
         );
     }
