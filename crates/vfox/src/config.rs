@@ -157,5 +157,4 @@ mod tests {
             "musl-compiled binary should return Some(\"musl\")"
         );
     }
-
 }

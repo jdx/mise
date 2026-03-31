@@ -381,5 +381,4 @@ mod tests {
             platform.to_key()
         );
     }
-
 }
