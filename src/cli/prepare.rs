@@ -229,22 +229,20 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 <bold><underline>Configuration:</underline></bold>
 
-    Configure prepare providers in mise.toml:
+```toml
+# Built-in npm provider (auto-detects lockfile)
+[prepare.npm]
+auto = true              # Auto-run before mise x/run
 
-    ```toml
-    # Built-in npm provider (auto-detects lockfile)
-    [prepare.npm]
-    auto = true              # Auto-run before mise x/run
+# Custom provider
+[prepare.codegen]
+auto = true
+sources = ["schema/*.graphql"]
+outputs = ["src/generated/"]
+run = "npm run codegen"
 
-    # Custom provider
-    [prepare.codegen]
-    auto = true
-    sources = ["schema/*.graphql"]
-    outputs = ["src/generated/"]
-    run = "npm run codegen"
-
-    [prepare]
-    disable = ["npm"]        # Disable specific providers at runtime
-    ```
+[prepare]
+disable = ["npm"]        # Disable specific providers at runtime
+```
 "#
 );
