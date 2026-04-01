@@ -1,5 +1,43 @@
 # Changelog
 
+## [2026.4.0](https://github.com/jdx/mise/compare/v2026.3.18..v2026.4.0) - 2026-04-01
+
+### 🚀 Features
+
+- add azd (Azure Developer CLI) to registry by @rajeshkamal5050 in [#8828](https://github.com/jdx/mise/pull/8828)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** skip registry lookup for linked versions in list_bin_paths by @nikobockerman in [#8801](https://github.com/jdx/mise/pull/8801)
+- **(rust)** handle rustup check exit code 100 as non-error by @shalk in [#8832](https://github.com/jdx/mise/pull/8832)
+- **(task)** resolve bare aliases in monorepo with config_roots by @nkakouros in [#8819](https://github.com/jdx/mise/pull/8819)
+- show usage help when long_about is defined w/o args/flags by @nkakouros in [#8824](https://github.com/jdx/mise/pull/8824)
+
+### 📚 Documentation
+
+- fix serif font in sidebar and increase heading sizes by @jdx in [#8831](https://github.com/jdx/mise/pull/8831)
+- fix #vscode link in ide integration page by @jedymatt in [#8833](https://github.com/jdx/mise/pull/8833)
+- fix nested Markdown code fences by @muzimuzhi in [#8835](https://github.com/jdx/mise/pull/8835)
+
+### New Contributors
+
+- @shalk made their first contribution in [#8832](https://github.com/jdx/mise/pull/8832)
+- @jedymatt made their first contribution in [#8833](https://github.com/jdx/mise/pull/8833)
+- @nikobockerman made their first contribution in [#8801](https://github.com/jdx/mise/pull/8801)
+- @rajeshkamal5050 made their first contribution in [#8828](https://github.com/jdx/mise/pull/8828)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`gastownhall/beads`](https://github.com/gastownhall/beads)
+- [`getdbt.com/dbt-fusion`](https://github.com/getdbt.com/dbt-fusion)
+
+#### Updated Packages (2)
+
+- [`Azure/azure-dev`](https://github.com/Azure/azure-dev)
+- [`magefile/mage`](https://github.com/magefile/mage)
+
 ## [2026.3.18](https://github.com/jdx/mise/compare/v2026.3.17..v2026.3.18) - 2026-03-31
 
 ### 🚀 Features
