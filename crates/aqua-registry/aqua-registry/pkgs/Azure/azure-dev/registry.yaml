@@ -3,16 +3,70 @@ packages:
   - type: github_release
     repo_owner: Azure
     repo_name: azure-dev
-    asset: azd-{{.OS}}-{{.Arch}}.{{.Format}}
-    format: zip
-    description: The Azure Developer CLI is a developer-centric command-line interface tool for creating Azure applications
-    overrides:
-      - goos: linux
-        format: tar.gz
+    description: "A developer CLI for working with Azure resources to build and deploy AI applications. Commands map to key workflow stages: code, build, deploy, and monitor"
+    version_prefix: azure-dev-cli_
+    version_constraint: "false"
     files:
       - name: azd
-        src: azd-{{.OS}}-{{.Arch}}
-    supported_envs:
-      - darwin
-      - amd64
-    rosetta2: true
+        src: "{{.AssetWithoutExt}}"
+    version_overrides:
+      - version_constraint: Version == "azure-dev-cli_0.9.0-beta.1"
+        asset: azd-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: azd
+            src: azd-{{.OS}}-{{.Arch}}
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: darwin
+            goarch: arm64
+            asset: azd-{{.OS}}-{{.Arch}}-beta.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.8.0-beta.2")
+        asset: azd-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.3.1")
+        asset: azd-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            goarch: amd64
+            format: tar.gz
+          - goos: linux
+            goarch: arm64
+            format: tar.gz
+            asset: azd-{{.OS}}-{{.Arch}}-beta.{{.Format}}
+          - goos: darwin
+            goarch: arm64
+            asset: azd-{{.OS}}-{{.Arch}}-beta.{{.Format}}
+      - version_constraint: semver("<= 1.9.3")
+        asset: azd-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            format: tar.gz
+      - version_constraint: "true"
+        asset: azd-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            goarch: arm64
+            asset: azd-{{.OS}}-{{.Arch}}-alpha.{{.Format}}

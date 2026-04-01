@@ -6,6 +6,27 @@ packages:
     description: a Make/rake-like dev tool using Go
     version_constraint: "false"
     version_overrides:
+      - version_constraint: Version == "v1.15.0"
+        asset: mage_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: 64bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: mage_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: ARM64
+          - goos: windows
+            format: zip
+            replacements:
+              arm64: ARM
       - version_constraint: semver("<= 1.0.1")
         no_asset: true
       - version_constraint: semver("<= 1.11.0")
@@ -44,6 +65,31 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: Version == "v1.17.0"
+        asset: mage_{{trimV .Version}}_{{.OS}}_{{.Arch}}Linux-64bit.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: mage_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: mage_{{trimV .Version}}_{{.OS}}_{{.Arch}}Linux-ARM64.{{.Format}}
+          - goos: darwin
+            goarch: amd64
+            asset: mage_{{trimV .Version}}_{{.OS}}_{{.Arch}}macOS-64bit.{{.Format}}
+          - goos: darwin
+            goarch: arm64
+            asset: mage_{{trimV .Version}}_{{.OS}}_{{.Arch}}macOS-ARM64.{{.Format}}
+          - goos: windows
+            goarch: amd64
+            format: zip
+            asset: mage_{{trimV .Version}}_{{.OS}}_{{.Arch}}Windows-64bit.{{.Format}}
+          - goos: windows
+            goarch: arm64
+            format: zip
+            asset: mage_{{trimV .Version}}_{{.OS}}_{{.Arch}}Windows-ARM64.{{.Format}}
       - version_constraint: "true"
         asset: mage_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
