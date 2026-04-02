@@ -171,7 +171,7 @@ impl Backend for NPMBackend {
             &ctx.config,
             &self.tool_name(),
             &tv.version,
-            ctx.before_date.clone(),
+            ctx.before_date,
         )
         .await?;
         match Settings::get().npm.package_manager {
