@@ -36,7 +36,7 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 ### Specifying a version
 
 ```sh
-$ mise use winget:Amazon.AWSCLI@2.15.0
+mise use winget:Amazon.AWSCLI@2.15.0
 ```
 
 ```toml
@@ -46,10 +46,10 @@ $ mise use winget:Amazon.AWSCLI@2.15.0
 
 ### Supported Winget Syntax
 
-| Description                            | Usage                                   |
-| -------------------------------------- | --------------------------------------- |
-| Winget shorthand latest version        | `winget:Amazon.AWSCLI`                  |
-| Winget shorthand for specific version  | `winget:Amazon.AWSCLI@2.15.0`          |
+| Description                           | Usage                         |
+| ------------------------------------- | ----------------------------- |
+| Winget shorthand latest version       | `winget:Amazon.AWSCLI`        |
+| Winget shorthand for specific version | `winget:Amazon.AWSCLI@2.15.0` |
 
 ::: tip Package IDs
 Winget package IDs follow the format used in the [winget-pkgs](https://github.com/microsoft/winget-pkgs) repository.
