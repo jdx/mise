@@ -4,12 +4,14 @@ use std::{
     sync::Arc,
 };
 
+use crate::backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, Settings};
 use crate::env;
+use crate::env_diff::EnvMap;
 use crate::registry::{REGISTRY, tool_enabled};
-use crate::toolset::{ToolRequest, ToolSource, Toolset};
+use crate::toolset::{ToolRequest, ToolSource, ToolVersion, Toolset};
 use indexmap::IndexMap;
 use itertools::Itertools;
 
@@ -195,10 +197,64 @@ impl ToolRequestSetBuilder {
         config: &Arc<Config>,
         mut trs: ToolRequestSet,
     ) -> eyre::Result<ToolRequestSet> {
+        // Pre-compute env vars exported by vfox tools so they're available in templates.
+        // Only needed once; skip if already populated (e.g., recursive calls).
+        if config.tool_env_cached().is_none() {
+            // First pass: build preliminary TRS to find vfox tools with concrete versions.
+            // Skip config files that fail (e.g., template refs to not-yet-defined env vars).
+            let mut preliminary_trs = ToolRequestSet::default();
+            for cf in config.config_files.values().rev() {
+                if let Ok(partial) = cf.to_tool_request_set() {
+                    preliminary_trs = merge(preliminary_trs, partial);
+                }
+            }
+
+            // Collect env vars from vfox tools found in the preliminary TRS
+            let tool_env = Self::collect_vfox_tool_env(config, &preliminary_trs).await;
+            config.tool_env.set(tool_env).ok();
+        }
+
+        // Main (second) pass: build the real TRS with vfox env vars now available in Tera context
         for cf in config.config_files.values().rev() {
             trs = merge(trs, cf.to_tool_request_set()?);
         }
         Ok(trs)
+    }
+
+    /// Runs exec_env() for all vfox tools with concrete (non-template) version specs in `trs`.
+    /// Returns a map of env vars exported by those tools. Does NOT require tools to be installed
+    /// (vfox's EnvKeys hook only needs the plugin scripts, not the tool installation).
+    async fn collect_vfox_tool_env(config: &Arc<Config>, trs: &ToolRequestSet) -> EnvMap {
+        let mut tool_env = EnvMap::new();
+        let empty_ts = Toolset::default();
+
+        for (ba, versions, _source) in trs.iter() {
+            // Only vfox backends export env via exec_env without requiring installation
+            if !matches!(
+                ba.backend_type(),
+                BackendType::Vfox | BackendType::VfoxBackend(_)
+            ) {
+                continue;
+            }
+            let Some(backend) = backend::get(ba) else {
+                continue;
+            };
+            for tr in versions {
+                // Only process concrete version strings (skip empty/unresolved templates)
+                let ToolRequest::Version { version, .. } = tr else {
+                    continue;
+                };
+                if version.is_empty() {
+                    continue;
+                }
+                let tv = ToolVersion::new(tr.clone(), version.clone());
+                match backend.exec_env(config, &empty_ts, &tv).await {
+                    Ok(env) => tool_env.extend(env),
+                    Err(e) => debug!("collect_vfox_tool_env: {}: {:#}", ba, e),
+                }
+            }
+        }
+        tool_env
     }
 
     fn load_runtime_env(&self, mut trs: ToolRequestSet) -> eyre::Result<ToolRequestSet> {

@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+# Regression test: env vars exported by vfox plugins should be available as
+# Tera template variables in tool version specifications in other config files.
+#
+# The vfox-pulumi plugin exports GO_VERSION_MISE which is used by
+# pulumi provider repos as: [tools] go = "{{ env.GO_VERSION_MISE }}"
+#
+# This fails because vfox env exports flow through:
+#   backend.exec_env() → env_from_tools() → final_env()  (shell hook-env path)
+# NOT through:
+#   env_results_cached()  (which uses ToolsFilter::NonToolsOnly)
+# The latter is what to_tool_request_set() uses for template context.
+
+# Pre-install the vfox dummy-env plugin so ensure_plugin_installed() is a no-op
+# (plugin_path.exists() == true), allowing exec_env to run without git-cloning.
+ln -s "$ROOT/test/data/vfox-plugins/dummy-env" "$MISE_DATA_DIR/plugins/dummy-env"
+
+mkdir -p project/.config
+
+# project/mise.toml: declares the pre-installed vfox plugin at version 1.0.0.
+# The EnvKeys hook exports MISE_DUMMY_ENV_VAR = ctx.version.
+cat <<MISE >project/mise.toml
+[tools]
+dummy-env = "1.0.0"
+MISE
+
+# project/.config/mise.toml: uses vfox-exported var as tool version
+# This mirrors what pulumi provider repos do with GO_VERSION_MISE
+cat <<MISE >project/.config/mise.toml
+[tools]
+dummy = "{{ env.MISE_DUMMY_ENV_VAR }}"
+MISE
+
+cd project
+
+# MISE_DUMMY_ENV_VAR is exported by the vfox plugin when active, but is NOT
+# available in env_results_cached() (NonToolsOnly filter excludes vfox exports).
+# Expected (fixed) behavior: dummy resolves to "1.0.0"
+assert_contains "mise ls dummy" "1.0.0"

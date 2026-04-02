@@ -679,8 +679,6 @@ impl ConfigFile for MiseToml {
         let mut trs = ToolRequestSet::new();
         let tools = self.tools.lock().unwrap();
         let mut context = self.context.clone();
-        if let Some(config) = Config::maybe_get()
-            && let Some(env_results) = config.env_results_cached()
         {
             let mut env_vars: EnvMap =
                 if let Some(TeraValue::Object(existing_env)) = context.get("env") {
@@ -691,16 +689,23 @@ impl ConfigFile for MiseToml {
                 } else {
                     env::PRISTINE_ENV.clone()
                 };
-            for key in &env_results.env_remove {
-                env_vars.remove(key);
+            if let Some(config) = Config::maybe_get() {
+                if let Some(env_results) = config.env_results_cached() {
+                    for key in &env_results.env_remove {
+                        env_vars.remove(key);
+                    }
+                    env_vars.extend(
+                        env_results
+                            .env
+                            .iter()
+                            .map(|(k, (v, _))| (k.clone(), v.clone())),
+                    );
+                }
+                if let Some(tool_env) = config.tool_env_cached() {
+                    env_vars.extend(tool_env.iter().map(|(k, v)| (k.clone(), v.clone())));
+                }
+                context.insert("env", &env_vars);
             }
-            env_vars.extend(
-                env_results
-                    .env
-                    .iter()
-                    .map(|(k, (v, _))| (k.clone(), v.clone())),
-            );
-            context.insert("env", &env_vars);
         }
         if context.get("vars").is_none()
             && let Some(config) = Config::maybe_get()

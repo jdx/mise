@@ -76,6 +76,7 @@ pub struct Config {
     toolset: OnceCell<Toolset>,
     vars_loader: Option<Arc<Config>>,
     vars_results: OnceCell<EnvResults>,
+    pub(crate) tool_env: std::sync::OnceLock<EnvMap>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -159,6 +160,7 @@ impl Config {
             vars: Default::default(),
             vars_loader: None,
             vars_results: OnceCell::new(),
+            tool_env: std::sync::OnceLock::new(),
         };
         let vars_config = Arc::new(Self {
             tera_ctx: config.tera_ctx.clone(),
@@ -179,6 +181,7 @@ impl Config {
             vars: config.vars.clone(),
             vars_loader: None,
             vars_results: OnceCell::new(),
+            tool_env: std::sync::OnceLock::new(),
         });
         let vars_results = measure!("config::load vars_results", {
             let results = load_vars(&vars_config).await?;
@@ -326,6 +329,9 @@ impl Config {
     }
     pub fn vars_results_cached(&self) -> Option<&EnvResults> {
         self.vars_results.get()
+    }
+    pub fn tool_env_cached(&self) -> Option<&EnvMap> {
+        self.tool_env.get()
     }
     pub async fn path_dirs(self: &Arc<Self>) -> eyre::Result<&Vec<PathBuf>> {
         Ok(&self.env_results().await?.env_paths)
