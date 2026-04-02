@@ -1,5 +1,11 @@
 use super::SandboxConfig;
 
+/// Sanitize a string for use in an SBPL profile.
+/// Escapes double quotes and backslashes to prevent injection.
+fn sbpl_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 /// System paths that are always readable on macOS.
 const SYSTEM_READ_PATHS: &[&str] = &[
     "/System",
@@ -31,9 +37,8 @@ pub async fn generate_seatbelt_profile(config: &SandboxConfig) -> String {
         // Allow writes to /dev (needed for /dev/null, /dev/tty, etc.)
         rules.push("(allow file-write* (subpath \"/dev\"))".to_string());
         for path in &config.allow_write {
-            let path_str = path.to_string_lossy();
+            let path_str = sbpl_escape(&path.to_string_lossy());
             rules.push(format!("(allow file-write* (subpath \"{path_str}\"))"));
-            // Writable paths are implicitly readable
             if config.effective_deny_read() {
                 rules.push(format!("(allow file-read* (subpath \"{path_str}\"))"));
             }
@@ -49,10 +54,10 @@ pub async fn generate_seatbelt_profile(config: &SandboxConfig) -> String {
         }
         // Mise data dir (includes installs, shims, etc.)
         let data_dir = &*crate::env::MISE_DATA_DIR;
-        let data_str = data_dir.to_string_lossy();
+        let data_str = sbpl_escape(&data_dir.to_string_lossy());
         rules.push(format!("(allow file-read* (subpath \"{data_str}\"))"));
         for path in &config.allow_read {
-            let path_str = path.to_string_lossy();
+            let path_str = sbpl_escape(&path.to_string_lossy());
             rules.push(format!("(allow file-read* (subpath \"{path_str}\"))"));
         }
         // allow_write paths are implicitly readable (handled above)
@@ -90,6 +95,7 @@ pub async fn generate_seatbelt_profile(config: &SandboxConfig) -> String {
                 if let Ok((host, ips)) = handle.await {
                     if ips.is_empty() {
                         // Resolution failed — use the value directly (might be an IP already)
+                        let host = sbpl_escape(&host);
                         rules.push(format!("(allow network* (remote ip \"{host}:*\"))"));
                     } else {
                         for ip in ips {
