@@ -33,6 +33,7 @@ pub enum BackendType {
     Ubi,
     Vfox,
     VfoxBackend(String),
+    Winget,
     Unknown,
 }
 
@@ -68,6 +69,7 @@ impl BackendType {
             "s3" => BackendType::S3,
             "ubi" => BackendType::Ubi,
             "vfox" => BackendType::Vfox,
+            "winget" => BackendType::Winget,
             _ => BackendType::Unknown,
         }
     }
@@ -80,6 +82,10 @@ impl BackendType {
             BackendType::Dotnet => dotnet::EXPERIMENTAL,
             BackendType::S3 => s3::EXPERIMENTAL,
             BackendType::Spm => spm::EXPERIMENTAL,
+            #[cfg(windows)]
+            BackendType::Winget => super::winget::EXPERIMENTAL,
+            #[cfg(not(windows))]
+            BackendType::Winget => true,
             _ => false,
         }
     }

@@ -25,4 +25,5 @@ Below is a list of the available backends in mise:
 - [spm](/dev-tools/backends/spm) <Badge type="warning" text="experimental" />
 - [ubi](/dev-tools/backends/ubi)
 - [vfox](/dev-tools/backends/vfox) (provide tools through [plugins](/plugins.html))
+- [winget](/dev-tools/backends/winget) <Badge type="warning" text="experimental" /> <Badge type="tip" text="Windows only" />
 - [custom backends](/backend-plugin-development) (build your own backend with a plugin which itself provides many tools)

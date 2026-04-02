@@ -86,6 +86,13 @@ impl BackendProvider for MiseBackendProvider {
                 BackendType::Http => ("http", Some("Download files from HTTP URLs")),
                 BackendType::S3 => ("s3", Some("Download from S3 buckets")),
                 BackendType::Ubi => ("ubi", Some("Universal Binary Installer")),
+                #[cfg(not(windows))]
+                BackendType::Winget => continue,
+                #[cfg(windows)]
+                BackendType::Winget => (
+                    "winget",
+                    Some("Install packages via Windows Package Manager"),
+                ),
                 // Skip internal/meta types
                 BackendType::Core
                 | BackendType::Vfox

@@ -64,6 +64,8 @@ pub mod static_helpers;
 pub mod ubi;
 pub mod version_list;
 pub mod vfox;
+#[cfg(windows)]
+pub mod winget;
 
 pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
@@ -271,6 +273,10 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
             ba,
             Some(plugin_name.to_string()),
         ))),
+        #[cfg(windows)]
+        BackendType::Winget => Some(Arc::new(winget::WingetBackend::from_arg(ba))),
+        #[cfg(not(windows))]
+        BackendType::Winget => None,
         BackendType::Unknown => None,
     }
 }
