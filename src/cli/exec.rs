@@ -303,7 +303,10 @@ where
         .iter()
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
-    if let Some(sandboxed) = sandbox.apply(&program.to_string_lossy(), &args_str)? {
+    if let Some(sandboxed) = tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current()
+            .block_on(sandbox.apply(&program.to_string_lossy(), &args_str))
+    })? {
         // macOS: exec through sandbox-exec
         let err = exec::Command::new(&sandboxed.program)
             .args(&sandboxed.args)

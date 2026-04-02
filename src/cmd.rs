@@ -635,7 +635,10 @@ impl<'a> CmdLineRunner<'a> {
                 .get_args()
                 .map(|a| a.to_string_lossy().into_owned())
                 .collect();
-            let profile = crate::sandbox::macos_generate_profile(&sandbox);
+            let profile = tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current()
+                    .block_on(crate::sandbox::macos_generate_profile(&sandbox))
+            });
 
             let mut new_cmd = Command::new("sandbox-exec");
             new_cmd.arg("-p").arg(&profile).arg("--").arg(&program);

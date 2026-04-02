@@ -113,7 +113,11 @@ impl SandboxConfig {
     /// On Linux: applies Landlock rules and seccomp filters in-process (inherited across exec).
     /// On macOS: returns a modified command that wraps through sandbox-exec.
     #[allow(unused_variables)]
-    pub fn apply(&self, program: &str, args: &[String]) -> eyre::Result<Option<SandboxedCommand>> {
+    pub async fn apply(
+        &self,
+        program: &str,
+        args: &[String],
+    ) -> eyre::Result<Option<SandboxedCommand>> {
         if !self.is_active() {
             return Ok(None);
         }
@@ -126,7 +130,7 @@ impl SandboxConfig {
 
         #[cfg(target_os = "macos")]
         {
-            return self.apply_macos(program, args);
+            return self.apply_macos(program, args).await;
         }
 
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -164,12 +168,12 @@ impl SandboxConfig {
     }
 
     #[cfg(target_os = "macos")]
-    fn apply_macos(
+    async fn apply_macos(
         &self,
         program: &str,
         args: &[String],
     ) -> eyre::Result<Option<SandboxedCommand>> {
-        let profile = macos::generate_seatbelt_profile(self);
+        let profile = macos::generate_seatbelt_profile(self).await;
         let mut sandbox_args = vec![
             "-p".to_string(),
             profile,
@@ -207,6 +211,6 @@ pub fn seccomp_apply() -> eyre::Result<()> {
 
 /// Generate a macOS Seatbelt profile string (macOS only).
 #[cfg(target_os = "macos")]
-pub fn macos_generate_profile(config: &SandboxConfig) -> String {
-    macos::generate_seatbelt_profile(config)
+pub async fn macos_generate_profile(config: &SandboxConfig) -> String {
+    macos::generate_seatbelt_profile(config).await
 }
