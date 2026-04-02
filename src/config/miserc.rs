@@ -68,11 +68,19 @@ pub fn get_override_tool_versions_filenames() -> Option<&'static Vec<String>> {
 ///
 /// Notably absent (would cause circular initialization):
 /// - `mise_env` (depends on miserc itself)
-/// - `exec()` / `read_file()` (depend on Settings)
-fn render_miserc_template(tera: &mut tera::Tera, content: &str, config_root: &Path) -> String {
+/// - `exec()` (depends on Settings, which are not yet loaded)
+/// - `read_file()` (not registered — needs per-file directory context not set up at this stage)
+fn render_miserc_template(
+    tera: &mut Option<tera::Tera>,
+    content: &str,
+    config_root: &Path,
+) -> String {
     if !content.contains("{{") && !content.contains("{%") && !content.contains("{#") {
         return content.to_string();
     }
+    // Lazily initialize the Tera instance — only pay the clone cost if at least one file
+    // contains template syntax.
+    let tera = tera.get_or_insert_with(get_miserc_tera);
     let mut context = Context::new();
     context.insert("env", &*env::PRISTINE_ENV);
     context.insert("config_root", config_root);
@@ -103,9 +111,9 @@ fn load_miserc_settings() -> Result<MisercSettings> {
     // Load in reverse precedence order so later loads override earlier ones
     let files = find_miserc_files();
 
-    // Create the Tera instance once — cloning TERA is non-trivial (copies all registered
-    // functions/filters), so we do it at most once regardless of how many files are loaded.
-    let mut tera = get_miserc_tera();
+    // Tera is initialized lazily inside render_miserc_template — only paid if a file
+    // actually contains template syntax. Shared across all files to avoid redundant clones.
+    let mut tera: Option<tera::Tera> = None;
 
     for path in files.into_iter().rev() {
         if let Ok(content) = file::read_to_string(&path) {
@@ -223,7 +231,7 @@ ceiling_paths = ["/home/user"]
     #[test]
     fn test_render_miserc_template_no_op() {
         // Content without template syntax should pass through unchanged
-        let mut tera = get_miserc_tera();
+        let mut tera = None;
         let content = r#"env = ["development"]"#;
         let result = render_miserc_template(&mut tera, content, Path::new("/home/user"));
         assert_eq!(result, content);
@@ -232,7 +240,7 @@ ceiling_paths = ["/home/user"]
     #[test]
     fn test_render_miserc_template_env_var() {
         // env.HOME should expand to the actual HOME env var
-        let mut tera = get_miserc_tera();
+        let mut tera = None;
         let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
         let content = r#"ceiling_paths = ["{{ env.HOME }}"]"#;
         let result = render_miserc_template(&mut tera, content, Path::new("/some/dir"));
@@ -244,7 +252,7 @@ ceiling_paths = ["/home/user"]
 
     #[test]
     fn test_render_miserc_template_config_root() {
-        let mut tera = get_miserc_tera();
+        let mut tera = None;
         let config_root = Path::new("/my/project");
         let content = r#"ceiling_paths = ["{{ config_root }}"]"#;
         let result = render_miserc_template(&mut tera, content, config_root);
@@ -256,7 +264,7 @@ ceiling_paths = ["/home/user"]
 
     #[test]
     fn test_render_miserc_template_os_function() {
-        let mut tera = get_miserc_tera();
+        let mut tera = None;
         let content = r#"env = ["{{ os() }}"]"#;
         let result = render_miserc_template(&mut tera, content, Path::new("/some/dir"));
         // os() should return a non-empty string (linux, macos, windows, etc.)
@@ -266,7 +274,7 @@ ceiling_paths = ["/home/user"]
     #[test]
     fn test_render_miserc_template_invalid_falls_back() {
         // An invalid template should fall back to the original content (with a warning)
-        let mut tera = get_miserc_tera();
+        let mut tera = None;
         let content = r#"ceiling_paths = ["{{ undefined_function_xyz() }}"]"#;
         let result = render_miserc_template(&mut tera, content, Path::new("/some/dir"));
         // Should return original content unchanged on error
