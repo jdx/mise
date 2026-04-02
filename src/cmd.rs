@@ -550,6 +550,14 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     fn execute_raw(mut self) -> Result<()> {
+        // In raw mode, inherit stdio so the child can interact with the terminal
+        // directly. Piped stdout/stderr would deadlock if the child produces >64KB
+        // of output since nobody reads the pipes.
+        if self.stdin.is_none() {
+            self.cmd.stdin(Stdio::inherit());
+        }
+        self.cmd.stdout(Stdio::inherit());
+        self.cmd.stderr(Stdio::inherit());
         let mut cp = self.spawn_with_etxtbsy_retry()?;
         let timeout_guard = self.timeout.map(|t| TimeoutGuard::new(t, cp.id()));
         let status = cp.wait()?;
@@ -630,7 +638,9 @@ impl<'a> CmdLineRunner<'a> {
 
         #[cfg(target_os = "macos")]
         {
-            // On macOS, rewrite the command to go through sandbox-exec
+            // On macOS, rewrite the command to go through sandbox-exec.
+            // Build a new Command that wraps the original through sandbox-exec,
+            // preserving stdio, cwd, and env from the original.
             let program = self.cmd.get_program().to_os_string();
             let args: Vec<String> = self
                 .cmd
@@ -644,6 +654,8 @@ impl<'a> CmdLineRunner<'a> {
             for arg in &args {
                 new_cmd.arg(arg);
             }
+            // Match CmdLineRunner::new() defaults for stdio.
+            // execute() reads from piped stdout/stderr; execute_raw() overrides to inherit.
             new_cmd.stdin(Stdio::null());
             new_cmd.stdout(Stdio::piped());
             new_cmd.stderr(Stdio::piped());

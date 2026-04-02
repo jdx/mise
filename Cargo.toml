@@ -204,16 +204,16 @@ zstd = "0.13"
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
 nix = { version = "0.30", features = ["signal", "term", "user"] }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-landlock = "0.4"
-seccompiler = "0.5"
 self_update = { version = "0.42", optional = true, default-features = false, features = [
   "archive-tar",
   "compression-flate2",
   "signatures",
   "rustls",
 ] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock = "0.4"
+seccompiler = "0.5"
 
 [target.'cfg(windows)'.dependencies]
 self_update = { version = "0.42", optional = true, default-features = false, features = [
