@@ -17,6 +17,16 @@ enforces that cutoff in two places during install:
   it was specified explicitly
 - transitive dependency resolution also receives the same cutoff
 
+The top-level package cutoff is enforced by mise itself. The transitive dependency protection relies
+on the configured package manager supporting its native release-age flag:
+
+- `npm`: `--before <timestamp>`
+- `bun`: `--minimum-release-age <seconds>`
+- `pnpm`: `--config.minimumReleaseAge=<minutes>`
+
+If you want transitive protection, install and use an `npm`/`bun`/`pnpm` version that supports the
+corresponding flag. Otherwise the package manager may fail while processing the forwarded argument.
+
 Here is how to install `npm` with mise:
 
 ```sh
