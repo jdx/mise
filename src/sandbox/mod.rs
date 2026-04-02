@@ -116,6 +116,7 @@ impl SandboxConfig {
     ///
     /// On Linux: applies Landlock rules and seccomp filters in-process (inherited across exec).
     /// On macOS: returns a modified command that wraps through sandbox-exec.
+    #[cfg(not(test))]
     #[allow(unused_variables)]
     pub async fn apply(
         &self,
@@ -144,7 +145,7 @@ impl SandboxConfig {
         }
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(all(not(test), target_os = "linux"))]
     fn apply_linux(&self) -> eyre::Result<()> {
         if self.effective_deny_read() || self.effective_deny_write() {
             match landlock::apply_landlock(self) {
@@ -171,7 +172,7 @@ impl SandboxConfig {
         Ok(())
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(not(test), target_os = "macos"))]
     async fn apply_macos(
         &self,
         program: &str,
@@ -193,6 +194,7 @@ impl SandboxConfig {
 }
 
 /// A command rewritten to run through a sandbox wrapper (macOS sandbox-exec).
+#[cfg(not(test))]
 #[derive(Debug)]
 pub struct SandboxedCommand {
     pub program: String,
