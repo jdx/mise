@@ -48,6 +48,43 @@ pub struct Exec {
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
+    /// [experimental] Allow specific env var through (implies --deny-env for everything else)
+    #[clap(long, value_name = "VAR", verbatim_doc_comment)]
+    pub allow_env: Vec<String>,
+
+    /// [experimental] Allow network to specific host (implies --deny-net for everything else)
+    /// macOS only in v1; on Linux falls back to allowing all network
+    #[clap(long, value_name = "HOST", verbatim_doc_comment)]
+    pub allow_net: Vec<String>,
+
+    /// [experimental] Allow reads from specific path (implies --deny-read for everything else)
+    #[clap(long, value_name = "PATH", verbatim_doc_comment)]
+    pub allow_read: Vec<std::path::PathBuf>,
+
+    /// [experimental] Allow writes to specific path (implies --deny-write for everything else)
+    #[clap(long, value_name = "PATH", verbatim_doc_comment)]
+    pub allow_write: Vec<std::path::PathBuf>,
+
+    /// [experimental] Block reads, writes, network, and env vars
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_all: bool,
+
+    /// [experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_env: bool,
+
+    /// [experimental] Block all network access
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_net: bool,
+
+    /// [experimental] Block filesystem reads (system libs and tool dirs still accessible)
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_read: bool,
+
+    /// [experimental] Block all filesystem writes
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_write: bool,
+
     /// Bypass the environment cache and recompute the environment
     #[clap(long)]
     pub fresh_env: bool,
@@ -60,43 +97,6 @@ pub struct Exec {
     /// Sets --jobs=1
     #[clap(long, overrides_with = "jobs")]
     pub raw: bool,
-
-    /// [experimental] Block reads, writes, network, and env vars
-    #[clap(long, verbatim_doc_comment)]
-    pub deny_all: bool,
-
-    /// [experimental] Block filesystem reads (system libs and tool dirs still accessible)
-    #[clap(long, verbatim_doc_comment)]
-    pub deny_read: bool,
-
-    /// [experimental] Block all filesystem writes
-    #[clap(long, verbatim_doc_comment)]
-    pub deny_write: bool,
-
-    /// [experimental] Block all network access
-    #[clap(long, verbatim_doc_comment)]
-    pub deny_net: bool,
-
-    /// [experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
-    #[clap(long, verbatim_doc_comment)]
-    pub deny_env: bool,
-
-    /// [experimental] Allow reads from specific path (implies --deny-read for everything else)
-    #[clap(long, value_name = "PATH", verbatim_doc_comment)]
-    pub allow_read: Vec<std::path::PathBuf>,
-
-    /// [experimental] Allow writes to specific path (implies --deny-write for everything else)
-    #[clap(long, value_name = "PATH", verbatim_doc_comment)]
-    pub allow_write: Vec<std::path::PathBuf>,
-
-    /// [experimental] Allow network to specific host (implies --deny-net for everything else)
-    /// macOS only in v1; on Linux falls back to allowing all network
-    #[clap(long, value_name = "HOST", verbatim_doc_comment)]
-    pub allow_net: Vec<String>,
-
-    /// [experimental] Allow specific env var through (implies --deny-env for everything else)
-    #[clap(long, value_name = "VAR", verbatim_doc_comment)]
-    pub allow_env: Vec<String>,
 }
 
 impl Exec {
