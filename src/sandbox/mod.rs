@@ -48,6 +48,10 @@ impl SandboxConfig {
                 if p.is_relative() {
                     *p = cwd.join(&p);
                 }
+                // Canonicalize to resolve symlinks (e.g., /var -> /private/var on macOS)
+                if let Ok(canonical) = p.canonicalize() {
+                    *p = canonical;
+                }
             }
         };
         resolve(&mut self.allow_read);

@@ -7,6 +7,7 @@ use landlock::{
 use super::SandboxConfig;
 
 /// System paths that are always readable on Linux.
+/// Note: /tmp and /dev are handled separately with full (read+write) access.
 const SYSTEM_READ_PATHS: &[&str] = &[
     "/usr",
     "/lib",
@@ -14,10 +15,8 @@ const SYSTEM_READ_PATHS: &[&str] = &[
     "/bin",
     "/sbin",
     "/etc",
-    "/dev",
     "/proc",
     "/sys",
-    "/tmp",
     "/nix",
     "/snap",
     "/home/linuxbrew",
@@ -41,11 +40,28 @@ fn add_path_rule(
     path: &std::path::Path,
     access: BitFlags<AccessFs>,
 ) -> Result<landlock::RulesetCreated> {
-    match PathFd::new(path) {
-        Ok(fd) => ruleset
-            .add_rule(PathBeneath::new(fd, access))
-            .map_err(|e| eyre!("landlock add_rule failed for {}: {e}", path.display())),
-        Err(_) => Ok(ruleset), // Path doesn't exist, skip
+    // If the path doesn't exist, walk up to the nearest existing ancestor.
+    // This handles cases like --allow-write=./dist where the build creates the dir.
+    let mut target = path;
+    loop {
+        match PathFd::new(target) {
+            Ok(fd) => {
+                return ruleset
+                    .add_rule(PathBeneath::new(fd, access))
+                    .map_err(|e| eyre!("landlock add_rule failed for {}: {e}", path.display()));
+            }
+            Err(_) => {
+                if let Some(parent) = target.parent() {
+                    if parent == target {
+                        // Reached root, give up
+                        return Ok(ruleset);
+                    }
+                    target = parent;
+                } else {
+                    return Ok(ruleset);
+                }
+            }
+        }
     }
 }
 

@@ -611,14 +611,13 @@ impl<'a> CmdLineRunner<'a> {
             );
         }
 
-        // When deny_env is active, clear inherited env and only keep what's explicitly set
-        if sandbox.effective_deny_env() {
-            self.cmd.env_clear();
-        }
-
         #[cfg(target_os = "linux")]
         {
-            // On Linux, use pre_exec to apply Landlock/seccomp in the child process
+            // On Linux, clear inherited env before pre_exec so child only sees filtered vars
+            if sandbox.effective_deny_env() {
+                self.cmd.env_clear();
+            }
+            // Use pre_exec to apply Landlock/seccomp in the child process
             // before it execs the target program. This avoids restricting the mise process.
             use std::os::unix::process::CommandExt;
             let sandbox = sandbox.clone();
