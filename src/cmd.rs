@@ -629,7 +629,7 @@ impl<'a> CmdLineRunner<'a> {
         #[cfg(target_os = "macos")]
         {
             // On macOS, rewrite the command to go through sandbox-exec
-            let program = self.get_program();
+            let program = self.cmd.get_program().to_os_string();
             let args: Vec<String> = self
                 .cmd
                 .get_args()
@@ -642,12 +642,16 @@ impl<'a> CmdLineRunner<'a> {
             for arg in &args {
                 new_cmd.arg(arg);
             }
-            // Preserve env, stdio, cwd from original command
+            // Preserve stdio, cwd from original command
             new_cmd.stdin(Stdio::null());
             new_cmd.stdout(Stdio::piped());
             new_cmd.stderr(Stdio::piped());
             if let Some(dir) = self.cmd.get_current_dir() {
                 new_cmd.current_dir(dir);
+            }
+            // When deny_env is active, clear inherited env and only set explicit vars
+            if sandbox.effective_deny_env() {
+                new_cmd.env_clear();
             }
             for (k, v) in self.cmd.get_envs() {
                 if let Some(v) = v {
