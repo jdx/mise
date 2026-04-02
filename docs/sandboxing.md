@@ -69,8 +69,8 @@ CLI flags on `mise run` override task-level config:
 # Run with task's declared sandbox
 mise run build
 
-# Override: also allow network
-mise run build --allow-net
+# Override: also allow network to a specific host
+mise run --allow-net=registry.npmjs.org build
 ```
 
 ## Implicit Access
