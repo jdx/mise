@@ -17,15 +17,6 @@ enforces that cutoff in two places during install:
   it was specified explicitly
 - transitive dependency resolution also receives the same cutoff
 
-Minimum supported package manager versions for the transitive dependency part are:
-
-- `npm >= 6.9.0` using `--before` (`Node >= 10.16.0` if you rely on bundled npm)
-- `bun >= 1.3.0` using `--minimum-release-age`
-- `pnpm >= 10.16.0` using `--config.minimumReleaseAge=...`
-
-If the configured package manager is older than that, npm backend installs fail with an upgrade hint
-instead of silently skipping the supply-chain guard.
-
 Here is how to install `npm` with mise:
 
 ```sh
