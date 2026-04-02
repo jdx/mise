@@ -7,12 +7,10 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::settings::NpmPackageManager;
 use crate::config::{Config, Settings};
-use crate::duration::parse_into_timestamp;
 use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
 use async_trait::async_trait;
-use eyre::{bail, eyre};
 use jiff::Timestamp;
 use serde_json::Value;
 use std::ffi::OsString;
@@ -27,8 +25,6 @@ pub struct NPMBackend {
 }
 
 const NPM_PROGRAM: &str = if cfg!(windows) { "npm.cmd" } else { "npm" };
-const BUN_PROGRAM: &str = if cfg!(windows) { "bun.exe" } else { "bun" };
-const PNPM_PROGRAM: &str = if cfg!(windows) { "pnpm.cmd" } else { "pnpm" };
 
 #[async_trait]
 impl Backend for NPMBackend {
@@ -162,23 +158,16 @@ impl Backend for NPMBackend {
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         self.check_install_deps(&ctx.config).await;
-        self.ensure_selected_version_respects_before_date(
-            &ctx.config,
-            &self.tool_name(),
-            &tv.version,
-            ctx.before_date,
-        )
-        .await?;
         match Settings::get().npm.package_manager {
             NpmPackageManager::Bun => {
-                let install_before_args = self
-                    .transitive_release_age_args(
-                        &ctx.config,
+                let install_before_args = ctx.before_date.map_or_else(Vec::new, |before_date| {
+                    Self::build_transitive_release_age_args(
                         NpmPackageManager::Bun,
-                        ctx.before_date,
+                        before_date,
+                        Timestamp::now(),
                     )
-                    .await?;
-                CmdLineRunner::new(BUN_PROGRAM)
+                });
+                CmdLineRunner::new("bun")
                     .arg("install")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
                     .arg("--global")
@@ -205,14 +194,14 @@ impl Backend for NPMBackend {
             NpmPackageManager::Pnpm => {
                 let bin_dir = tv.install_path().join("bin");
                 crate::file::create_dir_all(&bin_dir)?;
-                let install_before_args = self
-                    .transitive_release_age_args(
-                        &ctx.config,
+                let install_before_args = ctx.before_date.map_or_else(Vec::new, |before_date| {
+                    Self::build_transitive_release_age_args(
                         NpmPackageManager::Pnpm,
-                        ctx.before_date,
+                        before_date,
+                        Timestamp::now(),
                     )
-                    .await?;
-                CmdLineRunner::new(PNPM_PROGRAM)
+                });
+                CmdLineRunner::new("pnpm")
                     .arg("add")
                     .arg("--global")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
@@ -236,13 +225,13 @@ impl Backend for NPMBackend {
                     .execute()?;
             }
             _ => {
-                let install_before_args = self
-                    .transitive_release_age_args(
-                        &ctx.config,
+                let install_before_args = ctx.before_date.map_or_else(Vec::new, |before_date| {
+                    Self::build_transitive_release_age_args(
                         NpmPackageManager::Npm,
-                        ctx.before_date,
+                        before_date,
+                        Timestamp::now(),
                     )
-                    .await?;
+                });
                 CmdLineRunner::new(NPM_PROGRAM)
                     .arg("install")
                     .arg("-g")
@@ -290,65 +279,6 @@ impl NPMBackend {
             ),
             ba: Arc::new(ba),
         }
-    }
-
-    async fn transitive_release_age_args(
-        &self,
-        _config: &Arc<Config>,
-        package_manager: NpmPackageManager,
-        before_date: Option<Timestamp>,
-    ) -> Result<Vec<OsString>> {
-        let Some(before_date) = before_date else {
-            return Ok(vec![]);
-        };
-        Ok(Self::build_transitive_release_age_args(
-            package_manager,
-            before_date,
-            Timestamp::now(),
-        ))
-    }
-
-    async fn ensure_selected_version_respects_before_date(
-        &self,
-        config: &Arc<Config>,
-        package_name: &str,
-        version: &str,
-        before_date: Option<Timestamp>,
-    ) -> Result<()> {
-        let Some(before_date) = before_date else {
-            return Ok(());
-        };
-        let version_info = self
-            .list_remote_versions_with_info(config)
-            .await?
-            .into_iter()
-            .find(|v| v.version == version)
-            .ok_or_else(|| {
-                eyre!(
-                    "failed to verify release date for npm package {package_name}@{version} against install_before"
-                )
-            })?;
-        Self::ensure_package_release_before_date(package_name, version, version_info, before_date)
-    }
-
-    fn ensure_package_release_before_date(
-        package_name: &str,
-        version: &str,
-        version_info: VersionInfo,
-        before_date: Timestamp,
-    ) -> Result<()> {
-        let created_at = version_info.created_at.ok_or_else(|| {
-            eyre!(
-                "failed to verify release date for npm package {package_name}@{version} against install_before"
-            )
-        })?;
-        let created_at_ts = parse_into_timestamp(&created_at)?;
-        if created_at_ts >= before_date {
-            bail!(
-                "npm backend install_before forbids installing {package_name}@{version}: released at {created_at}, cutoff is {before_date}"
-            );
-        }
-        Ok(())
     }
 
     fn build_transitive_release_age_args(
@@ -507,37 +437,5 @@ mod tests {
             now,
         );
         assert_eq!(args, vec![OsString::from("--config.minimumReleaseAge=1")]);
-    }
-
-    #[test]
-    fn test_exact_package_version_must_be_before_cutoff() {
-        let err = NPMBackend::ensure_package_release_before_date(
-            "tiny",
-            "1.2.3",
-            VersionInfo {
-                version: "1.2.3".into(),
-                created_at: Some("2024-01-03T00:00:00Z".into()),
-                ..Default::default()
-            },
-            "2024-01-02T00:00:00Z".parse().unwrap(),
-        )
-        .unwrap_err();
-        assert!(err.to_string().contains("tiny@1.2.3"));
-        assert!(err.to_string().contains("cutoff is 2024-01-02T00:00:00Z"));
-    }
-
-    #[test]
-    fn test_exact_package_version_before_cutoff_is_allowed() {
-        NPMBackend::ensure_package_release_before_date(
-            "tiny",
-            "1.2.3",
-            VersionInfo {
-                version: "1.2.3".into(),
-                created_at: Some("2024-01-01T23:59:59Z".into()),
-                ..Default::default()
-            },
-            "2024-01-02T00:00:00Z".parse().unwrap(),
-        )
-        .unwrap();
     }
 }

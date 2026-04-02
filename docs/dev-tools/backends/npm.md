@@ -11,14 +11,8 @@ This relies on having `npm` installed for resolving package versions.
 If you use `bun` or `pnpm` as the package manager, they must also be installed.
 
 When [`install_before`](/configuration/settings.html#install_before) is set, the npm backend
-enforces that cutoff in two places during install:
-
-- the selected top-level `npm:` package version must have been released before the cutoff, even if
-  it was specified explicitly
-- transitive dependency resolution also receives the same cutoff
-
-The top-level package cutoff is enforced by mise itself. The transitive dependency protection relies
-on the configured package manager supporting its native release-age flag:
+forwards that cutoff to transitive dependency resolution during install. This relies on the
+configured package manager supporting its native release-age flag:
 
 - `npm >= 6.9.0` using `--before <timestamp>` (`Node >= 10.16.0` if you rely on bundled npm)
 - `bun >= 1.3.0` using `--minimum-release-age <seconds>`
@@ -58,9 +52,6 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 [tools]
 "npm:prettier" = "latest"
 ```
-
-Unlike most backends, pinned top-level `npm:` versions do not bypass `install_before`: if the
-selected package version was released on or after the cutoff, the install fails.
 
 ## Settings
 

@@ -1,8 +1,10 @@
 use crate::cli::args::ToolArg;
 use crate::config::Config;
+use crate::config::settings::Settings;
+use crate::duration::parse_into_timestamp;
 use crate::install_context::InstallContext;
-use crate::toolset::ToolsetBuilder;
 use crate::toolset::tool_request::effective_before_date;
+use crate::toolset::{ResolveOptions, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use clap::ValueHint;
 use eyre::{Result, eyre};
@@ -27,9 +29,21 @@ pub struct InstallInto {
 impl InstallInto {
     pub async fn run(self) -> Result<()> {
         let config = Config::get().await?;
+        let before_date = match self.tool.tvr.as_ref() {
+            Some(tvr) => effective_before_date(tvr, &Default::default())?,
+            None => Settings::get()
+                .install_before
+                .as_deref()
+                .map(parse_into_timestamp)
+                .transpose()?,
+        };
         let ts = Arc::new(
             ToolsetBuilder::new()
                 .with_args(std::slice::from_ref(&self.tool))
+                .with_resolve_options(ResolveOptions {
+                    before_date,
+                    ..Default::default()
+                })
                 .build(&config)
                 .await?,
         );
@@ -50,7 +64,7 @@ impl InstallInto {
             force: true,
             dry_run: false,
             locked: false, // install-into doesn't support locked mode
-            before_date: effective_before_date(&tv.request, &Default::default())?,
+            before_date,
         };
         tv.install_path = Some(self.path.clone());
         backend.install_version(install_ctx, tv).await?;
