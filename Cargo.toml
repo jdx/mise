@@ -211,6 +211,10 @@ self_update = { version = "0.42", optional = true, default-features = false, fea
   "rustls",
 ] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock = "0.4"
+seccompiler = "0.5"
+
 [target.'cfg(windows)'.dependencies]
 self_update = { version = "0.42", optional = true, default-features = false, features = [
   "archive-zip",
