@@ -569,7 +569,6 @@ impl<'a> CmdLineRunner<'a> {
     /// This can happen on Linux when executing a binary that was just written/extracted,
     /// as the file descriptor may not be fully closed yet.
     fn spawn_with_etxtbsy_retry(&mut self) -> std::io::Result<std::process::Child> {
-        self.apply_sandbox();
         let mut attempt = 0;
         loop {
             match self.cmd.spawn() {
@@ -585,7 +584,9 @@ impl<'a> CmdLineRunner<'a> {
         }
     }
 
-    fn apply_sandbox(&mut self) {
+    /// Prepare sandbox restrictions on the command. Must be called before execute()
+    /// when sandbox is configured. This is async because macOS DNS resolution is async.
+    pub async fn apply_sandbox(&mut self) {
         let Some(sandbox) = self.sandbox.take() else {
             return;
         };
@@ -596,10 +597,6 @@ impl<'a> CmdLineRunner<'a> {
         // When deny_env is active, clear inherited env and only keep what's explicitly set
         if sandbox.effective_deny_env() {
             self.cmd.env_clear();
-            // Re-add the env vars that were already set on the command
-            // (they were set by CmdLineRunner.envs() before apply_sandbox)
-            // env_clear() removes everything, but get_envs() returns what was explicitly set
-            // — those are preserved automatically by std::process::Command after env_clear()
         }
 
         #[cfg(target_os = "linux")]
@@ -611,14 +608,19 @@ impl<'a> CmdLineRunner<'a> {
             unsafe {
                 self.cmd.pre_exec(move || {
                     if (sandbox.effective_deny_read() || sandbox.effective_deny_write())
-                        && let Err(e) = crate::sandbox::landlock_apply(&sandbox) {
-                            eprintln!("mise: landlock unavailable, filesystem sandbox not applied: {e}");
-                        }
+                        && let Err(e) = crate::sandbox::landlock_apply(&sandbox)
+                    {
+                        eprintln!(
+                            "mise: landlock unavailable, filesystem sandbox not applied: {e}"
+                        );
+                    }
                     if sandbox.effective_deny_net() {
                         if !sandbox.allow_net.is_empty() {
                             eprintln!("mise: per-host network filtering (--allow-net=<host>) is not supported on Linux, allowing all network");
                         } else if let Err(e) = crate::sandbox::seccomp_apply() {
-                            eprintln!("mise: seccomp unavailable, network sandbox not applied: {e}");
+                            eprintln!(
+                                "mise: seccomp unavailable, network sandbox not applied: {e}"
+                            );
                         }
                     }
                     Ok(())
@@ -635,24 +637,19 @@ impl<'a> CmdLineRunner<'a> {
                 .get_args()
                 .map(|a| a.to_string_lossy().into_owned())
                 .collect();
-            let profile = tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current()
-                    .block_on(crate::sandbox::macos_generate_profile(&sandbox))
-            });
+            let profile = crate::sandbox::macos_generate_profile(&sandbox).await;
 
             let mut new_cmd = Command::new("sandbox-exec");
             new_cmd.arg("-p").arg(&profile).arg("--").arg(&program);
             for arg in &args {
                 new_cmd.arg(arg);
             }
-            // Preserve stdio, cwd from original command
             new_cmd.stdin(Stdio::null());
             new_cmd.stdout(Stdio::piped());
             new_cmd.stderr(Stdio::piped());
             if let Some(dir) = self.cmd.get_current_dir() {
                 new_cmd.current_dir(dir);
             }
-            // When deny_env is active, clear inherited env and only set explicit vars
             if sandbox.effective_deny_env() {
                 new_cmd.env_clear();
             }
