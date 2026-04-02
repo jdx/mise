@@ -274,18 +274,7 @@ impl EnvResults {
             .iter()
             .map(|(k, v)| (k.clone(), (v.clone(), None)))
             .collect::<IndexMap<_, _>>();
-        let mut r = Self {
-            env: Default::default(),
-            vars: Default::default(),
-            env_remove: BTreeSet::new(),
-            env_files: Vec::new(),
-            env_paths: Vec::new(),
-            env_scripts: Vec::new(),
-            redactions: Vec::new(),
-            tool_add_paths: Vec::new(),
-            watch_files: Vec::new(),
-            has_uncacheable: false,
-        };
+        let mut r = Self::default();
         let normalize_path = |config_root: &Path, p: PathBuf| {
             let p = p.strip_prefix("./").unwrap_or(&p);
             match p.strip_prefix("~/") {
@@ -764,9 +753,6 @@ impl Debug for EnvResults {
         }
         if !self.env_remove.is_empty() {
             ds.field("env_remove", &self.env_remove);
-        }
-        if !self.env_files.is_empty() {
-            ds.field("env_files", &self.env_files);
         }
         if !self.env_paths.is_empty() {
             ds.field("env_paths", &self.env_paths);
