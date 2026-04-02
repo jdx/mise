@@ -148,12 +148,7 @@ impl SandboxConfig {
     #[cfg(all(not(test), target_os = "linux"))]
     fn apply_linux(&self) -> eyre::Result<()> {
         if self.effective_deny_read() || self.effective_deny_write() {
-            match landlock::apply_landlock(self) {
-                Ok(()) => {}
-                Err(e) => {
-                    warn!("landlock unavailable, filesystem sandbox not applied: {e}");
-                }
-            }
+            landlock::apply_landlock(self)?;
         }
         if self.effective_deny_net() {
             if !self.allow_net.is_empty() {
@@ -162,12 +157,7 @@ impl SandboxConfig {
                      Use --deny-net to block all network, or remove --allow-net."
                 );
             }
-            match seccomp::apply_seccomp_net_filter() {
-                Ok(()) => {}
-                Err(e) => {
-                    warn!("seccomp unavailable, network sandbox not applied: {e}");
-                }
-            }
+            seccomp::apply_seccomp_net_filter()?;
         }
         Ok(())
     }

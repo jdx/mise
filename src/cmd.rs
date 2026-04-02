@@ -623,17 +623,15 @@ impl<'a> CmdLineRunner<'a> {
             let sandbox = sandbox.clone();
             unsafe {
                 self.cmd.pre_exec(move || {
-                    if (sandbox.effective_deny_read() || sandbox.effective_deny_write())
-                        && let Err(e) = crate::sandbox::landlock_apply(&sandbox)
-                    {
-                        eprintln!(
-                            "mise: landlock unavailable, filesystem sandbox not applied: {e}"
-                        );
+                    if sandbox.effective_deny_read() || sandbox.effective_deny_write() {
+                        crate::sandbox::landlock_apply(&sandbox).map_err(|e| {
+                            std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+                        })?;
                     }
-                    if sandbox.effective_deny_net()
-                        && let Err(e) = crate::sandbox::seccomp_apply()
-                    {
-                        eprintln!("mise: seccomp unavailable, network sandbox not applied: {e}");
+                    if sandbox.effective_deny_net() {
+                        crate::sandbox::seccomp_apply().map_err(|e| {
+                            std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+                        })?;
                     }
                     Ok(())
                 });
