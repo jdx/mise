@@ -1,0 +1,3 @@
+backends = ["aqua:controlplaneio-fluxcd/flux-operator-mcp"]
+description = "GitOps on Autopilot Mode"
+test = { cmd = "flux-operator-mcp --version", expected = "flux-operator-mcp version {{version}}" }
