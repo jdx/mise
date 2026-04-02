@@ -7,6 +7,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::settings::NpmPackageManager;
 use crate::config::{Config, Settings};
+use crate::duration::parse_into_timestamp;
 use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
@@ -166,6 +167,13 @@ impl Backend for NPMBackend {
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         self.check_install_deps(&ctx.config).await;
+        self.ensure_selected_version_respects_before_date(
+            &ctx.config,
+            self.tool_name(),
+            &tv.version,
+            ctx.before_date.clone(),
+        )
+        .await?;
         match Settings::get().npm.package_manager {
             NpmPackageManager::Bun => {
                 let install_before_args = self
@@ -314,6 +322,12 @@ impl NPMBackend {
         config: &Arc<Config>,
         package_manager: NpmPackageManager,
     ) -> Result<String> {
+        if let Some(version) = self
+            .dependency_toolset_package_manager_version(config, package_manager)
+            .await?
+        {
+            return Ok(version);
+        }
         let program = Self::package_manager_program(package_manager);
         let binary = self
             .dependency_which(config, program)
@@ -328,6 +342,64 @@ impl NPMBackend {
                 raw.trim()
             )
         })
+    }
+
+    async fn dependency_toolset_package_manager_version(
+        &self,
+        config: &Arc<Config>,
+        package_manager: NpmPackageManager,
+    ) -> Result<Option<String>> {
+        let tool_name = Self::package_manager_tool_name(package_manager);
+        let ts = self.dependency_toolset(config).await?;
+        Ok(ts
+            .list_current_versions()
+            .into_iter()
+            .find(|(backend, _)| backend.ba().short == tool_name)
+            .map(|(_, tv)| tv.version)
+            .and_then(|version| Self::normalize_runtime_version(&version)))
+    }
+
+    async fn ensure_selected_version_respects_before_date(
+        &self,
+        config: &Arc<Config>,
+        package_name: &str,
+        version: &str,
+        before_date: Option<Timestamp>,
+    ) -> Result<()> {
+        let Some(before_date) = before_date else {
+            return Ok(());
+        };
+        let version_info = self
+            .list_remote_versions_with_info(config)
+            .await?
+            .into_iter()
+            .find(|v| v.version == version)
+            .ok_or_else(|| {
+                eyre!(
+                    "failed to verify release date for npm package {package_name}@{version} against install_before"
+                )
+            })?;
+        Self::ensure_package_release_before_date(package_name, version, version_info, before_date)
+    }
+
+    fn ensure_package_release_before_date(
+        package_name: &str,
+        version: &str,
+        version_info: VersionInfo,
+        before_date: Timestamp,
+    ) -> Result<()> {
+        let created_at = version_info.created_at.ok_or_else(|| {
+            eyre!(
+                "failed to verify release date for npm package {package_name}@{version} against install_before"
+            )
+        })?;
+        let created_at_ts = parse_into_timestamp(&created_at)?;
+        if created_at_ts >= before_date {
+            bail!(
+                "npm backend install_before forbids installing {package_name}@{version}: released at {created_at}, cutoff is {before_date}"
+            );
+        }
+        Ok(())
     }
 
     fn normalize_runtime_version(raw: &str) -> Option<String> {
@@ -410,6 +482,14 @@ This integration uses --config.minimumReleaseAge=... for pnpm."
     }
 
     fn package_manager_name(package_manager: NpmPackageManager) -> &'static str {
+        match package_manager {
+            NpmPackageManager::Npm => "npm",
+            NpmPackageManager::Bun => "bun",
+            NpmPackageManager::Pnpm => "pnpm",
+        }
+    }
+
+    fn package_manager_tool_name(package_manager: NpmPackageManager) -> &'static str {
         match package_manager {
             NpmPackageManager::Npm => "npm",
             NpmPackageManager::Bun => "bun",
@@ -624,5 +704,37 @@ mod tests {
         .unwrap_err();
         assert!(err.to_string().contains("pnpm >= 10.16.0"));
         assert!(err.to_string().contains("--config.minimumReleaseAge"));
+    }
+
+    #[test]
+    fn test_exact_package_version_must_be_before_cutoff() {
+        let err = NPMBackend::ensure_package_release_before_date(
+            "tiny",
+            "1.2.3",
+            VersionInfo {
+                version: "1.2.3".into(),
+                created_at: Some("2024-01-03T00:00:00Z".into()),
+                ..Default::default()
+            },
+            "2024-01-02T00:00:00Z".parse().unwrap(),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("tiny@1.2.3"));
+        assert!(err.to_string().contains("cutoff is 2024-01-02T00:00:00Z"));
+    }
+
+    #[test]
+    fn test_exact_package_version_before_cutoff_is_allowed() {
+        NPMBackend::ensure_package_release_before_date(
+            "tiny",
+            "1.2.3",
+            VersionInfo {
+                version: "1.2.3".into(),
+                created_at: Some("2024-01-01T23:59:59Z".into()),
+                ..Default::default()
+            },
+            "2024-01-02T00:00:00Z".parse().unwrap(),
+        )
+        .unwrap();
     }
 }
