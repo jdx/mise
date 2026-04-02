@@ -45,6 +45,15 @@ pub async fn handle_shim() -> Result<()> {
         raw: false,
         no_prepare: true, // Skip prepare for shims to avoid performance impact
         fresh_env: false,
+        deny_all: false,
+        deny_read: false,
+        deny_write: false,
+        deny_net: false,
+        deny_env: false,
+        allow_read: vec![],
+        allow_write: vec![],
+        allow_net: vec![],
+        allow_env: vec![],
     };
     time!("shim exec");
     exec.run().await?;

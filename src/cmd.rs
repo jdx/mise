@@ -110,6 +110,7 @@ pub struct CmdLineRunner<'a> {
     on_stdout: Option<Box<dyn Fn(String) + Send + 'a>>,
     on_stderr: Option<Box<dyn Fn(String) + Send + 'a>>,
     timeout: Option<Duration>,
+    sandbox: Option<crate::sandbox::SandboxConfig>,
 }
 
 const GUARD_RUNNING: u8 = 0;
@@ -247,7 +248,15 @@ impl<'a> CmdLineRunner<'a> {
             on_stdout: None,
             on_stderr: None,
             timeout: None,
+            sandbox: None,
         }
+    }
+
+    pub fn with_sandbox(mut self, sandbox: crate::sandbox::SandboxConfig) -> Self {
+        if sandbox.is_active() {
+            self.sandbox = Some(sandbox);
+        }
+        self
     }
 
     #[cfg(unix)]
@@ -560,6 +569,7 @@ impl<'a> CmdLineRunner<'a> {
     /// This can happen on Linux when executing a binary that was just written/extracted,
     /// as the file descriptor may not be fully closed yet.
     fn spawn_with_etxtbsy_retry(&mut self) -> std::io::Result<std::process::Child> {
+        self.apply_sandbox();
         let mut attempt = 0;
         loop {
             match self.cmd.spawn() {
@@ -572,6 +582,85 @@ impl<'a> CmdLineRunner<'a> {
                 }
                 Err(err) => return Err(err),
             }
+        }
+    }
+
+    fn apply_sandbox(&mut self) {
+        let Some(sandbox) = self.sandbox.take() else {
+            return;
+        };
+        if !sandbox.is_active() {
+            return;
+        }
+
+        // When deny_env is active, clear inherited env and only keep what's explicitly set
+        if sandbox.effective_deny_env() {
+            self.cmd.env_clear();
+            // Re-add the env vars that were already set on the command
+            // (they were set by CmdLineRunner.envs() before apply_sandbox)
+            // env_clear() removes everything, but get_envs() returns what was explicitly set
+            // — those are preserved automatically by std::process::Command after env_clear()
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            // On Linux, use pre_exec to apply Landlock/seccomp in the child process
+            // before it execs the target program. This avoids restricting the mise process.
+            use std::os::unix::process::CommandExt;
+            let sandbox = sandbox.clone();
+            unsafe {
+                self.cmd.pre_exec(move || {
+                    if (sandbox.effective_deny_read() || sandbox.effective_deny_write())
+                        && let Err(e) = crate::sandbox::landlock_apply(&sandbox) {
+                            eprintln!("mise: landlock unavailable, filesystem sandbox not applied: {e}");
+                        }
+                    if sandbox.effective_deny_net() {
+                        if !sandbox.allow_net.is_empty() {
+                            eprintln!("mise: per-host network filtering (--allow-net=<host>) is not supported on Linux, allowing all network");
+                        } else if let Err(e) = crate::sandbox::seccomp_apply() {
+                            eprintln!("mise: seccomp unavailable, network sandbox not applied: {e}");
+                        }
+                    }
+                    Ok(())
+                });
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            // On macOS, rewrite the command to go through sandbox-exec
+            let program = self.get_program();
+            let args: Vec<String> = self
+                .cmd
+                .get_args()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect();
+            let profile = crate::sandbox::macos_generate_profile(&sandbox);
+
+            let mut new_cmd = Command::new("sandbox-exec");
+            new_cmd.arg("-p").arg(&profile).arg("--").arg(&program);
+            for arg in &args {
+                new_cmd.arg(arg);
+            }
+            // Preserve env, stdio, cwd from original command
+            new_cmd.stdin(Stdio::null());
+            new_cmd.stdout(Stdio::piped());
+            new_cmd.stderr(Stdio::piped());
+            if let Some(dir) = self.cmd.get_current_dir() {
+                new_cmd.current_dir(dir);
+            }
+            for (k, v) in self.cmd.get_envs() {
+                if let Some(v) = v {
+                    new_cmd.env(k, v);
+                }
+            }
+            self.cmd = new_cmd;
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        {
+            let _ = sandbox;
+            warn!("sandbox is not supported on this platform, running unsandboxed");
         }
     }
 

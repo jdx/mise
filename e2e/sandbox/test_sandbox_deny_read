@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# Test that --deny-read restricts file reads
+# Note: tests run under /tmp (always readable in system paths),
+# so we test with a file in /var/tmp which is not in system paths.
+
+SANDBOX_DIR="/var/tmp/mise_sandbox_read_test_$$"
+mkdir -p "$SANDBOX_DIR"
+echo "secret_data" >"$SANDBOX_DIR/secret.txt"
+trap 'rm -rf "$SANDBOX_DIR"' EXIT
+
+# Without sandbox, file is readable
+assert "mise x -- cat $SANDBOX_DIR/secret.txt" "secret_data"
+
+# With --deny-read, reading should fail
+assert_fail "mise x --deny-read -- cat $SANDBOX_DIR/secret.txt 2>/dev/null"
+
+# With --allow-read for that path, it should work
+assert "mise x --allow-read=$SANDBOX_DIR -- cat $SANDBOX_DIR/secret.txt" "secret_data"

@@ -670,6 +670,15 @@ impl Cli {
                         skip_tools: false,
                         no_prepare: false,
                         fresh_env: false,
+                        deny_all: false,
+                        deny_read: false,
+                        deny_write: false,
+                        deny_net: false,
+                        deny_env: false,
+                        allow_read: vec![],
+                        allow_write: vec![],
+                        allow_net: vec![],
+                        allow_env: vec![],
                     })));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(

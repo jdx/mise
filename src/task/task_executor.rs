@@ -3,6 +3,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::duration;
 use crate::file::{display_path, is_executable};
+use crate::sandbox::SandboxConfig;
 use crate::task::TaskKey;
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
@@ -59,6 +60,8 @@ pub struct TaskExecutorConfig {
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
+    /// CLI-level sandbox overrides (merged with task-level sandbox config)
+    pub sandbox: crate::sandbox::SandboxConfig,
 }
 
 /// Executes tasks with proper context, environment, and output handling
@@ -76,6 +79,7 @@ pub struct TaskExecutor {
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
+    pub sandbox: crate::sandbox::SandboxConfig,
 }
 
 impl TaskExecutor {
@@ -96,6 +100,7 @@ impl TaskExecutor {
             continue_on_error: config.continue_on_error,
             dry_run: config.dry_run,
             skip_deps: config.skip_deps,
+            sandbox: config.sandbox,
         }
     }
 
@@ -122,6 +127,42 @@ impl TaskExecutor {
 
     fn raw(&self, task: Option<&Task>) -> bool {
         self.output_handler.raw(task)
+    }
+
+    /// Build a SandboxConfig for a task by merging task-level config with CLI overrides.
+    fn build_sandbox_for_task(&self, task: &Task) -> SandboxConfig {
+        let mut config = SandboxConfig {
+            deny_read: task.deny_all || task.deny_read || self.sandbox.deny_read,
+            deny_write: task.deny_all || task.deny_write || self.sandbox.deny_write,
+            deny_net: task.deny_all || task.deny_net || self.sandbox.deny_net,
+            deny_env: task.deny_all || task.deny_env || self.sandbox.deny_env,
+            allow_read: task
+                .allow_read
+                .iter()
+                .chain(self.sandbox.allow_read.iter())
+                .cloned()
+                .collect(),
+            allow_write: task
+                .allow_write
+                .iter()
+                .chain(self.sandbox.allow_write.iter())
+                .cloned()
+                .collect(),
+            allow_net: task
+                .allow_net
+                .iter()
+                .chain(self.sandbox.allow_net.iter())
+                .cloned()
+                .collect(),
+            allow_env: task
+                .allow_env
+                .iter()
+                .chain(self.sandbox.allow_env.iter())
+                .cloned()
+                .collect(),
+        };
+        config.resolve_paths();
+        config
     }
 
     pub fn task_timings(&self) -> bool {
@@ -764,11 +805,19 @@ impl TaskExecutor {
         let program = program.to_executable();
         let redactions = config.redactions();
         let raw = self.raw(Some(task));
+        let sandbox = self.build_sandbox_for_task(task);
+        let env = if sandbox.is_active() {
+            Settings::get().ensure_experimental("sandbox")?;
+            &sandbox.filter_env(env)
+        } else {
+            env
+        };
         let mut cmd = CmdLineRunner::new(program.clone())
             .args(args)
             .envs(env)
             .redact(redactions.deref().clone())
-            .raw(raw);
+            .raw(raw)
+            .with_sandbox(sandbox);
         if raw && !redactions.is_empty() {
             if task.interactive && !task.raw && !Settings::get().raw {
                 hint!(

@@ -14,6 +14,7 @@ use crate::cmd;
 use crate::config::{Config, Settings};
 use crate::env;
 use crate::prepare::{PrepareEngine, PrepareOptions};
+use crate::sandbox::SandboxConfig;
 use crate::toolset::env_cache::CachedEnv;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolsetBuilder};
 
@@ -59,6 +60,43 @@ pub struct Exec {
     /// Sets --jobs=1
     #[clap(long, overrides_with = "jobs")]
     pub raw: bool,
+
+    /// [experimental] Block reads, writes, network, and env vars
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_all: bool,
+
+    /// [experimental] Block filesystem reads (system libs and tool dirs still accessible)
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_read: bool,
+
+    /// [experimental] Block all filesystem writes
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_write: bool,
+
+    /// [experimental] Block all network access
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_net: bool,
+
+    /// [experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_env: bool,
+
+    /// [experimental] Allow reads from specific path (implies --deny-read for everything else)
+    #[clap(long, value_name = "PATH", verbatim_doc_comment)]
+    pub allow_read: Vec<std::path::PathBuf>,
+
+    /// [experimental] Allow writes to specific path (implies --deny-write for everything else)
+    #[clap(long, value_name = "PATH", verbatim_doc_comment)]
+    pub allow_write: Vec<std::path::PathBuf>,
+
+    /// [experimental] Allow network to specific host (implies --deny-net for everything else)
+    /// macOS only in v1; on Linux falls back to allowing all network
+    #[clap(long, value_name = "HOST", verbatim_doc_comment)]
+    pub allow_net: Vec<String>,
+
+    /// [experimental] Allow specific env var through (implies --deny-env for everything else)
+    #[clap(long, value_name = "VAR", verbatim_doc_comment)]
+    pub allow_env: Vec<String>,
 }
 
 impl Exec {
@@ -172,18 +210,50 @@ impl Exec {
             args.insert(0, "-C".into());
         }
 
+        // Build sandbox config from CLI flags (experimental feature)
+        let mut sandbox = SandboxConfig {
+            deny_read: self.deny_all || self.deny_read,
+            deny_write: self.deny_all || self.deny_write,
+            deny_net: self.deny_all || self.deny_net,
+            deny_env: self.deny_all || self.deny_env,
+            allow_read: self.allow_read,
+            allow_write: self.allow_write,
+            allow_net: self.allow_net,
+            allow_env: self.allow_env,
+        };
+        sandbox.resolve_paths();
+
+        // Check experimental flag if sandbox is being used
+        if sandbox.is_active() {
+            Settings::get().ensure_experimental("sandbox")?;
+            env = sandbox.filter_env(&env);
+        }
+
         time!("exec");
-        exec_program(program, args, env)
+        exec_program(program, args, env, &sandbox)
     }
 }
 
 #[cfg(all(not(test), unix))]
-pub fn exec_program<T, U>(program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
+pub fn exec_program<T, U>(
+    program: T,
+    args: U,
+    env: BTreeMap<String, String>,
+    sandbox: &SandboxConfig,
+) -> Result<()>
 where
     T: IntoExecutablePath,
     U: IntoIterator,
     U::Item: Into<OsString>,
 {
+    if sandbox.effective_deny_env() {
+        // When env is sandboxed, clear all vars and only set the filtered ones
+        for (k, _) in std::env::vars() {
+            if !env.contains_key(&k) {
+                env::remove_var(&k);
+            }
+        }
+    }
     for (k, v) in env.iter() {
         env::set_var(k, v);
     }
@@ -228,17 +298,38 @@ where
             Err(_) => program, // Fall back to original if resolution fails
         }
     };
+    // Apply sandbox (Landlock/seccomp on Linux, sandbox-exec on macOS)
+    let args_str: Vec<String> = args
+        .iter()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    if let Some(sandboxed) = sandbox.apply(&program.to_string_lossy(), &args_str)? {
+        // macOS: exec through sandbox-exec
+        let err = exec::Command::new(&sandboxed.program)
+            .args(&sandboxed.args)
+            .exec();
+        bail!("{} {err}", sandboxed.program);
+    }
+
     let err = exec::Command::new(program.clone()).args(&args).exec();
     bail!("{:?} {err}", program.to_string_lossy())
 }
 
 #[cfg(all(windows, not(test)))]
-pub fn exec_program<T, U>(program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
+pub fn exec_program<T, U>(
+    program: T,
+    args: U,
+    env: BTreeMap<String, String>,
+    sandbox: &SandboxConfig,
+) -> Result<()>
 where
     T: IntoExecutablePath,
     U: IntoIterator,
     U::Item: Into<OsString>,
 {
+    if sandbox.is_active() {
+        warn!("sandbox is not supported on Windows, running unsandboxed");
+    }
     for (k, v) in env.iter() {
         env::set_var(k, v);
     }
@@ -313,7 +404,12 @@ where
 }
 
 #[cfg(test)]
-pub fn exec_program<T, U>(program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
+pub fn exec_program<T, U>(
+    program: T,
+    args: U,
+    env: BTreeMap<String, String>,
+    _sandbox: &SandboxConfig,
+) -> Result<()>
 where
     T: IntoExecutablePath,
     U: IntoIterator,
