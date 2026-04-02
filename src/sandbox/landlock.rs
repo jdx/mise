@@ -8,7 +8,20 @@ use super::SandboxConfig;
 
 /// System paths that are always readable on Linux.
 const SYSTEM_READ_PATHS: &[&str] = &[
-    "/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc", "/dev", "/proc", "/sys", "/tmp",
+    "/usr",
+    "/lib",
+    "/lib64",
+    "/bin",
+    "/sbin",
+    "/etc",
+    "/dev",
+    "/proc",
+    "/sys",
+    "/tmp",
+    "/opt",
+    "/nix",
+    "/snap",
+    "/home/linuxbrew",
 ];
 
 fn add_read_rule(
@@ -59,31 +72,6 @@ pub fn apply_landlock(config: &SandboxConfig) -> Result<()> {
         // System paths always readable
         for path in SYSTEM_READ_PATHS {
             ruleset = add_read_rule(ruleset, path, read_access)?;
-        }
-        // Allow reading from all PATH directories and their real paths (after symlink resolution)
-        // so programs can be exec'd. Also add parent prefixes for paths like /opt/homebrew/bin
-        // which may symlink to /opt/homebrew/Cellar/... and need library paths under /opt/homebrew.
-        if let Ok(path_var) = std::env::var("PATH") {
-            let mut seen = std::collections::HashSet::new();
-            for dir in std::env::split_paths(&path_var) {
-                if dir.exists() && seen.insert(dir.clone()) {
-                    ruleset = add_path_rule(ruleset, &dir, read_access)?;
-                    // Also add the canonicalized path (follows symlinks)
-                    if let Ok(real) = dir.canonicalize()
-                        && seen.insert(real.clone())
-                    {
-                        ruleset = add_path_rule(ruleset, &real, read_access)?;
-                    }
-                    // Add parent prefix (e.g., /opt/homebrew for /opt/homebrew/bin)
-                    // to handle symlinks and shared libraries
-                    if let Some(parent) = dir.parent()
-                        && parent != std::path::Path::new("/")
-                        && seen.insert(parent.to_path_buf())
-                    {
-                        ruleset = add_path_rule(ruleset, parent, read_access)?;
-                    }
-                }
-            }
         }
         // Mise install dirs
         let installs_dir: &std::path::Path = &crate::dirs::INSTALLS;

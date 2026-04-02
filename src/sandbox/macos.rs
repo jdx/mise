@@ -3,6 +3,7 @@ use super::SandboxConfig;
 /// System paths that are always readable on macOS.
 const SYSTEM_READ_PATHS: &[&str] = &[
     "/System", "/Library", "/usr", "/bin", "/sbin", "/dev", "/etc", "/var", "/tmp", "/private",
+    "/opt", "/nix",
 ];
 
 /// Generate a Seatbelt (SBPL) profile string from sandbox config.
