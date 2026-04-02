@@ -371,7 +371,7 @@ pub fn effective_before_date(
     request: &ToolRequest,
     opts: &ResolveOptions,
 ) -> Result<Option<Timestamp>> {
-    if let Some(before_date) = opts.before_date.clone() {
+    if let Some(before_date) = opts.before_date {
         return Ok(Some(before_date));
     }
     if let Some(before) = request.options().get("install_before") {

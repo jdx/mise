@@ -172,7 +172,7 @@ impl Backend for NPMBackend {
                     .transitive_release_age_args(
                         &ctx.config,
                         NpmPackageManager::Bun,
-                        ctx.before_date.clone(),
+                        ctx.before_date,
                     )
                     .await?;
                 CmdLineRunner::new(BUN_PROGRAM)
@@ -206,7 +206,7 @@ impl Backend for NPMBackend {
                     .transitive_release_age_args(
                         &ctx.config,
                         NpmPackageManager::Pnpm,
-                        ctx.before_date.clone(),
+                        ctx.before_date,
                     )
                     .await?;
                 CmdLineRunner::new(PNPM_PROGRAM)
@@ -237,7 +237,7 @@ impl Backend for NPMBackend {
                     .transitive_release_age_args(
                         &ctx.config,
                         NpmPackageManager::Npm,
-                        ctx.before_date.clone(),
+                        ctx.before_date,
                     )
                     .await?;
                 CmdLineRunner::new(NPM_PROGRAM)
