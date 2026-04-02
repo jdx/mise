@@ -632,11 +632,10 @@ impl<'a> CmdLineRunner<'a> {
                         );
                     }
                     if sandbox.effective_deny_net()
-                        && let Err(e) = crate::sandbox::seccomp_apply() {
-                            eprintln!(
-                                "mise: seccomp unavailable, network sandbox not applied: {e}"
-                            );
-                        }
+                        && let Err(e) = crate::sandbox::seccomp_apply()
+                    {
+                        eprintln!("mise: seccomp unavailable, network sandbox not applied: {e}");
+                    }
                     Ok(())
                 });
             }
