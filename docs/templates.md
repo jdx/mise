@@ -419,7 +419,7 @@ parsed — so only information available at OS level can be used.
 
 - `mise_env` – This is what `.miserc.toml` defines; it cannot reference itself
 - `exec()` – Requires Settings, which are not yet loaded
-- `read_file()` – Requires Settings, which are not yet loaded
+- `read_file()` – Not registered in the early-init context (needs per-file directory resolution that is not set up at this stage)
 - `mise_bin`, `mise_pid` – Not meaningful at this stage
 
 ### Examples
@@ -447,4 +447,10 @@ ceiling_paths = ["{{ env.HOME }}/work"]
 ::: tip
 If a template fails to render (e.g. due to an undefined variable), mise will log a warning
 and fall back to the raw content.
+:::
+
+::: warning
+If your `.miserc.toml` values contain literal `{{`, `{%`, or `{#` characters (not intended
+as templates), wrap them in a `{% raw %}...{% endraw %}` block to prevent Tera from
+interpreting them.
 :::

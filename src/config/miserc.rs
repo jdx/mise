@@ -69,7 +69,7 @@ pub fn get_override_tool_versions_filenames() -> Option<&'static Vec<String>> {
 /// Notably absent (would cause circular initialization):
 /// - `mise_env` (depends on miserc itself)
 /// - `exec()` / `read_file()` (depend on Settings)
-fn render_miserc_template(content: &str, config_root: &Path) -> String {
+fn render_miserc_template(tera: &mut tera::Tera, content: &str, config_root: &Path) -> String {
     if !content.contains("{{") && !content.contains("{%") && !content.contains("{#") {
         return content.to_string();
     }
@@ -83,7 +83,7 @@ fn render_miserc_template(content: &str, config_root: &Path) -> String {
     context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
     context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
     context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
-    match get_miserc_tera().render_str(content, &context) {
+    match tera.render_str(content, &context) {
         Ok(rendered) => rendered,
         Err(e) => {
             warn!("Failed to render template in miserc: {e}");
@@ -103,10 +103,14 @@ fn load_miserc_settings() -> Result<MisercSettings> {
     // Load in reverse precedence order so later loads override earlier ones
     let files = find_miserc_files();
 
+    // Create the Tera instance once — cloning TERA is non-trivial (copies all registered
+    // functions/filters), so we do it at most once regardless of how many files are loaded.
+    let mut tera = get_miserc_tera();
+
     for path in files.into_iter().rev() {
         if let Ok(content) = file::read_to_string(&path) {
             let config_root = path.parent().unwrap_or(Path::new("."));
-            let content = render_miserc_template(&content, config_root);
+            let content = render_miserc_template(&mut tera, &content, config_root);
             match toml::from_str::<MisercSettings>(&content) {
                 Ok(settings) => {
                     merge_settings(&mut merged, settings);
@@ -219,17 +223,19 @@ ceiling_paths = ["/home/user"]
     #[test]
     fn test_render_miserc_template_no_op() {
         // Content without template syntax should pass through unchanged
+        let mut tera = get_miserc_tera();
         let content = r#"env = ["development"]"#;
-        let result = render_miserc_template(content, Path::new("/home/user"));
+        let result = render_miserc_template(&mut tera, content, Path::new("/home/user"));
         assert_eq!(result, content);
     }
 
     #[test]
     fn test_render_miserc_template_env_var() {
         // env.HOME should expand to the actual HOME env var
+        let mut tera = get_miserc_tera();
         let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
         let content = r#"ceiling_paths = ["{{ env.HOME }}"]"#;
-        let result = render_miserc_template(content, Path::new("/some/dir"));
+        let result = render_miserc_template(&mut tera, content, Path::new("/some/dir"));
         assert!(
             result.contains(&home),
             "Expected HOME ({home}) in rendered output, got: {result}"
@@ -238,9 +244,10 @@ ceiling_paths = ["/home/user"]
 
     #[test]
     fn test_render_miserc_template_config_root() {
+        let mut tera = get_miserc_tera();
         let config_root = Path::new("/my/project");
         let content = r#"ceiling_paths = ["{{ config_root }}"]"#;
-        let result = render_miserc_template(content, config_root);
+        let result = render_miserc_template(&mut tera, content, config_root);
         assert!(
             result.contains("/my/project"),
             "Expected config_root in rendered output, got: {result}"
@@ -249,8 +256,9 @@ ceiling_paths = ["/home/user"]
 
     #[test]
     fn test_render_miserc_template_os_function() {
+        let mut tera = get_miserc_tera();
         let content = r#"env = ["{{ os() }}"]"#;
-        let result = render_miserc_template(content, Path::new("/some/dir"));
+        let result = render_miserc_template(&mut tera, content, Path::new("/some/dir"));
         // os() should return a non-empty string (linux, macos, windows, etc.)
         assert!(!result.contains("{{ os() }}"), "Template was not rendered: {result}");
     }
@@ -258,8 +266,9 @@ ceiling_paths = ["/home/user"]
     #[test]
     fn test_render_miserc_template_invalid_falls_back() {
         // An invalid template should fall back to the original content (with a warning)
+        let mut tera = get_miserc_tera();
         let content = r#"ceiling_paths = ["{{ undefined_function_xyz() }}"]"#;
-        let result = render_miserc_template(content, Path::new("/some/dir"));
+        let result = render_miserc_template(&mut tera, content, Path::new("/some/dir"));
         // Should return original content unchanged on error
         assert_eq!(result, content);
     }
