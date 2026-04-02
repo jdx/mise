@@ -11,7 +11,7 @@ You can define and use templates in the following locations:
 - Most `mise.toml` configuration values
   - The `mise.toml` file itself is not templated and must be valid toml
 - `.tool-versions` files
-- _(Submit a ticket if you want to see it used elsewhere!)_
+- `.miserc.toml` files (limited context — see [Template Support in .miserc.toml](#template-support-in-miserc-toml))
 
 ## Example
 
@@ -399,3 +399,47 @@ Mise offers additional tests:
 - `if path is dir` – Checks if the provided path is a directory.
 - `if path is file` – Checks if the path points to a file.
 - `if path is exists` – Checks if the path exists.
+
+## Template Support in .miserc.toml
+
+`.miserc.toml` files support Tera templates, but with a **limited context**. This is because
+`.miserc.toml` is loaded very early — before `mise.toml`, Settings, and the main config are
+parsed — so only information available at OS level can be used.
+
+### Available context
+
+- `env: HashMap<String, String>` – OS environment variables (same as in `mise.toml`)
+- `config_root: PathBuf` – Directory containing the `.miserc.toml` file
+- `cwd: PathBuf` – Current working directory
+- `xdg_cache_home`, `xdg_config_home`, `xdg_data_home`, `xdg_state_home` – XDG base directories
+- All [functions](#functions): `arch()`, `os()`, `os_family()`, `num_cpus()`, `choice()`, etc.
+- All [filters](#filters): `absolute`, `dirname`, `basename`, `hash`, etc.
+
+### Not available
+
+- `mise_env` – This is what `.miserc.toml` defines; it cannot reference itself
+- `exec()` – Requires Settings, which are not yet loaded
+- `read_file()` – Requires Settings, which are not yet loaded
+- `mise_bin`, `mise_pid` – Not meaningful at this stage
+
+### Examples
+
+```toml
+# ~/.config/mise/miserc.toml
+
+# Use $HOME to set a ceiling path (stops config search at home directory)
+ceiling_paths = ["{{ env.HOME }}"]
+
+# Platform-specific ceiling path
+{% if os() == "linux" %}
+ceiling_paths = ["{{ env.HOME }}/work"]
+{% endif %}
+
+# Ignore a config path relative to home
+ignored_config_paths = ["{{ env.HOME }}/shared"]
+```
+
+::: tip
+If a template fails to render (e.g. due to an undefined variable), mise will log a warning
+and fall back to the raw content.
+:::

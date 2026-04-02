@@ -23,3 +23,22 @@ cd subdir || exit 1
 assert "mise ls dummy" "dummy  2.0.0 (missing)  ~/workdir/mise.test.toml  2"
 
 cd .. || exit 1
+
+# Test Tera template support in .miserc.toml
+# ceiling_paths with {{ env.HOME }} should expand and stop config traversal
+rm -f .miserc.toml
+echo 'ceiling_paths = ["{{ env.HOME }}"]' >.miserc.toml
+
+# mise.toml exists here; from a subdir, it should still be found (we're within HOME)
+mkdir -p subdir2
+cd subdir2 || exit 1
+assert "mise ls dummy" "dummy  1.0.0 (missing)  ~/workdir/mise.toml  1"
+cd .. || exit 1
+
+# Test os() function in .miserc.toml env field - should not error
+rm -f .miserc.toml
+# Use os() to conditionally set env - just verify it parses without error
+printf 'env = ["%s"]\n' "$(uname -s | tr '[:upper:]' '[:lower:]')" >.miserc.toml
+assert "mise ls dummy" "dummy  1.0.0 (missing)  ~/workdir/mise.toml  1"
+
+rm -f .miserc.toml

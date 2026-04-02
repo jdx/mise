@@ -383,6 +383,13 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
     tera
 });
 
+/// Returns a Tera instance safe for use during early initialization (miserc loading).
+/// Does not register `exec` or `read_file` since those depend on Settings or the filesystem
+/// in ways that are not safe before the main config is loaded.
+pub fn get_miserc_tera() -> Tera {
+    TERA.clone()
+}
+
 pub fn get_tera(dir: Option<&Path>) -> Tera {
     let mut tera = TERA.clone();
     let dir = dir.map(PathBuf::from);
