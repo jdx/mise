@@ -35,10 +35,10 @@ cd subdir2 || exit 1
 assert "mise ls dummy" "dummy  1.0.0 (missing)  ~/workdir/mise.toml  1"
 cd .. || exit 1
 
-# Test os() function in .miserc.toml env field - should not error
+# Test os() function in .miserc.toml - template should render (no raw {{ }} in result)
 rm -f .miserc.toml
-# Use os() to conditionally set env - just verify it parses without error
-printf 'env = ["%s"]\n' "$(uname -s | tr '[:upper:]' '[:lower:]')" >.miserc.toml
+echo 'ceiling_paths = ["{{ env.HOME }}/{{ os() }}-work"]' >.miserc.toml
+# Rendered path won't match HOME exactly, so ceiling won't block — config still found
 assert "mise ls dummy" "dummy  1.0.0 (missing)  ~/workdir/mise.toml  1"
 
 rm -f .miserc.toml

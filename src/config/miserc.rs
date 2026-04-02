@@ -228,8 +228,8 @@ ceiling_paths = ["/home/user"]
     fn test_render_miserc_template_env_var() {
         // env.HOME should expand to the actual HOME env var
         let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-        let content = format!(r#"ceiling_paths = ["{{{{ env.HOME }}}}"]"#);
-        let result = render_miserc_template(&content, Path::new("/some/dir"));
+        let content = r#"ceiling_paths = ["{{ env.HOME }}"]"#;
+        let result = render_miserc_template(content, Path::new("/some/dir"));
         assert!(
             result.contains(&home),
             "Expected HOME ({home}) in rendered output, got: {result}"

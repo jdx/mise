@@ -430,13 +430,18 @@ parsed — so only information available at OS level can be used.
 # Use $HOME to set a ceiling path (stops config search at home directory)
 ceiling_paths = ["{{ env.HOME }}"]
 
-# Platform-specific ceiling path
+# Ignore a config path relative to home
+ignored_config_paths = ["{{ env.HOME }}/shared"]
+```
+
+Conditionals work too — `{% if %}` blocks at the top level produce empty lines when the
+condition is false, which TOML ignores:
+
+```toml
+# ~/.config/mise/miserc.toml
 {% if os() == "linux" %}
 ceiling_paths = ["{{ env.HOME }}/work"]
 {% endif %}
-
-# Ignore a config path relative to home
-ignored_config_paths = ["{{ env.HOME }}/shared"]
 ```
 
 ::: tip
