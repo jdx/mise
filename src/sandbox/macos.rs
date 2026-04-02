@@ -47,16 +47,10 @@ pub fn generate_seatbelt_profile(config: &SandboxConfig) -> String {
         for path in SYSTEM_READ_PATHS {
             rules.push(format!("(allow file-read* (subpath \"{path}\"))"));
         }
-        // Mise tool install dirs
-        if let Some(home) = dirs::home_dir() {
-            let installs = home.join(".local/share/mise/installs");
-            let installs_str = installs.to_string_lossy();
-            rules.push(format!("(allow file-read* (subpath \"{installs_str}\"))"));
-            // Also allow reading mise shims and other data
-            let data = home.join(".local/share/mise");
-            let data_str = data.to_string_lossy();
-            rules.push(format!("(allow file-read* (subpath \"{data_str}\"))"));
-        }
+        // Mise data dir (includes installs, shims, etc.)
+        let data_dir = &*crate::env::MISE_DATA_DIR;
+        let data_str = data_dir.to_string_lossy();
+        rules.push(format!("(allow file-read* (subpath \"{data_str}\"))"));
         for path in &config.allow_read {
             let path_str = path.to_string_lossy();
             rules.push(format!("(allow file-read* (subpath \"{path_str}\"))"));
