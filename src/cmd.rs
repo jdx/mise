@@ -631,13 +631,12 @@ impl<'a> CmdLineRunner<'a> {
                             "mise: landlock unavailable, filesystem sandbox not applied: {e}"
                         );
                     }
-                    if sandbox.effective_deny_net() {
-                        if let Err(e) = crate::sandbox::seccomp_apply() {
+                    if sandbox.effective_deny_net()
+                        && let Err(e) = crate::sandbox::seccomp_apply() {
                             eprintln!(
                                 "mise: seccomp unavailable, network sandbox not applied: {e}"
                             );
                         }
-                    }
                     Ok(())
                 });
             }
