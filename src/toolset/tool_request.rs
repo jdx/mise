@@ -11,6 +11,7 @@ use xx::file;
 
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
+use crate::config::settings::Settings;
 use crate::env;
 use crate::lockfile::LockfileTool;
 use crate::runtime_symlinks::is_runtime_symlink;
@@ -350,6 +351,24 @@ impl ToolRequest {
         config: &Arc<Config>,
         opts: &ResolveOptions,
     ) -> Result<ToolVersion> {
+        // Apply before_date with precedence: CLI flag > per-tool option > global setting.
+        // opts.before_date carries the CLI --before flag (if any).
+        let modified_opts: Option<ResolveOptions> = if opts.before_date.is_none() {
+            if let Some(before) = self.options().get("install_before") {
+                let mut o = opts.clone();
+                o.before_date = Some(crate::duration::parse_into_timestamp(before)?);
+                Some(o)
+            } else if let Some(before) = &Settings::get().install_before {
+                let mut o = opts.clone();
+                o.before_date = Some(crate::duration::parse_into_timestamp(before)?);
+                Some(o)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let opts = modified_opts.as_ref().unwrap_or(opts);
         ToolVersion::resolve(config, self.clone(), opts).await
     }
 
