@@ -20,12 +20,12 @@ enforces that cutoff in two places during install:
 The top-level package cutoff is enforced by mise itself. The transitive dependency protection relies
 on the configured package manager supporting its native release-age flag:
 
-- `npm`: `--before <timestamp>`
-- `bun`: `--minimum-release-age <seconds>`
-- `pnpm`: `--config.minimumReleaseAge=<minutes>`
+- `npm >= 6.9.0` using `--before <timestamp>` (`Node >= 10.16.0` if you rely on bundled npm)
+- `bun >= 1.3.0` using `--minimum-release-age <seconds>`
+- `pnpm >= 10.16.0` using `--config.minimumReleaseAge=<minutes>`
 
-If you want transitive protection, install and use an `npm`/`bun`/`pnpm` version that supports the
-corresponding flag. Otherwise the package manager may fail while processing the forwarded argument.
+If you want transitive protection, install and use a package manager version that meets the
+corresponding requirement above. Older versions may fail while processing the forwarded argument.
 
 Here is how to install `npm` with mise:
 
