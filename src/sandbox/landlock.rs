@@ -40,27 +40,19 @@ fn add_path_rule(
     path: &std::path::Path,
     access: BitFlags<AccessFs>,
 ) -> Result<landlock::RulesetCreated> {
-    // If the path doesn't exist, walk up to the nearest existing ancestor.
-    // This handles cases like --allow-write=./dist where the build creates the dir.
-    let mut target = path;
-    loop {
-        match PathFd::new(target) {
-            Ok(fd) => {
-                return ruleset
-                    .add_rule(PathBeneath::new(fd, access))
-                    .map_err(|e| eyre!("landlock add_rule failed for {}: {e}", path.display()));
-            }
-            Err(_) => {
-                if let Some(parent) = target.parent() {
-                    if parent == target {
-                        // Reached root, give up
-                        return Ok(ruleset);
-                    }
-                    target = parent;
-                } else {
-                    return Ok(ruleset);
-                }
-            }
+    match PathFd::new(path) {
+        Ok(fd) => ruleset
+            .add_rule(PathBeneath::new(fd, access))
+            .map_err(|e| eyre!("landlock add_rule failed for {}: {e}", path.display())),
+        Err(_) => {
+            // Path doesn't exist — on Linux, Landlock requires existing paths.
+            // This affects cases like --allow-write=./dist where the dir doesn't exist yet.
+            // We warn rather than silently skipping or granting broader ancestor access.
+            eprintln!(
+                "mise sandbox: path '{}' does not exist, sandbox rule may not apply as expected",
+                path.display()
+            );
+            Ok(ruleset)
         }
     }
 }
@@ -116,7 +108,9 @@ pub fn apply_landlock(config: &SandboxConfig) -> Result<()> {
         for path in SYSTEM_READ_PATHS {
             ruleset = add_read_rule(ruleset, path, read_access)?;
         }
-        // /tmp, /dev already in SYSTEM_READ_PATHS or need read access
+        // /tmp and /dev need read access (not in SYSTEM_READ_PATHS, handled separately)
+        ruleset = add_read_rule(ruleset, "/tmp", read_access)?;
+        ruleset = add_read_rule(ruleset, "/dev", read_access)?;
         let installs_dir: &std::path::Path = &crate::dirs::INSTALLS;
         if installs_dir.exists() {
             ruleset = add_path_rule(ruleset, installs_dir, read_access)?;

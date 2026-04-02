@@ -31,28 +31,21 @@ pub async fn generate_seatbelt_profile(config: &SandboxConfig) -> String {
     // Filesystem write restrictions
     if config.effective_deny_write() {
         rules.push("(deny file-write*)".to_string());
-        // Always allow writes to /tmp and /private/tmp
         rules.push("(allow file-write* (subpath \"/tmp\"))".to_string());
         rules.push("(allow file-write* (subpath \"/private/tmp\"))".to_string());
-        // Allow writes to /dev (needed for /dev/null, /dev/tty, etc.)
         rules.push("(allow file-write* (subpath \"/dev\"))".to_string());
         for path in &config.allow_write {
             let path_str = sbpl_escape(&path.to_string_lossy());
             rules.push(format!("(allow file-write* (subpath \"{path_str}\"))"));
-            if config.effective_deny_read() {
-                rules.push(format!("(allow file-read* (subpath \"{path_str}\"))"));
-            }
         }
     }
 
     // Filesystem read restrictions
     if config.effective_deny_read() {
         rules.push("(deny file-read*)".to_string());
-        // System paths always readable
         for path in SYSTEM_READ_PATHS {
             rules.push(format!("(allow file-read* (subpath \"{path}\"))"));
         }
-        // Mise data dir (includes installs, shims, etc.)
         let data_dir = &*crate::env::MISE_DATA_DIR;
         let data_str = sbpl_escape(&data_dir.to_string_lossy());
         rules.push(format!("(allow file-read* (subpath \"{data_str}\"))"));
@@ -60,7 +53,11 @@ pub async fn generate_seatbelt_profile(config: &SandboxConfig) -> String {
             let path_str = sbpl_escape(&path.to_string_lossy());
             rules.push(format!("(allow file-read* (subpath \"{path_str}\"))"));
         }
-        // allow_write paths are implicitly readable (handled above)
+        // allow_write paths are implicitly readable — emit AFTER deny-read
+        for path in &config.allow_write {
+            let path_str = sbpl_escape(&path.to_string_lossy());
+            rules.push(format!("(allow file-read* (subpath \"{path_str}\"))"));
+        }
     }
 
     // Network restrictions
