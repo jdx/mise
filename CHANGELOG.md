@@ -1,5 +1,45 @@
 # Changelog
 
+## [2026.4.1](https://github.com/jdx/mise/compare/v2026.4.0..v2026.4.1) - 2026-04-02
+
+### 🚀 Features
+
+- **(install)** add per-tool install_before option by @sargunv-headway in [#8842](https://github.com/jdx/mise/pull/8842)
+
+### 🐛 Bug Fixes
+
+- **(cli)** respect `-q` flag in `mise prepare` command by @Marukome0743 in [#8792](https://github.com/jdx/mise/pull/8792)
+- fall back to compile-time musl detection when no system linker found by @davireis in [#8825](https://github.com/jdx/mise/pull/8825)
+
+### 📚 Documentation
+
+- fix GitHub capitalization in Alpine docs by @Rohan5commit in [#8844](https://github.com/jdx/mise/pull/8844)
+
+### 📦 Registry
+
+- add dbt-fusion ([aqua:getdbt.com/dbt-fusion](https://github.com/getdbt.com/dbt-fusion)) by @ryan-pip in [#8837](https://github.com/jdx/mise/pull/8837)
+
+### New Contributors
+
+- @Marukome0743 made their first contribution in [#8792](https://github.com/jdx/mise/pull/8792)
+- @sargunv-headway made their first contribution in [#8842](https://github.com/jdx/mise/pull/8842)
+- @Rohan5commit made their first contribution in [#8844](https://github.com/jdx/mise/pull/8844)
+- @ryan-pip made their first contribution in [#8837](https://github.com/jdx/mise/pull/8837)
+- @rndmh3ro made their first contribution in [#8839](https://github.com/jdx/mise/pull/8839)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`azu/dockerfile-pin`](https://github.com/azu/dockerfile-pin)
+
+#### Updated Packages (4)
+
+- [`anthropics/claude-code`](https://github.com/anthropics/claude-code)
+- [`dandavison/delta`](https://github.com/dandavison/delta)
+- [`goreleaser/goreleaser`](https://github.com/goreleaser/goreleaser)
+- [`zellij-org/zellij`](https://github.com/zellij-org/zellij)
+
 ## [2026.4.0](https://github.com/jdx/mise/compare/v2026.3.18..v2026.4.0) - 2026-04-01
 
 ### 🚀 Features

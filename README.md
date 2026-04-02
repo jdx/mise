@@ -64,7 +64,7 @@ $ ~/.local/bin/mise --version
  / / / / / / (__  )  __/_____/  __/ / / /_____/ /_/ / / /_/ / /__/  __/
 /_/ /_/ /_/_/____/\___/      \___/_/ /_/     / .___/_/\__,_/\___/\___/
                                             /_/                 by @jdx
-2026.4.0 macos-arm64 (2026-04-01)
+2026.4.1 macos-arm64 (2026-04-02)
 ```
 
 Hook mise into your shell (pick the right one for your shell):
