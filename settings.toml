@@ -906,9 +906,18 @@ install_before = "7d"  # only install versions released more than 7 days ago
 Only affects backends that provide release timestamps (aqua, cargo, npm, pipx, and some core plugins).
 Versions without timestamps are included by default.
 
-**Behavior**: This filter only applies when resolving fuzzy version requests like `node@20` or `latest`.
-Explicitly pinned versions like `node@22.5.0` are not filtered, allowing you to selectively
-use newer versions for specific tools while keeping others behind the cutoff date.
+**Behavior**: For most backends, this filter only applies when resolving fuzzy version requests
+like `node@20` or `latest`. Explicitly pinned versions like `node@22.5.0` are not filtered,
+allowing you to selectively use newer versions for specific tools while keeping others behind the
+cutoff date.
+
+For `npm:` tools, mise also applies the cutoff to transitive dependency resolution during install.
+This works with `npm`, `bun`, and `pnpm` package managers when their runtime versions support the
+required CLI flags:
+
+- `npm >= 6.9.0` (`Node >= 10.16.0` if you rely on bundled npm)
+- `bun >= 1.3.0`
+- `pnpm >= 10.16.0` via `--config.minimumReleaseAge=...`
 
 Can be overridden with the `--before` CLI flag or per-tool with the `install_before` tool option.
 

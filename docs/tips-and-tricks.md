@@ -158,7 +158,13 @@ To limit supply chain risk, you can restrict mise to only install versions relea
 install_before = "7d"  # only install versions released more than 7 days ago
 ```
 
-Supports relative durations (`7d`, `6m`, `1y`) and absolute dates (`2024-06-01`). Only affects fuzzy version resolution (e.g., `node@20` or `latest`) — explicitly pinned versions like `node@22.5.0` bypass the filter.
+Supports relative durations (`7d`, `6m`, `1y`) and absolute dates (`2024-06-01`). For most backends, this only affects fuzzy version resolution (e.g., `node@20` or `latest`) — explicitly pinned versions like `node@22.5.0` bypass the filter.
+
+For `npm:` tools, mise also applies `install_before` to transitive dependency resolution during install. This works with:
+
+- `npm >= 6.9.0` using `--before` (`Node >= 10.16.0` if you rely on bundled npm)
+- `bun >= 1.3.0` using `--minimum-release-age`
+- `pnpm >= 10.16.0` using `--config.minimumReleaseAge=...`
 
 You can also set `install_before` per-tool to override the global setting:
 

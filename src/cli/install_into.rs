@@ -2,6 +2,7 @@ use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolsetBuilder;
+use crate::toolset::tool_request::effective_before_date;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use clap::ValueHint;
 use eyre::{Result, eyre};
@@ -49,6 +50,7 @@ impl InstallInto {
             force: true,
             dry_run: false,
             locked: false, // install-into doesn't support locked mode
+            before_date: effective_before_date(&tv.request, &Default::default())?,
         };
         tv.install_path = Some(self.path.clone());
         backend.install_version(install_ctx, tv).await?;

@@ -11,9 +11,13 @@ use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
 use async_trait::async_trait;
+use eyre::{bail, eyre};
+use jiff::Timestamp;
 use serde_json::Value;
+use std::ffi::OsString;
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
+use versions::Versioning;
 
 #[derive(Debug)]
 pub struct NPMBackend {
@@ -23,6 +27,12 @@ pub struct NPMBackend {
 }
 
 const NPM_PROGRAM: &str = if cfg!(windows) { "npm.cmd" } else { "npm" };
+const BUN_PROGRAM: &str = if cfg!(windows) { "bun.exe" } else { "bun" };
+const PNPM_PROGRAM: &str = if cfg!(windows) { "pnpm.cmd" } else { "pnpm" };
+const NPM_BEFORE_MIN_VERSION: &str = "6.9.0";
+const NODE_BUNDLED_NPM_BEFORE_MIN_VERSION: &str = "10.16.0";
+const BUN_MINIMUM_RELEASE_AGE_MIN_VERSION: &str = "1.3.0";
+const PNPM_MINIMUM_RELEASE_AGE_MIN_VERSION: &str = "10.16.0";
 
 #[async_trait]
 impl Backend for NPMBackend {
@@ -158,7 +168,14 @@ impl Backend for NPMBackend {
         self.check_install_deps(&ctx.config).await;
         match Settings::get().npm.package_manager {
             NpmPackageManager::Bun => {
-                CmdLineRunner::new("bun")
+                let install_before_args = self
+                    .transitive_release_age_args(
+                        &ctx.config,
+                        NpmPackageManager::Bun,
+                        ctx.before_date.clone(),
+                    )
+                    .await?;
+                CmdLineRunner::new(BUN_PROGRAM)
                     .arg("install")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
                     .arg("--global")
@@ -167,6 +184,7 @@ impl Backend for NPMBackend {
                     // https://github.com/jdx/mise/discussions/7541
                     .arg("--linker")
                     .arg("hoisted")
+                    .args(install_before_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
                     .env("BUN_INSTALL_GLOBAL_DIR", tv.install_path())
@@ -184,7 +202,14 @@ impl Backend for NPMBackend {
             NpmPackageManager::Pnpm => {
                 let bin_dir = tv.install_path().join("bin");
                 crate::file::create_dir_all(&bin_dir)?;
-                CmdLineRunner::new("pnpm")
+                let install_before_args = self
+                    .transitive_release_age_args(
+                        &ctx.config,
+                        NpmPackageManager::Pnpm,
+                        ctx.before_date.clone(),
+                    )
+                    .await?;
+                CmdLineRunner::new(PNPM_PROGRAM)
                     .arg("add")
                     .arg("--global")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
@@ -192,6 +217,7 @@ impl Backend for NPMBackend {
                     .arg(tv.install_path())
                     .arg("--global-bin-dir")
                     .arg(&bin_dir)
+                    .args(install_before_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
@@ -207,12 +233,20 @@ impl Backend for NPMBackend {
                     .execute()?;
             }
             _ => {
+                let install_before_args = self
+                    .transitive_release_age_args(
+                        &ctx.config,
+                        NpmPackageManager::Npm,
+                        ctx.before_date.clone(),
+                    )
+                    .await?;
                 CmdLineRunner::new(NPM_PROGRAM)
                     .arg("install")
                     .arg("-g")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
                     .arg("--prefix")
                     .arg(tv.install_path())
+                    .args(install_before_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
                     .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
@@ -253,6 +287,151 @@ impl NPMBackend {
             ),
             ba: Arc::new(ba),
         }
+    }
+
+    async fn transitive_release_age_args(
+        &self,
+        config: &Arc<Config>,
+        package_manager: NpmPackageManager,
+        before_date: Option<Timestamp>,
+    ) -> Result<Vec<OsString>> {
+        let Some(before_date) = before_date else {
+            return Ok(vec![]);
+        };
+        let runtime_version = self
+            .probe_package_manager_version(config, package_manager)
+            .await?;
+        Self::build_transitive_release_age_args(
+            package_manager,
+            &runtime_version,
+            before_date,
+            Timestamp::now(),
+        )
+    }
+
+    async fn probe_package_manager_version(
+        &self,
+        config: &Arc<Config>,
+        package_manager: NpmPackageManager,
+    ) -> Result<String> {
+        let program = Self::package_manager_program(package_manager);
+        let binary = self
+            .dependency_which(config, program)
+            .await
+            .ok_or_else(|| eyre!("failed to locate {program} for npm backend install"))?;
+        let raw = cmd!(&binary, "--version").read()?;
+        Self::normalize_runtime_version(&raw).ok_or_else(|| {
+            eyre!(
+                "failed to parse {} version from {} output: {}",
+                Self::package_manager_name(package_manager),
+                binary.display(),
+                raw.trim()
+            )
+        })
+    }
+
+    fn normalize_runtime_version(raw: &str) -> Option<String> {
+        let version = raw.lines().find_map(|line| {
+            let token = line.split_whitespace().next()?.trim();
+            (!token.is_empty()).then_some(token)
+        })?;
+        let version = version.trim_start_matches('v');
+        (!version.is_empty()).then_some(version.to_string())
+    }
+
+    fn build_transitive_release_age_args(
+        package_manager: NpmPackageManager,
+        runtime_version: &str,
+        before_date: Timestamp,
+        now: Timestamp,
+    ) -> Result<Vec<OsString>> {
+        Self::ensure_runtime_supports_release_age(package_manager, runtime_version)?;
+        Ok(match package_manager {
+            NpmPackageManager::Npm => vec!["--before".into(), before_date.to_string().into()],
+            NpmPackageManager::Bun => {
+                let seconds = Self::elapsed_seconds_ceil(before_date, now);
+                vec!["--minimum-release-age".into(), seconds.to_string().into()]
+            }
+            NpmPackageManager::Pnpm => {
+                let seconds = Self::elapsed_seconds_ceil(before_date, now);
+                let minutes = seconds.div_ceil(60);
+                vec![format!("--config.minimumReleaseAge={minutes}").into()]
+            }
+        })
+    }
+
+    fn ensure_runtime_supports_release_age(
+        package_manager: NpmPackageManager,
+        runtime_version: &str,
+    ) -> Result<()> {
+        let detected = Versioning::new(runtime_version).ok_or_else(|| {
+            eyre!(
+                "failed to parse {} version: {runtime_version}",
+                Self::package_manager_name(package_manager)
+            )
+        })?;
+        let minimum_version = Versioning::new(Self::minimum_runtime_version(package_manager))
+            .expect("minimum package-manager version must parse");
+        if detected < minimum_version {
+            bail!(
+                "{}",
+                Self::unsupported_runtime_message(package_manager, runtime_version)
+            );
+        }
+        Ok(())
+    }
+
+    fn unsupported_runtime_message(
+        package_manager: NpmPackageManager,
+        runtime_version: &str,
+    ) -> String {
+        match package_manager {
+            NpmPackageManager::Npm => format!(
+                "npm backend transitive install_before requires npm >= {NPM_BEFORE_MIN_VERSION}; detected {runtime_version}. \
+If you rely on bundled npm, Node {NODE_BUNDLED_NPM_BEFORE_MIN_VERSION} or newer includes a compatible npm."
+            ),
+            NpmPackageManager::Bun => format!(
+                "npm backend transitive install_before requires bun >= {BUN_MINIMUM_RELEASE_AGE_MIN_VERSION}; detected {runtime_version}. \
+Upgrade bun and retry."
+            ),
+            NpmPackageManager::Pnpm => format!(
+                "npm backend transitive install_before requires pnpm >= {PNPM_MINIMUM_RELEASE_AGE_MIN_VERSION}; detected {runtime_version}. \
+This integration uses --config.minimumReleaseAge=... for pnpm."
+            ),
+        }
+    }
+
+    fn package_manager_program(package_manager: NpmPackageManager) -> &'static str {
+        match package_manager {
+            NpmPackageManager::Npm => NPM_PROGRAM,
+            NpmPackageManager::Bun => BUN_PROGRAM,
+            NpmPackageManager::Pnpm => PNPM_PROGRAM,
+        }
+    }
+
+    fn package_manager_name(package_manager: NpmPackageManager) -> &'static str {
+        match package_manager {
+            NpmPackageManager::Npm => "npm",
+            NpmPackageManager::Bun => "bun",
+            NpmPackageManager::Pnpm => "pnpm",
+        }
+    }
+
+    fn minimum_runtime_version(package_manager: NpmPackageManager) -> &'static str {
+        match package_manager {
+            NpmPackageManager::Npm => NPM_BEFORE_MIN_VERSION,
+            NpmPackageManager::Bun => BUN_MINIMUM_RELEASE_AGE_MIN_VERSION,
+            NpmPackageManager::Pnpm => PNPM_MINIMUM_RELEASE_AGE_MIN_VERSION,
+        }
+    }
+
+    fn elapsed_seconds_ceil(before_date: Timestamp, now: Timestamp) -> u64 {
+        if before_date >= now {
+            return 0;
+        }
+        let nanos = now.as_nanosecond() - before_date.as_nanosecond();
+        u64::try_from((nanos + 999_999_999) / 1_000_000_000)
+            .expect("elapsed timestamp delta must fit into u64")
     }
 
     /// Check dependencies for version checking (always needs npm)
@@ -313,6 +492,7 @@ impl NPMBackend {
 mod tests {
     use super::*;
     use crate::cli::args::{BackendArg, BackendResolution};
+    use pretty_assertions::assert_eq;
 
     fn create_npm_backend(tool: &str) -> NPMBackend {
         let ba = BackendArg::new_raw(
@@ -343,5 +523,106 @@ mod tests {
         assert!(deps.contains(&"npm"));
         assert!(!deps.contains(&"bun"));
         assert!(!deps.contains(&"pnpm"));
+    }
+
+    #[test]
+    fn test_normalize_runtime_version() {
+        assert_eq!(
+            NPMBackend::normalize_runtime_version("v10.33.0\n"),
+            Some("10.33.0".to_string())
+        );
+        assert_eq!(
+            NPMBackend::normalize_runtime_version("11.12.1"),
+            Some("11.12.1".to_string())
+        );
+        assert_eq!(NPMBackend::normalize_runtime_version(""), None);
+    }
+
+    #[test]
+    fn test_build_transitive_release_age_args_for_npm() {
+        let before_date: Timestamp = "2024-01-02T03:04:05Z".parse().unwrap();
+        let now: Timestamp = "2024-01-03T03:04:05Z".parse().unwrap();
+        let args = NPMBackend::build_transitive_release_age_args(
+            NpmPackageManager::Npm,
+            "6.9.0",
+            before_date,
+            now,
+        )
+        .unwrap();
+        assert_eq!(
+            args,
+            vec![
+                OsString::from("--before"),
+                OsString::from("2024-01-02T03:04:05Z")
+            ]
+        );
+    }
+
+    #[test]
+    fn test_build_transitive_release_age_args_for_bun() {
+        let before_date: Timestamp = "2024-01-02T03:04:04.100Z".parse().unwrap();
+        let now: Timestamp = "2024-01-02T03:04:05Z".parse().unwrap();
+        let args = NPMBackend::build_transitive_release_age_args(
+            NpmPackageManager::Bun,
+            "1.3.0",
+            before_date,
+            now,
+        )
+        .unwrap();
+        assert_eq!(
+            args,
+            vec![OsString::from("--minimum-release-age"), OsString::from("1")]
+        );
+    }
+
+    #[test]
+    fn test_build_transitive_release_age_args_for_pnpm() {
+        let before_date: Timestamp = "2024-01-02T03:03:05.100Z".parse().unwrap();
+        let now: Timestamp = "2024-01-02T03:04:05Z".parse().unwrap();
+        let args = NPMBackend::build_transitive_release_age_args(
+            NpmPackageManager::Pnpm,
+            "10.16.0",
+            before_date,
+            now,
+        )
+        .unwrap();
+        assert_eq!(args, vec![OsString::from("--config.minimumReleaseAge=1")]);
+    }
+
+    #[test]
+    fn test_runtime_version_gate_for_npm() {
+        let err = NPMBackend::build_transitive_release_age_args(
+            NpmPackageManager::Npm,
+            "6.8.0",
+            "2024-01-02T03:04:05Z".parse().unwrap(),
+            "2024-01-03T03:04:05Z".parse().unwrap(),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("npm >= 6.9.0"));
+    }
+
+    #[test]
+    fn test_runtime_version_gate_for_bun() {
+        let err = NPMBackend::build_transitive_release_age_args(
+            NpmPackageManager::Bun,
+            "1.2.9",
+            "2024-01-02T03:04:05Z".parse().unwrap(),
+            "2024-01-03T03:04:05Z".parse().unwrap(),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("bun >= 1.3.0"));
+    }
+
+    #[test]
+    fn test_runtime_version_gate_for_pnpm() {
+        let err = NPMBackend::build_transitive_release_age_args(
+            NpmPackageManager::Pnpm,
+            "10.15.9",
+            "2024-01-02T03:04:05Z".parse().unwrap(),
+            "2024-01-03T03:04:05Z".parse().unwrap(),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("pnpm >= 10.16.0"));
+        assert!(err.to_string().contains("--config.minimumReleaseAge"));
     }
 }
