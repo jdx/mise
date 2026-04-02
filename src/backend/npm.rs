@@ -169,7 +169,7 @@ impl Backend for NPMBackend {
         self.check_install_deps(&ctx.config).await;
         self.ensure_selected_version_respects_before_date(
             &ctx.config,
-            self.tool_name(),
+            &self.tool_name(),
             &tv.version,
             ctx.before_date.clone(),
         )
