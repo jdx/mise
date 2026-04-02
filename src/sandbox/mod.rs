@@ -152,15 +152,15 @@ impl SandboxConfig {
         }
         if self.effective_deny_net() {
             if !self.allow_net.is_empty() {
-                warn!(
-                    "per-host network filtering (--allow-net=<host>) is not supported on Linux, allowing all network"
+                eyre::bail!(
+                    "per-host network filtering (--allow-net=<host>) is not supported on Linux. \
+                     Use --deny-net to block all network, or remove --allow-net."
                 );
-            } else {
-                match seccomp::apply_seccomp_net_filter() {
-                    Ok(()) => {}
-                    Err(e) => {
-                        warn!("seccomp unavailable, network sandbox not applied: {e}");
-                    }
+            }
+            match seccomp::apply_seccomp_net_filter() {
+                Ok(()) => {}
+                Err(e) => {
+                    warn!("seccomp unavailable, network sandbox not applied: {e}");
                 }
             }
         }

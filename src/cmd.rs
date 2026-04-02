@@ -594,12 +594,21 @@ impl<'a> CmdLineRunner<'a> {
 
     /// Prepare sandbox restrictions on the command. Must be called before execute()
     /// when sandbox is configured. This is async because macOS DNS resolution is async.
-    pub async fn apply_sandbox(&mut self) {
+    pub async fn apply_sandbox(&mut self) -> eyre::Result<()> {
         let Some(sandbox) = self.sandbox.take() else {
-            return;
+            return Ok(());
         };
         if !sandbox.is_active() {
-            return;
+            return Ok(());
+        }
+
+        // Fail early on Linux if per-host network filtering is requested
+        #[cfg(target_os = "linux")]
+        if !sandbox.allow_net.is_empty() {
+            eyre::bail!(
+                "per-host network filtering (--allow-net=<host>) is not supported on Linux. \
+                 Use --deny-net to block all network, or remove --allow-net."
+            );
         }
 
         // When deny_env is active, clear inherited env and only keep what's explicitly set
@@ -623,9 +632,7 @@ impl<'a> CmdLineRunner<'a> {
                         );
                     }
                     if sandbox.effective_deny_net() {
-                        if !sandbox.allow_net.is_empty() {
-                            eprintln!("mise: per-host network filtering (--allow-net=<host>) is not supported on Linux, allowing all network");
-                        } else if let Err(e) = crate::sandbox::seccomp_apply() {
+                        if let Err(e) = crate::sandbox::seccomp_apply() {
                             eprintln!(
                                 "mise: seccomp unavailable, network sandbox not applied: {e}"
                             );
@@ -678,6 +685,7 @@ impl<'a> CmdLineRunner<'a> {
             let _ = sandbox;
             warn!("sandbox is not supported on this platform, running unsandboxed");
         }
+        Ok(())
     }
 
     #[cfg(unix)]
