@@ -580,7 +580,7 @@ async fn execute_with_tool_request(
             }
             env.insert(crate::env::PATH_KEY.to_string(), path_env.to_string());
 
-            crate::cli::exec::exec_program(bin_path, args, env, &Default::default())
+            crate::cli::exec::exec_program(bin_path, args, env, &Default::default()).await
         }
         Err(e) => match e {
             BinPathError::ToolNotFound(tool_name) => {
@@ -702,7 +702,8 @@ pub(crate) async fn short_circuit_stub(args: &[String]) -> Result<()> {
             args,
             BTreeMap::new(),
             &Default::default(),
-        );
+        )
+        .await;
     }
 
     // No cache hit, return Ok(()) to continue with normal processing

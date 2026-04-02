@@ -230,12 +230,12 @@ impl Exec {
         }
 
         time!("exec");
-        exec_program(program, args, env, &sandbox)
+        exec_program(program, args, env, &sandbox).await
     }
 }
 
 #[cfg(all(not(test), unix))]
-pub fn exec_program<T, U>(
+pub async fn exec_program<T, U>(
     program: T,
     args: U,
     env: BTreeMap<String, String>,
@@ -303,10 +303,7 @@ where
         .iter()
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
-    if let Some(sandboxed) = tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current()
-            .block_on(sandbox.apply(&program.to_string_lossy(), &args_str))
-    })? {
+    if let Some(sandboxed) = sandbox.apply(&program.to_string_lossy(), &args_str).await? {
         // macOS: exec through sandbox-exec
         let err = exec::Command::new(&sandboxed.program)
             .args(&sandboxed.args)
@@ -319,7 +316,7 @@ where
 }
 
 #[cfg(all(windows, not(test)))]
-pub fn exec_program<T, U>(
+pub async fn exec_program<T, U>(
     program: T,
     args: U,
     env: BTreeMap<String, String>,
@@ -407,7 +404,7 @@ where
 }
 
 #[cfg(test)]
-pub fn exec_program<T, U>(
+pub async fn exec_program<T, U>(
     program: T,
     args: U,
     env: BTreeMap<String, String>,
