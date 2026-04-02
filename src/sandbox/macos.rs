@@ -63,12 +63,24 @@ pub fn generate_seatbelt_profile(config: &SandboxConfig) -> String {
         rules.push("(deny network*)".to_string());
         // Always allow local/unix sockets
         rules.push("(allow network* (local unix))".to_string());
-        for host in &config.allow_net {
-            rules.push(format!("(allow network* (remote ip \"{host}:*\"))"));
-            // Also allow DNS lookups
-            rules.push(format!(
+        if !config.allow_net.is_empty() {
+            // Allow DNS lookups via mDNSResponder (needed for hostname resolution)
+            rules.push(
                 "(allow network* (remote unix-socket (path-literal \"/var/run/mDNSResponder\")))"
-            ));
+                    .to_string(),
+            );
+            for host in &config.allow_net {
+                // Resolve hostnames to IPs — Seatbelt's `ip` predicate requires IP literals
+                if let Ok(addrs) = std::net::ToSocketAddrs::to_socket_addrs(&(host.as_str(), 0)) {
+                    for addr in addrs {
+                        let ip = addr.ip();
+                        rules.push(format!("(allow network* (remote ip \"{ip}:*\"))"));
+                    }
+                } else {
+                    // If resolution fails, try using the value directly (might be an IP already)
+                    rules.push(format!("(allow network* (remote ip \"{host}:*\"))"));
+                }
+            }
         }
     }
 
@@ -117,13 +129,20 @@ mod tests {
 
     #[test]
     fn test_allow_net_per_host() {
+        // Test with an IP address directly (no DNS resolution needed)
         let config = SandboxConfig {
-            allow_net: vec!["registry.npmjs.org".to_string()],
+            allow_net: vec!["1.2.3.4".to_string()],
             ..Default::default()
         };
         let profile = generate_seatbelt_profile(&config);
         assert!(profile.contains("(deny network*)"));
-        assert!(profile.contains("(allow network* (remote ip \"registry.npmjs.org:*\"))"));
+        assert!(profile.contains("(allow network* (remote ip \"1.2.3.4:*\"))"));
+        // mDNSResponder rule should appear exactly once
+        assert_eq!(
+            profile.matches("mDNSResponder").count(),
+            1,
+            "mDNSResponder rule should appear once"
+        );
     }
 
     #[test]
