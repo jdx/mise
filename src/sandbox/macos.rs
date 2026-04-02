@@ -17,7 +17,9 @@ const SYSTEM_READ_PATHS: &[&str] = &[
     "/etc",
     "/var/run",
     "/tmp",
-    "/private",
+    "/private/tmp",
+    "/private/etc",
+    "/private/var/run",
     "/opt/homebrew",
     "/nix",
 ];
