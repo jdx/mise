@@ -336,22 +336,12 @@ local M = {}
 
 function M.get_arch()
     -- Use the RUNTIME object provided by vfox/mise
-    local arch = RUNTIME.archType
-    if arch == "amd64" then
-        return "x64"
-    else
-        return arch  -- return as-is for other architectures
-    end
+    return (RUNTIME.archType == "amd64") and "x64" or RUNTIME.archType  -- return as-is for other architectures
 end
 
 function M.get_os()
     -- Use the RUNTIME object provided by vfox/mise
-    local os = RUNTIME.osType
-    if os == "windows" then
-        return "win"
-    else
-        return os
-    end
+    return (RUNTIME.osType == "windows") and "win" or RUNTIME.osType
 end
 
 function M.get_platform()
@@ -417,18 +407,8 @@ function PLUGIN:PreInstall(ctx)
     local version = ctx.version
 
     -- Determine platform using RUNTIME object
-    local arch_token
-    if RUNTIME.archType == "amd64" then
-        arch_token = "x64"
-    else
-        arch_token = RUNTIME.archType
-    end
-    local os_token
-    if RUNTIME.osType == "windows" then
-        os_token = "win"
-    else
-        os_token = RUNTIME.osType
-    end
+    local arch_token = (RUNTIME.archType == "amd64") and "x64" or RUNTIME.archType
+    local os_token = (RUNTIME.osType == "windows") and "win" or RUNTIME.osType
     local platform = os_token .. "-" .. arch_token
     local extension = (RUNTIME.osType == "windows") and "zip" or "tar.gz"
 
