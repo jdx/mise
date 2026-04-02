@@ -348,7 +348,7 @@ Handle different operating systems:
 
 ```lua
 local function create_dir(path)
-    local cmd = RUNTIME.osType == "Windows" and "mkdir" or "mkdir -p"
+    local cmd = RUNTIME.osType == "windows" and "mkdir" or "mkdir -p"
     os.execute(cmd .. " " .. path)
 end
 ```
@@ -411,8 +411,8 @@ end
 
 The `RUNTIME` object provides:
 
-- `RUNTIME.osType`: Operating system type (Windows, Linux, Darwin)
-- `RUNTIME.archType`: Architecture (amd64, arm64, etc.)
+- `RUNTIME.osType`: Operating system type ("windows", "linux", "darwin")
+- `RUNTIME.archType`: Architecture (`"amd64"`, `"arm64"`, `"x86"`, etc.)
 - `RUNTIME.envType`: libc environment type (`"gnu"` on glibc Linux, `"musl"` on musl Linux, `nil` on Windows/macOS and undetected systems)
 - `RUNTIME.version`: vfox runtime version
 - `RUNTIME.pluginDirPath`: Plugin directory path
