@@ -79,8 +79,8 @@ When filesystem restrictions are active, certain paths remain accessible so tool
 
 ### Always Readable
 
-- **System paths** (Linux): `/usr`, `/lib`, `/lib64`, `/bin`, `/sbin`, `/etc`, `/dev`, `/proc`, `/sys`, `/tmp`, `/opt`, `/nix`, `/snap`, `/home/linuxbrew`
-- **System paths** (macOS): `/System`, `/Library`, `/usr`, `/bin`, `/sbin`, `/dev`, `/etc`, `/var`, `/tmp`, `/private`, `/opt`, `/nix`
+- **System paths** (Linux): `/usr`, `/lib`, `/lib64`, `/bin`, `/sbin`, `/etc`, `/dev`, `/proc`, `/sys`, `/tmp`, `/nix`, `/snap`, `/home/linuxbrew`
+- **System paths** (macOS): `/System`, `/Library`, `/usr`, `/bin`, `/sbin`, `/dev`, `/etc`, `/var/run`, `/tmp`, `/private`, `/opt/homebrew`, `/nix`
 - **Mise tool dirs**: `~/.local/share/mise/installs/...`
 
 ### Always Writable

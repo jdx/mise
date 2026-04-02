@@ -18,7 +18,6 @@ const SYSTEM_READ_PATHS: &[&str] = &[
     "/proc",
     "/sys",
     "/tmp",
-    "/opt",
     "/nix",
     "/snap",
     "/home/linuxbrew",
