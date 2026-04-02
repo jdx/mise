@@ -625,12 +625,12 @@ impl<'a> CmdLineRunner<'a> {
                 self.cmd.pre_exec(move || {
                     if sandbox.effective_deny_read() || sandbox.effective_deny_write() {
                         crate::sandbox::landlock_apply(&sandbox).map_err(|e| {
-                            std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+                            std::io::Error::other(e.to_string())
                         })?;
                     }
                     if sandbox.effective_deny_net() {
                         crate::sandbox::seccomp_apply().map_err(|e| {
-                            std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+                            std::io::Error::other(e.to_string())
                         })?;
                     }
                     Ok(())
