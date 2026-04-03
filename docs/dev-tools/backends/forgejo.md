@@ -28,6 +28,89 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 }
 ```
 
+## Authentication
+
+For private repositories or higher API limits, mise supports several Forgejo token sources.
+
+### Token priority
+
+mise checks these sources in order and uses the first token found:
+
+1. `MISE_FORGEJO_ENTERPRISE_TOKEN` (for non-`codeberg.org` hosts)
+2. `MISE_FORGEJO_TOKEN`
+3. `FORGEJO_TOKEN`
+4. `credential_command` (if set)
+5. `forgejo_tokens.toml` (per host)
+6. `fj` CLI config (`keys.json`, if enabled)
+7. `git credential fill` (if `forgejo.use_git_credentials=true`)
+
+### Environment variables
+
+```sh
+export MISE_FORGEJO_TOKEN="forgejo-token"
+```
+
+For self-hosted Forgejo instances:
+
+```sh
+export MISE_FORGEJO_ENTERPRISE_TOKEN="forgejo-enterprise-token"
+```
+
+### Token file (`forgejo_tokens.toml`)
+
+```toml
+# ~/.config/mise/forgejo_tokens.toml
+[tokens."codeberg.org"]
+token = "forgejo-public-token"
+
+[tokens."forgejo.mycompany.com"]
+token = "forgejo-enterprise-token"
+```
+
+### `credential_command`
+
+You can provide a shell command that prints a token to stdout:
+
+```toml
+[settings.forgejo]
+credential_command = "op read 'op://Private/Forgejo Token/credential'"
+```
+
+The target hostname is passed as `$1` to the command.
+
+### `fj` CLI integration
+
+mise can read tokens from the [`fj` CLI](https://codeberg.org/forgejo-contrib/forgejo-cli) (`keys.json`) as a fallback. It checks:
+
+1. `$XDG_DATA_HOME/forgejo-cli/keys.json` (defaults to `~/.local/share/forgejo-cli/keys.json`)
+2. `~/Library/Application Support/forgejo-cli/keys.json` (macOS)
+
+Disable this fallback with:
+
+```toml
+[settings.forgejo]
+fj_cli_tokens = false
+```
+
+### `git credential fill` fallback
+
+As a last resort, mise can query git credential helpers:
+
+```toml
+[settings.forgejo]
+use_git_credentials = true
+```
+
+This uses `git credential fill` and supports credentials stored by helpers such as macOS Keychain.
+
+### Debugging token resolution
+
+```sh
+mise forgejo token
+mise forgejo token --unmask
+mise forgejo token forgejo.mycompany.com
+```
+
 ## Tool Options
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `forgejo` backend—these

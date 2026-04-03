@@ -27,7 +27,9 @@ pub mod exec;
 mod external;
 mod fmt;
 mod generate;
+mod forgejo;
 mod github;
+mod gitlab;
 mod global;
 mod hook_env;
 mod hook_not_found;
@@ -214,8 +216,10 @@ pub enum Commands {
     Env(env::Env),
     Exec(exec::Exec),
     Fmt(fmt::Fmt),
+    Forgejo(forgejo::Forgejo),
     Generate(generate::Generate),
     Github(github::Github),
+    Gitlab(gitlab::Gitlab),
     Global(global::Global),
     HookEnv(hook_env::HookEnv),
     HookNotFound(hook_not_found::HookNotFound),
@@ -283,8 +287,10 @@ impl Commands {
             Self::Env(cmd) => cmd.run().await,
             Self::Exec(cmd) => cmd.run().await,
             Self::Fmt(cmd) => cmd.run(),
+            Self::Forgejo(cmd) => cmd.run().await,
             Self::Generate(cmd) => cmd.run().await,
             Self::Github(cmd) => cmd.run().await,
+            Self::Gitlab(cmd) => cmd.run().await,
             Self::Global(cmd) => cmd.run().await,
             Self::HookEnv(cmd) => cmd.run().await,
             Self::HookNotFound(cmd) => cmd.run().await,

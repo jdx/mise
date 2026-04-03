@@ -611,6 +611,58 @@ description = "Timeout in seconds for HTTP requests to fetch new tool versions i
 env = "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT"
 type = "Duration"
 
+[forgejo.credential_command]
+default = ""
+description = "Shell command to run to obtain a Forgejo token for mise."
+docs = """
+When set, mise executes this command via `sh -c` and reads the token
+from stdout. The hostname is passed as `$1`, making the command
+host-aware for Forgejo Enterprise environments. This replaces the
+`git credential fill` fallback and does not require
+`forgejo.use_git_credentials` to be enabled.
+
+The command should print a single token to stdout. Trailing whitespace
+is trimmed. Results are cached per host per session.
+
+Example: `op read "op://Private/Forgejo Token/credential"`
+"""
+env = "MISE_FORGEJO_CREDENTIAL_COMMAND"
+type = "String"
+
+[forgejo.fj_cli_tokens]
+default = true
+description = "Read Forgejo tokens from the fj CLI config."
+docs = """
+When enabled, mise will read tokens from the fj CLI keys file
+(`~/.local/share/forgejo-cli/keys.json` on Linux,
+`~/Library/Application Support/forgejo-cli/keys.json` on macOS).
+This is used as a fallback when no `FORGEJO_TOKEN` or `MISE_FORGEJO_TOKEN`
+environment variable is set.
+
+Set to `false` to disable this behavior.
+"""
+env = "MISE_FORGEJO_FJ_CLI_TOKENS"
+type = "Bool"
+
+[forgejo.use_git_credentials]
+default = false
+description = "Use git credential helpers to obtain Forgejo tokens."
+docs = """
+When enabled, mise will run `git credential fill` to obtain Forgejo tokens
+using the credential helpers configured in your `.gitconfig`.
+
+This covers tokens stored in system keyrings (macOS Keychain, Windows
+Credential Manager), and any other git credential helper.
+
+Used as a last resort — after environment variables, `forgejo_tokens.toml`,
+and fj CLI tokens are checked. Results are cached per host for the
+duration of the session.
+
+Set to `true` to enable this behavior.
+"""
+env = "MISE_FORGEJO_USE_GIT_CREDENTIALS"
+type = "Bool"
+
 [github.credential_command]
 default = ""
 description = "Shell command to run to obtain a GitHub token for mise."
@@ -695,6 +747,56 @@ When enabled, mise will verify the authenticity and integrity of downloaded tool
 using GitHub's artifact attestation system for tools that support it (e.g., Ruby precompiled binaries).
 """
 env = "MISE_GITHUB_ATTESTATIONS"
+type = "Bool"
+
+[gitlab.credential_command]
+default = ""
+description = "Shell command to run to obtain a GitLab token for mise."
+docs = """
+When set, mise executes this command via `sh -c` and reads the token
+from stdout. The hostname is passed as `$1`, making the command
+host-aware for GitLab self-managed environments. This replaces the
+`git credential fill` fallback and does not require
+`gitlab.use_git_credentials` to be enabled.
+
+The command should print a single token to stdout. Trailing whitespace
+is trimmed. Results are cached per host per session.
+
+Example: `op read "op://Private/GitLab Token/credential"`
+"""
+env = "MISE_GITLAB_CREDENTIAL_COMMAND"
+type = "String"
+
+[gitlab.glab_cli_tokens]
+default = true
+description = "Read GitLab tokens from the glab CLI config."
+docs = """
+When enabled, mise will read tokens from the glab CLI config file
+(`~/.config/glab-cli/config.yml` or `$GLAB_CONFIG_DIR/config.yml`) as a fallback
+when no `GITLAB_TOKEN` or `MISE_GITLAB_TOKEN` environment variable is set.
+
+Set to `false` to disable this behavior.
+"""
+env = "MISE_GITLAB_GLAB_CLI_TOKENS"
+type = "Bool"
+
+[gitlab.use_git_credentials]
+default = false
+description = "Use git credential helpers to obtain GitLab tokens."
+docs = """
+When enabled, mise will run `git credential fill` to obtain GitLab tokens
+using the credential helpers configured in your `.gitconfig`.
+
+This covers tokens stored in system keyrings (macOS Keychain, Windows
+Credential Manager), and any other git credential helper.
+
+Used as a last resort — after environment variables, `gitlab_tokens.toml`,
+and glab CLI tokens are checked. Results are cached per host for the
+duration of the session.
+
+Set to `true` to enable this behavior.
+"""
+env = "MISE_GITLAB_USE_GIT_CREDENTIALS"
 type = "Bool"
 
 [gix]

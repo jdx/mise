@@ -1,4 +1,6 @@
 use crate::cache::{CacheManager, CacheManagerBuilder};
+use crate::config::Settings;
+use crate::tokens;
 use crate::{dirs, duration, env};
 use eyre::Result;
 use heck::ToKebabCase;
@@ -6,6 +8,7 @@ use reqwest::IntoUrl;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 use std::path::PathBuf;
 use std::sync::LazyLock as Lazy;
 use tokio::sync::RwLock;
@@ -134,19 +137,230 @@ fn cache_dir() -> PathBuf {
 pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     let mut headers = HeaderMap::new();
     let url = url.into_url().unwrap();
-    let mut set_headers = |token: &str| {
+
+    let lookup_host = canonical_host(url.host_str()).unwrap_or("codeberg.org");
+    if let Some((token, _source)) = resolve_token(lookup_host) {
         headers.insert(
             reqwest::header::AUTHORIZATION,
             HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
         );
-    };
-
-    if url.host_str() == Some("codeberg.org") {
-        if let Some(token) = env::FORGEJO_TOKEN.as_ref() {
-            set_headers(token);
-        }
-    } else if let Some(token) = env::MISE_FORGEJO_ENTERPRISE_TOKEN.as_ref() {
-        set_headers(token);
     }
+
     headers
+}
+
+/// The source from which a Forgejo token was resolved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TokenSource {
+    EnvVar(&'static str),
+    TokensFile,
+    FjCli,
+    CredentialCommand,
+    GitCredential,
+}
+
+impl fmt::Display for TokenSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TokenSource::EnvVar(name) => write!(f, "{name}"),
+            TokenSource::TokensFile => write!(f, "forgejo_tokens.toml"),
+            TokenSource::FjCli => write!(f, "fj CLI (keys.json)"),
+            TokenSource::CredentialCommand => write!(f, "credential_command"),
+            TokenSource::GitCredential => write!(f, "git credential fill"),
+        }
+    }
+}
+
+fn canonical_host(host: Option<&str>) -> Option<&str> {
+    host
+}
+
+/// Resolve the Forgejo token for the given hostname.
+///
+/// Priority:
+/// 1. `MISE_FORGEJO_ENTERPRISE_TOKEN` env var (non-codeberg.org only)
+/// 2. `MISE_FORGEJO_TOKEN` / `FORGEJO_TOKEN` env vars
+/// 3. `credential_command` (if set)
+/// 4. `forgejo_tokens.toml` (per-host)
+/// 5. fj CLI token (from `keys.json`)
+/// 6. `git credential fill` (if enabled)
+pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
+    let settings = Settings::get();
+    let is_codeberg = host == "codeberg.org";
+
+    // 1. Enterprise token (non-codeberg.org only)
+    if !is_codeberg && let Some(token) = env::MISE_FORGEJO_ENTERPRISE_TOKEN.as_deref() {
+        return Some((
+            token.to_string(),
+            TokenSource::EnvVar("MISE_FORGEJO_ENTERPRISE_TOKEN"),
+        ));
+    }
+
+    // 2. Standard env vars
+    if let Some(token) = std::env::var("MISE_FORGEJO_TOKEN")
+        .ok()
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+    {
+        return Some((token, TokenSource::EnvVar("MISE_FORGEJO_TOKEN")));
+    }
+    if let Some(token) = env::FORGEJO_TOKEN
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+    {
+        return Some((token.to_string(), TokenSource::EnvVar("FORGEJO_TOKEN")));
+    }
+
+    // 3. credential_command
+    let credential_command = &settings.forgejo.credential_command;
+    if !credential_command.is_empty()
+        && let Some(token) =
+            tokens::get_credential_command_token("forgejo", credential_command, host)
+    {
+        return Some((token, TokenSource::CredentialCommand));
+    }
+
+    // 4. forgejo_tokens.toml
+    if let Some(token) = MISE_FORGEJO_TOKENS.get(host) {
+        return Some((token.clone(), TokenSource::TokensFile));
+    }
+
+    // 5. fj CLI keys.json
+    if settings.forgejo.fj_cli_tokens
+        && let Some(token) = FJ_HOSTS.get(host)
+    {
+        return Some((token.clone(), TokenSource::FjCli));
+    }
+
+    // 6. git credential fill
+    if settings.forgejo.use_git_credentials
+        && let Some(token) = tokens::get_git_credential_token("forgejo", host)
+    {
+        return Some((token, TokenSource::GitCredential));
+    }
+
+    None
+}
+
+/// Returns true if the given hostname has a token available from a non-env-var source.
+pub fn is_forgejo_host(host: &str) -> bool {
+    MISE_FORGEJO_TOKENS.contains_key(host)
+        || (Settings::get().forgejo.fj_cli_tokens && FJ_HOSTS.contains_key(host))
+}
+
+// ── forgejo_tokens.toml ────────────────────────────────────────────
+
+static MISE_FORGEJO_TOKENS: Lazy<HashMap<String, String>> = Lazy::new(|| {
+    tokens::read_tokens_toml("forgejo_tokens.toml", "forgejo_tokens.toml").unwrap_or_default()
+});
+
+// ── fj CLI keys.json ──────────────────────────────────────────────
+
+static FJ_HOSTS: Lazy<HashMap<String, String>> = Lazy::new(|| read_fj_hosts().unwrap_or_default());
+
+fn fj_keys_path() -> Option<PathBuf> {
+    // Linux/XDG: $XDG_DATA_HOME/forgejo-cli/keys.json
+    let xdg_path = env::XDG_DATA_HOME.join("forgejo-cli/keys.json");
+    if xdg_path.exists() {
+        return Some(xdg_path);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let macos_path = dirs::HOME.join("Library/Application Support/forgejo-cli/keys.json");
+        if macos_path.exists() {
+            return Some(macos_path);
+        }
+    }
+
+    Some(xdg_path)
+}
+
+fn read_fj_hosts() -> Option<HashMap<String, String>> {
+    let path = fj_keys_path()?;
+    let contents = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => {
+            trace!("fj keys.json not readable at {}: {e}", path.display());
+            return None;
+        }
+    };
+    match parse_fj_keys(&contents) {
+        Some(tokens) => Some(tokens),
+        None => {
+            debug!("failed to parse fj keys.json at {}", path.display());
+            None
+        }
+    }
+}
+
+/// Parse `fj` CLI `keys.json` into a host→token map.
+///
+/// The file schema is:
+/// ```json
+/// {
+///   "hosts": {
+///     "codeberg.org": { "type": "Application", "name": "user", "token": "abc" },
+///     "codeberg.org": { "type": "OAuth", "name": "user", "token": "abc", ... }
+///   }
+/// }
+/// ```
+fn parse_fj_keys(contents: &str) -> Option<HashMap<String, String>> {
+    #[derive(serde::Deserialize)]
+    struct FjKeys {
+        hosts: Option<HashMap<String, FjLogin>>,
+    }
+    #[derive(serde::Deserialize)]
+    struct FjLogin {
+        token: Option<String>,
+    }
+    let keys: FjKeys = serde_json::from_str(contents).ok()?;
+    let hosts = keys.hosts?;
+    let map: HashMap<String, String> = hosts
+        .into_iter()
+        .filter_map(|(host, login)| login.token.map(|t| (host, t)))
+        .collect();
+    if map.is_empty() { None } else { Some(map) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_forgejo_tokens() {
+        let toml = r#"
+[tokens."codeberg.org"]
+token = "abc123"
+
+[tokens."forgejo.mycompany.com"]
+token = "def456"
+"#;
+        let result = tokens::parse_tokens_toml(toml).unwrap();
+        assert_eq!(result.get("codeberg.org").unwrap(), "abc123");
+        assert_eq!(result.get("forgejo.mycompany.com").unwrap(), "def456");
+    }
+
+    #[test]
+    fn test_parse_forgejo_tokens_empty() {
+        assert!(tokens::parse_tokens_toml("").is_none());
+    }
+
+    #[test]
+    fn test_parse_forgejo_tokens_empty_tokens() {
+        let toml = "[tokens]\n";
+        let result = tokens::parse_tokens_toml(toml).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_forgejo_tokens_missing_token_field() {
+        let toml = r#"
+[tokens."codeberg.org"]
+something_else = "value"
+"#;
+        let result = tokens::parse_tokens_toml(toml).unwrap();
+        assert!(result.is_empty());
+    }
 }

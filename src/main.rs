@@ -55,6 +55,7 @@ mod gpg;
 mod hash;
 mod hook_env;
 mod hooks;
+mod tokens;
 mod http;
 mod install_context;
 mod lock_file;
