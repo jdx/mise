@@ -138,8 +138,7 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     let mut headers = HeaderMap::new();
     let url = url.into_url().unwrap();
 
-    let lookup_host = canonical_host(url.host_str()).unwrap_or("codeberg.org");
-    if let Some((token, _source)) = resolve_token(lookup_host) {
+    if let Some((token, _source)) = resolve_token(url.host_str().unwrap_or("codeberg.org")) {
         headers.insert(
             reqwest::header::AUTHORIZATION,
             HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
@@ -171,10 +170,6 @@ impl fmt::Display for TokenSource {
     }
 }
 
-fn canonical_host(host: Option<&str>) -> Option<&str> {
-    host
-}
-
 /// Resolve the Forgejo token for the given hostname.
 ///
 /// Priority:
@@ -197,19 +192,14 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     }
 
     // 2. Standard env vars
-    if let Some(token) = std::env::var("MISE_FORGEJO_TOKEN")
-        .ok()
-        .map(|t| t.trim().to_string())
-        .filter(|t| !t.is_empty())
-    {
-        return Some((token, TokenSource::EnvVar("MISE_FORGEJO_TOKEN")));
-    }
-    if let Some(token) = env::FORGEJO_TOKEN
-        .as_deref()
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-    {
-        return Some((token.to_string(), TokenSource::EnvVar("FORGEJO_TOKEN")));
+    for var_name in &["MISE_FORGEJO_TOKEN", "FORGEJO_TOKEN"] {
+        if let Some(tok) = std::env::var(var_name)
+            .ok()
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+        {
+            return Some((tok, TokenSource::EnvVar(var_name)));
+        }
     }
 
     // 3. credential_command
@@ -268,7 +258,8 @@ fn fj_keys_path() -> Option<PathBuf> {
 
     #[cfg(target_os = "macos")]
     {
-        let macos_path = dirs::HOME.join("Library/Application Support/forgejo-cli/keys.json");
+        let macos_path =
+            dirs::HOME.join("Library/Application Support/Cyborus.forgejo-cli/keys.json");
         if macos_path.exists() {
             return Some(macos_path);
         }

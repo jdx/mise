@@ -299,6 +299,14 @@ cmd fmt help="Formats mise.toml" {
     flag "-c --check" help="Check if the configs are formatted, no formatting is done"
     flag "-s --stdin" help="Read config from stdin and write its formatted version into stdout"
 }
+cmd forgejo subcommand_required=#true help="Forgejo related commands" {
+    cmd token help="Display the Forgejo token mise will use for a given host" {
+        long_help "Display the Forgejo token mise will use for a given host\n\nShows which token source mise would use, useful for debugging\nauthentication issues. The token is masked by default."
+        after_long_help "Examples:\n\n    $ mise forgejo token\n    codeberg.org: a180…61f6 (source: FORGEJO_TOKEN)\n\n    $ mise forgejo token --unmask\n    codeberg.org: a18099ca69064be387fbe37b8ad1d333758361f6 (source: FORGEJO_TOKEN)\n\n    $ mise forgejo token forgejo.mycompany.com\n    forgejo.mycompany.com: (none)\n"
+        flag --unmask help="Show the full unmasked token"
+        arg "[HOST]" help="Forgejo hostname" required=#false default=codeberg.org
+    }
+}
 cmd generate subcommand_required=#true help="Generate files for various tools/services" {
     alias gen
     alias g hide=#true
@@ -436,6 +444,14 @@ cmd github subcommand_required=#true help="GitHub related commands" {
         after_long_help "Examples:\n\n    $ mise github token\n    github.com: ghp_…xxxx (source: GITHUB_TOKEN)\n\n    $ mise github token --unmask\n    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)\n\n    $ mise github token github.mycompany.com\n    github.mycompany.com: (none)\n"
         flag --unmask help="Show the full unmasked token"
         arg "[HOST]" help="GitHub hostname" required=#false default=github.com
+    }
+}
+cmd gitlab subcommand_required=#true help="GitLab related commands" {
+    cmd token help="Display the GitLab token mise will use for a given host" {
+        long_help "Display the GitLab token mise will use for a given host\n\nShows which token source mise would use, useful for debugging\nauthentication issues. The token is masked by default."
+        after_long_help "Examples:\n\n    $ mise gitlab token\n    gitlab.com: glpa…xxxx (source: GITLAB_TOKEN)\n\n    $ mise gitlab token --unmask\n    gitlab.com: glpat-xxxxxxxxxxxx (source: GITLAB_TOKEN)\n\n    $ mise gitlab token gitlab.mycompany.com\n    gitlab.mycompany.com: (none)\n"
+        flag --unmask help="Show the full unmasked token"
+        arg "[HOST]" help="GitLab hostname" required=#false default=gitlab.com
     }
 }
 cmd global hide=#true help="Sets/gets the global tool version(s)" {

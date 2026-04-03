@@ -635,7 +635,7 @@ description = "Read Forgejo tokens from the fj CLI config."
 docs = """
 When enabled, mise will read tokens from the fj CLI keys file
 (`~/.local/share/forgejo-cli/keys.json` on Linux,
-`~/Library/Application Support/forgejo-cli/keys.json` on macOS).
+`~/Library/Application Support/Cyborus.forgejo-cli/keys.json` on macOS).
 This is used as a fallback when no `FORGEJO_TOKEN` or `MISE_FORGEJO_TOKEN`
 environment variable is set.
 

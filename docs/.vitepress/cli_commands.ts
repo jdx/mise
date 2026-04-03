@@ -99,6 +99,14 @@ export const commands: { [key: string]: Command } = {
   fmt: {
     hide: false,
   },
+  forgejo: {
+    hide: false,
+    subcommands: {
+      token: {
+        hide: false,
+      },
+    },
+  },
   generate: {
     hide: false,
     subcommands: {
@@ -129,6 +137,14 @@ export const commands: { [key: string]: Command } = {
     },
   },
   github: {
+    hide: false,
+    subcommands: {
+      token: {
+        hide: false,
+      },
+    },
+  },
+  gitlab: {
     hide: false,
     subcommands: {
       token: {

@@ -446,7 +446,7 @@ fn host_auth_headers(url: &Url) -> HeaderMap {
         return crate::github::get_headers(url.as_str());
     }
 
-    let is_gitlab = host == "api.gitlab.com" || host == "gitlab.com" || crate::gitlab::is_gitlab_host(host);
+    let is_gitlab = host == "gitlab.com" || crate::gitlab::is_gitlab_host(host);
     if is_gitlab {
         return crate::gitlab::get_headers(url.as_str());
     }

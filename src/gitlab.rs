@@ -241,7 +241,7 @@ fn cache_dir() -> PathBuf {
 pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     let mut headers = HeaderMap::new();
     let url = url.into_url().unwrap();
-    let lookup_host = canonical_host(url.host_str()).unwrap_or("gitlab.com");
+    let lookup_host = url.host_str().unwrap_or("gitlab.com");
 
     if let Some((token, _source)) = resolve_token(lookup_host) {
         headers.insert(
@@ -275,13 +275,6 @@ impl fmt::Display for TokenSource {
     }
 }
 
-fn canonical_host(host: Option<&str>) -> Option<&str> {
-    match host {
-        Some("api.gitlab.com") => Some("gitlab.com"),
-        other => other,
-    }
-}
-
 /// Resolve the GitLab token for the given hostname.
 ///
 /// Priority:
@@ -293,13 +286,7 @@ fn canonical_host(host: Option<&str>) -> Option<&str> {
 /// 6. `git credential fill` (if enabled)
 pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     let settings = Settings::get();
-    let lookup_host = canonical_host(Some(host)).unwrap_or(host);
-    let is_gitlab_com = lookup_host == "gitlab.com";
-    let lookup_host = if host == "api.gitlab.com" {
-        "gitlab.com"
-    } else {
-        host
-    };
+    let is_gitlab_com = host == "gitlab.com";
 
     // 1. Enterprise token (non-gitlab.com only)
     if !is_gitlab_com && let Some(token) = env::MISE_GITLAB_ENTERPRISE_TOKEN.as_deref() {
@@ -324,26 +311,26 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     let credential_command = &settings.gitlab.credential_command;
     if !credential_command.is_empty()
         && let Some(token) =
-            tokens::get_credential_command_token("gitlab", credential_command, lookup_host)
+            tokens::get_credential_command_token("gitlab", credential_command, host)
     {
         return Some((token, TokenSource::CredentialCommand));
     }
 
     // 4. gitlab_tokens.toml
-    if let Some(token) = MISE_GITLAB_TOKENS.get(lookup_host) {
+    if let Some(token) = MISE_GITLAB_TOKENS.get(host) {
         return Some((token.clone(), TokenSource::TokensFile));
     }
 
     // 5. glab CLI config.yml
     if settings.gitlab.glab_cli_tokens
-        && let Some(token) = GLAB_HOSTS.get(lookup_host)
+        && let Some(token) = GLAB_HOSTS.get(host)
     {
         return Some((token.clone(), TokenSource::GlabCli));
     }
 
     // 6. git credential fill
     if settings.gitlab.use_git_credentials
-        && let Some(token) = tokens::get_git_credential_token("gitlab", lookup_host)
+        && let Some(token) = tokens::get_git_credential_token("gitlab", host)
     {
         return Some((token, TokenSource::GitCredential));
     }

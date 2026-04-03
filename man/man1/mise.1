@@ -217,6 +217,12 @@ Execute a command with tool(s) set
 \fBfmt\fR
 Formats mise.toml
 .TP
+\fBforgejo\fR
+Forgejo related commands
+.TP
+\fBforgejo token\fR
+Display the Forgejo token mise will use for a given host
+.TP
 \fBgenerate\fR
 Generate files for various tools/services
 .RS
@@ -255,6 +261,12 @@ GitHub related commands
 .TP
 \fBgithub token\fR
 Display the GitHub token mise will use for a given host
+.TP
+\fBgitlab\fR
+GitLab related commands
+.TP
+\fBgitlab token\fR
+Display the GitLab token mise will use for a given host
 .TP
 \fBimplode\fR
 Removes mise CLI and all related data
@@ -966,6 +978,27 @@ Check if the configs are formatted, no formatting is done
 .TP
 \fB\-s, \-\-stdin\fR
 Read config from stdin and write its formatted version into stdout
+.SH "MISE FORGEJO TOKEN"
+Display the Forgejo token mise will use for a given host
+
+Shows which token source mise would use, useful for debugging
+authentication issues. The token is masked by default.
+.PP
+\fBUsage:\fR mise forgejo token [OPTIONS] [<HOST>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-unmask\fR
+Show the full unmasked token
+\fBArguments:\fR
+.PP
+.TP
+\fB<HOST>\fR
+Forgejo hostname
+.RS
+\fIDefault: \fRcodeberg.org
+.RE
 .SH "MISE GENERATE BOOTSTRAP"
 Generate a script to download+execute mise
 
@@ -1239,6 +1272,27 @@ Show the full unmasked token
 GitHub hostname
 .RS
 \fIDefault: \fRgithub.com
+.RE
+.SH "MISE GITLAB TOKEN"
+Display the GitLab token mise will use for a given host
+
+Shows which token source mise would use, useful for debugging
+authentication issues. The token is masked by default.
+.PP
+\fBUsage:\fR mise gitlab token [OPTIONS] [<HOST>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-unmask\fR
+Show the full unmasked token
+\fBArguments:\fR
+.PP
+.TP
+\fB<HOST>\fR
+GitLab hostname
+.RS
+\fIDefault: \fRgitlab.com
 .RE
 .SH "MISE IMPLODE"
 Removes mise CLI and all related data

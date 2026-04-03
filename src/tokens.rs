@@ -157,13 +157,16 @@ pub fn get_git_credential_token(provider: &str, host: &str) -> Option<String> {
 }
 
 pub fn mask_token(token: &str) -> String {
-    let len = token.len();
+    let len = token.chars().count();
     if len <= 4 {
         "*".repeat(len)
     } else if len <= 8 {
-        format!("{}…", &token[..4])
+        let prefix: String = token.chars().take(4).collect();
+        format!("{prefix}…")
     } else {
-        format!("{}…{}", &token[..4], &token[len - 4..])
+        let prefix: String = token.chars().take(4).collect();
+        let suffix: String = token.chars().skip(len - 4).collect();
+        format!("{prefix}…{suffix}")
     }
 }
 
