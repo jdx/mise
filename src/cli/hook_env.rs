@@ -432,17 +432,17 @@ impl HookEnv {
         }
         for path in to_remove {
             diff.remove_path_from_old_and_new(path)
-                .inspect_err(|err| debug!("Failed to remove path from diff: {:?}", err))?;
+                .inspect_err(|err| debug!("Failed to remove path from diff: '{:?}'", err))?;
         }
         for install in installs {
             diff.add_path_to_old_and_new(install)
-                .inspect_err(|err| debug!("Failed to add path to diff: {:?}", err))?;
+                .inspect_err(|err| debug!("Failed to add path to diff: '{:?}'", err))?;
         }
 
         Ok(Some(EnvDiffOperation::Change(
             "DIRENV_DIFF".into(),
             diff.dump()
-                .inspect_err(|err| debug!("Failed to dump diff: {:?}", err))?,
+                .inspect_err(|err| debug!("Failed to dump diff: '{:?}'", err))?,
         )))
     }
 
