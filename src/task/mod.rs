@@ -331,6 +331,34 @@ pub struct Task {
     #[serde(skip)]
     pub remote_file_source: Option<String>,
 
+    /// Block reads, writes, network, and env vars
+    #[serde(default)]
+    pub deny_all: bool,
+    /// Block filesystem reads
+    #[serde(default)]
+    pub deny_read: bool,
+    /// Block all filesystem writes
+    #[serde(default)]
+    pub deny_write: bool,
+    /// Block all network access
+    #[serde(default)]
+    pub deny_net: bool,
+    /// Block env var inheritance
+    #[serde(default)]
+    pub deny_env: bool,
+    /// Allow reads from specific paths
+    #[serde(default)]
+    pub allow_read: Vec<std::path::PathBuf>,
+    /// Allow writes to specific paths
+    #[serde(default)]
+    pub allow_write: Vec<std::path::PathBuf>,
+    /// Allow network to specific hosts
+    #[serde(default)]
+    pub allow_net: Vec<String>,
+    /// Allow specific env vars through
+    #[serde(default)]
+    pub allow_env: Vec<String>,
+
     /// Name of the task template to extend (requires experimental = true)
     #[serde(default)]
     pub extends: Option<String>,
@@ -1334,6 +1362,15 @@ impl Default for Task {
             usage: "".to_string(),
             timeout: None,
             remote_file_source: None,
+            deny_all: false,
+            deny_read: false,
+            deny_write: false,
+            deny_net: false,
+            deny_env: false,
+            allow_read: vec![],
+            allow_write: vec![],
+            allow_net: vec![],
+            allow_env: vec![],
             extends: None,
             show_args_in_prefix: false,
         }

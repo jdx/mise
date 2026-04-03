@@ -269,6 +269,23 @@ cmd exec help="Execute a command with tool(s) set" {
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg <JOBS>
     }
+    flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)" var=#true {
+        arg <VAR>
+    }
+    flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)\nmacOS only in v1; on Linux falls back to allowing all network" var=#true {
+        arg <HOST>
+    }
+    flag --allow-read help="[experimental] Allow reads from specific path (implies --deny-read for everything else)" var=#true {
+        arg <PATH>
+    }
+    flag --allow-write help="[experimental] Allow writes to specific path (implies --deny-write for everything else)" var=#true {
+        arg <PATH>
+    }
+    flag --deny-all help="[experimental] Block reads, writes, network, and env vars"
+    flag --deny-env help="[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
+    flag --deny-net help="[experimental] Block all network access"
+    flag --deny-read help="[experimental] Block filesystem reads (system libs and tool dirs still accessible)"
+    flag --deny-write help="[experimental] Block all filesystem writes"
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-prepare help="Skip automatic dependency preparation"
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
@@ -735,6 +752,23 @@ cmd run restart_token=::: help="Run task(s)" {
     flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
         arg <TOOL@VERSION>
     }
+    flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)" var=#true {
+        arg <VAR>
+    }
+    flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)" var=#true {
+        arg <HOST>
+    }
+    flag --allow-read help="[experimental] Allow reads from specific path (implies --deny-read for everything else)" var=#true {
+        arg <PATH>
+    }
+    flag --allow-write help="[experimental] Allow writes to specific path (implies --deny-write for everything else)" var=#true {
+        arg <PATH>
+    }
+    flag --deny-all help="[experimental] Block reads, writes, network, and env vars"
+    flag --deny-env help="[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
+    flag --deny-net help="[experimental] Block all network access"
+    flag --deny-read help="[experimental] Block filesystem reads (system libs and tool dirs still accessible)"
+    flag --deny-write help="[experimental] Block all filesystem writes"
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-cache help="Do not use cache on remote tasks"
     flag --no-prepare help="Skip automatic dependency preparation"
@@ -1049,6 +1083,23 @@ cmd tasks help="Manage tasks" {
         flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
             arg <TOOL@VERSION>
         }
+        flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)" var=#true {
+            arg <VAR>
+        }
+        flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)" var=#true {
+            arg <HOST>
+        }
+        flag --allow-read help="[experimental] Allow reads from specific path (implies --deny-read for everything else)" var=#true {
+            arg <PATH>
+        }
+        flag --allow-write help="[experimental] Allow writes to specific path (implies --deny-write for everything else)" var=#true {
+            arg <PATH>
+        }
+        flag --deny-all help="[experimental] Block reads, writes, network, and env vars"
+        flag --deny-env help="[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
+        flag --deny-net help="[experimental] Block all network access"
+        flag --deny-read help="[experimental] Block filesystem reads (system libs and tool dirs still accessible)"
+        flag --deny-write help="[experimental] Block all filesystem writes"
         flag --fresh-env help="Bypass the environment cache and recompute the environment"
         flag --no-cache help="Do not use cache on remote tasks"
         flag --no-prepare help="Skip automatic dependency preparation"

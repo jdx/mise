@@ -134,6 +134,42 @@ pub struct Run {
     #[clap(skip)]
     pub is_linear: bool,
 
+    /// [experimental] Allow specific env var through (implies --deny-env for everything else)
+    #[clap(long, value_name = "VAR", verbatim_doc_comment)]
+    pub allow_env: Vec<String>,
+
+    /// [experimental] Allow network to specific host (implies --deny-net for everything else)
+    #[clap(long, value_name = "HOST", verbatim_doc_comment)]
+    pub allow_net: Vec<String>,
+
+    /// [experimental] Allow reads from specific path (implies --deny-read for everything else)
+    #[clap(long, value_name = "PATH", verbatim_doc_comment)]
+    pub allow_read: Vec<std::path::PathBuf>,
+
+    /// [experimental] Allow writes to specific path (implies --deny-write for everything else)
+    #[clap(long, value_name = "PATH", verbatim_doc_comment)]
+    pub allow_write: Vec<std::path::PathBuf>,
+
+    /// [experimental] Block reads, writes, network, and env vars
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_all: bool,
+
+    /// [experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_env: bool,
+
+    /// [experimental] Block all network access
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_net: bool,
+
+    /// [experimental] Block filesystem reads (system libs and tool dirs still accessible)
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_read: bool,
+
+    /// [experimental] Block all filesystem writes
+    #[clap(long, verbatim_doc_comment)]
+    pub deny_write: bool,
+
     /// Bypass the environment cache and recompute the environment
     #[clap(long)]
     pub fresh_env: bool,
@@ -583,6 +619,16 @@ impl Run {
             continue_on_error: self.continue_on_error,
             dry_run: self.dry_run,
             skip_deps: self.skip_deps,
+            sandbox: crate::sandbox::SandboxConfig {
+                deny_read: self.deny_all || self.deny_read,
+                deny_write: self.deny_all || self.deny_write,
+                deny_net: self.deny_all || self.deny_net,
+                deny_env: self.deny_all || self.deny_env,
+                allow_read: self.allow_read.clone(),
+                allow_write: self.allow_write.clone(),
+                allow_net: self.allow_net.clone(),
+                allow_env: self.allow_env.clone(),
+            },
         };
         self.executor = Some(crate::task::task_executor::TaskExecutor::new(
             self.context_builder.clone(),

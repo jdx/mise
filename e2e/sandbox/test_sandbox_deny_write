@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# Test that --deny-write prevents writing files
+# Note: tests run under /tmp (always writable), so we create a test dir outside /tmp.
+
+SANDBOX_DIR="/var/tmp/mise_sandbox_test_$$"
+mkdir -p "$SANDBOX_DIR"
+trap 'rm -rf "$SANDBOX_DIR"' EXIT
+
+# With --deny-write, writing outside /tmp should fail
+assert_fail "mise x --deny-write -- bash -c 'touch $SANDBOX_DIR/blocked 2>/dev/null'"
+
+# With --allow-write, writing to allowed path should work
+assert_succeed "mise x --allow-write=$SANDBOX_DIR -- bash -c 'touch $SANDBOX_DIR/ok 2>/dev/null'"

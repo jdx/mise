@@ -75,6 +75,7 @@ mod redactions;
 mod registry;
 pub(crate) mod result;
 mod runtime_symlinks;
+mod sandbox;
 mod semver;
 mod shell;
 mod shims;
