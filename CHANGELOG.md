@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026.4.3](https://github.com/jdx/mise/compare/v2026.4.2..v2026.4.3) - 2026-04-03
+
+### 🐛 Bug Fixes
+
+- **(exec)** fix seccomp build on armv7 with i32-to-i64 syscall cast by @jdx in [#8869](https://github.com/jdx/mise/pull/8869)
+
 ## [2026.4.2](https://github.com/jdx/mise/compare/v2026.4.1..v2026.4.2) - 2026-04-03
 
 ### 🚀 Features
