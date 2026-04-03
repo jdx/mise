@@ -235,22 +235,22 @@ Backend plugins receive context through the `ctx` parameter passed to each hook 
 
 ### BackendInstall Context
 
-| Variable            | Description                 | Example                                                             |
-| ------------------- | --------------------------- | ------------------------------------------------------------------- |
-| `ctx.tool`          | The tool name               | `"prettier"`                                                        |
-| `ctx.version`       | The requested version       | `"3.0.0"`                                                           |
+| Variable            | Description                 | Example                                                            |
+| ------------------- | --------------------------- | ------------------------------------------------------------------ |
+| `ctx.tool`          | The tool name               | `"prettier"`                                                       |
+| `ctx.version`       | The requested version       | `"3.0.0"`                                                          |
 | `ctx.install_path`  | Installation directory      | `"/home/user/.local/share/mise/installs/vfox-npm-prettier/3.0.0"`  |
 | `ctx.download_path` | Download directory          | `"/home/user/.local/share/mise/downloads/vfox-npm-prettier/3.0.0"` |
-| `ctx.options`       | Tool options from mise.toml | `{exe = "rg"}`                                                      |
+| `ctx.options`       | Tool options from mise.toml | `{exe = "rg"}`                                                     |
 
 ### BackendExecEnv Context
 
-| Variable           | Description                 | Example                                                            |
-| ------------------ | --------------------------- | ------------------------------------------------------------------ |
-| `ctx.tool`         | The tool name               | `"prettier"`                                                       |
-| `ctx.version`      | The requested version       | `"3.0.0"`                                                          |
+| Variable           | Description                 | Example                                                           |
+| ------------------ | --------------------------- | ----------------------------------------------------------------- |
+| `ctx.tool`         | The tool name               | `"prettier"`                                                      |
+| `ctx.version`      | The requested version       | `"3.0.0"`                                                         |
 | `ctx.install_path` | Installation directory      | `"/home/user/.local/share/mise/installs/vfox-npm-prettier/3.0.0"` |
-| `ctx.options`      | Tool options from mise.toml | `{exe = "rg"}`                                                     |
+| `ctx.options`      | Tool options from mise.toml | `{exe = "rg"}`                                                    |
 
 > [!TIP]
 > Option values preserve their TOML types as native Lua equivalents. Strings remain strings,

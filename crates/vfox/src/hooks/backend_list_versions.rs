@@ -62,8 +62,14 @@ mod tests {
     #[test]
     fn test_context_construction_and_clone() {
         let mut options = IndexMap::new();
-        options.insert("key1".to_string(), toml::Value::String("value1".to_string()));
-        options.insert("key2".to_string(), toml::Value::String("value2".to_string()));
+        options.insert(
+            "key1".to_string(),
+            toml::Value::String("value1".to_string()),
+        );
+        options.insert(
+            "key2".to_string(),
+            toml::Value::String("value2".to_string()),
+        );
 
         let ctx = BackendListVersionsContext {
             tool: "test-tool".to_string(),
@@ -72,8 +78,14 @@ mod tests {
 
         assert_eq!(ctx.tool, "test-tool");
         assert_eq!(ctx.options.len(), 2);
-        assert_eq!(ctx.options["key1"], toml::Value::String("value1".to_string()));
-        assert_eq!(ctx.options["key2"], toml::Value::String("value2".to_string()));
+        assert_eq!(
+            ctx.options["key1"],
+            toml::Value::String("value1".to_string())
+        );
+        assert_eq!(
+            ctx.options["key2"],
+            toml::Value::String("value2".to_string())
+        );
 
         let cloned = ctx.clone();
         assert_eq!(cloned.tool, "test-tool");
@@ -95,7 +107,10 @@ mod tests {
     fn test_into_lua_serialization() {
         let lua = Lua::new();
         let mut options = IndexMap::new();
-        options.insert("arch".to_string(), toml::Value::String("x86_64".to_string()));
+        options.insert(
+            "arch".to_string(),
+            toml::Value::String("x86_64".to_string()),
+        );
         options.insert("os".to_string(), toml::Value::String("linux".to_string()));
 
         let ctx = BackendListVersionsContext {
@@ -141,7 +156,10 @@ mod tests {
                 toml::Value::String("conda-forge".to_string()),
             ]),
         );
-        options.insert("name".to_string(), toml::Value::String("my-tool".to_string()));
+        options.insert(
+            "name".to_string(),
+            toml::Value::String("my-tool".to_string()),
+        );
 
         let ctx = BackendListVersionsContext {
             tool: "test-tool".to_string(),
