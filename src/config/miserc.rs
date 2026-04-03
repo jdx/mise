@@ -16,7 +16,7 @@ use crate::config::settings::MisercSettings;
 use crate::dirs;
 use crate::env;
 use crate::file;
-use crate::tera::get_miserc_tera;
+use crate::tera::{get_miserc_tera, take_tera_accessed_files};
 
 static MISERC: OnceLock<MisercSettings> = OnceLock::new();
 
@@ -26,6 +26,11 @@ static MISERC: OnceLock<MisercSettings> = OnceLock::new();
 pub fn init() -> Result<()> {
     let settings = load_miserc_settings()?;
     let _ = MISERC.set(settings);
+    // Discard any files tracked via hash_file/file_size/last_modified during miserc
+    // template rendering. Those filters write to TERA_ACCESSED_FILES (used by hook-env
+    // for file-watch detection), but miserc is loaded before config and should not
+    // contribute to that list.
+    let _ = take_tera_accessed_files();
     Ok(())
 }
 
@@ -84,9 +89,10 @@ fn render_miserc_template(
     let mut context = Context::new();
     context.insert("env", &*env::PRISTINE_ENV);
     context.insert("config_root", config_root);
-    if let Ok(dir) = std::env::current_dir() {
-        context.insert("cwd", &dir);
-    }
+    match std::env::current_dir() {
+        Ok(dir) => context.insert("cwd", &dir),
+        Err(e) => debug!("miserc template: could not determine cwd, `cwd` will be unavailable: {e}"),
+    };
     context.insert("xdg_cache_home", &*env::XDG_CACHE_HOME);
     context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
     context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
@@ -239,9 +245,12 @@ ceiling_paths = ["/home/user"]
 
     #[test]
     fn test_render_miserc_template_env_var() {
-        // env.HOME should expand to the actual HOME env var
+        // env.HOME should expand using PRISTINE_ENV — the same source the template uses
         let mut tera = None;
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+        let home = env::PRISTINE_ENV
+            .get("HOME")
+            .cloned()
+            .unwrap_or_else(|| "/root".to_string());
         let content = r#"ceiling_paths = ["{{ env.HOME }}"]"#;
         let result = render_miserc_template(&mut tera, content, Path::new("/some/dir"));
         assert!(
