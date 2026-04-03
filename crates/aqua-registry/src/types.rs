@@ -328,7 +328,10 @@ impl AquaPackage {
         } else if os == "windows" {
             let mut ctx = HashMap::default();
             let asset = self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?;
-            if self.complete_windows_ext && self.format(v, os, arch)? == "raw" && !asset.ends_with(".exe") {
+            if self.complete_windows_ext
+                && self.format(v, os, arch)? == "raw"
+                && !asset.ends_with(".exe")
+            {
                 strs.insert(format!("{asset}.exe"));
             } else {
                 strs.insert(asset);
@@ -337,7 +340,10 @@ impl AquaPackage {
                 ctx.insert("Arch".to_string(), "amd64".to_string());
                 strs.insert(self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?);
                 let asset = self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?;
-                if self.complete_windows_ext && self.format(v, os, arch)? == "raw" && !asset.ends_with(".exe") {
+                if self.complete_windows_ext
+                    && self.format(v, os, arch)? == "raw"
+                    && !asset.ends_with(".exe")
+                {
                     strs.insert(format!("{asset}.exe"));
                 } else {
                     strs.insert(asset);
@@ -350,7 +356,11 @@ impl AquaPackage {
     /// Get the URL for this package and version
     pub fn url(&self, v: &str, os: &str, arch: &str) -> Result<String> {
         let mut url = self.url.clone();
-        if os == "windows" && self.complete_windows_ext && self.format(v, os, arch)? == "raw" && !url.ends_with(".exe") {
+        if os == "windows"
+            && self.complete_windows_ext
+            && self.format(v, os, arch)? == "raw"
+            && !url.ends_with(".exe")
+        {
             url.push_str(".exe");
         }
         self.parse_aqua_str(&url, v, &Default::default(), os, arch)
