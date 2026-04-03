@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+# Test that --deny-env filters environment variables
+export SANDBOX_TEST_VAR="secret_value"
+
+# Without sandbox, env var is visible
+assert "mise x -- bash -c 'echo \$SANDBOX_TEST_VAR'" "secret_value"
+
+# With --deny-env, only essential vars pass through
+# shellcheck disable=SC2016
+result=$(mise x --deny-env -- bash -c 'echo "${SANDBOX_TEST_VAR:-empty}"')
+assert "echo $result" "empty"
+
+# With --allow-env, specified var passes through
+assert "mise x --allow-env=SANDBOX_TEST_VAR -- bash -c 'echo \$SANDBOX_TEST_VAR'" "secret_value"

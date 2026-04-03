@@ -4,6 +4,7 @@
 # a circular dependency during environment resolution while creating Python venv.
 # fixes https://github.com/jdx/mise/discussions/7059
 set -euo pipefail
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
 
 cat >.mise.toml <<EOF
 [tools]

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# Test that --deny-all blocks writes and env vars
+export SANDBOX_TEST_SECRET="should_not_see"
+
+SANDBOX_DIR="/var/tmp/mise_sandbox_deny_all_$$"
+mkdir -p "$SANDBOX_DIR"
+trap 'rm -rf "$SANDBOX_DIR"' EXIT
+
+# --deny-all should block writes outside /tmp
+assert_fail "mise x --deny-all -- bash -c 'touch $SANDBOX_DIR/blocked 2>/dev/null'"
+
+# --deny-all should filter env vars (test via --deny-env since --deny-all
+# on macOS can abort the process, making subshell capture unreliable)
+# shellcheck disable=SC2016
+result=$(mise x --deny-env -- bash -c 'echo "${SANDBOX_TEST_SECRET:-empty}"')
+assert "echo $result" "empty"

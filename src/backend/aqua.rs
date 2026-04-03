@@ -479,6 +479,20 @@ impl Backend for AquaBackend {
         }
 
         let install_path = tv.install_path();
+
+        // For linked versions (external symlinks created via `mise link`),
+        // skip aqua registry lookup — the linked install has its own layout.
+        if let Ok(Some(target)) = file::resolve_symlink(&install_path)
+            && target.is_absolute()
+        {
+            let bin = install_path.join("bin");
+            return Ok(if bin.is_dir() {
+                vec![bin]
+            } else {
+                vec![install_path]
+            });
+        }
+
         let cache: CacheManager<Vec<PathBuf>> =
             CacheManagerBuilder::new(tv.cache_path().join("bin_paths.msgpack.z"))
                 .with_fresh_file(install_path.clone())
@@ -503,7 +517,7 @@ impl Backend for AquaBackend {
                     .into_iter()
                     .unique()
                     .filter(|p| p.exists())
-                    .map(|p| p.strip_prefix(&install_path).unwrap().to_path_buf())
+                    .filter_map(|p| p.strip_prefix(&install_path).ok().map(|p| p.to_path_buf()))
                     .collect())
             })
             .await?
@@ -1080,7 +1094,12 @@ impl AquaBackend {
                 .get(&platform_key)
                 .is_none_or(|pi| pi.checksum.is_none());
 
-            let needs_cosign = !skip_cosign;
+            let needs_cosign = !skip_cosign
+                && Settings::get().aqua.cosign
+                && checksum
+                    .cosign
+                    .as_ref()
+                    .is_some_and(|c| c.enabled != Some(false));
             // Short-circuit cosign if a higher-priority mechanism already recorded provenance.
             // Safe to cache: provenance is only modified by the single-threaded verification
             // methods above (attestations, slsa, minisign), all of which have completed by now.
@@ -1107,7 +1126,7 @@ impl AquaBackend {
                     .await?;
             }
 
-            if !skip_cosign && !cosign_already_verified && checksum_path.exists() {
+            if needs_cosign && !cosign_already_verified && checksum_path.exists() {
                 self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
                     .await?;
             }

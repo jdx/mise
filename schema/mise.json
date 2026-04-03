@@ -739,6 +739,11 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "credential_command": {
+              "default": "",
+              "description": "Shell command to run to obtain a GitHub token for mise.",
+              "type": "string"
+            },
             "gh_cli_tokens": {
               "default": true,
               "description": "Read GitHub tokens from the gh CLI's hosts.yml config.",
@@ -752,6 +757,11 @@
             "slsa": {
               "default": true,
               "description": "Enable SLSA provenance verification for github backend tools.",
+              "type": "boolean"
+            },
+            "use_git_credentials": {
+              "default": false,
+              "description": "Use git credential helpers to obtain GitHub tokens.",
               "type": "boolean"
             }
           }
@@ -1110,6 +1120,10 @@
             "default_packages_file": {
               "description": "Path to a file containing default python packages to install when installing a python version.",
               "type": "string"
+            },
+            "github_attestations": {
+              "description": "Enable GitHub Artifact Attestations verification for precompiled Python binaries.",
+              "type": "boolean"
             },
             "patch_url": {
               "description": "URL to fetch python patches from to pass to python-build.",

@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 /// be persisted in the manifest or included in `full_with_opts()`.
 // install_env is a named field on ToolVersionOptions (serde puts it in self.install_env),
 // but parse_tool_options() can still place it in opts, so we filter it here as well.
-pub const EPHEMERAL_OPT_KEYS: &[&str] = &["postinstall", "install_env"];
+pub const EPHEMERAL_OPT_KEYS: &[&str] = &["postinstall", "install_env", "install_before"];
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct ToolVersionOptions {

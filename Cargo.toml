@@ -8,7 +8,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.3.13"
+version = "2026.4.3"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -210,6 +210,10 @@ self_update = { version = "0.42", optional = true, default-features = false, fea
   "signatures",
   "rustls",
 ] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock = "0.4"
+seccompiler = "0.5"
 
 [target.'cfg(windows)'.dependencies]
 self_update = { version = "0.42", optional = true, default-features = false, features = [

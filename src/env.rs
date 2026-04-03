@@ -377,8 +377,15 @@ pub static IS_RUNNING_AS_SHIM: Lazy<bool> = Lazy::new(|| {
         return true;
     }
 
-    crate::shims::is_in_shims_dir()
+    let bin_name = *MISE_BIN_NAME;
+    !is_mise_binary(bin_name)
 });
+
+/// Returns true if the given binary name refers to mise itself (not a shim).
+/// Handles "mise", "mise.exe", "mise.bat", "mise.cmd", "mise-doctor", etc.
+pub fn is_mise_binary(bin_name: &str) -> bool {
+    bin_name == "mise" || bin_name.starts_with("mise.") || bin_name.starts_with("mise-")
+}
 
 #[cfg(test)]
 pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| 80);

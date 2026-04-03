@@ -23,10 +23,11 @@ use tokio::task::JoinSet;
 
 // executes as if it was a shim if the command is not "mise", e.g.: "node"
 pub async fn handle_shim() -> Result<()> {
-    if *env::MISE_TOOL_STUB || !*env::IS_RUNNING_AS_SHIM {
+    // TODO: instead, check if bin is in shims dir
+    let bin_name = *env::MISE_BIN_NAME;
+    if env::is_mise_binary(bin_name) || cfg!(test) {
         return Ok(());
     }
-    let bin_name = *env::MISE_BIN_NAME;
     let mut config = Config::get().await?;
     let mut args = env::ARGS.read().unwrap().clone();
     env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
@@ -44,6 +45,15 @@ pub async fn handle_shim() -> Result<()> {
         raw: false,
         no_prepare: true, // Skip prepare for shims to avoid performance impact
         fresh_env: false,
+        deny_all: false,
+        deny_read: false,
+        deny_write: false,
+        deny_net: false,
+        deny_env: false,
+        allow_read: vec![],
+        allow_write: vec![],
+        allow_net: vec![],
+        allow_env: vec![],
     };
     time!("shim exec");
     exec.run().await?;
@@ -78,14 +88,27 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf>
         }
     }
     // fallback for "system"
+    let mise_bin = fs::canonicalize(&*env::MISE_BIN).unwrap_or_else(|_| env::MISE_BIN.clone());
+    let user_shims = fs::canonicalize(*dirs::SHIMS).unwrap_or_default();
+    let sys_shims = {
+        let p = env::MISE_SYSTEM_DATA_DIR.join("shims");
+        if p.exists() {
+            fs::canonicalize(&p).unwrap_or(p)
+        } else {
+            PathBuf::new()
+        }
+    };
     for path in &*env::PATH {
-        if fs::canonicalize(path).unwrap_or_default()
-            == fs::canonicalize(*dirs::SHIMS).unwrap_or_default()
-        {
+        let canon_path = fs::canonicalize(path).unwrap_or_default();
+        if canon_path == user_shims || canon_path == sys_shims {
             continue;
         }
         let bin = path.join(bin_name);
         if bin.exists() {
+            // Skip if this binary is a mise shim (symlink pointing to the mise binary)
+            if fs::canonicalize(&bin).unwrap_or_default() == mise_bin {
+                continue;
+            }
             trace!("shim[{bin_name}] SYSTEM {bin}", bin = display_path(&bin));
             return Ok(bin);
         }
@@ -591,16 +614,4 @@ async fn err_no_version_set(
         msg.push_str("Install all missing tools with: mise install\n");
         Err(eyre!(msg.trim().to_string()))
     }
-}
-
-/// Check if the current process is running as a shim by verifying that a file
-/// with the same name as argv[0] exists in the shims directory.
-/// This is more robust than checking the binary name with `is_mise_binary()`,
-/// since package managers may rename the mise binary (e.g. "mise-2026.3.7")
-/// which would incorrectly match the "mise-" prefix.
-pub fn is_in_shims_dir() -> bool {
-    let bin_name = *env::MISE_BIN_NAME;
-    let shim_path = dirs::SHIMS.join(bin_name);
-    // is_symlink() catches broken symlinks that .exists() would miss
-    shim_path.is_symlink() || shim_path.exists()
 }

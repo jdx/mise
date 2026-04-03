@@ -10,11 +10,11 @@ use crate::file::{TarFormat, TarOptions, display_path};
 use crate::git::{CloneOptions, Git};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{Result, lock_file::LockFile};
-use crate::{dirs, file, plugins, sysconfig};
+use crate::{dirs, env, file, plugins, sysconfig};
 use async_trait::async_trait;
 use eyre::{bail, eyre};
 use flate2::read::GzDecoder;
@@ -27,6 +27,9 @@ use std::sync::{Arc, OnceLock};
 use tokio::sync::Mutex;
 use versions::Versioning;
 use xx::regex;
+
+const ATTESTATION_HELP: &str = "To disable attestation verification, set MISE_PYTHON_GITHUB_ATTESTATIONS=false\n\
+    or add `python.github_attestations = false` to your mise config";
 
 #[derive(Debug)]
 pub struct PythonPlugin {
@@ -203,7 +206,7 @@ impl PythonPlugin {
                 let versions = raw
                     .lines()
                     .filter(|v| v.contains(&platform))
-                    .filter(|v| flavor.is_some() || !v.contains("freethreaded"))
+                    .filter(|v| filter_freethreaded(v, &flavor))
                     .flat_map(|v| {
                         // cpython-3.9.5+20210525 or cpython-3.9.5rc3+20210525
                         regex!(r"^cpython-(\d+\.\d+\.[\da-z]+)\+(\d+).*")
@@ -287,12 +290,50 @@ impl PythonPlugin {
         HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
             .await?;
 
-        {
-            let platform_key = self.get_platform_key();
-            let pi = tv.lock_platforms.entry(platform_key).or_default();
-            pi.url = Some(url.clone());
-        }
+        // Record the URL in lock_platforms so verify_checksum can find it
+        let platform_key = self.get_platform_key();
+        tv.lock_platforms
+            .entry(platform_key.clone())
+            .or_default()
+            .url = Some(url.to_string());
+
         self.verify_checksum(ctx, tv, &tarball_path)?;
+
+        // Check lockfile provenance expectation before verification
+        let locked_provenance = tv
+            .lock_platforms
+            .get_mut(&platform_key)
+            .and_then(|pi| pi.provenance.take());
+
+        // Verify GitHub artifact attestations for precompiled binaries
+        // Returns Ok(true) if verified, Ok(false) if skipped, Err if failed
+        let verified = self
+            .verify_github_artifact_attestations(ctx, &tarball_path, &tv.version)
+            .await?;
+
+        // Record provenance only if verification actually succeeded (not skipped)
+        if verified {
+            let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
+            pi.provenance = Some(ProvenanceType::GithubAttestations);
+        }
+
+        // Enforce lockfile provenance
+        if let Some(ref expected) = locked_provenance {
+            let got = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|pi| pi.provenance.as_ref());
+            if !got.is_some_and(|g| std::mem::discriminant(g) == std::mem::discriminant(expected)) {
+                let got_str = got
+                    .map(|g| g.to_string())
+                    .unwrap_or_else(|| "no verification".to_string());
+                return Err(eyre!(
+                    "Lockfile requires {expected} provenance for {tv} but {got_str} was used. \
+                     This may indicate a downgrade attack. Enable the corresponding verification setting \
+                     or update the lockfile."
+                ));
+            }
+        }
 
         file::remove_all(&install)?;
         file::untar(
@@ -504,7 +545,7 @@ impl PythonPlugin {
         let result = raw
             .lines()
             .filter(|v| v.contains(&platform))
-            .filter(|v| flavor.is_some() || !v.contains("freethreaded"))
+            .filter(|v| filter_freethreaded(v, &flavor))
             .flat_map(|v| {
                 regex!(r"^cpython-(\d+\.\d+\.[\da-z]+)\+(\d+).*")
                     .captures(v)
@@ -541,6 +582,68 @@ impl PythonPlugin {
             })
             .map(|(_, tag, filename)| (tag, filename));
         Ok(result)
+    }
+
+    fn github_attestations_enabled() -> bool {
+        let settings = Settings::get();
+        settings
+            .python
+            .github_attestations
+            .unwrap_or(settings.github_attestations)
+    }
+
+    fn detect_precompiled_provenance(&self) -> Option<ProvenanceType> {
+        // Provenance only applies to precompiled binaries, not compiled-from-source.
+        // On Windows, precompiled is always used regardless of compile setting.
+        let uses_precompiled = cfg!(windows) || Settings::get().python.compile != Some(true);
+        if !uses_precompiled || !Self::github_attestations_enabled() {
+            return None;
+        }
+        Some(ProvenanceType::GithubAttestations)
+    }
+
+    async fn verify_github_artifact_attestations(
+        &self,
+        ctx: &InstallContext,
+        tarball_path: &std::path::Path,
+        version: &str,
+    ) -> Result<bool> {
+        if !Self::github_attestations_enabled() {
+            debug!("GitHub artifact attestations verification disabled for Python");
+            return Ok(false);
+        }
+
+        ctx.pr
+            .set_message("verify GitHub artifact attestations".to_string());
+
+        match sigstore_verification::verify_github_attestation(
+            tarball_path,
+            "astral-sh",
+            "python-build-standalone",
+            env::GITHUB_TOKEN.as_deref(),
+            None, // Accept any workflow from repo
+        )
+        .await
+        {
+            Ok(true) => {
+                ctx.pr
+                    .set_message("✓ GitHub artifact attestations verified".to_string());
+                debug!(
+                    "GitHub artifact attestations verified successfully for python@{}",
+                    version
+                );
+                Ok(true)
+            }
+            Ok(false) => Err(eyre!(
+                "GitHub artifact attestations verification failed for python@{version}\n{ATTESTATION_HELP}"
+            )),
+            Err(sigstore_verification::AttestationError::NoAttestations) => Err(eyre!(
+                "No GitHub artifact attestations found for python@{version}\n{ATTESTATION_HELP}"
+            )),
+            Err(e) => Err(eyre!(
+                "GitHub artifact attestations verification failed for python@{version}: {e}\n{ATTESTATION_HELP}"
+            )),
+        }
     }
 }
 
@@ -593,6 +696,22 @@ impl Backend for PythonPlugin {
             ".python-version".to_string(),
             ".python-versions".to_string(),
         ])
+    }
+
+    async fn security_info(&self) -> Vec<crate::backend::SecurityFeature> {
+        use crate::backend::SecurityFeature;
+
+        let mut features = vec![SecurityFeature::Checksum {
+            algorithm: Some("sha256".to_string()),
+        }];
+
+        if self.detect_precompiled_provenance().is_some() {
+            features.push(SecurityFeature::GithubAttestations {
+                signer_workflow: None,
+            });
+        }
+
+        features
     }
 
     async fn install_version_(
@@ -724,12 +843,13 @@ impl Backend for PythonPlugin {
         );
         let checksum = fetch_checksum_from_shasums(&shasums_url, &filename).await;
 
+        // Detect provenance for precompiled binaries
+        let provenance = self.detect_precompiled_provenance();
+
         Ok(PlatformInfo {
             url: Some(url),
             checksum,
-            size: None,
-            url_api: None,
-            conda_deps: None,
+            provenance,
             ..Default::default()
         })
     }
@@ -824,4 +944,8 @@ fn ensure_not_windows() -> eyre::Result<()> {
         );
     }
     Ok(())
+}
+
+fn filter_freethreaded(v: &str, flavor: &Option<String>) -> bool {
+    flavor.as_ref().is_some_and(|f| f.contains("freethreaded")) || !v.contains("freethreaded")
 }

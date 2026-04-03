@@ -110,6 +110,7 @@ pub struct CmdLineRunner<'a> {
     on_stdout: Option<Box<dyn Fn(String) + Send + 'a>>,
     on_stderr: Option<Box<dyn Fn(String) + Send + 'a>>,
     timeout: Option<Duration>,
+    sandbox: Option<crate::sandbox::SandboxConfig>,
 }
 
 const GUARD_RUNNING: u8 = 0;
@@ -247,7 +248,15 @@ impl<'a> CmdLineRunner<'a> {
             on_stdout: None,
             on_stderr: None,
             timeout: None,
+            sandbox: None,
         }
+    }
+
+    pub fn with_sandbox(mut self, sandbox: crate::sandbox::SandboxConfig) -> Self {
+        if sandbox.is_active() {
+            self.sandbox = Some(sandbox);
+        }
+        self
     }
 
     #[cfg(unix)]
@@ -541,6 +550,14 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     fn execute_raw(mut self) -> Result<()> {
+        // In raw mode, inherit stdio so the child can interact with the terminal
+        // directly. Piped stdout/stderr would deadlock if the child produces >64KB
+        // of output since nobody reads the pipes.
+        if self.stdin.is_none() {
+            self.cmd.stdin(Stdio::inherit());
+        }
+        self.cmd.stdout(Stdio::inherit());
+        self.cmd.stderr(Stdio::inherit());
         let mut cp = self.spawn_with_etxtbsy_retry()?;
         let timeout_guard = self.timeout.map(|t| TimeoutGuard::new(t, cp.id()));
         let status = cp.wait()?;
@@ -573,6 +590,95 @@ impl<'a> CmdLineRunner<'a> {
                 Err(err) => return Err(err),
             }
         }
+    }
+
+    /// Prepare sandbox restrictions on the command. Must be called before execute()
+    /// when sandbox is configured. This is async because macOS DNS resolution is async.
+    pub async fn apply_sandbox(&mut self) -> eyre::Result<()> {
+        let Some(sandbox) = self.sandbox.take() else {
+            return Ok(());
+        };
+        if !sandbox.is_active() {
+            return Ok(());
+        }
+
+        // Fail early on Linux if per-host network filtering is requested
+        #[cfg(target_os = "linux")]
+        if !sandbox.allow_net.is_empty() {
+            eyre::bail!(
+                "per-host network filtering (--allow-net=<host>) is not supported on Linux. \
+                 Use --deny-net to block all network, or remove --allow-net."
+            );
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            // On Linux, clear inherited env before pre_exec so child only sees filtered vars
+            if sandbox.effective_deny_env() {
+                self.cmd.env_clear();
+            }
+            // Use pre_exec to apply Landlock/seccomp in the child process
+            // before it execs the target program. This avoids restricting the mise process.
+            use std::os::unix::process::CommandExt;
+            let sandbox = sandbox.clone();
+            unsafe {
+                self.cmd.pre_exec(move || {
+                    if sandbox.effective_deny_read() || sandbox.effective_deny_write() {
+                        crate::sandbox::landlock_apply(&sandbox)
+                            .map_err(|e| std::io::Error::other(e.to_string()))?;
+                    }
+                    if sandbox.effective_deny_net() {
+                        crate::sandbox::seccomp_apply()
+                            .map_err(|e| std::io::Error::other(e.to_string()))?;
+                    }
+                    Ok(())
+                });
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            // On macOS, rewrite the command to go through sandbox-exec.
+            // Build a new Command that wraps the original through sandbox-exec,
+            // preserving stdio, cwd, and env from the original.
+            let program = self.cmd.get_program().to_os_string();
+            let args: Vec<String> = self
+                .cmd
+                .get_args()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect();
+            let profile = crate::sandbox::macos_generate_profile(&sandbox).await;
+
+            let mut new_cmd = Command::new("sandbox-exec");
+            new_cmd.arg("-p").arg(&profile).arg("--").arg(&program);
+            for arg in &args {
+                new_cmd.arg(arg);
+            }
+            // Match CmdLineRunner::new() defaults for stdio.
+            // execute() reads from piped stdout/stderr; execute_raw() overrides to inherit.
+            new_cmd.stdin(Stdio::null());
+            new_cmd.stdout(Stdio::piped());
+            new_cmd.stderr(Stdio::piped());
+            if let Some(dir) = self.cmd.get_current_dir() {
+                new_cmd.current_dir(dir);
+            }
+            if sandbox.effective_deny_env() {
+                new_cmd.env_clear();
+            }
+            for (k, v) in self.cmd.get_envs() {
+                if let Some(v) = v {
+                    new_cmd.env(k, v);
+                }
+            }
+            self.cmd = new_cmd;
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        {
+            let _ = sandbox;
+            warn!("sandbox is not supported on this platform, running unsandboxed");
+        }
+        Ok(())
     }
 
     #[cfg(unix)]

@@ -153,9 +153,9 @@ impl Activate {
         }
     }
 
-    /// Used by activate_shims. For shells with native path dedup (fish), skips
-    /// the is_dir_in_path check and uses MovePrependEnv to reorder entries on
-    /// re-source. For other shells, falls back to prepend_path to avoid PATH growth.
+    /// Used by activate_shims. Always prepends the path to the front, even if
+    /// already present (accepting a duplicate entry). For shells with native path
+    /// dedup (fish), uses MovePrependEnv to reorder without duplicating.
     fn shims_prepend_path(&self, shell: &dyn Shell, p: &Path) -> Option<ActivatePrelude> {
         if !is_dir_not_in_nix(p) || p.is_relative() {
             return None;
@@ -166,7 +166,10 @@ impl Activate {
                 p.to_string_lossy().to_string(),
             ))
         } else {
-            self.prepend_path(p)
+            Some(ActivatePrelude::PrependEnv(
+                PATH_KEY.to_string(),
+                p.to_string_lossy().to_string(),
+            ))
         }
     }
 }

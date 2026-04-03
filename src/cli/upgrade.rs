@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::ToolArg;
-use crate::config::{Config, Settings, config_file};
+use crate::config::{Config, config_file};
 use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
 use crate::toolset::outdated_info::OutdatedInfo;
@@ -384,14 +384,10 @@ impl Upgrade {
         }
     }
 
-    /// Get the before_date from CLI flag or settings
+    /// Get the before_date from the CLI --before flag only.
+    /// Per-tool and global setting fallbacks are handled in ToolRequest::resolve.
     fn get_before_date(&self) -> Result<Option<Timestamp>> {
-        // CLI flag takes precedence over settings
         if let Some(before) = &self.before {
-            return Ok(Some(parse_into_timestamp(before)?));
-        }
-        // Fall back to settings
-        if let Some(before) = &Settings::get().install_before {
             return Ok(Some(parse_into_timestamp(before)?));
         }
         Ok(None)

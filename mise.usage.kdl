@@ -269,6 +269,23 @@ cmd exec help="Execute a command with tool(s) set" {
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg <JOBS>
     }
+    flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)" var=#true {
+        arg <VAR>
+    }
+    flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)\nmacOS only in v1; on Linux falls back to allowing all network" var=#true {
+        arg <HOST>
+    }
+    flag --allow-read help="[experimental] Allow reads from specific path (implies --deny-read for everything else)" var=#true {
+        arg <PATH>
+    }
+    flag --allow-write help="[experimental] Allow writes to specific path (implies --deny-write for everything else)" var=#true {
+        arg <PATH>
+    }
+    flag --deny-all help="[experimental] Block reads, writes, network, and env vars"
+    flag --deny-env help="[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
+    flag --deny-net help="[experimental] Block all network access"
+    flag --deny-read help="[experimental] Block filesystem reads (system libs and tool dirs still accessible)"
+    flag --deny-write help="[experimental] Block all filesystem writes"
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-prepare help="Skip automatic dependency preparation"
     flag --raw help="Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1"
@@ -411,6 +428,14 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
             arg <VERSION>
         }
         arg <OUTPUT> help="Output file path for the tool stub"
+    }
+}
+cmd github subcommand_required=#true help="GitHub related commands" {
+    cmd token help="Display the GitHub token mise will use for a given host" {
+        long_help "Display the GitHub token mise will use for a given host\n\nShows which token source mise would use, useful for debugging\nauthentication issues. The token is masked by default."
+        after_long_help "Examples:\n\n    $ mise github token\n    github.com: ghp_…xxxx (source: GITHUB_TOKEN)\n\n    $ mise github token --unmask\n    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)\n\n    $ mise github token github.mycompany.com\n    github.mycompany.com: (none)\n"
+        flag --unmask help="Show the full unmasked token"
+        arg "[HOST]" help="GitHub hostname" required=#false default=github.com
     }
 }
 cmd global hide=#true help="Sets/gets the global tool version(s)" {
@@ -657,7 +682,7 @@ cmd plugins help="Manage plugins" {
 cmd prepare help="[experimental] Ensure project dependencies are ready" {
     alias prep
     long_help "[experimental] Ensure project dependencies are ready\n\nRuns all applicable prepare steps for the current project.\nThis checks if dependency lockfiles are newer than installed outputs\n(e.g., package-lock.json vs node_modules/) and runs install commands\nif needed.\n\nProviders with `auto = true` are automatically invoked before `mise x` and `mise run`\nunless skipped with the --no-prepare flag."
-    after_long_help "Examples:\n\n    $ mise prepare              # Run all applicable prepare steps\n    $ mise prepare npm          # Run only npm prepare\n    $ mise prepare npm --explain # Show why npm is fresh or stale\n    $ mise prepare --dry-run    # Show what would run without executing\n    $ mise prepare --force      # Force run even if outputs are fresh\n    $ mise prepare --list       # List available prepare providers\n    $ mise prepare --skip npm   # Skip npm prepare\n\nConfiguration:\n\n    Configure prepare providers in mise.toml:\n\n    ```toml\n    # Built-in npm provider (auto-detects lockfile)\n    [prepare.npm]\n    auto = true              # Auto-run before mise x/run\n\n    # Custom provider\n    [prepare.codegen]\n    auto = true\n    sources = [\"schema/*.graphql\"]\n    outputs = [\"src/generated/\"]\n    run = \"npm run codegen\"\n\n    [prepare]\n    disable = [\"npm\"]        # Disable specific providers at runtime\n    ```\n"
+    after_long_help "Examples:\n\n    $ mise prepare              # Run all applicable prepare steps\n    $ mise prepare npm          # Run only npm prepare\n    $ mise prepare npm --explain # Show why npm is fresh or stale\n    $ mise prepare --dry-run    # Show what would run without executing\n    $ mise prepare --force      # Force run even if outputs are fresh\n    $ mise prepare --list       # List available prepare providers\n    $ mise prepare --skip npm   # Skip npm prepare\n\nConfiguration:\n\n```toml\n# Built-in npm provider (auto-detects lockfile)\n[prepare.npm]\nauto = true              # Auto-run before mise x/run\n\n# Custom provider\n[prepare.codegen]\nauto = true\nsources = [\"schema/*.graphql\"]\noutputs = [\"src/generated/\"]\nrun = \"npm run codegen\"\n\n[prepare]\ndisable = [\"npm\"]        # Disable specific providers at runtime\n```\n"
     flag --explain help="Show why a provider is fresh or stale (requires a provider argument)"
     flag "-f --force" help="Force run all prepare steps even if outputs are fresh"
     flag "-n --dry-run" help="Only check if prepare is needed, don't run commands"
@@ -727,6 +752,23 @@ cmd run restart_token=::: help="Run task(s)" {
     flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
         arg <TOOL@VERSION>
     }
+    flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)" var=#true {
+        arg <VAR>
+    }
+    flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)" var=#true {
+        arg <HOST>
+    }
+    flag --allow-read help="[experimental] Allow reads from specific path (implies --deny-read for everything else)" var=#true {
+        arg <PATH>
+    }
+    flag --allow-write help="[experimental] Allow writes to specific path (implies --deny-write for everything else)" var=#true {
+        arg <PATH>
+    }
+    flag --deny-all help="[experimental] Block reads, writes, network, and env vars"
+    flag --deny-env help="[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
+    flag --deny-net help="[experimental] Block all network access"
+    flag --deny-read help="[experimental] Block filesystem reads (system libs and tool dirs still accessible)"
+    flag --deny-write help="[experimental] Block all filesystem writes"
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-cache help="Do not use cache on remote tasks"
     flag --no-prepare help="Skip automatic dependency preparation"
@@ -1041,6 +1083,23 @@ cmd tasks help="Manage tasks" {
         flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
             arg <TOOL@VERSION>
         }
+        flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)" var=#true {
+            arg <VAR>
+        }
+        flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)" var=#true {
+            arg <HOST>
+        }
+        flag --allow-read help="[experimental] Allow reads from specific path (implies --deny-read for everything else)" var=#true {
+            arg <PATH>
+        }
+        flag --allow-write help="[experimental] Allow writes to specific path (implies --deny-write for everything else)" var=#true {
+            arg <PATH>
+        }
+        flag --deny-all help="[experimental] Block reads, writes, network, and env vars"
+        flag --deny-env help="[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)"
+        flag --deny-net help="[experimental] Block all network access"
+        flag --deny-read help="[experimental] Block filesystem reads (system libs and tool dirs still accessible)"
+        flag --deny-write help="[experimental] Block all filesystem writes"
         flag --fresh-env help="Bypass the environment cache and recompute the environment"
         flag --no-cache help="Do not use cache on remote tasks"
         flag --no-prepare help="Skip automatic dependency preparation"

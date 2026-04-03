@@ -58,7 +58,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - shell: pwsh
         run: |
-          cargo build
+          cargo build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update
           cargo build -p mise-shim
           Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - run: mise -v
@@ -86,11 +86,19 @@ jobs:
         with:
           shared-key: build
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install fd
+        run: brew install fd
       - run: |
           cargo build --all-features
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
       - run: mise x -- cargo test --all-features
+      - name: Run sandbox e2e tests
+        run: |
+          for test in e2e/sandbox/test_sandbox_*; do
+            echo "Running $test..."
+            ./e2e/run_test "$test"
+          done
 
   nightly:
     runs-on: ubuntu-latest

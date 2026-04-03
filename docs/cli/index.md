@@ -113,6 +113,8 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise generate task-docs [FLAGS]`](/cli/generate/task-docs.md)
 - [`mise generate task-stubs [-d --dir <DIR>] [-m --mise-bin <MISE_BIN>]`](/cli/generate/task-stubs.md)
 - [`mise generate tool-stub [FLAGS] <OUTPUT>`](/cli/generate/tool-stub.md)
+- [`mise github <SUBCOMMAND>`](/cli/github.md)
+- [`mise github token [--unmask] [HOST]`](/cli/github/token.md)
 - [`mise implode [-n --dry-run] [--config]`](/cli/implode.md)
 - [`mise edit [-n --dry-run] [-t --tool-versions <TOOL_VERSIONS>] [PATH]`](/cli/edit.md)
 - [`mise install [FLAGS] [TOOL@VERSION]…`](/cli/install.md)

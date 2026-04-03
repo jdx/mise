@@ -5,7 +5,7 @@ packages:
     repo_name: vivid
     asset: vivid-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
     format: tar.gz
-    description: A themeable LS_COLORS generator with a rich filetype datebase
+    description: A themeable LS_COLORS generator with a rich filetype database
     replacements:
       amd64: x86_64
       arm64: aarch64
@@ -27,7 +27,7 @@ packages:
     files:
       - name: vivid
         src: vivid-{{.Version}}-{{.Arch}}-{{.OS}}/vivid
-    version_constraint: semver(">= 0.8.0")
+    version_constraint: "false"
     version_overrides:
       - version_constraint: semver("< 0.8.0")
         overrides: []

@@ -248,11 +248,16 @@ h1, h2, h3, h4, h5, h6,
 .VPHero .name,
 .VPHome .name,
 .VPFeatures .title,
-.VPDocOutlineTitle,
-.VPSidebarItem.level-0 > .item {
+.VPDocOutlineTitle {
   font-family: "Cormorant Garamond", Georgia, serif !important;
   letter-spacing: 0.01em;
   font-weight: 600;
+}
+
+/* Details/summary — keep body font, not heading serif */
+.vp-doc details,
+.vp-doc summary {
+  font-family: var(--vp-font-family-base) !important;
 }
 
 /* Nav — all Roc Grotesk */
@@ -280,7 +285,7 @@ h1, h2, h3, h4, h5, h6,
 
 /* "On this page" header */
 .VPDocOutlineTitle {
-  font-size: 0.9rem;
+  font-size: 1rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 600;
@@ -330,9 +335,24 @@ h1, h2, h3, h4, h5, h6,
 
 /* h1 sizing */
 .vp-doc h1 {
-  font-size: 2.4rem;
-  line-height: 1.25;
+  font-size: 2.8rem;
+  line-height: 1.2;
   font-weight: 600;
+}
+
+.vp-doc h2 {
+  font-size: 1.8rem;
+  line-height: 1.25;
+}
+
+.vp-doc h3 {
+  font-size: 1.4rem;
+  line-height: 1.3;
+}
+
+.vp-doc h4 {
+  font-size: 1.15rem;
+  line-height: 1.35;
 }
 
 /* Site title */
@@ -382,7 +402,7 @@ h1, h2, h3, h4, h5, h6,
   grid-column: 1;
   grid-row: 2;
   font-family: "Cormorant Garamond", Georgia, serif !important;
-  font-size: 1.5rem !important;
+  font-size: 1.75rem !important;
   font-weight: 500;
   font-style: italic;
   letter-spacing: 0.01em;
@@ -531,6 +551,11 @@ h1, h2, h3, h4, h5, h6,
   margin: 0;
 }
 
+/* Override serif heading font for sidebar collapsible group titles (rendered as h3) */
+.VPSidebarItem .text {
+  font-family: var(--vp-font-family-base) !important;
+}
+
 .VPSidebarItem.level-0 > .item {
   padding-top: 2px;
   padding-bottom: 2px;
@@ -640,7 +665,7 @@ div[class*="language-"] .copy:hover {
 
 .VPFeatures .title {
   font-family: "Cormorant Garamond", Georgia, serif !important;
-  font-size: 1.3rem;
+  font-size: 1.5rem;
   font-weight: 600;
   letter-spacing: 0.02em;
 }

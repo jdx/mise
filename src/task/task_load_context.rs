@@ -23,16 +23,16 @@ impl TaskLoadContext {
 
     /// Create a context from a task pattern like "//foo/bar:task" or "//foo/bar/..."
     pub fn from_pattern(pattern: &str) -> Self {
-        // Extract path hint from pattern
-        let path_hints = if let Some(hint) = Self::extract_path_hint(pattern) {
-            vec![hint]
+        if let Some(hint) = Self::extract_path_hint(pattern) {
+            Self {
+                path_hints: vec![hint],
+                load_all: false,
+            }
         } else {
-            vec![]
-        };
-
-        Self {
-            path_hints,
-            load_all: false,
+            Self {
+                path_hints: vec![],
+                load_all: true,
+            }
         }
     }
 
@@ -340,6 +340,24 @@ mod tests {
         let ctx = TaskLoadContext::all();
         assert!(ctx.load_all);
         assert!(ctx.should_load_subdir("any/path", "/root"));
+    }
+
+    #[test]
+    fn test_from_pattern_root_level_sets_load_all() {
+        let ctx = TaskLoadContext::from_pattern("//:prl");
+        assert!(ctx.load_all);
+        assert!(ctx.path_hints.is_empty());
+
+        let ctx = TaskLoadContext::from_pattern("prl");
+        assert!(ctx.load_all);
+        assert!(ctx.path_hints.is_empty());
+    }
+
+    #[test]
+    fn test_from_pattern_with_path_does_not_set_load_all() {
+        let ctx = TaskLoadContext::from_pattern("//projects/backend:task");
+        assert!(!ctx.load_all);
+        assert_eq!(ctx.path_hints, vec!["projects/backend"]);
     }
 
     #[test]

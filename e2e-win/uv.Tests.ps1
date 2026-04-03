@@ -1,5 +1,9 @@
 
 Describe 'uv' {
+  BeforeAll {
+    $env:MISE_PYTHON_GITHUB_ATTESTATIONS = "0"
+  }
+
   BeforeEach {
     $originalPath = Get-Location
     Set-Location TestDrive:

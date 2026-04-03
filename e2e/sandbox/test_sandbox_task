@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# Test sandbox support for mise run (tasks)
+
+cat >mise.toml <<'TOML'
+[tasks.env_test]
+run = "echo ${SANDBOX_TASK_SECRET:-empty}"
+deny_env = true
+TOML
+
+export SANDBOX_TASK_SECRET="should_not_see"
+
+# Task with deny_env should not see the var
+assert "mise run env_test" "empty"

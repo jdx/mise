@@ -190,6 +190,15 @@ impl TasksLs {
                     .var(true)
                     .build(),
             );
+            if let Some(path) = crate::task::extract_monorepo_path(&task.display_name) {
+                let prefixed_aliases: Vec<String> = task_spec
+                    .cmd
+                    .aliases
+                    .iter()
+                    .map(|a| format!("//{}:{}", path, a))
+                    .collect();
+                task_spec.cmd.aliases.extend(prefixed_aliases);
+            }
             usage
                 .cmd
                 .subcommands
