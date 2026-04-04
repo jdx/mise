@@ -657,7 +657,33 @@ impl Backend for AquaBackend {
         };
 
         // Detect provenance from aqua registry config
-        let provenance = self.detect_provenance_type(&pkg);
+        let mut provenance = self.detect_provenance_type(&pkg);
+
+        // For the current platform, verify provenance cryptographically at lock time.
+        // This ensures the lockfile's provenance entry is backed by actual verification,
+        // not just registry metadata. Cross-platform entries remain detection-only.
+        if provenance.is_some() && target.is_current() {
+            if let Some(ref artifact_url) = url {
+                match self
+                    .verify_provenance_at_lock_time(
+                        &pkg,
+                        &v,
+                        artifact_url,
+                        provenance.as_ref().unwrap(),
+                    )
+                    .await
+                {
+                    Ok(verified) => provenance = Some(verified),
+                    Err(e) => {
+                        warn!(
+                            "lock-time provenance verification failed for {}: {e}",
+                            self.id
+                        );
+                        provenance = None;
+                    }
+                }
+            }
+        }
 
         Ok(PlatformInfo {
             url,
@@ -727,6 +753,268 @@ impl AquaBackend {
         }
 
         None
+    }
+
+    /// Verify provenance at lock time by downloading the artifact to a temp directory
+    /// and running the appropriate cryptographic verification. Only called for the
+    /// current platform during `mise lock`.
+    async fn verify_provenance_at_lock_time(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        artifact_url: &str,
+        detected: &ProvenanceType,
+    ) -> Result<ProvenanceType> {
+        let tmp_dir = tempfile::tempdir()?;
+        let filename = get_filename_from_url(artifact_url);
+        let artifact_path = tmp_dir.path().join(&filename);
+
+        debug!(
+            "downloading artifact for lock-time provenance verification: {}",
+            filename
+        );
+        HTTP.download_file(artifact_url, &artifact_path, None)
+            .await?;
+
+        match detected {
+            ProvenanceType::GithubAttestations => {
+                let signer_workflow = pkg
+                    .github_artifact_attestations
+                    .as_ref()
+                    .and_then(|att| att.signer_workflow.clone());
+
+                match sigstore_verification::verify_github_attestation(
+                    &artifact_path,
+                    &pkg.repo_owner,
+                    &pkg.repo_name,
+                    env::GITHUB_TOKEN.as_deref(),
+                    signer_workflow.as_deref(),
+                )
+                .await
+                {
+                    Ok(true) => {
+                        debug!(
+                            "lock-time GitHub attestations verified for {}/{}",
+                            pkg.repo_owner, pkg.repo_name
+                        );
+                        Ok(ProvenanceType::GithubAttestations)
+                    }
+                    Ok(false) => Err(eyre!(
+                        "GitHub artifact attestations verification returned false"
+                    )),
+                    Err(e) => Err(eyre!(
+                        "GitHub artifact attestations verification failed: {e}"
+                    )),
+                }
+            }
+            ProvenanceType::Slsa { .. } => {
+                if let Some(slsa) = &pkg.slsa_provenance {
+                    let mut slsa_pkg = pkg.clone();
+                    (slsa_pkg.repo_owner, slsa_pkg.repo_name) =
+                        resolve_repo_info(slsa.repo_owner.as_ref(), slsa.repo_name.as_ref(), pkg);
+
+                    let (provenance_path, provenance_url) =
+                        match slsa.r#type.as_deref().unwrap_or_default() {
+                            "github_release" => {
+                                let asset_strs = slsa.asset_strs(pkg, v, os(), arch())?;
+                                let (url, _) =
+                                    self.github_release_asset(&slsa_pkg, v, asset_strs).await?;
+                                let path = tmp_dir.path().join(get_filename_from_url(&url));
+                                HTTP.download_file(&url, &path, None).await?;
+                                (path, url)
+                            }
+                            "http" => {
+                                let url = slsa.url(pkg, v, os(), arch())?;
+                                let path = tmp_dir.path().join(get_filename_from_url(&url));
+                                HTTP.download_file(&url, &path, None).await?;
+                                (path, url)
+                            }
+                            t => return Err(eyre!("unsupported slsa type: {t}")),
+                        };
+
+                    match sigstore_verification::verify_slsa_provenance(
+                        &artifact_path,
+                        &provenance_path,
+                        1u8,
+                    )
+                    .await
+                    {
+                        Ok(true) => {
+                            debug!("lock-time SLSA provenance verified");
+                            Ok(ProvenanceType::Slsa {
+                                url: Some(provenance_url),
+                            })
+                        }
+                        Ok(false) => Err(eyre!("SLSA provenance verification failed")),
+                        Err(e) => Err(eyre!("SLSA verification error: {e}")),
+                    }
+                } else {
+                    Err(eyre!("SLSA provenance detected but no config found"))
+                }
+            }
+            ProvenanceType::Minisign => {
+                if let Some(minisign_config) = &pkg.minisign {
+                    let sig_path = match minisign_config._type() {
+                        AquaMinisignType::GithubRelease => {
+                            let asset = minisign_config.asset(pkg, v, os(), arch())?;
+                            let (repo_owner, repo_name) = resolve_repo_info(
+                                minisign_config.repo_owner.as_ref(),
+                                minisign_config.repo_name.as_ref(),
+                                pkg,
+                            );
+                            let url = github::get_release(&format!("{repo_owner}/{repo_name}"), v)
+                                .await?
+                                .assets
+                                .into_iter()
+                                .find(|a| a.name == asset)
+                                .map(|a| a.browser_download_url)
+                                .wrap_err_with(|| {
+                                    format!("no asset found for minisign: {asset}")
+                                })?;
+                            let path = tmp_dir.path().join(&asset);
+                            HTTP.download_file(&url, &path, None).await?;
+                            path
+                        }
+                        AquaMinisignType::Http => {
+                            let url = minisign_config.url(pkg, v, os(), arch())?;
+                            let path = tmp_dir.path().join(format!("{filename}.minisig"));
+                            HTTP.download_file(&url, &path, None).await?;
+                            path
+                        }
+                    };
+                    let data = file::read(&artifact_path)?;
+                    let sig = file::read_to_string(&sig_path)?;
+                    minisign::verify(
+                        &minisign_config.public_key(pkg, v, os(), arch())?,
+                        &data,
+                        &sig,
+                    )?;
+                    debug!("lock-time minisign verified");
+                    Ok(ProvenanceType::Minisign)
+                } else {
+                    Err(eyre!("minisign provenance detected but no config found"))
+                }
+            }
+            ProvenanceType::Cosign => {
+                // Cosign verification at lock time requires the checksum file and
+                // key/signature or bundle assets. This mirrors the install-time
+                // cosign_checksums flow but downloads to a temp directory.
+                if let Some(checksum_config) = &pkg.checksum
+                    && let Some(cosign) = checksum_config.cosign.as_ref()
+                {
+                    let checksum_path = match checksum_config._type() {
+                        AquaChecksumType::GithubRelease => {
+                            let asset_strs = checksum_config.asset_strs(pkg, v, os(), arch())?;
+                            let (url, _) = self.github_release_asset(pkg, v, asset_strs).await?;
+                            let path = tmp_dir.path().join(get_filename_from_url(&url));
+                            HTTP.download_file(&url, &path, None).await?;
+                            path
+                        }
+                        AquaChecksumType::Http => {
+                            let url = checksum_config.url(pkg, v, os(), arch())?;
+                            let path = tmp_dir.path().join(get_filename_from_url(&url));
+                            HTTP.download_file(&url, &path, None).await?;
+                            path
+                        }
+                    };
+
+                    if let Some(key) = &cosign.key {
+                        // Download the public key
+                        let mut key_pkg = pkg.clone();
+                        (key_pkg.repo_owner, key_pkg.repo_name) =
+                            resolve_repo_info(key.repo_owner.as_ref(), key.repo_name.as_ref(), pkg);
+                        let key_url = match key.r#type.as_deref().unwrap_or_default() {
+                            "github_release" => {
+                                let asset_strs = key.asset_strs(pkg, v, os(), arch())?;
+                                self.github_release_asset(&key_pkg, v, asset_strs).await?.0
+                            }
+                            "http" => key.url(pkg, v, os(), arch())?,
+                            t => return Err(eyre!("unsupported cosign key type: {t}")),
+                        };
+                        let key_path = tmp_dir.path().join(get_filename_from_url(&key_url));
+                        HTTP.download_file(&key_url, &key_path, None).await?;
+
+                        // Download signature
+                        let sig_path = if let Some(signature) = &cosign.signature {
+                            let mut sig_pkg = pkg.clone();
+                            (sig_pkg.repo_owner, sig_pkg.repo_name) = resolve_repo_info(
+                                signature.repo_owner.as_ref(),
+                                signature.repo_name.as_ref(),
+                                pkg,
+                            );
+                            let sig_url = match signature.r#type.as_deref().unwrap_or_default() {
+                                "github_release" => {
+                                    let asset_strs = signature.asset_strs(pkg, v, os(), arch())?;
+                                    self.github_release_asset(&sig_pkg, v, asset_strs).await?.0
+                                }
+                                "http" => signature.url(pkg, v, os(), arch())?,
+                                t => return Err(eyre!("unsupported cosign signature type: {t}")),
+                            };
+                            let path = tmp_dir.path().join(get_filename_from_url(&sig_url));
+                            HTTP.download_file(&sig_url, &path, None).await?;
+                            path
+                        } else {
+                            checksum_path.with_extension("sig")
+                        };
+
+                        match sigstore_verification::verify_cosign_signature_with_key(
+                            &checksum_path,
+                            &sig_path,
+                            &key_path,
+                        )
+                        .await
+                        {
+                            Ok(true) => {
+                                debug!("lock-time cosign (key) verified");
+                                Ok(ProvenanceType::Cosign)
+                            }
+                            Ok(false) => Err(eyre!("cosign key-based verification returned false")),
+                            Err(e) => Err(eyre!("cosign key-based verification failed: {e}")),
+                        }
+                    } else if let Some(bundle) = &cosign.bundle {
+                        // Download the bundle
+                        let mut bundle_pkg = pkg.clone();
+                        (bundle_pkg.repo_owner, bundle_pkg.repo_name) = resolve_repo_info(
+                            bundle.repo_owner.as_ref(),
+                            bundle.repo_name.as_ref(),
+                            pkg,
+                        );
+                        let bundle_url = match bundle.r#type.as_deref().unwrap_or_default() {
+                            "github_release" => {
+                                let asset_strs = bundle.asset_strs(pkg, v, os(), arch())?;
+                                self.github_release_asset(&bundle_pkg, v, asset_strs)
+                                    .await?
+                                    .0
+                            }
+                            "http" => bundle.url(pkg, v, os(), arch())?,
+                            t => return Err(eyre!("unsupported cosign bundle type: {t}")),
+                        };
+                        let bundle_path = tmp_dir.path().join(get_filename_from_url(&bundle_url));
+                        HTTP.download_file(&bundle_url, &bundle_path, None).await?;
+
+                        match sigstore_verification::verify_cosign_signature(
+                            &checksum_path,
+                            &bundle_path,
+                        )
+                        .await
+                        {
+                            Ok(true) => {
+                                debug!("lock-time cosign (bundle) verified");
+                                Ok(ProvenanceType::Cosign)
+                            }
+                            Ok(false) => {
+                                Err(eyre!("cosign bundle-based verification returned false"))
+                            }
+                            Err(e) => Err(eyre!("cosign bundle-based verification failed: {e}")),
+                        }
+                    } else {
+                        Err(eyre!("cosign detected but no key or bundle configured"))
+                    }
+                } else {
+                    Err(eyre!("cosign provenance detected but no config found"))
+                }
+            }
+        }
     }
 
     pub fn from_arg(ba: BackendArg) -> Self {
