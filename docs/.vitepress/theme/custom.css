@@ -949,6 +949,7 @@ div[class*="language-"] .copy:hover {
   padding: 0.25rem 0.5rem;
   font-size: 0.75rem;
   font-weight: 600;
+  font-family: var(--vp-font-family-base);
   border-radius: 4px;
   text-transform: uppercase;
   letter-spacing: 0.025em;
