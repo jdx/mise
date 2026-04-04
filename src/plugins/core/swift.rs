@@ -279,7 +279,11 @@ fn platform_directory() -> String {
         let settings = Settings::get();
         let arch = settings.arch();
         if os_release.id == "ubuntu" && arch == "arm64" {
-            let retval = format!("{}{}-aarch64", os_release.id, os_release.version_id);
+            let retval = format!(
+                "{}{}-aarch64",
+                os_release.id,
+                ubuntu_swift_version(&os_release.version_id)
+            );
             retval.replace(".", "")
         } else {
             platform().replace(".", "")
@@ -304,6 +308,8 @@ fn platform() -> String {
             "ubi9".to_string() // only 9 is available
         } else if os_release.id == "fedora" {
             "fedora39".to_string() // only 39 is available
+        } else if os_release.id == "ubuntu" {
+            format!("ubuntu{}", ubuntu_swift_version(&os_release.version_id))
         } else {
             format!("{}{}", os_release.id, os_release.version_id)
         }
@@ -334,6 +340,15 @@ fn architecture(settings: &Settings) -> Option<&str> {
         return Some("arm64");
     }
     None
+}
+
+/// Swift only provides Ubuntu binaries for specific versions.
+/// Map unsupported Ubuntu versions to the latest supported one.
+fn ubuntu_swift_version(version_id: &str) -> &str {
+    match version_id {
+        "20.04" | "22.04" | "24.04" => version_id,
+        _ => "24.04",
+    }
 }
 
 fn url(tv: &ToolVersion) -> String {
