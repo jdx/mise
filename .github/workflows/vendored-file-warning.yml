@@ -5,8 +5,7 @@ on:
     paths:
       - "crates/aqua-registry/aqua-registry/pkgs/**"
 
-permissions:
-  pull-requests: write
+permissions: {}
 
 jobs:
   warn:
@@ -15,7 +14,7 @@ jobs:
     steps:
       - name: Comment on PR
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.MISE_PR_COMMENT_TOKEN }}
         run: |
           existing=$(gh pr view "${{ github.event.pull_request.number }}" \
             -R "${{ github.repository }}" \
