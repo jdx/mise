@@ -49,22 +49,19 @@ mise run quick 2>&1
 mise run slow 2>&1
 echo "✓ Tasks within timeout complete successfully"
 
-# Test timeout via environment variable (global)
+# Test timeout via environment variable applies per-task as default
 cat <<EOF >mise.toml
 [tasks.env_test1]
-run = "sleep 1 && echo 'Task 1'"
-
-[tasks.env_test2]
-run = "sleep 2 && echo 'Task 2'"
+run = "sleep 10 && echo 'Should not appear'"
 EOF
 
-echo "Testing global timeout via environment variable..."
-output="$(MISE_TASK_TIMEOUT=2s mise run env_test1 ::: env_test2 2>&1 || true)"
+echo "Testing task.timeout setting as per-task default..."
+output="$(MISE_TASK_TIMEOUT=1s mise run env_test1 2>&1 || true)"
 if [[ $output != *"timed out"* ]]; then
 	echo "ERROR: Expected 'timed out' in output, got: $output"
 	exit 1
 fi
-echo "✓ Environment variable global timeout works"
+echo "✓ task.timeout setting applies per-task as default"
 
 # Test task timeout is independent per task
 cat <<EOF >mise.toml
@@ -91,6 +88,48 @@ EOF
 echo "Testing duration format parsing..."
 mise run duration_test 2>&1
 echo "✓ Duration format works"
+
+# Test per-task timeout overrides task.timeout setting
+# This is the key fix: task.timeout=2s should NOT override per-task timeout=3s
+cat <<EOF >mise.toml
+[settings]
+task_timeout = "2s"
+
+[tasks.has_own_timeout]
+run = "sleep 2.5 && echo 'Own timeout done'"
+timeout = "3s"
+
+[tasks.no_own_timeout]
+run = "sleep 10 && echo 'Should not appear'"
+EOF
+
+echo "Testing per-task timeout overrides task.timeout setting..."
+# Task with its own timeout=3s should succeed even though task.timeout=2s
+mise run has_own_timeout 2>&1
+echo "✓ Per-task timeout overrides task.timeout setting"
+
+# Task without its own timeout should use task.timeout=2s as default
+output="$(mise run no_own_timeout 2>&1 || true)"
+if [[ $output != *"timed out"* ]]; then
+	echo "ERROR: Expected 'timed out' in output, got: $output"
+	exit 1
+fi
+echo "✓ task.timeout setting applies as default for tasks without own timeout"
+
+# Test --timeout CLI flag acts as global cap over everything
+cat <<EOF >mise.toml
+[tasks.long_task]
+run = "sleep 10 && echo 'Should not appear'"
+timeout = "15s"
+EOF
+
+echo "Testing --timeout CLI flag as global cap..."
+output="$(mise run --timeout=2s long_task 2>&1 || true)"
+if [[ $output != *"timed out"* ]]; then
+	echo "ERROR: Expected 'timed out' in output, got: $output"
+	exit 1
+fi
+echo "✓ --timeout CLI flag acts as global cap"
 
 # Test global timeout + per-task timeout serve distinct purposes
 cat <<EOF >mise.toml

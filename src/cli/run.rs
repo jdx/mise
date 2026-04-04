@@ -354,11 +354,13 @@ impl Run {
                 .await?;
         }
 
-        // Apply global timeout for entire run if configured
+        // Apply global timeout for entire run if --timeout CLI flag is set
+        // Note: the task.timeout setting is handled at the per-task level as a default
+        // for tasks that don't define their own timeout
         let timeout = if let Some(timeout_str) = &self.timeout {
             Some(duration::parse_duration(timeout_str)?)
         } else {
-            Settings::get().task_timeout_duration()
+            None
         };
 
         if let Some(timeout) = timeout {
