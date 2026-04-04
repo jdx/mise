@@ -145,11 +145,10 @@ impl ToolsetBuilder {
             for arg in args {
                 if let Some(tvr) = &arg.tvr {
                     let mut tvr = tvr.clone();
-                    if tvr.options().is_empty() {
-                        if let Some(opts) = &config_options {
+                    if tvr.options().is_empty()
+                        && let Some(opts) = &config_options {
                             tvr.set_options(opts.clone());
                         }
-                    }
                     arg_ts.add_version(tvr);
                 } else if self.default_to_latest {
                     // this logic is required for `mise x` because with that specific command mise
