@@ -24,7 +24,7 @@ env = ["development"]
 
 ### Templates in .miserc.toml
 
-`.miserc.toml` supports [Tera templates](/templates#template-support-in-miserc-toml),
+`.miserc.toml` supports [Tera templates](/templates#miserc-template-support),
 which is useful for settings like `ceiling_paths` that reference home or XDG directories:
 
 <div v-pre>

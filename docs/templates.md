@@ -11,7 +11,7 @@ You can define and use templates in the following locations:
 - Most `mise.toml` configuration values
   - The `mise.toml` file itself is not templated and must be valid toml
 - `.tool-versions` files
-- `.miserc.toml` files (limited context — see [Template Support in .miserc.toml](#template-support-in-miserc-toml))
+- `.miserc.toml` files (limited context — see [Template Support in .miserc.toml](#miserc-template-support))
 
 ## Example
 
@@ -400,7 +400,7 @@ Mise offers additional tests:
 - `if path is file` – Checks if the path points to a file.
 - `if path is exists` – Checks if the path exists.
 
-## Template Support in .miserc.toml
+## Template Support in .miserc.toml {#miserc-template-support}
 
 `.miserc.toml` files support Tera templates, but with a **limited context**. This is because
 `.miserc.toml` is loaded very early — before `mise.toml`, Settings, and the main config are
@@ -422,7 +422,7 @@ parsed — so only information available at OS level can be used.
 - `read_file()` – Not registered in the early-init context (needs per-file directory resolution that is not set up at this stage)
 - `mise_bin`, `mise_pid` – Not meaningful at this stage
 
-### Examples
+### miserc.toml Examples
 
 <div v-pre>
 
@@ -458,7 +458,7 @@ and fall back to the raw content.
 :::
 
 ::: warning
-If your `.miserc.toml` values contain literal `{{`, `{%`, or `{#` characters (not intended
-as templates), wrap them in a `{% raw %}...{% endraw %}` block to prevent Tera from
-interpreting them.
+If your `.miserc.toml` values contain literal <span v-pre>`{{`</span>, `{%`, or `{#` characters
+(not intended as templates), wrap them in a `{% raw %}...{% endraw %}` block to prevent Tera
+from interpreting them.
 :::
