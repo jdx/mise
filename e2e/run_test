@@ -178,6 +178,11 @@ run_in_docker() {
 	local mise_bin
 	mise_bin="$(resolve_mise_bin)"
 
+	if ! file "$mise_bin" | grep -q "ELF"; then
+		err "The mise binary at '$mise_bin' is not a Linux ELF. On macOS, set MISE_E2E_BIN to a Linux-compiled mise binary."
+		return 1
+	fi
+
 	local docker_args=(
 		docker run --rm
 		-v "$ROOT:/mise-src:ro"

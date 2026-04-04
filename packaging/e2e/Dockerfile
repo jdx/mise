@@ -26,10 +26,12 @@ apt-get update && apt-get install -y --no-install-recommends \
     pipx \
     python3-full \
     python3-venv \
+    unzip \
     zsh
 
 ln -sf /usr/bin/fdfind /usr/bin/fd
 npm install -g nushell
+apt-get remove -y npm && apt-get autoremove -y
 
 apt-get clean
 rm -rf /var/lib/apt/lists/*
