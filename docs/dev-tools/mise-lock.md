@@ -283,7 +283,7 @@ mise use node@$(jq -r '.engines.node' package.json)
 
 ## Provenance and Security
 
-When `mise lock` generates a lockfile, it records a provenance type (e.g., `slsa`, `cosign`, `minisign`, `github-attestations`) for each tool. For the **current platform** with the aqua backend, mise downloads the artifact and performs full cryptographic verification at lock time -- ensuring the provenance entry in the lockfile is backed by actual verification, not just registry metadata. For the github backend, a lightweight attestation API query is made at lock time to confirm attestations exist; full cryptographic verification of the artifact happens at install time. For cross-platform entries, provenance is detected from registry metadata without verification (since the artifact may not be runnable on the current machine).
+When `mise lock` generates a lockfile, it records a provenance type (e.g., `slsa`, `cosign`, `minisign`, `github-attestations`) for each tool. For the **current platform**, mise downloads the artifact and performs full cryptographic verification at lock time -- ensuring the provenance entry in the lockfile is backed by actual verification, not just registry metadata. This applies to both the aqua and github backends. For cross-platform entries, provenance is detected from registry metadata without verification (since the artifact may not be runnable on the current machine).
 
 By default, when `mise install` sees a lockfile with both a checksum and a provenance entry, it trusts the lockfile and skips re-verification. This avoids redundant API calls (e.g., GitHub attestation queries) which can cause rate limit issues in CI. Since the current platform's provenance was already verified during `mise lock`, this is safe.
 
