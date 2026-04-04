@@ -275,6 +275,36 @@ pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result
         .clone())
 }
 
+/// Find the latest build revision for a version in a GitHub repo.
+///
+/// Build revisions use the pattern `{version}-{N}` where N is an incrementing integer.
+/// For example, given version "3.3.11", this will prefer tag "3.3.11-2" over "3.3.11-1"
+/// over "3.3.11". Returns the release with the highest build revision.
+///
+/// This is used by precompiled binary repos (e.g., jdx/ruby) where binaries may be
+/// rebuilt with different checksums while keeping the same upstream version.
+pub async fn get_release_with_build_revision(repo: &str, version: &str) -> Result<GithubRelease> {
+    let releases = list_releases(repo).await?;
+    let best = releases
+        .into_iter()
+        .filter(|r| {
+            r.tag_name == version
+                || r.tag_name
+                    .strip_prefix(&format!("{version}-"))
+                    .is_some_and(|suffix| suffix.parse::<u32>().is_ok())
+        })
+        .max_by_key(|r| {
+            r.tag_name
+                .strip_prefix(&format!("{version}-"))
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(0)
+        });
+    match best {
+        Some(release) => Ok(release),
+        None => get_release(repo, version).await,
+    }
+}
+
 async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
     let url = if tag == "latest" {
         format!("{api_url}/repos/{repo}/releases/latest")
@@ -695,5 +725,73 @@ something_else = "value"
 "#;
         let result = parse_github_tokens(toml).unwrap();
         assert!(result.is_empty());
+    }
+
+    fn make_release(tag: &str) -> GithubRelease {
+        GithubRelease {
+            tag_name: tag.to_string(),
+            draft: false,
+            prerelease: false,
+            created_at: String::new(),
+            assets: vec![],
+        }
+    }
+
+    /// Extract the build revision selection logic for unit testing
+    fn select_best_build_revision(
+        releases: Vec<GithubRelease>,
+        version: &str,
+    ) -> Option<GithubRelease> {
+        releases
+            .into_iter()
+            .filter(|r| {
+                r.tag_name == version
+                    || r.tag_name
+                        .strip_prefix(&format!("{version}-"))
+                        .is_some_and(|suffix| suffix.parse::<u32>().is_ok())
+            })
+            .max_by_key(|r| {
+                r.tag_name
+                    .strip_prefix(&format!("{version}-"))
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(0)
+            })
+    }
+
+    #[test]
+    fn test_build_revision_selects_highest() {
+        let releases = vec![
+            make_release("3.3.11"),
+            make_release("3.3.11-1"),
+            make_release("3.3.11-2"),
+            make_release("3.3.10-1"),
+        ];
+        let best = select_best_build_revision(releases, "3.3.11").unwrap();
+        assert_eq!(best.tag_name, "3.3.11-2");
+    }
+
+    #[test]
+    fn test_build_revision_falls_back_to_base() {
+        let releases = vec![make_release("3.3.11"), make_release("3.3.10-1")];
+        let best = select_best_build_revision(releases, "3.3.11").unwrap();
+        assert_eq!(best.tag_name, "3.3.11");
+    }
+
+    #[test]
+    fn test_build_revision_no_match() {
+        let releases = vec![make_release("3.3.10"), make_release("3.3.10-1")];
+        let best = select_best_build_revision(releases, "3.3.11");
+        assert!(best.is_none());
+    }
+
+    #[test]
+    fn test_build_revision_ignores_non_numeric_suffix() {
+        let releases = vec![
+            make_release("3.3.11"),
+            make_release("3.3.11-rc1"),
+            make_release("3.3.11-1"),
+        ];
+        let best = select_best_build_revision(releases, "3.3.11").unwrap();
+        assert_eq!(best.tag_name, "3.3.11-1");
     }
 }

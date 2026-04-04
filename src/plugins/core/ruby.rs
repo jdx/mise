@@ -510,13 +510,19 @@ impl RubyPlugin {
         platform: &str,
         prefer_no_yjit: bool,
     ) -> Result<Option<(String, Option<String>)>> {
-        let release = match github::get_release(repo, version).await {
+        let release = match github::get_release_with_build_revision(repo, version).await {
             Ok(r) => r,
             Err(err) => {
                 debug!("no precompiled ruby found for {version}: {err}");
                 return Ok(None);
             }
         };
+        if release.tag_name != version {
+            debug!(
+                "using build revision {} for ruby {version}",
+                release.tag_name
+            );
+        }
         let standard_name = format!("ruby-{}.{}.tar.gz", version, platform);
         let no_yjit_name = format!("ruby-{}.{}.no_yjit.tar.gz", version, platform);
 
