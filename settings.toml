@@ -147,18 +147,6 @@ env = "MISE_ARCH"
 optional = true
 type = "String"
 
-[asdf]
-deprecated = "Use disable_backends instead."
-description = "use asdf as a default plugin backend"
-docs = """
-Use asdf as a default plugin backend. This means running something like `mise use cmake` will
-default to using an asdf plugin for cmake.
-"""
-env = "MISE_ASDF"
-hide = true
-optional = true
-type = "Bool"
-
 [asdf_compat]
 deprecated = "no longer supported"
 description = "set to true to ensure .tool-versions will be compatible with asdf"
@@ -235,13 +223,6 @@ Please follow the [cargo alternative registries documentation](https://doc.rust-
 env = "MISE_CARGO_REGISTRY_NAME"
 optional = true
 type = "String"
-
-[cargo_binstall]
-deprecated = "Use cargo.binstall instead."
-description = "Use cargo-binstall instead of cargo install if available"
-hide = true
-optional = true
-type = "Bool"
 
 [cd]
 description = "Path to change to after launching mise"
@@ -352,18 +333,6 @@ type = "ListString"
 [disable_default_registry]
 description = "Disable the default mapping of short tool names like `php` -> `asdf:mise-plugins/asdf-php`. This parameter disables only for the backends `vfox` and `asdf`."
 env = "MISE_DISABLE_DEFAULT_REGISTRY"
-type = "Bool"
-
-[disable_default_shorthands]
-deprecated = "Replaced with `disable_default_registry`"
-description = "Disables built-in shorthands to asdf/vfox plugins"
-docs = """
-Disables the shorthand aliases for installing plugins. You will have to specify full URLs when
-installing plugins, e.g.: `mise plugin install node https://github.com/asdf-vm/asdf-node.git`
-"""
-env = "MISE_DISABLE_DEFAULT_SHORTHANDS"
-hide = true
-optional = true
 type = "Bool"
 
 [disable_hints]
@@ -1215,23 +1184,6 @@ This also runs in shims if the terminal is interactive.
 env = "MISE_NOT_FOUND_AUTO_INSTALL"
 type = "Bool"
 
-[npm.bun]
-deprecated = "Use npm.package_manager instead."
-description = "Use bun instead of npm if bun is installed and on PATH."
-docs = """
-If true, mise will use `bun` instead of `npm` if
-[`bun`](https://bun.sh/) is installed and on PATH.
-This makes installing CLIs faster by using `bun` as the package manager.
-
-You can install it with mise:
-
-```sh
-mise use -g bun
-```
-"""
-env = "MISE_NPM_BUN"
-hide = true
-type = "Bool"
 
 [npm.package_manager]
 default = "npm"
@@ -1346,12 +1298,6 @@ mise use -g uv
 ```
 """
 env = "MISE_PIPX_UVX"
-optional = true
-type = "Bool"
-
-[pipx_uvx]
-description = "Use uvx instead of pipx if uv is installed and on PATH."
-hide = true
 optional = true
 type = "Bool"
 
@@ -1496,62 +1442,6 @@ type = "ListString"
 [python.venv_stdlib]
 description = "Prefer to use venv from Python's standard library."
 env = "MISE_VENV_STDLIB"
-type = "Bool"
-
-[python_compile]
-deprecated = "Use python.compile instead."
-description = "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
-hide = true
-optional = true
-type = "Bool"
-
-[python_default_packages_file]
-deprecated = "Use python.default_packages_file instead."
-description = "Path to a file containing default python packages to install when installing python."
-hide = true
-optional = true
-type = "Path"
-
-[python_patch_url]
-deprecated = "Use python.patch_url instead."
-description = "URL to fetch python patches from."
-hide = true
-optional = true
-type = "String"
-
-[python_patches_directory]
-deprecated = "Use python.patch_url instead."
-description = "Directory to fetch python patches from."
-hide = true
-optional = true
-type = "Path"
-
-[python_precompiled_arch]
-deprecated = "Use python.precompiled_arch instead."
-description = "Specify the architecture to use for precompiled binaries."
-hide = true
-optional = true
-type = "String"
-
-[python_precompiled_os]
-deprecated = "Use python.precompiled_os instead."
-description = "Specify the OS to use for precompiled binaries."
-hide = true
-optional = true
-type = "String"
-
-[python_pyenv_repo]
-deprecated = "Use python.pyenv_repo instead."
-description = "URL to fetch pyenv from for compiling python."
-hide = true
-optional = true
-type = "String"
-
-[python_venv_stdlib]
-deprecated = "Use python.venv_stdlib instead."
-description = "Prefer to use venv from Python's standard library."
-hide = true
-optional = true
 type = "Bool"
 
 [quiet]
@@ -2177,18 +2067,6 @@ type = "Bool"
 [verbose]
 description = "Shows more verbose output such as installation logs when installing tools."
 env = "MISE_VERBOSE"
-type = "Bool"
-
-[vfox]
-deprecated = "Use disable_backends instead."
-description = "Use vfox as a default plugin backend instead of asdf."
-docs = """
-Use vfox as a default plugin backend. This means running something like `mise use cmake` will
-default to using a vfox plugin for cmake.
-"""
-env = "MISE_VFOX"
-hide = true
-optional = true
 type = "Bool"
 
 [windows_default_file_shell_args]
