@@ -16,10 +16,15 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      - name: Convert to draft and comment
+      - name: Convert to draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr ready --undo "$PR_NUMBER" -R "${{ github.repository }}"
+      - name: Post comment
         env:
           GH_TOKEN: ${{ secrets.MISE_PR_COMMENT_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          gh pr ready --undo "$PR_NUMBER" -R "${{ github.repository }}"
           gh pr comment "$PR_NUMBER" -R "${{ github.repository }}" -b "Thanks for the contribution! This PR has been automatically converted to draft mode. When you're ready for human review, click **Ready for review** to take it out of draft."
