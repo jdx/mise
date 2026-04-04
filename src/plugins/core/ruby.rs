@@ -500,6 +500,37 @@ impl RubyPlugin {
         }
     }
 
+    /// Extract the build revision tag from existing lock_platforms URLs.
+    ///
+    /// URLs look like: `.../releases/download/3.3.11-1/ruby-3.3.11...`
+    /// This extracts "3.3.11-1" when the version is "3.3.11".
+    fn extract_build_revision_from_lock_platforms(
+        tv: &ToolVersion,
+        version: &str,
+    ) -> Option<String> {
+        for pi in tv.lock_platforms.values() {
+            if let Some(url) = &pi.url {
+                // Match `/download/{tag}/` in GitHub release URLs
+                let prefix = "/releases/download/";
+                if let Some(start) = url.find(prefix) {
+                    let after = &url[start + prefix.len()..];
+                    if let Some(end) = after.find('/') {
+                        let tag = &after[..end];
+                        // Check if this is a build revision of the version
+                        if tag != version && tag.starts_with(&format!("{version}-")) {
+                            if let Some(suffix) = tag.strip_prefix(&format!("{version}-")) {
+                                if suffix.parse::<u32>().is_ok() {
+                                    return Some(tag.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Find precompiled asset from a GitHub repo's releases.
     /// On Linux with glibc < 2.35, prefers the no-YJIT variant (.no_yjit.) which
     /// targets glibc 2.17. Falls back to the standard build if no variant is found.
@@ -509,12 +540,31 @@ impl RubyPlugin {
         version: &str,
         platform: &str,
         prefer_no_yjit: bool,
+        locked_build_revision: Option<&str>,
     ) -> Result<Option<(String, Option<String>)>> {
-        let release = match github::get_release_with_build_revision(repo, version).await {
-            Ok(r) => r,
-            Err(err) => {
-                debug!("no precompiled ruby found for {version}: {err}");
-                return Ok(None);
+        let release = if let Some(tag) = locked_build_revision {
+            // Use the exact build revision from the lockfile
+            debug!("using locked build revision {tag} for ruby {version}");
+            match github::get_release(repo, tag).await {
+                Ok(r) => r,
+                Err(err) => {
+                    debug!("locked build revision {tag} not found, finding latest: {err}");
+                    match github::get_release_with_build_revision(repo, version).await {
+                        Ok(r) => r,
+                        Err(err) => {
+                            debug!("no precompiled ruby found for {version}: {err}");
+                            return Ok(None);
+                        }
+                    }
+                }
+            }
+        } else {
+            match github::get_release_with_build_revision(repo, version).await {
+                Ok(r) => r,
+                Err(err) => {
+                    debug!("no precompiled ruby found for {version}: {err}");
+                    return Ok(None);
+                }
             }
         };
         if release.tag_name != version {
@@ -556,6 +606,7 @@ impl RubyPlugin {
         version: &str,
         platform: &str,
         prefer_no_yjit: bool,
+        locked_build_revision: Option<&str>,
     ) -> Result<Option<(String, Option<String>)>> {
         let settings = Settings::get();
         let source = &settings.ruby.precompiled_url;
@@ -568,8 +619,14 @@ impl RubyPlugin {
             )))
         } else {
             // GitHub repo shorthand (default: "jdx/ruby")
-            self.find_precompiled_asset_in_repo(source, version, platform, prefer_no_yjit)
-                .await
+            self.find_precompiled_asset_in_repo(
+                source,
+                version,
+                platform,
+                prefer_no_yjit,
+                locked_build_revision,
+            )
+            .await
         }
     }
 
@@ -622,8 +679,15 @@ impl RubyPlugin {
             return Ok(None);
         };
 
+        let locked_build_revision =
+            Self::extract_build_revision_from_lock_platforms(tv, &tv.version);
         let Some((url, checksum)) = self
-            .resolve_precompiled_url(&tv.version, &platform, Self::needs_no_yjit())
+            .resolve_precompiled_url(
+                &tv.version,
+                &platform,
+                Self::needs_no_yjit(),
+                locked_build_revision.as_deref(),
+            )
             .await?
         else {
             return Ok(None);
@@ -961,9 +1025,17 @@ impl Backend for RubyPlugin {
         // Precompiled binary info if enabled
         if self.should_try_precompiled()
             && let Some(platform) = self.precompiled_platform_for_target(target)
-            && let Some((url, checksum)) = self
-                .resolve_precompiled_url(&tv.version, &platform, false)
+            && let Some((url, checksum)) = {
+                let locked_build_revision =
+                    Self::extract_build_revision_from_lock_platforms(tv, &tv.version);
+                self.resolve_precompiled_url(
+                    &tv.version,
+                    &platform,
+                    false,
+                    locked_build_revision.as_deref(),
+                )
                 .await?
+            }
         {
             // Detect provenance for precompiled binaries
             let provenance = self.detect_precompiled_provenance();
