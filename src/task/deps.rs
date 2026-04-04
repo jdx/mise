@@ -1,5 +1,5 @@
 use crate::config::env_directive::EnvDirective;
-use crate::task::{Task, parse_usage_values_from_task};
+use crate::task::{Task, dep_has_usage_ref, parse_usage_values_from_task};
 use crate::{config::Config, task::task_list::resolve_depends};
 use itertools::Itertools;
 use petgraph::Direction;
@@ -70,7 +70,11 @@ impl Deps {
             }
             // If this task received args (from a parent dependency), re-render
             // its dependency templates with usage values so {{usage.*}} resolves.
-            if !a.args.is_empty() && a.depends_raw.is_some() {
+            if !a.args.is_empty()
+                && a.depends_raw
+                    .as_ref()
+                    .map_or(false, |raw| raw.iter().any(dep_has_usage_ref))
+            {
                 let usage_values = parse_usage_values_from_task(config, &a).await?;
                 if !usage_values.is_empty() {
                     a.render_depends_with_usage(config, &usage_values).await?;

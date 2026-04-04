@@ -19,7 +19,6 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
-use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -1137,11 +1136,7 @@ impl Task {
         let mut tera_ctx = self.tera_ctx(config).await?;
         // Insert usage values into the tera context so templates like
         // {{usage.app}} resolve to the actual CLI arg value.
-        let usage_ctx: HashMap<String, tera::Value> = usage_values
-            .iter()
-            .map(|(k, v)| (k.clone(), tera::Value::String(v.clone())))
-            .collect();
-        tera_ctx.insert("usage", &usage_ctx);
+        tera_ctx.insert("usage", usage_values);
 
         // Re-render from raw templates (not from already-rendered values)
         if let Some(raw) = &self.depends_raw {
@@ -1739,8 +1734,12 @@ where
 }
 
 /// Check if a TaskDep contains {{usage.*}} references that need deferred rendering.
-fn dep_has_usage_ref(dep: &TaskDep) -> bool {
-    let has_ref = |s: &str| s.contains("{{") && s.contains("usage.");
+/// Strips whitespace before matching to handle Tera's `{{ usage.foo }}` syntax.
+pub(crate) fn dep_has_usage_ref(dep: &TaskDep) -> bool {
+    let has_ref = |s: &str| {
+        let s = s.replace(' ', "");
+        s.contains("{{usage.")
+    };
     has_ref(&dep.task)
         || dep.args.iter().any(|a| has_ref(a))
         || dep.env.values().any(|v| has_ref(v))
@@ -1766,7 +1765,10 @@ pub async fn parse_usage_values_from_task(
         .collect();
     let po = match usage::Parser::new(&spec).parse(&args) {
         Ok(po) => po,
-        Err(_) => return Ok(IndexMap::new()),
+        Err(e) => {
+            debug!("usage parse failed for task '{}': {e}", task.name);
+            return Ok(IndexMap::new());
+        }
     };
     let mut values = IndexMap::new();
     for (k, v) in po.as_env() {
