@@ -1,0 +1,24 @@
+name: auto-draft-pr
+
+on:
+  pull_request_target:
+    types: [opened]
+
+jobs:
+  auto-draft:
+    if: >-
+      github.event.pull_request.author_association != 'OWNER' &&
+      github.event.pull_request.user.login != 'jdx' &&
+      github.event.pull_request.user.login != 'renovate[bot]' &&
+      !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Convert to draft and comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr ready --undo "$PR_NUMBER" -R "${{ github.repository }}"
+          gh pr comment "$PR_NUMBER" -R "${{ github.repository }}" -b "Thanks for the contribution! This PR has been automatically converted to draft mode. When you're ready for human review, click **Ready for review** to take it out of draft."
