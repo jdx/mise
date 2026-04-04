@@ -428,6 +428,9 @@ impl Settings {
         if let Some(go_skip_checksum) = self.go_skip_checksum {
             self.go.skip_checksum = go_skip_checksum;
         }
+        if self.npm.bun {
+            self.npm.package_manager = NpmPackageManager::Bun;
+        }
     }
 
     pub fn add_cli_matches(cli: &Cli) {
