@@ -424,6 +424,8 @@ parsed — so only information available at OS level can be used.
 
 ### Examples
 
+<div v-pre>
+
 ```toml
 # ~/.config/mise/miserc.toml
 
@@ -434,8 +436,12 @@ ceiling_paths = ["{{ env.HOME }}"]
 ignored_config_paths = ["{{ env.HOME }}/shared"]
 ```
 
+</div>
+
 Conditionals work too — `{% if %}` blocks at the top level produce empty lines when the
 condition is false, which TOML ignores:
+
+<div v-pre>
 
 ```toml
 # ~/.config/mise/miserc.toml
@@ -443,6 +449,8 @@ condition is false, which TOML ignores:
 ceiling_paths = ["{{ env.HOME }}/work"]
 {% endif %}
 ```
+
+</div>
 
 ::: tip
 If a template fails to render (e.g. due to an undefined variable), mise will log a warning

@@ -36,7 +36,11 @@ pub fn init() -> Result<()> {
 
 /// Get the loaded miserc settings, or default if not initialized.
 pub fn get() -> &'static MisercSettings {
-    MISERC.get_or_init(|| load_miserc_settings().unwrap_or_default())
+    MISERC.get_or_init(|| {
+        let settings = load_miserc_settings().unwrap_or_default();
+        let _ = take_tera_accessed_files();
+        settings
+    })
 }
 
 /// Get the MISE_ENV value from miserc, if set.
@@ -91,7 +95,9 @@ fn render_miserc_template(
     context.insert("config_root", config_root);
     match std::env::current_dir() {
         Ok(dir) => context.insert("cwd", &dir),
-        Err(e) => debug!("miserc template: could not determine cwd, `cwd` will be unavailable: {e}"),
+        Err(e) => {
+            debug!("miserc template: could not determine cwd, `cwd` will be unavailable: {e}")
+        }
     };
     context.insert("xdg_cache_home", &*env::XDG_CACHE_HOME);
     context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);

@@ -27,6 +27,8 @@ env = ["development"]
 `.miserc.toml` supports [Tera templates](/templates#template-support-in-miserc-toml),
 which is useful for settings like `ceiling_paths` that reference home or XDG directories:
 
+<div v-pre>
+
 ```toml
 # .miserc.toml
 
@@ -36,6 +38,8 @@ ceiling_paths = ["{{ env.HOME }}"]
 # Or use the XDG config home variable
 ignored_config_paths = ["{{ xdg_config_home }}/mise/shared.toml"]
 ```
+
+</div>
 
 Note that only OS-level context is available (environment variables, `cwd`, `arch()`, `os()`,
 etc.) — settings from `mise.toml` are not yet loaded at this stage.
