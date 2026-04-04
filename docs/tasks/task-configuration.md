@@ -129,6 +129,49 @@ run = "./deploy.sh"
 
 Note: These environment variables are passed only to the specified dependency, not to the current task or other dependencies.
 
+#### Passing parent task arguments to dependencies
+
+You can forward a parent task's arguments to its dependencies using `{{usage.*}}` templates.
+Both the parent and child tasks must define a `usage` spec for the arguments they accept:
+
+```mise-toml
+[tasks.build]
+usage = 'arg "<app>"'
+run = 'echo "building {{usage.app}}"'
+
+[tasks.deploy]
+usage = 'arg "<app>"'
+depends = [{ task = "build", args = ["{{usage.app}}"] }]
+run = 'echo "deploying {{usage.app}}"'
+```
+
+Running `mise run deploy myapp` passes `"myapp"` to both `deploy` and its `build` dependency.
+
+This also works with the string syntax:
+
+```mise-toml
+[tasks.deploy]
+usage = 'arg "<app>"'
+depends = ["build {{usage.app}}"]
+run = 'echo "deploying {{usage.app}}"'
+```
+
+And with flags:
+
+```mise-toml
+[tasks.compile]
+usage = 'flag "--target <target>"'
+run = 'echo "compiling for $usage_target"'
+
+[tasks.package]
+usage = 'flag "--target <target>"'
+depends = [{ task = "compile", args = ["--target", "{{usage.target}}"] }]
+run = 'echo "packaging for $usage_target"'
+```
+
+Arguments flow through dependency chains — if A depends on B which depends on C, each task can
+forward its resolved arguments to its own dependencies.
+
 ### `depends_post`
 
 - **Type**: `string | string[] | { task: string, args?: string[], env?: { [key]: string } }[]`

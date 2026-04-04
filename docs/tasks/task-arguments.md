@@ -70,6 +70,11 @@ used with Tera's `for` loops and filters like `length`. The `usage` map is
 `flag()`) described later on this page—you should not mix the two approaches in
 the same task.
 
+`{{usage.*}}` templates can also be used in `depends`, `depends_post`, and
+`wait_for` to forward arguments to dependency tasks. See
+[Passing parent task arguments to dependencies](/tasks/task-configuration#passing-parent-task-arguments-to-dependencies)
+for details.
+
 **Help output example:**
 
 ```shellsession
