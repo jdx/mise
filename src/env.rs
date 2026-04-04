@@ -646,16 +646,22 @@ fn environment(args: &[String]) -> Vec<String> {
         // When running as shim, ignore command line args and use env vars only
         vec![]
     } else {
+        let arg_prefixes: Vec<String> = arg_defs.iter().map(|a| format!("{a}=")).collect();
         // Try to get from command line args first
-        args.windows(2)
-            .take_while(|window| !window.iter().any(|a| a == "--"))
-            .filter_map(|window| {
-                if arg_defs.contains(&*window[0]) {
-                    Some(window[1].clone())
-                } else {
-                    None
+        // Handles both `--env production` (separate args) and `--env=production` (joined with =)
+        let mut values = Vec::new();
+        let args_before_dashdash: Vec<_> = args.iter().take_while(|a| a.as_str() != "--").collect();
+        for (i, arg) in args_before_dashdash.iter().enumerate() {
+            if let Some(prefix) = arg_prefixes.iter().find(|p| arg.starts_with(p.as_str())) {
+                values.push(arg[prefix.len()..].to_string());
+            } else if arg_defs.contains(arg.as_str()) {
+                if let Some(next) = args_before_dashdash.get(i + 1) {
+                    values.push(next.to_string());
                 }
-            })
+            }
+        }
+        values
+            .into_iter()
             .flat_map(|s| {
                 s.split(',')
                     .filter(|s| !s.is_empty())
