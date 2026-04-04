@@ -12,7 +12,7 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::{MiseToml, MonorepoConfig};
 use crate::config::env_directive::EnvDirective;
-use crate::config::{AliasMap, Settings, settings};
+use crate::config::{AliasMap, BackendAliasMap, Settings, settings};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::hash_to_str;
@@ -102,6 +102,10 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet>;
     fn aliases(&self) -> eyre::Result<AliasMap> {
         Ok(Default::default())
+    }
+
+    fn backend_aliases(&self) -> BackendAliasMap {
+        Default::default()
     }
 
     fn shell_aliases(&self) -> eyre::Result<IndexMap<String, String>> {

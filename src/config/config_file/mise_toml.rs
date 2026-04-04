@@ -22,7 +22,7 @@ use crate::config::config_file::{ConfigFile, TaskConfig, config_trust_root, trus
 use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{AgeFormat, EnvDirective, EnvDirectiveOptions, RequiredValue};
 use crate::config::settings::SettingsPartial;
-use crate::config::{Alias, AliasMap, Config};
+use crate::config::{Alias, AliasMap, BackendAliasMap, Config};
 use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
 use crate::hooks::{Hook, HookDef, Hooks};
@@ -94,6 +94,8 @@ pub struct MiseToml {
     alias: AliasMap,
     #[serde(default)]
     tool_alias: AliasMap,
+    #[serde(default)]
+    backend_alias: BackendAliasMap,
     #[serde(default)]
     shell_alias: IndexMap<String, String>,
     #[serde(skip)]
@@ -861,6 +863,10 @@ impl ConfigFile for MiseToml {
             .collect()
     }
 
+    fn backend_aliases(&self) -> BackendAliasMap {
+        self.backend_alias.clone()
+    }
+
     fn shell_aliases(&self) -> eyre::Result<IndexMap<String, String>> {
         self.shell_alias
             .iter()
@@ -1000,6 +1006,7 @@ impl Clone for MiseToml {
             env_path: self.env_path.clone(),
             alias: self.alias.clone(),
             tool_alias: self.tool_alias.clone(),
+            backend_alias: self.backend_alias.clone(),
             shell_alias: self.shell_alias.clone(),
             doc: Mutex::new(self.doc.lock().unwrap().clone()),
             hooks: self.hooks.clone(),
@@ -2595,6 +2602,56 @@ run = 'echo "template"'
             opts.depends,
             Some(vec!["tiny".to_string()]),
             "single string depends should be wrapped in a vec"
+        );
+    }
+
+    #[test]
+    fn test_backend_alias_deserialization() {
+        let p = dirs::CWD.as_ref().unwrap().join("fake.mise.toml");
+        let cf = MiseToml::from_str(
+            r#"
+[backend_alias]
+mygitlab = { backend = "gitlab", api_url = "https://gitlab.mycompany.com/api/v4" }
+mygh = { backend = "github" }
+"#,
+            &p,
+        )
+        .unwrap();
+
+        let aliases = cf.backend_aliases();
+        assert_eq!(2, aliases.len(), "should have 2 backend aliases");
+
+        let def = aliases.get("mygitlab").expect("mygitlab alias not found");
+        assert_eq!("gitlab", def.backend);
+        assert_eq!(
+            Some("https://gitlab.mycompany.com/api/v4"),
+            def.opts().get("api_url")
+        );
+
+        let def2 = aliases.get("mygh").expect("mygh alias not found");
+        assert_eq!("github", def2.backend);
+        assert!(def2.opts().opts.is_empty(), "mygh should have no extra opts");
+    }
+
+    #[test]
+    fn test_backend_alias_table_syntax() {
+        let p = dirs::CWD.as_ref().unwrap().join("fake.mise.toml");
+        let cf = MiseToml::from_str(
+            r#"
+[backend_alias.myforgejo]
+backend = "forgejo"
+api_url = "https://forgejo.mycompany.com/api/v1"
+"#,
+            &p,
+        )
+        .unwrap();
+
+        let aliases = cf.backend_aliases();
+        let def = aliases.get("myforgejo").expect("myforgejo alias not found");
+        assert_eq!("forgejo", def.backend);
+        assert_eq!(
+            Some("https://forgejo.mycompany.com/api/v1"),
+            def.opts().get("api_url")
         );
     }
 }

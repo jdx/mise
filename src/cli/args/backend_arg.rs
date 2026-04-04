@@ -353,6 +353,12 @@ impl BackendArg {
                 return format!("asdf:{url}");
             }
 
+            if let Some((prefix, tool_name)) = short.split_once(':') {
+                if let Some(def) = Config::get_().backend_aliases.get(prefix) {
+                    return format!("{}:{}", def.backend, tool_name);
+                }
+            }
+
             let config = Config::get_();
             if let Some(backend) = lockfile::get_locked_backend(&config, short) {
                 return backend;
@@ -454,6 +460,15 @@ impl BackendArg {
             .map(|rt| rt.backend_options(&full))
             .unwrap_or_default();
 
+        // backend_alias defaults sit between registry opts (lower) and per-tool opts (higher)
+        if config::is_loaded() {
+            if let Some((prefix, _)) = self.short.split_once(':') {
+                if let Some(def) = Config::get_().backend_aliases.get(prefix) {
+                    opts.opts.extend(def.opts().opts);
+                }
+            }
+        }
+
         // Get user-provided options (from self.opts or from full string)
         let user_opts = self.opts.clone().unwrap_or_else(|| {
             if let Some((_, opts_str)) = split_bracketed_opts(&full) {
@@ -463,7 +478,7 @@ impl BackendArg {
             }
         });
 
-        // Merge user options on top (user options take precedence)
+        // Merge user options on top (user options take precedence over alias defaults)
         for (k, v) in user_opts.opts {
             opts.opts.insert(k, v);
         }
@@ -829,4 +844,5 @@ mod tests {
             fa.full_with_opts()
         );
     }
+
 }
