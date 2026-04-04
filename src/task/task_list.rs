@@ -13,7 +13,6 @@ use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use itertools::Itertools;
 use std::collections::HashSet;
 use std::iter::once;
-use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -121,20 +120,18 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
         }
 
         // Check if there are any untrusted config files in the current directory
-        // that might contain tasks. Skip .tool-versions files without template
-        // syntax since they're purely declarative and can't define tasks.
+        // that might contain tasks.
         if let Some(cwd) = &*dirs::CWD {
             use crate::config::config_file::{config_trust_root, is_trusted};
-            use crate::config::config_files_in_dir;
+            use crate::config::{config_files_in_dir, is_tool_versions_file};
 
             let config_files = config_files_in_dir(cwd);
             let untrusted_configs: Vec<_> = config_files
                 .iter()
                 .filter(|p| {
-                    if is_plain_tool_versions(p) {
-                        return false;
-                    }
-                    !is_trusted(&config_trust_root(p)) && !is_trusted(p)
+                    !is_tool_versions_file(p)
+                        && !is_trusted(&config_trust_root(p))
+                        && !is_trusted(p)
                 })
                 .collect();
 
@@ -513,13 +510,4 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
         })
         .flatten_ok()
         .collect()
-}
-
-/// Plain .tool-versions without Tera templates can't define tasks or execute code.
-fn is_plain_tool_versions(path: &Path) -> bool {
-    path.file_name()
-        .is_some_and(|f| f.to_string_lossy().ends_with(".tool-versions"))
-        && file::read_to_string(path).is_ok_and(|s| {
-            !s.contains("{{") && !s.contains("{%") && !s.contains("{#")
-        })
 }
