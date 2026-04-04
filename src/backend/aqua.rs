@@ -677,11 +677,14 @@ impl Backend for AquaBackend {
             {
                 Ok(verified) => provenance = Some(verified),
                 Err(e) => {
+                    // Verification failed but still record the detected provenance type.
+                    // This preserves the install-time verification path (which will verify
+                    // on first install) while not breaking lockfile generation due to
+                    // transient issues (e.g., Rekor key format changes, network errors).
                     warn!(
                         "lock-time provenance verification failed for {}: {e}",
                         self.id
                     );
-                    provenance = None;
                 }
             }
         }
