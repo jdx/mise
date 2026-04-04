@@ -46,9 +46,10 @@ create_isolated_env() {
 	# Create the required directories
 	mkdir -p "$TEST_HOME/bin" "$TEST_WORKDIR" "$TEST_TMPDIR" "$MISE_SYSTEM_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR"
 
-	# The dummy plugin is required for some tests
+	# The dummy and needs-dummy plugins are required for some tests
 	mkdir -p "$MISE_DATA_DIR/plugins"
 	ln -s "$ROOT/test/data/plugins/dummy" "$MISE_DATA_DIR/plugins/dummy"
+	ln -s "$ROOT/test/data/plugins/needs-dummy" "$MISE_DATA_DIR/plugins/needs-dummy"
 }
 
 remove_isolated_env() {

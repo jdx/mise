@@ -2090,6 +2090,21 @@
               },
               "description": "environment variables during tool installation"
             },
+            "depends": {
+              "oneOf": [
+                {
+                  "description": "tools that must be installed before this tool",
+                  "type": "string"
+                },
+                {
+                  "description": "tools that must be installed before this tool",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
             "postinstall": {
               "description": "command to run after tool installation",
               "type": "string"
