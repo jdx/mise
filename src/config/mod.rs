@@ -361,7 +361,7 @@ impl Config {
 
         let has_opts = |tr: &(&Arc<BackendArg>, &Vec<crate::toolset::ToolRequest>, _)| -> bool {
             tr.1.first()
-                .map_or(false, |req| !req.options().opts.is_empty())
+                .is_some_and(|req| !req.options().opts.is_empty())
         };
         // Prefer whichever match has options set. When both have options,
         // prefer the short (alias-specific) match since it's more specific.
