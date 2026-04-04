@@ -1,0 +1,111 @@
+#!/usr/bin/env zsh
+# shellcheck disable=SC1071
+set -euo pipefail
+
+# Reproduces the case where entering an untrusted project triggers hook-env from
+# both chpwd and precmd. The user-visible symptom is a duplicate `mise trust`
+# warning after a single `cd`.
+#
+# The expected zsh behavior is:
+# - `precmd` remains registered after activation and after directory changes
+# - the prompt immediately following `cd` does not repeat the same trust warning
+# - zsh does not fall back to chpwd-only behavior after the startup prompt
+
+# The e2e harness trusts the isolated workspace by default; clear that so this
+# test exercises the real untrusted-config warning path.
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+# In CI, mise auto-trusts configs via ci_info::is_ci(); clear the common CI vars
+# so hook-env follows the normal interactive trust-check behavior.
+unset CI GITHUB_ACTIONS GITHUB_ACTION
+
+run_hooks_to_file() {
+	local outfile="$1"
+	shift
+	local hook
+	: >"$outfile"
+	for hook in "$@"; do
+		"$hook" >>"$outfile" 2>&1 || true
+	done
+}
+
+contains_trust_warning() {
+	local file="$1"
+	grep -q "Config files in" "$file" && grep -q "are not trusted" "$file"
+}
+
+contains_mise_precmd_hook() {
+	[[ " ${precmd_functions[*]-} " == *" _mise_hook_precmd "* ]]
+}
+
+mkdir -p project
+cat >project/.mise.toml <<'EOF'
+[env]
+FOO = "bar"
+EOF
+
+eval "$(mise activate zsh --status)"
+
+startup_file="$(mktemp)"
+chpwd_file="$(mktemp)"
+precmd_file="$(mktemp)"
+trap 'rm -f "$startup_file" "$chpwd_file" "$precmd_file"' EXIT
+
+# A persistent mise precmd hook should be registered immediately after activation.
+if ! contains_mise_precmd_hook; then
+	echo "expected mise precmd hook to be registered after activation"
+	printf 'precmd_functions:\n'
+	printf '%s\n' ${precmd_functions[@]-}
+	printf 'chpwd_functions:\n'
+	printf '%s\n' ${chpwd_functions[@]-}
+	exit 1
+fi
+
+# Simulate the first prompt after activation before entering the untrusted
+# project.
+run_hooks_to_file "$startup_file" "${precmd_functions[@]}"
+if contains_trust_warning "$startup_file"; then
+	echo "startup precmd should not hit an untrusted project before cd"
+	cat "$startup_file"
+	exit 1
+fi
+
+# The mise precmd hook should remain registered after the startup prompt so zsh
+# can continue checking for later environment changes on subsequent prompts.
+if ! contains_mise_precmd_hook; then
+	echo "expected mise precmd hook to remain registered after the startup prompt"
+	printf '%s\n' ${precmd_functions[@]-}
+	exit 1
+fi
+
+# In an interactive zsh session, `cd` would trigger `chpwd` hooks and the next
+# prompt would trigger `precmd` hooks automatically. In this non-interactive
+# test script, we invoke both hook lists manually.
+cd project
+
+# Crucially, `run_hooks_to_file` executes the hooks in the current shell rather
+# than via command substitution, so hook functions can still mutate shell state.
+run_hooks_to_file "$chpwd_file" "${chpwd_functions[@]}"
+run_hooks_to_file "$precmd_file" "${precmd_functions[@]-}"
+
+# The chpwd hook should surface the untrusted-config warning on directory entry.
+if ! contains_trust_warning "$chpwd_file"; then
+	echo "expected chpwd hook to report untrusted config"
+	cat "$chpwd_file"
+	exit 1
+fi
+
+# The subsequent prompt should not repeat the same warning.
+if contains_trust_warning "$precmd_file"; then
+	echo "precmd hook should not repeat untrusted config error after chpwd"
+	cat "$precmd_file"
+	exit 1
+fi
+
+# The mise precmd hook should still remain registered after the prompt following
+# `cd`, so later prompts can continue to notice config/watch-file changes.
+if ! contains_mise_precmd_hook; then
+	echo "expected mise precmd hook to remain registered after chpwd + precmd"
+	printf '%s\n' ${precmd_functions[@]-}
+	exit 1
+fi
