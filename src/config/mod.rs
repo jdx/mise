@@ -1096,7 +1096,7 @@ fn all_dirs_from(start_dir: &Path) -> Result<Vec<PathBuf>> {
 }
 
 /// Returns true if a path is a .tool-versions file (lower priority for writes)
-fn is_tool_versions_file(p: &Path) -> bool {
+pub(crate) fn is_tool_versions_file(p: &Path) -> bool {
     p.file_name()
         .is_some_and(|f| f.to_string_lossy().ends_with(".tool-versions"))
 }
