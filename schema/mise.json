@@ -948,6 +948,11 @@
           "description": "Require lockfile URLs to be present during installation.",
           "type": "boolean"
         },
+        "locked_verify_provenance": {
+          "default": false,
+          "description": "Re-verify provenance at install time even when the lockfile already has provenance.",
+          "type": "boolean"
+        },
         "lockfile": {
           "description": "Create and read lockfiles for tool versions.",
           "type": "boolean"

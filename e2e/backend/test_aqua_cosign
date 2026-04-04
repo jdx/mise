@@ -1,23 +1,26 @@
 #!/usr/bin/env bash
 # Test native Cosign verification for aqua packages
+# Uses fork-cleaner which has bundle-based cosign (native verification),
+# unlike sops which only has opts-based cosign (CLI pass-through).
 
 set -euo pipefail
 
 export MISE_EXPERIMENTAL=1
 export MISE_AQUA_COSIGN=true
 export MISE_AQUA_SLSA=false
+export MISE_AQUA_GITHUB_ATTESTATIONS=false
 
 echo "=== Testing Native Cosign Verification ==="
 
-# Test: Install sops which has cosign signatures configured (v3.8.0+)
-echo "Installing sops with native Cosign verification..."
+# Test: Install fork-cleaner which has cosign bundle verification configured
+echo "Installing fork-cleaner with native Cosign verification..."
 
 # Capture the installation output to verify the native verification is being used
-output=$(mise install aqua:getsops/sops@3.9.0 2>&1)
+output=$(mise install aqua:caarlos0/fork-cleaner@2.4.0 2>&1)
 echo "$output"
 
 # Verify the native Cosign verification was used
-if echo "$output" | grep -q "verify checksums with cosign"; then
+if echo "$output" | grep -q "Cosign"; then
 	echo "✅ Native Cosign verification was used"
 else
 	echo "❌ ERROR: Cosign verification message not found in output"
@@ -27,11 +30,11 @@ else
 fi
 
 # Verify the tool works
-assert_contains "mise x aqua:getsops/sops@3.9.0 -- sops --version" "3.9.0"
-echo "✓ sops installed and working correctly"
+assert_contains "mise x aqua:caarlos0/fork-cleaner@2.4.0 -- fork-cleaner --version" "2.4.0"
+echo "✓ fork-cleaner installed and working correctly"
 
 # Cleanup
-mise uninstall aqua:getsops/sops@3.9.0 || true
+mise uninstall aqua:caarlos0/fork-cleaner@2.4.0 || true
 
 echo ""
 echo "=== Native Cosign Verification Test Passed ✓ ==="
