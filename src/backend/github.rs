@@ -577,10 +577,7 @@ impl UnifiedGitBackend {
                 .await
                 {
                     Ok(true) => {
-                        debug!(
-                            "lock-time GitHub attestations verified for {}",
-                            repo
-                        );
+                        debug!("lock-time GitHub attestations verified for {}", repo);
                         return Ok(ProvenanceType::GithubAttestations);
                     }
                     Ok(false) => {
