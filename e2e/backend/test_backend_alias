@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# Test backend_alias: basic alias redirects to real backend
+cat <<EOF >mise.toml
+[backend_alias]
+mygithub = { backend = "github" }
+
+[tools]
+"mygithub:jdx/mise-test-fixtures" = { version = "1.0.0", asset_pattern = "hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+
+mise install
+assert_contains "mise x -- hello-world" "hello world"
+
+mise uninstall "mygithub:jdx/mise-test-fixtures"
+
+# Test backend_alias: options defined in alias are inherited by tools
+cat <<EOF >mise.toml
+[backend_alias]
+mygithub = { backend = "github", asset_pattern = "hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+
+[tools]
+"mygithub:jdx/mise-test-fixtures" = "1.0.0"
+EOF
+
+mise install
+assert_contains "mise x -- hello-world" "hello world"
+
+mise uninstall "mygithub:jdx/mise-test-fixtures"
+
+# Test backend_alias: per-tool options override alias defaults
+cat <<EOF >mise.toml
+[backend_alias]
+mygithub = { backend = "github", asset_pattern = "hello-world" }
+
+[tools]
+"mygithub:jdx/mise-test-fixtures" = { version = "1.0.0", asset_pattern = "hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+
+mise install
+assert_contains "mise x -- hello-world" "hello world"

@@ -52,6 +52,10 @@ export default withMermaid(
               text: "Configuration Environments",
               link: "/configuration/environments",
             },
+            {
+              text: "Backend Aliases",
+              link: "/configuration/backend-alias",
+            },
           ],
         },
         {
