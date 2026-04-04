@@ -110,7 +110,18 @@ impl LsRemote {
     async fn get_plugin(&self, config: &Arc<Config>) -> Result<Option<Arc<dyn Backend>>> {
         match &self.plugin {
             Some(tool_arg) => {
-                let backend = tool_arg.ba.backend()?;
+                // When inline opts are present (e.g. [channels=["bioconda"]]), bypass the
+                // TOOLS cache so the backend carries those opts in its BackendArg, allowing
+                // _list_remote_versions to use them exclusively (overriding mise.toml).
+                // Without inline opts, fall back to the TOOLS-cache backend so mise.toml is read.
+                let backend = if tool_arg.ba.opts.is_some() {
+                    match backend::arg_to_backend((*tool_arg.ba).clone()) {
+                        Some(b) => b,
+                        None => tool_arg.ba.backend()?,
+                    }
+                } else {
+                    tool_arg.ba.backend()?
+                };
                 let mpr = MultiProgressReport::get();
                 if let Some(plugin) = backend.plugin() {
                     plugin.ensure_installed(config, &mpr, false, false).await?;
