@@ -407,6 +407,27 @@ impl Settings {
             self.not_found_auto_install = false;
             self.task.run_auto_install = false;
         }
+        if let Some(go_default_packages_file) = &self.go_default_packages_file {
+            self.go.default_packages_file = go_default_packages_file.clone();
+        }
+        if let Some(go_download_mirror) = &self.go_download_mirror {
+            self.go.download_mirror = go_download_mirror.clone();
+        }
+        if let Some(go_repo) = &self.go_repo {
+            self.go.repo = go_repo.clone();
+        }
+        if let Some(go_set_gobin) = self.go_set_gobin {
+            self.go.set_gobin = Some(go_set_gobin);
+        }
+        if let Some(go_set_gopath) = self.go_set_gopath {
+            self.go.set_gopath = go_set_gopath;
+        }
+        if let Some(go_set_goroot) = self.go_set_goroot {
+            self.go.set_goroot = go_set_goroot;
+        }
+        if let Some(go_skip_checksum) = self.go_skip_checksum {
+            self.go.skip_checksum = go_skip_checksum;
+        }
     }
 
     pub fn add_cli_matches(cli: &Cli) {
