@@ -183,6 +183,8 @@ run_in_docker() {
 		-v "$ROOT:/mise-src:ro"
 		-v "$mise_bin:/usr/local/bin/mise:ro"
 		-e ROOT=/mise-src
+		-e CI="${CI:-}"
+		-e GITHUB_ACTION="${GITHUB_ACTION:-}"
 		-e GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 		-e MISE_DEBUG="${MISE_DEBUG:-0}"
 		-e MISE_TRACE="${MISE_TRACE:-0}"
