@@ -662,8 +662,8 @@ impl Backend for AquaBackend {
         // For the current platform, verify provenance cryptographically at lock time.
         // This ensures the lockfile's provenance entry is backed by actual verification,
         // not just registry metadata. Cross-platform entries remain detection-only.
-        if provenance.is_some() && target.is_current() {
-            if let Some(ref artifact_url) = url {
+        if provenance.is_some() && target.is_current()
+            && let Some(ref artifact_url) = url {
                 match self
                     .verify_provenance_at_lock_time(
                         &pkg,
@@ -683,7 +683,6 @@ impl Backend for AquaBackend {
                     }
                 }
             }
-        }
 
         Ok(PlatformInfo {
             url,
