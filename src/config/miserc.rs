@@ -283,7 +283,10 @@ ceiling_paths = ["/home/user"]
         let content = r#"env = ["{{ os() }}"]"#;
         let result = render_miserc_template(&mut tera, content, Path::new("/some/dir"));
         // os() should return a non-empty string (linux, macos, windows, etc.)
-        assert!(!result.contains("{{ os() }}"), "Template was not rendered: {result}");
+        assert!(
+            !result.contains("{{ os() }}"),
+            "Template was not rendered: {result}"
+        );
     }
 
     #[test]
