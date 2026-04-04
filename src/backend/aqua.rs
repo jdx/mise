@@ -1590,10 +1590,7 @@ impl AquaBackend {
 
             ctx.pr.set_message("verify slsa".to_string());
             let artifact_path = tv.download_path().join(filename);
-            // Errors from run_slsa_check are treated leniently at install time:
-            // the provenance asset may not exist for older releases or may be
-            // misconfigured. Lock-time (which also calls run_slsa_check) is strict.
-            match self
+            let provenance_url = self
                 .run_slsa_check(
                     &artifact_path,
                     pkg,
@@ -1601,23 +1598,17 @@ impl AquaBackend {
                     &tv.download_path(),
                     Some(ctx.pr.as_ref()),
                 )
-                .await
-            {
-                Ok(provenance_url) => {
-                    ctx.pr.set_message("✓ SLSA provenance verified".to_string());
-                    // Record provenance in lockfile only if not already set by a
-                    // higher-priority verification (github-attestations runs first)
-                    let platform_key = self.get_platform_key();
-                    let pi = tv.lock_platforms.entry(platform_key).or_default();
-                    if pi.provenance.is_none() {
-                        pi.provenance = Some(ProvenanceType::Slsa {
-                            url: Some(provenance_url),
-                        });
-                    }
-                }
-                Err(e) => {
-                    warn!("SLSA verification skipped for {tv}: {e}");
-                }
+                .await?;
+
+            ctx.pr.set_message("✓ SLSA provenance verified".to_string());
+            // Record provenance in lockfile only if not already set by a
+            // higher-priority verification (github-attestations runs first)
+            let platform_key = self.get_platform_key();
+            let pi = tv.lock_platforms.entry(platform_key).or_default();
+            if pi.provenance.is_none() {
+                pi.provenance = Some(ProvenanceType::Slsa {
+                    url: Some(provenance_url),
+                });
             }
         }
         Ok(())
