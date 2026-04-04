@@ -103,7 +103,7 @@ impl From<InstallStateTool> for BackendArg {
 /// Split a string like `"http:hello[url=...,bin=bin]"` into `("http:hello", "url=...,bin=bin")`.
 /// Returns `None` if no bracketed opts are present.
 pub fn split_bracketed_opts(s: &str) -> Option<(&str, &str)> {
-    regex!(r"^(.+)\[(.+)\]$")
+    regex!(r"^([^\[]+)\[(.+)\]$")
         .captures(s)
         .map(|c| (c.get(1).unwrap().as_str(), c.get(2).unwrap().as_str()))
 }

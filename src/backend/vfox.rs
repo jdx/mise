@@ -61,11 +61,18 @@ impl Backend for VfoxBackend {
                     Settings::get().ensure_experimental("custom backends")?;
                     debug!("Using backend method for plugin: {}", this.pathname);
                     let tool_name = this.get_tool_name()?;
-                    let opts = config
-                        .get_tool_opts(&this.ba)
-                        .await?
-                        .map(|o| o.opts)
-                        .unwrap_or_default();
+                    // Inline opts (e.g. [channels=bioconda] CLI syntax) are used exclusively
+                    // when present. Config-file opts (mise.toml) are only used as a fallback
+                    // when no inline opts were provided.
+                    let opts = if let Some(inline) = &this.ba.opts {
+                        inline.opts.clone()
+                    } else {
+                        config
+                            .get_tool_opts(&this.ba)
+                            .await?
+                            .map(|o| o.opts)
+                            .unwrap_or_default()
+                    };
                     let versions = vfox
                         .backend_list_versions(&this.pathname, tool_name, opts)
                         .await
