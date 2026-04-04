@@ -677,14 +677,15 @@ impl Backend for AquaBackend {
             {
                 Ok(verified) => provenance = Some(verified),
                 Err(e) => {
-                    // Verification failed but still record the detected provenance type.
-                    // This preserves the install-time verification path (which will verify
-                    // on first install) while not breaking lockfile generation due to
-                    // transient issues (e.g., Rekor key format changes, network errors).
+                    // Clear provenance so install-time verification will run.
+                    // If we kept the unverified provenance, has_lockfile_integrity
+                    // would be true and verify_provenance() would be skipped.
                     warn!(
-                        "lock-time provenance verification failed for {}: {e}",
+                        "lock-time provenance verification failed for {}, \
+                         will be verified at install time: {e}",
                         self.id
                     );
+                    provenance = None;
                 }
             }
         }
@@ -1324,7 +1325,7 @@ impl AquaBackend {
         // This closes the gap where lock-time detection records provenance from registry
         // metadata without cryptographic verification.
         let settings = Settings::get();
-        let force_verify = settings.locked_verify_provenance || settings.paranoid;
+        let force_verify = settings.force_provenance_verify();
         let platform_key = self.get_platform_key();
         let has_lockfile_integrity = tv
             .lock_platforms

@@ -540,6 +540,10 @@ impl Settings {
         self.lockfile.unwrap_or(true)
     }
 
+    pub fn force_provenance_verify(&self) -> bool {
+        self.locked_verify_provenance || self.paranoid
+    }
+
     pub fn ensure_experimental(&self, what: &str) -> Result<()> {
         if !self.experimental {
             bail!("{what} is experimental. Enable it with `mise settings experimental=true`");
