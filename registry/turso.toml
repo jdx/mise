@@ -1,0 +1,3 @@
+backends = ["github:tursodatabase/turso-cli"]
+description = "Command line interface for Turso"
+test = { cmd = "turso --version", expected = "{{version}}" }
