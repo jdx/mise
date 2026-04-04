@@ -1,0 +1,43 @@
+#!/usr/bin/env zsh
+# shellcheck disable=SC1071
+set -eu
+
+# Verify that zsh does not fall into an every-other-prompt pattern after the
+# first precmd run. Two consecutive precmd runs without a directory change
+# should both run hook-env normally.
+
+eval "$(mise activate zsh --status)"
+
+if [[ "${__MISE_ZSH_PRECMD_RUN:-unset}" != "0" ]]; then
+	echo "expected __MISE_ZSH_PRECMD_RUN=0 after activation"
+	exit 1
+fi
+
+if [[ "${__MISE_ZSH_CHPWD_RAN:-unset}" != "0" ]]; then
+	echo "expected __MISE_ZSH_CHPWD_RAN=0 after activation"
+	exit 1
+fi
+
+_mise_hook_precmd >/dev/null 2>&1
+
+if [[ "${__MISE_ZSH_PRECMD_RUN:-unset}" != "1" ]]; then
+	echo "expected first precmd to run hook-env and set __MISE_ZSH_PRECMD_RUN=1"
+	exit 1
+fi
+
+if [[ "${__MISE_ZSH_CHPWD_RAN:-unset}" != "0" ]]; then
+	echo "expected no chpwd skip flag after the first precmd"
+	exit 1
+fi
+
+_mise_hook_precmd >/dev/null 2>&1
+
+if [[ "${__MISE_ZSH_PRECMD_RUN:-unset}" != "1" ]]; then
+	echo "expected second consecutive precmd to run normally"
+	exit 1
+fi
+
+if [[ "${__MISE_ZSH_CHPWD_RAN:-unset}" != "0" ]]; then
+	echo "expected no chpwd skip flag after the second precmd"
+	exit 1
+fi
