@@ -194,7 +194,7 @@ mise use node@24
 Backend support for lockfile features varies:
 
 - ✅ **Full support** (version + checksum + size + URL): `aqua`, `http`, `github`, `gitlab`
-  - _Provenance support_: `aqua`, `github`, `core:ruby` (precompiled binaries), `core:zig` (install-time)
+  - _Provenance support_: `aqua`, `github`, `core:python` (precompiled binaries), `core:ruby` (precompiled binaries), `core:zig` (install-time)
 - ⚠️ **Partial support** (version + URL + provenance): `vfox` (tool plugins only)
 - ⚠️ **Partial support** (version + checksum + size): `ubi`
 - 📝 **Basic support** (version + checksum): `core` (some tools)

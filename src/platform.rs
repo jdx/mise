@@ -193,6 +193,14 @@ impl From<&str> for Platform {
 fn is_musl_system() -> bool {
     use std::sync::LazyLock;
     static IS_MUSL: LazyLock<bool> = LazyLock::new(|| {
+        // Allow explicit override via environment variable (only gnu/musl accepted)
+        if let Ok(val) = std::env::var("MISE_LIBC") {
+            match val.to_lowercase().as_str() {
+                "musl" => return true,
+                "gnu" => return false,
+                _ => {} // invalid value ignored, fall through to runtime detection
+            }
+        }
         // If glibc's dynamic linker exists, this is a glibc system
         for dir in ["/lib", "/lib64"] {
             if has_file_prefix(dir, "ld-linux-") {
@@ -200,7 +208,14 @@ fn is_musl_system() -> bool {
             }
         }
         // No glibc linker found — check for musl's
-        has_file_prefix("/lib", "ld-musl-")
+        for dir in ["/lib", "/lib64"] {
+            if has_file_prefix(dir, "ld-musl-") {
+                return true;
+            }
+        }
+        // No linker found at all (e.g., scratch/busybox container) —
+        // fall back to the binary's compile-time target
+        cfg!(target_env = "musl")
     });
     *IS_MUSL
 }
@@ -340,5 +355,30 @@ mod tests {
         assert!(keys.contains(&"macos-x64".to_string()));
         assert!(keys.contains(&"macos-arm64".to_string()));
         assert!(keys.contains(&"windows-x64".to_string()));
+    }
+
+    #[cfg(all(target_os = "linux", target_env = "musl"))]
+    #[test]
+    fn test_musl_binary_detects_musl() {
+        // A musl-compiled binary should always detect musl, even in
+        // minimal containers with no linker files (scratch, busybox).
+        assert!(
+            is_musl_system(),
+            "musl-compiled binary should detect musl system"
+        );
+    }
+
+    #[cfg(all(target_os = "linux", target_env = "musl"))]
+    #[test]
+    fn test_current_platform_has_musl_qualifier() {
+        // A musl-compiled binary should always have the musl qualifier,
+        // even in minimal containers with no linker files.
+        let platform = Platform::current();
+        assert_eq!(
+            platform.qualifier.as_deref(),
+            Some("musl"),
+            "musl-compiled binary should have musl qualifier, got: {}",
+            platform.to_key()
+        );
     }
 }

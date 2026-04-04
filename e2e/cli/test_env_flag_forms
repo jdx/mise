@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+# Test various forms of the -E/--env flag:
+# - Space-separated: --env production, -E production
+# - Equals-sign: --env=production, -E=production
+# - Comma-separated: --env=dev,staging, -E dev,staging
+# - Interaction with `mise run` (task args should not be confused with -E)
+# See: https://github.com/jdx/mise/issues/8883
+
+cat >mise.toml <<EOF
+[env]
+TTT_BASE = "base"
+
+[tasks.show-env]
+run = 'echo "TTT_DEV=\${TTT_DEV:-unset}"'
+EOF
+
+cat >mise.dev.toml <<EOF
+[env]
+TTT_DEV = "dev-value"
+EOF
+
+cat >mise.staging.toml <<EOF
+[env]
+TTT_STG = "staging-value"
+EOF
+
+# === Equals-sign forms (the main fix in this PR) ===
+
+assert_contains "mise -E=dev env" "TTT_DEV=dev-value"
+assert_contains "mise --env=dev env" "TTT_DEV=dev-value"
+assert_contains "mise -E=dev,staging env" "TTT_DEV=dev-value"
+assert_contains "mise -E=dev,staging env" "TTT_STG=staging-value"
+assert_contains "mise --env=dev,staging env" "TTT_DEV=dev-value"
+assert_contains "mise --env=dev,staging env" "TTT_STG=staging-value"
+assert_contains "mise --profile=dev env" "TTT_DEV=dev-value"
+assert_contains "mise -P=dev env" "TTT_DEV=dev-value"
+
+# === Space-separated forms (already worked, regression tests) ===
+
+assert_contains "mise -E dev env" "TTT_DEV=dev-value"
+assert_contains "mise --env dev env" "TTT_DEV=dev-value"
+assert_contains "mise -E dev,staging env" "TTT_DEV=dev-value"
+assert_contains "mise -E dev,staging env" "TTT_STG=staging-value"
+
+# === With `mise run`: -E BEFORE task name works ===
+
+assert_contains "mise -E dev run show-env" "TTT_DEV=dev-value"
+assert_contains "mise --env dev run show-env" "TTT_DEV=dev-value"
+assert_contains "mise --env=dev run show-env" "TTT_DEV=dev-value"
+assert_contains "mise run -E dev show-env" "TTT_DEV=dev-value"
+assert_contains "mise run --env dev show-env" "TTT_DEV=dev-value"
+assert_contains "mise run --env=dev show-env" "TTT_DEV=dev-value"
+
+# === With `mise run`: -E AFTER task name should NOT set env ===
+# These are task arguments, not global flags.
+
+assert_contains "mise run show-env -E dev" "TTT_DEV=unset"
+assert_contains "mise run show-env --env dev" "TTT_DEV=unset"

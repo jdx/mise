@@ -51,6 +51,14 @@ pub fn arch() -> String {
 pub(crate) fn env_type() -> Option<String> {
     use once_cell::sync::Lazy;
     static ENV_TYPE: Lazy<Option<String>> = Lazy::new(|| {
+        // Allow explicit override via environment variable (only gnu/musl accepted)
+        if let Ok(val) = std::env::var("MISE_LIBC") {
+            match val.to_lowercase().as_str() {
+                "musl" => return Some("musl".to_string()),
+                "gnu" => return Some("gnu".to_string()),
+                _ => {} // invalid value ignored, fall through to runtime detection
+            }
+        }
         // If glibc's dynamic linker exists, this is a glibc system
         for dir in ["/lib", "/lib64"] {
             if has_file_prefix(dir, "ld-linux-") {
@@ -58,8 +66,18 @@ pub(crate) fn env_type() -> Option<String> {
             }
         }
         // No glibc linker found — check for musl's
-        if has_file_prefix("/lib", "ld-musl-") {
+        for dir in ["/lib", "/lib64"] {
+            if has_file_prefix(dir, "ld-musl-") {
+                return Some("musl".to_string());
+            }
+        }
+        // No linker found at all (e.g., scratch/busybox container) —
+        // fall back to the binary's compile-time target
+        if cfg!(target_env = "musl") {
             return Some("musl".to_string());
+        }
+        if cfg!(target_env = "gnu") {
+            return Some("gnu".to_string());
         }
         None
     });
@@ -112,5 +130,31 @@ mod tests {
     #[test]
     fn test_env_type_non_linux_returns_none() {
         assert_eq!(env_type(), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_env_type_returns_some_on_linux() {
+        // On any Linux system (glibc or musl), env_type() should return
+        // Some("gnu") or Some("musl") — never None. Even in minimal
+        // containers with no linker, the compile-time fallback applies.
+        let et = env_type();
+        assert!(
+            et.is_some(),
+            "env_type() returned None on Linux — expected Some(\"gnu\") or Some(\"musl\")"
+        );
+    }
+
+    #[cfg(all(target_os = "linux", target_env = "musl"))]
+    #[test]
+    fn test_env_type_musl_binary_returns_musl() {
+        // A musl-compiled binary should always report musl, regardless of
+        // the host system's linker files (covers scratch containers).
+        let et = env_type();
+        assert_eq!(
+            et.as_deref(),
+            Some("musl"),
+            "musl-compiled binary should return Some(\"musl\")"
+        );
     }
 }

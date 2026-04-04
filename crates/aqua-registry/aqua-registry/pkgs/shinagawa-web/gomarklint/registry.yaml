@@ -6,7 +6,7 @@ packages:
     description: A fast and configurable Markdown linter written in Go
     version_constraint: "false"
     version_overrides:
-      - version_constraint: semver("<= 0.4.1")
+      - version_constraint: semver("<= 0.4.1") || Version == "v2.1.0"
         no_asset: true
       - version_constraint: "true"
         asset: gomarklint_{{.OS}}_{{.Arch}}.{{.Format}}

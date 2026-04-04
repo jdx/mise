@@ -62,7 +62,7 @@ pub mod task_tool_installer;
 
 pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax};
 pub use task_output::TaskOutput;
-pub use task_script_parser::has_any_args_defined;
+pub use task_script_parser::{has_any_args_defined, has_any_usage_spec};
 pub use task_template::TaskTemplate;
 
 use crate::config::config_file::ConfigFile;
@@ -331,6 +331,34 @@ pub struct Task {
     #[serde(skip)]
     pub remote_file_source: Option<String>,
 
+    /// Block reads, writes, network, and env vars
+    #[serde(default)]
+    pub deny_all: bool,
+    /// Block filesystem reads
+    #[serde(default)]
+    pub deny_read: bool,
+    /// Block all filesystem writes
+    #[serde(default)]
+    pub deny_write: bool,
+    /// Block all network access
+    #[serde(default)]
+    pub deny_net: bool,
+    /// Block env var inheritance
+    #[serde(default)]
+    pub deny_env: bool,
+    /// Allow reads from specific paths
+    #[serde(default)]
+    pub allow_read: Vec<std::path::PathBuf>,
+    /// Allow writes to specific paths
+    #[serde(default)]
+    pub allow_write: Vec<std::path::PathBuf>,
+    /// Allow network to specific hosts
+    #[serde(default)]
+    pub allow_net: Vec<String>,
+    /// Allow specific env vars through
+    #[serde(default)]
+    pub allow_env: Vec<String>,
+
     /// Name of the task template to extend (requires experimental = true)
     #[serde(default)]
     pub extends: Option<String>,
@@ -339,6 +367,15 @@ pub struct Task {
     /// with the same display_name but different arguments.
     #[serde(skip)]
     pub show_args_in_prefix: bool,
+
+    /// Original unrendered dependency templates, preserved so they can be
+    /// re-rendered later with parent task args/flags (usage context) available.
+    #[serde(skip)]
+    pub depends_raw: Option<Vec<TaskDep>>,
+    #[serde(skip)]
+    pub depends_post_raw: Option<Vec<TaskDep>>,
+    #[serde(skip)]
+    pub wait_for_raw: Option<Vec<TaskDep>>,
 }
 
 impl Task {
@@ -607,6 +644,7 @@ impl Task {
             .depends
             .iter()
             .chain(self.depends_post.iter())
+            .filter(|td| !dep_has_usage_ref(td))
             .map(|td| match_tasks_with_context(tasks, td, Some(self)))
             .flatten_ok()
             .filter_ok(|t| t.name != self.name)
@@ -669,15 +707,19 @@ impl Task {
 
         let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
         let tasks = build_task_ref_map(all_tasks.iter());
+        // Skip deps with unresolved {{usage.*}} references — they'll be resolved
+        // later when render_depends_with_usage() is called with actual arg values.
         let depends = self
             .depends
             .iter()
+            .filter(|td| !dep_has_usage_ref(td))
             .map(|td| match_tasks_with_context(&tasks, td, Some(self)))
             .flatten_ok()
             .collect_vec();
         let wait_for = self
             .wait_for
             .iter()
+            .filter(|td| !dep_has_usage_ref(td))
             .map(|td| {
                 match_tasks_with_context(&tasks, td, Some(self))
                     .map(|tasks| tasks.into_iter().map(|t| (t, td)).collect_vec())
@@ -702,6 +744,7 @@ impl Task {
         let depends_post = self
             .depends_post
             .iter()
+            .filter(|td| !dep_has_usage_ref(td))
             .map(|td| match_tasks_with_context(&tasks, td, Some(self)))
             .flatten_ok()
             .filter_ok(|t| t.name != self.name)
@@ -1042,14 +1085,28 @@ impl Task {
             self.outputs = TaskOutputs::Auto;
         }
         self.raw_outputs = self.outputs.render(&mut tera, &tera_ctx)?;
+        // Save unrendered dependency templates so they can be re-rendered later
+        // with parent task args available (for passing args to dependencies).
+        self.depends_raw = Some(self.depends.clone());
+        self.depends_post_raw = Some(self.depends_post.clone());
+        self.wait_for_raw = Some(self.wait_for.clone());
+        // Render deps that don't contain {{usage.*}} references. Deps with usage
+        // references are deferred until render_depends_with_usage() is called with
+        // the actual arg values from CLI or parent dependency.
         for d in &mut self.depends {
-            d.render(&mut tera, &tera_ctx)?;
+            if !dep_has_usage_ref(d) {
+                d.render(&mut tera, &tera_ctx)?;
+            }
         }
         for d in &mut self.depends_post {
-            d.render(&mut tera, &tera_ctx)?;
+            if !dep_has_usage_ref(d) {
+                d.render(&mut tera, &tera_ctx)?;
+            }
         }
         for d in &mut self.wait_for {
-            d.render(&mut tera, &tera_ctx)?;
+            if !dep_has_usage_ref(d) {
+                d.render(&mut tera, &tera_ctx)?;
+            }
         }
         if let Some(dir) = &mut self.dir {
             *dir = tera.render_str(dir, &tera_ctx)?;
@@ -1059,6 +1116,54 @@ impl Task {
         }
         for (_, v) in &mut self.tools {
             *v = tera.render_str(v, &tera_ctx)?;
+        }
+        Ok(())
+    }
+
+    /// Re-render dependency templates with usage args/flags from the parent task.
+    /// This allows `depends = ["child {{usage.app}}"]` to resolve when the parent
+    /// task receives `--app=foo` from the CLI.
+    pub async fn render_depends_with_usage(
+        &mut self,
+        config: &Arc<Config>,
+        usage_values: &IndexMap<String, String>,
+    ) -> Result<()> {
+        if usage_values.is_empty() {
+            return Ok(());
+        }
+        let config_root = self.config_root.clone().unwrap_or_default();
+        let mut tera = get_tera(Some(&config_root));
+        let mut tera_ctx = self.tera_ctx(config).await?;
+        // Insert usage values into the tera context so templates like
+        // {{usage.app}} resolve to the actual CLI arg value.
+        tera_ctx.insert("usage", usage_values);
+
+        // Re-render from raw templates (not from already-rendered values).
+        // Only restore from raw if the field is non-empty — skip_deps clears
+        // depends/depends_post/wait_for and we must not undo that.
+        if !self.depends.is_empty()
+            && let Some(raw) = &self.depends_raw
+        {
+            self.depends = raw.clone();
+            for d in &mut self.depends {
+                d.render(&mut tera, &tera_ctx)?;
+            }
+        }
+        if !self.depends_post.is_empty()
+            && let Some(raw) = &self.depends_post_raw
+        {
+            self.depends_post = raw.clone();
+            for d in &mut self.depends_post {
+                d.render(&mut tera, &tera_ctx)?;
+            }
+        }
+        if !self.wait_for.is_empty()
+            && let Some(raw) = &self.wait_for_raw
+        {
+            self.wait_for = raw.clone();
+            for d in &mut self.wait_for {
+                d.render(&mut tera, &tera_ctx)?;
+            }
         }
         Ok(())
     }
@@ -1334,8 +1439,20 @@ impl Default for Task {
             usage: "".to_string(),
             timeout: None,
             remote_file_source: None,
+            deny_all: false,
+            deny_read: false,
+            deny_write: false,
+            deny_net: false,
+            deny_env: false,
+            allow_read: vec![],
+            allow_write: vec![],
+            allow_net: vec![],
+            allow_env: vec![],
             extends: None,
             show_args_in_prefix: false,
+            depends_raw: None,
+            depends_post_raw: None,
+            wait_for_raw: None,
         }
     }
 }
@@ -1622,6 +1739,53 @@ where
             .unique()
             .collect())
     }
+}
+
+/// Check if a TaskDep contains {{usage.*}} references that need deferred rendering.
+/// Strips whitespace before matching to handle Tera's `{{ usage.foo }}` syntax.
+pub(crate) fn dep_has_usage_ref(dep: &TaskDep) -> bool {
+    let has_ref = |s: &str| {
+        let s = s.replace(' ', "");
+        s.contains("{{usage.")
+    };
+    has_ref(&dep.task)
+        || dep.args.iter().any(|a| has_ref(a))
+        || dep.env.values().any(|v| has_ref(v))
+}
+
+/// Parse a task's usage spec against its current args and return a map
+/// of named arg/flag values (e.g., {"app": "myapp", "verbose": "true"}).
+/// Used to provide `{{usage.*}}` context when rendering dependency templates.
+pub async fn parse_usage_values_from_task(
+    config: &Arc<Config>,
+    task: &Task,
+) -> Result<IndexMap<String, String>> {
+    let env: EnvMap = Default::default();
+    let (spec, _) = task
+        .parse_usage_spec_with_vars(config, None, &env, None)
+        .await?;
+    if spec.cmd.args.is_empty() && spec.cmd.flags.is_empty() {
+        return Ok(IndexMap::new());
+    }
+    // Build args list with empty first element (usage parser expects argv[0] to be the command)
+    let args: Vec<String> = once(String::new())
+        .chain(task.args.iter().cloned())
+        .collect();
+    let po = match usage::Parser::new(&spec).parse(&args) {
+        Ok(po) => po,
+        Err(e) => {
+            debug!("usage parse failed for task '{}': {e}", task.name);
+            return Ok(IndexMap::new());
+        }
+    };
+    let mut values = IndexMap::new();
+    for (k, v) in po.as_env() {
+        // Strip "usage_" prefix to get the bare arg/flag name
+        if let Some(name) = k.strip_prefix("usage_") {
+            values.insert(name.to_string(), v);
+        }
+    }
+    Ok(values)
 }
 
 #[cfg(test)]
@@ -2562,5 +2726,43 @@ echo "test"
         // Bare name "test" should still match the "test" task (implicit wildcard)
         let matches = tasks.get_matching("test").unwrap();
         assert!(matches.contains(&&"test".to_string()));
+    }
+
+    #[test]
+    fn test_get_matching_resolves_aliases() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        let mut tasks: BTreeMap<String, String> = BTreeMap::new();
+        tasks.insert("pr:remove".to_string(), "pr:remove".to_string());
+        tasks.insert("prr".to_string(), "pr:remove".to_string());
+
+        let matches = tasks.get_matching("prr").unwrap();
+        assert_eq!(matches, vec![&"pr:remove".to_string()]);
+
+        let matches = tasks.get_matching("pr:remove").unwrap();
+        assert_eq!(matches, vec![&"pr:remove".to_string()]);
+    }
+
+    #[test]
+    fn test_get_matching_resolves_monorepo_aliases() {
+        use std::collections::BTreeMap;
+
+        use super::GetMatchingExt;
+
+        let mut tasks: BTreeMap<String, String> = BTreeMap::new();
+        tasks.insert("//:pr:remove".to_string(), "//:pr:remove".to_string());
+        tasks.insert("//:prr".to_string(), "//:pr:remove".to_string());
+        tasks.insert("prr".to_string(), "//:pr:remove".to_string());
+
+        let matches = tasks.get_matching("//:prr").unwrap();
+        assert_eq!(matches, vec![&"//:pr:remove".to_string()]);
+
+        let matches = tasks.get_matching("prr").unwrap();
+        assert_eq!(matches, vec![&"//:pr:remove".to_string()]);
+
+        let matches = tasks.get_matching("//:pr:remove").unwrap();
+        assert_eq!(matches, vec![&"//:pr:remove".to_string()]);
     }
 }

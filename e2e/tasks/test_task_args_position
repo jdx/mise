@@ -42,3 +42,15 @@ assert_contains "mise run echo-args --help" "Task: echo-args"
 
 # Test 8: --help on task WITH usage defined should show mise help
 assert_contains "mise run echo-with-usage --help" "myarg"
+
+# Test 9: --help on task with long_about but no args/flags should show the long_about text
+mkdir -p .mise/tasks
+cat <<'SCRIPT' >".mise/tasks/long-about-only"
+#!/usr/bin/env bash
+#USAGE long_about """
+#USAGE Detailed description here.
+#USAGE """
+echo "hello"
+SCRIPT
+chmod +x .mise/tasks/long-about-only
+assert_contains "mise run long-about-only --help" "Detailed description here."

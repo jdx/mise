@@ -336,28 +336,12 @@ local M = {}
 
 function M.get_arch()
     -- Use the RUNTIME object provided by vfox/mise
-    local arch = RUNTIME.archType
-    if arch == "amd64" then
-        return "x64"
-    elseif arch == "386" then
-        return "x86"
-    elseif arch == "arm64" then
-        return "arm64"
-    else
-        return arch  -- return as-is for other architectures
-    end
+    return (RUNTIME.archType == "amd64") and "x64" or RUNTIME.archType  -- return as-is for other architectures
 end
 
 function M.get_os()
     -- Use the RUNTIME object provided by vfox/mise
-    local os = RUNTIME.osType
-    if os == "Windows" then
-        return "win"
-    elseif os == "Darwin" then
-        return "darwin"
-    else
-        return "linux"
-    end
+    return (RUNTIME.osType == "windows") and "win" or RUNTIME.osType
 end
 
 function M.get_platform()
@@ -423,26 +407,10 @@ function PLUGIN:PreInstall(ctx)
     local version = ctx.version
 
     -- Determine platform using RUNTIME object
-    local arch_token
-    if RUNTIME.archType == "amd64" then
-        arch_token = "x64"
-    elseif RUNTIME.archType == "386" then
-        arch_token = "x86"
-    elseif RUNTIME.archType == "arm64" then
-        arch_token = "arm64"
-    else
-        arch_token = RUNTIME.archType
-    end
-    local os_token
-    if RUNTIME.osType == "Windows" then
-        os_token = "win"
-    elseif RUNTIME.osType == "Darwin" then
-        os_token = "darwin"
-    else
-        os_token = "linux"
-    end
+    local arch_token = (RUNTIME.archType == "amd64") and "x64" or RUNTIME.archType
+    local os_token = (RUNTIME.osType == "windows") and "win" or RUNTIME.osType
     local platform = os_token .. "-" .. arch_token
-    local extension = (RUNTIME.osType == "Windows") and "zip" or "tar.gz"
+    local extension = (RUNTIME.osType == "windows") and "zip" or "tar.gz"
 
     -- Build download URL
     local filename = "node-v" .. version .. "-" .. platform .. "." .. extension
@@ -494,7 +462,7 @@ function PLUGIN:EnvKeys(ctx)
 
     -- Add npm global modules to PATH
     local npm_global_path = mainPath .. "/lib/node_modules/.bin"
-    if os_type == "Windows" then
+    if os_type == "windows" then
         npm_global_path = mainPath .. "/node_modules/.bin"
     end
 
@@ -515,7 +483,7 @@ function PLUGIN:PostInstall(ctx)
     local sdkInfo = ctx.sdkInfo['nodejs']
     local path = sdkInfo.path
     -- Set executable permissions on Unix systems
-    if RUNTIME.osType ~= "Windows" then
+    if RUNTIME.osType ~= "windows" then
         os.execute("chmod +x " .. path .. "/bin/*")
     end
 
@@ -525,7 +493,7 @@ function PLUGIN:PostInstall(ctx)
 
     -- Configure npm to use local cache
     local npm_cmd = path .. "/bin/npm"
-    if RUNTIME.osType == "Windows" then
+    if RUNTIME.osType == "windows" then
         npm_cmd = path .. "/npm.cmd"
     end
 
@@ -680,7 +648,7 @@ Handle different operating systems properly using the RUNTIME object:
 local M = {}
 
 function M.is_windows()
-    return RUNTIME.osType == "Windows"
+    return RUNTIME.osType == "windows"
 end
 
 function M.get_exe_extension()
@@ -696,8 +664,8 @@ return M
 
 **Note:** The `RUNTIME` object is automatically available in all plugin hooks and provides:
 
-- `RUNTIME.osType`: Operating system type ("Windows", "Linux", "Darwin")
-- `RUNTIME.archType`: Architecture ("amd64", "arm64", "386", etc.)
+- `RUNTIME.osType`: Operating system type ("windows", "linux", "darwin")
+- `RUNTIME.archType`: Architecture ("amd64", "arm64", "x86", etc.)
 - `RUNTIME.envType`: libc environment type (`"gnu"` on glibc Linux, `"musl"` on musl Linux, `nil` on Windows/macOS and undetected systems)
 - `RUNTIME.version`: vfox runtime version
 - `RUNTIME.pluginDirPath`: Plugin directory path
@@ -757,10 +725,10 @@ function PLUGIN:PreInstall(ctx)
     local version = ctx.version
 
     -- Different logic for different platforms using RUNTIME object
-    if RUNTIME.osType == "Windows" then
+    if RUNTIME.osType == "windows" then
         -- Windows-specific installation
         return install_windows(version)
-    elseif RUNTIME.osType == "Darwin" then
+    elseif RUNTIME.osType == "darwin" then
         -- macOS-specific installation
         return install_macos(version)
     else
@@ -846,7 +814,7 @@ function PLUGIN:EnvKeys(ctx)
     }
 
     -- Platform-specific additions
-    if RUNTIME.osType == "Darwin" then
+    if RUNTIME.osType == "darwin" then
         table.insert(env_vars, {
             key = "DYLD_LIBRARY_PATH",
             value = mainPath .. "/lib"

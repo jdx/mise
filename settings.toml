@@ -906,11 +906,18 @@ install_before = "7d"  # only install versions released more than 7 days ago
 Only affects backends that provide release timestamps (aqua, cargo, npm, pipx, and some core plugins).
 Versions without timestamps are included by default.
 
-**Behavior**: This filter only applies when resolving fuzzy version requests like `node@20` or `latest`.
-Explicitly pinned versions like `node@22.5.0` are not filtered, allowing you to selectively
-use newer versions for specific tools while keeping others behind the cutoff date.
+**Behavior**: For most backends, this filter only applies when resolving fuzzy version requests
+like `node@20` or `latest`. Explicitly pinned versions like `node@22.5.0` are not filtered,
+allowing you to selectively use newer versions for specific tools while keeping others behind the
+cutoff date.
 
-Can be overridden with the `--before` CLI flag.
+Can be overridden with the `--before` CLI flag or per-tool with the `install_before` tool option.
+
+```toml
+[tools.trivy]
+version = "latest"
+install_before = "7d"  # override for this tool only
+```
 """
 env = "MISE_INSTALL_BEFORE"
 optional = true
@@ -1391,6 +1398,18 @@ description = "Path to a file containing default python packages to install when
 env = "MISE_PYTHON_DEFAULT_PACKAGES_FILE"
 optional = true
 type = "Path"
+
+[python.github_attestations]
+description = "Enable GitHub Artifact Attestations verification for precompiled Python binaries."
+docs = """
+Override the global `github_attestations` setting for Python precompiled binaries.
+When enabled, mise will verify the authenticity of precompiled Python binaries from astral-sh/python-build-standalone.
+
+Defaults to the global `github_attestations` setting if not specified.
+"""
+env = "MISE_PYTHON_GITHUB_ATTESTATIONS"
+optional = true
+type = "Bool"
 
 [python.patch_url]
 description = "URL to fetch python patches from to pass to python-build."

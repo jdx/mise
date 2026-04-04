@@ -97,6 +97,42 @@ Don't show any output except for errors
 
 Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
 
+### `--allow-env… <VAR>`
+
+[experimental] Allow specific env var through (implies --deny-env for everything else)
+
+### `--allow-net… <HOST>`
+
+[experimental] Allow network to specific host (implies --deny-net for everything else)
+
+### `--allow-read… <PATH>`
+
+[experimental] Allow reads from specific path (implies --deny-read for everything else)
+
+### `--allow-write… <PATH>`
+
+[experimental] Allow writes to specific path (implies --deny-write for everything else)
+
+### `--deny-all`
+
+[experimental] Block reads, writes, network, and env vars
+
+### `--deny-env`
+
+[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+
+### `--deny-net`
+
+[experimental] Block all network access
+
+### `--deny-read`
+
+[experimental] Block filesystem reads (system libs and tool dirs still accessible)
+
+### `--deny-write`
+
+[experimental] Block all filesystem writes
+
 ### `--fresh-env`
 
 Bypass the environment cache and recompute the environment

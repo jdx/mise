@@ -36,6 +36,43 @@ Command string to execute
 Number of jobs to run in parallel
 [default: 4]
 
+### `--allow-env… <VAR>`
+
+[experimental] Allow specific env var through (implies --deny-env for everything else)
+
+### `--allow-net… <HOST>`
+
+[experimental] Allow network to specific host (implies --deny-net for everything else)
+macOS only in v1; on Linux falls back to allowing all network
+
+### `--allow-read… <PATH>`
+
+[experimental] Allow reads from specific path (implies --deny-read for everything else)
+
+### `--allow-write… <PATH>`
+
+[experimental] Allow writes to specific path (implies --deny-write for everything else)
+
+### `--deny-all`
+
+[experimental] Block reads, writes, network, and env vars
+
+### `--deny-env`
+
+[experimental] Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+
+### `--deny-net`
+
+[experimental] Block all network access
+
+### `--deny-read`
+
+[experimental] Block filesystem reads (system libs and tool dirs still accessible)
+
+### `--deny-write`
+
+[experimental] Block all filesystem writes
+
 ### `--fresh-env`
 
 Bypass the environment cache and recompute the environment

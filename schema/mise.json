@@ -1121,6 +1121,10 @@
               "description": "Path to a file containing default python packages to install when installing a python version.",
               "type": "string"
             },
+            "github_attestations": {
+              "description": "Enable GitHub Artifact Attestations verification for precompiled Python binaries.",
+              "type": "boolean"
+            },
             "patch_url": {
               "description": "URL to fetch python patches from to pass to python-build.",
               "type": "string"
