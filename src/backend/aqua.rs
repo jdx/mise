@@ -1588,32 +1588,12 @@ impl AquaBackend {
                 return Ok(());
             }
 
-            // Pre-check: bail leniently if assets can't be resolved (old release, misconfigured)
-            match slsa.r#type.as_deref().unwrap_or_default() {
-                "github_release" => {
-                    let asset_strs = slsa.asset_strs(pkg, v, os(), arch())?;
-                    if asset_strs.is_empty() {
-                        warn!("no asset configured for slsa verification of {tv}");
-                        return Ok(());
-                    }
-                    let mut slsa_pkg = pkg.clone();
-                    (slsa_pkg.repo_owner, slsa_pkg.repo_name) =
-                        resolve_repo_info(slsa.repo_owner.as_ref(), slsa.repo_name.as_ref(), pkg);
-                    if let Err(e) = self.github_release_asset(&slsa_pkg, v, asset_strs).await {
-                        warn!("no asset found for slsa verification of {tv}: {e}");
-                        return Ok(());
-                    }
-                }
-                "http" => {}
-                t => {
-                    warn!("unsupported slsa type: {t}");
-                    return Ok(());
-                }
-            }
-
             ctx.pr.set_message("verify slsa".to_string());
             let artifact_path = tv.download_path().join(filename);
-            let provenance_url = self
+            // Errors from run_slsa_check are treated leniently at install time:
+            // the provenance asset may not exist for older releases or may be
+            // misconfigured. Lock-time (which also calls run_slsa_check) is strict.
+            match self
                 .run_slsa_check(
                     &artifact_path,
                     pkg,
@@ -1621,17 +1601,23 @@ impl AquaBackend {
                     &tv.download_path(),
                     Some(ctx.pr.as_ref()),
                 )
-                .await?;
-
-            ctx.pr.set_message("✓ SLSA provenance verified".to_string());
-            // Record provenance in lockfile only if not already set by a
-            // higher-priority verification (github-attestations runs first)
-            let platform_key = self.get_platform_key();
-            let pi = tv.lock_platforms.entry(platform_key).or_default();
-            if pi.provenance.is_none() {
-                pi.provenance = Some(ProvenanceType::Slsa {
-                    url: Some(provenance_url),
-                });
+                .await
+            {
+                Ok(provenance_url) => {
+                    ctx.pr.set_message("✓ SLSA provenance verified".to_string());
+                    // Record provenance in lockfile only if not already set by a
+                    // higher-priority verification (github-attestations runs first)
+                    let platform_key = self.get_platform_key();
+                    let pi = tv.lock_platforms.entry(platform_key).or_default();
+                    if pi.provenance.is_none() {
+                        pi.provenance = Some(ProvenanceType::Slsa {
+                            url: Some(provenance_url),
+                        });
+                    }
+                }
+                Err(e) => {
+                    warn!("SLSA verification skipped for {tv}: {e}");
+                }
             }
         }
         Ok(())
