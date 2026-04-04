@@ -47,9 +47,9 @@ pub fn apply_seccomp_net_filter() -> Result<()> {
 
     // Block socket() and socketpair() for inet families
     // This is sufficient — if you can't create an inet socket, you can't do networking
-    for syscall in [libc::SYS_socket, libc::SYS_socketpair] {
+    #[allow(clippy::useless_conversion)]
+    for syscall in [libc::SYS_socket, libc::SYS_socketpair].map(i64::from) {
         rules.insert(
-            // SYS_* constants are i32 on armv7, i64 on x86_64/aarch64
             syscall,
             vec![socket_rule_inet.clone(), socket_rule_inet6.clone()],
         );
