@@ -31,6 +31,7 @@ apt-get update && apt-get install -y --no-install-recommends \
     libncurses-dev \
     libreadline-dev \
     libssl-dev \
+    libxml2 \
     libyaml-dev \
     pipx \
     pkg-config \
