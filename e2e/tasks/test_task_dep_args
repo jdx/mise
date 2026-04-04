@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+
+# Test passing arguments to task dependencies via {{usage.*}} templates
+
+# Basic test: parent task passes its arg to a dependency
+cat <<'EOF' >mise.toml
+[tasks.build]
+usage = 'arg "<app>"'
+run = 'echo "building {{usage.app}}"'
+
+[tasks.deploy]
+usage = 'arg "<app>"'
+depends = [{ task = "build", args = ["{{usage.app}}"] }]
+run = 'echo "deploying {{usage.app}}"'
+EOF
+
+assert_contains "mise run deploy myapp" "building myapp"
+assert_contains "mise run deploy myapp" "deploying myapp"
+
+# Test with flag syntax
+cat <<'EOF' >mise.toml
+[tasks.compile]
+usage = 'flag "--target <target>"'
+run = 'echo "compiling for $usage_target"'
+
+[tasks.package]
+usage = 'flag "--target <target>"'
+depends = [{ task = "compile", args = ["--target", "{{usage.target}}"] }]
+run = 'echo "packaging for $usage_target"'
+EOF
+
+assert_contains "mise run package --target linux" "compiling for linux"
+assert_contains "mise run package --target linux" "packaging for linux"
+
+# Test with multiple args
+cat <<'EOF' >mise.toml
+[tasks.start-backend]
+usage = 'arg "<app>"'
+run = 'echo "backend {{usage.app}}"'
+
+[tasks.start-frontend]
+usage = 'arg "<app>"'
+run = 'echo "frontend {{usage.app}}"'
+
+[tasks.start]
+usage = 'arg "<app>"'
+depends = [
+    { task = "start-backend", args = ["{{usage.app}}"] },
+    { task = "start-frontend", args = ["{{usage.app}}"] },
+]
+run = 'echo "started {{usage.app}}"'
+EOF
+
+output=$(mise run start myapp 2>&1)
+assert_contains "echo \"$output\"" "backend myapp"
+assert_contains "echo \"$output\"" "frontend myapp"
+assert_contains "echo \"$output\"" "started myapp"
+
+# Test with string syntax for depends args
+cat <<'EOF' >mise.toml
+[tasks.greet]
+usage = 'arg "<name>"'
+run = 'echo "hello {{usage.name}}"'
+
+[tasks.welcome]
+usage = 'arg "<name>"'
+depends = ["greet {{usage.name}}"]
+run = 'echo "welcome {{usage.name}}"'
+EOF
+
+assert_contains "mise run welcome world" "hello world"
+assert_contains "mise run welcome world" "welcome world"
+
+# Test dependency chaining: A -> B -> C, args flow through
+cat <<'EOF' >mise.toml
+[tasks.step1]
+usage = 'arg "<val>"'
+run = 'echo "step1 {{usage.val}}"'
+
+[tasks.step2]
+usage = 'arg "<val>"'
+depends = [{ task = "step1", args = ["{{usage.val}}"] }]
+run = 'echo "step2 {{usage.val}}"'
+
+[tasks.step3]
+usage = 'arg "<val>"'
+depends = [{ task = "step2", args = ["{{usage.val}}"] }]
+run = 'echo "step3 {{usage.val}}"'
+EOF
+
+output=$(mise run step3 hello 2>&1)
+assert_contains "echo \"$output\"" "step1 hello"
+assert_contains "echo \"$output\"" "step2 hello"
+assert_contains "echo \"$output\"" "step3 hello"

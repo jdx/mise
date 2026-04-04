@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -367,6 +368,15 @@ pub struct Task {
     /// with the same display_name but different arguments.
     #[serde(skip)]
     pub show_args_in_prefix: bool,
+
+    /// Original unrendered dependency templates, preserved so they can be
+    /// re-rendered later with parent task args/flags (usage context) available.
+    #[serde(skip)]
+    pub depends_raw: Option<Vec<TaskDep>>,
+    #[serde(skip)]
+    pub depends_post_raw: Option<Vec<TaskDep>>,
+    #[serde(skip)]
+    pub wait_for_raw: Option<Vec<TaskDep>>,
 }
 
 impl Task {
@@ -635,6 +645,7 @@ impl Task {
             .depends
             .iter()
             .chain(self.depends_post.iter())
+            .filter(|td| !dep_has_usage_ref(td))
             .map(|td| match_tasks_with_context(tasks, td, Some(self)))
             .flatten_ok()
             .filter_ok(|t| t.name != self.name)
@@ -697,15 +708,19 @@ impl Task {
 
         let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
         let tasks = build_task_ref_map(all_tasks.iter());
+        // Skip deps with unresolved {{usage.*}} references — they'll be resolved
+        // later when render_depends_with_usage() is called with actual arg values.
         let depends = self
             .depends
             .iter()
+            .filter(|td| !dep_has_usage_ref(td))
             .map(|td| match_tasks_with_context(&tasks, td, Some(self)))
             .flatten_ok()
             .collect_vec();
         let wait_for = self
             .wait_for
             .iter()
+            .filter(|td| !dep_has_usage_ref(td))
             .map(|td| {
                 match_tasks_with_context(&tasks, td, Some(self))
                     .map(|tasks| tasks.into_iter().map(|t| (t, td)).collect_vec())
@@ -730,6 +745,7 @@ impl Task {
         let depends_post = self
             .depends_post
             .iter()
+            .filter(|td| !dep_has_usage_ref(td))
             .map(|td| match_tasks_with_context(&tasks, td, Some(self)))
             .flatten_ok()
             .filter_ok(|t| t.name != self.name)
@@ -1070,14 +1086,28 @@ impl Task {
             self.outputs = TaskOutputs::Auto;
         }
         self.raw_outputs = self.outputs.render(&mut tera, &tera_ctx)?;
+        // Save unrendered dependency templates so they can be re-rendered later
+        // with parent task args available (for passing args to dependencies).
+        self.depends_raw = Some(self.depends.clone());
+        self.depends_post_raw = Some(self.depends_post.clone());
+        self.wait_for_raw = Some(self.wait_for.clone());
+        // Render deps that don't contain {{usage.*}} references. Deps with usage
+        // references are deferred until render_depends_with_usage() is called with
+        // the actual arg values from CLI or parent dependency.
         for d in &mut self.depends {
-            d.render(&mut tera, &tera_ctx)?;
+            if !dep_has_usage_ref(d) {
+                d.render(&mut tera, &tera_ctx)?;
+            }
         }
         for d in &mut self.depends_post {
-            d.render(&mut tera, &tera_ctx)?;
+            if !dep_has_usage_ref(d) {
+                d.render(&mut tera, &tera_ctx)?;
+            }
         }
         for d in &mut self.wait_for {
-            d.render(&mut tera, &tera_ctx)?;
+            if !dep_has_usage_ref(d) {
+                d.render(&mut tera, &tera_ctx)?;
+            }
         }
         if let Some(dir) = &mut self.dir {
             *dir = tera.render_str(dir, &tera_ctx)?;
@@ -1087,6 +1117,50 @@ impl Task {
         }
         for (_, v) in &mut self.tools {
             *v = tera.render_str(v, &tera_ctx)?;
+        }
+        Ok(())
+    }
+
+    /// Re-render dependency templates with usage args/flags from the parent task.
+    /// This allows `depends = ["child {{usage.app}}"]` to resolve when the parent
+    /// task receives `--app=foo` from the CLI.
+    pub async fn render_depends_with_usage(
+        &mut self,
+        config: &Arc<Config>,
+        usage_values: &IndexMap<String, String>,
+    ) -> Result<()> {
+        if usage_values.is_empty() {
+            return Ok(());
+        }
+        let config_root = self.config_root.clone().unwrap_or_default();
+        let mut tera = get_tera(Some(&config_root));
+        let mut tera_ctx = self.tera_ctx(config).await?;
+        // Insert usage values into the tera context so templates like
+        // {{usage.app}} resolve to the actual CLI arg value.
+        let usage_ctx: HashMap<String, tera::Value> = usage_values
+            .iter()
+            .map(|(k, v)| (k.clone(), tera::Value::String(v.clone())))
+            .collect();
+        tera_ctx.insert("usage", &usage_ctx);
+
+        // Re-render from raw templates (not from already-rendered values)
+        if let Some(raw) = &self.depends_raw {
+            self.depends = raw.clone();
+            for d in &mut self.depends {
+                d.render(&mut tera, &tera_ctx)?;
+            }
+        }
+        if let Some(raw) = &self.depends_post_raw {
+            self.depends_post = raw.clone();
+            for d in &mut self.depends_post {
+                d.render(&mut tera, &tera_ctx)?;
+            }
+        }
+        if let Some(raw) = &self.wait_for_raw {
+            self.wait_for = raw.clone();
+            for d in &mut self.wait_for {
+                d.render(&mut tera, &tera_ctx)?;
+            }
         }
         Ok(())
     }
@@ -1373,6 +1447,9 @@ impl Default for Task {
             allow_env: vec![],
             extends: None,
             show_args_in_prefix: false,
+            depends_raw: None,
+            depends_post_raw: None,
+            wait_for_raw: None,
         }
     }
 }
@@ -1659,6 +1736,46 @@ where
             .unique()
             .collect())
     }
+}
+
+/// Check if a TaskDep contains {{usage.*}} references that need deferred rendering.
+fn dep_has_usage_ref(dep: &TaskDep) -> bool {
+    let has_ref = |s: &str| s.contains("{{") && s.contains("usage.");
+    has_ref(&dep.task)
+        || dep.args.iter().any(|a| has_ref(a))
+        || dep.env.values().any(|v| has_ref(v))
+}
+
+/// Parse a task's usage spec against its current args and return a map
+/// of named arg/flag values (e.g., {"app": "myapp", "verbose": "true"}).
+/// Used to provide `{{usage.*}}` context when rendering dependency templates.
+pub async fn parse_usage_values_from_task(
+    config: &Arc<Config>,
+    task: &Task,
+) -> Result<IndexMap<String, String>> {
+    let env: EnvMap = Default::default();
+    let (spec, _) = task
+        .parse_usage_spec_with_vars(config, None, &env, None)
+        .await?;
+    if spec.cmd.args.is_empty() && spec.cmd.flags.is_empty() {
+        return Ok(IndexMap::new());
+    }
+    // Build args list with empty first element (usage parser expects argv[0] to be the command)
+    let args: Vec<String> = once(String::new())
+        .chain(task.args.iter().cloned())
+        .collect();
+    let po = match usage::Parser::new(&spec).parse(&args) {
+        Ok(po) => po,
+        Err(_) => return Ok(IndexMap::new()),
+    };
+    let mut values = IndexMap::new();
+    for (k, v) in po.as_env() {
+        // Strip "usage_" prefix to get the bare arg/flag name
+        if let Some(name) = k.strip_prefix("usage_") {
+            values.insert(name.to_string(), v);
+        }
+    }
+    Ok(values)
 }
 
 #[cfg(test)]
