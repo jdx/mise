@@ -70,7 +70,7 @@ impl GoPlugin {
         pr: &dyn SingleReport,
     ) -> eyre::Result<()> {
         let settings = Settings::get();
-        let default_packages_file = file::replace_path(&settings.go_default_packages_file);
+        let default_packages_file = file::replace_path(&settings.go.default_packages_file);
         let body = file::read_to_string(default_packages_file).unwrap_or_default();
         for package in body.lines() {
             let package = package.split('#').next().unwrap_or_default().trim();
@@ -122,7 +122,7 @@ impl GoPlugin {
         HTTP.download_file(&*tarball_url, &tarball_path, Some(pr))
             .await?;
 
-        if !settings.go_skip_checksum {
+        if !settings.go.skip_checksum {
             let platform_key = self.get_platform_key();
             let platform_info = tv.lock_platforms.entry(platform_key).or_default();
             platform_info.url = Some(tarball_url.to_string());
@@ -169,8 +169,8 @@ impl GoPlugin {
             warn!("failed to install default go packages: {err:#}");
         }
         let settings = Settings::get();
-        if settings.go_set_gopath {
-            warn!("setting go_set_gopath is deprecated");
+        if settings.go.set_gopath {
+            warn!("setting go.set_gopath is deprecated");
         }
         Ok(())
     }
@@ -181,15 +181,15 @@ impl GoPlugin {
             map.insert(k.to_string(), v.to_string_lossy().to_string());
         };
         let settings = Settings::get();
-        let gobin = settings.go_set_gobin;
+        let gobin = settings.go.set_gobin;
         let gobin_env_is_set = env::PRISTINE_ENV.contains_key("GOBIN");
         if gobin == Some(true) || (gobin.is_none() && !gobin_env_is_set) {
             set("GOBIN", self.gobin(tv));
         }
-        if settings.go_set_goroot {
+        if settings.go.set_goroot {
             set("GOROOT", self.goroot(tv));
         }
-        if settings.go_set_gopath {
+        if settings.go.set_gopath {
             set("GOPATH", self.gopath(tv));
         }
         Ok(map)
@@ -212,10 +212,11 @@ impl Backend for GoPlugin {
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         // Extract repo name (e.g., "golang/go") from the configured URL
-        // The go_repo setting is like "https://github.com/golang/go"
+        // The go.repo setting is like "https://github.com/golang/go"
         let settings = Settings::get();
         let repo = settings
-            .go_repo
+            .go
+            .repo
             .trim_start_matches("https://")
             .trim_start_matches("http://")
             .trim_start_matches("github.com/")
@@ -243,7 +244,7 @@ impl Backend for GoPlugin {
             // Fast path: use git ls-remote to get all go tags efficiently
             // We can't use github::list_tags here because golang/go has 500+ tags
             // and the "go1.x" version tags aren't on the first page of API results
-            let go_repo = Settings::get().go_repo.clone();
+            let go_repo = Settings::get().go.repo.clone();
             plugins::core::run_fetch_task_with_timeout_async(async move || {
                 let output = crate::cmd::cmd_read_async_inherited_env(
                     "git",
@@ -349,7 +350,7 @@ impl Backend for GoPlugin {
         };
         Ok(Some(format!(
             "{}/go{}.{}-{}.{}",
-            &settings.go_download_mirror, tv.version, platform, arch, ext
+            &settings.go.download_mirror, tv.version, platform, arch, ext
         )))
     }
 
@@ -367,7 +368,7 @@ impl Backend for GoPlugin {
             .ok_or_else(|| eyre::eyre!("Failed to get go tarball URL"))?;
 
         // Go provides .sha256 files alongside each tarball
-        let checksum = if !settings.go_skip_checksum {
+        let checksum = if !settings.go.skip_checksum {
             let checksum_url = format!("{}.sha256", &url);
             fetch_checksum_from_file(&checksum_url, "sha256").await
         } else {

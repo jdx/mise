@@ -43,7 +43,7 @@ github.com/daixiang0/gci # allows comments
 github.com/jesseduffield/lazygit
 ```
 
-You can specify a non-default location of this file by setting a `MISE_GO_DEFAULT_PACKAGES_FILE` variable.
+You can override the default location of this file by setting the `MISE_GO_DEFAULT_PACKAGES_FILE` environment variable or the `go.default_packages_file` setting.
 
 ## Settings
 
