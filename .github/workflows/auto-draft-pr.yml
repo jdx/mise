@@ -10,6 +10,7 @@ jobs:
       github.event.pull_request.author_association != 'OWNER' &&
       github.event.pull_request.user.login != 'jdx' &&
       github.event.pull_request.user.login != 'renovate[bot]' &&
+      github.event.pull_request.user.login != 'mise-en-dev' &&
       !github.event.pull_request.draft
     runs-on: ubuntu-latest
     permissions:
