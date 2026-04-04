@@ -50,7 +50,7 @@ pub fn apply_seccomp_net_filter() -> Result<()> {
     for syscall in [libc::SYS_socket, libc::SYS_socketpair] {
         rules.insert(
             // SYS_* constants are i32 on armv7, i64 on x86_64/aarch64
-            i64::from(syscall),
+            syscall,
             vec![socket_rule_inet.clone(), socket_rule_inet6.clone()],
         );
     }
