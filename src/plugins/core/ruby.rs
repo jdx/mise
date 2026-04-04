@@ -517,11 +517,13 @@ impl RubyPlugin {
                     if let Some(end) = after.find('/') {
                         let tag = &after[..end];
                         // Check if this is a build revision of the version
-                        if tag != version && tag.starts_with(&format!("{version}-"))
+                        if tag != version
+                            && tag.starts_with(&format!("{version}-"))
                             && let Some(suffix) = tag.strip_prefix(&format!("{version}-"))
-                                && suffix.parse::<u32>().is_ok() {
-                                    return Some(tag.to_string());
-                                }
+                            && suffix.parse::<u32>().is_ok()
+                        {
+                            return Some(tag.to_string());
+                        }
                     }
                 }
             }

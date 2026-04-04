@@ -283,26 +283,39 @@ pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result
 ///
 /// This is used by precompiled binary repos (e.g., jdx/ruby) where binaries may be
 /// rebuilt with different checksums while keeping the same upstream version.
+///
+/// Note: this relies on `list_releases` which may only return the first page of results
+/// when `MISE_LIST_ALL_VERSIONS` is not set. For repos with many releases, older versions
+/// may not be found, falling back to the exact version tag via `get_release`.
 pub async fn get_release_with_build_revision(repo: &str, version: &str) -> Result<GithubRelease> {
     let releases = list_releases(repo).await?;
-    let best = releases
+    match pick_best_build_revision(releases, version) {
+        Some(release) => Ok(release),
+        None => get_release(repo, version).await,
+    }
+}
+
+/// Select the release with the highest build revision for a given version.
+///
+/// Given releases with tags like "3.3.11", "3.3.11-1", "3.3.11-2", picks the one
+/// with the highest numeric `-N` suffix. The base version (no suffix) is treated as
+/// revision 0.
+fn pick_best_build_revision(releases: Vec<GithubRelease>, version: &str) -> Option<GithubRelease> {
+    let prefix = format!("{version}-");
+    releases
         .into_iter()
         .filter(|r| {
             r.tag_name == version
                 || r.tag_name
-                    .strip_prefix(&format!("{version}-"))
+                    .strip_prefix(&prefix)
                     .is_some_and(|suffix| suffix.parse::<u32>().is_ok())
         })
         .max_by_key(|r| {
             r.tag_name
-                .strip_prefix(&format!("{version}-"))
+                .strip_prefix(&prefix)
                 .and_then(|s| s.parse::<u32>().ok())
                 .unwrap_or(0)
-        });
-    match best {
-        Some(release) => Ok(release),
-        None => get_release(repo, version).await,
-    }
+        })
 }
 
 async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GithubRelease> {
@@ -737,27 +750,6 @@ something_else = "value"
         }
     }
 
-    /// Extract the build revision selection logic for unit testing
-    fn select_best_build_revision(
-        releases: Vec<GithubRelease>,
-        version: &str,
-    ) -> Option<GithubRelease> {
-        releases
-            .into_iter()
-            .filter(|r| {
-                r.tag_name == version
-                    || r.tag_name
-                        .strip_prefix(&format!("{version}-"))
-                        .is_some_and(|suffix| suffix.parse::<u32>().is_ok())
-            })
-            .max_by_key(|r| {
-                r.tag_name
-                    .strip_prefix(&format!("{version}-"))
-                    .and_then(|s| s.parse::<u32>().ok())
-                    .unwrap_or(0)
-            })
-    }
-
     #[test]
     fn test_build_revision_selects_highest() {
         let releases = vec![
@@ -766,21 +758,21 @@ something_else = "value"
             make_release("3.3.11-2"),
             make_release("3.3.10-1"),
         ];
-        let best = select_best_build_revision(releases, "3.3.11").unwrap();
+        let best = pick_best_build_revision(releases, "3.3.11").unwrap();
         assert_eq!(best.tag_name, "3.3.11-2");
     }
 
     #[test]
     fn test_build_revision_falls_back_to_base() {
         let releases = vec![make_release("3.3.11"), make_release("3.3.10-1")];
-        let best = select_best_build_revision(releases, "3.3.11").unwrap();
+        let best = pick_best_build_revision(releases, "3.3.11").unwrap();
         assert_eq!(best.tag_name, "3.3.11");
     }
 
     #[test]
     fn test_build_revision_no_match() {
         let releases = vec![make_release("3.3.10"), make_release("3.3.10-1")];
-        let best = select_best_build_revision(releases, "3.3.11");
+        let best = pick_best_build_revision(releases, "3.3.11");
         assert!(best.is_none());
     }
 
@@ -791,7 +783,7 @@ something_else = "value"
             make_release("3.3.11-rc1"),
             make_release("3.3.11-1"),
         ];
-        let best = select_best_build_revision(releases, "3.3.11").unwrap();
+        let best = pick_best_build_revision(releases, "3.3.11").unwrap();
         assert_eq!(best.tag_name, "3.3.11-1");
     }
 }
