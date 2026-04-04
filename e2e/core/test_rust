@@ -5,11 +5,11 @@ export MISE_CARGO_HOME="$MISE_DATA_DIR/cargo"
 
 assert_contains "mise x rust@1.81.0 -- rustc --version" "rustc 1.81.0"
 
-if [[ ${MISE_E2E_INSIDE_DOCKER:-} != "1" ]]; then
-	cat <<-EOF >rust-toolchain.toml
-		[toolchain]
-		channel = "1.81.0"
-	EOF
+mise settings set idiomatic_version_file_enable_tools rust
 
-	assert_contains "mise x -- rustc --version" "rustc 1.81.0"
-fi
+cat <<EOF >rust-toolchain.toml
+[toolchain]
+channel = "1.81.0"
+EOF
+
+assert_contains "mise x -- rustc --version" "rustc 1.81.0"
