@@ -572,15 +572,44 @@ dir = "{{cwd}}"
 
 ### `task_config.includes`
 
-Add toml files containing toml tasks, or file tasks to include when looking for tasks.
+Set the toml files and file-task directories mise should search when looking for tasks.
 
 ```toml
 [task_config]
 includes = [
     "tasks.toml", # a task toml file
-    "mytasks"     # a directory containing file tasks (in addition to the default file tasks directories)
+    "mytasks"     # a directory containing file tasks
 ]
 ```
+
+When `task_config.includes` is set, it replaces the default file-task directories for that config scope instead of adding to them.
+
+The default file-task directories are:
+
+- `mise-tasks`
+- `.mise-tasks`
+- `.mise/tasks`
+- `.config/mise/tasks`
+- `mise/tasks`
+
+If you want to keep the defaults and add another directory, include the defaults explicitly:
+
+```toml
+[task_config]
+includes = [
+    "mise-tasks",
+    ".mise-tasks",
+    ".mise/tasks",
+    ".config/mise/tasks",
+    "mise/tasks",
+    "mytasks",
+    "tasks.toml",
+]
+```
+
+For local and monorepo task discovery, mise uses the nearest config file that defines `task_config.includes`.
+That means a child config's `includes` replaces both the defaults and any `includes` defined by parent configs for that directory.
+Global config files are loaded independently, so each global config file uses its own `task_config.includes` or the default directories if `includes` is unset.
 
 If using included task toml files, note that they have a different format than the `mise.toml` file. They are just a list of tasks.
 The file should be the same format as the `[tasks]` section of `mise.toml` but without the `[task]` prefix:
