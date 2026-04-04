@@ -189,7 +189,7 @@ toml_edit = { version = "0.24", features = ["parse"] }
 ubi = { version = "0.9", default-features = false }
 url = "2"
 urlencoding = "2"
-usage-lib = { version = "2", features = ["clap", "docs"] }
+usage-lib = { version = "3", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }
