@@ -33,6 +33,8 @@ assert_contains "mise -E=dev,staging env" "TTT_DEV=dev-value"
 assert_contains "mise -E=dev,staging env" "TTT_STG=staging-value"
 assert_contains "mise --env=dev,staging env" "TTT_DEV=dev-value"
 assert_contains "mise --env=dev,staging env" "TTT_STG=staging-value"
+assert_contains "mise --profile=dev env" "TTT_DEV=dev-value"
+assert_contains "mise -P=dev env" "TTT_DEV=dev-value"
 
 # === Space-separated forms (already worked, regression tests) ===
 

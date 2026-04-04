@@ -646,27 +646,22 @@ fn environment(args: &[String]) -> Vec<String> {
         // When running as shim, ignore command line args and use env vars only
         vec![]
     } else {
-        let arg_prefixes: Vec<String> = arg_defs.iter().map(|a| format!("{a}=")).collect();
         // Subcommands where positional args accept hyphen values, so -E after the
         // first positional would be a task arg, not a global flag.
         let run_subcommands: HashSet<&str> = HashSet::from(["run", "r"]);
         // Try to get from command line args first
         // Handles both `--env production` (separate args) and `--env=production` (joined with =)
         let mut values = Vec::new();
-        let args_before_dashdash: Vec<_> = args.iter().take_while(|a| a.as_str() != "--").collect();
-        let mut skip_next = false;
+        let mut it = args.iter().take_while(|a| a.as_str() != "--");
         let mut in_run_subcommand = false;
-        for (i, arg) in args_before_dashdash.iter().enumerate() {
-            if skip_next {
-                skip_next = false;
-                continue;
-            }
-            if let Some(prefix) = arg_prefixes.iter().find(|p| arg.starts_with(p.as_str())) {
-                values.push(arg[prefix.len()..].to_string());
+        while let Some(arg) = it.next() {
+            if let Some((flag, value)) = arg.split_once('=') {
+                if arg_defs.contains(flag) {
+                    values.push(value.to_string());
+                }
             } else if arg_defs.contains(arg.as_str()) {
-                if let Some(next) = args_before_dashdash.get(i + 1) {
+                if let Some(next) = it.next() {
                     values.push(next.to_string());
-                    skip_next = true;
                 }
             } else if !arg.starts_with('-') {
                 // After `run`/`r`, the first positional is the task name — everything
