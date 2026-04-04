@@ -33,6 +33,7 @@ apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     libyaml-dev \
     pipx \
+    pkg-config \
     python3-full \
     python3-venv \
     unzip \
