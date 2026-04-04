@@ -261,7 +261,6 @@ assert_fail_contains() {
 	fi
 }
 
-
 assert_fail_matches() {
 	local actual
 	actual="$(quiet_assert_fail "$1")"
