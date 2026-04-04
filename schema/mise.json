@@ -502,11 +502,6 @@
           "description": "Architecture to use for precompiled binaries.",
           "type": "string"
         },
-        "asdf": {
-          "description": "use asdf as a default plugin backend",
-          "type": "boolean",
-          "deprecated": true
-        },
         "asdf_compat": {
           "description": "set to true to ensure .tool-versions will be compatible with asdf",
           "type": "boolean",
@@ -548,11 +543,6 @@
               "type": "string"
             }
           }
-        },
-        "cargo_binstall": {
-          "description": "Use cargo-binstall instead of cargo install if available",
-          "type": "boolean",
-          "deprecated": true
         },
         "cd": {
           "description": "Path to change to after launching mise",
@@ -618,11 +608,6 @@
         "disable_default_registry": {
           "description": "Disable the default mapping of short tool names like `php` -> `asdf:mise-plugins/asdf-php`. This parameter disables only for the backends `vfox` and `asdf`.",
           "type": "boolean"
-        },
-        "disable_default_shorthands": {
-          "description": "Disables built-in shorthands to asdf/vfox plugins",
-          "type": "boolean",
-          "deprecated": true
         },
         "disable_hints": {
           "default": [],
@@ -1132,10 +1117,6 @@
             }
           }
         },
-        "pipx_uvx": {
-          "description": "Use uvx instead of pipx if uv is installed and on PATH.",
-          "type": "boolean"
-        },
         "plugin_autoupdate_last_check_duration": {
           "default": "7d",
           "description": "How long to wait before updating plugins automatically (note this isn't currently implemented).",
@@ -1216,46 +1197,6 @@
               "type": "boolean"
             }
           }
-        },
-        "python_compile": {
-          "description": "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available.",
-          "type": "boolean",
-          "deprecated": true
-        },
-        "python_default_packages_file": {
-          "description": "Path to a file containing default python packages to install when installing python.",
-          "type": "string",
-          "deprecated": true
-        },
-        "python_patch_url": {
-          "description": "URL to fetch python patches from.",
-          "type": "string",
-          "deprecated": true
-        },
-        "python_patches_directory": {
-          "description": "Directory to fetch python patches from.",
-          "type": "string",
-          "deprecated": true
-        },
-        "python_precompiled_arch": {
-          "description": "Specify the architecture to use for precompiled binaries.",
-          "type": "string",
-          "deprecated": true
-        },
-        "python_precompiled_os": {
-          "description": "Specify the OS to use for precompiled binaries.",
-          "type": "string",
-          "deprecated": true
-        },
-        "python_pyenv_repo": {
-          "description": "URL to fetch pyenv from for compiling python.",
-          "type": "string",
-          "deprecated": true
-        },
-        "python_venv_stdlib": {
-          "description": "Prefer to use venv from Python's standard library.",
-          "type": "boolean",
-          "deprecated": true
         },
         "quiet": {
           "description": "Suppress all output except errors.",
@@ -1636,11 +1577,6 @@
         "verbose": {
           "description": "Shows more verbose output such as installation logs when installing tools.",
           "type": "boolean"
-        },
-        "vfox": {
-          "description": "Use vfox as a default plugin backend instead of asdf.",
-          "type": "boolean",
-          "deprecated": true
         },
         "windows_default_file_shell_args": {
           "default": "cmd /c",
