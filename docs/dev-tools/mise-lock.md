@@ -281,6 +281,34 @@ mise install
 mise use node@$(jq -r '.engines.node' package.json)
 ```
 
+## Provenance and Security
+
+When `mise lock` generates a lockfile, it records a provenance type (e.g., `slsa`, `cosign`, `minisign`, `github-attestations`) based on the tool's registry metadata. This detection tells mise _which_ verification mechanism to use but does not perform cryptographic verification at lock time.
+
+By default, when `mise install` sees a lockfile with both a checksum and a provenance entry, it trusts the lockfile and skips re-verification. This avoids redundant API calls (e.g., GitHub attestation queries) which can cause rate limit issues in CI.
+
+For stronger security guarantees, you can force provenance re-verification at install time:
+
+```toml
+[settings]
+locked_verify_provenance = true
+```
+
+Or via environment variable:
+
+```sh
+MISE_LOCKED_VERIFY_PROVENANCE=1 mise install
+```
+
+This is also automatically enabled in [paranoid mode](/paranoid.html):
+
+```toml
+[settings]
+paranoid = true
+```
+
+When enabled, every `mise install` will cryptographically verify provenance regardless of what the lockfile contains, ensuring the artifact was built by a trusted CI pipeline.
+
 ## Minimum Release Age
 
 In addition to lockfiles, mise supports the [`install_before`](/configuration/settings.html#install_before) setting to limit supply chain risk by only installing versions that have been available for a minimum amount of time:

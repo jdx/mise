@@ -672,18 +672,30 @@ impl AquaBackend {
     /// Detect provenance type from aqua registry package config.
     ///
     /// Returns the highest-priority provenance type that is configured and
-    /// enabled for the package. GithubAttestations is NOT detected here
-    /// because it requires downloading the artifact to query the attestation
-    /// API — it is recorded at install-time after successful verification.
+    /// enabled for the package, based on the `ProvenanceType` priority order:
+    /// GithubAttestations (3) > Slsa (2) > Cosign (1) > Minisign (0).
     ///
-    /// NOTE: For packages with both `slsa_provenance` and `github_artifact_attestations`,
-    /// this returns `Slsa`. Subsequent `mise install` will enforce SLSA verification even
-    /// though attestations would also work. If SLSA verification fails (missing asset,
-    /// format change), the lockfile entry must be deleted and re-locked.
+    /// This detection is based on registry metadata only — no cryptographic
+    /// verification happens here. Actual verification occurs at install time
+    /// (and is always performed when `locked_verify_provenance` or `paranoid`
+    /// is enabled).
     fn detect_provenance_type(&self, pkg: &AquaPackage) -> Option<ProvenanceType> {
         let settings = Settings::get();
 
-        // Check for SLSA provenance (highest priority available at lock-time)
+        // Check for GitHub artifact attestations (highest priority)
+        // The registry metadata (enabled flag, signer_workflow) is sufficient for
+        // detection at lock-time. Actual cryptographic verification happens at
+        // install time (always when locked_verify_provenance/paranoid is enabled,
+        // or on first install when the lockfile doesn't yet have provenance).
+        if settings.github_attestations
+            && settings.aqua.github_attestations
+            && let Some(att) = &pkg.github_artifact_attestations
+            && att.enabled != Some(false)
+        {
+            return Some(ProvenanceType::GithubAttestations);
+        }
+
+        // Check for SLSA provenance
         if settings.slsa
             && settings.aqua.slsa
             && let Some(slsa) = &pkg.slsa_provenance
@@ -1014,12 +1026,19 @@ impl AquaBackend {
         // by the checksum, so re-verifying attestations would just be redundant API calls.
         // However, still check that the recorded provenance type's setting is enabled —
         // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
+        //
+        // When locked_verify_provenance is enabled (or paranoid mode is on), always
+        // re-verify provenance at install time regardless of what the lockfile contains.
+        // This closes the gap where lock-time detection records provenance from registry
+        // metadata without cryptographic verification.
+        let settings = Settings::get();
+        let force_verify = settings.locked_verify_provenance || settings.paranoid;
         let platform_key = self.get_platform_key();
         let has_lockfile_integrity = tv
             .lock_platforms
             .get(&platform_key)
             .is_some_and(|pi| pi.checksum.is_some() && pi.provenance.is_some());
-        if has_lockfile_integrity {
+        if has_lockfile_integrity && !force_verify {
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
         } else {
             self.verify_provenance(ctx, tv, pkg, v, filename).await?;

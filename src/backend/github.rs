@@ -630,7 +630,9 @@ impl UnifiedGitBackend {
 
         self.verify_checksum(ctx, tv, &file_path)?;
 
-        if has_lockfile_integrity {
+        let settings = Settings::get();
+        let force_verify = settings.locked_verify_provenance || settings.paranoid;
+        if has_lockfile_integrity && !force_verify {
             // Still check that the recorded provenance type's setting is enabled —
             // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
