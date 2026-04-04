@@ -1,7 +1,7 @@
 name: vendored-file-warning
 
 on:
-  pull_request:
+  pull_request_target:
     paths:
       - "crates/aqua-registry/aqua-registry/pkgs/**"
 
