@@ -129,17 +129,9 @@ impl MiseServer {
                 data: None,
             })?;
 
-        let output = match crate::config::Settings::get().task_timeout_duration() {
-            Some(timeout) => tokio::time::timeout(timeout, child.wait_with_output())
-                .await
-                .map_err(|_| ErrorData {
-                    code: ErrorCode::INTERNAL_ERROR,
-                    message: Cow::Owned(format!("Task '{task}' timed out after {timeout:?}")),
-                    data: None,
-                })?,
-            None => child.wait_with_output().await,
-        }
-        .map_err(|e| ErrorData {
+        // No global timeout here — per-task timeouts are handled inside the
+        // spawned `mise run` subprocess via task_executor.rs.
+        let output = child.wait_with_output().await.map_err(|e| ErrorData {
             code: ErrorCode::INTERNAL_ERROR,
             message: Cow::Owned(format!("Failed to execute mise run: {e}")),
             data: None,

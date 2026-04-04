@@ -96,7 +96,7 @@ cat <<EOF >mise.toml
 task_timeout = "2s"
 
 [tasks.has_own_timeout]
-run = "sleep 2.5 && echo 'Own timeout done'"
+run = "sleep 1.5 && echo 'Own timeout done'"
 timeout = "3s"
 
 [tasks.no_own_timeout]

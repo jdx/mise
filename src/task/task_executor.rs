@@ -961,17 +961,12 @@ impl TaskExecutor {
         if self.dry_run {
             return Ok(());
         }
-        let effective_timeout = task
-            .timeout
-            .as_ref()
-            .or(Settings::get().task.timeout.as_ref())
-            .and_then(|s| match duration::parse_duration(s) {
-                Ok(d) => Some(d),
-                Err(e) => {
-                    warn!("invalid timeout {:?} for task {}: {e}", s, task.name);
-                    None
-                }
-            });
+        let effective_timeout = match &task.timeout {
+            Some(s) => duration::parse_duration(s)
+                .map_err(|e| warn!("invalid timeout {:?} for task {}: {e}", s, task.name))
+                .ok(),
+            None => Settings::get().task_timeout_duration(),
+        };
         if let Some(timeout) = effective_timeout {
             cmd = cmd.with_timeout(timeout);
         }
