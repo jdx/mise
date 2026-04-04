@@ -9,6 +9,7 @@ expression: "replace_path(&format!(\"{:#?}\", cf.to_tool_request_set().unwrap().
             version: "1.0.0",
             options: ToolVersionOptions {
                 os: None,
+                depends: None,
                 install_env: {},
                 opts: {},
             },
@@ -23,6 +24,7 @@ expression: "replace_path(&format!(\"{:#?}\", cf.to_tool_request_set().unwrap().
             prefix: "1.6",
             options: ToolVersionOptions {
                 os: None,
+                depends: None,
                 install_env: {},
                 opts: {},
             },
