@@ -1,5 +1,5 @@
 use crate::config::env_directive::EnvDirective;
-use crate::task::Task;
+use crate::task::{Task, dep_has_usage_ref, parse_usage_values_from_task};
 use crate::{config::Config, task::task_list::resolve_depends};
 use itertools::Itertools;
 use petgraph::Direction;
@@ -63,10 +63,26 @@ impl Deps {
             add_idx(t, &mut graph);
         }
         let all_tasks_to_run = resolve_depends(config, tasks).await?;
-        while let Some(a) = stack.pop() {
+        while let Some(mut a) = stack.pop() {
             if seen.contains(&a) {
                 // prevent infinite loop
                 continue;
+            }
+            // If this task received args (from a parent dependency), re-render
+            // its dependency templates with usage values so {{usage.*}} resolves.
+            let has_usage_deps = |raw: &Option<Vec<_>>| {
+                raw.as_ref()
+                    .is_some_and(|r| r.iter().any(dep_has_usage_ref))
+            };
+            if !a.args.is_empty()
+                && (has_usage_deps(&a.depends_raw)
+                    || has_usage_deps(&a.depends_post_raw)
+                    || has_usage_deps(&a.wait_for_raw))
+            {
+                let usage_values = parse_usage_values_from_task(config, &a).await?;
+                if !usage_values.is_empty() {
+                    a.render_depends_with_usage(config, &usage_values).await?;
+                }
             }
             let a_idx = add_idx(&a, &mut graph);
             let (pre, post) = a.resolve_depends(config, &all_tasks_to_run).await?;
