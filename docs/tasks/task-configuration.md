@@ -131,7 +131,7 @@ Note: These environment variables are passed only to the specified dependency, n
 
 #### Passing parent task arguments to dependencies
 
-You can forward a parent task's arguments to its dependencies using `{{usage.*}}` templates.
+You can forward a parent task's arguments to its dependencies using <span v-pre>`{{usage.*}}`</span> templates.
 Both the parent and child tasks must define a `usage` spec for the arguments they accept:
 
 ```mise-toml
