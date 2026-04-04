@@ -774,7 +774,7 @@ impl AquaBackend {
         let filename = get_filename_from_url(artifact_url);
         let artifact_path = tmp_dir.path().join(&filename);
 
-        debug!(
+        info!(
             "downloading artifact for lock-time provenance verification: {}",
             filename
         );
