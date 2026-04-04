@@ -18,7 +18,7 @@ jobs:
     steps:
       - name: Convert to draft and comment
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           gh pr ready --undo "$PR_NUMBER" -R "${{ github.repository }}"
