@@ -36,6 +36,10 @@ impl DotnetPlugin {
     }
 
     async fn test_dotnet(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+        if tv.request.options().get("runtime").is_some() {
+            // Skip version check for runtime-only installs — `dotnet --version` exits non-zero without an SDK
+            return Ok(());
+        }
         ctx.pr.set_message("dotnet --version".into());
         CmdLineRunner::new(DOTNET_BIN)
             .with_pr(ctx.pr.as_ref())
@@ -120,6 +124,17 @@ impl Backend for DotnetPlugin {
         };
         file::create_dir_all(&install_dir)?;
 
+        // Read and validate runtime options
+        let runtime = tv.request.options().get("runtime").map(|s| s.to_string());
+        if let Some(ref rt) = runtime
+            && runtime_framework_name(rt).is_none()
+        {
+            return Err(eyre::eyre!(
+                "Invalid runtime option '{}'. Valid options: dotnet, aspnetcore, windowsdesktop",
+                rt
+            ));
+        }
+
         // Download install script (always refresh to pick up upstream fixes)
         let script_path = install_script_path();
         file::create_dir_all(script_path.parent().unwrap())?;
@@ -131,9 +146,10 @@ impl Backend for DotnetPlugin {
         file::make_executable(&script_path)?;
 
         // Run install script
+        let install_type = if runtime.is_some() { "Runtime" } else { "SDK" };
         ctx.pr
-            .set_message(format!("Installing .NET SDK {}", tv.version));
-        install_cmd(&script_path, &install_dir, &tv.version)
+            .set_message(format!("Installing .NET {} {}", install_type, tv.version));
+        install_cmd(&script_path, &install_dir, &tv.version, runtime.as_deref())
             .with_pr(ctx.pr.as_ref())
             .envs(self.exec_env(&ctx.config, &ctx.ts, &tv).await?)
             .execute()?;
@@ -158,10 +174,25 @@ impl Backend for DotnetPlugin {
         if Self::is_isolated() {
             // Isolated: mise handles removal of install_path by default
         } else {
-            // Shared: only remove this SDK version from the shared root
-            let sdk_dir = dotnet_root().join("sdk").join(&tv.version);
-            if sdk_dir.exists() {
-                file::remove_all(&sdk_dir)?;
+            let runtime = tv.request.options().get("runtime").map(|s| s.to_string());
+            if let Some(rt) = runtime {
+                // Runtime: remove the shared runtime directory for this version
+                let Some(framework) = runtime_framework_name(&rt) else {
+                    return Ok(());
+                };
+                let runtime_dir = dotnet_root()
+                    .join("shared")
+                    .join(framework)
+                    .join(&tv.version);
+                if runtime_dir.exists() {
+                    file::remove_all(&runtime_dir)?;
+                }
+            } else {
+                // SDK: only remove this SDK version from the shared root
+                let sdk_dir = dotnet_root().join("sdk").join(&tv.version);
+                if sdk_dir.exists() {
+                    file::remove_all(&sdk_dir)?;
+                }
             }
         }
         Ok(())
@@ -207,6 +238,15 @@ impl Backend for DotnetPlugin {
     }
 }
 
+fn runtime_framework_name(runtime: &str) -> Option<&'static str> {
+    match runtime {
+        "dotnet" => Some("Microsoft.NETCore.App"),
+        "aspnetcore" => Some("Microsoft.AspNetCore.App"),
+        "windowsdesktop" => Some("Microsoft.WindowsDesktop.App"),
+        _ => None,
+    }
+}
+
 fn dotnet_root() -> PathBuf {
     Settings::get()
         .dotnet
@@ -243,18 +283,32 @@ fn install_script_url() -> &'static str {
 }
 
 #[cfg(unix)]
-fn install_cmd<'a>(script_path: &Path, install_dir: &Path, version: &str) -> CmdLineRunner<'a> {
-    CmdLineRunner::new(script_path)
+fn install_cmd<'a>(
+    script_path: &Path,
+    install_dir: &Path,
+    version: &str,
+    runtime: Option<&str>,
+) -> CmdLineRunner<'a> {
+    let mut cmd = CmdLineRunner::new(script_path)
         .arg("--install-dir")
         .arg(install_dir)
         .arg("--version")
         .arg(version)
-        .arg("--no-path")
+        .arg("--no-path");
+    if let Some(rt) = runtime {
+        cmd = cmd.arg("--runtime").arg(rt);
+    }
+    cmd
 }
 
 #[cfg(windows)]
-fn install_cmd<'a>(script_path: &Path, install_dir: &Path, version: &str) -> CmdLineRunner<'a> {
-    CmdLineRunner::new("powershell")
+fn install_cmd<'a>(
+    script_path: &Path,
+    install_dir: &Path,
+    version: &str,
+    runtime: Option<&str>,
+) -> CmdLineRunner<'a> {
+    let mut cmd = CmdLineRunner::new("powershell")
         .arg("-ExecutionPolicy")
         .arg("Bypass")
         .arg("-File")
@@ -263,7 +317,11 @@ fn install_cmd<'a>(script_path: &Path, install_dir: &Path, version: &str) -> Cmd
         .arg(install_dir)
         .arg("-Version")
         .arg(version)
-        .arg("-NoPath")
+        .arg("-NoPath");
+    if let Some(rt) = runtime {
+        cmd = cmd.arg("-Runtime").arg(rt);
+    }
+    cmd
 }
 
 // --- Microsoft releases API types ---
