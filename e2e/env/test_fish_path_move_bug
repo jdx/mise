@@ -11,7 +11,7 @@ require_cmd fish
 mkdir -p project
 
 # Create test script
-cat >"$TEST_DIR/test.fish" <<'EOF'
+cat >"$HOME/test.fish" <<'EOF'
 #!/usr/bin/env fish
 
 # Ensure we use the debug mise binary, not homebrew mise
@@ -90,4 +90,4 @@ end
 echo "SUCCESS: /opt/homebrew/bin remained in PATH after leaving directory"
 EOF
 
-exec fish "$TEST_DIR/test.fish"
+exec fish "$HOME/test.fish"

@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+# dotnet requires ICU libraries which may not be available in Docker
+if [[ ${MISE_E2E_INSIDE_DOCKER:-} == "1" ]]; then
+	exit 0
+fi
+
 export MISE_DOTNET_ROOT="$MISE_DATA_DIR/dotnet-root"
 
 assert_contains "mise x dotnet@8.0.408 -- dotnet --version" "8.0.408"
