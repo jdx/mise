@@ -31,6 +31,6 @@ apt-get update && apt-get install -y --no-install-recommends \
 ln -sf /usr/bin/fdfind /usr/bin/fd
 npm install -g nushell
 
-rm -rf /var/lib/apt/lists/*
 apt-get clean
+rm -rf /var/lib/apt/lists/*
 EOT

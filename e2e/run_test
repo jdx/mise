@@ -188,7 +188,7 @@ run_in_docker() {
 		-e RUST_BACKTRACE="${RUST_BACKTRACE:-1}"
 	)
 
-	exec "${docker_args[@]}" "$image" /mise-src/e2e/run_test "$TEST"
+	"${docker_args[@]}" "$image" /mise-src/e2e/run_test "$TEST"
 }
 
 resolve_mise_bin() {
