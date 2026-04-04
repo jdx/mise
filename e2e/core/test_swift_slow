@@ -6,8 +6,10 @@ export MISE_USE_VERSIONS_HOST=0
 MISE_DEBUG=1 mise use swift@6
 assert_matches "mise x -- swift --version" 'Swift version 6\.'
 
-assert "mise x spm:nicklockwood/SwiftFormat@0.53.10 -- swiftformat --version" "0.53.10"
-assert "mise x spm:https://github.com/nicklockwood/SwiftFormat.git@0.53.10 -- swiftformat --version" "0.53.10"
+# TODO: re-enable once Swift provides Ubuntu 26.04 binaries
+# Swift 24.04 binaries link against libxml2.so.2 but Ubuntu 26.04 ships libxml2.so.16 (ABI mismatch)
+#assert "mise x spm:nicklockwood/SwiftFormat@0.53.10 -- swiftformat --version" "0.53.10"
+#assert "mise x spm:https://github.com/nicklockwood/SwiftFormat.git@0.53.10 -- swiftformat --version" "0.53.10"
 
 # test package with resources (`templates list` command depends on resources being installed)
 #assert "mise x spm:SwiftGen/SwiftGen@6.6.2 --verbose -- swiftgen templates list --only colors" "colors:
