@@ -13,6 +13,7 @@ Toolset {
                     version: "16.0.1",
                     options: ToolVersionOptions {
                         os: None,
+                        depends: None,
                         install_env: {},
                         opts: {},
                     },
@@ -25,6 +26,7 @@ Toolset {
                     version: "18.0.1",
                     options: ToolVersionOptions {
                         os: None,
+                        depends: None,
                         install_env: {},
                         opts: {},
                     },
