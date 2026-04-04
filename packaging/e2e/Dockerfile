@@ -15,9 +15,11 @@ set -euxo pipefail
 mkdir -p /opt/node
 
 apt-get update && apt-get install -y --no-install-recommends \
+    autoconf \
     bash \
     bison \
     build-essential \
+    cargo \
     curl \
     direnv \
     fd-find \
@@ -26,6 +28,7 @@ apt-get update && apt-get install -y --no-install-recommends \
     jq \
     libffi-dev \
     libicu-dev \
+    libncurses-dev \
     libreadline-dev \
     libssl-dev \
     libyaml-dev \
