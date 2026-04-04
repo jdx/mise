@@ -174,6 +174,7 @@ You can also have environment specific config files like `.mise.production.toml`
 See [Tools](/dev-tools/). In addition to specifying versions, each tool entry can include options such as:
 
 - `os`: Restrict installation to certain operating systems
+- `depends`: Tools that must be installed before this tool
 - `install_env`: Environment vars used during install
 - `postinstall`: Command to run after installation completes for that specific tool
 
@@ -342,7 +343,7 @@ task.output = "prefix" # see Tasks Runner for more information
 paranoid = false       # see MISE_PARANOID
 
 shorthands_file = '~/.config/mise/shorthands.toml' # path to the shorthands file, see `MISE_SHORTHANDS_FILE`
-disable_default_shorthands = false # disable the default shorthands, see `MISE_DISABLE_DEFAULT_SHORTHANDS`
+disable_default_registry = false   # disable the default registry, see `MISE_DISABLE_DEFAULT_REGISTRY`
 disable_tools = ['node']           # disable specific tools, generally used to turn off core tools
 
 env_file = '.env' # load env vars from a dotenv file, see `MISE_ENV_FILE`

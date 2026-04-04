@@ -233,54 +233,64 @@ impl PythonPlugin {
         ctx: &InstallContext,
         tv: &mut ToolVersion,
     ) -> eyre::Result<()> {
-        let precompiled_versions = self.fetch_precompiled_remote_versions().await?;
-        let precompile_info = precompiled_versions
-            .iter()
-            .rev()
-            .find(|(v, _, _)| &tv.version == v);
-        let (tag, filename) = match precompile_info {
-            Some((_, tag, filename)) => (tag, filename),
-            None => {
-                if cfg!(windows) || Settings::get().python.compile == Some(false) {
-                    if !cfg!(windows) {
-                        hint!(
-                            "python_compile",
-                            "To compile python from source, run",
-                            "mise settings python.compile=1"
+        let platform_key = self.get_platform_key();
+        let url = if let Some(url) = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|pi| pi.url.clone())
+        {
+            debug!("using lockfile URL for platform {platform_key}: {url}");
+            url
+        } else {
+            let precompiled_versions = self.fetch_precompiled_remote_versions().await?;
+            let precompile_info = precompiled_versions
+                .iter()
+                .rev()
+                .find(|(v, _, _)| &tv.version == v);
+            let (tag, filename) = match precompile_info {
+                Some((_, tag, filename)) => (tag, filename),
+                None => {
+                    if cfg!(windows) || Settings::get().python.compile == Some(false) {
+                        if !cfg!(windows) {
+                            hint!(
+                                "python_compile",
+                                "To compile python from source, run",
+                                "mise settings python.compile=1"
+                            );
+                        }
+                        let platform = python_precompiled_platform();
+                        bail!("no precompiled python found for {tv} on {platform}");
+                    }
+                    let available = precompiled_versions.iter().map(|(v, _, _)| v).collect_vec();
+                    if available.is_empty() {
+                        debug!("no precompiled python found for {}", tv.version);
+                    } else {
+                        warn!(
+                            "no precompiled python found for {}, force mise to use a precompiled version with `mise settings set python.compile false`",
+                            tv.version
                         );
                     }
-                    let platform = python_precompiled_platform();
-                    bail!("no precompiled python found for {tv} on {platform}");
-                }
-                let available = precompiled_versions.iter().map(|(v, _, _)| v).collect_vec();
-                if available.is_empty() {
-                    debug!("no precompiled python found for {}", tv.version);
-                } else {
-                    warn!(
-                        "no precompiled python found for {}, force mise to use a precompiled version with `mise settings set python.compile false`",
-                        tv.version
+                    trace!(
+                        "available precompiled versions: {}",
+                        available.into_iter().join(", ")
                     );
+                    return self.install_compiled(ctx, tv).await;
                 }
-                trace!(
-                    "available precompiled versions: {}",
-                    available.into_iter().join(", ")
+            };
+
+            if cfg!(unix) {
+                hint!(
+                    "python_precompiled",
+                    "installing precompiled python from astral-sh/python-build-standalone\n\
+                    if you experience issues with this python (e.g.: running poetry), switch to python-build by running",
+                    "mise settings python.compile=1"
                 );
-                return self.install_compiled(ctx, tv).await;
             }
+
+            format!(
+                "https://github.com/astral-sh/python-build-standalone/releases/download/{tag}/{filename}"
+            )
         };
-
-        if cfg!(unix) {
-            hint!(
-                "python_precompiled",
-                "installing precompiled python from astral-sh/python-build-standalone\n\
-                if you experience issues with this python (e.g.: running poetry), switch to python-build by running",
-                "mise settings python.compile=1"
-            );
-        }
-
-        let url = format!(
-            "https://github.com/astral-sh/python-build-standalone/releases/download/{tag}/{filename}"
-        );
         let filename = url.split('/').next_back().unwrap();
         let install = tv.install_path();
         let download = tv.download_path();
@@ -291,7 +301,6 @@ impl PythonPlugin {
             .await?;
 
         // Record the URL in lock_platforms so verify_checksum can find it
-        let platform_key = self.get_platform_key();
         tv.lock_platforms
             .entry(platform_key.clone())
             .or_default()
