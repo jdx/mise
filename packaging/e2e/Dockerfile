@@ -24,6 +24,7 @@ apt-get update && apt-get install -y --no-install-recommends \
     fish \
     git \
     jq \
+    libicu-dev \
     pipx \
     python3-full \
     python3-venv \

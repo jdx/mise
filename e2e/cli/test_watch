@@ -28,6 +28,7 @@ test_mise_watch "mise"
 
 # Test when mise is not in PATH
 original_mise="$(which mise)"
-mkdir -p ./bin && mv "$original_mise" ./bin/mise
+mkdir -p ./bin && cp "$original_mise" ./bin/mise
+rm -f "$original_mise"
 test_mise_watch "./bin/mise"
 mv ./bin/mise "$original_mise"

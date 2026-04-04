@@ -15,7 +15,8 @@ assert_contains "cat ./bin/mise" 'exec -a "$0" "$MISE_INSTALL_PATH" "$@"'
 
 # ensure that that the commands don't rely on the global mise bin
 original_mise="$(which mise)"
-mv "$original_mise" "original_mise"
+cp "$original_mise" "original_mise"
+rm -f "$original_mise"
 
 assert_contains "./bin/mise tasks ls" "xxx"
 
