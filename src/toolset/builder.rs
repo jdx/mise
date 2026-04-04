@@ -136,9 +136,21 @@ impl ToolsetBuilder {
     fn load_runtime_args(&self, ts: &mut Toolset) -> eyre::Result<()> {
         for (_, args) in self.args.iter().into_group_map_by(|arg| arg.ba.clone()) {
             let mut arg_ts = Toolset::new(ToolSource::Argument);
+            // carry over options (e.g. filter_bins) from config for this tool
+            let config_options = ts
+                .versions
+                .get(&args[0].ba)
+                .and_then(|tvl| tvl.requests.first())
+                .map(|tvr| tvr.options());
             for arg in args {
                 if let Some(tvr) = &arg.tvr {
-                    arg_ts.add_version(tvr.clone());
+                    let mut tvr = tvr.clone();
+                    if tvr.options().is_empty() {
+                        if let Some(opts) = &config_options {
+                            tvr.set_options(opts.clone());
+                        }
+                    }
+                    arg_ts.add_version(tvr);
                 } else if self.default_to_latest {
                     // this logic is required for `mise x` because with that specific command mise
                     // should default to installing the "latest" version if no version is specified
@@ -152,11 +164,15 @@ impl ToolsetBuilder {
 
                     if let Some(current_active) = current_active {
                         // active version, so don't set "latest"
-                        arg_ts.add_version(ToolRequest::new(
+                        let mut tvr = ToolRequest::new(
                             arg.ba.clone(),
                             &current_active.version(),
                             ToolSource::Argument,
-                        )?);
+                        )?;
+                        if let Some(opts) = &config_options {
+                            tvr.set_options(opts.clone());
+                        }
+                        arg_ts.add_version(tvr);
                     } else {
                         // no active version, so use "latest"
                         arg_ts.add_version(ToolRequest::new(
