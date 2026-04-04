@@ -17,9 +17,9 @@ cat >"$HOME/test.fish" <<'EOF'
 # Ensure we use the debug mise binary, not homebrew mise
 # The e2e framework sets PATH with the debug binary first, but we override it below
 # So we need to preserve the debug binary path
-set -l debug_mise_path (string match -r ".*/target/debug" $PATH | head -1)
+set -l debug_mise_path (which mise | xargs dirname)
 if test -z "$debug_mise_path"
-    echo "ERROR: Could not find debug mise in PATH"
+    echo "ERROR: Could not find mise in PATH"
     echo "PATH: $PATH"
     exit 1
 end
