@@ -24,12 +24,17 @@ apt-get update && apt-get install -y --no-install-recommends \
     fish \
     git \
     jq \
+    libffi-dev \
     libicu-dev \
+    libreadline-dev \
+    libssl-dev \
+    libyaml-dev \
     pipx \
     python3-full \
     python3-venv \
     unzip \
     xz-utils \
+    zlib1g-dev \
     zsh
 
 ln -sf /usr/bin/fdfind /usr/bin/fd
