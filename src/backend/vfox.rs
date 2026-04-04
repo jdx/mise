@@ -61,8 +61,13 @@ impl Backend for VfoxBackend {
                     Settings::get().ensure_experimental("custom backends")?;
                     debug!("Using backend method for plugin: {}", this.pathname);
                     let tool_name = this.get_tool_name()?;
+                    let opts = config
+                        .get_tool_opts(&this.ba)
+                        .await?
+                        .map(|o| o.opts)
+                        .unwrap_or_default();
                     let versions = vfox
-                        .backend_list_versions(&this.pathname, tool_name)
+                        .backend_list_versions(&this.pathname, tool_name, opts)
                         .await
                         .wrap_err("Backend list versions method failed")?;
                     return Ok(versions
@@ -118,7 +123,7 @@ impl Backend for VfoxBackend {
                 &tv.version,
                 tv.install_path(),
                 tv.download_path(),
-                tool_opts.opts_as_strings(),
+                tool_opts.opts,
             )
             .await
             .wrap_err("Backend install method failed")?;
@@ -389,18 +394,7 @@ impl VfoxBackend {
                         tool_name,
                         &tv.version,
                         tv.install_path(),
-                        opts.opts
-                            .iter()
-                            .map(|(k, v)| {
-                                (
-                                    k.clone(),
-                                    match v {
-                                        toml::Value::String(s) => s.clone(),
-                                        _ => v.to_string(),
-                                    },
-                                )
-                            })
-                            .collect(),
+                        opts.opts.clone(),
                     )
                     .await
                     .wrap_err("Backend exec env method failed")?
