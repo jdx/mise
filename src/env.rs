@@ -651,12 +651,18 @@ fn environment(args: &[String]) -> Vec<String> {
         // Handles both `--env production` (separate args) and `--env=production` (joined with =)
         let mut values = Vec::new();
         let args_before_dashdash: Vec<_> = args.iter().take_while(|a| a.as_str() != "--").collect();
+        let mut skip_next = false;
         for (i, arg) in args_before_dashdash.iter().enumerate() {
+            if skip_next {
+                skip_next = false;
+                continue;
+            }
             if let Some(prefix) = arg_prefixes.iter().find(|p| arg.starts_with(p.as_str())) {
                 values.push(arg[prefix.len()..].to_string());
             } else if arg_defs.contains(arg.as_str())
                 && let Some(next) = args_before_dashdash.get(i + 1) {
                     values.push(next.to_string());
+                    skip_next = true;
                 }
         }
         values
