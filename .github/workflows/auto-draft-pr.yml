@@ -8,9 +8,9 @@ jobs:
   auto-draft:
     if: >-
       github.event.pull_request.author_association != 'OWNER' &&
-      github.event.pull_request.user.login != 'jdx' &&
+      github.event.pull_request.author_association != 'MEMBER' &&
+      github.event.pull_request.author_association != 'COLLABORATOR' &&
       github.event.pull_request.user.login != 'renovate[bot]' &&
-      github.event.pull_request.user.login != 'mise-en-dev' &&
       !github.event.pull_request.draft
     runs-on: ubuntu-latest
     permissions:
