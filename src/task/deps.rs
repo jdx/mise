@@ -73,7 +73,7 @@ impl Deps {
             if !a.args.is_empty()
                 && a.depends_raw
                     .as_ref()
-                    .map_or(false, |raw| raw.iter().any(dep_has_usage_ref))
+                    .is_some_and(|raw| raw.iter().any(dep_has_usage_ref))
             {
                 let usage_values = parse_usage_values_from_task(config, &a).await?;
                 if !usage_values.is_empty() {
