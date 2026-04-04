@@ -873,24 +873,22 @@ impl AquaBackend {
         (slsa_pkg.repo_owner, slsa_pkg.repo_name) =
             resolve_repo_info(slsa.repo_owner.as_ref(), slsa.repo_name.as_ref(), pkg);
 
-        let (provenance_path, provenance_url) =
-            match slsa.r#type.as_deref().unwrap_or_default() {
-                "github_release" => {
-                    let asset_strs = slsa.asset_strs(pkg, v, os(), arch())?;
-                    let (url, _) =
-                        self.github_release_asset(&slsa_pkg, v, asset_strs).await?;
-                    let path = download_dir.join(get_filename_from_url(&url));
-                    HTTP.download_file(&url, &path, pr).await?;
-                    (path, url)
-                }
-                "http" => {
-                    let url = slsa.url(pkg, v, os(), arch())?;
-                    let path = download_dir.join(get_filename_from_url(&url));
-                    HTTP.download_file(&url, &path, pr).await?;
-                    (path, url)
-                }
-                t => return Err(eyre!("unsupported slsa type: {t}")),
-            };
+        let (provenance_path, provenance_url) = match slsa.r#type.as_deref().unwrap_or_default() {
+            "github_release" => {
+                let asset_strs = slsa.asset_strs(pkg, v, os(), arch())?;
+                let (url, _) = self.github_release_asset(&slsa_pkg, v, asset_strs).await?;
+                let path = download_dir.join(get_filename_from_url(&url));
+                HTTP.download_file(&url, &path, pr).await?;
+                (path, url)
+            }
+            "http" => {
+                let url = slsa.url(pkg, v, os(), arch())?;
+                let path = download_dir.join(get_filename_from_url(&url));
+                HTTP.download_file(&url, &path, pr).await?;
+                (path, url)
+            }
+            t => return Err(eyre!("unsupported slsa type: {t}")),
+        };
 
         match sigstore_verification::verify_slsa_provenance(artifact_path, &provenance_path, 1u8)
             .await
@@ -1025,11 +1023,8 @@ impl AquaBackend {
             }
         } else if let Some(bundle) = &cosign.bundle {
             let mut bundle_pkg = pkg.clone();
-            (bundle_pkg.repo_owner, bundle_pkg.repo_name) = resolve_repo_info(
-                bundle.repo_owner.as_ref(),
-                bundle.repo_name.as_ref(),
-                pkg,
-            );
+            (bundle_pkg.repo_owner, bundle_pkg.repo_name) =
+                resolve_repo_info(bundle.repo_owner.as_ref(), bundle.repo_name.as_ref(), pkg);
             let bundle_url = match bundle.r#type.as_deref().unwrap_or_default() {
                 "github_release" => {
                     let asset_strs = bundle.asset_strs(pkg, v, os(), arch())?;
@@ -1628,8 +1623,7 @@ impl AquaBackend {
                 )
                 .await?;
 
-            ctx.pr
-                .set_message("✓ SLSA provenance verified".to_string());
+            ctx.pr.set_message("✓ SLSA provenance verified".to_string());
             // Record provenance in lockfile only if not already set by a
             // higher-priority verification (github-attestations runs first)
             let platform_key = self.get_platform_key();
@@ -1708,14 +1702,8 @@ impl AquaBackend {
 
             ctx.pr
                 .set_message("verify checksums with cosign".to_string());
-            self.run_cosign_check(
-                checksum_path,
-                pkg,
-                v,
-                download_path,
-                Some(ctx.pr.as_ref()),
-            )
-            .await?;
+            self.run_cosign_check(checksum_path, pkg, v, download_path, Some(ctx.pr.as_ref()))
+                .await?;
 
             ctx.pr.set_message("✓ Cosign verified".to_string());
             let platform_key = self.get_platform_key();
