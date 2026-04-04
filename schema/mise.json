@@ -769,24 +769,64 @@
           "description": "Path which is used as `{{config_root}}` for the global config file. Default is `$HOME`. This must be an env var.",
           "type": "string"
         },
+        "go": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "default_packages_file": {
+              "default": "~/.default-go-packages",
+              "description": "Path to a file containing default go packages to install when installing go.",
+              "type": "string"
+            },
+            "download_mirror": {
+              "default": "https://dl.google.com/go",
+              "description": "Mirror to download go sdk tarballs from.",
+              "type": "string"
+            },
+            "repo": {
+              "default": "https://github.com/golang/go",
+              "description": "URL to fetch go from.",
+              "type": "string"
+            },
+            "set_gobin": {
+              "description": "Changes where `go install` installs binaries to.",
+              "type": "boolean"
+            },
+            "set_gopath": {
+              "description": "[deprecated] Set to true to set GOPATH=~/.local/share/mise/installs/go/.../packages.",
+              "type": "boolean",
+              "deprecated": true
+            },
+            "set_goroot": {
+              "default": true,
+              "description": "Sets GOROOT=~/.local/share/mise/installs/go/.../.",
+              "type": "boolean"
+            },
+            "skip_checksum": {
+              "description": "Set to true to skip checksum verification when downloading go sdk tarballs.",
+              "type": "boolean"
+            }
+          }
+        },
         "go_default_packages_file": {
-          "default": "~/.default-go-packages",
-          "description": "Path to a file containing default go packages to install when installing go",
-          "type": "string"
+          "description": "Path to a file containing default go packages to install when installing go.",
+          "type": "string",
+          "deprecated": true
         },
         "go_download_mirror": {
-          "default": "https://dl.google.com/go",
           "description": "Mirror to download go sdk tarballs from.",
-          "type": "string"
+          "type": "string",
+          "deprecated": true
         },
         "go_repo": {
-          "default": "https://github.com/golang/go",
           "description": "URL to fetch go from.",
-          "type": "string"
+          "type": "string",
+          "deprecated": true
         },
         "go_set_gobin": {
           "description": "Changes where `go install` installs binaries to.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "go_set_gopath": {
           "description": "[deprecated] Set to true to set GOPATH=~/.local/share/mise/installs/go/.../packages.",
@@ -794,13 +834,14 @@
           "deprecated": true
         },
         "go_set_goroot": {
-          "default": true,
           "description": "Sets GOROOT=~/.local/share/mise/installs/go/.../.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "go_skip_checksum": {
           "description": "Set to true to skip checksum verification when downloading go sdk tarballs.",
-          "type": "boolean"
+          "type": "boolean",
+          "deprecated": true
         },
         "gpg_verify": {
           "description": "Use gpg to verify all tool signatures.",
