@@ -2630,7 +2630,10 @@ mygh = { backend = "github" }
 
         let def2 = aliases.get("mygh").expect("mygh alias not found");
         assert_eq!("github", def2.backend);
-        assert!(def2.opts().opts.is_empty(), "mygh should have no extra opts");
+        assert!(
+            def2.opts().opts.is_empty(),
+            "mygh should have no extra opts"
+        );
     }
 
     #[test]

@@ -15,6 +15,7 @@ use tokio::{sync::OnceCell, task::JoinSet};
 use walkdir::WalkDir;
 
 use crate::backend::ABackend;
+use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
@@ -97,9 +98,12 @@ pub struct UserBackendDef {
 
 impl UserBackendDef {
     pub fn opts(&self) -> ToolVersionOptions {
-        let mut tvo = ToolVersionOptions::default();
-        tvo.merge(&self.opts_raw);
-        tvo
+        let table: toml::map::Map<String, toml::Value> = self
+            .opts_raw
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        toml::Value::Table(table).try_into().unwrap_or_default()
     }
 }
 
@@ -217,7 +221,7 @@ impl Config {
 
         config.vars = vars;
         config.aliases = load_aliases(&config.config_files)?;
-        config.backend_aliases = load_user_backends(&config.config_files);
+        config.backend_aliases = load_user_backends(&config.config_files)?;
         // Clear any previously tracked files before loading shell aliases
         let _ = take_tera_accessed_files();
         config.shell_aliases = load_shell_aliases(&config.config_files)?;
@@ -1560,15 +1564,30 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
     Ok(aliases)
 }
 
-fn load_user_backends(config_files: &ConfigMap) -> BackendAliasMap {
-    let mut user_backends = BackendAliasMap::new();
-    for config_file in config_files.values() {
+fn load_user_backends(config_files: &ConfigMap) -> Result<BackendAliasMap> {
+    let mut backend_aliases = BackendAliasMap::new();
+    for config_file in config_files.values().rev() {
         for (name, def) in config_file.backend_aliases() {
-            user_backends.insert(name, def);
+            backend_aliases.insert(name, def);
         }
     }
-    trace!("load_user_backends: {}", user_backends.len());
-    user_backends
+    for (name, def) in &backend_aliases {
+        if BackendType::guess(&def.backend) == BackendType::Unknown {
+            use strum::IntoEnumIterator;
+            let valid: Vec<String> = BackendType::iter()
+                .filter(|bt| !matches!(bt, BackendType::Unknown | BackendType::VfoxBackend(_)))
+                .map(|bt| bt.to_string())
+                .collect();
+            bail!(
+                "backend_alias '{}' has unknown backend '{}'. Valid backends: {}",
+                name,
+                def.backend,
+                valid.join(", ")
+            );
+        }
+    }
+    trace!("load_user_backends: {}", backend_aliases.len());
+    Ok(backend_aliases)
 }
 
 fn load_shell_aliases(config_files: &ConfigMap) -> Result<EnvWithSources> {

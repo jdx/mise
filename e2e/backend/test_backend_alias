@@ -39,3 +39,5 @@ EOF
 
 mise install
 assert_contains "mise x -- hello-world" "hello world"
+
+mise uninstall "mygithub:jdx/mise-test-fixtures"

@@ -353,10 +353,11 @@ impl BackendArg {
                 return format!("asdf:{url}");
             }
 
-            if let Some((prefix, tool_name)) = short.split_once(':') {
-                if let Some(def) = Config::get_().backend_aliases.get(prefix) {
-                    return format!("{}:{}", def.backend, tool_name);
-                }
+            if let Some((prefix, tool_name)) = short.split_once(':')
+                && BackendType::guess(prefix) == BackendType::Unknown
+                && let Some(def) = Config::get_().backend_aliases.get(prefix)
+            {
+                return format!("{}:{}", def.backend, tool_name);
             }
 
             let config = Config::get_();
@@ -461,11 +462,15 @@ impl BackendArg {
             .unwrap_or_default();
 
         // backend_alias defaults sit between registry opts (lower) and per-tool opts (higher)
-        if config::is_loaded() {
-            if let Some((prefix, _)) = self.short.split_once(':') {
-                if let Some(def) = Config::get_().backend_aliases.get(prefix) {
-                    opts.opts.extend(def.opts().opts);
-                }
+        if config::is_loaded()
+            && let Some((prefix, _)) = self.short.split_once(':')
+            && let Some(def) = Config::get_().backend_aliases.get(prefix)
+        {
+            let alias_opts = def.opts();
+            opts.opts.extend(alias_opts.opts);
+            opts.install_env.extend(alias_opts.install_env);
+            if alias_opts.os.is_some() {
+                opts.os = alias_opts.os;
             }
         }
 
@@ -844,5 +849,4 @@ mod tests {
             fa.full_with_opts()
         );
     }
-
 }
