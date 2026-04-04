@@ -186,7 +186,7 @@ run_in_docker() {
 	local docker_args=(
 		docker run --rm
 		-v "$ROOT:/mise-src:ro"
-		-v "$mise_bin:/usr/local/bin/mise:ro"
+		-v "$mise_bin:/usr/local/lib/mise/debug/mise:ro"
 		-e ROOT=/mise-src
 		-e CI="${CI:-}"
 		-e GITHUB_ACTION="${GITHUB_ACTION:-}"
@@ -195,13 +195,17 @@ run_in_docker() {
 		-e MISE_TRACE="${MISE_TRACE:-0}"
 		-e MISE_LOG_LEVEL="${MISE_LOG_LEVEL:-}"
 		-e RUST_BACKTRACE="${RUST_BACKTRACE:-1}"
+		-e MISE_E2E_INSIDE_DOCKER=1
+		-e CARGO_TARGET_DIR=/usr/local/lib/mise
 	)
 
 	"${docker_args[@]}" "$image" /mise-src/e2e/run_test "$TEST"
 }
 
 if [[ ${MISE_E2E_DOCKER:-0} == 1 ]]; then
-	as_group "E2E $TEST (docker)" run_in_docker
+	as_group "E2E $TEST" run_in_docker
+elif [[ ${MISE_E2E_INSIDE_DOCKER:-0} == 1 ]]; then
+	run_test
 else
 	as_group "E2E $TEST" run_test
 fi
