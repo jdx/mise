@@ -914,6 +914,7 @@ pub fn has_any_usage_spec(spec: &usage::Spec) -> bool {
         || spec.cmd.after_help.is_some()
         || spec.cmd.after_help_long.is_some()
         || !spec.cmd.examples.is_empty()
+        || !spec.examples.is_empty()
 }
 
 /// Extract the selected subcommand name from parsed commands.
@@ -1850,5 +1851,28 @@ mod tests {
         // And render in help output
         let help = usage::docs::cli::render_help(&spec, &spec.cmd, true);
         assert!(help.contains("Examples:"), "help should contain Examples section");
+    }
+
+    #[test]
+    fn test_has_any_usage_spec_examples_only() {
+        // A script with only examples (no flags or args) should be recognized
+        // as having usage directives. This exercises the spec.examples check in
+        // has_any_usage_spec (distinct from spec.cmd.examples).
+        fn parse_script_from_str(script: &str) -> usage::Spec {
+            use std::io::Write;
+            let mut tmp = tempfile::NamedTempFile::new().unwrap();
+            tmp.write_all(script.as_bytes()).unwrap();
+            tmp.flush().unwrap();
+            usage::Spec::parse_script(tmp.path()).unwrap()
+        }
+
+        let spec = parse_script_from_str(
+            "#!/usr/bin/env bash\n#USAGE example \"mycli hello\" header=\"Greet\"\necho hi\n",
+        );
+        assert_eq!(spec.examples.len(), 1);
+        assert!(
+            has_any_usage_spec(&spec),
+            "spec with only examples should be recognized as having usage"
+        );
     }
 }
