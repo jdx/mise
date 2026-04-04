@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   warn:
+    if: github.actor != 'jdx' && github.actor != 'mise-en-dev'
     runs-on: ubuntu-latest
     steps:
       - name: Comment on PR
