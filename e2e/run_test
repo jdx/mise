@@ -171,4 +171,46 @@ os() {
 	esac
 }
 
-as_group "E2E $TEST" run_test
+run_in_docker() {
+	local image="${MISE_E2E_DOCKER_IMAGE:-ghcr.io/jdx/mise:e2e}"
+	local mise_bin
+	mise_bin="$(resolve_mise_bin)"
+
+	local docker_args=(
+		docker run --rm
+		-v "$ROOT:/mise-src:ro"
+		-v "$mise_bin:/usr/local/bin/mise:ro"
+		-e ROOT=/mise-src
+		-e GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+		-e MISE_DEBUG="${MISE_DEBUG:-0}"
+		-e MISE_TRACE="${MISE_TRACE:-0}"
+		-e MISE_LOG_LEVEL="${MISE_LOG_LEVEL:-}"
+		-e RUST_BACKTRACE="${RUST_BACKTRACE:-1}"
+	)
+
+	exec "${docker_args[@]}" "$image" /mise-src/e2e/run_test "$TEST"
+}
+
+resolve_mise_bin() {
+	if [[ -n ${MISE_E2E_BIN:-} ]]; then
+		printf '%s\n' "$MISE_E2E_BIN"
+		return
+	fi
+	local candidate="${CARGO_TARGET_DIR:-$ROOT/target}/debug/mise"
+	if [[ -x $candidate ]]; then
+		printf '%s\n' "$candidate"
+		return
+	fi
+	local mise_path
+	if ! mise_path="$(command -v mise 2>/dev/null)"; then
+		err "Could not find 'mise' in PATH and no local debug build was found."
+		return 1
+	fi
+	printf '%s\n' "$mise_path"
+}
+
+if [[ ${MISE_E2E_DOCKER:-0} == 1 ]]; then
+	as_group "E2E $TEST (docker)" run_in_docker
+else
+	as_group "E2E $TEST" run_test
+fi
