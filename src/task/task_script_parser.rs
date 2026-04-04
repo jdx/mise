@@ -1818,9 +1818,18 @@ mod tests {
 
         // Examples render in help output
         let help = usage::docs::cli::render_help(&spec, &spec.cmd, true);
-        assert!(help.contains("Examples:"), "help should contain Examples section");
-        assert!(help.contains("Basic usage:"), "help should contain example header");
-        assert!(help.contains("$ mycli --name world"), "help should contain example command");
+        assert!(
+            help.contains("Examples:"),
+            "help should contain Examples section"
+        );
+        assert!(
+            help.contains("Basic usage:"),
+            "help should contain example header"
+        );
+        assert!(
+            help.contains("$ mycli --name world"),
+            "help should contain example command"
+        );
     }
 
     #[tokio::test]
@@ -1829,7 +1838,8 @@ mod tests {
         // TaskScriptParser::parse_run_scripts (the merge/processing pipeline)
         let config = Config::get().await.unwrap();
         let task = Task {
-            usage: "flag \"--name <name>\"\nexample \"mycli --name world\" header=\"Basic usage\"".to_string(),
+            usage: "flag \"--name <name>\"\nexample \"mycli --name world\" header=\"Basic usage\""
+                .to_string(),
             ..Default::default()
         };
         let parser = TaskScriptParser::new(None);
@@ -1844,13 +1854,20 @@ mod tests {
             .unwrap();
 
         // Examples should survive the merge into the final spec
-        assert_eq!(spec.examples.len(), 1, "examples should survive TaskScriptParser pipeline");
+        assert_eq!(
+            spec.examples.len(),
+            1,
+            "examples should survive TaskScriptParser pipeline"
+        );
         assert_eq!(spec.examples[0].code, "mycli --name world");
         assert_eq!(spec.examples[0].header, Some("Basic usage".to_string()));
 
         // And render in help output
         let help = usage::docs::cli::render_help(&spec, &spec.cmd, true);
-        assert!(help.contains("Examples:"), "help should contain Examples section");
+        assert!(
+            help.contains("Examples:"),
+            "help should contain Examples section"
+        );
     }
 
     #[test]
