@@ -70,10 +70,14 @@ impl Deps {
             }
             // If this task received args (from a parent dependency), re-render
             // its dependency templates with usage values so {{usage.*}} resolves.
+            let has_usage_deps = |raw: &Option<Vec<_>>| {
+                raw.as_ref()
+                    .is_some_and(|r| r.iter().any(dep_has_usage_ref))
+            };
             if !a.args.is_empty()
-                && a.depends_raw
-                    .as_ref()
-                    .is_some_and(|raw| raw.iter().any(dep_has_usage_ref))
+                && (has_usage_deps(&a.depends_raw)
+                    || has_usage_deps(&a.depends_post_raw)
+                    || has_usage_deps(&a.wait_for_raw))
             {
                 let usage_values = parse_usage_values_from_task(config, &a).await?;
                 if !usage_values.is_empty() {

@@ -1138,23 +1138,31 @@ impl Task {
         // {{usage.app}} resolve to the actual CLI arg value.
         tera_ctx.insert("usage", usage_values);
 
-        // Re-render from raw templates (not from already-rendered values)
-        if let Some(raw) = &self.depends_raw {
-            self.depends = raw.clone();
-            for d in &mut self.depends {
-                d.render(&mut tera, &tera_ctx)?;
+        // Re-render from raw templates (not from already-rendered values).
+        // Only restore from raw if the field is non-empty — skip_deps clears
+        // depends/depends_post/wait_for and we must not undo that.
+        if !self.depends.is_empty() {
+            if let Some(raw) = &self.depends_raw {
+                self.depends = raw.clone();
+                for d in &mut self.depends {
+                    d.render(&mut tera, &tera_ctx)?;
+                }
             }
         }
-        if let Some(raw) = &self.depends_post_raw {
-            self.depends_post = raw.clone();
-            for d in &mut self.depends_post {
-                d.render(&mut tera, &tera_ctx)?;
+        if !self.depends_post.is_empty() {
+            if let Some(raw) = &self.depends_post_raw {
+                self.depends_post = raw.clone();
+                for d in &mut self.depends_post {
+                    d.render(&mut tera, &tera_ctx)?;
+                }
             }
         }
-        if let Some(raw) = &self.wait_for_raw {
-            self.wait_for = raw.clone();
-            for d in &mut self.wait_for {
-                d.render(&mut tera, &tera_ctx)?;
+        if !self.wait_for.is_empty() {
+            if let Some(raw) = &self.wait_for_raw {
+                self.wait_for = raw.clone();
+                for d in &mut self.wait_for {
+                    d.render(&mut tera, &tera_ctx)?;
+                }
             }
         }
         Ok(())
