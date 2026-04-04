@@ -654,11 +654,10 @@ fn environment(args: &[String]) -> Vec<String> {
         for (i, arg) in args_before_dashdash.iter().enumerate() {
             if let Some(prefix) = arg_prefixes.iter().find(|p| arg.starts_with(p.as_str())) {
                 values.push(arg[prefix.len()..].to_string());
-            } else if arg_defs.contains(arg.as_str()) {
-                if let Some(next) = args_before_dashdash.get(i + 1) {
+            } else if arg_defs.contains(arg.as_str())
+                && let Some(next) = args_before_dashdash.get(i + 1) {
                     values.push(next.to_string());
                 }
-            }
         }
         values
             .into_iter()
