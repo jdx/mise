@@ -588,9 +588,9 @@ The default file-task directories are:
 
 - `mise-tasks`
 - `.mise-tasks`
-- `mise/tasks`
 - `.mise/tasks`
 - `.config/mise/tasks`
+- `mise/tasks`
 
 If you want to keep the defaults and add another directory, include the defaults explicitly:
 
@@ -599,9 +599,9 @@ If you want to keep the defaults and add another directory, include the defaults
 includes = [
     "mise-tasks",
     ".mise-tasks",
-    "mise/tasks",
     ".mise/tasks",
     ".config/mise/tasks",
+    "mise/tasks",
     "mytasks",
     "tasks.toml",
 ]
