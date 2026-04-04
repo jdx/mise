@@ -49,7 +49,7 @@ pub fn apply_seccomp_net_filter() -> Result<()> {
     // This is sufficient — if you can't create an inet socket, you can't do networking
     for syscall in [libc::SYS_socket, libc::SYS_socketpair] {
         rules.insert(
-            syscall as i64,
+            syscall,
             vec![socket_rule_inet.clone(), socket_rule_inet6.clone()],
         );
     }

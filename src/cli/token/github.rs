@@ -1,15 +1,15 @@
-use crate::gitlab;
+use crate::github;
 use crate::tokens;
 
-/// Display the GitLab token mise will use for a given host
+/// Display the GitHub token mise will use for a given host
 ///
 /// Shows which token source mise would use, useful for debugging
 /// authentication issues. The token is masked by default.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Token {
-    /// GitLab hostname
-    #[clap(default_value = "gitlab.com")]
+pub struct Github {
+    /// GitHub hostname
+    #[clap(default_value = "github.com")]
     host: String,
 
     /// Show the full unmasked token
@@ -17,9 +17,9 @@ pub struct Token {
     unmask: bool,
 }
 
-impl Token {
+impl Github {
     pub fn run(self) -> eyre::Result<()> {
-        match gitlab::resolve_token(&self.host) {
+        match github::resolve_token(&self.host) {
             Some((token, source)) => {
                 let display_token = if self.unmask {
                     token
@@ -39,13 +39,13 @@ impl Token {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise gitlab token</bold>
-    gitlab.com: glpa…xxxx (source: GITLAB_TOKEN)
+    $ <bold>mise token github</bold>
+    github.com: ghp_…xxxx (source: GITHUB_TOKEN)
 
-    $ <bold>mise gitlab token --unmask</bold>
-    gitlab.com: glpat-xxxxxxxxxxxx (source: GITLAB_TOKEN)
+    $ <bold>mise token github --unmask</bold>
+    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)
 
-    $ <bold>mise gitlab token gitlab.mycompany.com</bold>
-    gitlab.mycompany.com: (none)
+    $ <bold>mise token github github.mycompany.com</bold>
+    github.mycompany.com: (none)
 "#
 );

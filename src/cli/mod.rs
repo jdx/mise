@@ -26,10 +26,8 @@ mod env;
 pub mod exec;
 mod external;
 mod fmt;
-mod forgejo;
 mod generate;
 mod github;
-mod gitlab;
 mod global;
 mod hook_env;
 mod hook_not_found;
@@ -66,6 +64,7 @@ mod shell_alias;
 mod sync;
 mod tasks;
 mod test_tool;
+mod token;
 mod tool;
 pub mod tool_stub;
 mod trust;
@@ -216,10 +215,8 @@ pub enum Commands {
     Env(env::Env),
     Exec(exec::Exec),
     Fmt(fmt::Fmt),
-    Forgejo(forgejo::Forgejo),
     Generate(generate::Generate),
     Github(github::Github),
-    Gitlab(gitlab::Gitlab),
     Global(global::Global),
     HookEnv(hook_env::HookEnv),
     HookNotFound(hook_not_found::HookNotFound),
@@ -253,6 +250,7 @@ pub enum Commands {
     Sync(sync::Sync),
     Tasks(tasks::Tasks),
     TestTool(test_tool::TestTool),
+    Token(token::Token),
     Tool(tool::Tool),
     ToolStub(tool_stub::ToolStub),
     Trust(trust::Trust),
@@ -287,10 +285,8 @@ impl Commands {
             Self::Env(cmd) => cmd.run().await,
             Self::Exec(cmd) => cmd.run().await,
             Self::Fmt(cmd) => cmd.run(),
-            Self::Forgejo(cmd) => cmd.run().await,
             Self::Generate(cmd) => cmd.run().await,
             Self::Github(cmd) => cmd.run().await,
-            Self::Gitlab(cmd) => cmd.run().await,
             Self::Global(cmd) => cmd.run().await,
             Self::HookEnv(cmd) => cmd.run().await,
             Self::HookNotFound(cmd) => cmd.run().await,
@@ -324,6 +320,7 @@ impl Commands {
             Self::Sync(cmd) => cmd.run().await,
             Self::Tasks(cmd) => cmd.run().await,
             Self::TestTool(cmd) => cmd.run().await,
+            Self::Token(cmd) => cmd.run().await,
             Self::Tool(cmd) => cmd.run().await,
             Self::ToolStub(cmd) => cmd.run().await,
             Self::Trust(cmd) => cmd.run().await,
