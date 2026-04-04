@@ -15,6 +15,7 @@ rustPlatform.buildRustPackage {
     clang
     llvmPackages.libclang
     pkg-config
+    rustPlatform.bindgenHook
   ];
   buildInputs = with pkgs; [
     bash

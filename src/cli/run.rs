@@ -324,6 +324,18 @@ impl Run {
                 task.args.extend(self.args_last.clone());
             }
         }
+
+        // Re-render dependency templates with parent task's usage arg/flag values.
+        // This enables patterns like: depends = ["child {{usage.app}}"]
+        for task in &mut task_list {
+            if !task.args.is_empty() {
+                let usage_values = crate::task::parse_usage_values_from_task(&config, task).await?;
+                if !usage_values.is_empty() {
+                    task.render_depends_with_usage(&config, &usage_values)
+                        .await?;
+                }
+            }
+        }
         time!("run get_task_lists");
 
         // Resolve transitive dependencies once upfront so we can:

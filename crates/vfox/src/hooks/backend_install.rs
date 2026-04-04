@@ -11,7 +11,7 @@ pub struct BackendInstallContext {
     pub version: String,
     pub install_path: PathBuf,
     pub download_path: PathBuf,
-    pub options: IndexMap<String, String>,
+    pub options: IndexMap<String, toml::Value>,
 }
 
 #[derive(Debug)]

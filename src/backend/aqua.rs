@@ -474,8 +474,9 @@ impl Backend for AquaBackend {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
-        if self.symlink_bins(tv) {
-            return Ok(vec![tv.install_path().join(".mise-bins")]);
+        let mise_bins_dir = tv.install_path().join(".mise-bins");
+        if self.symlink_bins(tv) || mise_bins_dir.is_dir() {
+            return Ok(vec![mise_bins_dir]);
         }
 
         let install_path = tv.install_path();

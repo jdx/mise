@@ -10,7 +10,7 @@ pub struct BackendExecEnvContext {
     pub tool: String,
     pub version: String,
     pub install_path: PathBuf,
-    pub options: IndexMap<String, String>,
+    pub options: IndexMap<String, toml::Value>,
 }
 
 #[derive(Debug)]

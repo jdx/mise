@@ -336,8 +336,9 @@ impl Backend for UnifiedGitBackend {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> Result<Vec<std::path::PathBuf>> {
-        if self.get_filter_bins(tv).is_some() {
-            return Ok(vec![tv.install_path().join(".mise-bins")]);
+        let mise_bins_dir = tv.install_path().join(".mise-bins");
+        if self.get_filter_bins(tv).is_some() || mise_bins_dir.is_dir() {
+            return Ok(vec![mise_bins_dir]);
         }
 
         self.discover_bin_paths(tv)
