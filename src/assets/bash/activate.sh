@@ -1,11 +1,7 @@
----
-source: src/shell/bash.rs
-expression: bash.activate(opts)
----
 # shellcheck shell=bash
-__MISE_EXE=/some/dir/mise
-__MISE_FLAGS=(--status)
-__MISE_HOOK_ENABLED=1
+__MISE_EXE=__MISE_EXE_VALUE__
+__MISE_FLAGS=(__MISE_FLAGS_VALUE__)
+__MISE_HOOK_ENABLED=__MISE_HOOK_ENABLED_VALUE__
 
 export MISE_SHELL=bash
 
@@ -73,56 +69,9 @@ if [ "$__MISE_HOOK_ENABLED" = "1" ]; then
 	}
 
 	_mise_add_prompt_command
-	# shellcheck shell=bash
-export -a chpwd_functions
-function __zsh_like_cd()
-{
-  \typeset __zsh_like_cd_hook
-  if
-    builtin "$@"
-  then
-    for __zsh_like_cd_hook in chpwd "${chpwd_functions[@]}"
-    do
-      if \typeset -f "$__zsh_like_cd_hook" >/dev/null 2>&1
-      then "$__zsh_like_cd_hook" || break # finish on first failed hook
-      fi
-    done
-    true
-  else
-    return $?
-  fi
-}
-
-	# shellcheck shell=bash
-[[ -n "${ZSH_VERSION:-}" ]] ||
-{
-  function cd()    { __zsh_like_cd cd    "$@" ; }
-  function popd()  { __zsh_like_cd popd  "$@" ; }
-  function pushd() { __zsh_like_cd pushd "$@" ; }
-}
-
+	__MISE_CHPWD_FUNCTIONS__
+	__MISE_CHPWD_LOAD__
 	chpwd_functions+=(_mise_hook_chpwd)
 fi
 
 _mise_hook
-
-# shellcheck shell=bash
-if [ -z "${_mise_cmd_not_found:-}" ]; then
-	_mise_cmd_not_found=1
-	if [ -n "$(declare -f command_not_found_handle)" ]; then
-		_mise_cmd_not_found_handle=$(declare -f command_not_found_handle)
-		eval "${_mise_cmd_not_found_handle/command_not_found_handle/_command_not_found_handle}"
-	fi
-
-	command_not_found_handle() {
-		if [[ $1 != "mise" && $1 != "mise-"* ]] && /some/dir/mise hook-not-found -s bash -- "$1"; then
-			_mise_hook
-			"$@"
-		elif [ -n "$(declare -f _command_not_found_handle)" ]; then
-			_command_not_found_handle "$@"
-		else
-			echo "bash: command not found: $1" >&2
-			return 127
-		fi
-	}
-fi
