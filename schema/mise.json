@@ -720,6 +720,27 @@
           "description": "Timeout in seconds for HTTP requests to fetch new tool versions in mise.",
           "type": "string"
         },
+        "forgejo": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "credential_command": {
+              "default": "",
+              "description": "Shell command to run to obtain a Forgejo token for mise.",
+              "type": "string"
+            },
+            "fj_cli_tokens": {
+              "default": true,
+              "description": "Read Forgejo tokens from the fj CLI config.",
+              "type": "boolean"
+            },
+            "use_git_credentials": {
+              "default": false,
+              "description": "Use git credential helpers to obtain Forgejo tokens.",
+              "type": "boolean"
+            }
+          }
+        },
         "github": {
           "type": "object",
           "additionalProperties": false,
@@ -755,6 +776,27 @@
           "default": true,
           "description": "Enable GitHub Artifact Attestations verification for supported tools.",
           "type": "boolean"
+        },
+        "gitlab": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "credential_command": {
+              "default": "",
+              "description": "Shell command to run to obtain a GitLab token for mise.",
+              "type": "string"
+            },
+            "glab_cli_tokens": {
+              "default": true,
+              "description": "Read GitLab tokens from the glab CLI config.",
+              "type": "boolean"
+            },
+            "use_git_credentials": {
+              "default": false,
+              "description": "Use git credential helpers to obtain GitLab tokens.",
+              "type": "boolean"
+            }
+          }
         },
         "gix": {
           "default": true,
