@@ -28,12 +28,12 @@ assert_contains "mise generate prompts --dry-run" 'description: "Run the test su
 assert_contains "mise generate prompts --dry-run" "tools: ['terminal']"
 
 # Should include the mise run command
-assert_contains "mise generate prompts --dry-run" "Run: \`mise run test\`"
-assert_contains "mise generate prompts --dry-run" "This executes: \`cargo test --all\`"
+assert_contains "mise generate prompts --dry-run" 'Run: `mise run test`'
+assert_contains "mise generate prompts --dry-run" 'This executes: `cargo test --all`'
 
 # Should include multi-step commands for lint
-assert_contains "mise generate prompts --dry-run" "1. \`cargo fmt --check\`"
-assert_contains "mise generate prompts --dry-run" "2. \`cargo clippy -- -D warnings\`"
+assert_contains "mise generate prompts --dry-run" '1. `cargo fmt --check`'
+assert_contains "mise generate prompts --dry-run" '2. `cargo clippy -- -D warnings`'
 
 # Should include sources
 assert_contains "mise generate prompts --dry-run" "src/**/*.rs"
