@@ -270,7 +270,11 @@ run = "echo my internal task"
 - **Type**: `string`
 
 A message to show before running the task. This is useful for tasks that are destructive or take a long
-time to run. The user will be prompted to confirm before the task is run.
+time to run. The user will be prompted to confirm before the task's own `run` command executes.
+
+::: warning
+`confirm` only guards the task's own `run` command. Dependencies (`depends`) will execute **before** the confirmation prompt appears. If you need confirmation before dependencies run, add `confirm` to the dependency tasks themselves, or use `run = [{ task = "..." }]` instead of `depends`.
+:::
 
 ```mise-toml
 [tasks.release]

@@ -102,6 +102,11 @@ tests = "cd {{config_root}}/tests"
 docs = "cd {{config_root}}/docs"
 ```
 
+## Limitations
+
+- **Not available in tasks**: Shell aliases are only active in interactive shells where `mise activate` is running. They are **not** available inside TOML task `run` blocks or file tasks, since tasks run in non-interactive subshells. Use the underlying command directly in tasks, or add wrapper scripts to your `PATH` via [`env._.path`](/environments/#path).
+- **Shell support**: Only bash, zsh, and fish are supported. Other shells (nushell, elvish, xonsh, powershell) do not currently support shell aliases.
+
 ## Comparison to Tool Aliases
 
 mise has two different alias features that serve different purposes:

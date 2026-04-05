@@ -16,6 +16,11 @@ curl https://mise.run | sh
 ```
 
 By default, mise installs to `~/.local/bin`, but it can go anywhere.
+
+::: tip
+The install script automatically adds `mise activate` to your shell rc file (e.g., `.bashrc`, `.zshrc`). If you prefer to use [shims](/dev-tools/shims.md) instead, or want to manage activation yourself, remove the added line after installation.
+:::
+
 Verify the installation:
 
 ```shell
