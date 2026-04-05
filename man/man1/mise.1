@@ -1120,7 +1120,10 @@ Defaults to `.github/prompts/` in the current working directory.
 Generate a single combined prompt file instead of one per task
 .TP
 \fB\-p, \-\-pattern\fR \fI<PATTERN>\fR
-Only generate prompts for tasks matching this glob pattern
+Only generate prompts for tasks matching this pattern
+
+Supports glob syntax (e.g., "test:*" matches test:unit, test:e2e).
+Uses the same matching logic as `mise run`.
 .TP
 \fB\-\-dry\-run\fR
 Print to stdout instead of writing files

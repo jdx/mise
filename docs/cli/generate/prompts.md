@@ -31,7 +31,10 @@ Generate a single combined prompt file instead of one per task
 
 ### `-p --pattern <PATTERN>`
 
-Only generate prompts for tasks matching this glob pattern
+Only generate prompts for tasks matching this pattern
+
+Supports glob syntax (e.g., "test:*" matches test:unit, test:e2e).
+Uses the same matching logic as `mise run`.
 
 ### `--dry-run`
 
@@ -52,6 +55,6 @@ Generates a single combined prompt file
 $ mise generate prompts --dry-run
 Prints generated prompts to stdout without writing files
 
-$ mise generate prompts --pattern test
-Only generates prompts for tasks matching "test"
+$ mise generate prompts --pattern "test:*"
+Only generates prompts for tasks matching the glob pattern
 ```

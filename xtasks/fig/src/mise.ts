@@ -1277,7 +1277,7 @@ const completionSpec: Fig.Spec = {
             {
               name: ["-p", "--pattern"],
               description:
-                "Only generate prompts for tasks matching this glob pattern",
+                "Only generate prompts for tasks matching this pattern",
               isRepeatable: false,
               args: {
                 name: "pattern",
