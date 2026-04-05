@@ -20,6 +20,36 @@ mise use -g node@20
 
 See the [Node.JS Cookbook](/mise-cookbook/nodejs.html) for common tasks and examples.
 
+## Pinning npm version
+
+By default, Node.js ships with a bundled version of npm. If you need a specific npm version
+(e.g. to keep your entire team on the same version and avoid `package-lock.json` conflicts),
+you can pin it alongside Node in your `mise.toml`:
+
+```toml [mise.toml]
+[tools]
+node = "22"
+npm = "11"
+```
+
+To pin both to exact versions (recommended for teams):
+
+```sh
+mise use --pin node@lts
+mise use --pin npm@latest
+```
+
+This resolves aliases like `lts` and `latest` to exact version numbers in `mise.toml`, e.g.:
+
+```toml [mise.toml]
+[tools]
+node = "24.14.1"
+npm = "11.12.1"
+```
+
+The pinned npm version takes precedence over the one bundled with Node, so `npm --version` will
+always return the version specified in `mise.toml`.
+
 ## `.nvmrc` and `.node-version` support
 
 By default, mise uses a `mise.toml` file for auto-switching between software versions.
