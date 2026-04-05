@@ -7,7 +7,6 @@ use std::time::Duration;
 use super::args::ToolArg;
 use crate::cli::{Cli, unescape_task_args};
 use crate::config::{Config, Settings};
-use crate::duration;
 use crate::env;
 use crate::file::display_path;
 use crate::prepare::{PrepareEngine, PrepareOptions};
@@ -366,12 +365,13 @@ impl Run {
                 .await?;
         }
 
+        // --timeout overrides the task.timeout setting
+        if let Some(timeout_str) = &self.timeout {
+            Settings::task_timeout_override(timeout_str.clone());
+        }
+
         // Apply global timeout for entire run if configured
-        let timeout = if let Some(timeout_str) = &self.timeout {
-            Some(duration::parse_duration(timeout_str)?)
-        } else {
-            Settings::get().task_timeout_duration()
-        };
+        let timeout = Settings::get().task_timeout_duration();
 
         if let Some(timeout) = timeout {
             tokio::time::timeout(timeout, self.parallelize_tasks(config, resolved_tasks))

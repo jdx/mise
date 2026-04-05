@@ -518,6 +518,17 @@ impl Settings {
         crate::config::config_file::config_root::reset();
     }
 
+    /// Override the task.timeout setting with a CLI --timeout value.
+    /// This resets the settings so the new timeout is picked up everywhere.
+    pub fn task_timeout_override(timeout: String) {
+        let mut cli = CLI_SETTINGS.lock().unwrap();
+        let mut partial = cli.take().unwrap_or_default();
+        partial.task.timeout = Some(timeout);
+        *cli = Some(partial);
+        *BASE_SETTINGS.write().unwrap() = None;
+        crate::config::config_file::config_root::reset();
+    }
+
     pub fn lockfile_enabled(&self) -> bool {
         self.lockfile.unwrap_or(true)
     }
