@@ -222,7 +222,8 @@ situations now, but we still recommend these approaches for CI and scripts:
 
 ```bash
 # Option 1: Use shims (recommended for CI)
-echo "$HOME/.local/share/mise/shims" >> $GITHUB_PATH
+export PATH="$HOME/.local/share/mise/shims:$PATH"
+# In GitHub Actions, use: echo "$HOME/.local/share/mise/shims" >> $GITHUB_PATH
 
 # Option 2: Use mise exec
 mise exec -- npm test

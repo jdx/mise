@@ -245,8 +245,9 @@ mise upgrade --bump node
 mise requires you to trust config files that were not created by you. Common issues:
 
 - **Accidentally denied trust**: If mise prompted you to trust a file and you said no, it gets
-  added to the ignore list. Check `ls ~/.local/state/mise/ignored-configs/` and remove the
-  relevant symlink to un-ignore it.
+  added to the ignore list. Check the `ignored-configs` directory in your
+  [mise state directory](/directories.html) (default: `~/.local/state/mise/ignored-configs/`)
+  and remove the relevant symlink to un-ignore it.
 - **Symlinked configs**: If your config is symlinked (e.g., via GNU Stow), mise may track the
   symlink target path. Try `mise trust` pointing to the actual file path.
 - **Non-interactive mode**: In non-interactive shells (CI, IDE extensions, scripts), mise will
@@ -258,7 +259,7 @@ mise requires you to trust config files that were not created by you. Common iss
 Run `mise doctor` (`mise dr`) to see if any config files are untrusted — it will list them
 under "problems".
 
-## How do I ignore `.python-version` or other idiomatic version files?
+## How do idiomatic version files (`.python-version`, `.node-version`, etc.) work?
 
 Idiomatic version files (`.python-version`, `.node-version`, `.ruby-version`, etc.) are
 **disabled by default** in mise. They are only read if you explicitly opt in per tool using
@@ -296,21 +297,19 @@ It only puts shims on PATH. If you need those features, use `mise activate` (wit
 ## How does `mise exec` work?
 
 `mise exec` (or `mise x`) reads your config, sets up `PATH` and environment variables, then
-runs the command you specify after `--`. A common mistake is repeating the tool name:
+runs the command you specify after `--`:
 
 ```sh
-# Wrong — specifies node twice
-mise x node@20 -- node script.js
-
-# Right — mise already puts node@20 on PATH, just run the command
+# Uses whatever node version is in your mise.toml
 mise x -- node script.js
 
-# Also right — override a specific version for this command
-mise x node@20 -- node script.js
+# Override with a specific version (useful when it differs from config)
+mise x node@22 -- node script.js
 ```
 
-The first form (`mise x node@20 -- ...`) is only needed when you want to use a version
-**different** from what's in your config.
+A common pattern on Discord is `mise x node@20 -- node script.js` when node@20 is already
+in `mise.toml`. This works but is redundant — `mise x -- node script.js` is simpler when
+you just want the configured version.
 
 ## Where does `mise use` write to?
 
