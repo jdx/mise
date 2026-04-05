@@ -294,6 +294,17 @@ mise use --global github:BurntSushi/ripgrep
 rg --version
 ```
 
+Each `mise use` command above updates your config file. For example, after running all three globally, your `~/.config/mise/config.toml` would contain:
+
+```toml [~/.config/mise/config.toml]
+[tools]
+"npm:@anthropic-ai/claude-code" = "latest"
+"pipx:black" = "latest"
+"github:BurntSushi/ripgrep" = "latest"
+```
+
+You can also edit `mise.toml` directly instead of using `mise use` — the effect is the same. Run `mise install` after editing to install the tools.
+
 See [Backends](/dev-tools/backends/) for more ecosystems and details.
 
 ## 5. Setting environment variables {#environment-variables}

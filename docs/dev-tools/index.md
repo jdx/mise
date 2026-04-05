@@ -275,13 +275,21 @@ mise ~/my-project/mise.toml tools: node@24.x.x # mise.toml created/updated
 
 `mise use node@24` will install the latest version of node-24 and create/update the
 `mise.toml`
-config file in the local directory. Anytime you're in that directory, that version of `node` will be
-used.
+config file in the local directory. The resulting file looks like this:
 
-`mise use -g node@24` will do the same but update the [global config](/configuration.html#global-config-config-mise-config-toml) (~/.config/mise/config.toml) so
+```toml [mise.toml]
+[tools]
+node = "24"
+```
+
+Anytime you're in that directory, that version of `node` will be used.
+
+`mise use -g node@24` will do the same but update the [global config](/configuration.html#global-config-config-mise-config-toml) (`~/.config/mise/config.toml`) so
 unless there is a config file in the local directory hierarchy, node-24 will be the default version
 for
 the user.
+
+You can also edit `mise.toml` directly instead of using `mise use` — the effect is the same. Run `mise install` after editing to install any new tools.
 
 ### [`mise install`](/cli/install)
 
