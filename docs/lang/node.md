@@ -28,7 +28,7 @@ you can pin it alongside Node in your `mise.toml`:
 
 ```toml [mise.toml]
 [tools]
-node = "22"
+node = "24"
 npm = "11"
 ```
 
