@@ -328,42 +328,33 @@ impl AquaPackage {
         } else if os == "windows" {
             let mut ctx = HashMap::default();
             let asset = self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?;
-            if self.complete_windows_ext
-                && self.format(v, os, arch)? == "raw"
-                && !asset.ends_with(".exe")
-            {
-                strs.insert(format!("{asset}.exe"));
-            } else {
-                strs.insert(asset);
-            }
+            strs.insert(self.complete_windows_ext_to_asset(&asset, v, os, arch)?);
             if arch == "arm64" {
                 ctx.insert("Arch".to_string(), "amd64".to_string());
                 strs.insert(self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?);
                 let asset = self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?;
-                if self.complete_windows_ext
-                    && self.format(v, os, arch)? == "raw"
-                    && !asset.ends_with(".exe")
-                {
-                    strs.insert(format!("{asset}.exe"));
-                } else {
-                    strs.insert(asset);
-                }
+                strs.insert(self.complete_windows_ext_to_asset(&asset, v, os, arch)?);
             }
         }
         Ok(strs)
     }
 
+    /// Apply Windows .exe extension to an asset or URL string if appropriate.
+    /// Mirrors upstream aqua's `completeWindowsExtToAsset` decision tree.
+    fn complete_windows_ext_to_asset(&self, s: &str, v: &str, os: &str, arch: &str) -> Result<String> {
+        if os != "windows" || s.ends_with(".exe") {
+            return Ok(s.to_string());
+        }
+        if self.complete_windows_ext && self.format(v, os, arch)? == "raw" {
+            return Ok(format!("{s}.exe"));
+        }
+        Ok(s.to_string())
+    }
+
     /// Get the URL for this package and version
     pub fn url(&self, v: &str, os: &str, arch: &str) -> Result<String> {
-        let mut url = self.url.clone();
-        if os == "windows"
-            && self.complete_windows_ext
-            && self.format(v, os, arch)? == "raw"
-            && !url.ends_with(".exe")
-        {
-            url.push_str(".exe");
-        }
-        self.parse_aqua_str(&url, v, &Default::default(), os, arch)
+        let url = self.parse_aqua_str(&self.url, v, &Default::default(), os, arch)?;
+        self.complete_windows_ext_to_asset(&url, v, os, arch)
     }
 
     /// Parse an Aqua template string with variable substitution and platform info
