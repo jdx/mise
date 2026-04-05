@@ -1369,9 +1369,10 @@ pub trait Backend: Debug + Send + Sync {
             // (even if not yet installed). If so, mise will install it as a dependency
             // before this tool needs it, so the warning is spurious.
             if let Ok(ts) = self.dependency_toolset(config).await
-                && !ts.list_current_versions().is_empty() {
-                    return;
-                }
+                && !ts.list_current_versions().is_empty()
+            {
+                return;
+            }
             warn!(
                 "{} may be required but was not found.\n\n{}",
                 program, install_instructions
