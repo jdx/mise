@@ -176,8 +176,9 @@ won't produce visible output when redactions are active.
 
 ## `mise activate` in CI / non-interactive shells
 
-`mise activate` only works in interactive shells because it hooks into the shell prompt.
-In CI, scripts, or IDE subprocess calls, use one of these approaches instead:
+`mise activate` hooks into the shell prompt to update PATH, so historically it didn't work
+in non-interactive shells. With the addition of `chpwd` support, it does work in more
+situations now, but we still recommend these approaches for CI and scripts:
 
 ```bash
 # Option 1: Use shims (recommended for CI)
@@ -186,7 +187,7 @@ echo "$HOME/.local/share/mise/shims" >> $GITHUB_PATH
 # Option 2: Use mise exec
 mise exec -- npm test
 
-# Option 3: Manually call hook-env
+# Option 3: Manually call hook-env after activate
 eval "$(mise activate bash)"
 eval "$(mise hook-env)"
 ```
