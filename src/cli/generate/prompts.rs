@@ -19,15 +19,15 @@ use std::path::PathBuf;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Prompts {
+    /// Print to stdout instead of writing files
+    #[clap(long, verbatim_doc_comment)]
+    dry_run: bool,
+
     /// Output directory for generated prompt files
     ///
     /// Defaults to `.github/prompts/` in the current working directory.
     #[clap(long, short, verbatim_doc_comment, value_hint = clap::ValueHint::DirPath)]
     output: Option<PathBuf>,
-
-    /// Generate a single combined prompt file instead of one per task
-    #[clap(long, short = 'S', verbatim_doc_comment)]
-    single: bool,
 
     /// Only generate prompts for tasks matching this pattern
     ///
@@ -36,9 +36,9 @@ pub struct Prompts {
     #[clap(long, short, verbatim_doc_comment)]
     pattern: Option<String>,
 
-    /// Print to stdout instead of writing files
-    #[clap(long, verbatim_doc_comment)]
-    dry_run: bool,
+    /// Generate a single combined prompt file instead of one per task
+    #[clap(long, short = 'S', verbatim_doc_comment)]
+    single: bool,
 }
 
 impl Prompts {
