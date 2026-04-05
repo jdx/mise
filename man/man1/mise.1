@@ -241,6 +241,9 @@ Generate a git pre\-commit hook
 \fBgenerate github\-action\fR
 Generate a GitHub Action workflow file
 .TP
+\fBgenerate prompts\fR
+Generate AI prompt files from mise tasks
+.TP
 \fBgenerate task\-docs\fR
 Generate documentation for tasks in a project
 .TP
@@ -1089,6 +1092,38 @@ the name of the workflow to generate
 .RS
 \fIDefault: \fRci
 .RE
+.SH "MISE GENERATE PROMPTS"
+Generate AI prompt files from mise tasks
+
+Creates `.prompt.md` files in `.github/prompts/` (or a custom directory)
+for each visible mise task. These files act as slash commands in
+AI coding assistants like GitHub Copilot and the Copilot CLI.
+
+For example, a task named "test" with `run = "cargo test"` becomes
+`/test` in Copilot chat. The generated prompt tells the AI assistant
+what command to run, what the task does, and how to handle failures.
+
+Tasks with `hide = true` are skipped. Task dependencies are included
+in the generated prompts so the AI knows to run prerequisites.
+.PP
+\fBUsage:\fR mise generate prompts [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-o, \-\-output\fR \fI<OUTPUT>\fR
+Output directory for generated prompt files
+
+Defaults to `.github/prompts/` in the current working directory.
+.TP
+\fB\-S, \-\-single\fR
+Generate a single combined prompt file instead of one per task
+.TP
+\fB\-p, \-\-pattern\fR \fI<PATTERN>\fR
+Only generate prompts for tasks matching this glob pattern
+.TP
+\fB\-\-dry\-run\fR
+Print to stdout instead of writing files
 .SH "MISE GENERATE TASK-DOCS"
 Generate documentation for tasks in a project
 .PP

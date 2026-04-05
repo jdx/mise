@@ -110,6 +110,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise generate devcontainer [FLAGS]`](/cli/generate/devcontainer.md)
 - [`mise generate git-pre-commit [FLAGS]`](/cli/generate/git-pre-commit.md)
 - [`mise generate github-action [FLAGS]`](/cli/generate/github-action.md)
+- [`mise generate prompts [FLAGS]`](/cli/generate/prompts.md)
 - [`mise generate task-docs [FLAGS]`](/cli/generate/task-docs.md)
 - [`mise generate task-stubs [-d --dir <DIR>] [-m --mise-bin <MISE_BIN>]`](/cli/generate/task-stubs.md)
 - [`mise generate tool-stub [FLAGS] <OUTPUT>`](/cli/generate/tool-stub.md)

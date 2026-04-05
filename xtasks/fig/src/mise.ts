@@ -1257,6 +1257,40 @@ const completionSpec: Fig.Spec = {
           ],
         },
         {
+          name: "prompts",
+          description: "Generate AI prompt files from mise tasks",
+          options: [
+            {
+              name: ["-o", "--output"],
+              description: "Output directory for generated prompt files",
+              isRepeatable: false,
+              args: {
+                name: "output",
+              },
+            },
+            {
+              name: ["-S", "--single"],
+              description:
+                "Generate a single combined prompt file instead of one per task",
+              isRepeatable: false,
+            },
+            {
+              name: ["-p", "--pattern"],
+              description:
+                "Only generate prompts for tasks matching this glob pattern",
+              isRepeatable: false,
+              args: {
+                name: "pattern",
+              },
+            },
+            {
+              name: "--dry-run",
+              description: "Print to stdout instead of writing files",
+              isRepeatable: false,
+            },
+          ],
+        },
+        {
           name: "task-docs",
           description: "Generate documentation for tasks in a project",
           options: [

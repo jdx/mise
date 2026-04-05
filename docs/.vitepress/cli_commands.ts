@@ -117,6 +117,9 @@ export const commands: { [key: string]: Command } = {
       "github-action": {
         hide: false,
       },
+      prompts: {
+        hide: false,
+      },
       "task-docs": {
         hide: false,
       },
