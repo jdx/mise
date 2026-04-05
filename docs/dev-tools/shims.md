@@ -208,8 +208,14 @@ those PATH entries will be before the shim directory.
 In other words, which is better in terms of performance just depends on how you're calling mise. Really
 though most users will not notice a few ms lag on their terminal caused by `mise activate`.
 
-::: tip
-If prompts feel slow, check for expensive `_.source` scripts in your `mise.toml` — these re-run on every prompt. Run `mise doctor` and `MISE_TRACE=1 mise hook-env` to diagnose latency.
+::: tip Diagnosing slow prompts
+Use `MISE_TIMINGS=1` to see where time is being spent:
+
+```sh
+MISE_TIMINGS=1 mise hook-env 2>&1
+```
+
+This shows color-coded timing for each step (red = slow). Use `MISE_TIMINGS=2` for even more detail with per-step breakdowns. Also check for expensive `_.source` scripts in your `mise.toml` — these re-run on every prompt.
 :::
 
 The only difference between these would be that using `hook-env` you will need to call
