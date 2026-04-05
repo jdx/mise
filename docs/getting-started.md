@@ -223,6 +223,18 @@ When you ran `mise use --global node@24`, mise updated your global config:
 node = "24"
 ```
 
+### Shell Feature Compatibility {#shell-feature-compatibility}
+
+Not all shells support every mise feature:
+
+| Feature                         | Bash | Zsh | Fish | Nushell | Elvish | Xonsh | PowerShell |
+| ------------------------------- | ---- | --- | ---- | ------- | ------ | ----- | ---------- |
+| `mise activate`                 | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
+| `mise shell`                    | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
+| `mise deactivate`               | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
+| Shell aliases (`[shell_alias]`) | Yes  | Yes | Yes  | No      | No     | Yes   | No         |
+| `chpwd` hook                    | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
+
 ## 4. Use tools from backends (npm, pipx, core, aqua, github) {#tool-backends}
 
 ```mermaid

@@ -105,7 +105,7 @@ docs = "cd {{config_root}}/docs"
 ## Limitations
 
 - **Not available in tasks**: Shell aliases are only active in interactive shells where `mise activate` is running. They are **not** available inside TOML task `run` blocks or file tasks, since tasks run in non-interactive subshells. Use the underlying command directly in tasks, or add wrapper scripts to your `PATH` via [`env._.path`](/environments/#path).
-- **Shell support**: Only bash, zsh, fish, and xonsh are supported. See the [shell compatibility matrix](#shell-feature-compatibility) below.
+- **Shell support**: Only bash, zsh, fish, and xonsh are supported. See the [shell feature compatibility matrix](/getting-started.html#shell-feature-compatibility) for details.
 
 ## Comparison to Tool Aliases
 
@@ -117,15 +117,3 @@ mise has two different alias features that serve different purposes:
 | **Tool Aliases**  | Define version aliases for tools (`node@lts` → `20.x`) | `[tool_alias]`  |
 
 See [Tool Aliases](/dev-tools/aliases) for documentation on aliasing tool versions.
-
-## Shell Feature Compatibility {#shell-feature-compatibility}
-
-Not all shells support every mise feature. Here's a summary of what works where:
-
-| Feature                         | Bash | Zsh | Fish | Nushell | Elvish | Xonsh | PowerShell |
-| ------------------------------- | ---- | --- | ---- | ------- | ------ | ----- | ---------- |
-| `mise activate`                 | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
-| `mise shell`                    | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
-| `mise deactivate`               | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
-| Shell aliases (`[shell_alias]`) | Yes  | Yes | Yes  | No      | No     | Yes   | No         |
-| `chpwd` hook                    | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
