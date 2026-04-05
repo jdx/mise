@@ -41,11 +41,6 @@ preinstall = "echo 'I am about to install tools'"
 postinstall = "echo 'I just installed tools'"
 ```
 
-::: warning
-The syntax is `[hooks]` with `postinstall = "..."`, **not** `[hooks.postinstall]` with `run = "..."`.
-The `[hooks.<name>]` table syntax is only used for [shell hooks](#shell-hooks) below.
-:::
-
 The `postinstall` hook receives a `MISE_INSTALLED_TOOLS` environment variable containing a JSON array of the tools that were just installed:
 
 ```toml

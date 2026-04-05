@@ -323,6 +323,14 @@ mise trust
 
 This only needs to be done once per file. See [`mise trust`](/cli/trust) for more details.
 
+To disable trust prompts entirely, trust the root path:
+
+```sh
+mise settings trusted_config_paths=["/"]
+```
+
+Or set the environment variable `MISE_TRUSTED_CONFIG_PATHS=/`.
+
 ::: tip
 `mise use` automatically trusts the file it creates, so you'll only see this prompt when pulling a config someone else wrote or when editing `mise.toml` by hand.
 :::

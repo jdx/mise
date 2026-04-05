@@ -2179,7 +2179,9 @@ type = "Bool"
 
 [trusted_config_paths]
 default = []
-description = "This is a list of config paths that mise will automatically mark as trusted."
+description = """This is a list of config paths that mise will automatically mark as \
+trusted. Any config files under these paths will be trusted without prompting. \
+Set to `["/"]` to trust all config files, effectively disabling the trust mechanism."""
 env = "MISE_TRUSTED_CONFIG_PATHS"
 parse_env = "list_by_colon"
 rust_type = "BTreeSet<PathBuf>"
