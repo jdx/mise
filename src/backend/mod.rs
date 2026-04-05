@@ -1373,9 +1373,9 @@ pub trait Backend: Debug + Send + Sync {
             // before this tool needs it, so the warning is spurious.
             if let Ok(ts) = self.dependency_toolset(config).await
                 && ts
-                    .list_current_versions()
-                    .iter()
-                    .any(|(b, _)| provided_by.iter().any(|p| b.id() == *p))
+                    .versions
+                    .keys()
+                    .any(|ba| provided_by.contains(&ba.short.as_str()))
             {
                 return;
             }
