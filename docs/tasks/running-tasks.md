@@ -60,6 +60,16 @@ For example running `mise run test:**:local` will match`test:units:local`,
 `test:integration:local` and `test:e2e:happy:local`
 (See [Wildcards](#wildcards) for more information).
 
+::: tip
+Since TOML keys can't contain colons without quoting, use quoted keys in `mise.toml`:
+
+```toml
+[tasks."test:unit"]
+run = 'cargo test --lib'
+```
+
+:::
+
 ## Wildcards
 
 Glob style wildcards are supported when running tasks or specifying tasks
