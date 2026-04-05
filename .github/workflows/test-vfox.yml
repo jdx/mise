@@ -23,8 +23,8 @@ jobs:
   "test-vfox":
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           save-if: false
       - run: |
@@ -32,7 +32,7 @@ jobs:
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: mise -v
       - run: mise --cd crates/vfox install
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-vfox-${{ hashFiles('crates/vfox/mise.toml') }}
           restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-vfox-

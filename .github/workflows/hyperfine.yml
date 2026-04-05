@@ -24,10 +24,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           save-if: false
       - run: curl https://mise.run | MISE_INSTALL_PATH="$HOME/bin/mise-release" sh
@@ -36,7 +36,7 @@ jobs:
         run: |
           #echo "main=$(git rev-parse --short origin/main)" >> "$GITHUB_OUTPUT"
           echo "release=$(mise-release v | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-      #- uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+      #- uses: actions/cache@v5.0.4
       #  with:
       #    path: ~/bin/mise-${{ steps.versions.outputs.main }}
       #    key: mise-hyperfine-main-${{ steps.versions.outputs.main }}-${{ runner.os }}-${{ runner.arch }}
@@ -100,7 +100,7 @@ jobs:
       - run: cat comment.md >> "$GITHUB_STEP_SUMMARY"
         if: always() && github.event_name == 'pull_request'
       - name: Comment on PR
-        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
         if: always() && github.event_name == 'pull_request'
         continue-on-error: true
         with:

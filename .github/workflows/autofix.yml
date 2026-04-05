@@ -27,8 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: build
           save-if: false
@@ -54,7 +54,7 @@ jobs:
 #          cargo build
 #          Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
 #        shell: pwsh
-#      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+#      - uses: actions/cache@v5.0.4
 #        with:
 #          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
 #          path: |
@@ -65,4 +65,4 @@ jobs:
 #      #- run: mise run render
 #      - run: mise run lint-fix
 #      - run: mise --cd crates/vfox run lint-fix
-#      - uses: autofix-ci/action@2891949f3779a1cafafae1523058501de3d4e944 # v1.3.1
+#      - uses: autofix-ci/action@v1.3.3

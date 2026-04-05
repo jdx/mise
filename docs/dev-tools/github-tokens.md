@@ -179,7 +179,7 @@ This is the best approach for CI where you want deterministic builds without con
 In GitHub Actions, `GITHUB_TOKEN` is automatically available. mise picks it up with no extra configuration:
 
 ```yaml
-- uses: jdx/mise-action@v2
+- uses: jdx/mise-action@v4
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```

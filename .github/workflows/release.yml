@@ -49,25 +49,25 @@ jobs:
           - name: linux-armv7-musl
             target: armv7-unknown-linux-musleabi
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Install cross
-        uses: taiki-e/install-action@7a4939c09608b2a1986b484eca1d16fd0db8ebef # v2
+        uses: taiki-e/install-action@7a562dfa955aa2e4d5b0fd6ebd57ff9715c07b0b # v2.73.0
         with:
           tool: cross
       - name: cache crates
         id: cache-crates
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ~/.cargo/registry/cache
           key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-registry
       - name: build-tarball ${{matrix.target}}
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4.0.0
         with:
           timeout_minutes: 45
           max_attempts: 3
           command: scripts/build-tarball.sh ${{matrix.target}}
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: tarball-${{matrix.target}}
           path: |
@@ -75,7 +75,7 @@ jobs:
             dist/mise-*.tar.gz
             dist/mise-*.tar.zst
           if-no-files-found: error
-      - uses: taiki-e/install-action@7a4939c09608b2a1986b484eca1d16fd0db8ebef # v2
+      - uses: taiki-e/install-action@7a562dfa955aa2e4d5b0fd6ebd57ff9715c07b0b # v2.73.0
         with: { tool: cargo-cache }
       - if: steps.cache-crates.outputs.cache-hit != 'true'
         run: cargo cache --autoclean
@@ -96,14 +96,14 @@ jobs:
           - name: macos-arm64
             target: aarch64-apple-darwin
     steps:
-      - uses: apple-actions/import-codesign-certs@95e84a1a18f2bdbc5c6ab9b7f4429372e4b13a8b # v5
+      - uses: apple-actions/import-codesign-certs@b610f78488812c1e56b20e6df63ec42d833f2d14 # v6.0.0
         with:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: cache crates
         id: cache-crates
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ~/.cargo/registry/cache
           key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
@@ -111,12 +111,12 @@ jobs:
       - name: Setup Rust target
         run: rustup target add ${{matrix.target}}
       - name: build-tarball ${{matrix.target}}
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4.0.0
         with:
           timeout_minutes: 90
           max_attempts: 3
           command: scripts/build-tarball.sh ${{matrix.target}}
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: tarball-${{matrix.target}}
           path: |
@@ -124,7 +124,7 @@ jobs:
             dist/mise-*.tar.gz
             dist/mise-*.tar.zst
           if-no-files-found: error
-      - uses: taiki-e/install-action@7a4939c09608b2a1986b484eca1d16fd0db8ebef # v2
+      - uses: taiki-e/install-action@7a562dfa955aa2e4d5b0fd6ebd57ff9715c07b0b # v2.73.0
         with: { tool: cargo-cache }
       - if: steps.cache-crates.outputs.cache-hit != 'true'
         run: cargo cache --autoclean
@@ -142,16 +142,16 @@ jobs:
           - arch: x64
             target: x86_64-pc-windows-msvc
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - run: rustup target add ${{matrix.target}}
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           key: ${{matrix.arch}}
       - run: scripts/build-tarball.ps1 ${{matrix.target}}
         env:
           OS: windows
           ARCH: ${{matrix.arch}}
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: tarball-${{matrix.target}}
           path: dist/*.zip
@@ -168,7 +168,7 @@ jobs:
       matrix:
         tranche: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Install zsh/fish/direnv/fd
         run: sudo apt-get update; sudo apt-get install zsh fish direnv fd-find liblzma-dev libbz2-dev
       - name: Install fd-find
@@ -176,11 +176,11 @@ jobs:
           mkdir -p "$HOME/.local/bin"
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - uses: taiki-e/install-action@7a4939c09608b2a1986b484eca1d16fd0db8ebef # v2
+      - uses: taiki-e/install-action@7a562dfa955aa2e4d5b0fd6ebd57ff9715c07b0b # v2.73.0
         with:
           tool: usage-cli
       - run: tar -C "$HOME" -xvf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.zst"
@@ -189,7 +189,7 @@ jobs:
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise i
       - name: Run e2e tests
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4.0.0
         env:
           TEST_TRANCHE: ${{matrix.tranche}}
           TEST_TRANCHE_COUNT: 8
@@ -205,20 +205,20 @@ jobs:
     timeout-minutes: 10
     container: ghcr.io/jdx/mise:rpm@sha256:d45af2db3847044ccd9cce7e580c1616e7e8baad952092574dea4e4a0815c435
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7.0.0
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: tarball-aarch64-unknown-linux-gnu
           path: dist
       - run: scripts/build-rpm.sh
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: rpm
           path: dist/rpmrepo
@@ -230,20 +230,20 @@ jobs:
     container: ghcr.io/jdx/mise:deb@sha256:d7463ac5d3023c3f634eccc81834b6553f80e7fbdf0bc11a3bba5d691c44f614
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7.0.0
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: tarball-aarch64-unknown-linux-gnu
           path: dist
       - run: scripts/build-deb.sh
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: deb
           path: dist/deb
@@ -287,7 +287,7 @@ jobs:
             echo "  deb: ${{ needs.deb.result }}"
             exit 1
           fi
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
       - name: Check for existing release
@@ -313,7 +313,7 @@ jobs:
         run: |
           echo "Skipping release steps for PR from non-release branch"
           echo "All release operations will be skipped"
-      - uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
+      - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7.0.0
         if: github.event_name != 'pull_request' || github.head_ref == 'release'
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
@@ -321,7 +321,7 @@ jobs:
           git_commit_gpgsign: true
       - name: cache zipsign
         id: cache-zipsign
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ~/.cargo/bin/zipsign
           key: cargo-zipsign
@@ -337,12 +337,12 @@ jobs:
           mkdir -p "$HOME/.local/bin"
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: github.event_name != 'pull_request' || github.head_ref == 'release'
         with: { path: artifacts }
       - run: ls -R artifacts
         if: github.event_name != 'pull_request' || github.head_ref == 'release'
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: github.event_name != 'pull_request' || github.head_ref == 'release'
         with:
           path: artifacts
@@ -356,7 +356,7 @@ jobs:
         if: github.event_name != 'pull_request' || github.head_ref == 'release'
       - run: ls -R artifacts
         if: github.event_name != 'pull_request' || github.head_ref == 'release'
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: github.event_name != 'pull_request' || github.head_ref == 'release'
         with:
           name: tarball-x86_64-unknown-linux-gnu

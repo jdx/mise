@@ -10,11 +10,11 @@ jobs:
     ## if github.repository == 'jdx/mise'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
           token: ${{ secrets.MISE_GH_TOKEN }}
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: build
           save-if: false
@@ -24,7 +24,7 @@ jobs:
       - run: mise x -- bun i
       - run: mise run render:fig
       - name: Create Autocomplete PR ## Create the autocomplete PR using this action
-        uses: withfig/push-to-fig-autocomplete-action@fb320c27ec12b225b9446373aa30b7d9c0c1eae8 # v2
+        uses: withfig/push-to-fig-autocomplete-action@fb320c27ec12b225b9446373aa30b7d9c0c1eae8 # v2.4.0
         with:
           token: ${{ secrets.MISE_GH_TOKEN }}
           autocomplete-spec-name: mise
