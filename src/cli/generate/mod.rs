@@ -5,6 +5,7 @@ mod config;
 mod devcontainer;
 mod git_pre_commit;
 mod github_action;
+mod prompts;
 mod task_docs;
 mod task_stubs;
 mod tool_stub;
@@ -24,6 +25,7 @@ enum Commands {
     Devcontainer(devcontainer::Devcontainer),
     GitPreCommit(git_pre_commit::GitPreCommit),
     GithubAction(github_action::GithubAction),
+    Prompts(prompts::Prompts),
     TaskDocs(task_docs::TaskDocs),
     TaskStubs(task_stubs::TaskStubs),
     ToolStub(tool_stub::ToolStub),
@@ -37,6 +39,7 @@ impl Commands {
             Self::Devcontainer(cmd) => cmd.run().await,
             Self::GitPreCommit(cmd) => cmd.run().await,
             Self::GithubAction(cmd) => cmd.run().await,
+            Self::Prompts(cmd) => cmd.run().await,
             Self::TaskDocs(cmd) => cmd.run().await,
             Self::TaskStubs(cmd) => cmd.run().await,
             Self::ToolStub(cmd) => cmd.run().await,
