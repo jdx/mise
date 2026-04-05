@@ -274,6 +274,72 @@ If you previously enabled idiomatic files and now want to stop mise from reading
 
 See [Idiomatic Version Files](/configuration.html#idiomatic-version-files) for more information.
 
+## How do `mise activate`, shims, `mise exec`, and `mise env` relate?
+
+These all do the same core thing: they set up your environment (primarily `PATH`) so that
+mise-managed tools are available. The difference is _when_ and _how_:
+
+| Method                              | How it works                                           | Best for                                   |
+| ----------------------------------- | ------------------------------------------------------ | ------------------------------------------ |
+| `mise activate`                     | Hooks into your shell prompt, updates PATH dynamically | Interactive terminal use                   |
+| `mise activate --shims`             | Adds the shims directory to PATH once                  | IDEs, simple setups (no hooks/env support) |
+| `mise exec` / `mise x`              | Sets up env, runs a single command, then exits         | Scripts, CI, one-off commands              |
+| `mise env`                          | Prints env vars you can `eval`                         | Integrating with other tools               |
+| `mise run`                          | Sets up env, then runs a task                          | Task execution                             |
+| Shims (`~/.local/share/mise/shims`) | Wrapper scripts that call mise on each invocation      | Non-interactive shells, IDEs               |
+
+::: warning
+`mise activate --shims` does **not** support hooks, env vars from `[env]`, or `watch_files`.
+It only puts shims on PATH. If you need those features, use `mise activate` (without `--shims`).
+:::
+
+## How does `mise exec` work?
+
+`mise exec` (or `mise x`) reads your config, sets up `PATH` and environment variables, then
+runs the command you specify after `--`. A common mistake is repeating the tool name:
+
+```sh
+# Wrong — specifies node twice
+mise x node@20 -- node script.js
+
+# Right — mise already puts node@20 on PATH, just run the command
+mise x -- node script.js
+
+# Also right — override a specific version for this command
+mise x node@20 -- node script.js
+```
+
+The first form (`mise x node@20 -- ...`) is only needed when you want to use a version
+**different** from what's in your config.
+
+## Where does `mise use` write to?
+
+`mise use` writes to the nearest `mise.toml` in your directory hierarchy. If there's a
+`mise.toml` in a parent directory (including `~/.config/mise/config.toml` for `-g`), it will
+update that file.
+
+```sh
+mise use node@22           # writes to nearest mise.toml (may be a parent dir!)
+mise use -g node@22        # writes to ~/.config/mise/config.toml
+mise use --path mise.toml node@22  # writes to a specific file
+```
+
+Use `mise cfg` to see which config files mise is reading in the current directory.
+
+## mise is for dev tools, not applications or system packages
+
+mise manages **development tool versions** (node, python, go, rust, etc.) and CLI utilities.
+It is not a replacement for system package managers like `apt`, `brew`, or `pacman`.
+
+Things mise does **not** do:
+
+- Install system libraries (libssl, zlib, etc.)
+- Manage desktop applications
+- Handle system-level dependencies that tools need to compile
+
+If a mise-installed tool needs a system library, install that library with your OS package
+manager first.
+
 ## How does mise versioning work?
 
 mise uses [Calver](https://calver.org/) versioning (`2024.1.0`).

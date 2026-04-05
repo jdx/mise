@@ -165,6 +165,46 @@ common running mise in a CI environment like GitHub Actions.
 
 See [GitHub Tokens](/dev-tools/github-tokens.html) for how to configure authentication and avoid rate limits.
 
+## Tool not found after `mise install` or `mise use` in a script
+
+If you run `mise use` or `mise install` inside a script and then immediately try to use the
+tool, it may not be found. This is because `mise activate` updates PATH at the next prompt,
+which never happens in a script.
+
+**Solutions:**
+
+```bash
+# Option 1: Use mise exec (recommended)
+mise install
+mise exec -- my-tool --version
+
+# Option 2: Re-evaluate the environment after install
+mise install
+eval "$(mise hook-env)"
+my-tool --version
+
+# Option 3: Use shims (they always resolve dynamically)
+export PATH="$HOME/.local/share/mise/shims:$PATH"
+mise install
+my-tool --version
+```
+
+## Creating `~/.bash_profile` breaks existing `~/.profile` on Ubuntu/Debian
+
+On many Linux distributions, `~/.profile` sources `~/.bashrc` and sets up your environment.
+However, if `~/.bash_profile` exists, bash reads that **instead of** `~/.profile`.
+
+If you followed setup instructions that created `~/.bash_profile` for mise, your existing
+`~/.profile` configuration (including PATH, environment variables, etc.) may stop loading.
+
+**Fix:** Add mise activation to `~/.bashrc` instead, or source `~/.profile` from your
+`~/.bash_profile`:
+
+```bash
+# ~/.bash_profile
+[[ -f ~/.profile ]] && source ~/.profile
+```
+
 ## Tasks with `redact` env vars break `raw` output
 
 If you have `redact = true` on any env var in your config, tasks with `raw = true` will appear

@@ -277,6 +277,19 @@ depends = ['clean', 'build']  # both are dependencies, but build waits for clean
 run = 'cargo test'
 ```
 
+### Task working directory
+
+By default, tasks run from the **project root** (where `mise.toml` is), not from your current
+shell directory. To run a task from the caller's working directory, use `dir`:
+
+```toml
+[tasks.lint]
+run = 'eslint .'
+dir = '{{cwd}}'  # run from wherever the user is
+```
+
+The `{{cwd}}` template variable resolves to the directory where `mise run` was invoked.
+
 ### Using variables in tasks
 
 The [`[vars]`](/tasks/task-configuration.html#vars) section lets you define reusable values for tasks:
@@ -287,6 +300,24 @@ docker_cmd = 'docker run --rm -v "$(pwd):/data" pandoc/extra'
 
 [tasks.build-pdf]
 run = '{{vars.docker_cmd}} input.md -o output.pdf'
+```
+
+## `env._.path` must be an array
+
+A common mistake is trying to use colon-separated paths in `_.path`:
+
+```toml
+# Wrong — causes "path segment contains separator" error
+[env]
+_.path = "/foo:/bar"
+
+# Right — use an array
+[env]
+_.path = ["/foo", "/bar"]
+
+# Also right — single path as string is fine
+[env]
+_.path = "/foo"
 ```
 
 ## `mise.lock`
