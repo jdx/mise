@@ -35,8 +35,7 @@ npm = "11"
 To pin both to exact versions (recommended for teams):
 
 ```sh
-mise use --pin node@lts
-mise use --pin npm@latest
+mise use --pin node@lts npm@latest
 ```
 
 This resolves aliases like `lts` and `latest` to exact version numbers in `mise.toml`, e.g.:
