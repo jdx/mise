@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+# Test that PEP 440 .dev versions are filtered out during fuzzy version matching
+# Regression test for https://github.com/jdx/mise/discussions/8784
+#
+# The bug: VERSION_REGEX only catches "-dev" (hyphen) but not ".dev" (dot),
+# so PEP 440 dev versions like "2026.3.3.162408.dev0" slip through the
+# pre-release filter and incorrectly satisfy a request for "2026.3.3".
+
+# Create a custom plugin that returns versions including .dev suffixes
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/devtest"
+mkdir -p "$PLUGIN_DIR/bin"
+
+cat <<'LISTALL' >"$PLUGIN_DIR/bin/list-all"
+#!/usr/bin/env bash
+echo "2026.3.2 2026.3.3.dev0 2026.3.3 2026.3.3.162408.dev0 2026.3.4.dev1"
+LISTALL
+chmod +x "$PLUGIN_DIR/bin/list-all"
+
+cat <<'INSTALL' >"$PLUGIN_DIR/bin/install"
+#!/usr/bin/env bash
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+cat <<EOF >"$ASDF_INSTALL_PATH/bin/devtest"
+#!/usr/bin/env bash
+echo "devtest $ASDF_INSTALL_VERSION"
+EOF
+chmod +x "$ASDF_INSTALL_PATH/bin/devtest"
+INSTALL
+chmod +x "$PLUGIN_DIR/bin/install"
+
+# Test 1: latest for "2026.3.3" should return exactly "2026.3.3", not a dev version
+assert "mise latest devtest@2026.3.3" "2026.3.3"
+
+# Test 2: latest for "2026.3" should return "2026.3.3" (highest stable), not a dev version
+assert "mise latest devtest@2026.3" "2026.3.3"
+
+# Test 3: If user explicitly requests a dev version by exact match, it should work
+mise install devtest@2026.3.3.dev0
+assert_contains "mise x devtest@2026.3.3.dev0 -- devtest" "2026.3.3.dev0"
+
+# Test 4: Install stable version, then verify it resolves correctly even with
+# the dev version already installed (core bug from the discussion)
+mise install devtest@2026.3.3
+assert_contains "mise x devtest@2026.3.3 -- devtest" "devtest 2026.3.3"
+assert_not_contains "mise x devtest@2026.3.3 -- devtest" "dev0"
+
+# Test 5: latest for a version that only has dev releases should return nothing
+assert_empty "mise latest devtest@2026.3.4"

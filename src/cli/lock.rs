@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -126,20 +126,32 @@ impl Lock {
 
             if self.dry_run {
                 self.show_dry_run(&tools, &target_platforms)?;
+                let lockfile = Lockfile::read(lockfile_path)?;
                 if self.is_unfiltered_lock_run() {
-                    let lockfile = Lockfile::read(lockfile_path)?;
                     let stale_tools = self.stale_entries_if_pruned(&lockfile, &tools);
                     self.show_stale_prune_message(lockfile_path, &stale_tools, true)?;
                 }
+                let stale_versions = self.stale_versions_if_pruned(&lockfile, &tools);
+                self.show_stale_version_prune_message(lockfile_path, &stale_versions, true)?;
                 continue;
             }
 
             // Process tools and update lockfile
             let mut lockfile = Lockfile::read(lockfile_path)?;
-            self.prune_stale_entries_if_needed(&mut lockfile, &tools);
+            let stale_tools = self.prune_stale_entries_if_needed(&mut lockfile, &tools);
+            self.show_stale_prune_message(lockfile_path, &stale_tools, false)?;
+
+            // Compute stale versions BEFORE process_tools so provenance checks can
+            // compare against old version entries. Actual pruning happens after.
+            let stale_versions = self.stale_versions_if_pruned(&lockfile, &tools);
+
             let (results, provenance_errors) = self
                 .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
                 .await?;
+
+            // Prune stale versions AFTER provenance checks complete
+            self.prune_stale_versions(&mut lockfile, &tools);
+            self.show_stale_version_prune_message(lockfile_path, &stale_versions, false)?;
 
             // Save lockfile before raising provenance errors so non-regressing
             // tools' entries are preserved
@@ -195,6 +207,19 @@ impl Lock {
         stale_tools
     }
 
+    /// Prune lockfile entries whose version no longer matches any resolved version
+    /// of the tool. This prevents stale version entries from accumulating when a
+    /// tool's resolved version changes.
+    ///
+    /// Note: This must be called AFTER process_tools() so that provenance checks
+    /// can compare against the old version entries before they are removed.
+    fn prune_stale_versions(&self, lockfile: &mut Lockfile, tools: &[LockTool]) {
+        let current_versions = self.current_tool_versions(tools);
+        for (short, versions) in &current_versions {
+            lockfile.retain_tool_versions(short, versions);
+        }
+    }
+
     fn stale_entries_if_pruned(
         &self,
         lockfile: &Lockfile,
@@ -207,6 +232,62 @@ impl Lock {
         self.stale_entries_for_selectors(lockfile, &configured_tools, &configured_backends)
     }
 
+    fn stale_versions_if_pruned(
+        &self,
+        lockfile: &Lockfile,
+        tools: &[LockTool],
+    ) -> BTreeMap<String, Vec<String>> {
+        let current_versions = self.current_tool_versions(tools);
+        self.stale_versions_for_current(lockfile, &current_versions)
+    }
+
+    fn stale_versions_for_current(
+        &self,
+        lockfile: &Lockfile,
+        current_versions: &BTreeMap<String, BTreeSet<String>>,
+    ) -> BTreeMap<String, Vec<String>> {
+        let mut stale: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (short, versions) in current_versions {
+            let stale_versions = lockfile.stale_tool_versions(short, versions);
+            if !stale_versions.is_empty() {
+                stale.insert(short.clone(), stale_versions);
+            }
+        }
+        stale
+    }
+
+    fn show_stale_version_prune_message(
+        &self,
+        lockfile_path: &Path,
+        stale_versions: &BTreeMap<String, Vec<String>>,
+        dry_run: bool,
+    ) -> Result<()> {
+        if stale_versions.is_empty() {
+            return Ok(());
+        }
+        let total: usize = stale_versions.values().map(|v| v.len()).sum();
+        let entry_word = if total == 1 { "entry" } else { "entries" };
+        let (icon, message) = if dry_run {
+            (style("→").yellow(), "Dry run - would prune")
+        } else {
+            (style("✓").green(), "Pruned")
+        };
+        let details: Vec<String> = stale_versions
+            .iter()
+            .flat_map(|(short, versions)| versions.iter().map(move |v| format!("{short}@{v}")))
+            .collect();
+        miseprintln!(
+            "{} {} {} stale version {} from {}: {}",
+            icon,
+            message,
+            total,
+            entry_word,
+            style(display_path(lockfile_path)).cyan(),
+            details.join(", ")
+        );
+        Ok(())
+    }
+
     fn configured_tool_selectors(
         &self,
         tools: &[(crate::cli::args::BackendArg, crate::toolset::ToolVersion)],
@@ -215,6 +296,17 @@ impl Lock {
             tools.iter().map(|(ba, _)| ba.short.clone()).collect();
         let configured_backends: BTreeSet<String> = tools.iter().map(|(ba, _)| ba.full()).collect();
         (configured_tools, configured_backends)
+    }
+
+    fn current_tool_versions(&self, tools: &[LockTool]) -> BTreeMap<String, BTreeSet<String>> {
+        let mut current_versions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (ba, tv) in tools {
+            current_versions
+                .entry(ba.short.clone())
+                .or_default()
+                .insert(tv.version.clone());
+        }
+        current_versions
     }
 
     fn stale_entries_for_selectors(
@@ -618,6 +710,92 @@ mod tests {
         let pruned = cmd.prune_stale_entries_if_needed(&mut lockfile, &tools);
         assert!(pruned.is_empty());
 
+        assert_eq!(
+            lockfile.all_platform_keys(),
+            std::collections::BTreeSet::from(["linux-x64".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_filtered_run_prunes_stale_version() {
+        // Simulate: lockfile has dummy@1.0.0, resolved version is now 2.0.0
+        let cmd = lock_cmd(&["dummy"]);
+        let mut lockfile = lockfile_with_dummy(); // has dummy@1.0.0
+        let tools = vec![configured_tool("dummy", "2.0.0")];
+
+        cmd.prune_stale_versions(&mut lockfile, &tools);
+
+        // Old version entry should be removed
+        assert!(lockfile.all_platform_keys().is_empty());
+    }
+
+    #[test]
+    fn test_filtered_run_preserves_current_version() {
+        // Simulate: lockfile has dummy@1.0.0, resolved version is still 1.0.0
+        let cmd = lock_cmd(&["dummy"]);
+        let mut lockfile = lockfile_with_dummy(); // has dummy@1.0.0
+        let tools = vec![configured_tool("dummy", "1.0.0")];
+
+        cmd.prune_stale_versions(&mut lockfile, &tools);
+
+        // Entry should still be there
+        assert_eq!(
+            lockfile.all_platform_keys(),
+            std::collections::BTreeSet::from(["linux-x64".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_filtered_run_preserves_non_targeted_tools() {
+        // Simulate: lockfile has dummy@1.0.0 and jq@1.7.1, filter targets only dummy
+        let cmd = lock_cmd(&["dummy"]);
+        let mut lockfile = lockfile_with_dummy(); // has dummy@1.0.0
+        lockfile.set_platform_info(
+            "jq",
+            "1.7.1",
+            Some("aqua:jqlang/jq"),
+            &BTreeMap::new(),
+            "macos-x64",
+            PlatformInfo {
+                checksum: Some("sha256:jq".to_string()),
+                ..Default::default()
+            },
+        );
+        // Resolve dummy to a new version; jq is not targeted
+        let tools = vec![configured_tool("dummy", "2.0.0")];
+
+        cmd.prune_stale_versions(&mut lockfile, &tools);
+
+        // dummy@1.0.0 (linux-x64) should be removed, jq@1.7.1 (macos-x64) should remain
+        assert_eq!(
+            lockfile.all_platform_keys(),
+            std::collections::BTreeSet::from(["macos-x64".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_unfiltered_run_prunes_stale_version() {
+        // Unfiltered runs should prune stale versions just like filtered runs
+        let cmd = lock_cmd(&[]);
+        let mut lockfile = lockfile_with_dummy(); // has dummy@1.0.0
+        let tools = vec![configured_tool("dummy", "2.0.0")];
+
+        cmd.prune_stale_versions(&mut lockfile, &tools);
+
+        // Old version entry should be removed
+        assert!(lockfile.all_platform_keys().is_empty());
+    }
+
+    #[test]
+    fn test_unfiltered_run_preserves_current_version() {
+        // Unfiltered runs should preserve current versions
+        let cmd = lock_cmd(&[]);
+        let mut lockfile = lockfile_with_dummy(); // has dummy@1.0.0
+        let tools = vec![configured_tool("dummy", "1.0.0")];
+
+        cmd.prune_stale_versions(&mut lockfile, &tools);
+
+        // Entry should still be there
         assert_eq!(
             lockfile.all_platform_keys(),
             std::collections::BTreeSet::from(["linux-x64".to_string()])

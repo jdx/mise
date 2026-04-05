@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
-# Test that npm backend properly uses npm.package_manager and legacy npm.bun settings
+# Test that npm backend properly uses npm.package_manager settings
+
+export MISE_INSTALL_BEFORE=1d
 
 # Ensure npm is available by installing node if needed
 if ! command -v npm >/dev/null 2>&1; then
@@ -34,7 +36,8 @@ echo "✓ npm backend lists versions using npm"
 
 # Test installation using npm (default)
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
-assert_succeed "mise install npm:tiny@latest >/dev/null 2>&1"
+assert_succeed "MISE_DEBUG=1 mise install npm:tiny@latest >/tmp/npm_debug.log 2>&1"
+assert_contains "cat /tmp/npm_debug.log" "--before"
 echo "✓ npm backend successfully installs package using npm (default)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
@@ -42,7 +45,8 @@ mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 echo "Testing npm.package_manager=bun..."
 export MISE_NPM_PACKAGE_MANAGER=bun
 
-assert_succeed "mise install npm:tiny@latest >/dev/null 2>&1"
+assert_succeed "MISE_DEBUG=1 mise install npm:tiny@latest >/tmp/bun_debug.log 2>&1"
+assert_contains "cat /tmp/bun_debug.log" "--minimum-release-age"
 echo "✓ npm backend successfully installs package using bun (package_manager=bun)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
@@ -50,37 +54,15 @@ mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 echo "Testing npm.package_manager=pnpm..."
 export MISE_NPM_PACKAGE_MANAGER=pnpm
 
-if ! mise install npm:tiny@latest >/tmp/pnpm_debug.log 2>&1; then
+if ! MISE_DEBUG=1 mise install npm:tiny@latest >/tmp/pnpm_debug.log 2>&1; then
 	echo "Command failed. Output:"
 	cat /tmp/pnpm_debug.log
 	exit 1
 fi
+assert_contains "cat /tmp/pnpm_debug.log" "--config.minimumReleaseAge="
 echo "✓ npm backend successfully installs package using pnpm (package_manager=pnpm)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
-# Test 4: Legacy npm.bun = true (should override package_manager=npm default)
-echo "Testing legacy npm.bun=true..."
-unset MISE_NPM_PACKAGE_MANAGER
-export MISE_NPM_BUN=true
-
-assert_succeed "mise install npm:tiny@latest >/dev/null 2>&1"
-echo "✓ npm backend successfully installs package using bun (legacy npm.bun=true)"
-mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
-
-unset MISE_NPM_BUN
-
-# Test 5: npm.bun = true overrides package_manager="npm"
-echo "Testing npm.bun=true overrides npm.package_manager=npm..."
-export MISE_NPM_BUN=true
-export MISE_NPM_PACKAGE_MANAGER=npm
-
-assert_succeed "mise install npm:tiny@latest >/dev/null 2>&1"
-# Verify it actually used bun? The output might show it, or we rely on logic.
-# Since installation succeeds, at least it works.
-echo "✓ npm backend successfully installs package (priority check)"
-mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
-
-unset MISE_NPM_BUN
 unset MISE_NPM_PACKAGE_MANAGER
 
 echo "✓ npm package manager behavior test completed"

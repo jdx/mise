@@ -262,6 +262,31 @@ jobs:
       - build-tarball-windows
     if: ${{ !cancelled() && !failure() }}
     steps:
+      - name: Verify all build targets succeeded
+        if: github.event_name != 'pull_request' || github.head_ref == 'release'
+        run: |
+          failed=""
+          for result in \
+            "${{ needs.build-tarball-linux.result }}" \
+            "${{ needs.build-tarball-macos.result }}" \
+            "${{ needs.build-tarball-windows.result }}" \
+            "${{ needs.e2e-linux.result }}" \
+            "${{ needs.rpm.result }}" \
+            "${{ needs.deb.result }}"; do
+            if [ "$result" != "success" ]; then
+              failed="true"
+            fi
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::One or more required jobs did not succeed:"
+            echo "  build-tarball-linux: ${{ needs.build-tarball-linux.result }}"
+            echo "  build-tarball-macos: ${{ needs.build-tarball-macos.result }}"
+            echo "  build-tarball-windows: ${{ needs.build-tarball-windows.result }}"
+            echo "  e2e-linux: ${{ needs.e2e-linux.result }}"
+            echo "  rpm: ${{ needs.rpm.result }}"
+            echo "  deb: ${{ needs.deb.result }}"
+            exit 1
+          fi
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0

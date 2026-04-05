@@ -10,6 +10,17 @@ The code for this is inside of the mise repository at [`./src/backend/npm.rs`](h
 This relies on having `npm` installed for resolving package versions.
 If you use `bun` or `pnpm` as the package manager, they must also be installed.
 
+When [`install_before`](/configuration/settings.html#install_before) is set, the npm backend
+forwards that cutoff to transitive dependency resolution during install. This relies on the
+configured package manager supporting its native release-age flag:
+
+- `npm >= 6.9.0` using `--before <timestamp>` (`Node >= 10.16.0` if you rely on bundled npm)
+- `bun >= 1.3.0` using `--minimum-release-age <seconds>`
+- `pnpm >= 10.16.0` using `--config.minimumReleaseAge=<minutes>`
+
+If you want transitive protection, install and use a package manager version that meets the
+corresponding requirement above. Older versions may fail while processing the forwarded argument.
+
 Here is how to install `npm` with mise:
 
 ```sh

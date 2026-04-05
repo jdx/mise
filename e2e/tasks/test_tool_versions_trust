@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+# .tool-versions files can't define tasks, so plain ones should never
+# trigger a trust error in the task runner.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+echo "tiny 3.1.0" >.tool-versions
+assert_not_contains "MISE_YES=0 mise task ls" "not trusted"

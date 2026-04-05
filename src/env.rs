@@ -644,16 +644,36 @@ fn environment(args: &[String]) -> Vec<String> {
         // When running as shim, ignore command line args and use env vars only
         vec![]
     } else {
+        // Subcommands where positional args accept hyphen values, so -E after the
+        // first positional would be a task arg, not a global flag.
+        let run_subcommands: HashSet<&str> = HashSet::from(["run", "r"]);
         // Try to get from command line args first
-        args.windows(2)
-            .take_while(|window| !window.iter().any(|a| a == "--"))
-            .filter_map(|window| {
-                if arg_defs.contains(&*window[0]) {
-                    Some(window[1].clone())
-                } else {
-                    None
+        // Handles both `--env production` (separate args) and `--env=production` (joined with =)
+        let mut values = Vec::new();
+        let mut it = args.iter().take_while(|a| a.as_str() != "--");
+        let mut in_run_subcommand = false;
+        while let Some(arg) = it.next() {
+            if let Some((flag, value)) = arg.split_once('=') {
+                if arg_defs.contains(flag) {
+                    values.push(value.to_string());
                 }
-            })
+            } else if arg_defs.contains(arg.as_str()) {
+                if let Some(next) = it.next() {
+                    values.push(next.to_string());
+                }
+            } else if !arg.starts_with('-') {
+                // After `run`/`r`, the first positional is the task name — everything
+                // after that belongs to the task, so stop scanning for env flags.
+                if in_run_subcommand {
+                    break;
+                }
+                if run_subcommands.contains(arg.as_str()) {
+                    in_run_subcommand = true;
+                }
+            }
+        }
+        values
+            .into_iter()
             .flat_map(|s| {
                 s.split(',')
                     .filter(|s| !s.is_empty())
