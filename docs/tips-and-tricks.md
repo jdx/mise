@@ -244,6 +244,51 @@ Path                                    Tools
 
 This is helpful figuring out which order the config files are loaded in to figure out which one is overriding.
 
+## Task tips
+
+### Namespaced task names
+
+Use colons to namespace tasks. Since TOML keys can't contain colons without quoting, use quoted keys:
+
+```toml
+[tasks."packages:build"]
+run = 'echo building packages'
+
+[tasks."packages:clean"]
+run = 'echo cleaning packages'
+```
+
+Then run with `mise run packages:build`.
+
+### Running task dependencies in sequence
+
+By default, task dependencies run in parallel. To enforce ordering, use `wait_for`:
+
+```toml
+[tasks.clean]
+run = 'rm -rf dist'
+
+[tasks.build]
+wait_for = ['clean']  # wait for clean to finish before starting
+run = 'cargo build'
+
+[tasks.test]
+depends = ['clean', 'build']  # both are dependencies, but build waits for clean
+run = 'cargo test'
+```
+
+### Using variables in tasks
+
+The [`[vars]`](/tasks/task-configuration.html#vars) section lets you define reusable values for tasks:
+
+```toml
+[vars]
+docker_cmd = 'docker run --rm -v "$(pwd):/data" pandoc/extra'
+
+[tasks.build-pdf]
+run = '{{vars.docker_cmd}} input.md -o output.pdf'
+```
+
 ## `mise.lock`
 
 When lockfiles are enabled, mise will update `mise.lock` with full versions and tarball checksums (if supported by the backend).

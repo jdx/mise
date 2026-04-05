@@ -204,6 +204,65 @@ In VSCode, many extensions will throw an "error spawn EINVAL" due to a [Node.js 
 
 The default `exe` shim mode should resolve this. If you're using an older mode, you can change [windows_shim_mode](https://mise.jdx.dev/configuration/settings.html#windows_shim_mode) to `exe`, `hardlink`, or `symlink`.
 
+## What is the difference between `mise install` and `mise use`?
+
+`mise install` downloads and installs a tool version but does **not** add it to any config file.
+The tool won't be automatically activated in your shell unless it's already listed in a `mise.toml` or `.tool-versions`.
+
+`mise use` installs the tool **and** adds it to `mise.toml` (or `~/.config/mise/config.toml` with `-g`), so it will be activated
+automatically when you enter the directory.
+
+If you just want to pin a tool for a project, use `mise use`. If you want to install
+a version that's already listed in config, use `mise install`.
+
+::: tip
+`mise install node` (with no version) will install the **latest** version if node isn't in your config.
+`mise install` (with no arguments) installs only the tools listed in your config files.
+:::
+
+## Does `latest` mean the newest remote version?
+
+No. In config files, `latest` resolves to the latest **installed** version. It does not check
+for newer remote versions automatically. This means if you have node 20.0.0 installed and
+node 22.0.0 is available remotely, `latest` will still point to 20.0.0.
+
+To upgrade to the newest available version, run:
+
+```sh
+mise upgrade node
+# or to also update mise.toml:
+mise upgrade --bump node
+```
+
+## My config file is being ignored / `mise trust` issues
+
+mise requires you to trust config files that were not created by you. Common issues:
+
+- **Accidentally denied trust**: If mise prompted you to trust a file and you said no, it gets
+  added to the ignore list. Check `ls ~/.local/state/mise/ignored-configs/` and remove the
+  relevant symlink to un-ignore it.
+- **Symlinked configs**: If your config is symlinked (e.g., via GNU Stow), mise may track the
+  symlink target path. Try `mise trust` pointing to the actual file path.
+- **Non-interactive mode**: In non-interactive shells (CI, IDE extensions, scripts), mise will
+  silently skip untrusted configs. Either run `mise trust` beforehand or set
+  [`trusted_config_paths`](/configuration/settings.html#trusted_config_paths) in your global settings.
+- **Global config** (`~/.config/mise/config.toml`) should be auto-trusted. If it's not, run
+  `mise trust ~/.config/mise/config.toml` explicitly.
+
+## How do I ignore `.python-version` or other idiomatic version files?
+
+If another tool like `uv` or `pyenv` manages `.python-version`, you can tell mise to ignore it:
+
+```toml
+# ~/.config/mise/config.toml
+[settings]
+idiomatic_version_file_disable_tools = ["python"]
+```
+
+This also works for other tools that have idiomatic version files (e.g., `.node-version`, `.ruby-version`).
+
+See [`idiomatic_version_file_disable_tools`](/configuration/settings.html#idiomatic_version_file_disable_tools) for details.
+
 ## How does mise versioning work?
 
 mise uses [Calver](https://calver.org/) versioning (`2024.1.0`).

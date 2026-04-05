@@ -165,6 +165,34 @@ common running mise in a CI environment like GitHub Actions.
 
 See [GitHub Tokens](/dev-tools/github-tokens.html) for how to configure authentication and avoid rate limits.
 
+## Tasks with `redact` env vars break `raw` output
+
+If you have `redact = true` on any env var in your config, tasks with `raw = true` will appear
+to produce no output. This is because mise intercepts stdout/stderr to perform redaction, which
+conflicts with raw mode.
+
+**Workaround**: Remove `redact` from env vars that don't need it, or accept that raw tasks
+won't produce visible output when redactions are active.
+
+## `mise activate` in CI / non-interactive shells
+
+`mise activate` only works in interactive shells because it hooks into the shell prompt.
+In CI, scripts, or IDE subprocess calls, use one of these approaches instead:
+
+```bash
+# Option 1: Use shims (recommended for CI)
+echo "$HOME/.local/share/mise/shims" >> $GITHUB_PATH
+
+# Option 2: Use mise exec
+mise exec -- npm test
+
+# Option 3: Manually call hook-env
+eval "$(mise activate bash)"
+eval "$(mise hook-env)"
+```
+
+See also the [CI/CD section](/tips-and-tricks.html#ci-cd) in Tips & Tricks.
+
 ## Auto-install on command not found handler does not work for new tools
 
 If you are expecting mise to automatically install a tool when you run a command that is not found (using the [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install) feature), be aware of an important limitation:
