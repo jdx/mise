@@ -341,7 +341,13 @@ impl AquaPackage {
 
     /// Apply Windows .exe extension to an asset or URL string if appropriate.
     /// Mirrors upstream aqua's `completeWindowsExtToAsset` decision tree.
-    fn complete_windows_ext_to_asset(&self, s: &str, v: &str, os: &str, arch: &str) -> Result<String> {
+    fn complete_windows_ext_to_asset(
+        &self,
+        s: &str,
+        v: &str,
+        os: &str,
+        arch: &str,
+    ) -> Result<String> {
         if os != "windows" || s.ends_with(".exe") {
             return Ok(s.to_string());
         }
