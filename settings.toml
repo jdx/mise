@@ -2060,7 +2060,7 @@ Sets a global default timeout for all tasks. Individual tasks can also specify t
 
 When both a global timeout and a per-task timeout are set, the **shorter** of the two always wins—a
 per-task timeout cannot extend beyond the global timeout. The `--timeout` CLI flag overrides this
-global setting but does not override per-task timeouts.
+global setting.
 """
 env = "MISE_TASK_TIMEOUT"
 optional = true

@@ -56,10 +56,6 @@ Or if you only need to use mise for certain commands, just prefix the commands w
 [`mise x --`](./cli/exec).
 For example, `mise x -- npm test` or `mise x -- ./my_script.sh`.
 
-::: warning
-Because `hook-env` reconstructs `PATH` on every prompt, any custom `PATH` modifications you add **after** `eval "$(mise activate ...)"` in your shell rc file will be overwritten when you `cd` or the prompt refreshes. To avoid this, either place custom `PATH` exports **before** the `mise activate` line, or use [`env._.path`](/environments/#path) in your `mise.toml` to prepend directories that should persist.
-:::
-
 `mise hook-env` will exit early in different situations if no changes have been made. This prevents
 adding latency to your shell prompt every time you run a command. You can run `mise hook-env`
 yourself
