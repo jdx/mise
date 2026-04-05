@@ -29,7 +29,7 @@ That is another way to use mise without activation.
 First deactivate mise so the prompt hook doesn't interfere with your measurement, then run `hook-env` manually with timings:
 
 ```sh
-eval "$(mise deactivate)"
+mise deactivate
 
 # Show timing per major step (color-coded: red = slow)
 MISE_TIMINGS=1 mise hook-env -s bash 2>&1 >/dev/null
@@ -44,7 +44,7 @@ Replace `bash` with your shell. Common causes of slow prompts:
 - Large numbers of tools or plugins
 - Network-dependent operations in env directives
 
-If `mise activate` overhead is unacceptable, consider [`mise activate --shims`](/dev-tools/shims) which has lower per-prompt cost but [fewer features](/dev-tools/shims.html#shims-vs-path).
+Note that [`mise activate --shims`](/dev-tools/shims) moves the cost from every prompt to every tool invocation, which may or may not be faster depending on your workflow. See [Shims vs PATH](/dev-tools/shims.html#shims-vs-path) for tradeoffs.
 
 ## mise is failing or not working right
 
