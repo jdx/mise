@@ -135,7 +135,7 @@ Here is what a typical `mise.toml` looks like:
 
 ```toml
 [tools]
-node = '22'
+node = '24'
 python = '3.12'
 
 [env]

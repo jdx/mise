@@ -13,7 +13,7 @@ To know which tool version to use, mise will typically look for a `mise.toml` fi
 
 ```toml [mise.toml]
 [tools]
-node = '22'
+node = '24'
 python = '3'
 ruby = 'latest'
 ```
