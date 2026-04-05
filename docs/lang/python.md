@@ -55,7 +55,7 @@ mise has two ways to manage Python virtualenvs:
 **`_.python.venv`** creates/activates a venv and adds it to PATH. It works with both `mise activate` and `mise exec`. Use this for projects that don't use uv.
 
 ::: warning
-These are separate mechanisms with different code paths. Settings like `python.uv_venv_create_args` only apply to `_.python.venv` (when uv is installed), not to `python.uv_venv_auto`.
+These are separate mechanisms with different code paths. Options like `uv_create_args` and `python_create_args` in `_.python.venv` are not used by `python.uv_venv_auto`.
 :::
 
 ### `_.python.venv` configuration
