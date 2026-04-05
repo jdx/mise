@@ -131,18 +131,21 @@ $ mise set NODE_ENV=production  # writes to mise.toml
 
 :::
 
-Here is what a `mise.toml` looks like:
+Here is what a typical `mise.toml` looks like:
 
 ```toml
-[env]
-NODE_ENV = 'production'
-
 [tools]
-terraform = '1.0.0'
-erlang = '24.0'
+node = '22'
+python = '3.12'
 
-[tasks.build]
-run = 'echo "running build tasks"'
+[env]
+NODE_ENV = 'development'
+
+[tasks.dev]
+run = 'npm run dev'
+
+[tasks.test]
+run = 'pytest'
 ```
 
 `mise.toml` files are hierarchical. The configuration in a file in the current directory will

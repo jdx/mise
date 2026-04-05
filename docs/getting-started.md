@@ -307,6 +307,26 @@ You can also edit `mise.toml` directly instead of using `mise use` — the effec
 
 See [Backends](/dev-tools/backends/) for more ecosystems and details.
 
+## Trusting config files {#trust}
+
+When you or a teammate adds a `mise.toml` to a project, mise will prompt you to trust it before it runs any env directives or hooks:
+
+```
+mise ~/my-project/mise.toml is not trusted. Trust it? [y/n]
+```
+
+This is a security measure — config files can execute arbitrary code via `[env]` directives, hooks, and tasks. To trust a file, run:
+
+```sh
+mise trust
+```
+
+This only needs to be done once per file. See [`mise trust`](/cli/trust) for more details.
+
+::: tip
+`mise use` automatically trusts the file it creates, so you'll only see this prompt when pulling a config someone else wrote or when editing `mise.toml` by hand.
+:::
+
 ## 5. Setting environment variables {#environment-variables}
 
 Define environment variables in `mise.toml` — they'll be loaded whenever mise is activated or when using `mise exec`:
