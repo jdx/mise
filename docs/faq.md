@@ -255,6 +255,9 @@ mise requires you to trust config files that were not created by you. Common iss
 - **Global config** (`~/.config/mise/config.toml`) should be auto-trusted. If it's not, run
   `mise trust ~/.config/mise/config.toml` explicitly.
 
+Run `mise doctor` (`mise dr`) to see if any config files are untrusted — it will list them
+under "problems".
+
 ## How do I ignore `.python-version` or other idiomatic version files?
 
 If another tool like `uv` or `pyenv` manages `.python-version`, you can tell mise to ignore it:
