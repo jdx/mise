@@ -2,12 +2,39 @@
 source: src/shell/bash.rs
 expression: replace_path(&deactivate)
 ---
-if [[ ${PROMPT_COMMAND-} == *_mise_hook* ]]; then
+if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
+    _mise_prompt_command=()
+    for _mise_pc in "${PROMPT_COMMAND[@]}"; do
+        if [[ "$_mise_pc" != "_mise_hook_prompt_command" ]]; then
+            _mise_prompt_command+=("$_mise_pc")
+        fi
+    done
+    PROMPT_COMMAND=("${_mise_prompt_command[@]}")
+    unset _mise_prompt_command _mise_pc
+elif [[ ${PROMPT_COMMAND-} == *_mise_hook_prompt_command* ]]; then
+    PROMPT_COMMAND="${PROMPT_COMMAND//_mise_hook_prompt_command;/}"
+    PROMPT_COMMAND="${PROMPT_COMMAND//;_mise_hook_prompt_command/}"
+    PROMPT_COMMAND="${PROMPT_COMMAND//_mise_hook_prompt_command/}"
+elif [[ ${PROMPT_COMMAND-} == *_mise_hook* ]]; then
     PROMPT_COMMAND="${PROMPT_COMMAND//_mise_hook;/}"
     PROMPT_COMMAND="${PROMPT_COMMAND//_mise_hook/}"
 fi
-unset -f _mise_hook
-unset -f mise
+if declare -p chpwd_functions >/dev/null 2>&1; then
+    _mise_chpwd_functions=()
+    for _mise_f in "${chpwd_functions[@]}"; do
+        if [[ "$_mise_f" != "_mise_hook_chpwd" ]]; then
+            _mise_chpwd_functions+=("$_mise_f")
+        fi
+    done
+    chpwd_functions=("${_mise_chpwd_functions[@]}")
+    unset _mise_chpwd_functions _mise_f
+fi
+declare -F _mise_hook_prompt_command >/dev/null && unset -f _mise_hook_prompt_command
+declare -F _mise_add_prompt_command >/dev/null && unset -f _mise_add_prompt_command
+declare -F _mise_hook_chpwd >/dev/null && unset -f _mise_hook_chpwd
+declare -F _mise_hook >/dev/null && unset -f _mise_hook
+declare -F mise >/dev/null && unset -f mise
 unset MISE_SHELL
 unset __MISE_DIFF
 unset __MISE_SESSION
+unset __MISE_BASH_CHPWD_RAN

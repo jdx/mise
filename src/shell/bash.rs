@@ -34,6 +34,7 @@ impl Shell for Bash {
             if [ -z "${{__MISE_ORIG_PATH:-}}" ]; then
               export __MISE_ORIG_PATH="$PATH"
             fi
+            __MISE_BASH_CHPWD_RAN=0
 
             mise() {{
               local command
@@ -47,7 +48,7 @@ impl Shell for Bash {
               case "$command" in
               deactivate|shell|sh)
                 # if argv doesn't contains -h,--help
-                if [[ ! " $@ " =~ " --help " ]] && [[ ! " $@ " =~ " -h " ]]; then
+                if [[ ! " $* " =~ " --help " ]] && [[ ! " $* " =~ " -h " ]]; then
                   eval "$(command {exe} "$command" "$@")"
                   return $?
                 fi
@@ -64,12 +65,34 @@ impl Shell for Bash {
             "#});
         if !opts.no_hook_env {
             out.push_str(&formatdoc! {r#"
-            if [[ ";${{PROMPT_COMMAND:-}};" != *";_mise_hook;"* ]]; then
-              PROMPT_COMMAND="_mise_hook${{PROMPT_COMMAND:+;$PROMPT_COMMAND}}"
-            fi
+            _mise_hook_prompt_command() {{
+              local previous_exit_status=$?;
+              if [[ "${{__MISE_BASH_CHPWD_RAN:-0}}" == "1" ]]; then
+                __MISE_BASH_CHPWD_RAN=0
+                return $previous_exit_status;
+              fi
+              eval "$(mise hook-env{flags} -s bash --reason precmd)";
+              return $previous_exit_status;
+            }};
+            _mise_hook_chpwd() {{
+              local previous_exit_status=$?;
+              __MISE_BASH_CHPWD_RAN=1
+              eval "$(mise hook-env{flags} -s bash --reason chpwd)";
+              return $previous_exit_status;
+            }};
+            _mise_add_prompt_command() {{
+              if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
+                if [[ " ${{PROMPT_COMMAND[*]}} " != *" _mise_hook_prompt_command "* ]]; then
+                  PROMPT_COMMAND=("_mise_hook_prompt_command" "${{PROMPT_COMMAND[@]}}")
+                fi
+              elif [[ ";${{PROMPT_COMMAND:-}};" != *";_mise_hook_prompt_command;"* ]]; then
+                PROMPT_COMMAND="_mise_hook_prompt_command${{PROMPT_COMMAND:+;$PROMPT_COMMAND}}"
+              fi
+            }};
+            _mise_add_prompt_command
             {chpwd_functions}
             {chpwd_load}
-            chpwd_functions+=(_mise_hook)
+            chpwd_functions+=(_mise_hook_chpwd)
             _mise_hook
             "#,
             chpwd_functions = include_str!("../assets/bash_zsh_support/chpwd/function.sh"),
@@ -105,15 +128,42 @@ impl Shell for Bash {
 
     fn deactivate(&self) -> String {
         formatdoc! {r#"
-            if [[ ${{PROMPT_COMMAND-}} == *_mise_hook* ]]; then
+            if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
+                _mise_prompt_command=()
+                for _mise_pc in "${{PROMPT_COMMAND[@]}}"; do
+                    if [[ "$_mise_pc" != "_mise_hook_prompt_command" ]]; then
+                        _mise_prompt_command+=("$_mise_pc")
+                    fi
+                done
+                PROMPT_COMMAND=("${{_mise_prompt_command[@]}}")
+                unset _mise_prompt_command _mise_pc
+            elif [[ ${{PROMPT_COMMAND-}} == *_mise_hook_prompt_command* ]]; then
+                PROMPT_COMMAND="${{PROMPT_COMMAND//_mise_hook_prompt_command;/}}"
+                PROMPT_COMMAND="${{PROMPT_COMMAND//;_mise_hook_prompt_command/}}"
+                PROMPT_COMMAND="${{PROMPT_COMMAND//_mise_hook_prompt_command/}}"
+            elif [[ ${{PROMPT_COMMAND-}} == *_mise_hook* ]]; then
                 PROMPT_COMMAND="${{PROMPT_COMMAND//_mise_hook;/}}"
                 PROMPT_COMMAND="${{PROMPT_COMMAND//_mise_hook/}}"
             fi
-            unset -f _mise_hook
-            unset -f mise
+            if declare -p chpwd_functions >/dev/null 2>&1; then
+                _mise_chpwd_functions=()
+                for _mise_f in "${{chpwd_functions[@]}}"; do
+                    if [[ "$_mise_f" != "_mise_hook_chpwd" ]]; then
+                        _mise_chpwd_functions+=("$_mise_f")
+                    fi
+                done
+                chpwd_functions=("${{_mise_chpwd_functions[@]}}")
+                unset _mise_chpwd_functions _mise_f
+            fi
+            declare -F _mise_hook_prompt_command >/dev/null && unset -f _mise_hook_prompt_command
+            declare -F _mise_add_prompt_command >/dev/null && unset -f _mise_add_prompt_command
+            declare -F _mise_hook_chpwd >/dev/null && unset -f _mise_hook_chpwd
+            declare -F _mise_hook >/dev/null && unset -f _mise_hook
+            declare -F mise >/dev/null && unset -f mise
             unset MISE_SHELL
             unset __MISE_DIFF
             unset __MISE_SESSION
+            unset __MISE_BASH_CHPWD_RAN
         "#}
     }
 
