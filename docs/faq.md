@@ -260,17 +260,19 @@ under "problems".
 
 ## How do I ignore `.python-version` or other idiomatic version files?
 
-If another tool like `uv` or `pyenv` manages `.python-version`, you can tell mise to ignore it:
+Idiomatic version files (`.python-version`, `.node-version`, `.ruby-version`, etc.) are
+**disabled by default** in mise. They are only read if you explicitly opt in per tool using
+[`idiomatic_version_file_enable_tools`](/configuration/settings.html#idiomatic_version_file_enable_tools):
 
-```toml
-# ~/.config/mise/config.toml
-[settings]
-idiomatic_version_file_disable_tools = ["python"]
+```sh
+# Enable reading .node-version files
+mise settings add idiomatic_version_file_enable_tools node
 ```
 
-This also works for other tools that have idiomatic version files (e.g., `.node-version`, `.ruby-version`).
+If you previously enabled idiomatic files and now want to stop mise from reading them
+(e.g., because `uv` manages `.python-version`), simply don't add that tool to the list.
 
-See [`idiomatic_version_file_disable_tools`](/configuration/settings.html#idiomatic_version_file_disable_tools) for details.
+See [Idiomatic Version Files](/configuration.html#idiomatic-version-files) for more information.
 
 ## How does mise versioning work?
 
