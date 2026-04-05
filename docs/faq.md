@@ -222,11 +222,17 @@ a version that's already listed in config, use `mise install`.
 
 ## Does `latest` mean the newest remote version?
 
-No. In config files, `latest` resolves to the latest **installed** version. It does not check
-for newer remote versions automatically. This means if you have node 20.0.0 installed and
-node 22.0.0 is available remotely, `latest` will still point to 20.0.0.
+It depends on context. In config files and most commands, `latest` resolves to the latest
+**installed** version. This means if you have node 20.0.0 installed and node 22.0.0 is
+available remotely, `latest` will still point to 20.0.0.
 
-To upgrade to the newest available version, run:
+However, some commands resolve `latest` to the newest **available** (remote) version:
+
+- `mise install node@latest` — installs the newest available version
+- `mise x node@latest -- node -v` — uses the newest available version
+- `mise latest node` — shows the newest available version
+
+To upgrade to the newest available version and update your config, run:
 
 ```sh
 mise upgrade node
