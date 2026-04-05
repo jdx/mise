@@ -1097,29 +1097,6 @@ const completionSpec: Fig.Spec = {
       ],
     },
     {
-      name: "forgejo",
-      description: "Forgejo related commands",
-      subcommands: [
-        {
-          name: "token",
-          description:
-            "Display the Forgejo token mise will use for a given host",
-          options: [
-            {
-              name: "--unmask",
-              description: "Show the full unmasked token",
-              isRepeatable: false,
-            },
-          ],
-          args: {
-            name: "host",
-            description: "Forgejo hostname",
-            isOptional: true,
-          },
-        },
-      ],
-    },
-    {
       name: ["generate", "gen"],
       description: "Generate files for various tools/services",
       subcommands: [
@@ -1440,52 +1417,6 @@ const completionSpec: Fig.Spec = {
           args: {
             name: "output",
             description: "Output file path for the tool stub",
-          },
-        },
-      ],
-    },
-    {
-      name: "github",
-      description: "GitHub related commands",
-      subcommands: [
-        {
-          name: "token",
-          description:
-            "Display the GitHub token mise will use for a given host",
-          options: [
-            {
-              name: "--unmask",
-              description: "Show the full unmasked token",
-              isRepeatable: false,
-            },
-          ],
-          args: {
-            name: "host",
-            description: "GitHub hostname",
-            isOptional: true,
-          },
-        },
-      ],
-    },
-    {
-      name: "gitlab",
-      description: "GitLab related commands",
-      subcommands: [
-        {
-          name: "token",
-          description:
-            "Display the GitLab token mise will use for a given host",
-          options: [
-            {
-              name: "--unmask",
-              description: "Show the full unmasked token",
-              isRepeatable: false,
-            },
-          ],
-          args: {
-            name: "host",
-            description: "GitLab hostname",
-            isOptional: true,
           },
         },
       ],
@@ -3427,6 +3358,60 @@ const completionSpec: Fig.Spec = {
         isOptional: true,
         isVariadic: true,
       },
+    },
+    {
+      name: "token",
+      description: "Display git provider tokens mise will use",
+      subcommands: [
+        {
+          name: "forgejo",
+          description: "Forgejo token",
+          options: [
+            {
+              name: "--unmask",
+              description: "Show the full unmasked token",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "host",
+            description: "Forgejo hostname",
+            isOptional: true,
+          },
+        },
+        {
+          name: "github",
+          description: "GitHub token",
+          options: [
+            {
+              name: "--unmask",
+              description: "Show the full unmasked token",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "host",
+            description: "GitHub hostname",
+            isOptional: true,
+          },
+        },
+        {
+          name: "gitlab",
+          description: "GitLab token",
+          options: [
+            {
+              name: "--unmask",
+              description: "Show the full unmasked token",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "host",
+            description: "GitLab hostname",
+            isOptional: true,
+          },
+        },
+      ],
     },
     {
       name: "tool",

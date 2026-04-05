@@ -217,12 +217,6 @@ Execute a command with tool(s) set
 \fBfmt\fR
 Formats mise.toml
 .TP
-\fBforgejo\fR
-Forgejo related commands
-.TP
-\fBforgejo token\fR
-Display the Forgejo token mise will use for a given host
-.TP
 \fBgenerate\fR
 Generate files for various tools/services
 .RS
@@ -255,18 +249,6 @@ Generates shims to run mise tasks
 .TP
 \fBgenerate tool\-stub\fR
 Generate a tool stub for HTTP\-based tools
-.TP
-\fBgithub\fR
-GitHub related commands
-.TP
-\fBgithub token\fR
-Display the GitHub token mise will use for a given host
-.TP
-\fBgitlab\fR
-GitLab related commands
-.TP
-\fBgitlab token\fR
-Display the GitLab token mise will use for a given host
 .TP
 \fBimplode\fR
 Removes mise CLI and all related data
@@ -483,6 +465,18 @@ Validate tasks for common errors and issues
 .TP
 \fBtest\-tool\fR
 Test a tool installs and executes
+.TP
+\fBtoken\fR
+Display git provider tokens mise will use
+.TP
+\fBtoken forgejo\fR
+Forgejo token
+.TP
+\fBtoken github\fR
+GitHub token
+.TP
+\fBtoken gitlab\fR
+GitLab token
 .TP
 \fBtool\fR
 Gets information about a tool
@@ -978,27 +972,6 @@ Check if the configs are formatted, no formatting is done
 .TP
 \fB\-s, \-\-stdin\fR
 Read config from stdin and write its formatted version into stdout
-.SH "MISE FORGEJO TOKEN"
-Display the Forgejo token mise will use for a given host
-
-Shows which token source mise would use, useful for debugging
-authentication issues. The token is masked by default.
-.PP
-\fBUsage:\fR mise forgejo token [OPTIONS] [<HOST>]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-\-unmask\fR
-Show the full unmasked token
-\fBArguments:\fR
-.PP
-.TP
-\fB<HOST>\fR
-Forgejo hostname
-.RS
-\fIDefault: \fRcodeberg.org
-.RE
 .SH "MISE GENERATE BOOTSTRAP"
 Generate a script to download+execute mise
 
@@ -1252,48 +1225,6 @@ Version of the tool
 .TP
 \fB<OUTPUT>\fR
 Output file path for the tool stub
-.SH "MISE GITHUB TOKEN"
-Display the GitHub token mise will use for a given host
-
-Shows which token source mise would use, useful for debugging
-authentication issues. The token is masked by default.
-.PP
-\fBUsage:\fR mise github token [OPTIONS] [<HOST>]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-\-unmask\fR
-Show the full unmasked token
-\fBArguments:\fR
-.PP
-.TP
-\fB<HOST>\fR
-GitHub hostname
-.RS
-\fIDefault: \fRgithub.com
-.RE
-.SH "MISE GITLAB TOKEN"
-Display the GitLab token mise will use for a given host
-
-Shows which token source mise would use, useful for debugging
-authentication issues. The token is masked by default.
-.PP
-\fBUsage:\fR mise gitlab token [OPTIONS] [<HOST>]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-\-unmask\fR
-Show the full unmasked token
-\fBArguments:\fR
-.PP
-.TP
-\fB<HOST>\fR
-GitLab hostname
-.RS
-\fIDefault: \fRgitlab.com
-.RE
 .SH "MISE IMPLODE"
 Removes mise CLI and all related data
 
@@ -2856,6 +2787,60 @@ Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
 .TP
 \fB<TOOLS>\fR
 Tool(s) to test
+.SH "MISE TOKEN FORGEJO"
+Forgejo token
+.PP
+\fBUsage:\fR mise token forgejo [OPTIONS] [<HOST>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-unmask\fR
+Show the full unmasked token
+\fBArguments:\fR
+.PP
+.TP
+\fB<HOST>\fR
+Forgejo hostname
+.RS
+\fIDefault: \fRcodeberg.org
+.RE
+.SH "MISE TOKEN GITHUB"
+GitHub token
+.PP
+\fBUsage:\fR mise token github [OPTIONS] [<HOST>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-unmask\fR
+Show the full unmasked token
+\fBArguments:\fR
+.PP
+.TP
+\fB<HOST>\fR
+GitHub hostname
+.RS
+\fIDefault: \fRgithub.com
+.RE
+.SH "MISE TOKEN GITLAB"
+GitLab token
+.PP
+\fBUsage:\fR mise token gitlab [OPTIONS] [<HOST>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-unmask\fR
+Show the full unmasked token
+\fBArguments:\fR
+.PP
+.TP
+\fB<HOST>\fR
+GitLab hostname
+.RS
+\fIDefault: \fRgitlab.com
+.RE
 .SH "MISE TOOL"
 Gets information about a tool
 .PP
