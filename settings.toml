@@ -2054,7 +2054,14 @@ env = "MISE_TASK_SOURCE_FRESHNESS_HASH_CONTENTS"
 type = "Bool"
 
 [task.timeout]
-description = "Default timeout for tasks. Can be overridden by individual tasks."
+description = "Default timeout for tasks."
+docs = """
+Sets a global default timeout for all tasks. Individual tasks can also specify their own `timeout`.
+
+When both a global timeout and a per-task timeout are set, the **shorter** of the two always wins—a
+per-task timeout cannot extend beyond the global timeout. The `--timeout` CLI flag overrides this
+global setting.
+"""
 env = "MISE_TASK_TIMEOUT"
 optional = true
 type = "Duration"

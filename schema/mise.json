@@ -1512,7 +1512,7 @@
               "type": "boolean"
             },
             "timeout": {
-              "description": "Default timeout for tasks. Can be overridden by individual tasks.",
+              "description": "Default timeout for tasks.",
               "type": "string"
             },
             "timings": {
