@@ -207,23 +207,7 @@ those PATH entries will be before the shim directory.
 
 In other words, which is better in terms of performance just depends on how you're calling mise. Really
 though most users will not notice a few ms lag on their terminal caused by `mise activate`.
-
-::: tip Diagnosing slow prompts
-Unset mise's internal state variables first so hook-env does a full evaluation (otherwise it may short-circuit), then use `MISE_TIMINGS` to see where time is being spent:
-
-```sh
-# Clear mise state so hook-env runs fully
-unset __MISE_DIFF __MISE_SESSION __MISE_WATCH
-
-# Show timing per major step (color-coded: red = slow)
-MISE_TIMINGS=1 mise hook-env -s bash 2>&1 >/dev/null
-
-# Or use =2 for detailed per-step breakdowns with cumulative time
-MISE_TIMINGS=2 mise hook-env -s bash 2>&1 >/dev/null
-```
-
-Also check for expensive `_.source` scripts in your `mise.toml` — these re-run on every prompt.
-:::
+See [Troubleshooting: Slow shell prompts](/troubleshooting.html#slow-shell-prompts) for how to diagnose performance issues.
 
 The only difference between these would be that using `hook-env` you will need to call
 it again if you change directories but with shims that won't be necessary. The shims directory will be

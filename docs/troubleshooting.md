@@ -22,6 +22,30 @@ Also see the [shebang](/tips-and-tricks#shebang) example for a way to make scrip
 the runtime.
 That is another way to use mise without activation.
 
+## Slow shell prompts {#slow-shell-prompts}
+
+`mise activate` runs a hook on every prompt to check if tools or env vars need updating. This typically takes only a few milliseconds, but if your prompts feel sluggish you can profile it with `MISE_TIMINGS`:
+
+```sh
+# Clear mise's internal state so hook-env does a full evaluation
+# (otherwise it may short-circuit and skip the work you're trying to measure)
+unset __MISE_DIFF __MISE_SESSION __MISE_WATCH
+
+# Show timing per major step (color-coded: red = slow)
+MISE_TIMINGS=1 mise hook-env -s bash 2>&1 >/dev/null
+
+# Or use =2 for detailed per-step breakdowns with cumulative time
+MISE_TIMINGS=2 mise hook-env -s bash 2>&1 >/dev/null
+```
+
+Replace `bash` with your shell (`zsh`, `fish`, etc.). Common causes of slow prompts:
+
+- Expensive `_.source` scripts in `mise.toml` — these re-run on every prompt
+- Large numbers of tools or plugins
+- Network-dependent operations in env directives
+
+If `mise activate` overhead is unacceptable, consider [`mise activate --shims`](/dev-tools/shims) which has lower per-prompt cost but [fewer features](/dev-tools/shims.html#shims-vs-path).
+
 ## mise is failing or not working right
 
 First try setting `MISE_DEBUG=1` or `MISE_TRACE=1` and see if that gives you more information.
