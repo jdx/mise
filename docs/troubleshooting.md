@@ -26,14 +26,16 @@ That is another way to use mise without activation.
 
 `mise activate` runs a hook on every prompt to check if tools or env vars need updating. This typically takes only a few milliseconds, but if your prompts feel sluggish you can profile it with `MISE_TIMINGS`:
 
-Run this in a clean subshell without `mise activate` so the hook doesn't interfere with your measurement:
+First deactivate mise so the prompt hook doesn't interfere with your measurement, then run `hook-env` manually with timings:
 
 ```sh
-# Launch a bare shell (no rc file), then run hook-env with timings
-bash --norc -c 'MISE_TIMINGS=1 mise hook-env -s bash' 2>&1 >/dev/null
+eval "$(mise deactivate)"
+
+# Show timing per major step (color-coded: red = slow)
+MISE_TIMINGS=1 mise hook-env -s bash 2>&1 >/dev/null
 
 # Or use =2 for detailed per-step breakdowns with cumulative time
-bash --norc -c 'MISE_TIMINGS=2 mise hook-env -s bash' 2>&1 >/dev/null
+MISE_TIMINGS=2 mise hook-env -s bash 2>&1 >/dev/null
 ```
 
 Replace `bash` with your shell. Common causes of slow prompts:

@@ -43,16 +43,16 @@ See the [Python Cookbook](/mise-cookbook/python.html) for common tasks and examp
 
 ## Automatic virtualenv activation
 
-mise has two ways to manage Python virtualenvs. Choose based on your project:
+mise has two ways to manage Python virtualenvs:
 
 | Mechanism             | Best for                     | Config location      |
 | --------------------- | ---------------------------- | -------------------- |
-| `_.python.venv`       | Any Python project           | `[env]` section      |
 | `python.uv_venv_auto` | uv projects (with `uv.lock`) | `[settings]` section |
+| `_.python.venv`       | Projects not using uv        | `[env]` section      |
 
-**`_.python.venv`** (recommended for most projects) creates/activates a venv and adds it to PATH. It works with both `mise activate` and `mise exec`.
+**`python.uv_venv_auto`** detects and sources the `.venv` managed by `uv`. Use `"source"` to only activate existing venvs, or `"create|source"` to create if missing. See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for full examples.
 
-**`python.uv_venv_auto`** is designed for uv-managed projects. It detects an existing `.venv` created by `uv` and sources it. Use `"source"` to only activate existing venvs, or `"create|source"` to create if missing.
+**`_.python.venv`** creates/activates a venv and adds it to PATH. It works with both `mise activate` and `mise exec`. Use this for projects that don't use uv.
 
 ::: warning
 These are separate mechanisms with different code paths. Settings like `python.uv_venv_create_args` only apply to `_.python.venv` (when uv is installed), not to `python.uv_venv_auto`.
