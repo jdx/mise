@@ -316,6 +316,7 @@ impl NPMBackend {
         self.warn_if_dependency_missing(
             config,
             "npm", // Use "npm" for dependency check, which will check npm.cmd on Windows
+            &["node", "npm"],
             "To use npm packages with mise, you need to install Node.js first:\n\
               mise use node@latest\n\n\
             Note: npm is required for querying package information, even when using bun for installation.",
@@ -330,6 +331,7 @@ impl NPMBackend {
                 self.warn_if_dependency_missing(
                     config,
                     "bun",
+                    &["bun"],
                     "To use npm packages with bun, you need to install bun first:\n\
                       mise use bun@latest\n\n\
                     Or switch back to npm by setting:\n\
@@ -341,6 +343,7 @@ impl NPMBackend {
                 self.warn_if_dependency_missing(
                     config,
                     "pnpm",
+                    &["pnpm"],
                     "To use npm packages with pnpm, you need to install pnpm first:\n\
                       mise use pnpm@latest\n\n\
                     Or switch back to npm by setting:\n\
@@ -352,6 +355,7 @@ impl NPMBackend {
                 self.warn_if_dependency_missing(
                     config,
                     "npm",
+                    &["node", "npm"],
                     "To use npm packages with mise, you need to install Node.js first:\n\
                       mise use node@latest\n\n\
                     Alternatively, you can use bun or pnpm instead of npm by setting:\n\

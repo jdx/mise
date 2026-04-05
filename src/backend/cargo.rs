@@ -86,6 +86,7 @@ impl Backend for CargoBackend {
         self.warn_if_dependency_missing(
             &ctx.config,
             "cargo",
+            &["rust", "cargo"],
             "To use cargo packages with mise, you need to install Rust first:\n\
               mise use rust@latest\n\n\
             Or install Rust via https://rustup.rs/",
