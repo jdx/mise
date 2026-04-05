@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+
+# Test `mise generate prompts` functionality
+
+# Test 1: Basic prompt generation with --dry-run
+cat <<EOF >mise.toml
+[tasks.test]
+run = "cargo test --all"
+description = "Run the test suite"
+sources = ["src/**/*.rs"]
+
+[tasks.lint]
+run = ["cargo fmt --check", "cargo clippy -- -D warnings"]
+description = "Run linting checks"
+
+[tasks.build]
+run = "cargo build --release"
+description = "Build the project"
+EOF
+
+# Should generate prompts for each visible task
+assert_contains "mise generate prompts --dry-run" "--- test.prompt.md ---"
+assert_contains "mise generate prompts --dry-run" "--- lint.prompt.md ---"
+assert_contains "mise generate prompts --dry-run" "--- build.prompt.md ---"
+
+# Should include YAML frontmatter
+assert_contains "mise generate prompts --dry-run" 'description: "Run the test suite'
+assert_contains "mise generate prompts --dry-run" "tools: ['terminal']"
+
+# Should include the mise run command
+assert_contains "mise generate prompts --dry-run" "Run: \`mise run test\`"
+assert_contains "mise generate prompts --dry-run" "This executes: \`cargo test --all\`"
+
+# Should include multi-step commands for lint
+assert_contains "mise generate prompts --dry-run" "1. \`cargo fmt --check\`"
+assert_contains "mise generate prompts --dry-run" "2. \`cargo clippy -- -D warnings\`"
+
+# Should include sources
+assert_contains "mise generate prompts --dry-run" "src/**/*.rs"
+
+# Should include trigger phrases
+assert_contains "mise generate prompts --dry-run" "Use when the user says test"
+assert_contains "mise generate prompts --dry-run" "Use when the user says lint"
+assert_contains "mise generate prompts --dry-run" "Use when the user says build"
+
+# Test 2: Hidden tasks should be excluded
+cat <<EOF >mise.toml
+[tasks.visible]
+run = "echo visible"
+description = "Visible task"
+
+[tasks.hidden]
+run = "echo hidden"
+description = "Hidden task"
+hide = true
+EOF
+
+assert_contains "mise generate prompts --dry-run" "--- visible.prompt.md ---"
+assert_not_contains "mise generate prompts --dry-run" "--- hidden.prompt.md ---"
+
+# Test 3: Task dependencies
+cat <<EOF >mise.toml
+[tasks.test]
+run = "cargo test"
+description = "Run tests"
+
+[tasks.coverage]
+run = "cargo tarpaulin --all --fail-under 95"
+description = "Run tests with coverage"
+depends = ["test"]
+EOF
+
+assert_contains "mise generate prompts --dry-run" "## Prerequisites"
+assert_contains "mise generate prompts --dry-run" "mise run test"
+
+# Test 4: Single combined output
+cat <<EOF >mise.toml
+[tasks.test]
+run = "cargo test"
+description = "Run tests"
+
+[tasks.build]
+run = "cargo build"
+description = "Build project"
+EOF
+
+assert_contains "mise generate prompts --single --dry-run" "# Project Tasks"
+assert_contains "mise generate prompts --single --dry-run" "**test**"
+assert_contains "mise generate prompts --single --dry-run" "**build**"
+assert_not_contains "mise generate prompts --single --dry-run" "--- test.prompt.md ---"
+
+# Test 5: Pattern filtering
+cat <<EOF >mise.toml
+[tasks.test]
+run = "cargo test"
+description = "Run tests"
+
+[tasks.build]
+run = "cargo build"
+description = "Build project"
+
+[tasks.lint]
+run = "cargo clippy"
+description = "Run linting"
+EOF
+
+assert_contains "mise generate prompts --pattern test --dry-run" "--- test.prompt.md ---"
+assert_not_contains "mise generate prompts --pattern test --dry-run" "--- build.prompt.md ---"
+
+# Test 6: Output to directory
+cat <<EOF >mise.toml
+[tasks.test]
+run = "cargo test"
+description = "Run tests"
+EOF
+
+mkdir -p test_prompts_output
+mise generate prompts --output test_prompts_output
+assert "ls test_prompts_output/test.prompt.md" ""
+assert_contains "cat test_prompts_output/test.prompt.md" "mise run test"
+
+# Test 7: YAML escaping — descriptions with quotes should be escaped
+cat <<EOF >mise.toml
+[tasks.quoted]
+run = 'echo "hello"'
+description = 'Run "cargo test" with options'
+EOF
+
+# Should not produce invalid YAML — quotes should be escaped in frontmatter
+assert_contains "mise generate prompts --dry-run" 'Run \"cargo test\" with options'
+
+# Test 8: Namespaced tasks produce valid filenames
+cat <<EOF >mise.toml
+[tasks."test:unit"]
+run = "cargo test --lib"
+description = "Run unit tests"
+
+[tasks."test:e2e"]
+run = "cargo test --test e2e"
+description = "Run e2e tests"
+EOF
+
+assert_contains "mise generate prompts --dry-run" "--- test-unit.prompt.md ---"
+assert_contains "mise generate prompts --dry-run" "--- test-e2e.prompt.md ---"
+assert_contains "mise generate prompts --dry-run" "mise run test:unit"
+
+# Test 9: Description trailing period handling
+cat <<EOF >mise.toml
+[tasks.test]
+run = "cargo test"
+description = "Run tests."
+EOF
+
+# Should not produce "Run tests.. Use when"
+assert_not_contains "mise generate prompts --dry-run" "Run tests.. Use"
+
+# Test 10: No tasks produces warning
+cat <<EOF >mise.toml
+[tools]
+node = "22"
+EOF
+
+assert_contains "mise generate prompts --dry-run 2>&1" "no visible tasks found"
+
+echo "All generate prompts tests passed!"
