@@ -306,7 +306,7 @@ impl Prompts {
             n if n.contains("check") => ". Use when the user says check, verify, or validate.",
             n if n.contains("deploy") => ". Use when the user says deploy, release, or ship.",
             n if n.contains("coverage") || n.contains("cov") => {
-                ". Use when the user says coverage, code coverage, or tarpaulin."
+                ". Use when the user says coverage, code coverage, or check coverage."
             }
             n if n.contains("clean") => ". Use when the user says clean, clear, or reset.",
             n if n.contains("doc") => {
