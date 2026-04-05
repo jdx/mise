@@ -9,10 +9,10 @@ MISE_BIN="$(command -v mise)"
 MISE_DIR="$(dirname "$MISE_BIN")"
 export PATH="$MISE_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
 
-# Verify npm is not on PATH
+# Verify npm is not on PATH — if it is, the restricted PATH isn't working
 if command -v npm >/dev/null 2>&1; then
-	echo "SKIP: npm is already in PATH, cannot test missing dependency behavior"
-	exit 0
+	echo "ERROR: npm is found in restricted PATH, test cannot verify behavior"
+	exit 1
 fi
 
 # Create a mise.toml that has both node and an npm package

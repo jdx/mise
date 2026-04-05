@@ -1365,11 +1365,21 @@ pub trait Backend: Debug + Send + Sync {
         };
 
         if !found {
-            // Check if a tool providing this program is configured in the toolset
+            // Check if a tool that provides this program is configured in the toolset
             // (even if not yet installed). If so, mise will install it as a dependency
             // before this tool needs it, so the warning is spurious.
+            // Map program names to the tool(s) known to provide them.
+            let providers: &[&str] = match program {
+                "npm" | "npx" => &["node", "npm"],
+                "cargo" => &["rust", "cargo"],
+                "gem" => &["ruby", "gem"],
+                _ => &[program],
+            };
             if let Ok(ts) = self.dependency_toolset(config).await
-                && !ts.list_current_versions().is_empty()
+                && ts
+                    .list_current_versions()
+                    .iter()
+                    .any(|(b, _)| providers.iter().any(|p| b.id() == *p))
             {
                 return;
             }
