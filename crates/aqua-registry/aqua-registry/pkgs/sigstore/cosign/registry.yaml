@@ -91,7 +91,7 @@ packages:
           type: github_release
           asset: cosign_checksums.txt
           algorithm: sha256
-      - version_constraint: semver("<= 2.6.1")
+      - version_constraint: semver("<= 2.6.2")
         asset: cosign-{{.OS}}-{{.Arch}}
         format: raw
         windows_arm_emulation: true
