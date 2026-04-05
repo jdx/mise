@@ -49,7 +49,7 @@ ls -l ~/.local/share/mise/shims/node
 # [...] ~/.local/share/mise/shims/node -> ~/.local/bin/mise
 ```
 
-By default, the shim directory is located at `~/.local/share/mise/shims`. When installing a tool (for example, `node`), `mise` will add some entries for every binary provided by this tool in the `shims` directory (for example, `~/.local/share/mise/shims/node`).
+By default, the shim directory is located at `~/.local/share/mise/shims` (on Windows: `%LOCALAPPDATA%\mise\shims`). When installing a tool (for example, `node`), `mise` will add some entries for every binary provided by this tool in the `shims` directory (for example, `~/.local/share/mise/shims/node`).
 
 ```sh
 mise use -g node@20
