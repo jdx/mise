@@ -1111,13 +1111,13 @@ in the generated prompts so the AI knows to run prerequisites.
 \fBOptions:\fR
 .PP
 .TP
+\fB\-\-dry\-run\fR
+Print to stdout instead of writing files
+.TP
 \fB\-o, \-\-output\fR \fI<OUTPUT>\fR
 Output directory for generated prompt files
 
 Defaults to `.github/prompts/` in the current working directory.
-.TP
-\fB\-S, \-\-single\fR
-Generate a single combined prompt file instead of one per task
 .TP
 \fB\-p, \-\-pattern\fR \fI<PATTERN>\fR
 Only generate prompts for tasks matching this pattern
@@ -1125,8 +1125,8 @@ Only generate prompts for tasks matching this pattern
 Supports glob syntax (e.g., "test:*" matches test:unit, test:e2e).
 Uses the same matching logic as `mise run`.
 .TP
-\fB\-\-dry\-run\fR
-Print to stdout instead of writing files
+\fB\-S, \-\-single\fR
+Generate a single combined prompt file instead of one per task
 .SH "MISE GENERATE TASK-DOCS"
 Generate documentation for tasks in a project
 .PP

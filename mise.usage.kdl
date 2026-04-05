@@ -363,16 +363,16 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
     cmd prompts help="Generate AI prompt files from mise tasks" {
         long_help "Generate AI prompt files from mise tasks\n\nCreates `.prompt.md` files in `.github/prompts/` (or a custom directory)\nfor each visible mise task. These files act as slash commands in\nAI coding assistants like GitHub Copilot and the Copilot CLI.\n\nFor example, a task named \"test\" with `run = \"cargo test\"` becomes\n`/test` in Copilot chat. The generated prompt tells the AI assistant\nwhat command to run, what the task does, and how to handle failures.\n\nTasks with `hide = true` are skipped. Task dependencies are included\nin the generated prompts so the AI knows to run prerequisites."
         after_long_help "Examples:\n\n    $ mise generate prompts\n    Generates .github/prompts/*.prompt.md for each visible task\n\n    $ mise generate prompts --output ./prompts\n    Generates prompt files in a custom directory\n\n    $ mise generate prompts --single\n    Generates a single combined prompt file\n\n    $ mise generate prompts --dry-run\n    Prints generated prompts to stdout without writing files\n\n    $ mise generate prompts --pattern \"test:*\"\n    Only generates prompts for tasks matching the glob pattern\n"
+        flag --dry-run help="Print to stdout instead of writing files"
         flag "-o --output" help="Output directory for generated prompt files" {
             long_help "Output directory for generated prompt files\n\nDefaults to `.github/prompts/` in the current working directory."
             arg <OUTPUT>
         }
-        flag "-S --single" help="Generate a single combined prompt file instead of one per task"
         flag "-p --pattern" help="Only generate prompts for tasks matching this pattern" {
             long_help "Only generate prompts for tasks matching this pattern\n\nSupports glob syntax (e.g., \"test:*\" matches test:unit, test:e2e).\nUses the same matching logic as `mise run`."
             arg <PATTERN>
         }
-        flag --dry-run help="Print to stdout instead of writing files"
+        flag "-S --single" help="Generate a single combined prompt file instead of one per task"
     }
     cmd task-docs help="Generate documentation for tasks in a project" {
         after_long_help "Examples:\n\n    $ mise generate task-docs\n"

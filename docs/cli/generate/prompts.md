@@ -19,15 +19,15 @@ in the generated prompts so the AI knows to run prerequisites.
 
 ## Flags
 
+### `--dry-run`
+
+Print to stdout instead of writing files
+
 ### `-o --output <OUTPUT>`
 
 Output directory for generated prompt files
 
 Defaults to `.github/prompts/` in the current working directory.
-
-### `-S --single`
-
-Generate a single combined prompt file instead of one per task
 
 ### `-p --pattern <PATTERN>`
 
@@ -36,9 +36,9 @@ Only generate prompts for tasks matching this pattern
 Supports glob syntax (e.g., "test:*" matches test:unit, test:e2e).
 Uses the same matching logic as `mise run`.
 
-### `--dry-run`
+### `-S --single`
 
-Print to stdout instead of writing files
+Generate a single combined prompt file instead of one per task
 
 Examples:
 
