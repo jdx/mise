@@ -231,7 +231,6 @@ Not all shells support every mise feature:
 | ------------------------------- | ---- | --- | ---- | ------- | ------ | ----- | ---------- |
 | `mise activate`                 | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
 | `mise shell`                    | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
-| `mise deactivate`               | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
 | Shell aliases (`[shell_alias]`) | Yes  | Yes | Yes  | No      | No     | Yes   | No         |
 | `chpwd` hook                    | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
 
