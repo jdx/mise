@@ -66,6 +66,7 @@ impl Backend for GemBackend {
         self.warn_if_dependency_missing(
             &ctx.config,
             "gem",
+            &["ruby", "gem"],
             "To use gem packages with mise, you need to install Ruby first:\n\
               mise use ruby@latest",
         )

@@ -47,6 +47,7 @@ impl Backend for GoBackend {
         self.warn_if_dependency_missing(
             config,
             "go",
+            &["go"],
             "To use go packages with mise, you need to install Go first:\n\
               mise use go@latest\n\n\
             Or install Go via https://go.dev/dl/",
@@ -112,6 +113,7 @@ impl Backend for GoBackend {
         self.warn_if_dependency_missing(
             &ctx.config,
             "go",
+            &["go"],
             "To use go packages with mise, you need to install Go first:\n\
               mise use go@latest\n\n\
             Or install Go via https://go.dev/dl/",
