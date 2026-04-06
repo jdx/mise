@@ -563,8 +563,14 @@ impl HttpBackend {
     // -------------------------------------------------------------------------
 
     /// Fetch versions from version_list_url if configured
-    async fn fetch_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
-        let opts = if !self.ba.opts().contains_key("version_list_url") {
+    async fn fetch_versions(
+        &self,
+        config: &Arc<Config>,
+        opts: Option<ToolVersionOptions>,
+    ) -> Result<Vec<String>> {
+        let opts = if let Some(inline) = opts {
+            inline
+        } else if !self.ba.opts().contains_key("version_list_url") {
             config.get_tool_opts(&self.ba).await?.unwrap_or_default()
         } else {
             self.ba.opts()
@@ -617,7 +623,15 @@ impl Backend for HttpBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let versions = self.fetch_versions(config).await?;
+        self._list_remote_versions_with_opts(config, None).await
+    }
+
+    async fn _list_remote_versions_with_opts(
+        &self,
+        config: &Arc<Config>,
+        opts: Option<ToolVersionOptions>,
+    ) -> Result<Vec<VersionInfo>> {
+        let versions = self.fetch_versions(config, opts).await?;
         Ok(versions
             .into_iter()
             .map(|v| VersionInfo {

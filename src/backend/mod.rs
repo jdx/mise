@@ -24,7 +24,8 @@ use crate::registry::{REGISTRY, full_to_url, normalize_remote, tool_enabled};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
-    ResolveOptions, ToolRequest, ToolVersion, Toolset, install_state, is_outdated_version,
+    ResolveOptions, ToolRequest, ToolVersion, ToolVersionOptions, Toolset, install_state,
+    is_outdated_version,
 };
 use crate::ui::progress_report::SingleReport;
 use crate::{
@@ -465,7 +466,7 @@ pub trait Backend: Debug + Send + Sync {
 
     async fn list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         Ok(self
-            .list_remote_versions_with_info(config)
+            .list_remote_versions_with_info(config, None)
             .await?
             .into_iter()
             .map(|v| v.version)
@@ -473,16 +474,34 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     /// List remote versions with additional metadata like created_at timestamps.
-    /// Results are cached. Backends can override `_list_remote_versions_with_info`
-    /// to provide timestamp information.
+    /// Results are cached when `opts` is `None`. When `opts` is `Some`, the cache is
+    /// bypassed since results depend on the provided options (e.g. inline CLI opts).
     ///
     /// This method first tries the versions host (mise-versions.jdx.dev) which provides
     /// version info with created_at timestamps. If that fails, it falls back to the
-    /// backend's `_list_remote_versions_with_info` implementation.
+    /// backend's `_list_remote_versions` implementation.
     async fn list_remote_versions_with_info(
         &self,
         config: &Arc<Config>,
+        opts: Option<ToolVersionOptions>,
     ) -> eyre::Result<Vec<VersionInfo>> {
+        // When opts are provided (e.g. inline CLI opts like [channels=["bioconda"]]),
+        // skip the cache since results depend on the opts.
+        if opts.is_some() {
+            let versions = self
+                ._list_remote_versions_with_opts(config, opts)
+                .await?
+                .into_iter()
+                .filter(|v| {
+                    matches!(
+                        v.version.parse::<ToolVersionType>(),
+                        Ok(ToolVersionType::Version(_))
+                    )
+                })
+                .collect::<Vec<_>>();
+            return Ok(versions);
+        }
+
         let remote_versions = self.get_remote_version_cache();
         let remote_versions = remote_versions.lock().await;
         let ba = self.ba().clone();
@@ -585,6 +604,18 @@ pub trait Backend: Debug + Send + Sync {
     /// Override this to provide version listing with optional timestamp information.
     /// Return `VersionInfo` with `created_at: None` if timestamps are not available.
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>>;
+
+    /// Like `_list_remote_versions` but accepts caller-supplied opts (e.g. from inline
+    /// CLI syntax like `[channels=["bioconda"]]`). Backends that use opts override this;
+    /// the default delegates to `_list_remote_versions` ignoring opts.
+    async fn _list_remote_versions_with_opts(
+        &self,
+        config: &Arc<Config>,
+        opts: Option<ToolVersionOptions>,
+    ) -> eyre::Result<Vec<VersionInfo>> {
+        let _ = opts;
+        self._list_remote_versions(config).await
+    }
 
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
         self.latest_version(config, Some("latest".into())).await
@@ -729,7 +760,7 @@ pub trait Backend: Debug + Send + Sync {
         let versions = match before_date {
             Some(before) => {
                 // Use version info to filter by date
-                let versions_with_info = self.list_remote_versions_with_info(config).await?;
+                let versions_with_info = self.list_remote_versions_with_info(config, None).await?;
                 let filtered = VersionInfo::filter_by_date(versions_with_info, before);
                 // Warn if no versions have timestamps
                 if filtered.iter().all(|v| v.created_at.is_none()) && !filtered.is_empty() {
@@ -780,7 +811,7 @@ pub trait Backend: Debug + Send + Sync {
                     matches = match before_date {
                         Some(before) => {
                             let versions_with_info =
-                                self.list_remote_versions_with_info(config).await?;
+                                self.list_remote_versions_with_info(config, None).await?;
                             VersionInfo::filter_by_date(versions_with_info, before)
                                 .into_iter()
                                 .map(|v| v.version)
@@ -833,7 +864,7 @@ pub trait Backend: Debug + Send + Sync {
     /// Check if a version is a rolling release (like "nightly") that should
     /// always be considered potentially outdated for `mise up` purposes
     async fn is_version_rolling(&self, config: &Arc<Config>, version: &str) -> bool {
-        let versions = match self.list_remote_versions_with_info(config).await {
+        let versions = match self.list_remote_versions_with_info(config, None).await {
             Ok(v) => v,
             Err(_) => return false,
         };
@@ -842,7 +873,7 @@ pub trait Backend: Debug + Send + Sync {
 
     /// Get version info for a specific version (including checksum for rolling releases)
     async fn get_version_info(&self, config: &Arc<Config>, version: &str) -> Option<VersionInfo> {
-        let versions = match self.list_remote_versions_with_info(config).await {
+        let versions = match self.list_remote_versions_with_info(config, None).await {
             Ok(v) => v,
             Err(_) => return None,
         };

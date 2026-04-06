@@ -632,8 +632,9 @@ impl Backend for CondaBackend {
     async fn list_remote_versions_with_info(
         &self,
         config: &Arc<Config>,
+        opts: Option<crate::toolset::ToolVersionOptions>,
     ) -> Result<Vec<VersionInfo>> {
-        self._list_remote_versions(config).await
+        self._list_remote_versions_with_opts(config, opts).await
     }
 
     async fn install_version_(

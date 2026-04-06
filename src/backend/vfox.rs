@@ -22,7 +22,7 @@ use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::plugins::Plugin;
 use crate::plugins::vfox_plugin::VfoxPlugin;
-use crate::toolset::{ToolVersion, Toolset, install_state};
+use crate::toolset::{ToolVersion, ToolVersionOptions, Toolset, install_state};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 #[derive(Debug)]
@@ -50,6 +50,14 @@ impl Backend for VfoxBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
+        self._list_remote_versions_with_opts(config, None).await
+    }
+
+    async fn _list_remote_versions_with_opts(
+        &self,
+        config: &Arc<Config>,
+        opts: Option<ToolVersionOptions>,
+    ) -> eyre::Result<Vec<VersionInfo>> {
         let this = self;
         timeout::run_with_timeout_async(
             || async {
@@ -61,11 +69,10 @@ impl Backend for VfoxBackend {
                     Settings::get().ensure_experimental("custom backends")?;
                     debug!("Using backend method for plugin: {}", this.pathname);
                     let tool_name = this.get_tool_name()?;
-                    // Inline opts (e.g. [channels=bioconda] CLI syntax) are used exclusively
-                    // when present. Config-file opts (mise.toml) are only used as a fallback
-                    // when no inline opts were provided.
-                    let opts = if let Some(inline) = &this.ba.opts {
-                        inline.opts.clone()
+                    // Inline opts (passed via opts param) take precedence.
+                    // Fall back to config-file opts (mise.toml) when not provided.
+                    let opts = if let Some(inline) = opts {
+                        inline.opts
                     } else {
                         config
                             .get_tool_opts(&this.ba)

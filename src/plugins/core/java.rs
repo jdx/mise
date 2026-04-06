@@ -364,8 +364,9 @@ impl Backend for JavaPlugin {
     async fn list_remote_versions_with_info(
         &self,
         config: &Arc<Config>,
+        opts: Option<crate::toolset::ToolVersionOptions>,
     ) -> Result<Vec<VersionInfo>> {
-        self._list_remote_versions(config).await
+        self._list_remote_versions_with_opts(config, opts).await
     }
 
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {

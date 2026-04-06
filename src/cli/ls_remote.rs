@@ -66,8 +66,13 @@ impl LsRemote {
         };
         let matches_prefix = |v: &str| prefix.as_ref().is_none_or(|p| v.starts_with(p));
 
+        // Extract inline opts (e.g. [channels=["bioconda"]]) from the tool arg.
+        // When present, they are passed to list_remote_versions_with_info which bypasses
+        // the cache and passes them through to the backend, overriding mise.toml opts.
+        let opts = self.plugin.as_ref().and_then(|ta| ta.ba.opts.clone());
+
         let versions: Vec<_> = plugin
-            .list_remote_versions_with_info(config)
+            .list_remote_versions_with_info(config, opts)
             .await?
             .into_iter()
             .filter(|v| matches_prefix(&v.version))
@@ -87,7 +92,7 @@ impl LsRemote {
         let mut versions = vec![];
         for b in backend::list() {
             let tool = b.id().to_string();
-            for v in b.list_remote_versions_with_info(config).await? {
+            for v in b.list_remote_versions_with_info(config, None).await? {
                 versions.push(VersionOutputAll {
                     tool: tool.clone(),
                     version: v.version,
@@ -110,18 +115,7 @@ impl LsRemote {
     async fn get_plugin(&self, config: &Arc<Config>) -> Result<Option<Arc<dyn Backend>>> {
         match &self.plugin {
             Some(tool_arg) => {
-                // When inline opts are present (e.g. [channels=["bioconda"]]), bypass the
-                // TOOLS cache so the backend carries those opts in its BackendArg, allowing
-                // _list_remote_versions to use them exclusively (overriding mise.toml).
-                // Without inline opts, fall back to the TOOLS-cache backend so mise.toml is read.
-                let backend = if tool_arg.ba.opts.is_some() {
-                    match backend::arg_to_backend((*tool_arg.ba).clone()) {
-                        Some(b) => b,
-                        None => tool_arg.ba.backend()?,
-                    }
-                } else {
-                    tool_arg.ba.backend()?
-                };
+                let backend = tool_arg.ba.backend()?;
                 let mpr = MultiProgressReport::get();
                 if let Some(plugin) = backend.plugin() {
                     plugin.ensure_installed(config, &mpr, false, false).await?;

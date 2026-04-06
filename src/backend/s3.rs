@@ -268,8 +268,16 @@ impl S3Backend {
     }
 
     /// Fetch versions using the configured method (manifest or listing)
-    async fn fetch_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
-        let opts = config.get_tool_opts(&self.ba).await?.unwrap_or_default();
+    async fn fetch_versions(
+        &self,
+        config: &Arc<Config>,
+        opts: Option<ToolVersionOptions>,
+    ) -> Result<Vec<String>> {
+        let opts = if let Some(inline) = opts {
+            inline
+        } else {
+            config.get_tool_opts(&self.ba).await?.unwrap_or_default()
+        };
 
         // Try manifest-based version discovery first
         if let Some(manifest_url) = Self::get_opt(&opts, "version_list_url") {
@@ -428,7 +436,15 @@ impl Backend for S3Backend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let versions = self.fetch_versions(config).await?;
+        self._list_remote_versions_with_opts(config, None).await
+    }
+
+    async fn _list_remote_versions_with_opts(
+        &self,
+        config: &Arc<Config>,
+        opts: Option<ToolVersionOptions>,
+    ) -> Result<Vec<VersionInfo>> {
+        let versions = self.fetch_versions(config, opts).await?;
         Ok(versions
             .into_iter()
             .map(|v| VersionInfo {
