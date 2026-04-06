@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Roundtrip regression test for avoiding GitHub API calls when installing via --locked.
-# Discussion  of the original bug: https://github.com/jdx/mise/discussions/8677
+# Discussion of the original bug: https://github.com/jdx/mise/discussions/8677
 # 1) Generate lockfile with `mise lock` (real URL stored)
 # 2) Block api.github.com via url_replacements → api.github.invalid
 # 3) Verify `mise install --locked` succeeds using only the lockfile URL,
