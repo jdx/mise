@@ -1,5 +1,3 @@
-backends = [
-  "github:sagernet/sing-box"
-]
+backends = ["github:sagernet/sing-box"]
 description = "The universal proxy platform"
 test = { cmd = "sing-box version | head -n1 | awk '{print $3}'", expected = "{{version}}" }
