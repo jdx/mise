@@ -29,7 +29,7 @@ use versions::Versioning;
 use xx::regex;
 
 const ATTESTATION_HELP: &str = "To disable attestation verification, set MISE_PYTHON_GITHUB_ATTESTATIONS=false\n\
-    or add `python.github_attestations = false` to your mise config";
+    or add `python.github_attestations = false` under [settings] in mise.toml";
 
 #[derive(Debug)]
 pub struct PythonPlugin {
