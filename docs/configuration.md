@@ -131,18 +131,21 @@ $ mise set NODE_ENV=production  # writes to mise.toml
 
 :::
 
-Here is what a `mise.toml` looks like:
+Here is what a typical `mise.toml` looks like:
 
 ```toml
-[env]
-NODE_ENV = 'production'
-
 [tools]
-terraform = '1.0.0'
-erlang = '24.0'
+node = '24'
+python = '3.12'
 
-[tasks.build]
-run = 'echo "running build tasks"'
+[env]
+NODE_ENV = 'development'
+
+[tasks.dev]
+run = 'npm run dev'
+
+[tasks.test]
+run = 'pytest'
 ```
 
 `mise.toml` files are hierarchical. The configuration in a file in the current directory will
@@ -343,7 +346,7 @@ task.output = "prefix" # see Tasks Runner for more information
 paranoid = false       # see MISE_PARANOID
 
 shorthands_file = '~/.config/mise/shorthands.toml' # path to the shorthands file, see `MISE_SHORTHANDS_FILE`
-disable_default_shorthands = false # disable the default shorthands, see `MISE_DISABLE_DEFAULT_SHORTHANDS`
+disable_default_registry = false   # disable the default registry, see `MISE_DISABLE_DEFAULT_REGISTRY`
 disable_tools = ['node']           # disable specific tools, generally used to turn off core tools
 
 env_file = '.env' # load env vars from a dotenv file, see `MISE_ENV_FILE`
@@ -474,7 +477,9 @@ mise can also be configured via environment variables. The following options are
 
 ### `MISE_DATA_DIR`
 
-Default: `~/.local/share/mise` or `$XDG_DATA_HOME/mise`
+Default (Linux): `~/.local/share/mise` or `$XDG_DATA_HOME/mise`
+Default (macOS): `~/.local/share/mise` or `$XDG_DATA_HOME/mise`
+Default (Windows): `%LOCALAPPDATA%\mise` or `$XDG_DATA_HOME/mise`
 
 This is the directory where mise stores plugins and tool installs. These are not supposed to be
 shared
@@ -484,6 +489,7 @@ across machines.
 
 Default (Linux): `~/.cache/mise` or `$XDG_CACHE_HOME/mise`
 Default (macOS): `~/Library/Caches/mise` or `$XDG_CACHE_HOME/mise`
+Default (Windows): `%TEMP%\mise` or `$XDG_CACHE_HOME/mise`
 
 This is the directory where mise stores internal cache. This is not supposed to be shared
 across machines. It may be deleted at any time mise is not running.
@@ -504,7 +510,7 @@ This is the directory where mise stores system-wide configuration.
 
 ### `MISE_GLOBAL_CONFIG_FILE`
 
-Default: `$MISE_CONFIG_DIR/config.toml` (Usually ~/.config/mise/config.toml)
+Default: `$MISE_CONFIG_DIR/config.toml` (Usually `~/.config/mise/config.toml`)
 
 This is the path to the config file.
 

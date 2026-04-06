@@ -1,11 +1,12 @@
 use crate::github;
+use crate::tokens;
 
 /// Display the GitHub token mise will use for a given host
 ///
 /// Shows which token source mise would use, useful for debugging
 /// authentication issues. The token is masked by default.
 #[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, hide = true)]
 pub struct Token {
     /// GitHub hostname
     #[clap(default_value = "github.com")]
@@ -23,7 +24,7 @@ impl Token {
                 let display_token = if self.unmask {
                     token
                 } else {
-                    mask_token(&token)
+                    tokens::mask_token(&token)
                 };
                 miseprintln!("{}: {} (source: {})", self.host, display_token, source);
             }
@@ -32,17 +33,6 @@ impl Token {
             }
         }
         Ok(())
-    }
-}
-
-fn mask_token(token: &str) -> String {
-    let len = token.len();
-    if len <= 4 {
-        "*".repeat(len)
-    } else if len <= 8 {
-        format!("{}…", &token[..4])
-    } else {
-        format!("{}…{}", &token[..4], &token[len - 4..])
     }
 }
 

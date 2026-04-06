@@ -16,6 +16,7 @@ curl https://mise.run | sh
 ```
 
 By default, mise installs to `~/.local/bin`, but it can go anywhere.
+
 Verify the installation:
 
 ```shell
@@ -222,6 +223,17 @@ When you ran `mise use --global node@24`, mise updated your global config:
 node = "24"
 ```
 
+### Shell Feature Compatibility {#shell-feature-compatibility}
+
+Not all shells support every mise feature:
+
+| Feature                         | Bash | Zsh | Fish | Nushell | Elvish | Xonsh | PowerShell |
+| ------------------------------- | ---- | --- | ---- | ------- | ------ | ----- | ---------- |
+| `mise activate`                 | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
+| `mise shell`                    | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
+| Shell aliases (`[shell_alias]`) | Yes  | Yes | Yes  | No      | No     | Yes   | No         |
+| `chpwd` hook                    | Yes  | Yes | Yes  | Yes     | Yes    | Yes   | Yes        |
+
 ## 4. Use tools from backends (npm, pipx, core, aqua, github) {#tool-backends}
 
 ```mermaid
@@ -294,7 +306,46 @@ mise use --global github:BurntSushi/ripgrep
 rg --version
 ```
 
+Each `mise use` command above updates your config file. For example, after running all three globally, your `~/.config/mise/config.toml` would contain:
+
+```toml [~/.config/mise/config.toml]
+[tools]
+"npm:@anthropic-ai/claude-code" = "latest"
+"pipx:black" = "latest"
+"github:BurntSushi/ripgrep" = "latest"
+```
+
+You can also edit `mise.toml` directly instead of using `mise use` — the effect is the same. Run `mise install` after editing to install the tools.
+
 See [Backends](/dev-tools/backends/) for more ecosystems and details.
+
+## Trusting config files {#trust}
+
+When you or a teammate adds a `mise.toml` to a project, mise will prompt you to trust it before it runs any env directives or hooks:
+
+```
+mise ~/my-project/mise.toml is not trusted. Trust it? [y/n]
+```
+
+This is a security measure — config files can execute arbitrary code via `[env]` directives, hooks, and tasks. To trust a file, run:
+
+```sh
+mise trust
+```
+
+This only needs to be done once per file. See [`mise trust`](/cli/trust) for more details.
+
+To disable trust prompts entirely, trust the root path:
+
+```sh
+mise settings trusted_config_paths=["/"]
+```
+
+Or set the environment variable `MISE_TRUSTED_CONFIG_PATHS=/`.
+
+::: tip
+`mise use` automatically trusts the file it creates, so you'll only see this prompt when pulling a config someone else wrote or when editing `mise.toml` by hand.
+:::
 
 ## 5. Setting environment variables {#environment-variables}
 

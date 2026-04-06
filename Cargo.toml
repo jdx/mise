@@ -8,7 +8,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.4.3"
+version = "2026.4.4"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -186,7 +186,7 @@ tokio = { version = "1", features = ["full"] }
 tokio-retry = "0.3"
 toml = { version = "0.9", features = ["parse", "preserve_order"] }
 toml_edit = { version = "0.24", features = ["parse"] }
-ubi = { version = "0.8", default-features = false }
+ubi = { version = "0.9", default-features = false }
 url = "2"
 urlencoding = "2"
 usage-lib = { version = "2", features = ["clap", "docs"] }
@@ -198,7 +198,7 @@ walkdir = "2"
 which = "7"
 xx = { version = "2.5", default-features = false, features = ["glob"] }
 xz2 = "0.1"
-zip = { version = "3", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 zstd = "0.13"
 
 [target.'cfg(unix)'.dependencies]

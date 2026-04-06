@@ -1,6 +1,6 @@
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::config::Settings;
-use crate::file::path_env_without_shims;
+use crate::tokens;
 use crate::{dirs, duration, env};
 use eyre::Result;
 use heck::ToKebabCase;
@@ -419,7 +419,8 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     // 3. credential_command
     let credential_command = &settings.github.credential_command;
     if !credential_command.is_empty()
-        && let Some(token) = get_credential_command_token(credential_command, lookup_host)
+        && let Some(token) =
+            tokens::get_credential_command_token("github", credential_command, lookup_host)
     {
         return Some((token, TokenSource::CredentialCommand));
     }
@@ -438,7 +439,7 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
 
     // 6. git credential fill
     if settings.github.use_git_credentials
-        && let Some(token) = get_git_credential_token(lookup_host)
+        && let Some(token) = tokens::get_git_credential_token("github", lookup_host)
     {
         return Some((token, TokenSource::GitCredential));
     }
@@ -488,42 +489,13 @@ pub fn is_gh_host(host: &str) -> bool {
 static MISE_GITHUB_TOKENS: Lazy<HashMap<String, String>> =
     Lazy::new(|| read_mise_github_tokens().unwrap_or_default());
 
-#[derive(Deserialize)]
-struct MiseGithubTokensFile {
-    tokens: Option<HashMap<String, MiseGithubTokenEntry>>,
-}
-
-#[derive(Deserialize)]
-struct MiseGithubTokenEntry {
-    token: Option<String>,
-}
-
+#[cfg(test)]
 fn parse_github_tokens(contents: &str) -> Option<HashMap<String, String>> {
-    let file: MiseGithubTokensFile = toml::from_str(contents).ok()?;
-    Some(
-        file.tokens?
-            .into_iter()
-            .filter_map(|(host, entry)| entry.token.map(|t| (host, t)))
-            .collect(),
-    )
+    tokens::parse_tokens_toml(contents)
 }
 
 fn read_mise_github_tokens() -> Option<HashMap<String, String>> {
-    let path = env::MISE_CONFIG_DIR.join("github_tokens.toml");
-    let contents = match std::fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(e) => {
-            trace!("github_tokens.toml not readable at {}: {e}", path.display());
-            return None;
-        }
-    };
-    match parse_github_tokens(&contents) {
-        Some(tokens) => Some(tokens),
-        None => {
-            debug!("failed to parse github_tokens.toml at {}", path.display());
-            None
-        }
-    }
+    tokens::read_tokens_toml("github_tokens.toml", "github_tokens.toml")
 }
 
 // ── gh CLI hosts.yml ────────────────────────────────────────────────
@@ -588,116 +560,6 @@ fn read_gh_hosts() -> Option<HashMap<String, String>> {
 #[derive(Deserialize)]
 struct GhHostEntry {
     oauth_token: Option<String>,
-}
-
-// ── credential_command ──────────────────────────────────────────────
-
-/// Cache for tokens obtained from `credential_command`.
-/// Maps hostname to the token (or None if the command failed).
-static CREDENTIAL_COMMAND_CACHE: Lazy<std::sync::Mutex<HashMap<String, Option<String>>>> =
-    Lazy::new(Default::default);
-
-/// Get a GitHub token by running the user's `credential_command` setting.
-/// The host is passed as `$1` to the command. Results are cached per host.
-fn get_credential_command_token(cmd: &str, host: &str) -> Option<String> {
-    let mut cache = CREDENTIAL_COMMAND_CACHE
-        .lock()
-        .expect("CREDENTIAL_COMMAND_CACHE mutex poisoned");
-    if let Some(token) = cache.get(host) {
-        return token.clone();
-    }
-    let path_without_shims = path_env_without_shims();
-    let result = std::process::Command::new("sh")
-        .arg("-c")
-        .arg(cmd)
-        .arg("mise-credential-helper") // $0
-        .arg(host) // $1
-        .env("PATH", &path_without_shims)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .ok()
-        .and_then(|output| {
-            if !output.status.success() {
-                if let Ok(err) = String::from_utf8(output.stderr)
-                    && !err.trim().is_empty()
-                {
-                    debug!("credential_command stderr: {}", err.trim());
-                }
-                return None;
-            }
-            String::from_utf8(output.stdout)
-                .ok()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-        });
-    trace!(
-        "credential_command for {host}: {}",
-        if result.is_some() {
-            "found"
-        } else {
-            "not found"
-        }
-    );
-    cache.insert(host.to_string(), result.clone());
-    result
-}
-
-// ── git credential fill ─────────────────────────────────────────────
-
-/// Cache for tokens obtained from `git credential fill`.
-/// Maps hostname to the token (or None if the command failed / git is not installed).
-static GIT_CREDENTIAL_CACHE: Lazy<std::sync::Mutex<HashMap<String, Option<String>>>> =
-    Lazy::new(Default::default);
-
-/// Get a GitHub token for `host` by running `git credential fill`.
-/// Results are cached per hostname so the subprocess is only spawned once.
-// TODO: make async and use tokio::sync::Mutex to avoid blocking the runtime
-// thread during subprocess I/O. Requires making resolve_token and get_headers async.
-fn get_git_credential_token(host: &str) -> Option<String> {
-    let mut cache = GIT_CREDENTIAL_CACHE
-        .lock()
-        .expect("GIT_CREDENTIAL_CACHE mutex poisoned");
-    if let Some(token) = cache.get(host) {
-        return token.clone();
-    }
-    let path_without_shims = path_env_without_shims();
-    let input = format!("protocol=https\nhost={host}\n\n");
-    let result = std::process::Command::new("git")
-        .args(["credential", "fill"])
-        .env("PATH", &path_without_shims)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .ok()
-        .and_then(|mut child| {
-            use std::io::Write;
-            child.stdin.take()?.write_all(input.as_bytes()).ok()?;
-            let output = child.wait_with_output().ok()?;
-            if !output.status.success() {
-                return None;
-            }
-            String::from_utf8(output.stdout)
-                .ok()?
-                .lines()
-                .find_map(|line| line.strip_prefix("password="))
-                .map(|p| p.to_string())
-                .filter(|s| !s.is_empty())
-        });
-    trace!(
-        "git credential fill for {host}: {}",
-        if result.is_some() {
-            "found"
-        } else {
-            "not found"
-        }
-    );
-    cache.insert(host.to_string(), result.clone());
-    result
 }
 
 #[cfg(test)]

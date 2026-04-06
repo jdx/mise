@@ -284,24 +284,7 @@ impl Config {
     }
     pub async fn env_with_sources(self: &Arc<Self>) -> eyre::Result<&EnvWithSources> {
         self.env_with_sources
-            .get_or_try_init(async || {
-                let mut env = self.env_results().await?.env.clone();
-                for env_file in Settings::get().env_files() {
-                    match dotenvy::from_path_iter(&env_file) {
-                        Ok(iter) => {
-                            for item in iter {
-                                let (k, v) = item.unwrap_or_else(|err| {
-                                    warn!("env_file: {err}");
-                                    Default::default()
-                                });
-                                env.insert(k, (v, env_file.clone()));
-                            }
-                        }
-                        Err(err) => trace!("env_file: {err}"),
-                    }
-                }
-                Ok(env)
-            })
+            .get_or_try_init(async || Ok(self.env_results().await?.env.clone()))
             .await
     }
     pub async fn env_results(self: &Arc<Self>) -> Result<&EnvResults> {
@@ -693,7 +676,7 @@ impl Config {
             .flatten()
             .collect();
         // trace!("load_env: entries: {:#?}", entries);
-        let env_results = EnvResults::resolve(
+        let mut env_results = EnvResults::resolve(
             self,
             self.tera_ctx.clone(),
             &env::PRISTINE_ENV,
@@ -705,6 +688,26 @@ impl Config {
             },
         )
         .await?;
+        for env_file in Settings::get().env_files() {
+            if env_results.env_files.contains(&env_file) {
+                continue;
+            }
+            debug!("env_file: {}", display_path(&env_file));
+            match dotenvy::from_path_iter(&env_file) {
+                Ok(iter) => {
+                    env_results.env_files.push(env_file.clone());
+                    for item in iter {
+                        match item {
+                            Ok((k, v)) => {
+                                env_results.env.insert(k, (v, env_file.clone()));
+                            }
+                            Err(err) => warn!("env_file: {err}"),
+                        }
+                    }
+                }
+                Err(err) => trace!("env_file: {err}"),
+            }
+        }
         let redact_keys = self
             .redaction_keys()
             .into_iter()
@@ -1096,7 +1099,7 @@ fn all_dirs_from(start_dir: &Path) -> Result<Vec<PathBuf>> {
 }
 
 /// Returns true if a path is a .tool-versions file (lower priority for writes)
-fn is_tool_versions_file(p: &Path) -> bool {
+pub(crate) fn is_tool_versions_file(p: &Path) -> bool {
     p.file_name()
         .is_some_and(|f| f.to_string_lossy().ends_with(".tool-versions"))
 }

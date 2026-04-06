@@ -56,6 +56,21 @@ Normally mise uses HTTP because loading the TLS module takes about 10ms and this
 affects commonly used commands so it is a noticeably delay.
 In paranoid mode, all endpoints will be fetched over HTTPS.
 
+## Provenance re-verification
+
+Normally, when a lockfile contains both a checksum and a provenance entry for a tool,
+`mise install` trusts the lockfile and skips provenance re-verification to avoid
+redundant API calls (e.g., to GitHub). This is safe when you trust the lockfile was
+generated correctly.
+
+In paranoid mode, `mise install` always re-verifies provenance (SLSA, cosign, minisign,
+GitHub artifact attestations) at install time, even when the lockfile already has a
+provenance entry. This ensures that cryptographic verification happens on every install,
+not just when the lockfile is first generated.
+
+This behavior can also be enabled independently via the
+[`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance) setting.
+
 ## More?
 
 If you have suggestions for more that could be added to paranoid, please let

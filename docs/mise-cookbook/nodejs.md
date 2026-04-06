@@ -110,7 +110,7 @@ This example uses `pnpm` as the package manager. This will skip installing depen
 
 ```toml [mise.toml]
 [tools]
-node = '22'
+node = '24'
 
 [hooks]
 # Enabling corepack will install the `pnpm` package manager specified in your package.json

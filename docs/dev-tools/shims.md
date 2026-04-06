@@ -49,7 +49,7 @@ ls -l ~/.local/share/mise/shims/node
 # [...] ~/.local/share/mise/shims/node -> ~/.local/bin/mise
 ```
 
-By default, the shim directory is located at `~/.local/share/mise/shims`. When installing a tool (for example, `node`), `mise` will add some entries for every binary provided by this tool in the `shims` directory (for example, `~/.local/share/mise/shims/node`).
+By default, the shim directory is located at `~/.local/share/mise/shims` (on Windows: `%LOCALAPPDATA%\mise\shims`). When installing a tool (for example, `node`), `mise` will add some entries for every binary provided by this tool in the `shims` directory (for example, `~/.local/share/mise/shims/node`).
 
 ```sh
 mise use -g node@20
@@ -207,6 +207,7 @@ those PATH entries will be before the shim directory.
 
 In other words, which is better in terms of performance just depends on how you're calling mise. Really
 though most users will not notice a few ms lag on their terminal caused by `mise activate`.
+See [Troubleshooting: Slow shell prompts](/troubleshooting.html#slow-shell-prompts) for how to diagnose performance issues.
 
 The only difference between these would be that using `hook-env` you will need to call
 it again if you change directories but with shims that won't be necessary. The shims directory will be

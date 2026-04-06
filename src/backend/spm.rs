@@ -87,6 +87,7 @@ impl Backend for SPMBackend {
         self.warn_if_dependency_missing(
             &ctx.config,
             "swift",
+            &["swift"],
             "To use Swift Package Manager (spm) tools with mise, you need to install Swift first:\n\
               mise use swift@latest\n\n\
             Or install Swift via https://swift.org/download/",

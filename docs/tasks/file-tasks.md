@@ -8,7 +8,8 @@ In addition to defining tasks through the configuration, they can also be define
 - `.mise/tasks/:task_name`
 - `.config/mise/tasks/:task_name`
 
-Note that you can configure directories using the [task_config](/tasks/task-configuration.html#task-config-options) section.
+These are the default file-task directories. If [`task_config.includes`](/tasks/task-configuration.html#task-config-includes)
+is set for the current config scope, mise searches only the paths listed there instead.
 
 Here is an example of a file task that builds a Rust CLI:
 

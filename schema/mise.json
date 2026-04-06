@@ -502,11 +502,6 @@
           "description": "Architecture to use for precompiled binaries.",
           "type": "string"
         },
-        "asdf": {
-          "description": "use asdf as a default plugin backend",
-          "type": "boolean",
-          "deprecated": true
-        },
         "asdf_compat": {
           "description": "set to true to ensure .tool-versions will be compatible with asdf",
           "type": "boolean",
@@ -548,11 +543,6 @@
               "type": "string"
             }
           }
-        },
-        "cargo_binstall": {
-          "description": "Use cargo-binstall instead of cargo install if available",
-          "type": "boolean",
-          "deprecated": true
         },
         "cd": {
           "description": "Path to change to after launching mise",
@@ -618,11 +608,6 @@
         "disable_default_registry": {
           "description": "Disable the default mapping of short tool names like `php` -> `asdf:mise-plugins/asdf-php`. This parameter disables only for the backends `vfox` and `asdf`.",
           "type": "boolean"
-        },
-        "disable_default_shorthands": {
-          "description": "Disables built-in shorthands to asdf/vfox plugins",
-          "type": "boolean",
-          "deprecated": true
         },
         "disable_hints": {
           "default": [],
@@ -735,6 +720,27 @@
           "description": "Timeout in seconds for HTTP requests to fetch new tool versions in mise.",
           "type": "string"
         },
+        "forgejo": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "credential_command": {
+              "default": "",
+              "description": "Shell command to run to obtain a Forgejo token for mise.",
+              "type": "string"
+            },
+            "fj_cli_tokens": {
+              "default": true,
+              "description": "Read Forgejo tokens from the fj CLI config.",
+              "type": "boolean"
+            },
+            "use_git_credentials": {
+              "default": false,
+              "description": "Use git credential helpers to obtain Forgejo tokens.",
+              "type": "boolean"
+            }
+          }
+        },
         "github": {
           "type": "object",
           "additionalProperties": false,
@@ -770,6 +776,27 @@
           "default": true,
           "description": "Enable GitHub Artifact Attestations verification for supported tools.",
           "type": "boolean"
+        },
+        "gitlab": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "credential_command": {
+              "default": "",
+              "description": "Shell command to run to obtain a GitLab token for mise.",
+              "type": "string"
+            },
+            "glab_cli_tokens": {
+              "default": true,
+              "description": "Read GitLab tokens from the glab CLI config.",
+              "type": "boolean"
+            },
+            "use_git_credentials": {
+              "default": false,
+              "description": "Use git credential helpers to obtain GitLab tokens.",
+              "type": "boolean"
+            }
+          }
         },
         "gix": {
           "default": true,
@@ -963,6 +990,11 @@
           "description": "Require lockfile URLs to be present during installation.",
           "type": "boolean"
         },
+        "locked_verify_provenance": {
+          "default": false,
+          "description": "Re-verify provenance at install time even when the lockfile already has provenance.",
+          "type": "boolean"
+        },
         "lockfile": {
           "description": "Create and read lockfiles for tool versions.",
           "type": "boolean"
@@ -1132,10 +1164,6 @@
             }
           }
         },
-        "pipx_uvx": {
-          "description": "Use uvx instead of pipx if uv is installed and on PATH.",
-          "type": "boolean"
-        },
         "plugin_autoupdate_last_check_duration": {
           "default": "7d",
           "description": "How long to wait before updating plugins automatically (note this isn't currently implemented).",
@@ -1216,46 +1244,6 @@
               "type": "boolean"
             }
           }
-        },
-        "python_compile": {
-          "description": "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available.",
-          "type": "boolean",
-          "deprecated": true
-        },
-        "python_default_packages_file": {
-          "description": "Path to a file containing default python packages to install when installing python.",
-          "type": "string",
-          "deprecated": true
-        },
-        "python_patch_url": {
-          "description": "URL to fetch python patches from.",
-          "type": "string",
-          "deprecated": true
-        },
-        "python_patches_directory": {
-          "description": "Directory to fetch python patches from.",
-          "type": "string",
-          "deprecated": true
-        },
-        "python_precompiled_arch": {
-          "description": "Specify the architecture to use for precompiled binaries.",
-          "type": "string",
-          "deprecated": true
-        },
-        "python_precompiled_os": {
-          "description": "Specify the OS to use for precompiled binaries.",
-          "type": "string",
-          "deprecated": true
-        },
-        "python_pyenv_repo": {
-          "description": "URL to fetch pyenv from for compiling python.",
-          "type": "string",
-          "deprecated": true
-        },
-        "python_venv_stdlib": {
-          "description": "Prefer to use venv from Python's standard library.",
-          "type": "boolean",
-          "deprecated": true
         },
         "quiet": {
           "description": "Suppress all output except errors.",
@@ -1524,7 +1512,7 @@
               "type": "boolean"
             },
             "timeout": {
-              "description": "Default timeout for tasks. Can be overridden by individual tasks.",
+              "description": "Default timeout for tasks.",
               "type": "string"
             },
             "timings": {
@@ -1595,7 +1583,7 @@
         },
         "trusted_config_paths": {
           "default": [],
-          "description": "This is a list of config paths that mise will automatically mark as trusted.",
+          "description": "This is a list of config paths that mise will automatically mark as trusted. Any config files under these paths will be trusted without prompting. Set to `[\"/\"]` to trust all config files, effectively disabling the trust mechanism.",
           "type": "array",
           "items": {
             "type": "string"
@@ -1636,11 +1624,6 @@
         "verbose": {
           "description": "Shows more verbose output such as installation logs when installing tools.",
           "type": "boolean"
-        },
-        "vfox": {
-          "description": "Use vfox as a default plugin backend instead of asdf.",
-          "type": "boolean",
-          "deprecated": true
         },
         "windows_default_file_shell_args": {
           "default": "cmd /c",

@@ -147,6 +147,10 @@ mise settings locked=true
 MISE_LOCKED=1 mise install
 ```
 
+::: warning
+All mise settings are global in scope. Setting `locked = true` in a project's `mise.toml` applies to **all** tool resolution, including tools from your global `~/.config/mise/config.toml`. If you see warnings about global tools missing from the lockfile, run `mise lock -g` to generate a global lockfile.
+:::
+
 When enabled, `mise install` will fail if a tool doesn't have a URL for the current platform in the lockfile. To fix this, first populate the lockfile with URLs:
 
 ```sh
@@ -280,6 +284,34 @@ mise install
 # Set versions based on package.json
 mise use node@$(jq -r '.engines.node' package.json)
 ```
+
+## Provenance and Security
+
+When `mise lock` generates a lockfile, it records a provenance type (e.g., `slsa`, `cosign`, `minisign`, `github-attestations`) for each tool. For the **current platform**, mise downloads the artifact and performs full cryptographic verification at lock time -- ensuring the provenance entry in the lockfile is backed by actual verification, not just registry metadata. This applies to both the aqua and github backends. For cross-platform entries, provenance is detected from registry metadata without verification (since the artifact may not be runnable on the current machine).
+
+By default, when `mise install` sees a lockfile with both a checksum and a provenance entry, it trusts the lockfile and skips re-verification. This avoids redundant API calls (e.g., GitHub attestation queries) which can cause rate limit issues in CI. Since the current platform's provenance was already verified during `mise lock`, this is safe.
+
+For additional security, you can force provenance re-verification at install time on every install:
+
+```toml
+[settings]
+locked_verify_provenance = true
+```
+
+Or via environment variable:
+
+```sh
+MISE_LOCKED_VERIFY_PROVENANCE=1 mise install
+```
+
+This is also automatically enabled in [paranoid mode](/paranoid.html):
+
+```toml
+[settings]
+paranoid = true
+```
+
+When enabled, every `mise install` will cryptographically verify provenance regardless of what the lockfile contains, ensuring the artifact was built by a trusted CI pipeline.
 
 ## Minimum Release Age
 

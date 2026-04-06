@@ -204,6 +204,141 @@ In VSCode, many extensions will throw an "error spawn EINVAL" due to a [Node.js 
 
 The default `exe` shim mode should resolve this. If you're using an older mode, you can change [windows_shim_mode](https://mise.jdx.dev/configuration/settings.html#windows_shim_mode) to `exe`, `hardlink`, or `symlink`.
 
+## What is the difference between `mise install` and `mise use`?
+
+`mise install` downloads and installs a tool version but does **not** add it to any config file.
+The tool won't be automatically activated in your shell unless it's already listed in a `mise.toml` or `.tool-versions`.
+
+`mise use` installs the tool **and** adds it to `mise.toml` (or `~/.config/mise/config.toml` with `-g`), so it will be activated
+automatically when you enter the directory.
+
+If you just want to pin a tool for a project, use `mise use`. If you want to install
+a version that's already listed in config, use `mise install`.
+
+::: tip
+`mise install node` (with no version) will install the **latest** version if node isn't in your config.
+`mise install` (with no arguments) installs only the tools listed in your config files.
+:::
+
+## Does `latest` mean the newest remote version?
+
+It depends on context. In config files and most commands, `latest` resolves to the latest
+**installed** version. This means if you have node 20.0.0 installed and node 22.0.0 is
+available remotely, `latest` will still point to 20.0.0.
+
+However, some commands resolve `latest` to the newest **available** (remote) version:
+
+- `mise install node@latest` — installs the newest available version
+- `mise x node@latest -- node -v` — uses the newest available version
+- `mise latest node` — shows the newest available version
+
+To upgrade to the newest available version and update your config, run:
+
+```sh
+mise upgrade node
+# or to also update mise.toml:
+mise upgrade --bump node
+```
+
+## My config file is being ignored / `mise trust` issues
+
+mise requires you to trust config files that were not created by you. Common issues:
+
+- **Accidentally denied trust**: If mise prompted you to trust a file and you said no, it gets
+  added to the ignore list. Check the `ignored-configs` directory in your
+  [mise state directory](/directories.html) (default: `~/.local/state/mise/ignored-configs/`)
+  and remove the relevant symlink to un-ignore it.
+- **Symlinked configs**: If your config is symlinked (e.g., via GNU Stow), mise may track the
+  symlink target path. Try `mise trust` pointing to the actual file path.
+- **Non-interactive mode**: In non-interactive shells (CI, IDE extensions, scripts), mise will
+  silently skip untrusted configs. Either run `mise trust` beforehand or set
+  [`trusted_config_paths`](/configuration/settings.html#trusted_config_paths) in your global settings.
+- **Global config** (`~/.config/mise/config.toml`) should be auto-trusted. If it's not, run
+  `mise trust ~/.config/mise/config.toml` explicitly.
+
+Run `mise doctor` (`mise dr`) to see if any config files are untrusted — it will list them
+under "problems".
+
+## How do idiomatic version files (`.python-version`, `.node-version`, etc.) work?
+
+Idiomatic version files (`.python-version`, `.node-version`, `.ruby-version`, etc.) are
+**disabled by default** in mise. They are only read if you explicitly opt in per tool using
+[`idiomatic_version_file_enable_tools`](/configuration/settings.html#idiomatic_version_file_enable_tools):
+
+```sh
+# Enable reading .node-version files
+mise settings add idiomatic_version_file_enable_tools node
+```
+
+If you previously enabled idiomatic files and now want to stop mise from reading them
+(e.g., because `uv` manages `.python-version`), simply don't add that tool to the list.
+
+See [Idiomatic Version Files](/configuration.html#idiomatic-version-files) for more information.
+
+## How do `mise activate`, shims, `mise exec`, and `mise env` relate?
+
+These all do the same core thing: they set up your environment (primarily `PATH`) so that
+mise-managed tools are available. The difference is _when_ and _how_:
+
+| Method                              | How it works                                           | Best for                                   |
+| ----------------------------------- | ------------------------------------------------------ | ------------------------------------------ |
+| `mise activate`                     | Hooks into your shell prompt, updates PATH dynamically | Interactive terminal use                   |
+| `mise activate --shims`             | Adds the shims directory to PATH once                  | IDEs, simple setups (no hooks/env support) |
+| `mise exec` / `mise x`              | Sets up env, runs a single command, then exits         | Scripts, CI, one-off commands              |
+| `mise env`                          | Prints env vars you can `eval`                         | Integrating with other tools               |
+| `mise run`                          | Sets up env, then runs a task                          | Task execution                             |
+| Shims (`~/.local/share/mise/shims`) | Wrapper scripts that call mise on each invocation      | Non-interactive shells, IDEs               |
+
+::: warning
+`mise activate --shims` does **not** support hooks, env vars from `[env]`, or `watch_files`.
+It only puts shims on PATH. If you need those features, use `mise activate` (without `--shims`).
+:::
+
+## How does `mise exec` work?
+
+`mise exec` (or `mise x`) reads your config, sets up `PATH` and environment variables, then
+runs the command you specify after `--`:
+
+```sh
+# Uses whatever node version is in your mise.toml
+mise x -- node script.js
+
+# Override with a specific version (useful when it differs from config)
+mise x node@22 -- node script.js
+```
+
+A common pattern on Discord is `mise x node@20 -- node script.js` when node@20 is already
+in `mise.toml`. This works but is redundant — `mise x -- node script.js` is simpler when
+you just want the configured version.
+
+## Where does `mise use` write to?
+
+`mise use` writes to the nearest `mise.toml` in your directory hierarchy. If there's a
+`mise.toml` in a parent directory (including `~/.config/mise/config.toml` for `-g`), it will
+update that file.
+
+```sh
+mise use node@22           # writes to nearest mise.toml (may be a parent dir!)
+mise use -g node@22        # writes to ~/.config/mise/config.toml
+mise use --path mise.toml node@22  # writes to a specific file
+```
+
+Use `mise cfg` to see which config files mise is reading in the current directory.
+
+## mise is for dev tools, not applications or system packages
+
+mise manages **development tool versions** (node, python, go, rust, etc.) and CLI utilities.
+It is not a replacement for system package managers like `apt`, `brew`, or `pacman`.
+
+Things mise does **not** do:
+
+- Install system libraries (libssl, zlib, etc.)
+- Manage desktop applications
+- Handle system-level dependencies that tools need to compile
+
+If a mise-installed tool needs a system library, install that library with your OS package
+manager first.
+
 ## How does mise versioning work?
 
 mise uses [Calver](https://calver.org/) versioning (`2024.1.0`).

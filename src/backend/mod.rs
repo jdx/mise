@@ -1335,12 +1335,15 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     /// Check if a required dependency is available and show a warning if not.
-    /// This provides a consistent warning message format across all backends.
-    /// Changed to warning instead of error to avoid CI failures on Windows.
+    /// `provided_by` lists tool names that are known to provide the `program` binary
+    /// (e.g., "npm" is provided by &["node"]). If any of these tools are configured
+    /// in the toolset (even if not yet installed), the warning is suppressed since
+    /// mise will install them as dependencies first.
     async fn warn_if_dependency_missing(
         &self,
         config: &Arc<Config>,
         program: &str,
+        provided_by: &[&str],
         install_instructions: &str,
     ) {
         let found = if self.dependency_which(config, program).await.is_some() {
@@ -1365,6 +1368,17 @@ pub trait Backend: Debug + Send + Sync {
         };
 
         if !found {
+            // Check if a tool that provides this program is configured in the toolset
+            // (even if not yet installed). If so, mise will install it as a dependency
+            // before this tool needs it, so the warning is spurious.
+            if let Ok(ts) = self.dependency_toolset(config).await
+                && ts
+                    .versions
+                    .keys()
+                    .any(|ba| provided_by.contains(&ba.short.as_str()))
+            {
+                return;
+            }
             warn!(
                 "{} may be required but was not found.\n\n{}",
                 program, install_instructions
