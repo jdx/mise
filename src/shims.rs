@@ -552,9 +552,7 @@ async fn list_tool_bins(
 }
 
 async fn make_shim(target: &Path, shim: &Path) -> Result<()> {
-    if shim.exists() {
-        file::remove_file_async(shim).await?;
-    }
+    file::remove_file_async_if_exists(shim).await?;
     file::write_async(
         shim,
         formatdoc! {r#"
