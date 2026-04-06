@@ -26,7 +26,7 @@ EOF
 mise lock --platform "$PLATFORM"
 assert "test -f mise.lock"
 assert_contains "cat mise.lock" "\"platforms.$PLATFORM\""
-assert_contains "cat mise.lock" "backend = \"aqua:jqlang/jq\""
+assert_contains "cat mise.lock" 'backend = "aqua:jqlang/jq"'
 
 # Roundtrip part 2: redirect GitHub API to an unresolvable host.
 # Any API call during install will fail with a DNS error for api.github.invalid,
