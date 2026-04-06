@@ -1,5 +1,32 @@
 # Changelog
 
+## [2026.4.5](https://github.com/jdx/mise/compare/v2026.4.4..v2026.4.5) - 2026-04-06
+
+### 🚀 Features
+
+- **(config)** report env files in config ls and doctor output by @SamSoldatenko in [#8853](https://github.com/jdx/mise/pull/8853)
+- add support for token sources in GitLab and Forgejo by @roele in [#8868](https://github.com/jdx/mise/pull/8868)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** prevent double .exe extension when Windows override URL already ends in .exe by @yusei-wy in [#8863](https://github.com/jdx/mise/pull/8863)
+- **(bash)** avoid duplicate trust warning after cd by @timothysparg in [#8920](https://github.com/jdx/mise/pull/8920)
+- **(env)** prevent config root injection into PATH via _.source by @jdx in [#8936](https://github.com/jdx/mise/pull/8936)
+- **(install)** suppress spurious dependency warning when tool is configured by @jdx in [#8923](https://github.com/jdx/mise/pull/8923)
+
+### 📚 Documentation
+
+- **(node)** add section on pinning npm version by @jdx in [#8925](https://github.com/jdx/mise/pull/8925)
+- add Windows default paths and mise.toml examples alongside CLI commands by @jdx in [#8926](https://github.com/jdx/mise/pull/8926)
+- clarify common sources of confusion from GitHub discussions by @jdx in [#8927](https://github.com/jdx/mise/pull/8927)
+- clarify Python venv mechanisms, JAVA_HOME behavior, and activation performance by @jdx in [#8928](https://github.com/jdx/mise/pull/8928)
+- add FAQ and troubleshooting entries based on common Discord questions by @jdx in [#8930](https://github.com/jdx/mise/pull/8930)
+
+### New Contributors
+
+- @SamSoldatenko made their first contribution in [#8853](https://github.com/jdx/mise/pull/8853)
+- @yusei-wy made their first contribution in [#8863](https://github.com/jdx/mise/pull/8863)
+
 ## [2026.4.4](https://github.com/jdx/mise/compare/v2026.4.3..v2026.4.4) - 2026-04-05
 
 ### 🚀 Features
