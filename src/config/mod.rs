@@ -97,13 +97,51 @@ pub struct UserBackendDef {
 }
 
 impl UserBackendDef {
+    /// Convert the raw options map into a `ToolVersionOptions`.
+    ///
+    /// NOTE: We cannot use `toml::Value::Table(...).try_into::<ToolVersionOptions>()` here
+    /// because `ToolVersionOptions` uses `#[serde(flatten)]` on its `opts` field, and the
+    /// TOML deserializer does not support nested flatten. The `try_into()` call silently
+    /// returns `Default::default()`, dropping all options.
+    ///
+    /// Instead we manually extract the structured fields (`os`, `depends`, `install_env`)
+    /// and route everything else into `opts`. If a new structured field is added to
+    /// `ToolVersionOptions`, add a matching arm here.
     pub fn opts(&self) -> ToolVersionOptions {
-        let table: toml::map::Map<String, toml::Value> = self
-            .opts_raw
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        toml::Value::Table(table).try_into().unwrap_or_default()
+        let mut tvo = ToolVersionOptions::default();
+        for (key, value) in &self.opts_raw {
+            match key.as_str() {
+                "os" | "depends" => {
+                    let strings = match value {
+                        toml::Value::Array(arr) => Some(
+                            arr.iter()
+                                .filter_map(|v| v.as_str().map(String::from))
+                                .collect(),
+                        ),
+                        toml::Value::String(s) => Some(vec![s.clone()]),
+                        _ => None,
+                    };
+                    if key == "os" {
+                        tvo.os = strings;
+                    } else {
+                        tvo.depends = strings;
+                    }
+                }
+                "install_env" => {
+                    if let toml::Value::Table(table) = value {
+                        for (k, v) in table {
+                            if let toml::Value::String(s) = v {
+                                tvo.install_env.insert(k.clone(), s.clone());
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    tvo.opts.insert(key.to_string(), value.clone());
+                }
+            }
+        }
+        tvo
     }
 }
 

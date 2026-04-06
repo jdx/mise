@@ -472,6 +472,9 @@ impl BackendArg {
             if alias_opts.os.is_some() {
                 opts.os = alias_opts.os;
             }
+            if alias_opts.depends.is_some() {
+                opts.depends = alias_opts.depends;
+            }
         }
 
         // Get user-provided options (from self.opts or from full string)
