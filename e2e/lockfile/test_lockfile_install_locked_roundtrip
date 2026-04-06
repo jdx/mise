@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# Roundtrip regression test for avoiding GitHub API calls when installing via --locked.
+# Discussion  of the original bug: https://github.com/jdx/mise/discussions/8677
+# 1) Generate lockfile with `mise lock` (real URL stored)
+# 2) Block api.github.com via url_replacements → api.github.invalid
+# 3) Verify `mise install --locked` succeeds using only the lockfile URL,
+#    without falling back to the GitHub release API.
+
+# At the time of writing, the GitHub API is still used for attestation verification.
+# Attestation verification has separate URL resolution, and therefore passes
+# silently, for details see https://github.com/jdx/mise/discussions/8846
+# and https://github.com/jdx/mise/discussions/8949.
+
+export MISE_LOCKFILE=1
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+cat <<'EOF' >mise.toml
+[tools]
+jq = "1.8.1"
+EOF
+
+# Roundtrip part 1: create lockfile from live resolution (no url_replacements yet)
+mise lock --platform "$PLATFORM"
+assert "test -f mise.lock"
+assert_contains "cat mise.lock" "\"platforms.$PLATFORM\""
+assert_contains "cat mise.lock" "backend = \"aqua:jqlang/jq\""
+
+# Roundtrip part 2: redirect GitHub API to an unresolvable host.
+# Any API call during install will fail with a DNS error for api.github.invalid,
+# proving a successful install never touched the API.
+cat <<'EOF' >>mise.toml
+
+[settings.url_replacements]
+"api.github.com" = "api.github.invalid"
+EOF
+
+# Clean cache to force real network calls during install.
+rm -rf "$MISE_CACHE_DIR"
+
+# Roundtrip part 3: --locked install must succeed using the lockfile URL.
+# On calls to the GitHub API it will fail with a DNS error instead.
+assert "mise install --locked"
