@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+# Test rolling release support for GitHub backend
+# Verifies that mise can detect when a rolling release has been updated
+# by comparing stored vs remote checksums.
+
+# Test 1: Install a GitHub tool with rolling_regex and verify checksum is written
+cat <<EOF >mise.toml
+[tools."github:jdx/mise-test-fixtures"]
+version = "1.0.0"
+asset_pattern = "hello-world-1.0.0.tar.gz"
+bin_path = "hello-world-1.0.0/bin"
+rolling_regex = '^1\.0\.0$'
+postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"
+EOF
+
+mise install
+assert_contains "mise x -- hello-world" "hello world"
+
+# Verify the checksum file was written during install
+CHECKSUM_FILE="$MISE_DATA_DIR/installs/github-jdx-mise-test-fixtures/1.0.0/.mise.checksum"
+if [[ ! -f $CHECKSUM_FILE ]]; then
+	fail "Expected checksum file to exist at $CHECKSUM_FILE"
+fi
+STORED_CHECKSUM=$(cat "$CHECKSUM_FILE")
+if [[ -z $STORED_CHECKSUM ]]; then
+	fail "Expected checksum file to contain a checksum"
+fi
+
+# Test 2: With matching checksum, mise outdated should NOT report it as outdated
+assert_not_contains "mise outdated" "mise-test-fixtures"
+
+# Test 3: Modify stored checksum to simulate a remote change, then verify outdated detects it
+echo "sha256:0000000000000000000000000000000000000000000000000000000000000000" >"$CHECKSUM_FILE"
+assert_contains "mise outdated" "mise-test-fixtures"
+
+# Test 4: Upgrade should reinstall and write the correct checksum
+mise upgrade
+NEW_CHECKSUM=$(cat "$CHECKSUM_FILE")
+if [[ $NEW_CHECKSUM == "sha256:0000000000000000000000000000000000000000000000000000000000000000" ]]; then
+	fail "Expected checksum to be updated after upgrade, but it still has the fake value"
+fi
+assert_contains "mise x -- hello-world" "hello world"
+
+# Test 5: After upgrade, mise outdated should no longer report it
+assert_not_contains "mise outdated" "mise-test-fixtures"
+
+# Test 6: Verify rolling=true with declared version works the same way
+cat <<EOF >mise.toml
+[tools."github:jdx/mise-test-fixtures"]
+version = "1.0.0"
+asset_pattern = "hello-world-1.0.0.tar.gz"
+bin_path = "hello-world-1.0.0/bin"
+rolling = "true"
+postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"
+EOF
+
+mise uninstall github:jdx/mise-test-fixtures
+mise install
+assert_contains "mise x -- hello-world" "hello world"
+
+# Verify checksum file exists with rolling=true as well
+if [[ ! -f $CHECKSUM_FILE ]]; then
+	fail "Expected checksum file with rolling=true"
+fi
+assert_not_contains "mise outdated" "mise-test-fixtures"
