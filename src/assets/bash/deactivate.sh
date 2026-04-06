@@ -1,7 +1,3 @@
----
-source: src/shell/bash.rs
-expression: replace_path(&deactivate)
----
 # shellcheck shell=bash
 if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
 	_mise_prompt_command=()

@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+set -euo pipefail
+
+# Reproduces the case where entering an untrusted project triggers hook-env from
+# both chpwd and PROMPT_COMMAND. The user-visible symptom is a duplicate `mise trust`
+# warning after a single `cd`.
+#
+# The expected bash behavior is:
+# - `_mise_hook_prompt_command` remains registered after activation and after cd
+# - the prompt immediately following `cd` does not repeat the same trust warning
+# - bash does not fall back to chpwd-only behavior after the startup prompt
+
+# The e2e harness trusts the isolated workspace by default; clear that so this
+# test exercises the real untrusted-config warning path.
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+# In CI, mise auto-trusts configs via ci_info::is_ci(); clear the common CI vars
+# so hook-env follows the normal interactive trust-check behavior.
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+contains_trust_warning() {
+	local file="$1"
+	grep -q "Config files in" "$file" && grep -q "are not trusted" "$file"
+}
+
+contains_mise_prompt_hook() {
+	[[ ";${PROMPT_COMMAND:-};" == *";_mise_hook_prompt_command;"* ]]
+}
+
+mkdir -p project
+cat >project/.mise.toml <<'EOF'
+[env]
+FOO = "bar"
+EOF
+
+eval "$(mise activate bash --status)"
+
+startup_file="$(mktemp)"
+chpwd_file="$(mktemp)"
+precmd_file="$(mktemp)"
+trap 'rm -f "$startup_file" "$chpwd_file" "$precmd_file"' EXIT
+
+# A persistent mise PROMPT_COMMAND hook should be registered immediately after activation.
+if ! contains_mise_prompt_hook; then
+	echo "expected mise PROMPT_COMMAND hook to be registered after activation"
+	echo "PROMPT_COMMAND: ${PROMPT_COMMAND:-}"
+	exit 1
+fi
+
+# The bash chpwd skip flag should be initialised to 0 after activation.
+if [[ ${__MISE_BASH_CHPWD_RAN:-unset} != "0" ]]; then
+	echo "expected __MISE_BASH_CHPWD_RAN=0 after activation"
+	exit 1
+fi
+
+# Simulate the first prompt after activation before entering the untrusted project.
+_mise_hook_prompt_command >"$startup_file" 2>&1 || true
+if contains_trust_warning "$startup_file"; then
+	echo "startup PROMPT_COMMAND should not hit an untrusted project before cd"
+	cat "$startup_file"
+	exit 1
+fi
+
+# The chpwd skip flag must not have been touched.
+if [[ ${__MISE_BASH_CHPWD_RAN:-unset} != "0" ]]; then
+	echo "expected no chpwd skip flag after the first prompt"
+	exit 1
+fi
+
+# The mise PROMPT_COMMAND hook should remain registered after the startup prompt
+# so bash can continue checking for later environment changes on subsequent prompts.
+if ! contains_mise_prompt_hook; then
+	echo "expected mise PROMPT_COMMAND hook to remain registered after the startup prompt"
+	echo "PROMPT_COMMAND: ${PROMPT_COMMAND:-}"
+	exit 1
+fi
+
+# Use builtin cd to avoid __zsh_like_cd triggering chpwd_functions automatically,
+# so we can capture the hook output separately below.
+builtin cd project
+
+# Fire chpwd hooks manually (simulating what __zsh_like_cd does after cd).
+: >"$chpwd_file"
+for _hook in "${chpwd_functions[@]-}"; do
+	"$_hook" >>"$chpwd_file" 2>&1 || true
+done
+
+# After chpwd, the skip flag should be set.
+if [[ ${__MISE_BASH_CHPWD_RAN:-unset} != "1" ]]; then
+	echo "expected __MISE_BASH_CHPWD_RAN=1 after chpwd"
+	exit 1
+fi
+
+# The chpwd hook should surface the untrusted-config warning on directory entry.
+if ! contains_trust_warning "$chpwd_file"; then
+	echo "expected chpwd hook to report untrusted config"
+	cat "$chpwd_file"
+	exit 1
+fi
+
+# Fire the PROMPT_COMMAND hook that would run at the next prompt after cd.
+_mise_hook_prompt_command >"$precmd_file" 2>&1 || true
+
+# The PROMPT_COMMAND hook should have consumed the chpwd skip flag.
+if [[ ${__MISE_BASH_CHPWD_RAN:-unset} != "0" ]]; then
+	echo "expected __MISE_BASH_CHPWD_RAN to be reset to 0 after precmd consumed it"
+	exit 1
+fi
+
+# The subsequent prompt should not repeat the same warning.
+if contains_trust_warning "$precmd_file"; then
+	echo "PROMPT_COMMAND hook should not repeat untrusted config warning after chpwd"
+	cat "$precmd_file"
+	exit 1
+fi
+
+# The mise PROMPT_COMMAND hook should still remain registered after chpwd + precmd
+# so later prompts can continue to notice config/watch-file changes.
+if ! contains_mise_prompt_hook; then
+	echo "expected mise PROMPT_COMMAND hook to remain registered after chpwd + precmd"
+	echo "PROMPT_COMMAND: ${PROMPT_COMMAND:-}"
+	exit 1
+fi
