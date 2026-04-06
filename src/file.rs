@@ -93,12 +93,14 @@ pub fn remove_file<P: AsRef<Path>>(path: P) -> Result<()> {
     fs::remove_file(path).wrap_err_with(|| format!("failed rm: {}", display_path(path)))
 }
 
-pub async fn remove_file_async<P: AsRef<Path>>(path: P) -> Result<()> {
+pub async fn remove_file_async_if_exists<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     trace!("rm {}", display_path(path));
-    tokio::fs::remove_file(path)
-        .await
-        .wrap_err_with(|| format!("failed rm: {}", display_path(path)))
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e).wrap_err_with(|| format!("failed rm: {}", display_path(path))),
+    }
 }
 
 pub fn remove_dir<P: AsRef<Path>>(path: P) -> Result<()> {
@@ -1597,5 +1599,22 @@ mod tests {
         assert!(expected_path.is_file());
         let content = std::fs::read_to_string(&expected_path).unwrap();
         assert_eq!(content, "hello world");
+    }
+
+    #[tokio::test]
+    async fn test_remove_file_async_if_exists_when_file_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("file");
+        tokio::fs::write(&path, "content").await.unwrap();
+        remove_file_async_if_exists(&path).await.unwrap();
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_remove_file_async_if_exists_when_file_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nonexistent");
+        // Should not error when file does not exist.
+        remove_file_async_if_exists(&path).await.unwrap();
     }
 }
