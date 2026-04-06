@@ -2,6 +2,8 @@
 
 # Test that `mise install --locked` fails when the lockfile contains a wrong checksum.
 
+export MISE_LOCKFILE=1
+
 detect_platform
 PLATFORM="$MISE_PLATFORM"
 
