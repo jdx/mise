@@ -2657,4 +2657,77 @@ api_url = "https://forgejo.mycompany.com/api/v1"
             def.opts().get("api_url")
         );
     }
+
+    #[test]
+    fn test_backend_alias_structured_fields_roundtrip() {
+        // Ensures UserBackendDef::opts() populates the structured fields of ToolVersionOptions
+        // (os, depends, install_env). Flat opts (e.g. api_url) are covered by
+        // test_backend_alias_deserialization.
+        // If a new structured field is added to ToolVersionOptions, add it here too.
+        let p = dirs::CWD.as_ref().unwrap().join("fake.mise.toml");
+        let cf = MiseToml::from_str(
+            r#"
+[backend_alias.mygitlab]
+backend = "gitlab"
+api_url = "https://gitlab.mycompany.com/api/v4"
+os = ["linux", "macos"]
+depends = ["curl"]
+
+[backend_alias.mygitlab.install_env]
+MY_TOKEN = "secret"
+"#,
+            &p,
+        )
+        .unwrap();
+
+        let aliases = cf.backend_aliases();
+        let def = aliases.get("mygitlab").expect("mygitlab alias not found");
+        let opts = def.opts();
+
+        assert_eq!(
+            opts.get("api_url"),
+            Some("https://gitlab.mycompany.com/api/v4")
+        );
+        assert_eq!(
+            opts.os,
+            Some(vec!["linux".to_string(), "macos".to_string()]),
+            "os must be populated (not silently dropped)"
+        );
+        assert_eq!(
+            opts.depends,
+            Some(vec!["curl".to_string()]),
+            "depends must be populated (not silently dropped)"
+        );
+        assert_eq!(
+            opts.install_env.get("MY_TOKEN").map(String::as_str),
+            Some("secret"),
+            "install_env must be populated (not silently dropped)"
+        );
+    }
+
+    #[test]
+    fn test_backend_alias_depends_per_tool_override() {
+        // Regression: per-tool depends was silently dropped instead of overriding alias default.
+        // BackendArg::opts() must apply user_opts.depends in the final merge pass.
+        let p = dirs::CWD.as_ref().unwrap().join("fake.mise.toml");
+        let cf = MiseToml::from_str(
+            r#"
+[backend_alias.mygitlab]
+backend = "gitlab"
+depends = ["alias-dep"]
+"#,
+            &p,
+        )
+        .unwrap();
+
+        let aliases = cf.backend_aliases();
+        let def = aliases.get("mygitlab").expect("mygitlab alias not found");
+
+        // alias default
+        assert_eq!(
+            def.opts().depends,
+            Some(vec!["alias-dep".to_string()]),
+            "alias depends must be populated"
+        );
+    }
 }

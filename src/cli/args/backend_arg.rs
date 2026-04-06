@@ -496,6 +496,9 @@ impl BackendArg {
         if user_opts.os.is_some() {
             opts.os = user_opts.os;
         }
+        if user_opts.depends.is_some() {
+            opts.depends = user_opts.depends;
+        }
 
         opts
     }
