@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# Test that `mise install --locked` fails when the lockfile contains a wrong checksum.
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+cat <<'EOF' >mise.toml
+[tools]
+jq = "1.7.1"
+EOF
+
+# Step 1: Generate lockfile with real URL and checksum
+mise lock --platform "$PLATFORM"
+assert "test -f mise.lock"
+assert_contains "cat mise.lock" "\"platforms.$PLATFORM\""
+assert_contains "cat mise.lock" 'checksum = "sha256:'
+
+# Step 2: Corrupt the checksum in the lockfile
+awk '/checksum = "sha256:/ { gsub(/"sha256:[a-f0-9]+"/, "\"sha256:0000000000000000000000000000000000000000000000000000000000000000\"") } { print }' mise.lock >mise.lock.tmp && mv mise.lock.tmp mise.lock
+
+assert_contains "cat mise.lock" "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
+# Step 3: --locked install must fail due to checksum mismatch
+mise uninstall jq@1.7.1 2>/dev/null || true
+assert_fail_contains "mise install --locked 2>&1" "Checksum mismatch"
