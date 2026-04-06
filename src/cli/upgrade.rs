@@ -209,7 +209,11 @@ impl Upgrade {
                 miseprintln!("Would uninstall {}@{}", o.name, current);
             }
             for o in &outdated {
-                miseprintln!("Would install {}@{}", o.name, o.latest);
+                if o.current.as_deref() == Some(&o.latest) {
+                    miseprintln!("Would reinstall rolling release {}@{}", o.name, o.latest);
+                } else {
+                    miseprintln!("Would install {}@{}", o.name, o.latest);
+                }
             }
             for (o, cf) in &config_file_updates {
                 miseprintln!(
@@ -223,6 +227,26 @@ impl Upgrade {
                 exit::exit(1);
             }
             return Ok(());
+        }
+
+        // Uninstall rolling releases (current == latest) before reinstalling.
+        // These are versions whose tag content changed while the tag name stayed
+        // the same (e.g. "nightly"). Without uninstalling first, install_version()
+        // sees the existing directory and returns early without downloading the
+        // new release or updating the checksum.
+        for o in &outdated {
+            if o.current.as_deref() == Some(&o.latest) {
+                let pr = mpr.add(&format!("uninstall {}@{}", o.name, o.latest));
+                if let Err(e) = self
+                    .uninstall_old_version(config, &o.tool_version, pr.as_ref())
+                    .await
+                {
+                    warn!(
+                        "Failed to uninstall rolling version {}@{}: {}",
+                        o.name, o.latest, e
+                    );
+                }
+            }
         }
 
         let opts = InstallOptions {
