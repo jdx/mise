@@ -383,6 +383,14 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
     tera
 });
 
+/// Returns a Tera instance for use during early initialization (miserc loading).
+/// This is a plain clone of the global `TERA` static. `exec` and `read_file` are absent
+/// because they are only registered in [`get_tera`], not in `TERA` itself — so they
+/// cannot accidentally become available here if `TERA` changes in the future.
+pub fn get_miserc_tera() -> Tera {
+    TERA.clone()
+}
+
 pub fn get_tera(dir: Option<&Path>) -> Tera {
     let mut tera = TERA.clone();
     let dir = dir.map(PathBuf::from);
