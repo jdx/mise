@@ -38,8 +38,9 @@ cat <<'EOF' >>mise.toml
 EOF
 
 # Clean cache to force real network calls during install.
-rm -rf "$MISE_CACHE_DIR"
+rm -rf "${MISE_CACHE_DIR:?}"
 
 # Roundtrip part 3: --locked install must succeed using the lockfile URL.
 # On calls to the GitHub API it will fail with a DNS error instead.
 assert "mise install --locked"
+assert "mise x jq -- jq --version"
