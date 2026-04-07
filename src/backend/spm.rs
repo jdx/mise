@@ -279,12 +279,14 @@ impl GitProvider {
 
         let api_url = match opts.get("api_url") {
             Some(api_url) => api_url.trim_end_matches('/').to_string(),
-            None => Self::derive_api_url_from_tool_name(&ba.tool_name, &kind).unwrap_or_else(
-                || match kind {
-                    GitProviderKind::GitHub => github::API_URL.to_string(),
-                    GitProviderKind::GitLab => gitlab::API_URL.to_string(),
-                },
-            ),
+            None => {
+                Self::derive_api_url_from_tool_name(&ba.tool_name, &kind).unwrap_or_else(|| {
+                    match kind {
+                        GitProviderKind::GitHub => github::API_URL.to_string(),
+                        GitProviderKind::GitLab => gitlab::API_URL.to_string(),
+                    }
+                })
+            }
         };
 
         Self { api_url, kind }
@@ -447,10 +449,7 @@ mod tests {
 
         // github.com URL without api_url -> should use default
         assert_eq!(
-            GitProvider::from_ba(&get_ba(
-                "https://github.com/org/Tool.git".to_string(),
-                None
-            )),
+            GitProvider::from_ba(&get_ba("https://github.com/org/Tool.git".to_string(), None)),
             GitProvider {
                 api_url: github::API_URL.to_string(),
                 kind: GitProviderKind::GitHub
