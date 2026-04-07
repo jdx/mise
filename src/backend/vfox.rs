@@ -55,14 +55,14 @@ impl Backend for VfoxBackend {
             || async {
                 let (mut vfox, _log_rx) = this.plugin.vfox();
                 this.ensure_plugin_installed(config).await?;
+                if let Ok(dep_env) = this.dependency_env(config).await {
+                    vfox.cmd_env = Some(dep_env.into_iter().collect());
+                }
 
                 // Use backend methods if the plugin supports them
                 if this.is_backend_plugin() {
                     Settings::get().ensure_experimental("custom backends")?;
                     debug!("Using backend method for plugin: {}", this.pathname);
-                    if let Ok(dep_env) = this.dependency_env(config).await {
-                        vfox.cmd_env = Some(dep_env.into_iter().collect());
-                    }
                     let tool_name = this.get_tool_name()?;
                     let opts = config
                         .get_tool_opts(&this.ba)
@@ -114,13 +114,13 @@ impl Backend for VfoxBackend {
                 info!("{}", line);
             }
         });
+        if let Ok(dep_env) = self.dependency_env(&ctx.config).await {
+            vfox.cmd_env = Some(dep_env.into_iter().collect());
+        }
 
         // Use backend methods if the plugin supports them
         if self.is_backend_plugin() {
             Settings::get().ensure_experimental("custom backends")?;
-            if let Ok(dep_env) = self.dependency_env(&ctx.config).await {
-                vfox.cmd_env = Some(dep_env.into_iter().collect());
-            }
             let tool_name = self.get_tool_name()?;
             let tool_opts = tv.request.options();
             vfox.backend_install(
@@ -390,7 +390,10 @@ impl VfoxBackend {
         cache
             .get_or_try_init_async(async || {
                 self.ensure_plugin_installed(config).await?;
-                let (vfox, _log_rx) = self.plugin.vfox();
+                let (mut vfox, _log_rx) = self.plugin.vfox();
+                if let Ok(dep_env) = self.dependency_env(config).await {
+                    vfox.cmd_env = Some(dep_env.into_iter().collect());
+                }
 
                 // Use backend methods if the plugin supports them
                 let env_keys = if self.is_backend_plugin() {
