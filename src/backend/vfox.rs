@@ -53,8 +53,11 @@ impl Backend for VfoxBackend {
         let this = self;
         timeout::run_with_timeout_async(
             || async {
-                let (vfox, _log_rx) = this.plugin.vfox();
+                let (mut vfox, _log_rx) = this.plugin.vfox();
                 this.ensure_plugin_installed(config).await?;
+                if let Ok(dep_env) = this.dependency_env(config).await {
+                    vfox.cmd_env = Some(dep_env.into_iter().collect());
+                }
 
                 // Use backend methods if the plugin supports them
                 if this.is_backend_plugin() {
@@ -111,6 +114,9 @@ impl Backend for VfoxBackend {
                 info!("{}", line);
             }
         });
+        if let Ok(dep_env) = self.dependency_env(&ctx.config).await {
+            vfox.cmd_env = Some(dep_env.into_iter().collect());
+        }
 
         // Use backend methods if the plugin supports them
         if self.is_backend_plugin() {
@@ -384,7 +390,10 @@ impl VfoxBackend {
         cache
             .get_or_try_init_async(async || {
                 self.ensure_plugin_installed(config).await?;
-                let (vfox, _log_rx) = self.plugin.vfox();
+                let (mut vfox, _log_rx) = self.plugin.vfox();
+                if let Ok(dep_env) = self.dependency_env(config).await {
+                    vfox.cmd_env = Some(dep_env.into_iter().collect());
+                }
 
                 // Use backend methods if the plugin supports them
                 let env_keys = if self.is_backend_plugin() {
