@@ -83,6 +83,8 @@ static TAGS_CACHE: Lazy<RwLock<CacheGroup<Vec<String>>>> = Lazy::new(Default::de
 
 pub static API_URL: &str = "https://api.github.com";
 
+pub static API_PATH: &str = "/api/v3";
+
 async fn get_tags_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<String>>> {
     TAGS_CACHE
         .write()
