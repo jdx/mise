@@ -48,6 +48,11 @@ pub struct Vfox {
     /// no checksums, attestation always runs regardless of this flag.
     /// Set by the caller when the lockfile already has a provenance entry from a prior install.
     pub skip_verification: bool,
+    /// Optional environment to set on plugins before executing backend hooks.
+    /// When set, `plugin.set_cmd_env()` is called so Lua `cmd.exec()` uses this env
+    /// instead of inheriting the process environment. This allows dependency tools'
+    /// bin paths to be on PATH during version resolution and installation.
+    pub cmd_env: Option<IndexMap<String, String>>,
     log_tx: Option<mpsc::Sender<String>>,
 }
 
@@ -289,6 +294,9 @@ impl Vfox {
         options: IndexMap<String, toml::Value>,
     ) -> Result<Vec<String>> {
         let plugin = self.get_sdk(sdk)?;
+        if let Some(env) = &self.cmd_env {
+            plugin.set_cmd_env(env)?;
+        }
         let ctx = BackendListVersionsContext {
             tool: tool.to_string(),
             options,
@@ -306,6 +314,9 @@ impl Vfox {
         options: IndexMap<String, toml::Value>,
     ) -> Result<()> {
         let plugin = self.get_sdk(sdk)?;
+        if let Some(env) = &self.cmd_env {
+            plugin.set_cmd_env(env)?;
+        }
         let ctx = BackendInstallContext {
             tool: tool.to_string(),
             version: version.to_string(),
@@ -326,6 +337,9 @@ impl Vfox {
         options: IndexMap<String, toml::Value>,
     ) -> Result<Vec<EnvKey>> {
         let plugin = self.get_sdk(sdk)?;
+        if let Some(env) = &self.cmd_env {
+            plugin.set_cmd_env(env)?;
+        }
         let ctx = BackendExecEnvContext {
             tool: tool.to_string(),
             version: version.to_string(),
@@ -554,6 +568,7 @@ impl Default for Vfox {
             download_dir: home().join(".version-fox/downloads"),
             install_dir: home().join(".version-fox/installs"),
             skip_verification: false,
+            cmd_env: None,
             log_tx: None,
         }
     }
@@ -579,6 +594,7 @@ mod tests {
                 download_dir: PathBuf::from("test/downloads"),
                 install_dir: PathBuf::from("test/installs"),
                 skip_verification: false,
+                cmd_env: None,
                 log_tx: None,
             }
         }
@@ -679,5 +695,33 @@ mod tests {
         let metadata = vfox.metadata("dummy").await.unwrap();
         let out = format!("{metadata:?}");
         assert_snapshot!(out);
+    }
+
+    #[tokio::test]
+    async fn test_backend_list_versions_with_cmd_env() {
+        let mut vfox = Vfox::test();
+        let mut env = IndexMap::new();
+        env.insert("MY_TEST_VAR".to_string(), "hello".to_string());
+        env.insert(
+            "PATH".to_string(),
+            std::env::var("PATH").unwrap_or_default(),
+        );
+        vfox.cmd_env = Some(env);
+
+        let versions = vfox
+            .backend_list_versions("dummy-backend", "test-tool", IndexMap::new())
+            .await
+            .unwrap();
+        assert_eq!(versions, vec!["hello".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_backend_list_versions_without_cmd_env() {
+        let vfox = Vfox::test();
+        let versions = vfox
+            .backend_list_versions("dummy-backend", "test-tool", IndexMap::new())
+            .await
+            .unwrap();
+        assert_eq!(versions, vec!["fallback".to_string()]);
     }
 }

@@ -53,13 +53,16 @@ impl Backend for VfoxBackend {
         let this = self;
         timeout::run_with_timeout_async(
             || async {
-                let (vfox, _log_rx) = this.plugin.vfox();
+                let (mut vfox, _log_rx) = this.plugin.vfox();
                 this.ensure_plugin_installed(config).await?;
 
                 // Use backend methods if the plugin supports them
                 if this.is_backend_plugin() {
                     Settings::get().ensure_experimental("custom backends")?;
                     debug!("Using backend method for plugin: {}", this.pathname);
+                    if let Ok(dep_env) = this.dependency_env(config).await {
+                        vfox.cmd_env = Some(dep_env.into_iter().collect());
+                    }
                     let tool_name = this.get_tool_name()?;
                     let opts = config
                         .get_tool_opts(&this.ba)
@@ -115,6 +118,9 @@ impl Backend for VfoxBackend {
         // Use backend methods if the plugin supports them
         if self.is_backend_plugin() {
             Settings::get().ensure_experimental("custom backends")?;
+            if let Ok(dep_env) = self.dependency_env(&ctx.config).await {
+                vfox.cmd_env = Some(dep_env.into_iter().collect());
+            }
             let tool_name = self.get_tool_name()?;
             let tool_opts = tv.request.options();
             vfox.backend_install(
