@@ -1,5 +1,38 @@
 # Changelog
 
+## [2026.4.6](https://github.com/jdx/mise/compare/v2026.4.5..v2026.4.6) - 2026-04-07
+
+### 🚀 Features
+
+- **(config)** Add Tera template support to miserc.toml by @richardthe3rd in [#8867](https://github.com/jdx/mise/pull/8867)
+
+### 🐛 Bug Fixes
+
+- **(env)** include tools-only redactions in `mise env --redacted` by @jakedgy in [#8956](https://github.com/jdx/mise/pull/8956)
+- **(env)** pass dependency env to vfox backend plugin hooks by @cprecioso in [#8952](https://github.com/jdx/mise/pull/8952)
+- **(shim)** fix race condition when removing in make_shim, when multiple plugins provide the same shim by @brander-john in [#8947](https://github.com/jdx/mise/pull/8947)
+- **(spm)** derive API URL from host for self-hosted instances by @ThomasDutartre in [#8955](https://github.com/jdx/mise/pull/8955)
+- **(task)** resolve env vars in usage tera templates when flags are provided by @jdx in [#8957](https://github.com/jdx/mise/pull/8957)
+
+### 📚 Documentation
+
+- **(python)** clarify attestation settings must be under [settings] in mise.toml by @fru1tworld in [#8939](https://github.com/jdx/mise/pull/8939)
+
+### 📦 Registry
+
+- added sing-box by @tony-sol in [#8944](https://github.com/jdx/mise/pull/8944)
+
+### Chore
+
+- **(ci)** remove auto-draft PR workflow by @jdx in [#8945](https://github.com/jdx/mise/pull/8945)
+
+### New Contributors
+
+- @ThomasDutartre made their first contribution in [#8955](https://github.com/jdx/mise/pull/8955)
+- @jakedgy made their first contribution in [#8956](https://github.com/jdx/mise/pull/8956)
+- @brander-john made their first contribution in [#8947](https://github.com/jdx/mise/pull/8947)
+- @fru1tworld made their first contribution in [#8939](https://github.com/jdx/mise/pull/8939)
+
 ## [2026.4.5](https://github.com/jdx/mise/compare/v2026.4.4..v2026.4.5) - 2026-04-06
 
 ### 🚀 Features
