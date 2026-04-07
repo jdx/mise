@@ -21,3 +21,15 @@ assert "mise run tera-env-default -f another-file.txt" "another-file.txt"
 
 # Test --help doesn't error
 assert_contains "mise run tera-env-default --help" "--file"
+
+# Test system env vars (e.g. HOME) are also available in usage defaults
+cat <<'EOF' >mise.toml
+[tasks.tera-sys-env]
+usage = '''
+flag "-d --dir [dir]" default="{{ env.HOME }}"
+'''
+run = "echo ${usage_dir}"
+EOF
+
+assert "mise run tera-sys-env" "$HOME"
+assert "mise run tera-sys-env -d /tmp" "/tmp"

@@ -1761,7 +1761,7 @@ pub async fn parse_usage_values_from_task(
     task: &Task,
 ) -> Result<IndexMap<String, String>> {
     let ts = config.get_toolset().await?;
-    let env = ts.env_with_path(config).await?;
+    let env = ts.full_env(config).await?;
     let (spec, _) = task
         .parse_usage_spec_with_vars(config, None, &env, None)
         .await?;
