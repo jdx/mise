@@ -22,6 +22,28 @@ configuration to version control:
 env = ["development"]
 ```
 
+### Templates in .miserc.toml
+
+`.miserc.toml` supports [Tera templates](/templates#miserc-template-support),
+which is useful for settings like `ceiling_paths` that reference home or XDG directories:
+
+<div v-pre>
+
+```toml
+# .miserc.toml
+
+# Stop config search at $HOME
+ceiling_paths = ["{{ env.HOME }}"]
+
+# Or use the XDG config home variable
+ignored_config_paths = ["{{ xdg_config_home }}/mise/shared.toml"]
+```
+
+</div>
+
+Note that only OS-level context is available (environment variables, `cwd`, `arch()`, `os()`,
+etc.) — settings from `mise.toml` are not yet loaded at this stage.
+
 File locations searched (in order of precedence):
 
 1. `.miserc.toml` and `.config/miserc.toml` in current directory and parent directories
