@@ -301,12 +301,13 @@ impl GitProvider {
         match host {
             "github.com" | "gitlab.com" => None,
             _ => {
-                let scheme = url.scheme();
                 let api_path = match kind {
                     GitProviderKind::GitHub => github::API_PATH,
                     GitProviderKind::GitLab => gitlab::API_PATH,
                 };
-                Some(format!("{scheme}://{host}{api_path}"))
+                let mut api_url = url.clone();
+                api_url.set_path(api_path);
+                Some(api_url.as_str().trim_end_matches('/').to_string())
             }
         }
     }
