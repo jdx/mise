@@ -279,13 +279,37 @@ impl GitProvider {
 
         let api_url = match opts.get("api_url") {
             Some(api_url) => api_url.trim_end_matches('/').to_string(),
-            None => match kind {
-                GitProviderKind::GitHub => github::API_URL.to_string(),
-                GitProviderKind::GitLab => gitlab::API_URL.to_string(),
-            },
+            None => {
+                Self::derive_api_url_from_tool_name(&ba.tool_name, &kind).unwrap_or_else(|| {
+                    match kind {
+                        GitProviderKind::GitHub => github::API_URL.to_string(),
+                        GitProviderKind::GitLab => gitlab::API_URL.to_string(),
+                    }
+                })
+            }
         };
 
         Self { api_url, kind }
+    }
+
+    /// When the tool name is a full URL pointing to a self-hosted instance,
+    /// derive the API URL from the host instead of falling back to the public API.
+    fn derive_api_url_from_tool_name(tool_name: &str, kind: &GitProviderKind) -> Option<String> {
+        let name = tool_name.strip_prefix("spm:").unwrap_or(tool_name);
+        let url = Url::parse(name).ok()?;
+        let host = url.host_str()?;
+        match host {
+            "github.com" | "gitlab.com" => None,
+            _ => {
+                let api_path = match kind {
+                    GitProviderKind::GitHub => github::API_PATH,
+                    GitProviderKind::GitLab => gitlab::API_PATH,
+                };
+                let mut api_url = url.clone();
+                api_url.set_path(api_path);
+                Some(api_url.as_str().trim_end_matches('/').to_string())
+            }
+        }
     }
 }
 
@@ -392,6 +416,61 @@ mod tests {
             GitProvider {
                 api_url: "https://gitlab.acme.com/api/v4".to_string(),
                 kind: GitProviderKind::GitLab
+            }
+        );
+
+        // Self-hosted GitHub Enterprise URL without api_url -> should derive from host
+        assert_eq!(
+            GitProvider::from_ba(&get_ba(
+                "https://github.acme.com/org/Tool.git".to_string(),
+                None
+            )),
+            GitProvider {
+                api_url: "https://github.acme.com/api/v3".to_string(),
+                kind: GitProviderKind::GitHub
+            }
+        );
+
+        // Self-hosted GitLab URL without api_url -> should derive from host
+        assert_eq!(
+            GitProvider::from_ba(&get_ba(
+                "https://gitlab.acme.com/org/Tool.git".to_string(),
+                Some(ToolVersionOptions {
+                    opts: indexmap![
+                        "provider".to_string() => toml::Value::String("gitlab".to_string())
+                    ],
+                    ..Default::default()
+                })
+            )),
+            GitProvider {
+                api_url: "https://gitlab.acme.com/api/v4".to_string(),
+                kind: GitProviderKind::GitLab
+            }
+        );
+
+        // github.com URL without api_url -> should use default
+        assert_eq!(
+            GitProvider::from_ba(&get_ba("https://github.com/org/Tool.git".to_string(), None)),
+            GitProvider {
+                api_url: github::API_URL.to_string(),
+                kind: GitProviderKind::GitHub
+            }
+        );
+
+        // Explicit api_url should take precedence over derived URL
+        assert_eq!(
+            GitProvider::from_ba(&get_ba(
+                "https://github.acme.com/org/Tool.git".to_string(),
+                Some(ToolVersionOptions {
+                    opts: indexmap![
+                        "api_url".to_string() => toml::Value::String("https://custom-api.acme.com/v3".to_string())
+                    ],
+                    ..Default::default()
+                })
+            )),
+            GitProvider {
+                api_url: "https://custom-api.acme.com/v3".to_string(),
+                kind: GitProviderKind::GitHub
             }
         );
     }
