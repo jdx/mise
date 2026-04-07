@@ -696,6 +696,7 @@ mod tests {
         assert_snapshot!(out);
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_backend_list_versions_with_cmd_env() {
         let mut vfox = Vfox::test();
