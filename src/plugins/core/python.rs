@@ -896,14 +896,19 @@ fn python_arch(settings: &Settings) -> &str {
     if let Some(arch) = &settings.python.precompiled_arch {
         return arch.as_str();
     }
-    let arch = match settings.arch() {
+    let arch = settings.arch();
+    resolve_python_arch(std::env::consts::OS, arch)
+}
+
+fn resolve_python_arch<'a>(os: &str, arch: &'a str) -> &'a str {
+    let arch = match arch {
         "x64" => "x86_64",
         "arm64" => "aarch64",
         other => other,
     };
-    if cfg!(windows) {
+    if os == "windows" && arch != "aarch64" {
         "x86_64"
-    } else if cfg!(linux) && arch == "x86_64" {
+    } else if os == "linux" && arch == "x86_64" {
         if cfg!(target_feature = "avx512f") {
             "x86_64_v4"
         } else if cfg!(target_feature = "avx2") {
@@ -957,4 +962,39 @@ fn ensure_not_windows() -> eyre::Result<()> {
 
 fn filter_freethreaded(v: &str, flavor: &Option<String>) -> bool {
     flavor.as_ref().is_some_and(|f| f.contains("freethreaded")) || !v.contains("freethreaded")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_python_arch_windows_x64() {
+        assert_eq!(resolve_python_arch("windows", "x64"), "x86_64");
+        assert_eq!(resolve_python_arch("windows", "x86_64"), "x86_64");
+    }
+
+    #[test]
+    fn test_resolve_python_arch_windows_arm64() {
+        assert_eq!(resolve_python_arch("windows", "arm64"), "aarch64");
+        assert_eq!(resolve_python_arch("windows", "aarch64"), "aarch64");
+    }
+
+    #[test]
+    fn test_resolve_python_arch_linux_x64() {
+        // Exact variant depends on CPU features at compile time,
+        // but it should always start with "x86_64"
+        assert!(resolve_python_arch("linux", "x64").starts_with("x86_64"));
+    }
+
+    #[test]
+    fn test_resolve_python_arch_linux_arm64() {
+        assert_eq!(resolve_python_arch("linux", "arm64"), "aarch64");
+    }
+
+    #[test]
+    fn test_resolve_python_arch_macos() {
+        assert_eq!(resolve_python_arch("macos", "arm64"), "aarch64");
+        assert_eq!(resolve_python_arch("macos", "x64"), "x86_64");
+    }
 }
