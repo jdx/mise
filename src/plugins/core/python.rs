@@ -906,7 +906,7 @@ fn resolve_python_arch<'a>(os: &str, arch: &'a str) -> &'a str {
         "arm64" => "aarch64",
         other => other,
     };
-    if os == "windows" {
+    if os == "windows" && arch != "aarch64" {
         "x86_64"
     } else if os == "linux" && arch == "x86_64" {
         if cfg!(target_feature = "avx512f") {
@@ -972,6 +972,12 @@ mod tests {
     fn test_resolve_python_arch_windows_x64() {
         assert_eq!(resolve_python_arch("windows", "x64"), "x86_64");
         assert_eq!(resolve_python_arch("windows", "x86_64"), "x86_64");
+    }
+
+    #[test]
+    fn test_resolve_python_arch_windows_arm64() {
+        assert_eq!(resolve_python_arch("windows", "arm64"), "aarch64");
+        assert_eq!(resolve_python_arch("windows", "aarch64"), "aarch64");
     }
 
     #[test]
