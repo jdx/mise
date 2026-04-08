@@ -378,7 +378,7 @@ impl Lock {
             return Platform::parse_multiple(&self.platform);
         }
 
-        Ok(lockfile::determine_existing_platforms(lockfile_path))
+        lockfile::determine_existing_platforms(lockfile_path)
     }
 
     /// Collect tools that belong to a given lockfile target.

@@ -1166,6 +1166,32 @@ env = "MISE_LOCKFILE"
 optional = true
 type = "Bool"
 
+[lockfile_platforms]
+description = "Platforms to target in lockfile operations."
+docs = """
+Restricts which platforms are included when auto-locking (triggered by `mise install`/`mise use`)
+or when running `mise lock` without `--platform`. By default (unset), mise targets all common
+platforms (linux-x64, linux-x64-musl, linux-arm64, linux-arm64-musl, macos-x64, macos-arm64,
+windows-x64) plus the current platform.
+
+Setting this avoids resolving checksums/URLs for platforms you don't need, keeping lockfiles
+smaller and `mise install`/`mise use` faster.
+
+Does NOT override explicit `mise lock --platform` flags.
+
+```toml
+[settings]
+lockfile_platforms = ["macos-arm64", "linux-x64"]
+```
+
+Platform format: `os-arch` or `os-arch-qualifier` (e.g., `linux-x64`, `linux-x64-musl`, `macos-arm64`).
+"""
+env = "MISE_LOCKFILE_PLATFORMS"
+optional = true
+parse_env = "list_by_comma"
+rust_type = "Vec<String>"
+type = "ListString"
+
 [log_level]
 default = "info"
 description = "Show more/less output."

@@ -1037,7 +1037,15 @@ fn check_provenance_regression(
 
 /// Determine target platforms using an already-loaded lockfile (used by auto-lock).
 /// Returns all common platforms + current platform + any existing platforms in the lockfile.
-fn determine_target_platforms_from_lockfile(lockfile: Option<&Lockfile>) -> Vec<Platform> {
+fn determine_target_platforms_from_lockfile(lockfile: Option<&Lockfile>) -> Result<Vec<Platform>> {
+    // If lockfile_platforms setting is configured, use it as the authoritative set
+    if let Some(configured) = Settings::get().lockfile_platforms()? {
+        let mut platforms: BTreeSet<Platform> = configured.into_iter().collect();
+        platforms.insert(Platform::current());
+        return Ok(platforms.into_iter().collect());
+    }
+
+    // Default: all common platforms + current + existing lockfile platforms
     let mut platforms: BTreeSet<Platform> = Platform::common_platforms().into_iter().collect();
     platforms.insert(Platform::current());
     if let Some(lockfile) = lockfile {
@@ -1049,13 +1057,20 @@ fn determine_target_platforms_from_lockfile(lockfile: Option<&Lockfile>) -> Vec<
             }
         }
     }
-    platforms.into_iter().collect()
+    Ok(platforms.into_iter().collect())
 }
 
 /// Determine target platforms from an existing lockfile for explicit `mise lock` calls.
 /// If the lockfile already has platform entries, only those are targeted.
 /// Otherwise, falls back to all common platforms + current platform.
-pub fn determine_existing_platforms(lockfile_path: &Path) -> Vec<Platform> {
+pub fn determine_existing_platforms(lockfile_path: &Path) -> Result<Vec<Platform>> {
+    // If lockfile_platforms setting is configured, use it as the authoritative set
+    if let Some(configured) = Settings::get().lockfile_platforms()? {
+        let mut platforms: BTreeSet<Platform> = configured.into_iter().collect();
+        platforms.insert(Platform::current());
+        return Ok(platforms.into_iter().collect());
+    }
+
     if let Ok(lockfile) = Lockfile::read(lockfile_path) {
         let existing_keys = lockfile.all_platform_keys();
         if !existing_keys.is_empty() {
@@ -1068,14 +1083,14 @@ pub fn determine_existing_platforms(lockfile_path: &Path) -> Vec<Platform> {
                 }
             }
             if !platforms.is_empty() {
-                return platforms.into_iter().collect();
+                return Ok(platforms.into_iter().collect());
             }
         }
     }
     // No lockfile, no platforms yet, or no valid platform keys — use common defaults
     let mut platforms: BTreeSet<Platform> = Platform::common_platforms().into_iter().collect();
     platforms.insert(Platform::current());
-    platforms.into_iter().collect()
+    Ok(platforms.into_iter().collect())
 }
 
 /// After installing new tool versions, resolve checksums/URLs for all common platforms
@@ -1117,7 +1132,7 @@ pub async fn auto_lock_new_versions(_config: &Config, new_versions: &[ToolVersio
         let mut lockfile = Lockfile::read(&lockfile_path)
             .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
 
-        let target_platforms = determine_target_platforms_from_lockfile(Some(&lockfile));
+        let target_platforms = determine_target_platforms_from_lockfile(Some(&lockfile))?;
 
         let semaphore = Arc::new(Semaphore::new(jobs));
         let mut jset: JoinSet<LockResolutionResult> = JoinSet::new();
