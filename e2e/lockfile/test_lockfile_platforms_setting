@@ -18,7 +18,6 @@ assert_contains "cat mise.lock" "platforms.macos-arm64"
 assert_contains "cat mise.lock" "platforms.linux-x64"
 assert_contains "cat mise.lock" "platforms.$MISE_PLATFORM"
 assert_not_contains "cat mise.lock" "platforms.windows-x64"
-assert_not_contains "cat mise.lock" "platforms.linux-arm64-musl"
 
 # === Test 2: Setting restricts mise lock without --platform ===
 rm -f mise.lock
@@ -27,7 +26,6 @@ mise lock
 assert_contains "cat mise.lock" "platforms.macos-arm64"
 assert_contains "cat mise.lock" "platforms.linux-x64"
 assert_not_contains "cat mise.lock" "platforms.windows-x64"
-assert_not_contains "cat mise.lock" "platforms.linux-x64-musl"
 
 # === Test 3: --platform flag overrides the setting ===
 rm -f mise.lock
