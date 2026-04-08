@@ -50,4 +50,18 @@ assert_contains "cat mise.lock" "platforms.macos-arm64"
 assert_contains "cat mise.lock" "platforms.linux-x64"
 assert_not_contains "cat mise.lock" "platforms.windows-x64"
 
+# === Test 5: mise use respects lockfile_platforms setting ===
+export MISE_LOCKFILE_PLATFORMS=macos-arm64,linux-x64
+
+cat <<EOF >mise.toml
+[tools]
+EOF
+
+rm -f mise.lock
+touch mise.lock
+mise use "aqua:jqlang/jq@1.7.1"
+assert_contains "cat mise.lock" "platforms.macos-arm64"
+assert_contains "cat mise.lock" "platforms.linux-x64"
+assert_not_contains "cat mise.lock" "platforms.windows-x64"
+
 rm -f mise.toml mise.lock
