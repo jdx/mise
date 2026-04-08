@@ -14,6 +14,9 @@ EOF
 
 touch mise.lock
 mise install
+assert_contains "cat mise.lock" "platforms.macos-arm64"
+assert_contains "cat mise.lock" "platforms.linux-x64"
+assert_contains "cat mise.lock" "platforms.$MISE_PLATFORM"
 assert_not_contains "cat mise.lock" "platforms.windows-x64"
 assert_not_contains "cat mise.lock" "platforms.linux-arm64-musl"
 
@@ -21,6 +24,8 @@ assert_not_contains "cat mise.lock" "platforms.linux-arm64-musl"
 rm -f mise.lock
 touch mise.lock
 mise lock
+assert_contains "cat mise.lock" "platforms.macos-arm64"
+assert_contains "cat mise.lock" "platforms.linux-x64"
 assert_not_contains "cat mise.lock" "platforms.windows-x64"
 assert_not_contains "cat mise.lock" "platforms.linux-x64-musl"
 
@@ -43,6 +48,8 @@ EOF
 rm -f mise.lock
 touch mise.lock
 mise lock
+assert_contains "cat mise.lock" "platforms.macos-arm64"
+assert_contains "cat mise.lock" "platforms.linux-x64"
 assert_not_contains "cat mise.lock" "platforms.windows-x64"
 
 rm -f mise.toml mise.lock

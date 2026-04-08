@@ -1184,6 +1184,8 @@ Does NOT override explicit `mise lock --platform` flags.
 lockfile_platforms = ["macos-arm64", "linux-x64"]
 ```
 
+The current platform is always included in addition to any configured platforms.
+
 Platform format: `os-arch` or `os-arch-qualifier` (e.g., `linux-x64`, `linux-x64-musl`, `macos-arm64`).
 """
 env = "MISE_LOCKFILE_PLATFORMS"
