@@ -64,4 +64,3 @@ assert_contains "cat mise.lock" "platforms.macos-arm64"
 assert_contains "cat mise.lock" "platforms.linux-x64"
 assert_not_contains "cat mise.lock" "platforms.windows-x64"
 
-rm -f mise.toml mise.lock
