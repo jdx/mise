@@ -530,9 +530,13 @@ impl Run {
             let result = this
                 .run_task_sched(&task, &ctx.config, ctx.sched_tx.clone(), completed, dep_ran)
                 .await;
-            // If the task actually ran (not skipped), mark it so dependents know
+            // If the task actually ran (not skipped) and has sources defined,
+            // mark it so dependents' source freshness checks are invalidated.
+            // Tasks without sources always run and should not trigger invalidation.
             if let Ok(true) = &result {
-                deps_for_remove.lock().await.mark_ran(&task);
+                if !task.sources.is_empty() {
+                    deps_for_remove.lock().await.mark_ran(&task);
+                }
             }
             if let Err(err) = &result {
                 let status = Error::get_exit_status(err);

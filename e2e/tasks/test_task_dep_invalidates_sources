@@ -46,8 +46,9 @@ mise run frontend:build
 assert "cat log.txt 2>/dev/null || echo empty" "empty"
 
 # --- Edge case: dependency has no sources (always runs) ---
-# When a dep has no sources it always runs, so dependents with sources
-# should also re-run every time.
+# A dep without sources always runs, but should NOT invalidate
+# the dependent's source freshness check. Otherwise sources on
+# the dependent would be useless.
 
 cat <<'EOF' >mise.toml
 [tasks.setup]
@@ -69,11 +70,11 @@ assert_contains "cat log2.txt" "setup-ran"
 assert_contains "cat log2.txt" "compiled"
 rm -f log2.txt
 
-# Second run: setup has no sources so it always runs,
-# which should cause compile to also run
+# Second run: setup runs (no sources) but compile should be
+# skipped because its own sources haven't changed
 mise run compile
 assert_contains "cat log2.txt" "setup-ran"
-assert_contains "cat log2.txt" "compiled"
+assert_not_contains "cat log2.txt" "compiled"
 rm -f log2.txt
 
 # --- Edge case: dependency has sources, dependent has no sources ---
