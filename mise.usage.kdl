@@ -269,7 +269,7 @@ cmd exec help="Execute a command with tool(s) set" {
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg <JOBS>
     }
-    flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)" var=#true {
+    flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'" var=#true {
         arg <VAR>
     }
     flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)\nmacOS only in v1; on Linux falls back to allowing all network" var=#true {
@@ -752,7 +752,7 @@ cmd run restart_token=::: help="Run task(s)" {
     flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
         arg <TOOL@VERSION>
     }
-    flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)" var=#true {
+    flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'" var=#true {
         arg <VAR>
     }
     flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)" var=#true {
@@ -1083,7 +1083,7 @@ cmd tasks help="Manage tasks" {
         flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
             arg <TOOL@VERSION>
         }
-        flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)" var=#true {
+        flag --allow-env help="[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'" var=#true {
             arg <VAR>
         }
         flag --allow-net help="[experimental] Allow network to specific host (implies --deny-net for everything else)" var=#true {
