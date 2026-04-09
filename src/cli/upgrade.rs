@@ -219,6 +219,32 @@ impl Upgrade {
                     display_path(cf.get_path())
                 );
             }
+            if !self.bump {
+                use crate::toolset::outdated_info::compute_config_bumps;
+                let tool_versions: Vec<(String, String)> = self
+                    .tool
+                    .iter()
+                    .filter_map(|t| {
+                        t.tvr
+                            .as_ref()
+                            .map(|tvr| (t.ba.short.clone(), tvr.version()))
+                    })
+                    .collect();
+                let refs: Vec<(&str, &str)> = tool_versions
+                    .iter()
+                    .map(|(n, v)| (n.as_str(), v.as_str()))
+                    .collect();
+                let bumps = compute_config_bumps(config, &refs);
+                for bump in &bumps {
+                    miseprintln!(
+                        "Would update {} from {} to {} in {}",
+                        bump.tool_name,
+                        bump.old_version,
+                        bump.new_version,
+                        display_path(&bump.config_path)
+                    );
+                }
+            }
             if self.dry_run_code {
                 exit::exit(1);
             }
@@ -274,9 +300,31 @@ impl Upgrade {
 
         // When a specific version is provided via CLI (e.g., `mise upgrade tiny@3.0.1`),
         // update the config file prefix if the new version doesn't match the current specifier.
-        // This is similar to --bump but uses the CLI-specified version as the target.
-        self.update_config_for_cli_versions(config, &outdated, &successful_versions)
-            .await?;
+        // Skip if --bump was used since it already handles config updates.
+        if !self.bump {
+            use crate::toolset::outdated_info::{apply_config_bumps, compute_config_bumps};
+            let tool_versions: Vec<(String, String)> = self
+                .tool
+                .iter()
+                .filter_map(|t| {
+                    t.tvr.as_ref().and_then(|tvr| {
+                        let name = t.ba.short.clone();
+                        // Only process tools that were successfully installed
+                        if successful_versions.iter().any(|v| v.ba().short == name) {
+                            Some((name, tvr.version()))
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .collect();
+            let refs: Vec<(&str, &str)> = tool_versions
+                .iter()
+                .map(|(n, v)| (n.as_str(), v.as_str()))
+                .collect();
+            let bumps = compute_config_bumps(config, &refs);
+            apply_config_bumps(config, &bumps)?;
+        }
 
         // Reset config after upgrades so tracked configs resolve with new versions
         *config = Config::reset().await?;
@@ -355,108 +403,6 @@ impl Upgrade {
         Self::print_summary(&outdated, &successful_versions)?;
 
         install_error
-    }
-
-    /// When CLI args specify an explicit version (e.g., `mise upgrade tiny@3.0.1`),
-    /// update the config file if the new version doesn't match the current specifier.
-    /// This preserves the same version precision as the original config entry.
-    async fn update_config_for_cli_versions(
-        &self,
-        config: &Arc<Config>,
-        outdated: &[OutdatedInfo],
-        successful_versions: &[ToolVersion],
-    ) -> Result<()> {
-        use crate::semver::split_version_prefix;
-        use crate::toolset::ToolRequest;
-        use crate::toolset::outdated_info::check_semver_bump;
-
-        // Build map of CLI args that have explicit versions
-        let cli_versions: std::collections::HashMap<String, String> = self
-            .tool
-            .iter()
-            .filter_map(|t| {
-                t.tvr
-                    .as_ref()
-                    .map(|tvr| (t.ba.short.clone(), tvr.version()))
-            })
-            .collect();
-
-        if cli_versions.is_empty() {
-            return Ok(());
-        }
-
-        for o in outdated {
-            let Some(cli_version) = cli_versions.get(&o.name) else {
-                continue;
-            };
-
-            // Only process tools that were successfully installed
-            if !successful_versions
-                .iter()
-                .any(|v| v.ba() == o.tool_version.ba())
-            {
-                continue;
-            }
-
-            // Find which config file defines this tool
-            for (path, cf) in config.config_files.iter() {
-                if crate::config::is_global_config(path) {
-                    continue;
-                }
-                let Ok(trs) = cf.to_tool_request_set() else {
-                    continue;
-                };
-                let Some(requests) = trs.tools.get(o.tool_version.ba()) else {
-                    continue;
-                };
-                if requests.len() != 1 {
-                    continue;
-                }
-
-                let current_version = requests[0].version();
-                let (prefix, _) = split_version_prefix(&current_version);
-                let old = current_version
-                    .strip_prefix(&prefix)
-                    .unwrap_or(&current_version);
-
-                // Check if the new version requires a config update
-                if let Some(bumped) = check_semver_bump(old, cli_version)
-                    && bumped != old
-                {
-                    let new_version = format!("{prefix}{bumped}");
-                    let new_request = match requests[0].clone() {
-                        ToolRequest::Version {
-                            version: _,
-                            backend,
-                            options,
-                            source,
-                        } => ToolRequest::Version {
-                            version: new_version,
-                            backend,
-                            options,
-                            source,
-                        },
-                        ToolRequest::Prefix {
-                            prefix: _,
-                            backend,
-                            options,
-                            source,
-                        } => ToolRequest::Prefix {
-                            prefix: format!("{prefix}{bumped}"),
-                            backend,
-                            options,
-                            source,
-                        },
-                        other => other,
-                    };
-                    cf.replace_versions(o.tool_version.ba(), vec![new_request])?;
-                    cf.save()?;
-                }
-                break;
-            }
-        }
-
-        Ok(())
     }
 
     async fn uninstall_old_version(

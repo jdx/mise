@@ -181,85 +181,39 @@ impl Lock {
 
         // Update config files when a specific version is requested that doesn't match
         // the current prefix (e.g., `mise lock tiny@3.0.1` when config has `tiny = "2"`)
-        if !self.dry_run {
-            self.update_config_for_version_args(&config).await?;
+        {
+            use crate::toolset::outdated_info::{apply_config_bumps, compute_config_bumps};
+            let tool_versions: Vec<(String, String)> = self
+                .tool
+                .iter()
+                .filter_map(|t| {
+                    t.tvr
+                        .as_ref()
+                        .map(|tvr| (t.ba.short.clone(), tvr.version()))
+                })
+                .collect();
+            let refs: Vec<(&str, &str)> = tool_versions
+                .iter()
+                .map(|(n, v)| (n.as_str(), v.as_str()))
+                .collect();
+            let bumps = compute_config_bumps(&config, &refs);
+            if self.dry_run {
+                for bump in &bumps {
+                    miseprintln!(
+                        "Would update {} from {} to {} in {}",
+                        bump.tool_name,
+                        bump.old_version,
+                        bump.new_version,
+                        display_path(&bump.config_path)
+                    );
+                }
+            } else {
+                apply_config_bumps(&config, &bumps)?;
+            }
         }
 
         if !all_provenance_errors.is_empty() {
             return Err(eyre::eyre!("{}", all_provenance_errors.join("\n")));
-        }
-
-        Ok(())
-    }
-
-    /// Update config files when a specific version is requested via `mise lock tool@version`
-    /// and the version doesn't match the current config prefix.
-    async fn update_config_for_version_args(&self, config: &Config) -> Result<()> {
-        use crate::semver::split_version_prefix;
-        use crate::toolset::ToolRequest;
-        use crate::toolset::outdated_info::check_semver_bump;
-
-        for tool_arg in &self.tool {
-            let Some(tvr) = &tool_arg.tvr else {
-                continue;
-            };
-            let cli_version = tvr.version();
-
-            // Find which config file defines this tool
-            for (path, cf) in config.config_files.iter() {
-                if crate::config::is_global_config(path) {
-                    continue;
-                }
-                let Ok(trs) = cf.to_tool_request_set() else {
-                    continue;
-                };
-                let Some(requests) = trs.tools.get(&tool_arg.ba) else {
-                    continue;
-                };
-                if requests.len() != 1 {
-                    continue;
-                }
-
-                let current_version = requests[0].version();
-                let (prefix, _) = split_version_prefix(&current_version);
-                let old = current_version
-                    .strip_prefix(&prefix)
-                    .unwrap_or(&current_version);
-
-                if let Some(bumped) = check_semver_bump(old, &cli_version)
-                    && bumped != old
-                {
-                    let new_version = format!("{prefix}{bumped}");
-                    let new_request = match requests[0].clone() {
-                        ToolRequest::Version {
-                            version: _,
-                            backend,
-                            options,
-                            source,
-                        } => ToolRequest::Version {
-                            version: new_version,
-                            backend,
-                            options,
-                            source,
-                        },
-                        ToolRequest::Prefix {
-                            prefix: _,
-                            backend,
-                            options,
-                            source,
-                        } => ToolRequest::Prefix {
-                            prefix: format!("{prefix}{bumped}"),
-                            backend,
-                            options,
-                            source,
-                        },
-                        other => other,
-                    };
-                    cf.replace_versions(&tool_arg.ba, vec![new_request])?;
-                    cf.save()?;
-                }
-                break;
-            }
         }
 
         Ok(())
