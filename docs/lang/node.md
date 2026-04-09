@@ -32,7 +32,7 @@ node = "24"
 npm = "11"
 ```
 
-To pin both to exact versions (recommended for teams):
+To pin both to exact versions:
 
 ```sh
 mise use --pin node@lts npm@latest

@@ -1760,7 +1760,8 @@ pub async fn parse_usage_values_from_task(
     config: &Arc<Config>,
     task: &Task,
 ) -> Result<IndexMap<String, String>> {
-    let env: EnvMap = Default::default();
+    let ts = config.get_toolset().await?;
+    let env = ts.full_env(config).await?;
     let (spec, _) = task
         .parse_usage_spec_with_vars(config, None, &env, None)
         .await?;

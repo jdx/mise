@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
+use crate::env_diff::EnvMap;
 use crate::shell::{ShellType, get_shell};
 use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 use indexmap::IndexSet;
@@ -55,11 +56,22 @@ impl Env {
             .await?;
         ts.notify_missing_versions(missing);
 
-        // Get redacted keys if needed
+        // Pre-compute final_env when needed by --redacted or --dotenv to
+        // avoid calling it twice. final_env includes the tools-only pass
+        // whose redactions are not in config.env_results().
+        let final_env = if self.redacted || self.dotenv {
+            Some(ts.final_env(&config).await?)
+        } else {
+            None
+        };
+
         let redacted_keys = if self.redacted {
             let env_results = config.env_results().await?;
             let mut keys = IndexSet::new();
             keys.extend(env_results.redactions.clone());
+            if let Some((_, ref tools_env_results)) = final_env {
+                keys.extend(tools_env_results.redactions.clone());
+            }
             keys.extend(config.redaction_keys());
             Some(keys)
         } else {
@@ -71,7 +83,7 @@ impl Env {
         } else if self.json_extended {
             self.output_extended_json(&config, ts, &redacted_keys).await
         } else if self.dotenv {
-            self.output_dotenv(&config, ts, &redacted_keys).await
+            self.output_dotenv(final_env.unwrap().0, &redacted_keys)
         } else if self.values {
             self.output_values(&config, ts, &redacted_keys).await
         } else {
@@ -183,14 +195,11 @@ impl Env {
         Ok(())
     }
 
-    async fn output_dotenv(
+    fn output_dotenv(
         &self,
-        config: &Arc<Config>,
-        ts: Toolset,
+        mut env: EnvMap,
         redacted_keys: &Option<IndexSet<String>>,
     ) -> Result<()> {
-        let (mut env, _) = ts.final_env(config).await?;
-
         if let Some(keys) = redacted_keys {
             env.retain(|k, _| self.should_include_key(k, keys));
         }

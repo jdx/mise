@@ -92,3 +92,24 @@ EOF
 # With file redaction, all vars from file are redacted
 assert_contains "mise env --redacted" "FILE_SECRET=file_secret_value"
 assert_contains "mise env --redacted" "FILE_PUBLIC=public_value"
+
+# Test --redacted with tools=true + redact=true (inline val)
+cat <<'TOML' >mise.toml
+[env]
+TOOLS_SECRET = { value = "tools_secret_val", tools = true, redact = true }
+TOOLS_PUBLIC = { value = "tools_public_val", tools = true }
+TOML
+
+assert_contains "mise env --redacted" "TOOLS_SECRET=tools_secret_val"
+assert_not_contains "mise env --redacted" "TOOLS_PUBLIC=tools_public_val"
+
+# Test --redacted with tools=true + redact=true (sourced file)
+echo 'export SOURCED_SECRET="sourced_secret_val"' >secrets.sh
+cat <<'TOML' >mise.toml
+[env]
+_.source = { path = "secrets.sh", tools = true, redact = true }
+NORMAL_VAR = "normal"
+TOML
+
+assert_contains "mise env --redacted" "SOURCED_SECRET=sourced_secret_val"
+assert_not_contains "mise env --redacted" "NORMAL_VAR=normal"

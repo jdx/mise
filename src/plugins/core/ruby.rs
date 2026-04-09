@@ -28,7 +28,7 @@ use crate::{file, hash, plugins, timeout};
 
 const RUBY_INDEX_URL: &str = "https://cache.ruby-lang.org/pub/ruby/index.txt";
 const ATTESTATION_HELP: &str = "To disable attestation verification, set MISE_RUBY_GITHUB_ATTESTATIONS=false\n\
-    or add `ruby.github_attestations = false` to your mise config";
+    or add `ruby.github_attestations = false` under [settings] in mise.toml";
 
 #[derive(Debug)]
 pub struct RubyPlugin {
