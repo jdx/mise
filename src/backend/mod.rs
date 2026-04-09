@@ -12,6 +12,7 @@ use jiff::Timestamp;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
+use crate::config::config_file::config_root;
 use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
@@ -1152,7 +1153,7 @@ pub trait Backend: Debug + Send + Sync {
         let mut tera = get_tera(dir);
         let rendered_script = tera.render_str(script, tera_ctx)?;
 
-        CmdLineRunner::new(&*env::SHELL)
+        let mut runner = CmdLineRunner::new(&*env::SHELL)
             .env(&*env::PATH_KEY, path_env.join())
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
             .env("MISE_TOOL_NAME", tv.ba().short.clone())
@@ -1160,8 +1161,18 @@ pub trait Backend: Debug + Send + Sync {
             .with_pr(ctx.pr.as_ref())
             .arg(env::SHELL_COMMAND_FLAG)
             .arg(&rendered_script)
-            .envs(env_vars)
-            .execute()?;
+            .envs(env_vars);
+
+        // Set MISE_CONFIG_ROOT and MISE_PROJECT_ROOT from the tool's source config file
+        if let Some(source_path) = tv.request.source().path() {
+            let root = config_root::config_root(source_path);
+            let root = root.to_string_lossy().to_string();
+            runner = runner
+                .env("MISE_CONFIG_ROOT", &root)
+                .env("MISE_PROJECT_ROOT", &root);
+        }
+
+        runner.execute()?;
         Ok(())
     }
 
