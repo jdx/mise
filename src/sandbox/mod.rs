@@ -27,6 +27,24 @@ pub struct SandboxConfig {
 /// Minimal env vars inherited when deny_env is active.
 const DEFAULT_ENV_KEYS: &[&str] = &["PATH", "HOME", "USER", "SHELL", "TERM", "LANG"];
 
+/// Check if an env var name matches an allow_env pattern.
+/// Patterns can contain `*` as a wildcard (e.g., `MYAPP_*` matches `MYAPP_FOO`).
+/// Patterns without `*` require an exact match.
+fn env_pattern_matches(pattern: &str, key: &str) -> bool {
+    if !pattern.contains('*') {
+        return pattern == key;
+    }
+    let parts: Vec<&str> = pattern.split('*').collect();
+    if parts.len() == 2 {
+        // Common case: single wildcard (prefix*, *suffix, or *middle*)
+        return key.starts_with(parts[0]) && key.ends_with(parts[1]);
+    }
+    // Multiple wildcards: use globset
+    globset::Glob::new(pattern)
+        .map(|g| g.compile_matcher().is_match(key))
+        .unwrap_or(false)
+}
+
 impl SandboxConfig {
     /// Returns true if any sandbox restriction is configured.
     pub fn is_active(&self) -> bool {
@@ -87,17 +105,25 @@ impl SandboxConfig {
         if !self.effective_deny_env() {
             return env.clone();
         }
+        let env_matches = |k: &str| self.allow_env.iter().any(|pat| env_pattern_matches(pat, k));
         let mut filtered: std::collections::BTreeMap<String, String> = env
             .iter()
-            .filter(|(k, _)| DEFAULT_ENV_KEYS.contains(&k.as_str()) || self.allow_env.contains(k))
+            .filter(|(k, _)| DEFAULT_ENV_KEYS.contains(&k.as_str()) || env_matches(k))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
-        // Pull in allowed vars from parent env that might not be in mise's env map
-        for key in &self.allow_env {
-            if !filtered.contains_key(key)
-                && let Ok(val) = std::env::var(key)
+        // Pull in allowed vars from parent env that might not be in mise's env map.
+        // For wildcard patterns, check all parent env vars; for exact names, check directly.
+        for pattern in &self.allow_env {
+            if pattern.contains('*') {
+                for (key, val) in std::env::vars() {
+                    if !filtered.contains_key(&key) && env_pattern_matches(pattern, &key) {
+                        filtered.insert(key, val);
+                    }
+                }
+            } else if !filtered.contains_key(pattern)
+                && let Ok(val) = std::env::var(pattern)
             {
-                filtered.insert(key.clone(), val);
+                filtered.insert(pattern.clone(), val);
             }
         }
         // Also ensure essential vars from parent env are present
@@ -209,4 +235,57 @@ pub fn seccomp_apply() -> eyre::Result<()> {
 #[cfg(target_os = "macos")]
 pub async fn macos_generate_profile(config: &SandboxConfig) -> String {
     macos::generate_seatbelt_profile(config).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn test_env_pattern_matches_exact() {
+        assert!(env_pattern_matches("FOO", "FOO"));
+        assert!(!env_pattern_matches("FOO", "FOOBAR"));
+        assert!(!env_pattern_matches("FOO", "BAR"));
+    }
+
+    #[test]
+    fn test_env_pattern_matches_prefix_wildcard() {
+        assert!(env_pattern_matches("MYAPP_*", "MYAPP_FOO"));
+        assert!(env_pattern_matches("MYAPP_*", "MYAPP_"));
+        assert!(!env_pattern_matches("MYAPP_*", "MYAPP"));
+        assert!(!env_pattern_matches("MYAPP_*", "OTHER_FOO"));
+    }
+
+    #[test]
+    fn test_env_pattern_matches_suffix_wildcard() {
+        assert!(env_pattern_matches("*_SECRET", "MY_SECRET"));
+        assert!(env_pattern_matches("*_SECRET", "_SECRET"));
+        assert!(!env_pattern_matches("*_SECRET", "SECRET"));
+    }
+
+    #[test]
+    fn test_env_pattern_matches_star_only() {
+        assert!(env_pattern_matches("*", "ANYTHING"));
+        assert!(env_pattern_matches("*", ""));
+    }
+
+    #[test]
+    fn test_filter_env_with_wildcard() {
+        let config = SandboxConfig {
+            allow_env: vec!["MYAPP_*".to_string()],
+            ..Default::default()
+        };
+        let mut env = BTreeMap::new();
+        env.insert("MYAPP_FOO".to_string(), "val1".to_string());
+        env.insert("MYAPP_BAR".to_string(), "val2".to_string());
+        env.insert("OTHER_VAR".to_string(), "val3".to_string());
+        env.insert("PATH".to_string(), "/usr/bin".to_string());
+
+        let filtered = config.filter_env(&env);
+        assert!(filtered.contains_key("MYAPP_FOO"));
+        assert!(filtered.contains_key("MYAPP_BAR"));
+        assert!(!filtered.contains_key("OTHER_VAR"));
+        assert!(filtered.contains_key("PATH")); // default key
+    }
 }

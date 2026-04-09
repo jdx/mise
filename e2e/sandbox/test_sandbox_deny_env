@@ -13,3 +13,13 @@ assert "echo $result" "empty"
 
 # With --allow-env, specified var passes through
 assert "mise x --allow-env=SANDBOX_TEST_VAR -- bash -c 'echo \$SANDBOX_TEST_VAR'" "secret_value"
+
+# With --allow-env wildcard, matching vars pass through
+export SANDBOX_TEST_OTHER="other_value"
+assert "mise x --allow-env='SANDBOX_TEST_*' -- bash -c 'echo \$SANDBOX_TEST_VAR'" "secret_value"
+assert "mise x --allow-env='SANDBOX_TEST_*' -- bash -c 'echo \$SANDBOX_TEST_OTHER'" "other_value"
+
+# Wildcard should not match non-matching vars
+# shellcheck disable=SC2016
+result=$(mise x --allow-env='SANDBOX_TEST_*' -- bash -c 'echo "${UNRELATED_VAR:-empty}"')
+assert "echo $result" "empty"
