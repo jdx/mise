@@ -36,8 +36,11 @@ fn env_pattern_matches(pattern: &str, key: &str) -> bool {
     }
     let parts: Vec<&str> = pattern.split('*').collect();
     if parts.len() == 2 {
-        // Common case: single wildcard (prefix*, *suffix, or *middle*)
-        return key.starts_with(parts[0]) && key.ends_with(parts[1]);
+        // Common case: single wildcard (prefix*, *suffix, or prefix*suffix)
+        let (prefix, suffix) = (parts[0], parts[1]);
+        return prefix.len() + suffix.len() <= key.len()
+            && key.starts_with(prefix)
+            && key.ends_with(suffix);
     }
     // Multiple wildcards: use globset
     globset::Glob::new(pattern)
@@ -262,6 +265,15 @@ mod tests {
         assert!(env_pattern_matches("*_SECRET", "MY_SECRET"));
         assert!(env_pattern_matches("*_SECRET", "_SECRET"));
         assert!(!env_pattern_matches("*_SECRET", "SECRET"));
+    }
+
+    #[test]
+    fn test_env_pattern_matches_infix_wildcard() {
+        assert!(env_pattern_matches("MY_*_SECRET", "MY_APP_SECRET"));
+        assert!(env_pattern_matches("MY_*_SECRET", "MY__SECRET"));
+        // key too short for both prefix and suffix without overlap
+        assert!(!env_pattern_matches("MY_*_SECRET", "MY_SECRET"));
+        assert!(!env_pattern_matches("AB*B", "AB"));
     }
 
     #[test]
