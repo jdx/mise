@@ -268,41 +268,42 @@ pub fn compute_config_bumps(
                 .unwrap_or(&current_version);
 
             if let Some(bumped) = check_semver_bump(old, cli_version)
-                && bumped != old {
-                    let new_version = format!("{prefix}{bumped}");
-                    let new_request = match requests[0].clone() {
-                        ToolRequest::Version {
-                            version: _,
-                            backend,
-                            options,
-                            source,
-                        } => ToolRequest::Version {
-                            version: new_version.clone(),
-                            backend,
-                            options,
-                            source,
-                        },
-                        ToolRequest::Prefix {
-                            prefix: _,
-                            backend,
-                            options,
-                            source,
-                        } => ToolRequest::Prefix {
-                            prefix: format!("{prefix}{bumped}"),
-                            backend,
-                            options,
-                            source,
-                        },
-                        other => other,
-                    };
-                    bumps.push(ConfigBump {
-                        tool_name: tool_name.to_string(),
-                        config_path: path.clone(),
-                        old_version: current_version.to_string(),
-                        new_version,
-                        new_request,
-                    });
-                }
+                && bumped != old
+            {
+                let new_version = format!("{prefix}{bumped}");
+                let new_request = match requests[0].clone() {
+                    ToolRequest::Version {
+                        version: _,
+                        backend,
+                        options,
+                        source,
+                    } => ToolRequest::Version {
+                        version: new_version.clone(),
+                        backend,
+                        options,
+                        source,
+                    },
+                    ToolRequest::Prefix {
+                        prefix: _,
+                        backend,
+                        options,
+                        source,
+                    } => ToolRequest::Prefix {
+                        prefix: format!("{prefix}{bumped}"),
+                        backend,
+                        options,
+                        source,
+                    },
+                    other => other,
+                };
+                bumps.push(ConfigBump {
+                    tool_name: tool_name.to_string(),
+                    config_path: path.clone(),
+                    old_version: current_version.to_string(),
+                    new_version,
+                    new_request,
+                });
+            }
             break;
         }
     }
