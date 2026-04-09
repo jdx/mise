@@ -1,4 +1,6 @@
+use crate::config::Settings;
 use crate::config::env_directive::EnvDirective;
+use crate::task::task_fetcher::TaskFetcher;
 use crate::task::{Task, dep_has_usage_ref, parse_usage_values_from_task};
 use crate::{config::Config, task::task_list::resolve_depends};
 use itertools::Itertools;
@@ -66,10 +68,22 @@ impl Deps {
             add_idx(t, &mut graph);
         }
         let all_tasks_to_run = resolve_depends(config, tasks).await?;
+        let no_cache = Settings::get().task.remote_no_cache.unwrap_or(false);
+        let fetcher = TaskFetcher::new(no_cache);
         while let Some(mut a) = stack.pop() {
             if seen.contains(&a) {
                 // prevent infinite loop
                 continue;
+            }
+            // Fetch remote task files so file-based tasks have local paths
+            // before we try to parse their usage specs or execute them.
+            if a.file
+                .as_ref()
+                .is_some_and(|f| TaskFetcher::is_remote_source(&f.to_string_lossy()))
+            {
+                let mut tasks_to_fetch = vec![a];
+                fetcher.fetch_tasks(&mut tasks_to_fetch).await?;
+                a = tasks_to_fetch.into_iter().next().unwrap();
             }
             // If this task received args (from a parent dependency), re-render
             // its dependency templates with usage values so {{usage.*}} resolves.
@@ -88,6 +102,9 @@ impl Deps {
                 }
             }
             let a_idx = add_idx(&a, &mut graph);
+            // Update the graph node with the fetched version of the task
+            // (add_idx may have returned an existing index with an unfetched task)
+            graph[a_idx] = a.clone();
             let (pre, post) = a.resolve_depends(config, &all_tasks_to_run).await?;
             for b in pre {
                 let b_idx = add_idx(&b, &mut graph);

@@ -326,6 +326,11 @@ impl Run {
             }
         }
 
+        // Fetch remote task files before parsing usage specs, so that
+        // file-based remote tasks have their files resolved to local cache.
+        let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
+        fetcher.fetch_tasks(&mut task_list).await?;
+
         // Re-render dependency templates with parent task's usage arg/flag values.
         // This enables patterns like: depends = ["child {{usage.app}}"]
         for task in &mut task_list {
