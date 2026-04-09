@@ -56,7 +56,7 @@ fn exec(lua: &Lua, args: mlua::MultiValue) -> LuaResult<String> {
     } else {
         false
     };
-    trace!("[cmd.exec] command={command:?} has_mise_env={has_mise_env}");
+    debug!("[cmd.exec] command={command:?} has_mise_env={has_mise_env}");
 
     // Apply options if provided (explicit env vars override mise env)
     if let Some(options) = options {
