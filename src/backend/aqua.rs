@@ -666,6 +666,7 @@ impl Backend for AquaBackend {
             && let Some(resolved_url) = self
                 .resolve_slsa_url(&pkg, &v, target_os, target_arch)
                 .await
+                .ok()
         {
             provenance = Some(ProvenanceType::Slsa {
                 url: Some(resolved_url),
@@ -874,8 +875,11 @@ impl AquaBackend {
         v: &str,
         target_os: &str,
         target_arch: &str,
-    ) -> Option<String> {
-        let slsa = pkg.slsa_provenance.as_ref()?;
+    ) -> Result<String> {
+        let slsa = pkg
+            .slsa_provenance
+            .as_ref()
+            .wrap_err("SLSA provenance detected but no config found")?;
 
         let mut slsa_pkg = pkg.clone();
         (slsa_pkg.repo_owner, slsa_pkg.repo_name) =
@@ -883,15 +887,12 @@ impl AquaBackend {
 
         match slsa.r#type.as_deref().unwrap_or_default() {
             "github_release" => {
-                let asset_strs = slsa.asset_strs(pkg, v, target_os, target_arch).ok()?;
-                let (url, _) = self
-                    .github_release_asset(&slsa_pkg, v, asset_strs)
-                    .await
-                    .ok()?;
-                Some(url)
+                let asset_strs = slsa.asset_strs(pkg, v, target_os, target_arch)?;
+                let (url, _) = self.github_release_asset(&slsa_pkg, v, asset_strs).await?;
+                Ok(url)
             }
-            "http" => slsa.url(pkg, v, target_os, target_arch).ok(),
-            _ => None,
+            "http" => slsa.url(pkg, v, target_os, target_arch),
+            t => Err(eyre!("unsupported slsa type: {t}")),
         }
     }
 
@@ -905,31 +906,10 @@ impl AquaBackend {
         download_dir: &Path,
         pr: Option<&dyn SingleReport>,
     ) -> Result<String> {
-        let slsa = pkg
-            .slsa_provenance
-            .as_ref()
-            .wrap_err("SLSA provenance detected but no config found")?;
-
-        let mut slsa_pkg = pkg.clone();
-        (slsa_pkg.repo_owner, slsa_pkg.repo_name) =
-            resolve_repo_info(slsa.repo_owner.as_ref(), slsa.repo_name.as_ref(), pkg);
-
-        let (provenance_path, provenance_url) = match slsa.r#type.as_deref().unwrap_or_default() {
-            "github_release" => {
-                let asset_strs = slsa.asset_strs(pkg, v, os(), arch())?;
-                let (url, _) = self.github_release_asset(&slsa_pkg, v, asset_strs).await?;
-                let path = download_dir.join(get_filename_from_url(&url));
-                HTTP.download_file(&url, &path, pr).await?;
-                (path, url)
-            }
-            "http" => {
-                let url = slsa.url(pkg, v, os(), arch())?;
-                let path = download_dir.join(get_filename_from_url(&url));
-                HTTP.download_file(&url, &path, pr).await?;
-                (path, url)
-            }
-            t => return Err(eyre!("unsupported slsa type: {t}")),
-        };
+        let provenance_url = self.resolve_slsa_url(pkg, v, os(), arch()).await?;
+        let provenance_path = download_dir.join(get_filename_from_url(&provenance_url));
+        HTTP.download_file(&provenance_url, &provenance_path, pr)
+            .await?;
 
         match sigstore_verification::verify_slsa_provenance(artifact_path, &provenance_path, 1u8)
             .await
