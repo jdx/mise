@@ -7,7 +7,7 @@ use crate::duration::parse_into_timestamp;
 use crate::file::display_path;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
-    ConfigScope, InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder,
+    ConfigScope, InstallOptions, ResolveOptions, ToolSource, ToolVersion, ToolsetBuilder,
     get_versions_needed_by_tracked_configs,
 };
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -242,7 +242,7 @@ impl Upgrade {
         let tool_requests: Vec<_> = outdated.iter().map(|o| o.tool_request.clone()).collect();
 
         // Install all tools in parallel
-        let (successful_versions, install_error) =
+        let (mut successful_versions, install_error) =
             match ts.install_all_versions(config, tool_requests, &opts).await {
                 Ok(versions) => (versions, eyre::Result::Ok(())),
                 Err(e) => match e.downcast_ref::<crate::errors::Error>() {
@@ -271,6 +271,12 @@ impl Upgrade {
                 }
             }
         }
+
+        // When a specific version is provided via CLI (e.g., `mise upgrade tiny@3.0.1`),
+        // update the config file prefix if the new version doesn't match the current specifier.
+        // This is similar to --bump but uses the CLI-specified version as the target.
+        self.update_config_for_cli_versions(config, &outdated, &successful_versions)
+            .await?;
 
         // Reset config after upgrades so tracked configs resolve with new versions
         *config = Config::reset().await?;
@@ -316,6 +322,27 @@ impl Upgrade {
         }
 
         let ts = config.get_toolset().await?;
+
+        // Fix up sources and requests for lockfile update - CLI args produce
+        // ToolSource::Argument but lockfile update only processes ToolSource::MiseToml.
+        // Also copy the config's request version (e.g., "latest") so the lockfile update
+        // correctly replaces the old entry instead of adding a duplicate.
+        for tv in &mut successful_versions {
+            if matches!(tv.request.source(), ToolSource::Argument) {
+                if let Some(tvl) = ts.versions.get(tv.ba()) {
+                    if matches!(&tvl.source, ToolSource::MiseToml(_)) {
+                        // Use the config's request (preserves version specifier like "latest")
+                        // but keep the resolved version from the upgrade
+                        if let Some(config_tv) = tvl.versions.first() {
+                            tv.request = config_tv.request.clone();
+                        } else {
+                            tv.request.set_source(tvl.source.clone());
+                        }
+                    }
+                }
+            }
+        }
+
         config::rebuild_shims_and_runtime_symlinks(config, ts, &successful_versions).await?;
 
         if successful_versions.iter().any(|v| v.short() == "python") {
@@ -329,6 +356,105 @@ impl Upgrade {
         Self::print_summary(&outdated, &successful_versions)?;
 
         install_error
+    }
+
+    /// When CLI args specify an explicit version (e.g., `mise upgrade tiny@3.0.1`),
+    /// update the config file if the new version doesn't match the current specifier.
+    /// This preserves the same version precision as the original config entry.
+    async fn update_config_for_cli_versions(
+        &self,
+        config: &Arc<Config>,
+        outdated: &[OutdatedInfo],
+        successful_versions: &[ToolVersion],
+    ) -> Result<()> {
+        use crate::semver::split_version_prefix;
+        use crate::toolset::ToolRequest;
+        use crate::toolset::outdated_info::check_semver_bump;
+
+        // Build map of CLI args that have explicit versions
+        let cli_versions: std::collections::HashMap<String, String> = self
+            .tool
+            .iter()
+            .filter_map(|t| {
+                t.tvr
+                    .as_ref()
+                    .map(|tvr| (t.ba.short.clone(), tvr.version()))
+            })
+            .collect();
+
+        if cli_versions.is_empty() {
+            return Ok(());
+        }
+
+        for o in outdated {
+            let Some(cli_version) = cli_versions.get(&o.name) else {
+                continue;
+            };
+
+            // Only process tools that were successfully installed
+            if !successful_versions
+                .iter()
+                .any(|v| v.ba() == o.tool_version.ba())
+            {
+                continue;
+            }
+
+            // Find which config file defines this tool
+            for (_path, cf) in config.config_files.iter() {
+                let Ok(trs) = cf.to_tool_request_set() else {
+                    continue;
+                };
+                let Some(requests) = trs.tools.get(o.tool_version.ba()) else {
+                    continue;
+                };
+                if requests.len() != 1 {
+                    continue;
+                }
+
+                let current_version = requests[0].version();
+                let (prefix, _) = split_version_prefix(&current_version);
+                let old = current_version
+                    .strip_prefix(&prefix)
+                    .unwrap_or(&current_version);
+
+                // Check if the new version requires a config update
+                if let Some(bumped) = check_semver_bump(old, cli_version) {
+                    if bumped != old {
+                        let new_version = format!("{prefix}{bumped}");
+                        let new_request = match requests[0].clone() {
+                            ToolRequest::Version {
+                                version: _,
+                                backend,
+                                options,
+                                source,
+                            } => ToolRequest::Version {
+                                version: new_version,
+                                backend,
+                                options,
+                                source,
+                            },
+                            ToolRequest::Prefix {
+                                prefix: _,
+                                backend,
+                                options,
+                                source,
+                            } => ToolRequest::Prefix {
+                                prefix: format!("{prefix}{bumped}"),
+                                backend,
+                                options,
+                                source,
+                            },
+                            other => other,
+                        };
+                        cf.replace_versions(o.tool_version.ba(), vec![new_request])?;
+                        cf.save()?;
+                    }
+                }
+                break;
+            }
+        }
+
+        Ok(())
     }
 
     async fn uninstall_old_version(

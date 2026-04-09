@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# Test: mise lock with @version should lock specific version
+export MISE_LOCKFILE=1
+
+cat <<'EOF' >mise.toml
+[tools]
+tiny = "latest"
+EOF
+mise uninstall tiny --all 2>/dev/null || true
+mise install tiny@3.0.0
+touch mise.lock
+mise lock tiny --platform linux-x64
+assert_contains "cat mise.lock" "3.0.0"
+# Now lock a different specific version
+mise lock tiny@3.0.1 --platform linux-x64
+assert_contains "cat mise.lock" "3.0.1"
+assert_not_contains "cat mise.lock" "3.0.0"
+# mise.toml should still say "latest"
+assert_contains "cat mise.toml" '"latest"'
+rm -f mise.toml mise.lock
+
+# Test: lock with version that doesn't match prefix should update config
+cat <<'EOF' >mise.toml
+[tools]
+tiny = "2"
+EOF
+mise uninstall tiny --all 2>/dev/null || true
+mise install tiny@2.0.0
+touch mise.lock
+mise lock tiny --platform linux-x64
+assert_contains "cat mise.lock" "2.0.0"
+mise lock tiny@3.0.1 --platform linux-x64
+# Config should be updated to match new prefix
+assert_contains "cat mise.toml" '"3"'
+# Lockfile should have 3.0.1
+assert_contains "cat mise.lock" "3.0.1"
+assert_not_contains "cat mise.lock" "2.0.0"
+rm -f mise.toml mise.lock

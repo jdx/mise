@@ -179,8 +179,84 @@ impl Lock {
             miseprintln!("{} No tools configured to lock", style("!").yellow());
         }
 
+        // Update config files when a specific version is requested that doesn't match
+        // the current prefix (e.g., `mise lock tiny@3.0.1` when config has `tiny = "2"`)
+        if !self.dry_run {
+            self.update_config_for_version_args(&config).await?;
+        }
+
         if !all_provenance_errors.is_empty() {
             return Err(eyre::eyre!("{}", all_provenance_errors.join("\n")));
+        }
+
+        Ok(())
+    }
+
+    /// Update config files when a specific version is requested via `mise lock tool@version`
+    /// and the version doesn't match the current config prefix.
+    async fn update_config_for_version_args(&self, config: &Config) -> Result<()> {
+        use crate::semver::split_version_prefix;
+        use crate::toolset::ToolRequest;
+        use crate::toolset::outdated_info::check_semver_bump;
+
+        for tool_arg in &self.tool {
+            let Some(tvr) = &tool_arg.tvr else {
+                continue;
+            };
+            let cli_version = tvr.version();
+
+            // Find which config file defines this tool
+            for (_path, cf) in config.config_files.iter() {
+                let Ok(trs) = cf.to_tool_request_set() else {
+                    continue;
+                };
+                let Some(requests) = trs.tools.get(&tool_arg.ba) else {
+                    continue;
+                };
+                if requests.len() != 1 {
+                    continue;
+                }
+
+                let current_version = requests[0].version();
+                let (prefix, _) = split_version_prefix(&current_version);
+                let old = current_version
+                    .strip_prefix(&prefix)
+                    .unwrap_or(&current_version);
+
+                if let Some(bumped) = check_semver_bump(old, &cli_version) {
+                    if bumped != old {
+                        let new_version = format!("{prefix}{bumped}");
+                        let new_request = match requests[0].clone() {
+                            ToolRequest::Version {
+                                version: _,
+                                backend,
+                                options,
+                                source,
+                            } => ToolRequest::Version {
+                                version: new_version,
+                                backend,
+                                options,
+                                source,
+                            },
+                            ToolRequest::Prefix {
+                                prefix: _,
+                                backend,
+                                options,
+                                source,
+                            } => ToolRequest::Prefix {
+                                prefix: format!("{prefix}{bumped}"),
+                                backend,
+                                options,
+                                source,
+                            },
+                            other => other,
+                        };
+                        cf.replace_versions(&tool_arg.ba, vec![new_request])?;
+                        cf.save()?;
+                    }
+                }
+                break;
+            }
         }
 
         Ok(())
@@ -465,11 +541,25 @@ impl Lock {
         if self.tool.is_empty() {
             all_tools
         } else {
-            let specified: BTreeSet<String> =
-                self.tool.iter().map(|t| t.ba.short.clone()).collect();
+            // Build map of tool args with explicit versions
+            let specified_versions: std::collections::HashMap<String, Option<String>> = self
+                .tool
+                .iter()
+                .map(|t| {
+                    let version = t.tvr.as_ref().map(|tvr| tvr.version());
+                    (t.ba.short.clone(), version)
+                })
+                .collect();
             all_tools
                 .into_iter()
-                .filter(|(ba, _)| specified.contains(&ba.short))
+                .filter(|(ba, _)| specified_versions.contains_key(&ba.short))
+                .map(|(ba, mut tv)| {
+                    // If a specific version was requested, override the resolved version
+                    if let Some(Some(version)) = specified_versions.get(&ba.short) {
+                        tv.version.clone_from(version);
+                    }
+                    (ba, tv)
+                })
                 .collect()
         }
     }

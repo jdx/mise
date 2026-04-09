@@ -185,7 +185,7 @@ impl Display for OutdatedInfo {
 /// at the same specificity level as the old version
 /// used with `mise outdated --bump` to determine what new semver range to use
 /// given old: "20" and new: "21.2.3", return Some("21")
-fn check_semver_bump(old: &str, new: &str) -> Option<String> {
+pub fn check_semver_bump(old: &str, new: &str) -> Option<String> {
     // Preserve known channel names as-is
     const CHANNEL_NAMES: &[&str] = &[
         "latest", "nightly", "stable", "beta", "dev", "canary", "edge", "lts",
