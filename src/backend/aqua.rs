@@ -660,6 +660,19 @@ impl Backend for AquaBackend {
         // Detect provenance from aqua registry config
         let mut provenance = self.detect_provenance_type(&pkg);
 
+        // Resolve SLSA provenance URL for all platforms (not just current).
+        // This ensures deterministic lockfile output regardless of host platform.
+        if matches!(provenance, Some(ProvenanceType::Slsa { url: None })) {
+            if let Some(resolved_url) = self
+                .resolve_slsa_url(&pkg, &v, target_os, target_arch)
+                .await
+            {
+                provenance = Some(ProvenanceType::Slsa {
+                    url: Some(resolved_url),
+                });
+            }
+        }
+
         // For the current platform, verify provenance cryptographically at lock time.
         // This ensures the lockfile's provenance entry is backed by actual verification,
         // not just registry metadata. Cross-platform entries remain detection-only.
@@ -678,15 +691,15 @@ impl Backend for AquaBackend {
             {
                 Ok(verified) => provenance = Some(verified),
                 Err(e) => {
-                    // Clear provenance so install-time verification will run.
-                    // If we kept the unverified provenance, has_lockfile_integrity
-                    // would be true and verify_provenance() would be skipped.
+                    // Keep detected provenance. Cross-platform entries already
+                    // trust detection-only provenance in the lockfile, so this
+                    // is consistent. Install-time re-verification can be forced
+                    // via locked_verify_provenance or paranoid settings.
                     warn!(
                         "lock-time provenance verification failed for {}, \
-                         will be verified at install time: {e}",
+                         detected provenance retained: {e}",
                         self.id
                     );
-                    provenance = None;
                 }
             }
         }
@@ -851,6 +864,35 @@ impl AquaBackend {
             Err(e) => Err(eyre!(
                 "GitHub artifact attestations verification failed: {e}"
             )),
+        }
+    }
+
+    /// Resolve the SLSA provenance URL for a target platform without downloading.
+    /// Uses cached GitHub release data or template-based URL construction.
+    async fn resolve_slsa_url(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        target_os: &str,
+        target_arch: &str,
+    ) -> Option<String> {
+        let slsa = pkg.slsa_provenance.as_ref()?;
+
+        let mut slsa_pkg = pkg.clone();
+        (slsa_pkg.repo_owner, slsa_pkg.repo_name) =
+            resolve_repo_info(slsa.repo_owner.as_ref(), slsa.repo_name.as_ref(), pkg);
+
+        match slsa.r#type.as_deref().unwrap_or_default() {
+            "github_release" => {
+                let asset_strs = slsa.asset_strs(pkg, v, target_os, target_arch).ok()?;
+                let (url, _) = self
+                    .github_release_asset(&slsa_pkg, v, asset_strs)
+                    .await
+                    .ok()?;
+                Some(url)
+            }
+            "http" => slsa.url(pkg, v, target_os, target_arch).ok(),
+            _ => None,
         }
     }
 

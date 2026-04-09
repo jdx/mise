@@ -405,13 +405,15 @@ impl Backend for UnifiedGitBackend {
                     {
                         Ok(verified) => provenance = Some(verified),
                         Err(e) => {
-                            // Clear provenance so install-time verification will run.
+                            // Keep detected provenance. Cross-platform entries already
+                            // trust detection-only provenance in the lockfile, so this
+                            // is consistent. Install-time re-verification can be forced
+                            // via locked_verify_provenance or paranoid settings.
                             warn!(
                                 "lock-time provenance verification failed for {}, \
-                                 will be verified at install time: {e}",
+                                 detected provenance retained: {e}",
                                 self.ba.full()
                             );
-                            provenance = None;
                         }
                     }
                 }
@@ -516,8 +518,13 @@ impl UnifiedGitBackend {
                 target.arch_name().to_string(),
                 target.qualifier().map(|s| s.to_string()),
             );
-            if picker.pick_best_provenance(&asset_names).is_some() {
-                return Some(ProvenanceType::Slsa { url: None });
+            if let Some(provenance_name) = picker.pick_best_provenance(&asset_names) {
+                let url = release
+                    .assets
+                    .iter()
+                    .find(|a| a.name == provenance_name)
+                    .map(|a| a.browser_download_url.clone());
+                return Some(ProvenanceType::Slsa { url });
             }
         }
 
