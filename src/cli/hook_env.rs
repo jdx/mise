@@ -12,7 +12,7 @@ use console::truncate_str;
 use eyre::Result;
 use indexmap::IndexSet;
 use itertools::Itertools;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::{borrow::Cow, sync::Arc};
@@ -268,16 +268,38 @@ impl HookEnv {
                 // Also collect orig paths in their current order to preserve any
                 // reordering done after activation (e.g., by ~/.zlogin which runs
                 // after ~/.zshrc where mise activate is typically placed).
+                //
+                // The pre/post boundary fires on the *last* occurrence of each orig
+                // entry in current_paths.  For a duplicated entry (moved-to-front copy +
+                // stale tail copy) the first copy is in the "pre" zone and the last copy
+                // is the genuine original-position tail; anchoring on the last occurrence
+                // correctly places new prepends in pre even when all orig entries are
+                // duplicated.
+                let orig_count_in_current = current_paths
+                    .iter()
+                    .filter(|p| orig_set.contains(p))
+                    .counts();
+
                 let mut pre = Vec::new();
                 let mut post_user = Vec::new();
                 let mut orig_reordered = Vec::new();
-                let mut seen_orig = false;
                 let mut seen_in_current: HashSet<&PathBuf> = HashSet::new();
+                // Running count of how many times each orig path has been seen so far.
+                let mut seen_orig_count: HashMap<&PathBuf, usize> = HashMap::new();
+                // true once iteration has passed the genuine tail position of any orig entry.
+                let mut past_orig_boundary = false;
                 for path in &current_paths {
                     if orig_set.contains(path) {
-                        seen_orig = true;
+                        let seen = seen_orig_count.entry(path).or_insert(0);
+                        *seen += 1;
                         orig_reordered.push(path.clone());
                         seen_in_current.insert(path);
+                        // Anchor the boundary on the last occurrence of this orig path.
+                        // Earlier copies are external prepends; the last copy is the
+                        // original tail position — that is the real pre/post boundary.
+                        if *seen == orig_count_in_current.get(path).copied().unwrap_or(1) {
+                            past_orig_boundary = true;
+                        }
                         continue;
                     }
 
@@ -287,7 +309,7 @@ impl HookEnv {
                     }
 
                     // Place in pre or post_user based on position relative to original PATH
-                    if seen_orig {
+                    if past_orig_boundary {
                         post_user.push(path.clone());
                     } else {
                         pre.push(path.clone());

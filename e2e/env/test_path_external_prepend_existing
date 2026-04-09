@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+# Test that all externally prepended paths stay at the front of PATH even
+# when one of them already exists in __MISE_ORIG_PATH.
+
+# Save the mise binary path before we override PATH
+MISE_BIN="$(which mise)"
+
+# Original PATH at activation time — note that existing-bin is present
+export __MISE_ORIG_PATH="$HOME/system-bin:/usr/local/bin:/usr/bin:/bin:$HOME/existing-bin"
+
+mkdir -p "$HOME/existing-bin"
+mkdir -p "$HOME/system-bin"
+mkdir -p "$HOME/prepended-bin"
+
+cat >"$HOME/system-bin/check-priority" <<'EOF'
+#!/usr/bin/env bash
+echo "system"
+EOF
+
+cat >"$HOME/prepended-bin/check-priority" <<'EOF'
+#!/usr/bin/env bash
+echo "prepended"
+EOF
+
+chmod +x "$HOME/system-bin/check-priority"
+chmod +x "$HOME/prepended-bin/check-priority"
+
+# Simulate an external tool (e.g., direnv) that prepended two paths.
+# Because prepending is LIFO, existing-bin (added second) ends up first:
+#   PATH_add prepended-bin  -> prepended-bin:<orig>
+#   PATH_add existing-bin   -> existing-bin:prepended-bin:<orig>
+# Critically, existing-bin already appears in __MISE_ORIG_PATH.
+export PATH="$HOME/existing-bin:$HOME/prepended-bin:$HOME/system-bin:/usr/local/bin:/usr/bin:/bin:$HOME/existing-bin"
+
+cat >mise.toml <<'EOF'
+EOF
+
+eval "$("$MISE_BIN" hook-env -s bash)"
+
+echo "DEBUG: PATH=$PATH"
+
+# prepended-bin should be BEFORE system-bin — it was prepended by the external tool
+PREPENDED_POS=$(echo "$PATH" | tr ':' '\n' | grep -n "prepended-bin" | head -1 | cut -d: -f1)
+SYSTEM_POS=$(echo "$PATH" | tr ':' '\n' | grep -n "system-bin" | head -1 | cut -d: -f1)
+
+echo "DEBUG: prepended-bin at position $PREPENDED_POS, system-bin at position $SYSTEM_POS"
+
+if [[ -z $PREPENDED_POS ]]; then
+	echo "FAIL: prepended-bin not found in PATH"
+	exit 1
+fi
+
+if [[ -z $SYSTEM_POS ]]; then
+	echo "FAIL: system-bin not found in PATH"
+	exit 1
+fi
+
+if [[ $PREPENDED_POS -lt $SYSTEM_POS ]]; then
+	echo "SUCCESS: prepended-bin stays before system-bin (prepend preserved)"
+else
+	echo "FAIL: prepended-bin ($PREPENDED_POS) was moved after system-bin ($SYSTEM_POS)"
+	echo "Prepended path was misclassified because an already-in-orig path preceded it"
+	exit 1
+fi
+
+# Confirm the winning binary is actually from prepended-bin, not system-bin.
+# This validates the end-to-end functional outcome beyond position alone.
+assert_contains "check-priority" "prepended"
+
+# existing-bin must appear exactly twice in PATH: once at the front (prepended
+# by the external tool) and once at its original tail position.  Assert that
+# both copies survive.
+EXISTING_BIN_COUNT=$(echo "$PATH" | tr ':' '\n' | grep -c "existing-bin")
+echo "DEBUG: existing-bin count in PATH: $EXISTING_BIN_COUNT"
+if [[ $EXISTING_BIN_COUNT -ne 2 ]]; then
+	echo "FAIL: expected existing-bin to appear 2 times in PATH but got $EXISTING_BIN_COUNT"
+	exit 1
+fi
+echo "SUCCESS: existing-bin appears exactly 2 times in PATH (prepend copy + original tail copy)"

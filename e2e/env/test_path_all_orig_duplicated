@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+
+# Regression guard for the boundary-detection logic when every orig-PATH entry
+# has a stale tail copy AND a new path is appended after the tail copies.
+# This is a synthetic worst case, not a literal `direnv PATH_add` output
+# (real PATH_add prepends to the front, producing layouts like `b:a:a:b:SYS`).
+# It exercises the tail-anchored boundary detection in `build_path_operations()`
+# to ensure appended paths are not promoted to pre when all orig entries are
+# duplicated.
+
+MISE_BIN="$(which mise)"
+
+mkdir -p "$HOME/orig-bin-a"
+mkdir -p "$HOME/orig-bin-b"
+mkdir -p "$HOME/appended-bin"
+
+cat >"$HOME/orig-bin-a/check-priority" <<'EOF'
+#!/usr/bin/env bash
+echo "orig-a"
+EOF
+cat >"$HOME/appended-bin/check-priority" <<'EOF'
+#!/usr/bin/env bash
+echo "appended"
+EOF
+chmod +x "$HOME/orig-bin-a/check-priority"
+chmod +x "$HOME/appended-bin/check-priority"
+
+cat >mise.toml <<'EOF'
+EOF
+
+# Orig PATH has exactly two custom entries — both will be duplicated.
+export __MISE_ORIG_PATH="$HOME/orig-bin-a:$HOME/orig-bin-b"
+
+# External tool prepended copies of BOTH orig paths (all-duplicated scenario).
+# System paths are included so shell commands remain available after the override.
+# appended-bin was added after the orig block and must remain after it.
+export PATH="$HOME/orig-bin-a:$HOME/orig-bin-b:/usr/local/bin:/usr/bin:/bin:$HOME/orig-bin-a:$HOME/orig-bin-b:$HOME/appended-bin"
+
+eval "$("$MISE_BIN" hook-env -s bash)"
+
+echo "DEBUG: PATH=$PATH"
+
+ORIG_A_FIRST_POS=$(echo "$PATH" | tr ':' '\n' | grep -n "orig-bin-a" | head -1 | cut -d: -f1)
+APPENDED_POS=$(echo "$PATH" | tr ':' '\n' | grep -n "appended-bin" | head -1 | cut -d: -f1)
+
+echo "DEBUG: orig-bin-a first at $ORIG_A_FIRST_POS, appended-bin at $APPENDED_POS"
+
+if [[ -z $APPENDED_POS ]]; then
+	echo "FAIL: appended-bin not found in PATH"
+	exit 1
+fi
+
+if [[ -z $ORIG_A_FIRST_POS ]]; then
+	echo "FAIL: orig-bin-a not found in PATH"
+	exit 1
+fi
+
+# appended-bin must come AFTER the orig block, not be promoted to the front
+if [[ $APPENDED_POS -gt $ORIG_A_FIRST_POS ]]; then
+	echo "SUCCESS: appended-bin stays after orig block (not promoted to pre)"
+else
+	echo "FAIL: appended-bin ($APPENDED_POS) was promoted before orig-bin-a ($ORIG_A_FIRST_POS)"
+	echo "All-duplicated-orig edge case: appended path incorrectly classified as pre"
+	exit 1
+fi
+
+# orig-bin-a wins check-priority (it's in the orig block ahead of appended-bin)
+assert_contains "check-priority" "orig-a"
