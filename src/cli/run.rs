@@ -522,14 +522,23 @@ impl Run {
         // always sees the parent in `executed` — avoiding a race where a
         // concurrent task fails between spawn and first poll.
         deps_for_remove.lock().await.mark_executed(&task);
+        let semaphore = ctx.semaphore.clone();
         ctx.jset.lock().await.spawn(async move {
-            let _permit = permit_opt;
+            let mut permit = permit_opt;
             let (completed, dep_ran) = {
                 let deps = deps_for_remove.lock().await;
                 (deps.handled_task_keys(), deps.any_dep_ran(&task))
             };
             let result = this
-                .run_task_sched(&task, &ctx.config, ctx.sched_tx.clone(), completed, dep_ran)
+                .run_task_sched(
+                    &task,
+                    &ctx.config,
+                    ctx.sched_tx.clone(),
+                    completed,
+                    dep_ran,
+                    semaphore,
+                    &mut permit,
+                )
                 .await;
             // If the task actually ran (not skipped) and has sources defined,
             // mark it so dependents' source freshness checks are invalidated.
@@ -698,6 +707,7 @@ impl Run {
             .unwrap_or(false)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_task_sched(
         &self,
         task: &Task,
@@ -705,11 +715,21 @@ impl Run {
         sched_tx: Arc<tokio::sync::mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         completed_tasks: std::collections::HashSet<crate::task::TaskKey>,
         dep_ran: bool,
+        semaphore: Arc<tokio::sync::Semaphore>,
+        permit: &mut Option<tokio::sync::OwnedSemaphorePermit>,
     ) -> Result<bool> {
         self.executor
             .as_ref()
             .expect("executor must be initialized before running tasks")
-            .run_task_sched(task, config, sched_tx, completed_tasks, dep_ran)
+            .run_task_sched(
+                task,
+                config,
+                sched_tx,
+                completed_tasks,
+                dep_ran,
+                semaphore,
+                permit,
+            )
             .await
     }
 

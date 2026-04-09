@@ -29,7 +29,7 @@ use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use std::time::{Duration, SystemTime};
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 use xx::file;
 
 /// Global lock for interactive task exclusivity.
@@ -176,6 +176,7 @@ impl TaskExecutor {
     }
 
     /// Run a task, returning true if the task actually executed (not skipped).
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_task_sched(
         &self,
         task: &Task,
@@ -183,6 +184,8 @@ impl TaskExecutor {
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         completed_tasks: HashSet<TaskKey>,
         dep_ran: bool,
+        semaphore: Arc<Semaphore>,
+        permit: &mut Option<OwnedSemaphorePermit>,
     ) -> Result<bool> {
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
@@ -333,6 +336,8 @@ impl TaskExecutor {
                 sched_tx,
                 confirm_guard,
                 &completed_tasks,
+                semaphore,
+                permit,
             )
             .await?;
             trace!(
@@ -369,6 +374,8 @@ impl TaskExecutor {
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         existing_guard: Option<RuntimeLockGuard<'static>>,
         completed_tasks: &HashSet<TaskKey>,
+        semaphore: Arc<Semaphore>,
+        permit: &mut Option<OwnedSemaphorePermit>,
     ) -> Result<()> {
         let (env, task_env) = full_env;
         use crate::task::RunEntry;
@@ -411,6 +418,11 @@ impl TaskExecutor {
                         Some(override_env.as_slice())
                     };
                     guard = None; // drop lock before waiting on sub-tasks
+                    // Release the semaphore permit before waiting on sub-tasks to
+                    // avoid deadlock when MISE_JOBS=1 (the sub-task needs a permit
+                    // but we're holding the only one).
+                    let had_permit = permit.is_some();
+                    *permit = None;
                     self.inject_and_wait(
                         config,
                         &[resolved_spec],
@@ -421,6 +433,9 @@ impl TaskExecutor {
                         completed_tasks,
                     )
                     .await?;
+                    if had_permit {
+                        *permit = Some(semaphore.clone().acquire_owned().await?);
+                    }
                 }
                 RunEntry::TaskGroup { tasks } => {
                     let resolved_tasks: Vec<String> = tasks
@@ -428,6 +443,8 @@ impl TaskExecutor {
                         .map(|t| crate::task::resolve_task_pattern(t, Some(task)))
                         .collect();
                     guard = None; // drop lock before waiting on sub-tasks
+                    let had_permit = permit.is_some();
+                    *permit = None;
                     self.inject_and_wait(
                         config,
                         &resolved_tasks,
@@ -438,6 +455,9 @@ impl TaskExecutor {
                         completed_tasks,
                     )
                     .await?;
+                    if had_permit {
+                        *permit = Some(semaphore.clone().acquire_owned().await?);
+                    }
                 }
             }
         }
