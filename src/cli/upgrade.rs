@@ -399,7 +399,10 @@ impl Upgrade {
             }
 
             // Find which config file defines this tool
-            for (_path, cf) in config.config_files.iter() {
+            for (path, cf) in config.config_files.iter() {
+                if crate::config::is_global_config(path) {
+                    continue;
+                }
                 let Ok(trs) = cf.to_tool_request_set() else {
                     continue;
                 };

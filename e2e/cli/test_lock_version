@@ -37,3 +37,4 @@ assert_contains "cat mise.toml" '"3"'
 assert_contains "cat mise.lock" "3.0.1"
 assert_not_contains "cat mise.lock" "2.0.0"
 rm -f mise.toml mise.lock
+unset MISE_LOCKFILE
