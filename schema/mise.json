@@ -999,6 +999,13 @@
           "description": "Create and read lockfiles for tool versions.",
           "type": "boolean"
         },
+        "lockfile_platforms": {
+          "description": "Platforms to target in lockfile operations.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "log_level": {
           "default": "info",
           "description": "Show more/less output.",

@@ -975,7 +975,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-env",
           description:
-            "[experimental] Allow specific env var through (implies --deny-env for everything else)",
+            "[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'",
           isRepeatable: true,
           args: {
             name: "var",
@@ -2192,7 +2192,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "--allow-env",
           description:
-            "[experimental] Allow specific env var through (implies --deny-env for everything else)",
+            "[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'",
           isRepeatable: true,
           args: {
             name: "var",
@@ -3103,7 +3103,7 @@ const completionSpec: Fig.Spec = {
             {
               name: "--allow-env",
               description:
-                "[experimental] Allow specific env var through (implies --deny-env for everything else)",
+                "[experimental] Allow specific env var through (implies --deny-env for everything else)\nSupports wildcards, e.g. --allow-env='MYAPP_*'",
               isRepeatable: true,
               args: {
                 name: "var",

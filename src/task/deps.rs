@@ -150,10 +150,11 @@ impl Deps {
         for task in leaves {
             let key = task_key(&task);
 
-            if self.sent.insert(key) {
+            if self.sent.insert(key.clone()) {
                 trace!("Scheduling task {0}", task.name);
                 if let Err(e) = self.tx.send(Some(task)) {
                     trace!("Error sending task: {e:?}");
+                    self.sent.remove(&key);
                 }
             }
         }
