@@ -349,6 +349,32 @@ has changed since the last build.
 The [`task_source_files`](../templates.md#task-source-files) function can be used to iterate over a task's
 `sources` within its template context.
 
+#### Dependency invalidation
+
+When a task depends on another task that also has `sources` defined, and the dependency runs because
+its sources changed, the dependent task will also re-run — even if the dependent's own sources haven't
+changed. This is useful for monorepo workflows where downstream tasks should be invalidated by upstream
+changes:
+
+```mise-toml
+[tasks."core:build"]
+run = "tsc -p packages/core"
+sources = ["packages/core/src/**/*.ts"]
+outputs = ["packages/core/dist/**/*.js"]
+
+[tasks."frontend:build"]
+run = "tsc -p packages/frontend"
+sources = ["packages/frontend/src/**/*.ts"]
+outputs = ["packages/frontend/dist/**/*.js"]
+depends = ["core:build"]
+```
+
+If a file in `packages/core/src/` changes, both `core:build` and `frontend:build` will run. If nothing
+changes, both are skipped.
+
+Note that dependencies **without** `sources` (which always run) do not trigger this invalidation —
+otherwise `sources` on the dependent task would be effectively useless.
+
 ### `outputs`
 
 - **Type**: `string | string[] | { auto = true }`
