@@ -77,10 +77,10 @@ impl Deps {
             }
             // Fetch remote task files so file-based tasks have local paths
             // before we try to parse their usage specs or execute them.
-            if a.file.as_ref().is_some_and(|f| {
-                let s = f.to_string_lossy();
-                s.starts_with("git::") || s.starts_with("http://") || s.starts_with("https://")
-            }) {
+            if a.file
+                .as_ref()
+                .is_some_and(|f| TaskFetcher::is_remote_source(&f.to_string_lossy()))
+            {
                 let mut tasks_to_fetch = vec![a];
                 fetcher.fetch_tasks(&mut tasks_to_fetch).await?;
                 a = tasks_to_fetch.into_iter().next().unwrap();
