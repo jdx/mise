@@ -114,6 +114,7 @@ Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.
 ### `--allow-env… <VAR>`
 
 [experimental] Allow specific env var through (implies --deny-env for everything else)
+Supports wildcards, e.g. --allow-env='MYAPP_*'
 
 ### `--allow-net… <HOST>`
 
