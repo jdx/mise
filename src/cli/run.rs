@@ -533,11 +533,10 @@ impl Run {
             // If the task actually ran (not skipped) and has sources defined,
             // mark it so dependents' source freshness checks are invalidated.
             // Tasks without sources always run and should not trigger invalidation.
-            if let Ok(true) = &result {
-                if !task.sources.is_empty() {
+            if let Ok(true) = &result
+                && !task.sources.is_empty() {
                     deps_for_remove.lock().await.mark_ran(&task);
                 }
-            }
             if let Err(err) = &result {
                 let status = Error::get_exit_status(err);
                 if !this.is_stopping() && status.is_none() {
