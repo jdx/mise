@@ -666,11 +666,11 @@ impl Backend for AquaBackend {
             && let Some(resolved_url) = self
                 .resolve_slsa_url(&pkg, &v, target_os, target_arch)
                 .await
-            {
-                provenance = Some(ProvenanceType::Slsa {
-                    url: Some(resolved_url),
-                });
-            }
+        {
+            provenance = Some(ProvenanceType::Slsa {
+                url: Some(resolved_url),
+            });
+        }
 
         // For the current platform, verify provenance cryptographically at lock time.
         // This ensures the lockfile's provenance entry is backed by actual verification,
