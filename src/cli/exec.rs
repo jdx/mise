@@ -49,6 +49,7 @@ pub struct Exec {
     pub jobs: Option<usize>,
 
     /// [experimental] Allow specific env var through (implies --deny-env for everything else)
+    /// Supports wildcards, e.g. --allow-env='MYAPP_*'
     #[clap(long, value_name = "VAR", verbatim_doc_comment)]
     pub allow_env: Vec<String>,
 
