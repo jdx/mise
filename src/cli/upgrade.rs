@@ -328,9 +328,9 @@ impl Upgrade {
         // Also copy the config's request version (e.g., "latest") so the lockfile update
         // correctly replaces the old entry instead of adding a duplicate.
         for tv in &mut successful_versions {
-            if matches!(tv.request.source(), ToolSource::Argument) {
-                if let Some(tvl) = ts.versions.get(tv.ba()) {
-                    if matches!(&tvl.source, ToolSource::MiseToml(_)) {
+            if matches!(tv.request.source(), ToolSource::Argument)
+                && let Some(tvl) = ts.versions.get(tv.ba())
+                    && matches!(&tvl.source, ToolSource::MiseToml(_)) {
                         // Use the config's request (preserves version specifier like "latest")
                         // but keep the resolved version from the upgrade
                         if let Some(config_tv) = tvl.versions.first() {
@@ -339,8 +339,6 @@ impl Upgrade {
                             tv.request.set_source(tvl.source.clone());
                         }
                     }
-                }
-            }
         }
 
         config::rebuild_shims_and_runtime_symlinks(config, ts, &successful_versions).await?;
@@ -418,8 +416,8 @@ impl Upgrade {
                     .unwrap_or(&current_version);
 
                 // Check if the new version requires a config update
-                if let Some(bumped) = check_semver_bump(old, cli_version) {
-                    if bumped != old {
+                if let Some(bumped) = check_semver_bump(old, cli_version)
+                    && bumped != old {
                         let new_version = format!("{prefix}{bumped}");
                         let new_request = match requests[0].clone() {
                             ToolRequest::Version {
@@ -449,7 +447,6 @@ impl Upgrade {
                         cf.replace_versions(o.tool_version.ba(), vec![new_request])?;
                         cf.save()?;
                     }
-                }
                 break;
             }
         }
