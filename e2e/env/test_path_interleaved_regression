@@ -9,6 +9,9 @@
 # 4. User adds MORE Homebrew paths (which get interleaved with system paths)
 # Result: Paths after the first system path match were being lost
 
+# Save the mise binary path before we override PATH
+MISE_BIN="$(command -v mise)"
+
 export MISE_EXPERIMENTAL=1
 
 # Simulate the PATH that existed when mise was first activated
@@ -29,7 +32,8 @@ tiny = "latest"
 EOF
 
 # Run hook-env and source it
-eval "$(mise hook-env -s bash)"
+mise_env="$("$MISE_BIN" hook-env -s bash)"
+eval "$mise_env"
 
 # Verify that all Homebrew paths are still present
 # The bug would cause paths after /usr/local/bin to be lost
