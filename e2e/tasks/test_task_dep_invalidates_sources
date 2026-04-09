@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+# Test that when a dependency task runs (sources changed), the dependent task
+# also runs even if the dependent's own sources haven't changed.
+# See: https://github.com/jdx/mise/discussions/8960
+
+mkdir -p core frontend
+
+cat <<'EOF' >mise.toml
+[tasks."core:build"]
+run = "echo core-built >> log.txt && touch core/out.txt"
+sources = ["core/src.txt"]
+outputs = ["core/out.txt"]
+
+[tasks."frontend:build"]
+run = "echo frontend-built >> log.txt && touch frontend/out.txt"
+sources = ["frontend/src.txt"]
+outputs = ["frontend/out.txt"]
+depends = ["core:build"]
+EOF
+
+# Create initial source files
+echo "v1" >core/src.txt
+echo "v1" >frontend/src.txt
+
+# First run: both tasks should execute
+mise run frontend:build
+assert_contains "cat log.txt" "core-built"
+assert_contains "cat log.txt" "frontend-built"
+rm -f log.txt
+
+# Second run: both should be skipped (nothing changed)
+mise run frontend:build
+assert "cat log.txt 2>/dev/null || echo empty" "empty"
+
+# Now change core's source - both should run because frontend depends on core
+sleep 0.1
+touch core/src.txt
+mise run frontend:build
+assert_contains "cat log.txt" "core-built"
+assert_contains "cat log.txt" "frontend-built"
+rm -f log.txt
+
+# Verify skipping still works when nothing changed
+mise run frontend:build
+assert "cat log.txt 2>/dev/null || echo empty" "empty"

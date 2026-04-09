@@ -523,10 +523,17 @@ impl Run {
         deps_for_remove.lock().await.mark_executed(&task);
         ctx.jset.lock().await.spawn(async move {
             let _permit = permit_opt;
-            let completed = deps_for_remove.lock().await.handled_task_keys();
+            let (completed, dep_ran) = {
+                let deps = deps_for_remove.lock().await;
+                (deps.handled_task_keys(), deps.any_dep_ran(&task))
+            };
             let result = this
-                .run_task_sched(&task, &ctx.config, ctx.sched_tx.clone(), completed)
+                .run_task_sched(&task, &ctx.config, ctx.sched_tx.clone(), completed, dep_ran)
                 .await;
+            // If the task actually ran (not skipped), mark it so dependents know
+            if let Ok(true) = &result {
+                deps_for_remove.lock().await.mark_ran(&task);
+            }
             if let Err(err) = &result {
                 let status = Error::get_exit_status(err);
                 if !this.is_stopping() && status.is_none() {
@@ -552,7 +559,7 @@ impl Run {
             deps_for_remove.lock().await.remove(&task);
             trace!("deps removed: {} {}", task.name, task.args.join(" "));
             in_flight_c.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-            result
+            result.map(|_| ())
         });
 
         Ok(())
@@ -692,11 +699,12 @@ impl Run {
         config: &Arc<Config>,
         sched_tx: Arc<tokio::sync::mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         completed_tasks: std::collections::HashSet<crate::task::TaskKey>,
-    ) -> Result<()> {
+        dep_ran: bool,
+    ) -> Result<bool> {
         self.executor
             .as_ref()
             .expect("executor must be initialized before running tasks")
-            .run_task_sched(task, config, sched_tx, completed_tasks)
+            .run_task_sched(task, config, sched_tx, completed_tasks, dep_ran)
             .await
     }
 
