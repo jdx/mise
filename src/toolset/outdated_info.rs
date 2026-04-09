@@ -267,8 +267,8 @@ pub fn compute_config_bumps(
                 .strip_prefix(&prefix)
                 .unwrap_or(&current_version);
 
-            if let Some(bumped) = check_semver_bump(old, cli_version) {
-                if bumped != old {
+            if let Some(bumped) = check_semver_bump(old, cli_version)
+                && bumped != old {
                     let new_version = format!("{prefix}{bumped}");
                     let new_request = match requests[0].clone() {
                         ToolRequest::Version {
@@ -303,7 +303,6 @@ pub fn compute_config_bumps(
                         new_request,
                     });
                 }
-            }
             break;
         }
     }
