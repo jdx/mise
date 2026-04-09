@@ -19,6 +19,8 @@ pub struct Deps {
     sent: HashSet<TaskKey>, // tasks that have already started so should not run again
     removed: HashSet<TaskKey>, // tasks that have already finished to track if we are in an infinitve loop
     executed: HashSet<TaskKey>, // tasks that actually began executing (not just scheduled)
+    ran: HashSet<TaskKey>, // tasks that actually ran their commands (not skipped due to fresh sources)
+    dep_edges: HashMap<TaskKey, HashSet<TaskKey>>, // maps each task to its direct dependency task keys
     post_dep_parents: HashMap<TaskKey, HashSet<TaskKey>>, // maps each post-dep to its parent tasks
     tx: mpsc::UnboundedSender<Option<Task>>,
     // not clone, notify waiters via tx None
@@ -49,6 +51,7 @@ impl Deps {
         let mut stack = vec![];
         let mut seen = HashSet::new();
         let mut post_dep_parents: HashMap<TaskKey, HashSet<TaskKey>> = HashMap::new();
+        let mut dep_edges: HashMap<TaskKey, HashSet<TaskKey>> = HashMap::new();
 
         let mut add_idx = |task: &Task, graph: &mut DiGraph<Task, ()>| {
             *indexes
@@ -89,6 +92,10 @@ impl Deps {
             for b in pre {
                 let b_idx = add_idx(&b, &mut graph);
                 graph.update_edge(a_idx, b_idx, ());
+                dep_edges
+                    .entry(task_key(&a))
+                    .or_default()
+                    .insert(task_key(&b));
                 stack.push(b.clone());
             }
             for b in post {
@@ -106,12 +113,15 @@ impl Deps {
         let sent = HashSet::new();
         let removed = HashSet::new();
         let executed = HashSet::new();
+        let ran = HashSet::new();
         Ok(Self {
             graph,
             tx,
             sent,
             removed,
             executed,
+            ran,
+            dep_edges,
             post_dep_parents,
         })
     }
@@ -209,6 +219,20 @@ impl Deps {
     /// graph leaf but then skipped because an earlier task failed.
     pub fn mark_executed(&mut self, task: &Task) {
         self.executed.insert(task_key(task));
+    }
+
+    /// Mark a task as having actually run its commands (not skipped due to fresh sources).
+    /// Used to invalidate dependent tasks' source freshness checks.
+    pub fn mark_ran(&mut self, task: &Task) {
+        self.ran.insert(task_key(task));
+    }
+
+    /// Check if any direct dependency of the given task actually ran (not skipped).
+    pub fn any_dep_ran(&self, task: &Task) -> bool {
+        let key = task_key(task);
+        self.dep_edges
+            .get(&key)
+            .is_some_and(|deps| deps.iter().any(|dep_key| self.ran.contains(dep_key)))
     }
 
     /// Remove multiple tasks from the graph in a batch, emitting leaves only once at the end.
