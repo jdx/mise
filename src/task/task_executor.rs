@@ -175,28 +175,32 @@ impl TaskExecutor {
             )
     }
 
+    /// Run a task, returning true if the task actually executed (not skipped).
     pub async fn run_task_sched(
         &self,
         task: &Task,
         config: &Arc<Config>,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         completed_tasks: HashSet<TaskKey>,
+        dep_ran: bool,
         semaphore: Arc<Semaphore>,
         permit: &mut Option<OwnedSemaphorePermit>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
         if Settings::get().task.skip.contains(&task.name) {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "skipping task");
             }
-            return Ok(());
+            return Ok(false);
         }
-        if !self.force && sources_are_fresh(task, config).await? {
+        // If any dependency actually ran, skip the source freshness check
+        // so that downstream tasks are invalidated by upstream changes
+        if !self.force && !dep_ran && sources_are_fresh(task, config).await? {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "sources up-to-date, skipping");
             }
-            return Ok(());
+            return Ok(false);
         }
 
         let mut tools = self.tool.clone();
@@ -355,7 +359,7 @@ impl TaskExecutor {
 
         save_checksum(task, config).await?;
 
-        Ok(())
+        Ok(true)
     }
 
     #[allow(clippy::too_many_arguments)]
