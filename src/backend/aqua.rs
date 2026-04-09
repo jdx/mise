@@ -662,8 +662,8 @@ impl Backend for AquaBackend {
 
         // Resolve SLSA provenance URL for all platforms (not just current).
         // This ensures deterministic lockfile output regardless of host platform.
-        if matches!(provenance, Some(ProvenanceType::Slsa { url: None })) {
-            if let Some(resolved_url) = self
+        if matches!(provenance, Some(ProvenanceType::Slsa { url: None }))
+            && let Some(resolved_url) = self
                 .resolve_slsa_url(&pkg, &v, target_os, target_arch)
                 .await
             {
@@ -671,7 +671,6 @@ impl Backend for AquaBackend {
                     url: Some(resolved_url),
                 });
             }
-        }
 
         // For the current platform, verify provenance cryptographically at lock time.
         // This ensures the lockfile's provenance entry is backed by actual verification,
