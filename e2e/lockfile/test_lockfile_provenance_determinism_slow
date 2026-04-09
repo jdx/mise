@@ -41,7 +41,4 @@ mise lock --platform "$PLATFORM,$CROSS_PLATFORM"
 # Second run should produce identical output
 assert "diff mise.lock mise.lock.first"
 
-echo "=== Cleanup ==="
-rm -f mise.lock mise.lock.first mise.toml
-
 echo "mise lockfile provenance determinism tests passed!"

@@ -405,15 +405,13 @@ impl Backend for UnifiedGitBackend {
                     {
                         Ok(verified) => provenance = Some(verified),
                         Err(e) => {
-                            // Keep detected provenance. Cross-platform entries already
-                            // trust detection-only provenance in the lockfile, so this
-                            // is consistent. Install-time re-verification can be forced
-                            // via locked_verify_provenance or paranoid settings.
+                            // Clear provenance so install-time verification will run.
                             warn!(
                                 "lock-time provenance verification failed for {}, \
-                                 detected provenance retained: {e}",
+                                 will be verified at install time: {e}",
                                 self.ba.full()
                             );
+                            provenance = None;
                         }
                     }
                 }

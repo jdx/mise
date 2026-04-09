@@ -690,15 +690,15 @@ impl Backend for AquaBackend {
             {
                 Ok(verified) => provenance = Some(verified),
                 Err(e) => {
-                    // Keep detected provenance. Cross-platform entries already
-                    // trust detection-only provenance in the lockfile, so this
-                    // is consistent. Install-time re-verification can be forced
-                    // via locked_verify_provenance or paranoid settings.
+                    // Clear provenance so install-time verification will run.
+                    // If we kept the unverified provenance, has_lockfile_integrity
+                    // would be true and verify_provenance() would be skipped.
                     warn!(
                         "lock-time provenance verification failed for {}, \
-                         detected provenance retained: {e}",
+                         will be verified at install time: {e}",
                         self.id
                     );
+                    provenance = None;
                 }
             }
         }
