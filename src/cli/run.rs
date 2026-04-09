@@ -707,6 +707,7 @@ impl Run {
             .unwrap_or(false)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_task_sched(
         &self,
         task: &Task,

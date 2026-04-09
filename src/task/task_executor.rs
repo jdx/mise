@@ -176,6 +176,7 @@ impl TaskExecutor {
     }
 
     /// Run a task, returning true if the task actually executed (not skipped).
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_task_sched(
         &self,
         task: &Task,
