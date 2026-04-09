@@ -9,6 +9,9 @@
 # 4. User adds MORE Homebrew paths (which get interleaved with system paths)
 # Result: Paths after the first system path match were being lost
 
+# Save the mise binary path before we override PATH
+MISE_BIN="$(which mise)"
+
 export MISE_EXPERIMENTAL=1
 
 # Simulate the PATH that existed when mise was first activated
@@ -28,8 +31,8 @@ cat >.mise.toml <<EOF
 tiny = "latest"
 EOF
 
-# Run hook-env and source it
-eval "$(mise hook-env -s bash)"
+# Run hook-env using the saved binary path
+eval "$("$MISE_BIN" hook-env -s bash)"
 
 # Verify that all Homebrew paths are still present
 # The bug would cause paths after /usr/local/bin to be lost
@@ -40,3 +43,26 @@ assert_contains "echo $PATH" "/opt/homebrew/opt/grep/libexec/gnubin"
 # Verify system paths are still present
 assert_contains "echo $PATH" "/usr/local/bin"
 assert_contains "echo $PATH" "/usr/bin"
+
+# Verify ordering: curl/bin was prepended before the orig block and must stay
+# before /usr/local/bin. Interleaved paths (findutils, grep) must NOT be promoted
+# ahead of /usr/local/bin — that would give them unintended priority.
+CURL_POS=$(echo "$PATH" | tr ':' '\n' | grep -n "opt/curl" | head -1 | cut -d: -f1)
+USR_LOCAL_POS=$(echo "$PATH" | tr ':' '\n' | grep -n "usr/local/bin" | head -1 | cut -d: -f1)
+FINDUTILS_POS=$(echo "$PATH" | tr ':' '\n' | grep -n "findutils" | head -1 | cut -d: -f1)
+
+echo "DEBUG: curl/bin at $CURL_POS, /usr/local/bin at $USR_LOCAL_POS, findutils at $FINDUTILS_POS"
+
+if [[ $CURL_POS -lt $USR_LOCAL_POS ]]; then
+	echo "SUCCESS: curl/bin stays before /usr/local/bin (prepend preserved)"
+else
+	echo "FAIL: curl/bin ($CURL_POS) moved after /usr/local/bin ($USR_LOCAL_POS)"
+	exit 1
+fi
+
+if [[ $FINDUTILS_POS -gt $USR_LOCAL_POS ]]; then
+	echo "SUCCESS: findutils not promoted before /usr/local/bin (interleaved entry kept out of pre)"
+else
+	echo "FAIL: findutils ($FINDUTILS_POS) was promoted before /usr/local/bin ($USR_LOCAL_POS)"
+	exit 1
+fi
