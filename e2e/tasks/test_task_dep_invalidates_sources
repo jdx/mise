@@ -44,3 +44,62 @@ rm -f log.txt
 # Verify skipping still works when nothing changed
 mise run frontend:build
 assert "cat log.txt 2>/dev/null || echo empty" "empty"
+
+# --- Edge case: dependency has no sources (always runs) ---
+# When a dep has no sources it always runs, so dependents with sources
+# should also re-run every time.
+
+cat <<'EOF' >mise.toml
+[tasks.setup]
+run = "echo setup-ran >> log2.txt"
+
+[tasks.compile]
+run = "echo compiled >> log2.txt && touch out.txt"
+sources = ["src.txt"]
+outputs = ["out.txt"]
+depends = ["setup"]
+EOF
+
+rm -f log2.txt out.txt
+echo "v1" >src.txt
+
+# First run: both should execute
+mise run compile
+assert_contains "cat log2.txt" "setup-ran"
+assert_contains "cat log2.txt" "compiled"
+rm -f log2.txt
+
+# Second run: setup has no sources so it always runs,
+# which should cause compile to also run
+mise run compile
+assert_contains "cat log2.txt" "setup-ran"
+assert_contains "cat log2.txt" "compiled"
+rm -f log2.txt
+
+# --- Edge case: dependency has sources, dependent has no sources ---
+# Dependent with no sources always runs regardless, so no behavior change needed.
+
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = "echo built >> log3.txt && touch build-out.txt"
+sources = ["build-src.txt"]
+outputs = ["build-out.txt"]
+
+[tasks.deploy]
+run = "echo deployed >> log3.txt"
+depends = ["build"]
+EOF
+
+rm -f log3.txt build-out.txt
+echo "v1" >build-src.txt
+
+# First run: both execute
+mise run deploy
+assert_contains "cat log3.txt" "built"
+assert_contains "cat log3.txt" "deployed"
+rm -f log3.txt
+
+# Second run: build is skipped (sources fresh), deploy still runs (no sources)
+mise run deploy
+assert_not_contains "cat log3.txt" "built"
+assert_contains "cat log3.txt" "deployed"
