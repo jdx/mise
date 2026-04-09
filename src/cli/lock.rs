@@ -224,36 +224,37 @@ impl Lock {
                     .unwrap_or(&current_version);
 
                 if let Some(bumped) = check_semver_bump(old, &cli_version)
-                    && bumped != old {
-                        let new_version = format!("{prefix}{bumped}");
-                        let new_request = match requests[0].clone() {
-                            ToolRequest::Version {
-                                version: _,
-                                backend,
-                                options,
-                                source,
-                            } => ToolRequest::Version {
-                                version: new_version,
-                                backend,
-                                options,
-                                source,
-                            },
-                            ToolRequest::Prefix {
-                                prefix: _,
-                                backend,
-                                options,
-                                source,
-                            } => ToolRequest::Prefix {
-                                prefix: format!("{prefix}{bumped}"),
-                                backend,
-                                options,
-                                source,
-                            },
-                            other => other,
-                        };
-                        cf.replace_versions(&tool_arg.ba, vec![new_request])?;
-                        cf.save()?;
-                    }
+                    && bumped != old
+                {
+                    let new_version = format!("{prefix}{bumped}");
+                    let new_request = match requests[0].clone() {
+                        ToolRequest::Version {
+                            version: _,
+                            backend,
+                            options,
+                            source,
+                        } => ToolRequest::Version {
+                            version: new_version,
+                            backend,
+                            options,
+                            source,
+                        },
+                        ToolRequest::Prefix {
+                            prefix: _,
+                            backend,
+                            options,
+                            source,
+                        } => ToolRequest::Prefix {
+                            prefix: format!("{prefix}{bumped}"),
+                            backend,
+                            options,
+                            source,
+                        },
+                        other => other,
+                    };
+                    cf.replace_versions(&tool_arg.ba, vec![new_request])?;
+                    cf.save()?;
+                }
                 break;
             }
         }

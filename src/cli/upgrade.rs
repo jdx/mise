@@ -330,15 +330,16 @@ impl Upgrade {
         for tv in &mut successful_versions {
             if matches!(tv.request.source(), ToolSource::Argument)
                 && let Some(tvl) = ts.versions.get(tv.ba())
-                    && matches!(&tvl.source, ToolSource::MiseToml(_)) {
-                        // Use the config's request (preserves version specifier like "latest")
-                        // but keep the resolved version from the upgrade
-                        if let Some(config_tv) = tvl.versions.first() {
-                            tv.request = config_tv.request.clone();
-                        } else {
-                            tv.request.set_source(tvl.source.clone());
-                        }
-                    }
+                && matches!(&tvl.source, ToolSource::MiseToml(_))
+            {
+                // Use the config's request (preserves version specifier like "latest")
+                // but keep the resolved version from the upgrade
+                if let Some(config_tv) = tvl.versions.first() {
+                    tv.request = config_tv.request.clone();
+                } else {
+                    tv.request.set_source(tvl.source.clone());
+                }
+            }
         }
 
         config::rebuild_shims_and_runtime_symlinks(config, ts, &successful_versions).await?;
@@ -417,36 +418,37 @@ impl Upgrade {
 
                 // Check if the new version requires a config update
                 if let Some(bumped) = check_semver_bump(old, cli_version)
-                    && bumped != old {
-                        let new_version = format!("{prefix}{bumped}");
-                        let new_request = match requests[0].clone() {
-                            ToolRequest::Version {
-                                version: _,
-                                backend,
-                                options,
-                                source,
-                            } => ToolRequest::Version {
-                                version: new_version,
-                                backend,
-                                options,
-                                source,
-                            },
-                            ToolRequest::Prefix {
-                                prefix: _,
-                                backend,
-                                options,
-                                source,
-                            } => ToolRequest::Prefix {
-                                prefix: format!("{prefix}{bumped}"),
-                                backend,
-                                options,
-                                source,
-                            },
-                            other => other,
-                        };
-                        cf.replace_versions(o.tool_version.ba(), vec![new_request])?;
-                        cf.save()?;
-                    }
+                    && bumped != old
+                {
+                    let new_version = format!("{prefix}{bumped}");
+                    let new_request = match requests[0].clone() {
+                        ToolRequest::Version {
+                            version: _,
+                            backend,
+                            options,
+                            source,
+                        } => ToolRequest::Version {
+                            version: new_version,
+                            backend,
+                            options,
+                            source,
+                        },
+                        ToolRequest::Prefix {
+                            prefix: _,
+                            backend,
+                            options,
+                            source,
+                        } => ToolRequest::Prefix {
+                            prefix: format!("{prefix}{bumped}"),
+                            backend,
+                            options,
+                            source,
+                        },
+                        other => other,
+                    };
+                    cf.replace_versions(o.tool_version.ba(), vec![new_request])?;
+                    cf.save()?;
+                }
                 break;
             }
         }
