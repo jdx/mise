@@ -521,11 +521,19 @@ impl Run {
         // always sees the parent in `executed` — avoiding a race where a
         // concurrent task fails between spawn and first poll.
         deps_for_remove.lock().await.mark_executed(&task);
+        let semaphore = ctx.semaphore.clone();
         ctx.jset.lock().await.spawn(async move {
-            let _permit = permit_opt;
+            let mut permit = permit_opt;
             let completed = deps_for_remove.lock().await.handled_task_keys();
             let result = this
-                .run_task_sched(&task, &ctx.config, ctx.sched_tx.clone(), completed)
+                .run_task_sched(
+                    &task,
+                    &ctx.config,
+                    ctx.sched_tx.clone(),
+                    completed,
+                    semaphore,
+                    &mut permit,
+                )
                 .await;
             if let Err(err) = &result {
                 let status = Error::get_exit_status(err);
@@ -692,11 +700,13 @@ impl Run {
         config: &Arc<Config>,
         sched_tx: Arc<tokio::sync::mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         completed_tasks: std::collections::HashSet<crate::task::TaskKey>,
+        semaphore: Arc<tokio::sync::Semaphore>,
+        permit: &mut Option<tokio::sync::OwnedSemaphorePermit>,
     ) -> Result<()> {
         self.executor
             .as_ref()
             .expect("executor must be initialized before running tasks")
-            .run_task_sched(task, config, sched_tx, completed_tasks)
+            .run_task_sched(task, config, sched_tx, completed_tasks, semaphore, permit)
             .await
     }
 
