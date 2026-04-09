@@ -87,6 +87,7 @@ within_isolated_env() {
 		LLVM_PROFILE_FILE="${LLVM_PROFILE_FILE:-}" \
 		${proxy_vars[@]+"${proxy_vars[@]}"} \
 		MISE_CACHE_DIR="$MISE_CACHE_DIR" \
+		MISE_URL_REPLACEMENTS="${MISE_URL_REPLACEMENTS:-}" \
 		MISE_CACHE_PRUNE_AGE="0" \
 		MISE_CONFIG_DIR="$MISE_CONFIG_DIR" \
 		MISE_DATA_DIR="$MISE_DATA_DIR" \

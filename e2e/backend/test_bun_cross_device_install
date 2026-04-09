@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Regression test: bun install should work when downloads and installs are on different filesystems.
+
+set -euo pipefail
+
+if [[ $(uname) != Linux ]]; then
+	exit 0
+fi
+
+TEST_DIR="$(mktemp -d)"
+HTTP_PORT=8765
+SERVER_PID=""
+
+cleanup() {
+	if [[ -n $SERVER_PID ]]; then
+		kill "$SERVER_PID" 2>/dev/null || true
+	fi
+	rm -rf "$TEST_DIR" /dev/shm/mise-bun-cross-device-install-downloads
+}
+trap cleanup EXIT
+
+# Build a tiny Bun release fixture that exercises the exact same install code path
+# without the network and without large downloads.
+#
+# The script only needs to answer `-v/--version` for the installer verification;
+# the `bun fixture` fallback just makes any other invocation obviously fake while
+# keeping the binary harmless.
+FIXTURE_DIR="$TEST_DIR/releases/bun-v1.3.10"
+mkdir -p "$FIXTURE_DIR"
+python3 - "$FIXTURE_DIR/bun-linux-aarch64.zip" <<'PY'
+import os
+import sys
+import zipfile
+from zipfile import ZipInfo
+
+out_path = sys.argv[1]
+script = b"""#!/usr/bin/env bash
+if [[ ${1:-} == -v || ${1:-} == --version ]]; then
+  echo 1.3.10
+else
+  echo 'bun fixture' "$@"
+fi
+"""
+
+with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+    info = ZipInfo("bun-linux-aarch64/bun")
+    info.create_system = 3
+    info.external_attr = 0o755 << 16
+    zf.writestr(info, script)
+PY
+sha256sum "$FIXTURE_DIR/bun-linux-aarch64.zip" | awk '{print $1 "  bun-linux-aarch64.zip"}' > "$FIXTURE_DIR/SHASUMS256.txt"
+
+# Serve the fixture with Python's stdlib HTTP server so the test can exercise
+# the real Bun download + checksum + unzip path without relying on GitHub.
+pushd "$TEST_DIR/releases" >/dev/null
+python3 -m http.server "$HTTP_PORT" --bind 127.0.0.1 >/dev/null 2>&1 &
+SERVER_PID=$!
+popd >/dev/null
+sleep 1
+
+downloads_dir="/dev/shm/mise-bun-cross-device-install-downloads"
+mkdir -p "$downloads_dir"
+rm -rf "$MISE_DATA_DIR/installs/bun/1.3.10"
+export MISE_URL_REPLACEMENTS="$(printf '{\"https://github.com/oven-sh/bun/releases/download\":\"http://127.0.0.1:%s\"}' "$HTTP_PORT")"
+
+assert_contains "MISE_DOWNLOADS_DIR='$downloads_dir' mise install bun@1.3.10 2>&1" "bun@1.3.10    ✓ installed"
+assert_contains "$MISE_DATA_DIR/installs/bun/1.3.10/bin/bun -v 2>&1" "1.3.10"

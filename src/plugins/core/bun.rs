@@ -41,6 +41,7 @@ impl BunPlugin {
         tv.install_path().join("bin").join(bun_bin_name())
     }
 
+
     fn test_bun(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message("bun -v".into());
         CmdLineRunner::new(self.bun_bin(tv))
@@ -71,7 +72,7 @@ impl BunPlugin {
         file::remove_all(tv.install_path())?;
         file::create_dir_all(tv.install_path().join("bin"))?;
         file::unzip(tarball_path, &tv.download_path(), &Default::default())?;
-        file::rename(
+        file::move_file(
             tv.download_path()
                 .join(format!("bun-{}-{}", os(), arch()))
                 .join(bun_bin_name()),
