@@ -1,5 +1,15 @@
 # Changelog
 
+## [2026.4.7](https://github.com/jdx/mise/compare/v2026.4.6..v2026.4.7) - 2026-04-09
+
+### 🐛 Bug Fixes
+
+- **(python)** use native ARM64 precompiled Python on Windows ARM by @JohanLorenzo in [#8961](https://github.com/jdx/mise/pull/8961)
+
+### New Contributors
+
+- @JohanLorenzo made their first contribution in [#8961](https://github.com/jdx/mise/pull/8961)
+
 ## [2026.4.6](https://github.com/jdx/mise/compare/v2026.4.5..v2026.4.6) - 2026-04-07
 
 ### 🚀 Features
