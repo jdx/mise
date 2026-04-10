@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+cat <<'TOML' >mise.prod.toml
+[task_config]
+includes = ["prod-tasks"]
+TOML
+
+mkdir -p prod-tasks
+cat <<'SCRIPT' >prod-tasks/prod-task
+#!/usr/bin/env bash
+echo "prod task"
+SCRIPT
+chmod +x prod-tasks/prod-task
+
+cat <<'TOML' >mise.ci.toml
+[task_config]
+includes = ["ci-tasks"]
+TOML
+
+mkdir -p ci-tasks
+cat <<'SCRIPT' >ci-tasks/ci-task
+#!/usr/bin/env bash
+echo "ci task"
+SCRIPT
+chmod +x ci-tasks/ci-task
+
+assert_contains "MISE_ENV=prod,ci mise tasks ls" "ci-task"
+assert_not_contains "MISE_ENV=prod,ci mise tasks ls" "prod-task"
