@@ -20,7 +20,7 @@ use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
-use crate::config::config_file::{ConfigFile, config_trust_root};
+use crate::config::config_file::{ConfigFile, TaskIncludesMode, config_trust_root};
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
@@ -2334,11 +2334,16 @@ async fn load_file_tasks(
     cf: Arc<dyn ConfigFile>,
     config_root: &Path,
 ) -> Result<Vec<Task>> {
-    let includes = cf
-        .task_config()
-        .includes
-        .clone()
-        .unwrap_or_else(default_task_includes);
+    let includes = match cf.task_config().includes.clone() {
+        Some(includes) if cf.task_config().includes_mode == TaskIncludesMode::Extend => {
+            default_task_includes()
+                .into_iter()
+                .chain(includes)
+                .collect_vec()
+        }
+        Some(includes) => includes,
+        None => default_task_includes(),
+    };
 
     let mut tasks = vec![];
     let config_root = Arc::new(config_root.to_path_buf());
@@ -2364,26 +2369,9 @@ async fn load_file_tasks(
 }
 
 pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBuf> {
-    let configs = configs_at_root(dir, config_files);
-
-    // Find the highest-precedence config that has explicit task_config.includes
-    // and resolve paths relative to that config file's directory
-    let (includes, resolve_dir) = configs
-        .iter()
-        .find_map(|cf| {
-            cf.task_config().includes.clone().map(|includes| {
-                // Resolve relative paths from the config root, not the config file's directory
-                (includes, cf.config_root())
-            })
-        })
-        .unwrap_or_else(|| {
-            // Default includes should be resolved relative to the search directory
-            (default_task_includes(), dir.to_path_buf())
-        });
-
-    includes
+    task_include_specs_for_dir(dir, config_files)
         .into_iter()
-        .flat_map(|p| {
+        .flat_map(|(resolve_dir, p)| {
             // Git URLs are handled by load_file_tasks, not here
             if p.starts_with("git::") {
                 return vec![];
@@ -2394,6 +2382,83 @@ pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBu
         .collect::<Vec<_>>()
 }
 
+fn task_include_specs_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<(PathBuf, String)> {
+    let configs = configs_at_root(dir, config_files);
+    replacement_task_include_specs_for_dir(dir, &configs, &[])
+}
+
+fn replacement_task_include_specs_for_dir(
+    dir: &Path,
+    configs: &[&Arc<dyn ConfigFile>],
+    exclude_paths: &[PathBuf],
+) -> Vec<(PathBuf, String)> {
+    match selected_task_include_config(configs, exclude_paths) {
+        Some(cf) if cf.task_config().includes_mode == TaskIncludesMode::Extend => {
+            let mut exclude_paths = exclude_paths.to_vec();
+            exclude_paths.push(cf.get_path().to_path_buf());
+            let mut includes = replacement_task_include_specs_for_dir(dir, configs, &exclude_paths);
+            includes.extend(task_include_specs_for_config(cf));
+            includes
+        }
+        Some(cf) => task_include_specs_for_config(cf),
+        None => default_task_include_specs_for_dir(dir),
+    }
+}
+
+fn selected_task_include_config<'a>(
+    configs: &[&'a Arc<dyn ConfigFile>],
+    exclude_paths: &[PathBuf],
+) -> Option<&'a Arc<dyn ConfigFile>> {
+    configs
+        .iter()
+        .copied()
+        .find(|cf| {
+            cf.task_config().includes.is_some()
+                && !exclude_paths.iter().any(|path| cf.get_path() == path)
+                && is_plain_local_config(cf.get_path())
+        })
+        .or_else(|| {
+            configs.iter().copied().find(|cf| {
+                cf.task_config().includes.is_some()
+                    && !exclude_paths.iter().any(|path| cf.get_path() == path)
+            })
+        })
+}
+
+fn is_plain_local_config(path: &Path) -> bool {
+    matches!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some("config.local.toml" | "mise.local.toml" | ".mise.local.toml" | ".rtx.local.toml")
+    )
+}
+
+fn task_include_specs_for_config(cf: &Arc<dyn ConfigFile>) -> Vec<(PathBuf, String)> {
+    let resolve_dir = cf.config_root();
+    cf.task_config()
+        .includes
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| (resolve_dir.clone(), p))
+        .collect_vec()
+}
+
+fn default_task_include_specs_for_dir(dir: &Path) -> Vec<(PathBuf, String)> {
+    default_task_includes()
+        .into_iter()
+        .map(|p| (dir.to_path_buf(), p))
+        .collect_vec()
+}
+
+fn task_git_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<String> {
+    task_include_specs_for_dir(dir, config_files)
+        .into_iter()
+        .map(|(_, p)| p)
+        .filter(|p| p.starts_with("git::"))
+        .unique()
+        .collect()
+}
+
 pub async fn load_tasks_in_dir(
     config: &Arc<Config>,
     dir: &Path,
@@ -2401,14 +2466,7 @@ pub async fn load_tasks_in_dir(
     templates: &IndexMap<String, TaskTemplate>,
 ) -> Result<Vec<Task>> {
     let configs = configs_at_root(dir, config_files);
-
-    let git_includes: Vec<String> = configs
-        .iter()
-        .find_map(|cf| cf.task_config().includes.clone())
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|p| p.starts_with("git::"))
-        .collect();
+    let git_includes = task_git_includes_for_dir(dir, config_files);
 
     let mut config_tasks = vec![];
     for cf in &configs {

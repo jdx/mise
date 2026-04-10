@@ -641,6 +641,19 @@ For local and monorepo task discovery, mise uses the nearest config file that de
 That means a child config's `includes` replaces both the defaults and any `includes` defined by parent configs for that directory.
 Global config files are loaded independently, so each global config file uses its own `task_config.includes` or the default directories if `includes` is unset.
 
+Set `task_config.includes_mode = "extend"` on the config file whose `task_config.includes` is selected to add `includes` to the inherited includes for the same task scope:
+
+```toml
+[task_config]
+includes = [
+    "mytasks",
+    "tasks.toml",
+]
+includes_mode = "extend"
+```
+
+With `includes_mode = "extend"`, mise keeps the inherited `task_config.includes` and appends the selected config file's `includes`. If there are no inherited includes, mise extends the default file-task directories instead. If `includes_mode = "extend"` is only set on a config file whose `includes` are replaced by another config file, it has no effect.
+
 If using included task toml files, note that they have a different format than the `mise.toml` file. They are just a list of tasks.
 The file should be the same format as the `[tasks]` section of `mise.toml` but without the `[task]` prefix:
 

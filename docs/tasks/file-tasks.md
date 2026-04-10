@@ -4,9 +4,9 @@ In addition to defining tasks through the configuration, they can also be define
 
 - `mise-tasks/:task_name`
 - `.mise-tasks/:task_name`
-- `mise/tasks/:task_name`
 - `.mise/tasks/:task_name`
 - `.config/mise/tasks/:task_name`
+- `mise/tasks/:task_name`
 
 These are the default file-task directories. If [`task_config.includes`](/tasks/task-configuration.html#task-config-includes)
 is set for the current config scope, mise searches only the paths listed there instead.

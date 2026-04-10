@@ -607,9 +607,20 @@ impl Hash for dyn ConfigFile {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum TaskIncludesMode {
+    #[default]
+    Replace,
+    #[serde(alias = "additive")]
+    Extend,
+}
+
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct TaskConfig {
     pub includes: Option<Vec<String>>,
+    #[serde(default)]
+    pub includes_mode: TaskIncludesMode,
     pub dir: Option<String>,
 }
 

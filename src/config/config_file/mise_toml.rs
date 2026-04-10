@@ -940,7 +940,10 @@ impl Debug for MiseToml {
         if !self.plugins.is_empty() {
             d.field("plugins", &self.plugins);
         }
-        if self.task_config.includes.is_some() {
+        if self.task_config.includes.is_some()
+            || self.task_config.includes_mode != Default::default()
+            || self.task_config.dir.is_some()
+        {
             d.field("task_config", &self.task_config);
         }
         d.finish()

@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+
+assert_output_contains() {
+	local output="$1"
+	local expected="$2"
+
+	if [[ $output == *"$expected"* ]]; then
+		ok "'$expected' is in output"
+	else
+		fail "expected '$expected' to be in '$output'"
+	fi
+}
+
+assert_output_not_contains() {
+	local output="$1"
+	local expected="$2"
+
+	if [[ $output != *"$expected"* ]]; then
+		ok "'$expected' is not in output"
+	else
+		fail "expected '$expected' not to be in '$output'"
+	fi
+}
+
+cat <<'TOML' >mise.toml
+[task_config]
+includes = ["tasks.toml", "root-tasks"]
+TOML
+
+cat <<'TOML' >tasks.toml
+[root-file-task]
+run = 'echo "root file task"'
+TOML
+
+mkdir -p root-tasks
+cat <<'SCRIPT' >root-tasks/root-dir-task
+#!/usr/bin/env bash
+echo "root dir task"
+SCRIPT
+chmod +x root-tasks/root-dir-task
+
+mkdir -p .mise/tasks
+cat <<'SCRIPT' >.mise/tasks/default-task
+#!/usr/bin/env bash
+echo "default task"
+SCRIPT
+chmod +x .mise/tasks/default-task
+
+cat <<'TOML' >mise.local.toml
+[task_config]
+includes = ["tasks.local.toml", "local-tasks"]
+includes_mode = "extend"
+TOML
+
+cat <<'TOML' >tasks.local.toml
+[local-file-task]
+run = 'echo "local file task"'
+TOML
+
+mkdir -p local-tasks
+cat <<'SCRIPT' >local-tasks/local-dir-task
+#!/usr/bin/env bash
+echo "local dir task"
+SCRIPT
+chmod +x local-tasks/local-dir-task
+
+tasks="$(mise tasks ls)"
+assert_output_not_contains "$tasks" "default-task"
+assert_output_contains "$tasks" "root-file-task"
+assert_output_contains "$tasks" "root-dir-task"
+assert_output_contains "$tasks" "local-file-task"
+assert_output_contains "$tasks" "local-dir-task"
+
+cat <<'TOML' >mise.local.toml
+[task_config]
+includes = ["tasks.local.toml", "local-tasks"]
+TOML
+
+tasks="$(mise tasks ls)"
+assert_output_not_contains "$tasks" "default-task"
+assert_output_not_contains "$tasks" "root-file-task"
+assert_output_not_contains "$tasks" "root-dir-task"
+assert_output_contains "$tasks" "local-file-task"
+assert_output_contains "$tasks" "local-dir-task"
+
+cat <<'TOML' >mise.toml
+[task_config]
+includes = ["tasks.toml", "root-tasks"]
+includes_mode = "extend"
+TOML
+
+tasks="$(mise tasks ls)"
+assert_output_not_contains "$tasks" "default-task"
+assert_output_not_contains "$tasks" "root-file-task"
+assert_output_not_contains "$tasks" "root-dir-task"
+assert_output_contains "$tasks" "local-file-task"
+assert_output_contains "$tasks" "local-dir-task"
+
+cat <<'TOML' >mise.toml
+[env]
+ROOT_CONFIG = "1"
+TOML
+
+cat <<'TOML' >mise.prod.toml
+[task_config]
+includes = ["prod-tasks"]
+includes_mode = "extend"
+TOML
+
+mkdir -p prod-tasks
+cat <<'SCRIPT' >prod-tasks/prod-dir-task
+#!/usr/bin/env bash
+echo "prod dir task"
+SCRIPT
+chmod +x prod-tasks/prod-dir-task
+
+cat <<'TOML' >mise.ci.toml
+[task_config]
+includes = ["ci-tasks"]
+TOML
+
+mkdir -p ci-tasks
+cat <<'SCRIPT' >ci-tasks/ci-dir-task
+#!/usr/bin/env bash
+echo "ci dir task"
+SCRIPT
+chmod +x ci-tasks/ci-dir-task
+
+cat <<'TOML' >mise.local.toml
+[task_config]
+includes = ["tasks.local.toml", "local-tasks"]
+includes_mode = "extend"
+TOML
+
+# FIXME: This should be ci + local when the MISE_ENV include precedence bug is fixed.
+tasks="$(MISE_ENV=prod,ci mise tasks ls)"
+assert_output_not_contains "$tasks" "default-task"
+assert_output_not_contains "$tasks" "root-file-task"
+assert_output_not_contains "$tasks" "root-dir-task"
+assert_output_contains "$tasks" "prod-dir-task"
+assert_output_not_contains "$tasks" "ci-dir-task"
+assert_output_contains "$tasks" "local-file-task"
+assert_output_contains "$tasks" "local-dir-task"
