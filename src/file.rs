@@ -1665,12 +1665,11 @@ mod tests {
         let source_dir = tempdir_in(&source_root).unwrap();
         let source_dev = source_dir.path().metadata().unwrap().dev();
 
-        let target_dir = tempdir_in("/tmp").ok();
-        let Some(target_dir) = target_dir
-            .filter(|dir| dir.path().metadata().ok().map(|m| m.dev()) != Some(source_dev))
-        else {
+        let target_dir = tempdir_in("/tmp").unwrap();
+        if target_dir.path().metadata().unwrap().dev() == source_dev {
+            // This host only has one filesystem for tempdirs, so skip if we can't reproduce EXDEV.
             return;
-        };
+        }
 
         let src = source_dir.path().join("bun");
         let dst = target_dir.path().join("bun");
@@ -1692,12 +1691,11 @@ mod tests {
         let source_dir = tempdir_in(&source_root).unwrap();
         let source_dev = source_dir.path().metadata().unwrap().dev();
 
-        let target_dir = tempdir_in("/tmp").ok();
-        let Some(target_dir) = target_dir
-            .filter(|dir| dir.path().metadata().ok().map(|m| m.dev()) != Some(source_dev))
-        else {
+        let target_dir = tempdir_in("/tmp").unwrap();
+        if target_dir.path().metadata().unwrap().dev() == source_dev {
+            // This host only has one filesystem for tempdirs, so skip if we can't reproduce EXDEV.
             return;
-        };
+        }
 
         let src = source_dir.path().join("bun-tree");
         let dst = target_dir.path().join("bun-tree");
