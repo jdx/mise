@@ -51,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Install cross
-        uses: taiki-e/install-action@45a93d9c71692daf99a53feb97366fb6f4c3757f # v2
+        uses: taiki-e/install-action@97a5807a604e12de3a13b52d868ebecaeeea757c # v2
         with:
           tool: cross
       - name: cache crates
@@ -75,7 +75,7 @@ jobs:
             dist/mise-*.tar.gz
             dist/mise-*.tar.zst
           if-no-files-found: error
-      - uses: taiki-e/install-action@45a93d9c71692daf99a53feb97366fb6f4c3757f # v2
+      - uses: taiki-e/install-action@97a5807a604e12de3a13b52d868ebecaeeea757c # v2
         with: { tool: cargo-cache }
       - if: steps.cache-crates.outputs.cache-hit != 'true'
         run: cargo cache --autoclean
@@ -124,7 +124,7 @@ jobs:
             dist/mise-*.tar.gz
             dist/mise-*.tar.zst
           if-no-files-found: error
-      - uses: taiki-e/install-action@45a93d9c71692daf99a53feb97366fb6f4c3757f # v2
+      - uses: taiki-e/install-action@97a5807a604e12de3a13b52d868ebecaeeea757c # v2
         with: { tool: cargo-cache }
       - if: steps.cache-crates.outputs.cache-hit != 'true'
         run: cargo cache --autoclean
@@ -180,7 +180,7 @@ jobs:
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - uses: taiki-e/install-action@45a93d9c71692daf99a53feb97366fb6f4c3757f # v2
+      - uses: taiki-e/install-action@97a5807a604e12de3a13b52d868ebecaeeea757c # v2
         with:
           tool: usage-cli
       - run: tar -C "$HOME" -xvf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.zst"
@@ -203,7 +203,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-tarball-linux]
     timeout-minutes: 10
-    container: ghcr.io/jdx/mise:rpm@sha256:b37cc3b48f1687a96644cfa3751f610078dcd466987f32a2d86a5304196291f4
+    container: ghcr.io/jdx/mise:rpm@sha256:d45af2db3847044ccd9cce7e580c1616e7e8baad952092574dea4e4a0815c435
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
@@ -227,7 +227,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     runs-on: ubuntu-latest
     needs: [build-tarball-linux]
-    container: ghcr.io/jdx/mise:deb@sha256:56ddc496f677211c16adab9d86a62dbfab8f9f1e6e60ddd9c182916ebdfd5f27
+    container: ghcr.io/jdx/mise:deb@sha256:d7463ac5d3023c3f634eccc81834b6553f80e7fbdf0bc11a3bba5d691c44f614
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

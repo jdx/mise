@@ -26,17 +26,17 @@ mise x --deny-all --allow-read=. --allow-write=./dist --allow-net=registry.npmjs
 
 ## CLI Flags
 
-| Flag                   | Description                                                                                   |
-| ---------------------- | --------------------------------------------------------------------------------------------- |
-| `--deny-all`           | Block reads, writes, network, and env vars                                                    |
-| `--deny-read`          | Block filesystem reads (system libs and tool dirs still accessible)                           |
-| `--deny-write`         | Block all filesystem writes (except `/tmp`)                                                   |
-| `--deny-net`           | Block all network access                                                                      |
-| `--deny-env`           | Block env var inheritance (only `PATH`, `HOME`, `USER`, `SHELL`, `TERM`, `LANG` pass through) |
-| `--allow-read=<path>`  | Allow reads from specific path (implies `--deny-read` for everything else)                    |
-| `--allow-write=<path>` | Allow writes to specific path (implies `--deny-write` for everything else)                    |
-| `--allow-net=<host>`   | Allow network to specific host (implies `--deny-net` for everything else)                     |
-| `--allow-env=<var>`    | Allow specific env var through (implies `--deny-env` for everything else)                     |
+| Flag                   | Description                                                                                                            |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `--deny-all`           | Block reads, writes, network, and env vars                                                                             |
+| `--deny-read`          | Block filesystem reads (system libs and tool dirs still accessible)                                                    |
+| `--deny-write`         | Block all filesystem writes (except `/tmp`)                                                                            |
+| `--deny-net`           | Block all network access                                                                                               |
+| `--deny-env`           | Block env var inheritance (only `PATH`, `HOME`, `USER`, `SHELL`, `TERM`, `LANG` pass through)                          |
+| `--allow-read=<path>`  | Allow reads from specific path (implies `--deny-read` for everything else)                                             |
+| `--allow-write=<path>` | Allow writes to specific path (implies `--deny-write` for everything else)                                             |
+| `--allow-net=<host>`   | Allow network to specific host (implies `--deny-net` for everything else)                                              |
+| `--allow-env=<var>`    | Allow specific env var through (implies `--deny-env` for everything else). Supports wildcards: `--allow-env='MYAPP_*'` |
 
 These flags work with both `mise exec` (`mise x`) and `mise run`.
 
@@ -140,6 +140,16 @@ mise x --deny-net -- make build
 mise x --deny-all --allow-read=./src --allow-write=./dist node@20 -- node build.js
 ```
 
+### Restrict env vars to a namespace
+
+```bash
+# Only pass through env vars starting with MYAPP_
+mise x --allow-env='MYAPP_*' -- node app.js
+
+# Allow multiple patterns
+mise x --allow-env='MYAPP_*' --allow-env='NODE_*' -- node app.js
+```
+
 ### Sandboxed task definition
 
 ```toml
@@ -148,4 +158,5 @@ run = "npm test"
 deny_net = true
 deny_write = true
 allow_write = ["./coverage", "./node_modules/.cache"]
+allow_env = ["NODE_*", "npm_*"]
 ```

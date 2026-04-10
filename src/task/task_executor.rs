@@ -29,7 +29,7 @@ use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use std::time::{Duration, SystemTime};
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 use xx::file;
 
 /// Global lock for interactive task exclusivity.
@@ -175,26 +175,33 @@ impl TaskExecutor {
             )
     }
 
+    /// Run a task, returning true if the task actually executed (not skipped).
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_task_sched(
         &self,
         task: &Task,
         config: &Arc<Config>,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         completed_tasks: HashSet<TaskKey>,
-    ) -> Result<()> {
+        dep_ran: bool,
+        semaphore: Arc<Semaphore>,
+        permit: &mut Option<OwnedSemaphorePermit>,
+    ) -> Result<bool> {
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
         if Settings::get().task.skip.contains(&task.name) {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "skipping task");
             }
-            return Ok(());
+            return Ok(false);
         }
-        if !self.force && sources_are_fresh(task, config).await? {
+        // If any dependency actually ran, skip the source freshness check
+        // so that downstream tasks are invalidated by upstream changes
+        if !self.force && !dep_ran && sources_are_fresh(task, config).await? {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "sources up-to-date, skipping");
             }
-            return Ok(());
+            return Ok(false);
         }
 
         let mut tools = self.tool.clone();
@@ -329,6 +336,8 @@ impl TaskExecutor {
                 sched_tx,
                 confirm_guard,
                 &completed_tasks,
+                semaphore,
+                permit,
             )
             .await?;
             trace!(
@@ -351,7 +360,7 @@ impl TaskExecutor {
 
         save_checksum(task, config).await?;
 
-        Ok(())
+        Ok(true)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -365,6 +374,8 @@ impl TaskExecutor {
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         existing_guard: Option<RuntimeLockGuard<'static>>,
         completed_tasks: &HashSet<TaskKey>,
+        semaphore: Arc<Semaphore>,
+        permit: &mut Option<OwnedSemaphorePermit>,
     ) -> Result<()> {
         let (env, task_env) = full_env;
         use crate::task::RunEntry;
@@ -407,6 +418,11 @@ impl TaskExecutor {
                         Some(override_env.as_slice())
                     };
                     guard = None; // drop lock before waiting on sub-tasks
+                    // Release the semaphore permit before waiting on sub-tasks to
+                    // avoid deadlock when MISE_JOBS=1 (the sub-task needs a permit
+                    // but we're holding the only one).
+                    let had_permit = permit.is_some();
+                    *permit = None;
                     self.inject_and_wait(
                         config,
                         &[resolved_spec],
@@ -417,6 +433,9 @@ impl TaskExecutor {
                         completed_tasks,
                     )
                     .await?;
+                    if had_permit {
+                        *permit = Some(semaphore.clone().acquire_owned().await?);
+                    }
                 }
                 RunEntry::TaskGroup { tasks } => {
                     let resolved_tasks: Vec<String> = tasks
@@ -424,6 +443,8 @@ impl TaskExecutor {
                         .map(|t| crate::task::resolve_task_pattern(t, Some(task)))
                         .collect();
                     guard = None; // drop lock before waiting on sub-tasks
+                    let had_permit = permit.is_some();
+                    *permit = None;
                     self.inject_and_wait(
                         config,
                         &resolved_tasks,
@@ -434,6 +455,9 @@ impl TaskExecutor {
                         completed_tasks,
                     )
                     .await?;
+                    if had_permit {
+                        *permit = Some(semaphore.clone().acquire_owned().await?);
+                    }
                 }
             }
         }
@@ -898,7 +922,7 @@ impl TaskExecutor {
                 }
                 // Show progress indicator except when both streams are fully suppressed
                 if !task.silent.suppresses_both() {
-                    let pr = self.output_handler.task_prs.get(task).unwrap().clone();
+                    let pr = self.output_handler.get_or_init_task_pr(task);
                     cmd = cmd.with_pr_arc(pr);
                 }
             }

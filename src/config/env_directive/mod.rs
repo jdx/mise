@@ -541,6 +541,13 @@ impl EnvResults {
                         }
                         env_map.insert(env::PATH_KEY.to_string(), path_env.to_string());
                     }
+                    if log::log_enabled!(log::Level::Trace) {
+                        if let Some(path) = env_map.get(&*env::PATH_KEY) {
+                            trace!("module {name}: PATH={path}");
+                        } else {
+                            trace!("module {name}: no PATH in env_map");
+                        }
+                    }
                     let env_before: IndexMap<String, (String, PathBuf)> = r.env.clone();
                     Self::module(&mut r, config, source, name, &value, redact, env_map).await?;
                     // Merge entries that this module call added or changed into

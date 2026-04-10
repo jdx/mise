@@ -135,6 +135,7 @@ pub struct Run {
     pub is_linear: bool,
 
     /// [experimental] Allow specific env var through (implies --deny-env for everything else)
+    /// Supports wildcards, e.g. --allow-env='MYAPP_*'
     #[clap(long, value_name = "VAR", verbatim_doc_comment)]
     pub allow_env: Vec<String>,
 
@@ -324,6 +325,11 @@ impl Run {
                 task.args.extend(self.args_last.clone());
             }
         }
+
+        // Fetch remote task files before parsing usage specs, so that
+        // file-based remote tasks have their files resolved to local cache.
+        let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
+        fetcher.fetch_tasks(&mut task_list).await?;
 
         // Re-render dependency templates with parent task's usage arg/flag values.
         // This enables patterns like: depends = ["child {{usage.app}}"]
@@ -521,12 +527,32 @@ impl Run {
         // always sees the parent in `executed` — avoiding a race where a
         // concurrent task fails between spawn and first poll.
         deps_for_remove.lock().await.mark_executed(&task);
+        let semaphore = ctx.semaphore.clone();
         ctx.jset.lock().await.spawn(async move {
-            let _permit = permit_opt;
-            let completed = deps_for_remove.lock().await.handled_task_keys();
+            let mut permit = permit_opt;
+            let (completed, dep_ran) = {
+                let deps = deps_for_remove.lock().await;
+                (deps.handled_task_keys(), deps.any_dep_ran(&task))
+            };
             let result = this
-                .run_task_sched(&task, &ctx.config, ctx.sched_tx.clone(), completed)
+                .run_task_sched(
+                    &task,
+                    &ctx.config,
+                    ctx.sched_tx.clone(),
+                    completed,
+                    dep_ran,
+                    semaphore,
+                    &mut permit,
+                )
                 .await;
+            // If the task actually ran (not skipped) and has sources defined,
+            // mark it so dependents' source freshness checks are invalidated.
+            // Tasks without sources always run and should not trigger invalidation.
+            if let Ok(true) = &result
+                && !task.sources.is_empty()
+            {
+                deps_for_remove.lock().await.mark_ran(&task);
+            }
             if let Err(err) = &result {
                 let status = Error::get_exit_status(err);
                 if !this.is_stopping() && status.is_none() {
@@ -552,7 +578,7 @@ impl Run {
             deps_for_remove.lock().await.remove(&task);
             trace!("deps removed: {} {}", task.name, task.args.join(" "));
             in_flight_c.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-            result
+            result.map(|_| ())
         });
 
         Ok(())
@@ -686,17 +712,29 @@ impl Run {
             .unwrap_or(false)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_task_sched(
         &self,
         task: &Task,
         config: &Arc<Config>,
         sched_tx: Arc<tokio::sync::mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         completed_tasks: std::collections::HashSet<crate::task::TaskKey>,
-    ) -> Result<()> {
+        dep_ran: bool,
+        semaphore: Arc<tokio::sync::Semaphore>,
+        permit: &mut Option<tokio::sync::OwnedSemaphorePermit>,
+    ) -> Result<bool> {
         self.executor
             .as_ref()
             .expect("executor must be initialized before running tasks")
-            .run_task_sched(task, config, sched_tx, completed_tasks)
+            .run_task_sched(
+                task,
+                config,
+                sched_tx,
+                completed_tasks,
+                dep_ran,
+                semaphore,
+                permit,
+            )
             .await
     }
 

@@ -46,13 +46,17 @@ fn exec(lua: &Lua, args: mlua::MultiValue) -> LuaResult<String> {
 
     // Apply mise-constructed environment if available in Lua registry.
     // This ensures mise-managed tools are on PATH when called from env module hooks.
-    if let Ok(mise_env) = lua.named_registry_value::<Table>("mise_env") {
+    let has_mise_env = if let Ok(mise_env) = lua.named_registry_value::<Table>("mise_env") {
         cmd.env_clear();
         for pair in mise_env.pairs::<String, String>() {
             let (key, value) = pair?;
             cmd.env(key, value);
         }
-    }
+        true
+    } else {
+        false
+    };
+    debug!("[cmd.exec] command={command:?} has_mise_env={has_mise_env}");
 
     // Apply options if provided (explicit env vars override mise env)
     if let Some(options) = options {

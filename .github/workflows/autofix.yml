@@ -40,7 +40,7 @@ jobs:
       - run: mise run render
       - run: mise run lint-fix
       - run: mise --cd crates/vfox run lint-fix
-      - uses: autofix-ci/action@635ffb0c9798bd160680f18fd73371e355b85f27 # v1.3.2
+      - uses: autofix-ci/action@7a166d7532b277f34e16238930461bf77f9d7ed8 # v1.3.3
 #  windows:
 #    runs-on: windows-latest
 #    timeout-minutes: 30

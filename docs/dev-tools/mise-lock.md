@@ -193,6 +193,42 @@ mise use node@24
 # This will update both the installation and mise.lock
 ```
 
+### Pinning a Locked Version
+
+You can pin a specific version in the lockfile while keeping a fuzzy specifier in `mise.toml`:
+
+```sh
+# mise.toml has node = "latest" or node = "22"
+mise upgrade node@22.15.0   # installs 22.15.0 and updates mise.lock
+mise lock node@22.15.0      # updates mise.lock without reinstalling
+```
+
+If the version doesn't match the current config prefix, the config is updated automatically. For example, if `mise.toml` has `node = "20"` and you run `mise upgrade node@22.15.0`, the config is bumped to `node = "22"` (preserving the same precision level) and the lockfile is set to `22.15.0`.
+
+## Command Behavior with Lockfiles
+
+The table below shows how each command interacts with `mise.toml` and `mise.lock`:
+
+| Command                     | Installs | Updates `mise.toml`                  | Updates `mise.lock`                     |
+| --------------------------- | -------- | ------------------------------------ | --------------------------------------- |
+| `mise use node@22`          | Yes      | Yes (sets `node = "22"`)             | Yes                                     |
+| `mise install`              | Yes      | No                                   | Yes                                     |
+| `mise install node`         | Yes      | No                                   | Yes (installs config version for node)  |
+| `mise install node@22.15.0` | Yes      | No                                   | No (one-off install, not config-driven) |
+| `mise upgrade`              | Yes      | No                                   | Yes                                     |
+| `mise upgrade node`         | Yes      | No                                   | Yes (upgrades node within its range)    |
+| `mise upgrade node@22.15.0` | Yes      | Only if version doesn't match prefix | Yes                                     |
+| `mise upgrade --bump`       | Yes      | Yes (bumps prefix to match)          | Yes                                     |
+| `mise lock`                 | No       | No                                   | Yes (regenerates for all tools)         |
+| `mise lock node@22.15.0`    | No       | Only if version doesn't match prefix | Yes                                     |
+
+**Key points:**
+
+- **`mise use`** is for changing which version you want in your config — it always writes to `mise.toml`
+- **`mise install`** installs what's in your config without changing it — `mise install node` installs the config's version of node and updates the lockfile, while `mise install node@22.15.0` is a one-off that doesn't
+- **`mise upgrade`** upgrades tools within their configured ranges and updates the lockfile — passing `tool@version` lets you target a specific version
+- **`mise lock`** regenerates lockfile entries without installing — passing `tool@version` lets you pin a specific version
+
 ## Backend Support
 
 Backend support for lockfile features varies:

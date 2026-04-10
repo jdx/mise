@@ -8,7 +8,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.4.6"
+version = "2026.4.8"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -189,7 +189,7 @@ toml_edit = { version = "0.24", features = ["parse"] }
 ubi = { version = "0.9", default-features = false }
 url = "2"
 urlencoding = "2"
-usage-lib = { version = "2", features = ["clap", "docs"] }
+usage-lib = { version = "3", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }
@@ -236,7 +236,7 @@ serde_yaml = "0.9"
 
 [dev-dependencies]
 clap-sort = "1"
-ctor = "0.4"
+ctor = "0.9"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1"
 pretty_assertions = "1"

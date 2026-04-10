@@ -179,6 +179,39 @@ impl Lock {
             miseprintln!("{} No tools configured to lock", style("!").yellow());
         }
 
+        // Update config files when a specific version is requested that doesn't match
+        // the current prefix (e.g., `mise lock tiny@3.0.1` when config has `tiny = "2"`)
+        {
+            use crate::toolset::outdated_info::{apply_config_bumps, compute_config_bumps};
+            let tool_versions: Vec<(String, String)> = self
+                .tool
+                .iter()
+                .filter_map(|t| {
+                    t.tvr
+                        .as_ref()
+                        .map(|tvr| (t.ba.short.clone(), tvr.version()))
+                })
+                .collect();
+            let refs: Vec<(&str, &str)> = tool_versions
+                .iter()
+                .map(|(n, v)| (n.as_str(), v.as_str()))
+                .collect();
+            let bumps = compute_config_bumps(&config, &refs);
+            if self.dry_run {
+                for bump in &bumps {
+                    miseprintln!(
+                        "Would update {} from {} to {} in {}",
+                        bump.tool_name,
+                        bump.old_version,
+                        bump.new_version,
+                        display_path(&bump.config_path)
+                    );
+                }
+            } else {
+                apply_config_bumps(&config, &bumps)?;
+            }
+        }
+
         if !all_provenance_errors.is_empty() {
             return Err(eyre::eyre!("{}", all_provenance_errors.join("\n")));
         }
@@ -378,7 +411,7 @@ impl Lock {
             return Platform::parse_multiple(&self.platform);
         }
 
-        Ok(lockfile::determine_existing_platforms(lockfile_path))
+        lockfile::determine_existing_platforms(lockfile_path)
     }
 
     /// Collect tools that belong to a given lockfile target.
@@ -465,11 +498,25 @@ impl Lock {
         if self.tool.is_empty() {
             all_tools
         } else {
-            let specified: BTreeSet<String> =
-                self.tool.iter().map(|t| t.ba.short.clone()).collect();
+            // Build map of tool args with explicit versions
+            let specified_versions: std::collections::HashMap<String, Option<String>> = self
+                .tool
+                .iter()
+                .map(|t| {
+                    let version = t.tvr.as_ref().map(|tvr| tvr.version());
+                    (t.ba.short.clone(), version)
+                })
+                .collect();
             all_tools
                 .into_iter()
-                .filter(|(ba, _)| specified.contains(&ba.short))
+                .filter(|(ba, _)| specified_versions.contains_key(&ba.short))
+                .map(|(ba, mut tv)| {
+                    // If a specific version was requested, override the resolved version
+                    if let Some(Some(version)) = specified_versions.get(&ba.short) {
+                        tv.version.clone_from(version);
+                    }
+                    (ba, tv)
+                })
                 .collect()
         }
     }

@@ -39,7 +39,7 @@ mise() {
 
 _mise_hook() {
 	local previous_exit_status=$?
-	eval "$(mise hook-env "${__MISE_FLAGS[@]}" -s bash)"
+	eval "$(mise hook-env ${__MISE_FLAGS[@]+"${__MISE_FLAGS[@]}"} -s bash)"
 	return $previous_exit_status
 }
 
@@ -50,14 +50,14 @@ if [ "$__MISE_HOOK_ENABLED" = "1" ]; then
 			__MISE_BASH_CHPWD_RAN=0
 			return $previous_exit_status
 		fi
-		eval "$(mise hook-env "${__MISE_FLAGS[@]}" -s bash --reason precmd)"
+		eval "$(mise hook-env ${__MISE_FLAGS[@]+"${__MISE_FLAGS[@]}"} -s bash --reason precmd)"
 		return $previous_exit_status
 	}
 
 	_mise_hook_chpwd() {
 		local previous_exit_status=$?
 		__MISE_BASH_CHPWD_RAN=1
-		eval "$(mise hook-env "${__MISE_FLAGS[@]}" -s bash --reason chpwd)"
+		eval "$(mise hook-env ${__MISE_FLAGS[@]+"${__MISE_FLAGS[@]}"} -s bash --reason chpwd)"
 		return $previous_exit_status
 	}
 

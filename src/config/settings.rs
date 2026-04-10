@@ -2,6 +2,7 @@ use crate::cli::Cli;
 use crate::config::ALL_TOML_CONFIG_FILES;
 use crate::duration;
 use crate::file::FindUp;
+use crate::platform::Platform;
 use crate::{dirs, env, file};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
@@ -520,6 +521,17 @@ impl Settings {
 
     pub fn lockfile_enabled(&self) -> bool {
         self.lockfile.unwrap_or(true)
+    }
+
+    /// Returns configured lockfile platforms parsed into Platform structs, or None for defaults.
+    /// Errors on invalid platform strings (same validation as `mise lock --platform`).
+    pub fn lockfile_platforms(&self) -> Result<Option<Vec<Platform>>> {
+        match &self.lockfile_platforms {
+            Some(platforms) if !platforms.is_empty() => {
+                Ok(Some(Platform::parse_multiple(platforms)?))
+            }
+            _ => Ok(None),
+        }
     }
 
     pub fn force_provenance_verify(&self) -> bool {

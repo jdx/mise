@@ -185,7 +185,7 @@ impl Display for OutdatedInfo {
 /// at the same specificity level as the old version
 /// used with `mise outdated --bump` to determine what new semver range to use
 /// given old: "20" and new: "21.2.3", return Some("21")
-fn check_semver_bump(old: &str, new: &str) -> Option<String> {
+pub fn check_semver_bump(old: &str, new: &str) -> Option<String> {
     // Preserve known channel names as-is
     const CHANNEL_NAMES: &[&str] = &[
         "latest", "nightly", "stable", "beta", "dev", "canary", "edge", "lts",
@@ -223,6 +223,110 @@ fn check_semver_bump(old: &str, new: &str) -> Option<String> {
     } else {
         Some(new.to_string())
     }
+}
+
+/// Represents a config file update needed when a CLI-specified version doesn't match
+/// the current config prefix.
+pub struct ConfigBump {
+    pub tool_name: String,
+    pub config_path: std::path::PathBuf,
+    pub old_version: String,
+    pub new_version: String,
+    pub new_request: ToolRequest,
+}
+
+/// Compute config bumps needed when CLI-specified versions don't match current config prefixes.
+/// Returns a list of bumps to apply (or preview in dry-run mode).
+pub fn compute_config_bumps(
+    config: &Config,
+    tool_versions: &[(&str, &str)], // (tool_short_name, cli_version)
+) -> Vec<ConfigBump> {
+    let mut bumps = Vec::new();
+
+    for &(tool_name, cli_version) in tool_versions {
+        for (path, cf) in config.config_files.iter() {
+            if crate::config::is_global_config(path) {
+                continue;
+            }
+            let Ok(trs) = cf.to_tool_request_set() else {
+                continue;
+            };
+
+            // Find the tool by short name in this config file
+            let matching = trs.tools.iter().find(|(ba, _)| ba.short == tool_name);
+            let Some((_ba, requests)) = matching else {
+                continue;
+            };
+            if requests.len() != 1 {
+                continue;
+            }
+
+            let current_version = requests[0].version();
+            let (prefix, _) = split_version_prefix(&current_version);
+            let old = current_version
+                .strip_prefix(&prefix)
+                .unwrap_or(&current_version);
+
+            if let Some(bumped) = check_semver_bump(old, cli_version)
+                && bumped != old
+            {
+                let new_version = format!("{prefix}{bumped}");
+                let new_request = match requests[0].clone() {
+                    ToolRequest::Version {
+                        version: _,
+                        backend,
+                        options,
+                        source,
+                    } => ToolRequest::Version {
+                        version: new_version.clone(),
+                        backend,
+                        options,
+                        source,
+                    },
+                    ToolRequest::Prefix {
+                        prefix: _,
+                        backend,
+                        options,
+                        source,
+                    } => ToolRequest::Prefix {
+                        prefix: format!("{prefix}{bumped}"),
+                        backend,
+                        options,
+                        source,
+                    },
+                    other => other,
+                };
+                bumps.push(ConfigBump {
+                    tool_name: tool_name.to_string(),
+                    config_path: path.clone(),
+                    old_version: current_version.to_string(),
+                    new_version,
+                    new_request,
+                });
+            }
+            break;
+        }
+    }
+
+    bumps
+}
+
+/// Apply config bumps by writing the new versions to their config files.
+pub fn apply_config_bumps(config: &Config, bumps: &[ConfigBump]) -> Result<()> {
+    for bump in bumps {
+        let Some(cf) = config.config_files.get(&bump.config_path) else {
+            continue;
+        };
+        let Ok(trs) = cf.to_tool_request_set() else {
+            continue;
+        };
+        let Some((ba, _)) = trs.tools.iter().find(|(ba, _)| ba.short == bump.tool_name) else {
+            continue;
+        };
+        cf.replace_versions(ba, vec![bump.new_request.clone()])?;
+        cf.save()?;
+    }
+    Ok(())
 }
 
 pub fn is_outdated_version(current: &str, latest: &str) -> bool {

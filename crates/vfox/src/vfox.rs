@@ -287,6 +287,13 @@ impl Vfox {
         if !plugin.get_metadata()?.hooks.contains("mise_env") {
             return Ok(MiseEnvResult::default());
         }
+        if log::log_enabled!(log::Level::Trace) {
+            if let Some(path) = env.get("PATH") {
+                trace!("[vfox:{sdk}] mise_env PATH: {path}");
+            } else {
+                trace!("[vfox:{sdk}] mise_env: no PATH in env");
+            }
+        }
         plugin.set_cmd_env(env)?;
         let ctx = MiseEnvContext {
             args: vec![],
