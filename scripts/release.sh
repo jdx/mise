@@ -46,6 +46,8 @@ for platform in "${windows_platforms[@]}"; do
 	zipsign sign zip "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" ~/.zipsign/mise.priv
 	zipsign verify zip "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" "$BASE_DIR/zipsign.pub"
 	cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" "$RELEASE_DIR/mise-latest-$platform.zip"
+	unzip -p "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.zip" mise/bin/mise.exe >"$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.exe"
+	cp "$RELEASE_DIR/$MISE_VERSION/mise-$MISE_VERSION-$platform.exe" "$RELEASE_DIR/mise-latest-$platform.exe"
 done
 
 echo "::group::Checksums"
