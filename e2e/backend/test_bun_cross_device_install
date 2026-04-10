@@ -12,10 +12,10 @@ if [[ ! -d /dev/shm ]]; then
 	exit 0
 fi
 
-# Put downloads on /dev/shm and installs under the repo root so bun has to
-# move files across filesystems and hits the rename() cross-device case.
+# Put downloads on /dev/shm and installs under /tmp so bun has to move files
+# across filesystems and hits the rename() cross-device case.
 downloads_dir="$(mktemp -d -p /dev/shm mise-bun-cross-device.XXXXXX)"
-installs_dir="$(mktemp -d -p "$ROOT" mise-bun-cross-device.XXXXXX)"
+installs_dir="$(mktemp -d -p /tmp mise-bun-cross-device.XXXXXX)"
 
 cleanup() {
 	if [[ -n $SERVER_PID ]]; then
