@@ -152,49 +152,35 @@ pub fn rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
     })
 }
 
-/// Moves a file, falling back to copy+remove when source and destination are on different filesystems.
+/// Moves a path, falling back to copy+remove when source and destination are on different filesystems.
 ///
 /// This preserves the normal `rename` behavior when possible, but avoids cross-device failures
-/// (`EXDEV` on Unix, `ERROR_NOT_SAME_DEVICE` on Windows) when `from` and `to` live on separate
-/// mounts (for example, when downloads are cached on one volume and installs are written to
-/// another).
+/// (`ErrorKind::CrossesDevices`) when `from` and `to` live on separate mounts (for example, when
+/// downloads are cached on one volume and installs are written to another).
 pub fn move_file<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
     let from = from.as_ref();
     let to = to.as_ref();
 
     match fs::rename(from, to) {
         Ok(()) => Ok(()),
-        Err(err) => {
-            let is_cross_device = {
-                #[cfg(unix)]
-                {
-                    err.raw_os_error() == Some(nix::errno::Errno::EXDEV as i32)
-                }
-                #[cfg(windows)]
-                {
-                    // ERROR_NOT_SAME_DEVICE
-                    err.raw_os_error() == Some(17)
-                }
-                #[cfg(not(any(unix, windows)))]
-                {
-                    false
-                }
-            };
-
-            if is_cross_device {
+        Err(err) if err.kind() == std::io::ErrorKind::CrossesDevices => {
+            if from.is_dir() {
+                create_dir_all(to)?;
+                copy_dir_all(from, to)?;
+                remove_all(from)?;
+            } else {
                 copy(from, to)?;
                 remove_file(from)?;
-                Ok(())
-            } else {
-                Err(err).wrap_err_with(|| {
-                    format!(
-                        "failed rename: {} -> {}",
-                        display_path(from),
-                        display_path(to)
-                    )
-                })
             }
+            Ok(())
         }
+        Err(err) => Err(err).wrap_err_with(|| {
+            format!(
+                "failed move: {} -> {}",
+                display_path(from),
+                display_path(to)
+            )
+        }),
     }
 }
 
@@ -1694,5 +1680,33 @@ mod tests {
 
         assert!(!src.exists());
         assert_eq!(fs::read(&dst).unwrap(), b"hello");
+    }
+
+    #[cfg(all(unix, target_os = "linux"))]
+    #[test]
+    fn test_move_dir_falls_back_to_copy_across_filesystems() {
+        use std::{fs, os::unix::fs::MetadataExt};
+        use tempfile::tempdir_in;
+
+        let source_root = std::env::current_dir().unwrap();
+        let source_dir = tempdir_in(&source_root).unwrap();
+        let source_dev = source_dir.path().metadata().unwrap().dev();
+
+        let target_dir = tempdir_in("/tmp").ok();
+        let Some(target_dir) = target_dir
+            .filter(|dir| dir.path().metadata().ok().map(|m| m.dev()) != Some(source_dev))
+        else {
+            return;
+        };
+
+        let src = source_dir.path().join("bun-tree");
+        let dst = target_dir.path().join("bun-tree");
+        fs::create_dir_all(src.join("nested")).unwrap();
+        fs::write(src.join("nested/bun"), b"hello").unwrap();
+
+        move_file(&src, &dst).unwrap();
+
+        assert!(!src.exists());
+        assert_eq!(fs::read(dst.join("nested/bun")).unwrap(), b"hello");
     }
 }
