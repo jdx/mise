@@ -17,7 +17,7 @@
   },
   "author": "@jdx",
   "resolutions": {
-    "esbuild": "0.21.5"
+    "esbuild": "0.27.5"
   },
   "devDependencies": {
     "@fig/eslint-config-autocomplete": "^2.0.0",
