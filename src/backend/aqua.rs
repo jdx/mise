@@ -887,11 +887,11 @@ impl AquaBackend {
 
         match slsa.r#type.as_deref().unwrap_or_default() {
             "github_release" => {
-                let asset_strs = slsa.asset_strs(pkg, v, target_os, target_arch)?;
+                let asset_strs = slsa.asset_strs(&slsa_pkg, v, target_os, target_arch)?;
                 let (url, _) = self.github_release_asset(&slsa_pkg, v, asset_strs).await?;
                 Ok(url)
             }
-            "http" => slsa.url(pkg, v, target_os, target_arch),
+            "http" => slsa.url(&slsa_pkg, v, target_os, target_arch),
             t => Err(eyre!("unsupported slsa type: {t}")),
         }
     }
