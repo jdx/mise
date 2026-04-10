@@ -1,5 +1,42 @@
 # Changelog
 
+## [2026.4.8](https://github.com/jdx/mise/compare/v2026.4.7..v2026.4.8) - 2026-04-10
+
+### 🚀 Features
+
+- **(config)** add lockfile_platforms setting to restrict lockfile platforms by @cameronbrill in [#8966](https://github.com/jdx/mise/pull/8966)
+- **(sandbox)** support wildcard patterns in allow_env by @jdx in [#8974](https://github.com/jdx/mise/pull/8974)
+- bump usage-lib v2 → v3 to render examples in task --help by @baby-joel in [#8890](https://github.com/jdx/mise/pull/8890)
+
+### 🐛 Bug Fixes
+
+- **(activate)** handle empty __MISE_FLAGS array with set -u on bash 3.2 by @jdx in [#8988](https://github.com/jdx/mise/pull/8988)
+- **(env)** add trace logging for module hook PATH diagnostics by @jdx in [#8981](https://github.com/jdx/mise/pull/8981)
+- **(go)** Query module proxy directly for version resolution by @c22 in [#8968](https://github.com/jdx/mise/pull/8968)
+- **(install)** render tera templates in tool postinstall hooks by @jdx in [#8978](https://github.com/jdx/mise/pull/8978)
+- **(install)** add missing env vars to tool postinstall hooks by @jdx in [#8977](https://github.com/jdx/mise/pull/8977)
+- **(task)** prevent hang when skipped task has dependents by @jdx in [#8937](https://github.com/jdx/mise/pull/8937)
+- **(task)** invalidate dependent task sources when dependency runs by @jdx in [#8975](https://github.com/jdx/mise/pull/8975)
+- **(task)** prevent deadlock when MISE_JOBS=1 with sub-task references by @jdx in [#8976](https://github.com/jdx/mise/pull/8976)
+- **(task)** fetch remote task files before parsing usage specs by @jdx in [#8979](https://github.com/jdx/mise/pull/8979)
+- **(task)** prevent panic when running parallel sub-tasks with replacing output by @jdx in [#8986](https://github.com/jdx/mise/pull/8986)
+- **(upgrade)** update lockfile and config when upgrading to specific version by @jdx in [#8983](https://github.com/jdx/mise/pull/8983)
+
+### 📚 Documentation
+
+- **(node)** remove "recommended for teams" from pin example by @jdx in [b334363](https://github.com/jdx/mise/commit/b3343637fb9eba60329c68a8e8662f213b66a780)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:alpine docker digest to 17a29f2 by @renovate[bot] in [#8995](https://github.com/jdx/mise/pull/8995)
+- update docker/dockerfile:1 docker digest to 2780b5c by @renovate[bot] in [#8994](https://github.com/jdx/mise/pull/8994)
+
+### New Contributors
+
+- @baby-joel made their first contribution in [#8890](https://github.com/jdx/mise/pull/8890)
+- @cameronbrill made their first contribution in [#8966](https://github.com/jdx/mise/pull/8966)
+- @c22 made their first contribution in [#8968](https://github.com/jdx/mise/pull/8968)
+
 ## [2026.4.7](https://github.com/jdx/mise/compare/v2026.4.6..v2026.4.7) - 2026-04-09
 
 ### 🐛 Bug Fixes
