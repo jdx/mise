@@ -922,7 +922,7 @@ impl TaskExecutor {
                 }
                 // Show progress indicator except when both streams are fully suppressed
                 if !task.silent.suppresses_both() {
-                    let pr = self.output_handler.task_prs.get(task).unwrap().clone();
+                    let pr = self.output_handler.get_or_init_task_pr(task);
                     cmd = cmd.with_pr_arc(pr);
                 }
             }
