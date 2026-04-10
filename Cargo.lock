@@ -5761,7 +5761,7 @@ dependencies = [
  "winapi",
  "xx",
  "xz2",
- "zip 8.5.0",
+ "zip 8.5.1",
  "zipsign-api",
  "zstd",
 ]
@@ -11257,7 +11257,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "xz2",
- "zip 8.5.0",
+ "zip 8.5.1",
 ]
 
 [[package]]
@@ -11465,9 +11465,9 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "8.5.0"
+version = "8.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2726508a48f38dceb22b35ecbbd2430efe34ff05c62bd3285f965d7911b33464"
+checksum = "dcab981e19633ebcf0b001ddd37dd802996098bc1864f90b7c5d970ce76c1d59"
 dependencies = [
  "aes",
  "bzip2 0.6.1",
