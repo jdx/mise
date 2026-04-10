@@ -9,9 +9,10 @@ can sometimes conflict with each other.
 The official stance is you should not use direnv with mise. Issues arising
 from incompatibilities are not considered bugs and PRs to improve direnv
 compatibility will not be accepted.
-While that's the official stance, the reality is mise and direnv usually
-will work together just fine despite this. It's only more advanced use-cases
-where problems arise.
+While that's the official stance, the reality is mise and direnv can
+coexist for simple cases like setting unrelated environment variables.
+Anything involving PATH — which is most of what people use both tools
+for — is where problems arise.
 :::
 
 If you have an issue, it's likely to do with the ordering of PATH. This means it would
