@@ -31,6 +31,8 @@ env_path = "./bin"
 [task_templates.base]
 quiet = true
 dir = "{{config_root}}"
+deny_net = true
+allow_env = ["CI"]
 
 [tasks.build]
 description = "Build the project"
