@@ -1,88 +1,99 @@
 #!/usr/bin/env bash
 # Generate aqua-registry changelog section
-# Usage: gen-aqua-changelog.sh <old_registry_yaml> <new_registry_yaml> <heading_level>
+# Usage: gen-aqua-changelog.sh <old_tag> <new_tag> <heading_level>
 set -euo pipefail
 
-OLD_REGISTRY="$1"
-NEW_REGISTRY="$2"
+OLD_TAG="$1"
+NEW_TAG="$2"
 HEADING_LEVEL="${3:-###}" # Default to ### for CHANGELOG.md sections
+REPO="aquaproj/aqua-registry"
 
-if [[ ! -s $OLD_REGISTRY ]]; then
+if [[ -z $OLD_TAG ]] || [[ -z $NEW_TAG ]] || [[ $OLD_TAG == "$NEW_TAG" ]]; then
 	exit 0
 fi
 
-registry_manifest() {
-	local registry_file="$1"
-	local yq_bin="${YQ:-yq}"
+if ! command -v gh >/dev/null 2>&1; then
+	echo "gh is required to generate aqua-registry changelog entries" >&2
+	exit 1
+fi
 
-	if ! command -v "$yq_bin" >/dev/null 2>&1; then
-		echo "yq is required to generate aqua-registry changelog entries" >&2
+release_tags() {
+	local collecting=0
+	local -a tags=()
+
+	while IFS= read -r tag; do
+		if [[ $tag == "$OLD_TAG" ]]; then
+			break
+		fi
+		if [[ $tag == "$NEW_TAG" ]]; then
+			collecting=1
+		fi
+		if [[ $collecting -eq 1 ]]; then
+			tags+=("$tag")
+		fi
+	done < <(gh release list --repo "$REPO" --limit 1000 --json tagName --jq '.[].tagName')
+
+	if [[ ${#tags[@]} -eq 0 ]]; then
+		echo "Unable to find aqua-registry releases from $OLD_TAG to $NEW_TAG" >&2
 		return 1
 	fi
 
-	"$yq_bin" -r '.packages[] | [(.name // (.repo_owner + "/" + .repo_name)), (. | @json)] | @tsv' "$registry_file" |
-		while IFS=$'\t' read -r id package_json; do
-			if [[ -n $id ]]; then
-				hash="$(printf '%s' "$package_json" | sha256sum | awk '{print $1}')"
-				printf '%s\t%s\n' "$id" "$hash"
-			fi
-		done |
-		sort
+	for ((i = ${#tags[@]} - 1; i >= 0; i--)); do
+		printf '%s\n' "${tags[$i]}"
+	done
 }
 
-OLD_MANIFEST="$(mktemp)"
-NEW_MANIFEST="$(mktemp)"
-trap 'rm -f "$OLD_MANIFEST" "$NEW_MANIFEST"' EXIT
+strip_contributors() {
+	sed -E 's/[[:space:]]+@[A-Za-z0-9_.-]+([[:space:]]+@[A-Za-z0-9_.-]+)*[[:space:]]*$//'
+}
 
-registry_manifest "$OLD_REGISTRY" >"$OLD_MANIFEST"
-registry_manifest "$NEW_REGISTRY" >"$NEW_MANIFEST"
+section_title() {
+	sed -E 's/^[^[:alnum:]]+[[:space:]]*//; s/[[:space:]]+$//'
+}
 
-# Find new packages (in new but not in old)
-NEW_PACKAGES="$(comm -13 <(cut -f1 "$OLD_MANIFEST") <(cut -f1 "$NEW_MANIFEST"))"
+format_release() {
+	local tag="$1"
+	local body section line pr text
 
-# Find updated packages (same package ID but different serialized YAML)
-UPDATED_PACKAGES="$(
-	join -t $'\t' -j 1 "$OLD_MANIFEST" "$NEW_MANIFEST" |
-		awk -F '\t' '$2 != $3 {print $1}'
-)"
+	body="$(gh release view "$tag" --repo "$REPO" --json body --jq .body)"
+	echo "#### [$tag](https://github.com/$REPO/releases/tag/$tag)"
 
-NEW_COUNT=$(echo "$NEW_PACKAGES" | grep -c . || true)
-if [[ -z $NEW_COUNT ]] || [[ $NEW_COUNT -eq 0 ]]; then
-	NEW_COUNT=0
-fi
+	while IFS= read -r line; do
+		line="${line%$'\r'}"
+		if [[ -z $line ]] || [[ $line == "[Issues]"* ]]; then
+			continue
+		fi
+		if [[ $line =~ ^##[[:space:]]+(.+)$ ]]; then
+			section="$(printf '%s' "${BASH_REMATCH[1]}" | section_title)"
+			if [[ -n $section ]]; then
+				echo ""
+				echo "**$section**"
+				echo ""
+			fi
+			continue
+		fi
+		if [[ $line =~ ^#([0-9]+)[[:space:]]+(.+)$ ]]; then
+			pr="${BASH_REMATCH[1]}"
+			text="$(printf '%s' "${BASH_REMATCH[2]}" | strip_contributors)"
+			echo "- $text ([#$pr](https://github.com/$REPO/pull/$pr))"
+			continue
+		fi
 
-UPDATED_COUNT=$(echo "$UPDATED_PACKAGES" | grep -c . || true)
-if [[ -z $UPDATED_COUNT ]] || [[ $UPDATED_COUNT -eq 0 ]]; then
-	UPDATED_COUNT=0
-fi
+		text="$(printf '%s' "$line" | strip_contributors)"
+		if [[ -n $text ]]; then
+			echo "- $text"
+		fi
+	done <<<"$body"
+	echo ""
+}
 
-# If no changes, exit
-if [[ $NEW_COUNT -eq 0 ]] && [[ $UPDATED_COUNT -eq 0 ]]; then
-	exit 0
-fi
+RELEASE_TAGS="$(release_tags)"
 
-# Build markdown output
 echo "$HEADING_LEVEL 📦 Aqua Registry Updates"
 echo ""
+echo "Updated [aqua-registry](https://github.com/$REPO) from \`$OLD_TAG\` to \`$NEW_TAG\`."
+echo ""
 
-if [[ $NEW_COUNT -gt 0 ]]; then
-	echo "#### New Packages ($NEW_COUNT)"
-	echo ""
-	while IFS= read -r pkg; do
-		if [[ -n $pkg ]]; then
-			echo "- [\`$pkg\`](https://github.com/$pkg)"
-		fi
-	done <<<"$NEW_PACKAGES"
-	echo ""
-fi
-
-if [[ $UPDATED_COUNT -gt 0 ]]; then
-	echo "#### Updated Packages ($UPDATED_COUNT)"
-	echo ""
-	while IFS= read -r pkg; do
-		if [[ -n $pkg ]]; then
-			echo "- [\`$pkg\`](https://github.com/$pkg)"
-		fi
-	done <<<"$UPDATED_PACKAGES"
-	echo ""
-fi
+while IFS= read -r tag; do
+	format_release "$tag"
+done <<<"$RELEASE_TAGS"
