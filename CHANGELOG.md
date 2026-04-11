@@ -1,5 +1,85 @@
 # Changelog
 
+## [2026.4.9](https://github.com/jdx/mise/compare/v2026.4.8..v2026.4.9) - 2026-04-11
+
+### 🐛 Bug Fixes
+
+- **(docs)** upgrade esbuild to 0.28.0 with es2022 build target by @jdx in [#9047](https://github.com/jdx/mise/pull/9047)
+- **(env)** skip tools=true module hooks in dependency_env by @jdx in [#9011](https://github.com/jdx/mise/pull/9011)
+- **(lockfile)** resolve SLSA provenance URLs deterministically for all platforms by @cameronbrill in [#8982](https://github.com/jdx/mise/pull/8982)
+- **(registry)** test of docuum in registry by @jylenhof in [#8996](https://github.com/jdx/mise/pull/8996)
+- **(release)** publish extracted mise.exe alongside Windows zip by @zeitlinger in [#8997](https://github.com/jdx/mise/pull/8997)
+- **(schema)** add missing config fields by @risu729 in [#9044](https://github.com/jdx/mise/pull/9044)
+- **(task)** support sandbox fields in task templates by @risu729 in [#9046](https://github.com/jdx/mise/pull/9046)
+- **(tasks)** respect env precedence for task config by @risu729 in [#9039](https://github.com/jdx/mise/pull/9039)
+- prevent implicit enabling of `self_update` when rustls features are enabled by @salim-b in [#9040](https://github.com/jdx/mise/pull/9040)
+- allow installing bun and others when downloads folder is on a different mount by @bgeron in [#9032](https://github.com/jdx/mise/pull/9032)
+
+### 📚 Documentation
+
+- discourage direnv compatibility PRs and remove issue suggestions by @jdx in [ca78346](https://github.com/jdx/mise/commit/ca7834674fe5a926f462e9c65bb748f8cc0f2ccc)
+- tighten direnv compatibility language by @jdx in [ab140c8](https://github.com/jdx/mise/commit/ab140c8c988697a7b206b6603684b16a29cd2e05)
+- add Tera tip for unsupported version files by @risu729 in [#9048](https://github.com/jdx/mise/pull/9048)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:deb docker digest to 49fa8a4 by @renovate[bot] in [#8999](https://github.com/jdx/mise/pull/8999)
+- update ghcr.io/jdx/mise:copr docker digest to 61ba7b6 by @renovate[bot] in [#8998](https://github.com/jdx/mise/pull/8998)
+- update ghcr.io/jdx/mise:copr docker digest to fa351ff by @renovate[bot] in [#9002](https://github.com/jdx/mise/pull/9002)
+- update ghcr.io/jdx/mise:alpine docker digest to f3bb475 by @renovate[bot] in [#9001](https://github.com/jdx/mise/pull/9001)
+- update ghcr.io/jdx/mise:rpm docker digest to d45af2d by @renovate[bot] in [#9005](https://github.com/jdx/mise/pull/9005)
+- update ghcr.io/jdx/mise:deb docker digest to d7463ac by @renovate[bot] in [#9004](https://github.com/jdx/mise/pull/9004)
+- update jdx/mise-action digest to 5228313 by @renovate[bot] in [#9007](https://github.com/jdx/mise/pull/9007)
+- update rust docker digest to e8e2bb5 by @renovate[bot] in [#9008](https://github.com/jdx/mise/pull/9008)
+- update taiki-e/install-action digest to 97a5807 by @renovate[bot] in [#9010](https://github.com/jdx/mise/pull/9010)
+- update autofix-ci/action action to v1.3.3 by @renovate[bot] in [#9015](https://github.com/jdx/mise/pull/9015)
+- update ubuntu:24.04 docker digest to 84e77de by @renovate[bot] in [#9012](https://github.com/jdx/mise/pull/9012)
+- update actions/checkout action to v4.3.1 by @renovate[bot] in [#9014](https://github.com/jdx/mise/pull/9014)
+- update ubuntu:26.04 docker digest to cc925e5 by @renovate[bot] in [#9013](https://github.com/jdx/mise/pull/9013)
+- update rust crate tokio to v1.51.1 by @renovate[bot] in [#9018](https://github.com/jdx/mise/pull/9018)
+- update rust crate zip to v8.5.1 by @renovate[bot] in [#9019](https://github.com/jdx/mise/pull/9019)
+- update rust crate ctor to 0.9 by @renovate[bot] in [#9024](https://github.com/jdx/mise/pull/9024)
+- update ubuntu docker tag to resolute-20260404 by @renovate[bot] in [#9020](https://github.com/jdx/mise/pull/9020)
+- update dependency vitepress-plugin-tabs to ^0.8.0 by @renovate[bot] in [#9023](https://github.com/jdx/mise/pull/9023)
+- update rust crate indexmap to v2.14.0 by @renovate[bot] in [#9025](https://github.com/jdx/mise/pull/9025)
+- update rust crate nix to 0.31 by @renovate[bot] in [#9030](https://github.com/jdx/mise/pull/9030)
+- update taiki-e/install-action digest to 7a4939c by @renovate[bot] in [#9027](https://github.com/jdx/mise/pull/9027)
+- update dependency esbuild to v0.28.0 by @renovate[bot] in [#9022](https://github.com/jdx/mise/pull/9022)
+- update rust crate rand to 0.10 by @renovate[bot] in [#9031](https://github.com/jdx/mise/pull/9031)
+- update rust crate digest to 0.11.0 by @renovate[bot] in [#9028](https://github.com/jdx/mise/pull/9028)
+- update rust crate confique to 0.4 by @renovate[bot] in [#9026](https://github.com/jdx/mise/pull/9026)
+- update rust crate rattler to 0.40 by @renovate[bot] in [#9034](https://github.com/jdx/mise/pull/9034)
+- lock file maintenance by @renovate[bot] in [#8416](https://github.com/jdx/mise/pull/8416)
+- disable renovate for aws-config/aws-sdk-* crates by @jdx in [#9052](https://github.com/jdx/mise/pull/9052)
+- update swatinem/rust-cache digest to e18b497 by @renovate[bot] in [#9009](https://github.com/jdx/mise/pull/9009)
+
+### 📦 Registry
+
+- remove broken tool tests by @jdx in [#9017](https://github.com/jdx/mise/pull/9017)
+- update granted aqua backend repo by @risu729 in [#9033](https://github.com/jdx/mise/pull/9033)
+- fix atlas-community test expected output by @jdx in [#9054](https://github.com/jdx/mise/pull/9054)
+
+### Chore
+
+- use deprecated_at! macro for ubi backend deprecation by @jdx in [#9049](https://github.com/jdx/mise/pull/9049)
+
+### Security
+
+- **(ci)** run test-tool inside Docker container by @jdx in [#9055](https://github.com/jdx/mise/pull/9055)
+- **(ci)** avoid exposing MISE_GH_TOKEN to test-tool scripts by @jdx in [#9053](https://github.com/jdx/mise/pull/9053)
+
+### New Contributors
+
+- @bgeron made their first contribution in [#9032](https://github.com/jdx/mise/pull/9032)
+- @salim-b made their first contribution in [#9040](https://github.com/jdx/mise/pull/9040)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (2)
+
+- [`cloudnative-pg/cloudnative-pg/kubectl-cnpg`](https://github.com/cloudnative-pg/cloudnative-pg/kubectl-cnpg)
+- [`gleam-lang/gleam`](https://github.com/gleam-lang/gleam)
+
 ## [2026.4.8](https://github.com/jdx/mise/compare/v2026.4.7..v2026.4.8) - 2026-04-10
 
 ### 🚀 Features
