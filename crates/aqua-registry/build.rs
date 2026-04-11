@@ -1,13 +1,25 @@
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::path::Path;
+
+use serde_yaml::Value;
 
 fn main() {
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR environment variable must be set");
     generate_baked_registry(&out_dir);
 }
+
+#[derive(Debug)]
+struct PackageRegistry {
+    id: String,
+    content: String,
+    aliases: Vec<String>,
+}
+
 fn generate_baked_registry(out_dir: &str) {
-    let dest_path = Path::new(out_dir).join("aqua_standard_registry.rs");
+    let files_dest_path = Path::new(out_dir).join("aqua_standard_registry_files.rs");
+    let aliases_dest_path = Path::new(out_dir).join("aqua_standard_registry_aliases.rs");
 
     let registry_file = find_registry_file();
 
@@ -20,7 +32,7 @@ fn generate_baked_registry(out_dir: &str) {
         )
     });
 
-    let registry = serde_yaml::from_str::<serde_yaml::Value>(&content).unwrap_or_else(|e| {
+    let registry = serde_yaml::from_str::<Value>(&content).unwrap_or_else(|e| {
         panic!(
             "Failed to parse aqua registry file {}: {e}",
             registry_file.display()
@@ -35,14 +47,109 @@ fn generate_baked_registry(out_dir: &str) {
                 registry_file.display()
             )
         });
-    if packages.is_empty() {
+    let registries = package_registries(packages);
+    if registries.is_empty() {
         panic!(
             "Aqua registry file {} contains no packages",
             registry_file.display()
         );
     }
 
-    fs::write(dest_path, format!("{content:?}")).expect("Failed to write baked registry file");
+    fs::write(files_dest_path, registry_files_code(&registries))
+        .expect("Failed to write baked registry files");
+    fs::write(aliases_dest_path, registry_aliases_code(&registries))
+        .expect("Failed to write baked registry aliases");
+}
+
+fn package_registries(packages: &[Value]) -> Vec<PackageRegistry> {
+    packages
+        .iter()
+        .filter_map(|package| {
+            let id = canonical_package_id(package)?;
+            let content = package_registry_yaml(package);
+            let aliases = package_aliases(package);
+            Some(PackageRegistry {
+                id,
+                content,
+                aliases,
+            })
+        })
+        .collect()
+}
+
+fn registry_files_code(registries: &[PackageRegistry]) -> String {
+    let mut entries = registries
+        .iter()
+        .map(|registry| (registry.id.clone(), registry.content.clone()))
+        .collect::<Vec<_>>();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    registry_map_code(&entries)
+}
+
+fn registry_aliases_code(registries: &[PackageRegistry]) -> String {
+    let canonical_ids = registries
+        .iter()
+        .map(|registry| registry.id.as_str())
+        .collect::<HashSet<_>>();
+    let mut aliases = HashMap::new();
+
+    for registry in registries {
+        for alias in &registry.aliases {
+            if alias != &registry.id && !canonical_ids.contains(alias.as_str()) {
+                aliases.insert(alias.clone(), registry.id.clone());
+            }
+        }
+    }
+
+    let mut entries = aliases.into_iter().collect::<Vec<_>>();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    registry_map_code(&entries)
+}
+
+fn registry_map_code(entries: &[(String, String)]) -> String {
+    let mut code = String::from("HashMap::from([\n");
+    for (key, value) in entries {
+        code.push_str(&format!("    ({key:?}, {value:?}),\n"));
+    }
+    code.push_str("])");
+    code
+}
+
+fn package_registry_yaml(package: &Value) -> String {
+    let mut registry = serde_yaml::Mapping::new();
+    registry.insert(
+        Value::String("packages".to_string()),
+        Value::Sequence(vec![package.clone()]),
+    );
+    serde_yaml::to_string(&Value::Mapping(registry))
+        .expect("Failed to serialize aqua package registry")
+}
+
+fn canonical_package_id(package: &Value) -> Option<String> {
+    string_field(package, "name").or_else(|| {
+        let repo_owner = string_field(package, "repo_owner")?;
+        let repo_name = string_field(package, "repo_name")?;
+        Some(format!("{repo_owner}/{repo_name}"))
+    })
+}
+
+fn package_aliases(package: &Value) -> Vec<String> {
+    package
+        .get("aliases")
+        .and_then(|aliases| aliases.as_sequence())
+        .map(|aliases| {
+            aliases
+                .iter()
+                .filter_map(|alias| string_field(alias, "name"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn string_field(value: &Value, key: &str) -> Option<String> {
+    value.get(key)?.as_str().map(str::to_string)
 }
 
 fn find_registry_file() -> std::path::PathBuf {

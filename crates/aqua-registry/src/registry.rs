@@ -37,73 +37,36 @@ pub struct FileCacheStore {
     cache_dir: PathBuf,
 }
 
-/// Baked merged registry YAML (compiled into binary).
-pub static AQUA_STANDARD_REGISTRY: &str =
-    include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry.rs"));
+/// Baked canonical registry files (compiled into binary).
+pub static AQUA_STANDARD_REGISTRY_FILES: LazyLock<HashMap<&'static str, &'static str>> =
+    LazyLock::new(|| include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry_files.rs")));
 
-#[derive(Debug)]
-struct BakedRegistryIndex {
-    packages: HashMap<String, AquaPackage>,
-    aliases: HashMap<String, String>,
-}
-
-static BAKED_REGISTRY_INDEX: LazyLock<BakedRegistryIndex> = LazyLock::new(|| {
-    BakedRegistryIndex::from_yaml(AQUA_STANDARD_REGISTRY)
-        .expect("Failed to parse baked aqua registry")
-});
-
-impl BakedRegistryIndex {
-    fn from_yaml(content: &str) -> Result<Self> {
-        let registry: RegistryYaml = serde_yaml::from_str(content)?;
-        let mut packages = HashMap::new();
-        let mut pending_aliases = Vec::new();
-
-        for package in registry.packages {
-            let Some(id) = canonical_package_id(&package) else {
-                continue;
-            };
-            for alias in &package.aliases {
-                if alias.name != id {
-                    pending_aliases.push((alias.name.clone(), id.clone()));
-                }
-            }
-            packages.insert(id, package);
-        }
-
-        let aliases = pending_aliases
-            .into_iter()
-            .filter(|(alias, _)| !packages.contains_key(alias))
-            .collect();
-
-        Ok(Self { packages, aliases })
-    }
-
-    fn package(&self, package_id: &str) -> Option<AquaPackage> {
-        if let Some(package) = self.packages.get(package_id) {
-            return Some(package.clone());
-        }
-
-        self.aliases
-            .get(package_id)
-            .and_then(|canonical| self.packages.get(canonical))
-            .cloned()
-    }
-
-    fn package_ids(&self) -> Vec<String> {
-        self.packages.keys().cloned().collect()
-    }
-}
-
-fn canonical_package_id(package: &AquaPackage) -> Option<String> {
-    package.name.clone().or_else(|| {
-        (!package.repo_owner.is_empty() && !package.repo_name.is_empty())
-            .then(|| format!("{}/{}", package.repo_owner, package.repo_name))
-    })
-}
+/// Baked alias-to-canonical package ID map (compiled into binary).
+static AQUA_STANDARD_REGISTRY_ALIASES: LazyLock<HashMap<&'static str, &'static str>> =
+    LazyLock::new(|| {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/aqua_standard_registry_aliases.rs"
+        ))
+    });
 
 /// Returns all package IDs from the baked-in aqua registry.
 pub fn package_ids() -> Vec<String> {
-    BAKED_REGISTRY_INDEX.package_ids()
+    AQUA_STANDARD_REGISTRY_FILES
+        .keys()
+        .map(|id| id.to_string())
+        .collect()
+}
+
+fn baked_registry_file(package_id: &str) -> Option<&'static str> {
+    if let Some(content) = AQUA_STANDARD_REGISTRY_FILES.get(package_id) {
+        return Some(*content);
+    }
+
+    AQUA_STANDARD_REGISTRY_ALIASES
+        .get(package_id)
+        .and_then(|canonical| AQUA_STANDARD_REGISTRY_FILES.get(*canonical))
+        .copied()
 }
 
 impl AquaRegistry {
@@ -205,12 +168,10 @@ impl RegistryFetcher for DefaultRegistryFetcher {
 
         // Fall back to baked registry if enabled
         if self.config.use_baked_registry
-            && let Some(package) = BAKED_REGISTRY_INDEX.package(package_id)
+            && let Some(content) = baked_registry_file(package_id)
         {
             log::trace!("reading baked-in aqua-registry for {package_id}");
-            return Ok(RegistryYaml {
-                packages: vec![package],
-            });
+            return Ok(serde_yaml::from_str(content)?);
         }
 
         Err(AquaRegistryError::RegistryNotAvailable(format!(
@@ -294,50 +255,29 @@ mod tests {
     }
 
     #[test]
-    fn test_baked_registry_index_package_lookup() {
-        let index = BakedRegistryIndex::from_yaml(
-            r#"
-packages:
-  - type: github_release
-    repo_owner: example
-    repo_name: canonical
-  - type: github_release
-    name: example/named
-    repo_owner: example
-    repo_name: renamed
-"#,
-        )
-        .unwrap();
+    fn test_baked_registry_package_lookup() {
+        let registry = baked_registry_file("01mf02/jaq").unwrap();
+        let registry = serde_yaml::from_str::<RegistryYaml>(registry).unwrap();
 
-        assert!(index.package("example/canonical").is_some());
-        assert!(index.package("example/named").is_some());
-        assert!(index.package("example/renamed").is_none());
+        let package = registry.packages.into_iter().next().unwrap();
+        assert_eq!(package.repo_owner, "01mf02");
+        assert_eq!(package.repo_name, "jaq");
     }
 
     #[test]
-    fn test_baked_registry_index_alias_lookup() {
-        let index = BakedRegistryIndex::from_yaml(
-            r#"
-packages:
-  - type: github_release
-    name: example/canonical
-    repo_owner: example
-    repo_name: canonical
-    aliases:
-      - name: example/alias
-      - name: example/self
-  - type: github_release
-    name: example/self
-    repo_owner: example
-    repo_name: self
-"#,
-        )
-        .unwrap();
+    fn test_baked_registry_alias_lookup() {
+        let alias = "elijah-potter/harper/harper-ls";
 
-        let alias_package = index.package("example/alias").unwrap();
-        assert_eq!(alias_package.name.as_deref(), Some("example/canonical"));
+        assert!(!AQUA_STANDARD_REGISTRY_FILES.contains_key(alias));
+        assert_eq!(
+            AQUA_STANDARD_REGISTRY_ALIASES.get(alias).copied(),
+            Some("Automattic/harper/harper-ls")
+        );
 
-        let canonical_package = index.package("example/self").unwrap();
-        assert_eq!(canonical_package.name.as_deref(), Some("example/self"));
+        let registry = baked_registry_file(alias).unwrap();
+        let registry = serde_yaml::from_str::<RegistryYaml>(registry).unwrap();
+
+        let package = registry.packages.into_iter().next().unwrap();
+        assert_eq!(package.name.as_deref(), Some("Automattic/harper/harper-ls"));
     }
 }
