@@ -516,8 +516,13 @@ impl UnifiedGitBackend {
                 target.arch_name().to_string(),
                 target.qualifier().map(|s| s.to_string()),
             );
-            if picker.pick_best_provenance(&asset_names).is_some() {
-                return Some(ProvenanceType::Slsa { url: None });
+            if let Some(provenance_name) = picker.pick_best_provenance(&asset_names) {
+                let url = release
+                    .assets
+                    .iter()
+                    .find(|a| a.name == provenance_name)
+                    .map(|a| a.browser_download_url.clone());
+                return Some(ProvenanceType::Slsa { url });
             }
         }
 
