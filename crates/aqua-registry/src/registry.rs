@@ -37,9 +37,22 @@ pub struct FileCacheStore {
     cache_dir: PathBuf,
 }
 
+/// Metadata for the baked aqua registry snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AquaRegistryMetadata {
+    pub repository: &'static str,
+    pub tag: &'static str,
+}
+
 /// Baked canonical registry files (compiled into binary).
 pub static AQUA_STANDARD_REGISTRY_FILES: LazyLock<HashMap<&'static str, &'static str>> =
     LazyLock::new(|| include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry_files.rs")));
+
+/// Baked aqua registry snapshot metadata (compiled into binary).
+pub static AQUA_STANDARD_REGISTRY_METADATA: AquaRegistryMetadata = include!(concat!(
+    env!("OUT_DIR"),
+    "/aqua_standard_registry_metadata.rs"
+));
 
 /// Baked alias-to-canonical package ID map (compiled into binary).
 static AQUA_STANDARD_REGISTRY_ALIASES: LazyLock<HashMap<&'static str, &'static str>> =
@@ -259,6 +272,15 @@ mod tests {
         let package = registry.packages.into_iter().next().unwrap();
         assert_eq!(package.repo_owner, "01mf02");
         assert_eq!(package.repo_name, "jaq");
+    }
+
+    #[test]
+    fn test_baked_registry_metadata() {
+        assert_eq!(
+            AQUA_STANDARD_REGISTRY_METADATA.repository,
+            "aquaproj/aqua-registry"
+        );
+        assert_eq!(AQUA_STANDARD_REGISTRY_METADATA.tag, "v4.492.0");
     }
 
     #[test]

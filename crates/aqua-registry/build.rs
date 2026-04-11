@@ -8,6 +8,7 @@ use serde_yaml::Value;
 fn main() {
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR environment variable must be set");
     generate_baked_registry(&out_dir);
+    generate_registry_metadata(&out_dir);
 }
 
 #[derive(Debug)]
@@ -59,6 +60,44 @@ fn generate_baked_registry(out_dir: &str) {
         .expect("Failed to write baked registry files");
     fs::write(aliases_dest_path, registry_aliases_code(&registries))
         .expect("Failed to write baked registry aliases");
+}
+
+fn generate_registry_metadata(out_dir: &str) {
+    let metadata_dest_path = Path::new(out_dir).join("aqua_standard_registry_metadata.rs");
+    let metadata_file = find_registry_metadata_file();
+
+    println!("cargo:rerun-if-changed={}", metadata_file.display());
+
+    let content = fs::read_to_string(&metadata_file).unwrap_or_else(|e| {
+        panic!(
+            "Failed to read aqua registry metadata file {}: {e}",
+            metadata_file.display()
+        )
+    });
+    let metadata = serde_yaml::from_str::<Value>(&content).unwrap_or_else(|e| {
+        panic!(
+            "Failed to parse aqua registry metadata file {}: {e}",
+            metadata_file.display()
+        )
+    });
+    let repository = string_field(&metadata, "repository").unwrap_or_else(|| {
+        panic!(
+            "Aqua registry metadata file {} does not contain a repository",
+            metadata_file.display()
+        )
+    });
+    let tag = string_field(&metadata, "tag").unwrap_or_else(|| {
+        panic!(
+            "Aqua registry metadata file {} does not contain a tag",
+            metadata_file.display()
+        )
+    });
+
+    fs::write(
+        metadata_dest_path,
+        format!("AquaRegistryMetadata {{ repository: {repository:?}, tag: {tag:?} }}"),
+    )
+    .expect("Failed to write baked registry metadata");
 }
 
 fn package_registries(packages: &[Value]) -> Vec<PackageRegistry> {
@@ -161,4 +200,14 @@ fn find_registry_file() -> std::path::PathBuf {
         return embedded;
     }
     panic!("Registry file not found at {}", embedded.display());
+}
+
+fn find_registry_metadata_file() -> std::path::PathBuf {
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR")
+        .expect("CARGO_MANIFEST_DIR environment variable must be set");
+    let embedded = std::path::Path::new(&manifest_dir).join("aqua-registry/metadata.json");
+    if embedded.exists() {
+        return embedded;
+    }
+    panic!("Registry metadata file not found at {}", embedded.display());
 }
