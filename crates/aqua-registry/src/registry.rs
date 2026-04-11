@@ -51,11 +51,8 @@ static AQUA_STANDARD_REGISTRY_ALIASES: LazyLock<HashMap<&'static str, &'static s
     });
 
 /// Returns all package IDs from the baked-in aqua registry.
-pub fn package_ids() -> Vec<String> {
-    AQUA_STANDARD_REGISTRY_FILES
-        .keys()
-        .map(|id| id.to_string())
-        .collect()
+pub fn package_ids() -> Vec<&'static str> {
+    AQUA_STANDARD_REGISTRY_FILES.keys().copied().collect()
 }
 
 fn baked_registry_file(package_id: &str) -> Option<&'static str> {
