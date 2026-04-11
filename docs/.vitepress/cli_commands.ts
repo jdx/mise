@@ -201,7 +201,7 @@ export const commands: { [key: string]: Command } = {
       },
     },
   },
-  prepare: {
+  deps: {
     hide: false,
   },
   prune: {

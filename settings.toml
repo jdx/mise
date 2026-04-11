@@ -1934,10 +1934,10 @@ description = "Show configured env vars when entering a directory with a mise.to
 env = "MISE_STATUS_MESSAGE_SHOW_ENV"
 type = "Bool"
 
-[status.show_prepare_stale]
+[status.show_deps_stale]
 default = true
-description = "Show warning when prepare providers have stale dependencies."
-env = "MISE_STATUS_SHOW_PREPARE_STALE"
+description = "Show warning when deps providers have stale dependencies."
+env = "MISE_STATUS_SHOW_DEPS_STALE"
 type = "Bool"
 
 [status.show_tools]

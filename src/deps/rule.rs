@@ -17,13 +17,13 @@ pub const BUILTIN_PROVIDERS: &[&str] = &[
     "git-submodule", // Git
 ];
 
-/// Configuration for a prepare provider (both built-in and custom)
+/// Configuration for a deps provider (both built-in and custom)
 ///
 /// Built-in providers have auto-detected sources/outputs and default run commands.
 /// Custom providers require explicit sources, outputs, and run.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct PrepareProviderConfig {
+pub struct DepsProviderConfig {
     /// Whether to auto-run this provider before mise x/run (default: false)
     #[serde(default)]
     pub auto: bool,
@@ -42,38 +42,38 @@ pub struct PrepareProviderConfig {
     pub dir: Option<String>,
     /// Optional description
     pub description: Option<String>,
-    /// Other prepare providers that must complete before this one runs
+    /// Other deps providers that must complete before this one runs
     #[serde(default)]
     pub depends: Vec<String>,
     /// Timeout for the run command (e.g., "30s", "5m", "1h")
     pub timeout: Option<String>,
 }
 
-impl PrepareProviderConfig {
+impl DepsProviderConfig {
     /// Check if this is a custom rule (has explicit run command and is not a built-in name)
     pub fn is_custom(&self, name: &str) -> bool {
         !BUILTIN_PROVIDERS.contains(&name) && self.run.is_some()
     }
 }
 
-/// Top-level [prepare] configuration section
+/// Top-level [deps] configuration section
 ///
 /// All providers are configured at the same level:
-/// - `[prepare.npm]` - built-in npm provider
-/// - `[prepare.codegen]` - custom provider
+/// - `[deps.npm]` - built-in npm provider
+/// - `[deps.codegen]` - custom provider
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct PrepareConfig {
+pub struct DepsConfig {
     /// List of provider IDs to disable at runtime
     #[serde(default)]
     pub disable: Vec<String>,
     /// All provider configurations (both built-in and custom)
     #[serde(flatten)]
-    pub providers: BTreeMap<String, PrepareProviderConfig>,
+    pub providers: BTreeMap<String, DepsProviderConfig>,
 }
 
-impl PrepareConfig {
-    /// Merge two PrepareConfigs, with `other` taking precedence
-    pub fn merge(&self, other: &PrepareConfig) -> PrepareConfig {
+impl DepsConfig {
+    /// Merge two DepsConfigs, with `other` taking precedence
+    pub fn merge(&self, other: &DepsConfig) -> DepsConfig {
         let mut providers = self.providers.clone();
         for (k, v) in &other.providers {
             providers.insert(k.clone(), v.clone());
@@ -82,11 +82,11 @@ impl PrepareConfig {
         let mut disable = self.disable.clone();
         disable.extend(other.disable.clone());
 
-        PrepareConfig { disable, providers }
+        DepsConfig { disable, providers }
     }
 
     /// Get a provider config by name
-    pub fn get(&self, name: &str) -> Option<&PrepareProviderConfig> {
+    pub fn get(&self, name: &str) -> Option<&DepsProviderConfig> {
         self.providers.get(name)
     }
 }

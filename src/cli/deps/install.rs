@@ -1,21 +1,16 @@
 use eyre::{Result, bail};
 
 use crate::config::Config;
-use crate::prepare::{PrepareEngine, PrepareOptions, PrepareStepResult};
+use crate::deps::{DepsEngine, DepsOptions, DepsStepResult};
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 
-/// [experimental] Ensure project dependencies are ready
+/// Install all project dependencies
 ///
-/// Runs all applicable prepare steps for the current project.
-/// This checks if dependency lockfiles are newer than installed outputs
-/// (e.g., package-lock.json vs node_modules/) and runs install commands
-/// if needed.
-///
-/// Providers with `auto = true` are automatically invoked before `mise x` and `mise run`
-/// unless skipped with the --no-prepare flag.
+/// Checks if dependency lockfiles are newer than installed outputs
+/// and runs install commands if needed.
 #[derive(Debug, clap::Args)]
-#[clap(visible_alias = "prep", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Prepare {
+#[clap(verbatim_doc_comment)]
+pub struct DepsInstall {
     /// Provider to operate on (runs only this provider, or use with --explain)
     pub provider: Option<String>,
 
@@ -23,31 +18,31 @@ pub struct Prepare {
     #[clap(long)]
     pub explain: bool,
 
-    /// Force run all prepare steps even if outputs are fresh
+    /// Force run all deps steps even if outputs are fresh
     #[clap(long, short)]
     pub force: bool,
 
-    /// Only check if prepare is needed, don't run commands
+    /// Only check if deps install is needed, don't run commands
     #[clap(long, short = 'n')]
     pub dry_run: bool,
 
-    /// Show what prepare steps are available
+    /// Show what deps providers are available
     #[clap(long)]
     pub list: bool,
 
-    /// Run specific prepare rule(s) only
+    /// Run specific deps rule(s) only
     #[clap(long)]
     pub only: Option<Vec<String>>,
 
-    /// Skip specific prepare rule(s)
+    /// Skip specific deps rule(s)
     #[clap(long)]
     pub skip: Option<Vec<String>>,
 }
 
-impl Prepare {
+impl DepsInstall {
     pub async fn run(self) -> Result<()> {
         let mut config = Config::get().await?;
-        let engine = PrepareEngine::new(&config)?;
+        let engine = DepsEngine::new(&config)?;
 
         if self.list {
             self.list_providers(&engine)?;
@@ -56,7 +51,9 @@ impl Prepare {
 
         if self.explain {
             let Some(ref provider_id) = self.provider else {
-                bail!("--explain requires a provider argument, e.g.: mise prepare npm --explain");
+                bail!(
+                    "--explain requires a provider argument, e.g.: mise deps install npm --explain"
+                );
             };
             return self.explain_provider(&engine, provider_id);
         }
@@ -90,7 +87,7 @@ impl Prepare {
             (None, only) => only.clone(),
         };
 
-        let opts = PrepareOptions {
+        let opts = DepsOptions {
             dry_run: self.dry_run,
             force: self.force,
             only,
@@ -104,19 +101,19 @@ impl Prepare {
         // Report results
         for step in &result.steps {
             match step {
-                PrepareStepResult::Ran(id) => {
-                    info!("Prepared: {}", id);
+                DepsStepResult::Ran(id) => {
+                    info!("Installed: {}", id);
                 }
-                PrepareStepResult::WouldRun(id, reason) => {
-                    info!("[dry-run] Would prepare: {} ({})", id, reason);
+                DepsStepResult::WouldRun(id, reason) => {
+                    info!("[dry-run] Would install: {} ({})", id, reason);
                 }
-                PrepareStepResult::Fresh(id) => {
+                DepsStepResult::Fresh(id) => {
                     debug!("Fresh: {}", id);
                 }
-                PrepareStepResult::Skipped(id) => {
+                DepsStepResult::Skipped(id) => {
                     debug!("Skipped: {}", id);
                 }
-                PrepareStepResult::Failed(id) => {
+                DepsStepResult::Failed(id) => {
                     error!("Failed: {}", id);
                 }
             }
@@ -129,7 +126,7 @@ impl Prepare {
         Ok(())
     }
 
-    fn explain_provider(&self, engine: &PrepareEngine, provider_id: &str) -> Result<()> {
+    fn explain_provider(&self, engine: &DepsEngine, provider_id: &str) -> Result<()> {
         let Some(provider) = engine.find_provider(provider_id) else {
             let available = engine
                 .list_providers()
@@ -165,7 +162,7 @@ impl Prepare {
         }
 
         // Command
-        if let Ok(cmd) = provider.prepare_command() {
+        if let Ok(cmd) = provider.install_command() {
             miseprintln!("Command: {}", cmd.description);
         }
 
@@ -184,15 +181,15 @@ impl Prepare {
         Ok(())
     }
 
-    fn list_providers(&self, engine: &PrepareEngine) -> Result<()> {
+    fn list_providers(&self, engine: &DepsEngine) -> Result<()> {
         let providers = engine.list_providers();
 
         if providers.is_empty() {
-            miseprintln!("No prepare providers found for this project");
+            miseprintln!("No deps providers found for this project");
             return Ok(());
         }
 
-        miseprintln!("Available prepare providers:");
+        miseprintln!("Available deps providers:");
         for provider in providers {
             let sources = provider
                 .sources()
@@ -215,34 +212,3 @@ impl Prepare {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise prepare</bold>              # Run all applicable prepare steps
-    $ <bold>mise prepare npm</bold>          # Run only npm prepare
-    $ <bold>mise prepare npm --explain</bold> # Show why npm is fresh or stale
-    $ <bold>mise prepare --dry-run</bold>    # Show what would run without executing
-    $ <bold>mise prepare --force</bold>      # Force run even if outputs are fresh
-    $ <bold>mise prepare --list</bold>       # List available prepare providers
-    $ <bold>mise prepare --skip npm</bold>   # Skip npm prepare
-
-<bold><underline>Configuration:</underline></bold>
-
-```toml
-# Built-in npm provider (auto-detects lockfile)
-[prepare.npm]
-auto = true              # Auto-run before mise x/run
-
-# Custom provider
-[prepare.codegen]
-auto = true
-sources = ["schema/*.graphql"]
-outputs = ["src/generated/"]
-run = "npm run codegen"
-
-[prepare]
-disable = ["npm"]        # Disable specific providers at runtime
-```
-"#
-);
