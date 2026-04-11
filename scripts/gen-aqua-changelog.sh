@@ -19,19 +19,32 @@ fi
 
 release_tags() {
 	local collecting=0
+	local found_old=0
+	local found_new=0
 	local -a tags=()
 
 	while IFS= read -r tag; do
 		if [[ $tag == "$OLD_TAG" ]]; then
+			found_old=1
 			break
 		fi
 		if [[ $tag == "$NEW_TAG" ]]; then
 			collecting=1
+			found_new=1
 		fi
 		if [[ $collecting -eq 1 ]]; then
 			tags+=("$tag")
 		fi
 	done < <(gh release list --repo "$REPO" --limit 1000 --json tagName --jq '.[].tagName')
+
+	if [[ $found_old -eq 0 ]]; then
+		return 0
+	fi
+
+	if [[ $found_new -eq 0 ]]; then
+		echo "Unable to find aqua-registry release $NEW_TAG" >&2
+		return 1
+	fi
 
 	if [[ ${#tags[@]} -eq 0 ]]; then
 		echo "Unable to find aqua-registry releases from $OLD_TAG to $NEW_TAG" >&2
@@ -43,55 +56,18 @@ release_tags() {
 	done
 }
 
-section_title() {
-	sed -E 's/^[^[:alnum:]]+[[:space:]]*//; s/[[:space:]]+$//'
-}
-
-format_release() {
-	local tag="$1"
-	local body section line pr text
-
-	body="$(gh release view "$tag" --repo "$REPO" --json body --jq .body)"
-	echo "#### [$tag](https://github.com/$REPO/releases/tag/$tag)"
-
-	while IFS= read -r line; do
-		line="${line%$'\r'}"
-		if [[ -z $line ]] || [[ $line == "[Issues]"* ]]; then
-			continue
-		fi
-		if [[ $line =~ ^##[[:space:]]+(.+)$ ]]; then
-			section="$(printf '%s' "${BASH_REMATCH[1]}" | section_title)"
-			if [[ -n $section ]]; then
-				echo ""
-				echo "**$section**"
-				echo ""
-			fi
-			continue
-		fi
-		if [[ $line =~ ^#([0-9]+)[[:space:]]+(.+)$ ]]; then
-			pr="${BASH_REMATCH[1]}"
-			text="${BASH_REMATCH[2]}"
-			echo "- $text ([#$pr](https://github.com/$REPO/pull/$pr))"
-			continue
-		fi
-
-		text="$line"
-		if [[ -n $text ]]; then
-			echo "- $text"
-		fi
-	done <<<"$body"
-	echo ""
-}
-
 RELEASE_TAGS="$(release_tags)"
+if [[ -z $RELEASE_TAGS ]]; then
+	exit 0
+fi
 
 echo "$HEADING_LEVEL 📦 Aqua Registry"
 echo ""
 echo "Updated [aqua-registry](https://github.com/$REPO): [$OLD_TAG](https://github.com/$REPO/releases/tag/$OLD_TAG) -> [$NEW_TAG](https://github.com/$REPO/releases/tag/$NEW_TAG)."
 echo ""
-echo "Changelog copied from [aqua-registry releases](https://github.com/$REPO/releases)."
+echo "Included aqua-registry releases:"
 echo ""
 
 while IFS= read -r tag; do
-	format_release "$tag"
+	echo "- [$tag](https://github.com/$REPO/releases/tag/$tag)"
 done <<<"$RELEASE_TAGS"
