@@ -3006,6 +3006,7 @@
     },
     "env_file": {
       "description": "dotenv file(s) to load",
+      "deprecated": true,
       "oneOf": [
         {
           "description": "dotenv file to load",
@@ -3022,6 +3023,7 @@
     },
     "dotenv": {
       "description": "dotenv file(s) to load",
+      "deprecated": true,
       "oneOf": [
         {
           "description": "dotenv file to load",
@@ -3038,6 +3040,7 @@
     },
     "env_path": {
       "description": "PATH entries to add",
+      "deprecated": true,
       "oneOf": [
         {
           "description": "PATH entry to add",
