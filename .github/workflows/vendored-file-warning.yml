@@ -3,7 +3,7 @@ name: vendored-file-warning
 on:
   pull_request_target:
     paths:
-      - "crates/aqua-registry/aqua-registry/pkgs/**"
+      - "crates/aqua-registry/aqua-registry/registry.yaml"
 
 permissions: {}
 
@@ -23,7 +23,7 @@ jobs:
           if [ "$existing" = "0" ]; then
             gh pr comment "${{ github.event.pull_request.number }}" \
               -R "${{ github.repository }}" \
-              --body "The aqua registry YAML files under \`crates/aqua-registry/\` are vendored from the upstream [aqua-registry](https://github.com/aquaproj/aqua-registry) and should not be modified directly in this repo. Please submit the package definitions to the upstream aqua-registry instead, and they will be picked up here when we next update the vendored copy.
+              --body "The aqua registry YAML file under \`crates/aqua-registry/\` is vendored from the upstream [aqua-registry](https://github.com/aquaproj/aqua-registry) and should not be modified directly in this repo. Please submit package definition changes to the upstream aqua-registry instead, and they will be picked up here when we next update the vendored copy.
 
           The \`registry/*.toml\` files are fine to add here, but the backend should reference the package after it's been accepted upstream."
           fi

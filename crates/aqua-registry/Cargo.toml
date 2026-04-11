@@ -15,7 +15,8 @@ include = [
   "/README.md",
   "/build.rs",
   "/src/**/*.rs",
-  "/aqua-registry/pkgs/**/registry.yaml",
+  "/aqua-registry/LICENSE",
+  "/aqua-registry/registry.yaml",
 ]
 
 [package.metadata.cargo-machete]

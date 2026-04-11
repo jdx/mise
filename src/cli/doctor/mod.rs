@@ -699,7 +699,7 @@ fn shell() -> String {
 }
 
 fn aqua_registry_count() -> usize {
-    aqua_registry::AQUA_STANDARD_REGISTRY_FILES.len()
+    aqua_registry::package_ids().len()
 }
 
 fn aqua_registry_count_str() -> String {

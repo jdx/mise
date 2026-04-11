@@ -117,19 +117,19 @@ fn fetch_latest_repo(repo: &Git) -> Result<()> {
 }
 
 struct AquaSuggestionsCache {
-    name_to_ids: HashMap<&'static str, Vec<&'static str>>,
-    names: Vec<&'static str>,
+    name_to_ids: HashMap<String, Vec<String>>,
+    names: Vec<String>,
 }
 
 static AQUA_SUGGESTIONS_CACHE: Lazy<AquaSuggestionsCache> = Lazy::new(|| {
     let ids = aqua_registry::package_ids();
-    let mut name_to_ids: HashMap<&'static str, Vec<&'static str>> = HashMap::new();
+    let mut name_to_ids: HashMap<String, Vec<String>> = HashMap::new();
     for id in ids {
         if let Some((_, name)) = id.rsplit_once('/') {
-            name_to_ids.entry(name).or_default().push(id);
+            name_to_ids.entry(name.to_string()).or_default().push(id);
         }
     }
-    let names = name_to_ids.keys().copied().collect();
+    let names = name_to_ids.keys().cloned().collect();
     AquaSuggestionsCache { name_to_ids, names }
 });
 
@@ -146,7 +146,7 @@ pub fn aqua_suggest(query: &str) -> Vec<String> {
     for matched_name in &similar_names {
         if let Some(full_ids) = cache.name_to_ids.get(matched_name.as_str()) {
             for full_id in full_ids {
-                results.push(full_id.to_string());
+                results.push(full_id.clone());
                 if results.len() >= 5 {
                     return results;
                 }

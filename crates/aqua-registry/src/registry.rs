@@ -37,13 +37,73 @@ pub struct FileCacheStore {
     cache_dir: PathBuf,
 }
 
-/// Baked registry files (compiled into binary)
-pub static AQUA_STANDARD_REGISTRY_FILES: LazyLock<HashMap<&'static str, &'static str>> =
-    LazyLock::new(|| include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry.rs")));
+/// Baked merged registry YAML (compiled into binary).
+pub static AQUA_STANDARD_REGISTRY: &str =
+    include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry.rs"));
+
+#[derive(Debug)]
+struct BakedRegistryIndex {
+    packages: HashMap<String, AquaPackage>,
+    aliases: HashMap<String, String>,
+}
+
+static BAKED_REGISTRY_INDEX: LazyLock<BakedRegistryIndex> = LazyLock::new(|| {
+    BakedRegistryIndex::from_yaml(AQUA_STANDARD_REGISTRY)
+        .expect("Failed to parse baked aqua registry")
+});
+
+impl BakedRegistryIndex {
+    fn from_yaml(content: &str) -> Result<Self> {
+        let registry: RegistryYaml = serde_yaml::from_str(content)?;
+        let mut packages = HashMap::new();
+        let mut pending_aliases = Vec::new();
+
+        for package in registry.packages {
+            let Some(id) = canonical_package_id(&package) else {
+                continue;
+            };
+            for alias in &package.aliases {
+                if alias.name != id {
+                    pending_aliases.push((alias.name.clone(), id.clone()));
+                }
+            }
+            packages.insert(id, package);
+        }
+
+        let aliases = pending_aliases
+            .into_iter()
+            .filter(|(alias, _)| !packages.contains_key(alias))
+            .collect();
+
+        Ok(Self { packages, aliases })
+    }
+
+    fn package(&self, package_id: &str) -> Option<AquaPackage> {
+        if let Some(package) = self.packages.get(package_id) {
+            return Some(package.clone());
+        }
+
+        self.aliases
+            .get(package_id)
+            .and_then(|canonical| self.packages.get(canonical))
+            .cloned()
+    }
+
+    fn package_ids(&self) -> Vec<String> {
+        self.packages.keys().cloned().collect()
+    }
+}
+
+fn canonical_package_id(package: &AquaPackage) -> Option<String> {
+    package.name.clone().or_else(|| {
+        (!package.repo_owner.is_empty() && !package.repo_name.is_empty())
+            .then(|| format!("{}/{}", package.repo_owner, package.repo_name))
+    })
+}
 
 /// Returns all package IDs from the baked-in aqua registry.
-pub fn package_ids() -> Vec<&'static str> {
-    AQUA_STANDARD_REGISTRY_FILES.keys().copied().collect()
+pub fn package_ids() -> Vec<String> {
+    BAKED_REGISTRY_INDEX.package_ids()
 }
 
 impl AquaRegistry {
@@ -144,12 +204,13 @@ impl RegistryFetcher for DefaultRegistryFetcher {
         }
 
         // Fall back to baked registry if enabled
-        #[allow(clippy::collapsible_if)]
-        if self.config.use_baked_registry && AQUA_STANDARD_REGISTRY_FILES.contains_key(package_id) {
-            if let Some(content) = AQUA_STANDARD_REGISTRY_FILES.get(package_id) {
-                log::trace!("reading baked-in aqua-registry for {package_id}");
-                return Ok(serde_yaml::from_str(content)?);
-            }
+        if self.config.use_baked_registry
+            && let Some(package) = BAKED_REGISTRY_INDEX.package(package_id)
+        {
+            log::trace!("reading baked-in aqua-registry for {package_id}");
+            return Ok(RegistryYaml {
+                packages: vec![package],
+            });
         }
 
         Err(AquaRegistryError::RegistryNotAvailable(format!(
@@ -230,5 +291,53 @@ mod tests {
         assert!(!cache.is_fresh("test"));
         assert!(cache.store("test", b"data").is_ok());
         assert!(cache.retrieve("test").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_baked_registry_index_package_lookup() {
+        let index = BakedRegistryIndex::from_yaml(
+            r#"
+packages:
+  - type: github_release
+    repo_owner: example
+    repo_name: canonical
+  - type: github_release
+    name: example/named
+    repo_owner: example
+    repo_name: renamed
+"#,
+        )
+        .unwrap();
+
+        assert!(index.package("example/canonical").is_some());
+        assert!(index.package("example/named").is_some());
+        assert!(index.package("example/renamed").is_none());
+    }
+
+    #[test]
+    fn test_baked_registry_index_alias_lookup() {
+        let index = BakedRegistryIndex::from_yaml(
+            r#"
+packages:
+  - type: github_release
+    name: example/canonical
+    repo_owner: example
+    repo_name: canonical
+    aliases:
+      - name: example/alias
+      - name: example/self
+  - type: github_release
+    name: example/self
+    repo_owner: example
+    repo_name: self
+"#,
+        )
+        .unwrap();
+
+        let alias_package = index.package("example/alias").unwrap();
+        assert_eq!(alias_package.name.as_deref(), Some("example/canonical"));
+
+        let canonical_package = index.package("example/self").unwrap();
+        assert_eq!(canonical_package.name.as_deref(), Some("example/self"));
     }
 }

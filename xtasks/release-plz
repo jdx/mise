@@ -264,24 +264,25 @@ fi
 mise run fetch-gpg-keys
 mise run render ::: lint-fix
 
-# Capture current aqua-registry package list before updating
-OLD_AQUA_PKGS=""
-if [[ -d crates/aqua-registry/aqua-registry/pkgs ]]; then
-	OLD_AQUA_PKGS="$(find crates/aqua-registry/aqua-registry/pkgs -name registry.yaml -type f | sed 's|crates/aqua-registry/aqua-registry/pkgs/||;s|/registry.yaml||' | sort)"
+# Capture current aqua-registry before updating
+OLD_AQUA_REGISTRY="$(mktemp)"
+if [[ -f crates/aqua-registry/aqua-registry/registry.yaml ]]; then
+	cp crates/aqua-registry/aqua-registry/registry.yaml "$OLD_AQUA_REGISTRY"
+else
+	: >"$OLD_AQUA_REGISTRY"
 fi
 
 rm -rf crates/aqua-registry/aqua-registry
-git clone https://github.com/aquaproj/aqua-registry crates/aqua-registry/aqua-registry
-# Keep only pkgs/**/registry.yaml files, remove everything else
-find crates/aqua-registry/aqua-registry -type f ! -path "crates/aqua-registry/aqua-registry/pkgs/*/registry.yaml" ! -name LICENSE -delete
-find crates/aqua-registry/aqua-registry -type d -empty -delete
-
-# Capture new aqua-registry package list after updating
-NEW_AQUA_PKGS="$(find crates/aqua-registry/aqua-registry/pkgs -name registry.yaml -type f | sed 's|crates/aqua-registry/aqua-registry/pkgs/||;s|/registry.yaml||' | sort)"
+mkdir -p crates/aqua-registry/aqua-registry
+curl -fsSL https://raw.githubusercontent.com/aquaproj/aqua-registry/main/registry.yaml \
+	-o crates/aqua-registry/aqua-registry/registry.yaml
+curl -fsSL https://raw.githubusercontent.com/aquaproj/aqua-registry/main/LICENSE \
+	-o crates/aqua-registry/aqua-registry/LICENSE
 
 # Generate aqua-registry changelog section for both CHANGELOG.md and PR body
-AQUA_CHANGELOG_MD="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA_PKGS" "###" || true)"
-AQUA_CHANGELOG_PR="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA_PKGS" "##" || true)"
+AQUA_CHANGELOG_MD="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_REGISTRY" "crates/aqua-registry/aqua-registry/registry.yaml" "###" || true)"
+AQUA_CHANGELOG_PR="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_REGISTRY" "crates/aqua-registry/aqua-registry/registry.yaml" "##" || true)"
+rm -f "$OLD_AQUA_REGISTRY"
 
 # Generate changelog using git-cliff with explicit calver version (not --bump which uses semver)
 # LLM editorialization happens in release.yml after merge

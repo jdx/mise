@@ -29,6 +29,7 @@ pub struct AquaPackage {
     pub repo_owner: String,
     pub repo_name: String,
     pub name: Option<String>,
+    pub aliases: Vec<AquaAlias>,
     pub asset: String,
     pub url: String,
     pub description: Option<String>,
@@ -70,6 +71,12 @@ struct AquaOverride {
 pub struct AquaFile {
     pub name: String,
     pub src: Option<String>,
+}
+
+/// Alias definition for a package in the merged aqua registry.
+#[derive(Debug, Deserialize, Clone)]
+pub struct AquaAlias {
+    pub name: String,
 }
 
 /// Checksum algorithm options
@@ -186,6 +193,7 @@ impl Default for AquaPackage {
             repo_owner: String::new(),
             repo_name: String::new(),
             name: None,
+            aliases: Vec::new(),
             asset: String::new(),
             url: String::new(),
             description: None,
