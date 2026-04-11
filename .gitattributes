@@ -1,3 +1,2 @@
 zipsign.pub binary
-aqua-registry/ linguist-vendored
 crates/aqua-registry/aqua-registry/** linguist-vendored
