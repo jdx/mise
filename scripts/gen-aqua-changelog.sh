@@ -89,9 +89,11 @@ format_release() {
 
 RELEASE_TAGS="$(release_tags)"
 
-echo "$HEADING_LEVEL 📦 Aqua Registry Updates"
+echo "$HEADING_LEVEL 📦 Aqua Registry"
 echo ""
-echo "Updated [aqua-registry](https://github.com/$REPO) from \`$OLD_TAG\` to \`$NEW_TAG\`."
+echo "Updated [aqua-registry](https://github.com/$REPO): \`$OLD_TAG\` -> \`$NEW_TAG\`."
+echo ""
+echo "Changelog copied from [aqua-registry releases](https://github.com/$REPO/releases)."
 echo ""
 
 while IFS= read -r tag; do
