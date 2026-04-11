@@ -91,7 +91,7 @@ console = "0.16"
 contracts = "0.6"
 dashmap = "6"
 demand = "1"
-digest = "0.10.7"
+digest = "0.11.0"
 dotenvy = "0.15"
 duct = "0.13"
 homedir = "0.3"
@@ -118,7 +118,7 @@ jiff = "0.2"
 junction = "1"
 log = "0.4"
 minisign-verify = "0.2"
-md-5 = "0.10"
+md-5 = "0.11"
 miette = { version = "7", features = ["fancy"] }
 netrc-rs = "0.1"
 num_cpus = "1"
@@ -128,7 +128,7 @@ openssl = { version = "0.10", optional = true }
 os-release = "0.1"
 path-absolutize = { version = "3", features = ["unsafe_cache"] }
 petgraph = "0.8"
-rand = "0.9"
+rand = "0.10"
 rattler = { version = "0.40", default-features = false }
 rattler_conda_types = { version = "0.44", default-features = false }
 rattler_repodata_gateway = { version = "0.27", default-features = false, features = [
@@ -164,8 +164,8 @@ serde_derive = "1"
 serde_ignored = "0.1"
 serde_json = "1"
 serde_yaml = "0.9"
-sha1 = "0.10"
-sha2 = "0.10"
+sha1 = "0.11"
+sha2 = "0.11"
 blake3 = "1"
 chacha20poly1305 = "0.10"
 shell-escape = "0.1"
@@ -259,7 +259,6 @@ rustls = [
   "reqwest/rustls-tls",
   "rattler/rustls-tls",
   "rattler_repodata_gateway/rustls-tls",
-  "self_update/rustls",
   "sigstore-verification/rustls",
   "ubi/rustls-tls",
   "vfox/rustls",
@@ -270,7 +269,6 @@ rustls-native-roots = [
   "reqwest/rustls-tls-native-roots",
   "rattler/rustls-tls",
   "rattler_repodata_gateway/rustls-tls",
-  "self_update/rustls",
   "sigstore-verification/rustls-native-roots",
   "ubi/rustls-tls-native-roots",
   "vfox/rustls-native-roots",

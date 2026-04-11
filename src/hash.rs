@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::Path;
 
 use crate::file;
@@ -23,7 +23,11 @@ pub fn hash_to_str<T: Hash>(t: &T) -> String {
 pub fn hash_sha256_to_str(s: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(s);
-    format!("{:x}", hasher.finalize())
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 pub fn file_hash_sha256(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String> {
@@ -38,7 +42,7 @@ pub fn file_hash_sha256(path: &Path, pr: Option<&dyn SingleReport>) -> Result<St
 
 fn file_hash_prog<D>(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String>
 where
-    D: Digest + Write,
+    D: Digest,
 {
     let mut file = file::open(path)?;
     if let Some(pr) = pr {
@@ -51,12 +55,11 @@ where
         if n == 0 {
             break;
         }
-        hasher.write_all(&buf[..n])?;
+        hasher.update(&buf[..n]);
         if let Some(pr) = pr {
             pr.inc(n as u64);
         }
     }
-    std::io::copy(&mut file, &mut hasher)?;
     let hash = hasher.finalize();
     Ok(hash.iter().map(|b| format!("{b:02x}")).collect())
 }
