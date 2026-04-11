@@ -5,8 +5,8 @@ to use for new tools since they don't require plugins, they work on windows, the
 features in addition to checksums. aqua installs also show more progress bars, which is nice.
 
 You do not need to separately install aqua. The aqua CLI is not used in mise at all. What is used is
-the merged [aqua registry](https://github.com/aquaproj/aqua-registry/blob/main/registry.yaml) YAML file that gets compiled into the mise binary on release.
-Here's an example package entry: [`aqua:hashicorp/terraform`](https://github.com/aquaproj/aqua-registry/blob/main/registry.yaml).
+the [aqua registry](https://github.com/aquaproj/aqua-registry) that gets compiled into the mise binary on release.
+Here's an example package entry: [`aqua:hashicorp/terraform`](https://github.com/aquaproj/aqua-registry/blob/main/pkgs/hashicorp/terraform/registry.yaml).
 mise has a reimplementation of aqua that knows how to work with these files to install tools.
 
 As of this writing, aqua is relatively new to mise and because a lot of tools are being converted from
