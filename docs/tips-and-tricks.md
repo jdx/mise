@@ -114,6 +114,26 @@ Instead of manually editing `mise.toml` to add env vars, you can use [`mise set`
 mise set NODE_ENV=production
 ```
 
+## Using Tera to read unsupported version files
+
+Some project-local version files are already supported as [idiomatic version files](https://mise.jdx.dev/configuration.html#idiomatic-version-files). For other version files, you can use Tera templates in `mise.toml` to read the file and assign the version to the appropriate tool.
+
+For example, to use a `.hvm` file with a plain Hugo version:
+
+```toml
+[tools]
+hugo = "{{ read_file(path='.hvm') | trim }}"
+```
+
+HVM also supports versions with an `/extended` suffix. In mise, Hugo and Hugo Extended are separate tools, so strip the suffix and use `hugo-extended` instead:
+
+```toml
+[tools]
+hugo-extended = "{{ read_file(path='.hvm') | trim | replace(from='/extended', to='') }}"
+```
+
+See [Templates](/templates.html) for more details on Tera functions and filters.
+
 ## [`mise run`](/cli/run.html) shorthand
 
 As long as the task name doesn't conflict with a mise-provided command you can skip the `run` part:
