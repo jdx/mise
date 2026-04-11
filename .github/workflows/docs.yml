@@ -3,14 +3,32 @@ name: docs
 on:
   push:
     paths:
+      - ".github/actions/**"
+      - ".github/workflows/docs.yml"
+      - "bun.lock"
       - "docs/**"
+      - "mise.toml"
+      - "package.json"
+      - "registry/**"
+      - "settings.toml"
+      - "tasks.toml"
       - "tasks/docs/**"
+      - "xtasks/docs/**"
     branches:
       - main
   pull_request:
     paths:
+      - ".github/actions/**"
+      - ".github/workflows/docs.yml"
+      - "bun.lock"
       - "docs/**"
+      - "mise.toml"
+      - "package.json"
+      - "registry/**"
+      - "settings.toml"
+      - "tasks.toml"
       - "tasks/docs/**"
+      - "xtasks/docs/**"
     branches:
       - main
   workflow_dispatch:
