@@ -26,9 +26,7 @@ impl TryFrom<Table> for Metadata {
         let legacy_filenames = t
             .get::<Option<Vec<String>>>("legacyFilenames")?
             .unwrap_or_default();
-        let depends = t
-            .get::<Option<Vec<String>>>("depends")?
-            .unwrap_or_default();
+        let depends = t.get::<Option<Vec<String>>>("depends")?.unwrap_or_default();
         Ok(Metadata {
             name: t.get("name")?,
             legacy_filenames,
