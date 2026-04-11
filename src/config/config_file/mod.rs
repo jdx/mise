@@ -612,7 +612,6 @@ impl Hash for dyn ConfigFile {
 pub enum TaskIncludesMode {
     #[default]
     Replace,
-    #[serde(alias = "additive")]
     Extend,
 }
 

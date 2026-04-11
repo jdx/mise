@@ -2409,27 +2409,10 @@ fn selected_task_include_config<'a>(
     configs: &[&'a Arc<dyn ConfigFile>],
     exclude_paths: &[PathBuf],
 ) -> Option<&'a Arc<dyn ConfigFile>> {
-    configs
-        .iter()
-        .copied()
-        .find(|cf| {
-            cf.task_config().includes.is_some()
-                && !exclude_paths.iter().any(|path| cf.get_path() == path)
-                && is_plain_local_config(cf.get_path())
-        })
-        .or_else(|| {
-            configs.iter().copied().find(|cf| {
-                cf.task_config().includes.is_some()
-                    && !exclude_paths.iter().any(|path| cf.get_path() == path)
-            })
-        })
-}
-
-fn is_plain_local_config(path: &Path) -> bool {
-    matches!(
-        path.file_name().and_then(|name| name.to_str()),
-        Some("config.local.toml" | "mise.local.toml" | ".mise.local.toml" | ".rtx.local.toml")
-    )
+    configs.iter().copied().find(|cf| {
+        cf.task_config().includes.is_some()
+            && !exclude_paths.iter().any(|path| cf.get_path() == path)
+    })
 }
 
 fn task_include_specs_for_config(cf: &Arc<dyn ConfigFile>) -> Vec<(PathBuf, String)> {
