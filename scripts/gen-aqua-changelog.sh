@@ -43,30 +43,6 @@ release_tags() {
 	done
 }
 
-link_contributors() {
-	local text="$1"
-	local prefix handles handle links
-
-	if [[ ! $text =~ ^(.+[^[:space:]])[[:space:]]+(@[A-Za-z0-9_.-]+([[:space:]]+@[A-Za-z0-9_.-]+)*)[[:space:]]*$ ]]; then
-		printf '%s' "$text"
-		return
-	fi
-
-	prefix="${BASH_REMATCH[1]}"
-	handles="${BASH_REMATCH[2]}"
-	links=""
-
-	for handle in $handles; do
-		handle="${handle#@}"
-		if [[ -n $links ]]; then
-			links+=", "
-		fi
-		links+="[$handle](https://github.com/$handle)"
-	done
-
-	printf '%s (%s)' "$prefix" "$links"
-}
-
 section_title() {
 	sed -E 's/^[^[:alnum:]]+[[:space:]]*//; s/[[:space:]]+$//'
 }
@@ -94,12 +70,12 @@ format_release() {
 		fi
 		if [[ $line =~ ^#([0-9]+)[[:space:]]+(.+)$ ]]; then
 			pr="${BASH_REMATCH[1]}"
-			text="$(link_contributors "${BASH_REMATCH[2]}")"
+			text="${BASH_REMATCH[2]}"
 			echo "- $text ([#$pr](https://github.com/$REPO/pull/$pr))"
 			continue
 		fi
 
-		text="$(link_contributors "$line")"
+		text="$line"
 		if [[ -n $text ]]; then
 			echo "- $text"
 		fi
