@@ -1,17 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::env;
-use std::error::Error;
 use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 
+use eyre::{Result, WrapErr, eyre};
 use serde_yaml::Value;
 
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
-
 fn main() -> Result<()> {
-    let out_dir = env::var("OUT_DIR")
-        .map_err(|e| err(format!("OUT_DIR environment variable must be set: {e}")))?;
+    let out_dir = env::var("OUT_DIR").wrap_err("OUT_DIR environment variable must be set")?;
     generate_baked_registry(&out_dir)?;
     generate_registry_metadata(&out_dir)?;
     Ok(())
@@ -32,41 +28,40 @@ fn generate_baked_registry(out_dir: &str) -> Result<()> {
 
     println!("cargo:rerun-if-changed={}", registry_file.display());
 
-    let content = fs::read_to_string(&registry_file).map_err(|e| {
-        err(format!(
-            "Failed to read aqua registry file {}: {e}",
+    let content = fs::read_to_string(&registry_file).wrap_err_with(|| {
+        format!(
+            "Failed to read aqua registry file {}",
             registry_file.display()
-        ))
+        )
     })?;
 
-    let registry = serde_yaml::from_str::<Value>(&content).map_err(|e| {
-        err(format!(
-            "Failed to parse aqua registry file {}: {e}",
+    let registry = serde_yaml::from_str::<Value>(&content).wrap_err_with(|| {
+        format!(
+            "Failed to parse aqua registry file {}",
             registry_file.display()
-        ))
+        )
     })?;
     let packages = registry
         .get("packages")
         .and_then(|packages| packages.as_sequence())
         .ok_or_else(|| {
-            err(format!(
+            eyre!(
                 "Aqua registry file {} does not contain a packages list",
                 registry_file.display()
-            ))
+            )
         })?;
     let registries = package_registries(packages)?;
     if registries.is_empty() {
-        return Err(err(format!(
+        return Err(eyre!(
             "Aqua registry file {} contains no packages",
             registry_file.display()
-        ))
-        .into());
+        ));
     }
 
     fs::write(files_dest_path, registry_files_code(&registries))
-        .map_err(|e| err(format!("Failed to write baked registry files: {e}")))?;
+        .wrap_err("Failed to write baked registry files")?;
     fs::write(aliases_dest_path, registry_aliases_code(&registries))
-        .map_err(|e| err(format!("Failed to write baked registry aliases: {e}")))?;
+        .wrap_err("Failed to write baked registry aliases")?;
     Ok(())
 }
 
@@ -76,36 +71,36 @@ fn generate_registry_metadata(out_dir: &str) -> Result<()> {
 
     println!("cargo:rerun-if-changed={}", metadata_file.display());
 
-    let content = fs::read_to_string(&metadata_file).map_err(|e| {
-        err(format!(
-            "Failed to read aqua registry metadata file {}: {e}",
+    let content = fs::read_to_string(&metadata_file).wrap_err_with(|| {
+        format!(
+            "Failed to read aqua registry metadata file {}",
             metadata_file.display()
-        ))
+        )
     })?;
-    let metadata = serde_yaml::from_str::<Value>(&content).map_err(|e| {
-        err(format!(
-            "Failed to parse aqua registry metadata file {}: {e}",
+    let metadata = serde_yaml::from_str::<Value>(&content).wrap_err_with(|| {
+        format!(
+            "Failed to parse aqua registry metadata file {}",
             metadata_file.display()
-        ))
+        )
     })?;
     let repository = string_field(&metadata, "repository").ok_or_else(|| {
-        err(format!(
+        eyre!(
             "Aqua registry metadata file {} does not contain a repository",
             metadata_file.display()
-        ))
+        )
     })?;
     let tag = string_field(&metadata, "tag").ok_or_else(|| {
-        err(format!(
+        eyre!(
             "Aqua registry metadata file {} does not contain a tag",
             metadata_file.display()
-        ))
+        )
     })?;
 
     fs::write(
         metadata_dest_path,
         format!("AquaRegistryMetadata {{ repository: {repository:?}, tag: {tag:?} }}"),
     )
-    .map_err(|e| err(format!("Failed to write baked registry metadata: {e}")))?;
+    .wrap_err("Failed to write baked registry metadata")?;
     Ok(())
 }
 
@@ -173,7 +168,7 @@ fn package_registry_yaml(package: &Value) -> Result<String> {
         Value::Sequence(vec![package.clone()]),
     );
     serde_yaml::to_string(&Value::Mapping(registry))
-        .map_err(|e| err(format!("Failed to serialize aqua package registry: {e}")).into())
+        .wrap_err("Failed to serialize aqua package registry")
 }
 
 fn canonical_package_id(package: &Value) -> Option<String> {
@@ -210,20 +205,13 @@ fn find_registry_metadata_file() -> Result<PathBuf> {
 }
 
 fn registry_file(file_name: &str, description: &str) -> Result<PathBuf> {
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").map_err(|e| {
-        err(format!(
-            "CARGO_MANIFEST_DIR environment variable must be set: {e}"
-        ))
-    })?;
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR")
+        .wrap_err("CARGO_MANIFEST_DIR environment variable must be set")?;
     let embedded = Path::new(&manifest_dir)
         .join("aqua-registry")
         .join(file_name);
     if embedded.exists() {
         return Ok(embedded);
     }
-    Err(err(format!("{description} not found at {}", embedded.display())).into())
-}
-
-fn err(message: impl Into<String>) -> io::Error {
-    io::Error::other(message.into())
+    Err(eyre!("{description} not found at {}", embedded.display()))
 }

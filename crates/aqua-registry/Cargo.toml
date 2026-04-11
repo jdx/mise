@@ -53,4 +53,5 @@ log = "0.4"
 tokio = { version = "1", features = ["rt", "macros"] }
 
 [build-dependencies]
+eyre = "0.6"
 serde_yaml = "0.9"
