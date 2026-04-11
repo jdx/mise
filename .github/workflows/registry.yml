@@ -186,6 +186,7 @@ jobs:
         id: retry
         if: steps.test-tools.outputs.failed_tools != ''
         run: |
+          summary_lines=$(wc -l < "$GITHUB_STEP_SUMMARY")
           docker run --rm \
             -v "$PWD:/mise-src:ro" \
             -v "$PWD/target/debug/mise:/usr/local/bin/mise:ro" \
@@ -195,7 +196,7 @@ jobs:
             -e RUST_BACKTRACE=1 \
             ghcr.io/jdx/mise:e2e \
             mise test-tool ${{ steps.test-tools.outputs.failed_tools }} || true
-          failed_tools=$(grep "Failed Tools" "$GITHUB_STEP_SUMMARY" | sed 's/\*\*Failed Tools\*\*: //' | tr ',' ' ')
+          failed_tools=$(tail -n "+$((summary_lines+1))" "$GITHUB_STEP_SUMMARY" | grep "Failed Tools" | sed 's/\*\*Failed Tools\*\*: //' | tr ',' ' ')
           echo "failed_tools=$failed_tools" >> "$GITHUB_OUTPUT"
       - name: Handle retry failures
         if: steps.retry.outputs.failed_tools != '' && github.head_ref != 'release' && github.ref != 'refs/heads/release'
