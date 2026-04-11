@@ -86,7 +86,7 @@ clap = { version = "4", features = ["env", "derive", "string"] }
 color-eyre = "0.6"
 color-print = "0.3"
 comfy-table = "7"
-confique = { version = "0.3", default-features = false }
+confique = { version = "0.4", default-features = false }
 console = "0.16"
 contracts = "0.6"
 dashmap = "6"
