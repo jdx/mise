@@ -212,39 +212,7 @@ jobs:
         if: steps.retry.outputs.failed_tools != '' && (github.head_ref == 'release' || github.ref == 'refs/heads/release')
         env:
           GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
-          hard_failures=""
-          for tool in ${{ steps.retry.outputs.failed_tools }}; do
-            backend=$(mise tool --json "$tool" 2>/dev/null | jq -r '.backend // empty')
-            repo=""
-            case "$backend" in
-              github:*|aqua:*)
-                repo=$(echo "$backend" | sed 's/^[^:]*://' | sed 's/\[.*//' | cut -d/ -f1-2)
-                ;;
-            esac
-            if [ -z "$repo" ]; then
-              echo "::warning::Ignoring $tool failure — no github/aqua backend found"
-              continue
-            fi
-            published=$(gh api "repos/$repo/releases/latest" --jq '.published_at' 2>/dev/null || true)
-            if [ -z "$published" ]; then
-              echo "::error::$tool: could not fetch latest release for $repo"
-              hard_failures="$hard_failures $tool"
-              continue
-            fi
-            age_days=$(( ($(date +%s) - $(date -d "$published" +%s)) / 86400 ))
-            if [ "$age_days" -lt 7 ]; then
-              echo "::warning::Ignoring $tool failure — latest release of $repo is ${age_days}d old (< 7d grace period)"
-            else
-              echo "::error::$tool: latest release of $repo is ${age_days}d old"
-              hard_failures="$hard_failures $tool"
-            fi
-          done
-          if [ -n "$hard_failures" ]; then
-            echo "Hard failures:$hard_failures"
-            exit 1
-          fi
-          echo "All failures are within the 7-day grace period for new releases."
+        run: mise run test-tool-retry --check-only --grace-period ${{ steps.retry.outputs.failed_tools }}
 
   registry-ci:
     runs-on: ubuntu-latest
