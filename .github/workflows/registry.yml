@@ -18,7 +18,6 @@ env:
   MISE_LOCKFILE: 1
   MISE_USE_VERSIONS_HOST_TRACK: 0
   RUST_BACKTRACE: 1
-  GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
 
 jobs:
   check-changes:
@@ -48,6 +47,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: check-changes
     if: needs.check-changes.outputs.registry-changed == 'true'
+    env:
+      GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
