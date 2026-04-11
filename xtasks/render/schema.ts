@@ -133,6 +133,61 @@ schema["$defs"].settings.properties = settings;
 // Generate task and task_template from task_props to avoid unevaluatedProperties
 // (which Tombi doesn't support) while keeping extends only on tasks, not templates.
 const taskProps = schema["$defs"].task_props;
+const taskOnlyProps = {
+  deny_all: {
+    default: false,
+    description: "block reads, writes, network, and env vars",
+    type: "boolean",
+  },
+  deny_read: {
+    default: false,
+    description: "block filesystem reads",
+    type: "boolean",
+  },
+  deny_write: {
+    default: false,
+    description: "block all filesystem writes",
+    type: "boolean",
+  },
+  deny_net: {
+    default: false,
+    description: "block all network access",
+    type: "boolean",
+  },
+  deny_env: {
+    default: false,
+    description: "block env var inheritance",
+    type: "boolean",
+  },
+  allow_read: {
+    description: "allow reads from specific paths",
+    items: {
+      type: "string",
+    },
+    type: "array",
+  },
+  allow_write: {
+    description: "allow writes to specific paths",
+    items: {
+      type: "string",
+    },
+    type: "array",
+  },
+  allow_net: {
+    description: "allow network to specific hosts",
+    items: {
+      type: "string",
+    },
+    type: "array",
+  },
+  allow_env: {
+    description: "allow specific env vars through",
+    items: {
+      type: "string",
+    },
+    type: "array",
+  },
+};
 
 // task_template: task_props + additionalProperties: false
 schema["$defs"].task_template = {
@@ -146,6 +201,7 @@ schema["$defs"].task_template = {
 const taskObjectVariant = {
   properties: {
     ...taskProps.properties,
+    ...taskOnlyProps,
     extends: {
       description: "name of the task template to extend",
       type: "string",

@@ -25,6 +25,9 @@ EOF
 
 # Create a mise.toml exercising task properties that were previously broken
 cat >"$HOME/workdir/mise.toml" <<'TOML'
+env_file = ".env"
+env_path = "./bin"
+
 [task_templates.base]
 quiet = true
 dir = "{{config_root}}"
@@ -36,6 +39,8 @@ run = "cargo build"
 dir = "{{config_root}}"
 quiet = true
 usage = "build [args]"
+deny_env = true
+allow_read = ["."]
 
 [tasks.lint]
 extends = "base"
