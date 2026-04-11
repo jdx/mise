@@ -1,4 +1,4 @@
-# Ubi Backend
+# Ubi Backend <Badge type="danger" text="deprecated" />
 
 ::: warning
 The ubi backend is **deprecated**. Please use the [github backend](/dev-tools/backends/github) instead.
