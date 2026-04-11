@@ -23,7 +23,9 @@ impl Toolset {
     }
 
     /// Like full_env but skips `tools=true` env directives (load_post_env).
-    /// Used for preinstall hooks where tool-dependent env vars aren't available yet.
+    /// Used for preinstall hooks where tool-dependent env vars aren't available yet,
+    /// and for dependency_env where resolving tools=true modules on a partial toolset
+    /// would trigger spurious errors from modules expecting the full PATH.
     pub async fn full_env_without_tools(&self, config: &Arc<Config>) -> Result<EnvMap> {
         let mut env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
         env.extend(self.env_with_path_without_tools(config).await?);
@@ -32,7 +34,8 @@ impl Toolset {
 
     /// Like env_with_path but skips `tools=true` env directives.
     /// Used during tool installation where tool-dependent env vars
-    /// may reference tools that aren't installed yet.
+    /// may reference tools that aren't installed yet, and in
+    /// dependency_env to avoid triggering module hooks on a partial PATH.
     pub async fn env_with_path_without_tools(&self, config: &Arc<Config>) -> Result<EnvMap> {
         let (mut env, add_paths) = self.env(config).await?;
         let mut path_env = PathEnv::from_iter(env::PATH.clone());

@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+
+# Regression test for https://github.com/jdx/mise/discussions/8962
+#
+# When a vfox backend tool is in the toolset, its _exec_env calls
+# dependency_env() which used to call full_env() → load_post_env().
+# That resolved ALL tools=true modules (including fnox-env) with a PATH
+# that only contained dependency-toolset tools — not fnox — causing a
+# spurious "fnox: command not found" warning.
+#
+# The fix changes dependency_env to use full_env_without_tools so it
+# skips tools=true module resolution entirely.
+
+# 1. Install fnox tool and fnox-env plugin
+mise plugins install fnox-env https://github.com/jdx/mise-env-fnox
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+fnox = "latest"
+
+[env]
+_.fnox-env = { tools = true }
+
+[plugins]
+fnox-env = "https://github.com/jdx/mise-env-fnox"
+EOF
+
+mise i
+
+# Verify fnox is installed
+assert "mise x -- fnox --version"
+
+# 2. Create a fake vfox plugin with env_keys hook (triggers dependency_env)
+PLUGIN_NAME="dummy-vfox-trigger"
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/$PLUGIN_NAME"
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'EOFMETA'
+PLUGIN = {}
+PLUGIN.name = "dummy-vfox-trigger"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = ""
+PLUGIN.license = "MIT"
+PLUGIN.description = "Dummy vfox plugin to trigger dependency_env"
+PLUGIN.minRuntimeVersion = "0.3.0"
+EOFMETA
+
+cat >"$PLUGIN_DIR/hooks/available.lua" <<'EOFHOOK'
+function PLUGIN:Available(ctx)
+    return {
+        { version = "1.0.0" }
+    }
+end
+EOFHOOK
+
+cat >"$PLUGIN_DIR/hooks/env_keys.lua" <<'EOFHOOK'
+function PLUGIN:EnvKeys(ctx)
+    return {}
+end
+EOFHOOK
+
+# 3. Fake-install the vfox tool by creating the install directory
+INSTALL_DIR="$MISE_DATA_DIR/installs/$PLUGIN_NAME/1.0.0"
+mkdir -p "$INSTALL_DIR/bin"
+cat >"$INSTALL_DIR/bin/dummy-vfox-trigger" <<'EOFBIN'
+#!/bin/sh
+echo "dummy-vfox-trigger 1.0.0"
+EOFBIN
+chmod +x "$INSTALL_DIR/bin/dummy-vfox-trigger"
+
+# 4. Add the vfox tool to config alongside fnox + fnox-env
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[tools]
+fnox = "latest"
+"vfox:$PLUGIN_NAME" = "1.0.0"
+
+[env]
+_.fnox-env = { tools = true }
+
+[plugins]
+fnox-env = "https://github.com/jdx/mise-env-fnox"
+EOF
+
+# 5. Run mise env and capture stderr — should NOT contain "command not found"
+STDERR_OUTPUT=$(mise env -s bash 2>&1 1>/dev/null || true)
+if echo "$STDERR_OUTPUT" | grep -q "command not found"; then
+	echo "FAIL: Spurious 'command not found' warning in mise env stderr:"
+	echo "$STDERR_OUTPUT"
+	exit 1
+fi
+echo "PASS: No spurious warning from tools=true module during dependency_env"
