@@ -152,9 +152,8 @@ jobs:
         uses: ./.github/actions/fetch-token
         with:
           api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
-      - name: Set GITHUB_TOKEN from pool
-        if: steps.token.outputs.token
-        run: echo "GITHUB_TOKEN=${{ steps.token.outputs.token }}" >> "$GITHUB_ENV"
+      - name: Set pooled token for Docker
+        run: echo "POOL_TOKEN=${{ steps.token.outputs.token }}" >> "$GITHUB_ENV"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: mise
@@ -173,10 +172,13 @@ jobs:
             -v "$PWD:/mise-src:ro" \
             -v "$PWD/target/debug/mise:/usr/local/bin/mise:ro" \
             -v "$GITHUB_STEP_SUMMARY:/tmp/github_summary" \
-            -e GITHUB_TOKEN="${GITHUB_TOKEN:-}" \
+            -e GITHUB_TOKEN="${POOL_TOKEN:-}" \
             -e GITHUB_STEP_SUMMARY=/tmp/github_summary \
             -e TEST_TRANCHE="$TEST_TRANCHE" \
             -e TEST_TRANCHE_COUNT="$TEST_TRANCHE_COUNT" \
+            -e MISE_EXPERIMENTAL=1 \
+            -e MISE_LOCKFILE=1 \
+            -e MISE_USE_VERSIONS_HOST_TRACK=0 \
             -e RUST_BACKTRACE=1 \
             ghcr.io/jdx/mise:e2e \
             mise test-tool ${{ needs.list-changed-tools.outputs.tools == '' && '--all' || needs.list-changed-tools.outputs.tools }} || true
@@ -191,8 +193,11 @@ jobs:
             -v "$PWD:/mise-src:ro" \
             -v "$PWD/target/debug/mise:/usr/local/bin/mise:ro" \
             -v "$GITHUB_STEP_SUMMARY:/tmp/github_summary" \
-            -e GITHUB_TOKEN="${GITHUB_TOKEN:-}" \
+            -e GITHUB_TOKEN="${POOL_TOKEN:-}" \
             -e GITHUB_STEP_SUMMARY=/tmp/github_summary \
+            -e MISE_EXPERIMENTAL=1 \
+            -e MISE_LOCKFILE=1 \
+            -e MISE_USE_VERSIONS_HOST_TRACK=0 \
             -e RUST_BACKTRACE=1 \
             ghcr.io/jdx/mise:e2e \
             mise test-tool ${{ steps.test-tools.outputs.failed_tools }} || true
@@ -207,7 +212,39 @@ jobs:
         if: steps.retry.outputs.failed_tools != '' && (github.head_ref == 'release' || github.ref == 'refs/heads/release')
         env:
           GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
-        run: mise run test-tool-retry --grace-period ${{ steps.retry.outputs.failed_tools }}
+        run: |
+          hard_failures=""
+          for tool in ${{ steps.retry.outputs.failed_tools }}; do
+            backend=$(mise tool --json "$tool" 2>/dev/null | jq -r '.backend // empty')
+            repo=""
+            case "$backend" in
+              github:*|aqua:*)
+                repo=$(echo "$backend" | sed 's/^[^:]*://' | sed 's/\[.*//' | cut -d/ -f1-2)
+                ;;
+            esac
+            if [ -z "$repo" ]; then
+              echo "::warning::Ignoring $tool failure — no github/aqua backend found"
+              continue
+            fi
+            published=$(gh api "repos/$repo/releases/latest" --jq '.published_at' 2>/dev/null || true)
+            if [ -z "$published" ]; then
+              echo "::error::$tool: could not fetch latest release for $repo"
+              hard_failures="$hard_failures $tool"
+              continue
+            fi
+            age_days=$(( ($(date +%s) - $(date -d "$published" +%s)) / 86400 ))
+            if [ "$age_days" -lt 7 ]; then
+              echo "::warning::Ignoring $tool failure — latest release of $repo is ${age_days}d old (< 7d grace period)"
+            else
+              echo "::error::$tool: latest release of $repo is ${age_days}d old"
+              hard_failures="$hard_failures $tool"
+            fi
+          done
+          if [ -n "$hard_failures" ]; then
+            echo "Hard failures:$hard_failures"
+            exit 1
+          fi
+          echo "All failures are within the 7-day grace period for new releases."
 
   registry-ci:
     runs-on: ubuntu-latest
