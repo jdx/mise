@@ -10,7 +10,8 @@
   },
   "packageRules": [
     {
-      "matchPackageNames": ["aws-*"],
+      "description": "AWS SDK requires MSRV 1.91.1, project is 1.88.0. Re-enable when MSRV is bumped.",
+      "matchPackageNames": ["aws-config", "aws-sdk-*"],
       "matchManagers": ["cargo"],
       "enabled": false
     }
