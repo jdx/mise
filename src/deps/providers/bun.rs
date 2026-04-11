@@ -76,29 +76,32 @@ impl DepsProvider for BunDepsProvider {
         self.lockfile_path().is_some()
     }
 
-    fn add_command(&self, package: &str, dev: bool) -> Result<DepsCommand> {
+    fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {
         let mut args = vec!["add".to_string()];
         if dev {
             args.push("--dev".to_string());
         }
-        args.push(package.to_string());
+        args.extend(packages.iter().map(|p| p.to_string()));
 
         Ok(DepsCommand {
             program: "bun".to_string(),
             args,
             env: self.base.config.env.clone(),
             cwd: Some(self.base.config_root()),
-            description: format!("bun add {package}"),
+            description: format!("bun add {}", packages.join(" ")),
         })
     }
 
-    fn remove_command(&self, package: &str) -> Result<DepsCommand> {
+    fn remove_command(&self, packages: &[&str]) -> Result<DepsCommand> {
+        let mut args = vec!["remove".to_string()];
+        args.extend(packages.iter().map(|p| p.to_string()));
+
         Ok(DepsCommand {
             program: "bun".to_string(),
-            args: vec!["remove".to_string(), package.to_string()],
+            args,
             env: self.base.config.env.clone(),
             cwd: Some(self.base.config_root()),
-            description: format!("bun remove {package}"),
+            description: format!("bun remove {}", packages.join(" ")),
         })
     }
 }

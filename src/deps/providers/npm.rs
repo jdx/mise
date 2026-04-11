@@ -58,29 +58,32 @@ impl DepsProvider for NpmDepsProvider {
         self.base.config_root().join("package-lock.json").exists()
     }
 
-    fn add_command(&self, package: &str, dev: bool) -> Result<DepsCommand> {
+    fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {
         let mut args = vec!["install".to_string()];
         if dev {
             args.push("--save-dev".to_string());
         }
-        args.push(package.to_string());
+        args.extend(packages.iter().map(|p| p.to_string()));
 
         Ok(DepsCommand {
             program: "npm".to_string(),
             args,
             env: self.base.config.env.clone(),
             cwd: Some(self.base.config_root()),
-            description: format!("npm install {package}"),
+            description: format!("npm install {}", packages.join(" ")),
         })
     }
 
-    fn remove_command(&self, package: &str) -> Result<DepsCommand> {
+    fn remove_command(&self, packages: &[&str]) -> Result<DepsCommand> {
+        let mut args = vec!["uninstall".to_string()];
+        args.extend(packages.iter().map(|p| p.to_string()));
+
         Ok(DepsCommand {
             program: "npm".to_string(),
-            args: vec!["uninstall".to_string(), package.to_string()],
+            args,
             env: self.base.config.env.clone(),
             cwd: Some(self.base.config_root()),
-            description: format!("npm uninstall {package}"),
+            description: format!("npm uninstall {}", packages.join(" ")),
         })
     }
 }

@@ -58,29 +58,32 @@ impl DepsProvider for YarnDepsProvider {
         self.base.config_root().join("yarn.lock").exists()
     }
 
-    fn add_command(&self, package: &str, dev: bool) -> Result<DepsCommand> {
+    fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {
         let mut args = vec!["add".to_string()];
         if dev {
             args.push("--dev".to_string());
         }
-        args.push(package.to_string());
+        args.extend(packages.iter().map(|p| p.to_string()));
 
         Ok(DepsCommand {
             program: "yarn".to_string(),
             args,
             env: self.base.config.env.clone(),
             cwd: Some(self.base.config_root()),
-            description: format!("yarn add {package}"),
+            description: format!("yarn add {}", packages.join(" ")),
         })
     }
 
-    fn remove_command(&self, package: &str) -> Result<DepsCommand> {
+    fn remove_command(&self, packages: &[&str]) -> Result<DepsCommand> {
+        let mut args = vec!["remove".to_string()];
+        args.extend(packages.iter().map(|p| p.to_string()));
+
         Ok(DepsCommand {
             program: "yarn".to_string(),
-            args: vec!["remove".to_string(), package.to_string()],
+            args,
             env: self.base.config.env.clone(),
             cwd: Some(self.base.config_root()),
-            description: format!("yarn remove {package}"),
+            description: format!("yarn remove {}", packages.join(" ")),
         })
     }
 }

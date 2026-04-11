@@ -152,13 +152,13 @@ pub trait DepsProvider: Debug + Send + Sync {
         })
     }
 
-    /// Command to add a package dependency
-    fn add_command(&self, _package: &str, _dev: bool) -> Result<DepsCommand> {
+    /// Command to add one or more package dependencies
+    fn add_command(&self, _packages: &[&str], _dev: bool) -> Result<DepsCommand> {
         bail!("provider '{}' does not support adding packages", self.id())
     }
 
-    /// Command to remove a package dependency
-    fn remove_command(&self, _package: &str) -> Result<DepsCommand> {
+    /// Command to remove one or more package dependencies
+    fn remove_command(&self, _packages: &[&str]) -> Result<DepsCommand> {
         bail!(
             "provider '{}' does not support removing packages",
             self.id()
@@ -299,23 +299,61 @@ pub fn detect_applicable_providers(project_root: &Path) -> Vec<String> {
     applicable
 }
 
-/// Create a provider on-the-fly for add/remove operations
-pub fn create_provider(ecosystem: &str, project_root: &Path) -> Result<Box<dyn DepsProvider>> {
+/// Create a provider for add/remove operations.
+///
+/// If a `Config` is provided, looks up user-defined settings (env, dir, timeout)
+/// from the `[deps.<ecosystem>]` section. Falls back to defaults otherwise.
+pub fn create_provider(
+    ecosystem: &str,
+    project_root: &Path,
+    config: Option<&crate::config::Config>,
+) -> Result<Box<dyn DepsProvider>> {
     use providers::*;
-    use rule::DepsProviderConfig;
 
-    let config = DepsProviderConfig::default();
+    let provider_config = config
+        .and_then(|c| {
+            c.config_files.values().find_map(|cf| {
+                cf.deps_config()
+                    .and_then(|dc| dc.providers.get(ecosystem).cloned())
+            })
+        })
+        .unwrap_or_default();
+
     match ecosystem {
-        "npm" => Ok(Box::new(NpmDepsProvider::new(project_root, config))),
-        "yarn" => Ok(Box::new(YarnDepsProvider::new(project_root, config))),
-        "pnpm" => Ok(Box::new(PnpmDepsProvider::new(project_root, config))),
-        "bun" => Ok(Box::new(BunDepsProvider::new(project_root, config))),
-        "go" => Ok(Box::new(GoDepsProvider::new(project_root, config))),
-        "pip" => Ok(Box::new(PipDepsProvider::new(project_root, config))),
-        "poetry" => Ok(Box::new(PoetryDepsProvider::new(project_root, config))),
-        "uv" => Ok(Box::new(UvDepsProvider::new(project_root, config))),
-        "bundler" => Ok(Box::new(BundlerDepsProvider::new(project_root, config))),
-        "composer" => Ok(Box::new(ComposerDepsProvider::new(project_root, config))),
+        "npm" => Ok(Box::new(NpmDepsProvider::new(
+            project_root,
+            provider_config,
+        ))),
+        "yarn" => Ok(Box::new(YarnDepsProvider::new(
+            project_root,
+            provider_config,
+        ))),
+        "pnpm" => Ok(Box::new(PnpmDepsProvider::new(
+            project_root,
+            provider_config,
+        ))),
+        "bun" => Ok(Box::new(BunDepsProvider::new(
+            project_root,
+            provider_config,
+        ))),
+        "go" => Ok(Box::new(GoDepsProvider::new(project_root, provider_config))),
+        "pip" => Ok(Box::new(PipDepsProvider::new(
+            project_root,
+            provider_config,
+        ))),
+        "poetry" => Ok(Box::new(PoetryDepsProvider::new(
+            project_root,
+            provider_config,
+        ))),
+        "uv" => Ok(Box::new(UvDepsProvider::new(project_root, provider_config))),
+        "bundler" => Ok(Box::new(BundlerDepsProvider::new(
+            project_root,
+            provider_config,
+        ))),
+        "composer" => Ok(Box::new(ComposerDepsProvider::new(
+            project_root,
+            provider_config,
+        ))),
         _ => bail!("unknown deps provider '{ecosystem}'"),
     }
 }

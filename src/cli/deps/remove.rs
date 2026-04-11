@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use eyre::Result;
 
 use crate::config::{Config, Settings};
@@ -44,12 +46,22 @@ impl DepsRemove {
             .clone()
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
+        // Group packages by ecosystem for batching
+        let mut by_ecosystem: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for spec in &self.packages {
             let (ecosystem, package) = parse_package_spec(spec)?;
-            let provider = crate::deps::create_provider(ecosystem, &project_root)?;
+            by_ecosystem
+                .entry(ecosystem.to_string())
+                .or_default()
+                .push(package.to_string());
+        }
 
-            let cmd = provider.remove_command(package)?;
-            DepsEngine::execute_command(&cmd, &env, None)?;
+        for (ecosystem, packages) in &by_ecosystem {
+            let provider = crate::deps::create_provider(ecosystem, &project_root, Some(&config))?;
+
+            let pkg_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
+            let cmd = provider.remove_command(&pkg_refs)?;
+            DepsEngine::execute_command(&cmd, &env, provider.timeout())?;
         }
 
         Ok(())

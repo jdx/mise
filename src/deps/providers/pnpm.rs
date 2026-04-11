@@ -58,29 +58,32 @@ impl DepsProvider for PnpmDepsProvider {
         self.base.config_root().join("pnpm-lock.yaml").exists()
     }
 
-    fn add_command(&self, package: &str, dev: bool) -> Result<DepsCommand> {
+    fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {
         let mut args = vec!["add".to_string()];
         if dev {
             args.push("--save-dev".to_string());
         }
-        args.push(package.to_string());
+        args.extend(packages.iter().map(|p| p.to_string()));
 
         Ok(DepsCommand {
             program: "pnpm".to_string(),
             args,
             env: self.base.config.env.clone(),
             cwd: Some(self.base.config_root()),
-            description: format!("pnpm add {package}"),
+            description: format!("pnpm add {}", packages.join(" ")),
         })
     }
 
-    fn remove_command(&self, package: &str) -> Result<DepsCommand> {
+    fn remove_command(&self, packages: &[&str]) -> Result<DepsCommand> {
+        let mut args = vec!["remove".to_string()];
+        args.extend(packages.iter().map(|p| p.to_string()));
+
         Ok(DepsCommand {
             program: "pnpm".to_string(),
-            args: vec!["remove".to_string(), package.to_string()],
+            args,
             env: self.base.config.env.clone(),
             cwd: Some(self.base.config_root()),
-            description: format!("pnpm remove {package}"),
+            description: format!("pnpm remove {}", packages.join(" ")),
         })
     }
 }
