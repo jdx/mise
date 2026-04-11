@@ -7,5 +7,12 @@
   },
   "nodenv": {
     "enabled": false
-  }
+  },
+  "packageRules": [
+    {
+      "matchPackageNames": ["aws-*"],
+      "matchManagers": ["cargo"],
+      "enabled": false
+    }
+  ]
 }
