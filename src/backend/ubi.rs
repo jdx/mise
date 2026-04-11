@@ -41,8 +41,8 @@ impl Backend for UbiBackend {
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         deprecated_at!(
-            "2026.5.0",
-            "2027.5.0",
+            "2026.10.0",
+            "2027.10.0",
             "ubi",
             "The ubi backend is deprecated. Use the github backend instead (e.g., github:owner/repo)."
         );
@@ -200,8 +200,8 @@ impl Backend for UbiBackend {
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
         deprecated_at!(
-            "2026.5.0",
-            "2027.5.0",
+            "2026.10.0",
+            "2027.10.0",
             "ubi",
             "The ubi backend is deprecated. Use the github backend instead (e.g., github:owner/repo)."
         );
