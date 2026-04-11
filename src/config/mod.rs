@@ -878,6 +878,7 @@ impl Config {
 }
 
 fn configs_at_root<'a>(dir: &Path, config_files: &'a ConfigMap) -> Vec<&'a Arc<dyn ConfigFile>> {
+    // Highest precedence config files are returned first.
     let mut configs: Vec<&'a Arc<dyn ConfigFile>> = DEFAULT_CONFIG_FILENAMES
         .iter()
         .rev()
@@ -2365,11 +2366,10 @@ async fn load_file_tasks(
 pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBuf> {
     let configs = configs_at_root(dir, config_files);
 
-    // Find the first config that has explicit task_config.includes
+    // Find the highest-precedence config that has explicit task_config.includes
     // and resolve paths relative to that config file's directory
     let (includes, resolve_dir) = configs
         .iter()
-        .rev()
         .find_map(|cf| {
             cf.task_config().includes.clone().map(|includes| {
                 // Resolve relative paths from the config root, not the config file's directory
@@ -2404,7 +2404,6 @@ pub async fn load_tasks_in_dir(
 
     let git_includes: Vec<String> = configs
         .iter()
-        .rev()
         .find_map(|cf| cf.task_config().includes.clone())
         .unwrap_or_default()
         .into_iter()
@@ -2417,11 +2416,8 @@ pub async fn load_tasks_in_dir(
         config_tasks.extend(load_config_tasks(config, (*cf).clone(), &dir, templates).await?);
     }
 
-    // Find task_config.dir from the nearest config that defines it
-    let task_config_dir = configs
-        .iter()
-        .rev()
-        .find_map(|cf| cf.task_config().dir.clone());
+    // Find task_config.dir from the highest-precedence config that defines it
+    let task_config_dir = configs.iter().find_map(|cf| cf.task_config().dir.clone());
 
     let mut file_tasks = vec![];
     for p in task_includes_for_dir(dir, config_files) {
