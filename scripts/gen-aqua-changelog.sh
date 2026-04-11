@@ -91,7 +91,7 @@ RELEASE_TAGS="$(release_tags)"
 
 echo "$HEADING_LEVEL 📦 Aqua Registry"
 echo ""
-echo "Updated [aqua-registry](https://github.com/$REPO): \`$OLD_TAG\` -> \`$NEW_TAG\`."
+echo "Updated [aqua-registry](https://github.com/$REPO): [$OLD_TAG](https://github.com/$REPO/releases/tag/$OLD_TAG) -> [$NEW_TAG](https://github.com/$REPO/releases/tag/$NEW_TAG)."
 echo ""
 echo "Changelog copied from [aqua-registry releases](https://github.com/$REPO/releases)."
 echo ""
