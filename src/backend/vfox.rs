@@ -51,9 +51,15 @@ impl Backend for VfoxBackend {
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
-        let deps = self
-            .metadata_deps
-            .get_or_init(|| self.load_metadata_deps().unwrap_or_default());
+        let deps = self.metadata_deps.get_or_init(|| {
+            self.load_metadata_deps().unwrap_or_else(|e| {
+                warn!(
+                    "failed to load vfox plugin metadata deps for {}: {e}",
+                    self.pathname
+                );
+                vec![]
+            })
+        });
         Ok(deps.iter().map(|s| s.as_str()).collect())
     }
 
