@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubesphere
+    repo_name: kubeeye
+    asset: kubeeye-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
+    description: KubeEye aims to find various problems on Kubernetes, such as application misconfiguration, unhealthy cluster components and node problems
+    supported_envs:
+      - linux
+    files:
+      - name: kubeeye
+        src: ke
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    version_constraint: semver("< 1.0.0")
+    version_overrides:
+      - version_constraint: semver(">= 1.0.0")
+        error_message: |
+          kubeeye isn't released pre-built binaries anymore.

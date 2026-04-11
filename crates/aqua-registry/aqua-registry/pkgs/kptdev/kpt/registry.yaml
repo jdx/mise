@@ -1,0 +1,174 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kptdev
+    repo_name: kpt
+    aliases:
+      - name: GoogleContainerTools/kpt
+    description: Automate Kubernetes Configuration Editing
+    version_filter: |
+      not (Version startsWith "porch/" or Version startsWith "package-examples/")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.33.0")
+        asset: kpt_{{.OS}}_{{.Arch}}_{{trimV .Version}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.37.1")
+        asset: kpt_{{.OS}}_{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.38.1")
+        asset: kpt_{{.OS}}_{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.39.3")
+        asset: kpt_{{.OS}}_{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.0.0-alpha.5")
+        asset: kpt_{{.OS}}_{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.0.0-beta.19")
+        asset: kpt_{{.OS}}_{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.0.0-beta.21")
+        asset: kpt_{{.OS}}_{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        # slsa_provenance:
+        #   # FAILED: SLSA verification failed: source used to generate the binary does not match provenance: expected source 'kptdev/kpt', got 'GoogleContainerTools/kpt'
+        #   type: github_release
+        #   asset: attestation.intoto.jsonl
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: Version == "v1.0.0-beta.22"
+        asset: kpt_{{.OS}}_{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.0.0-beta.35")
+        asset: kpt_{{.OS}}_{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        # slsa_provenance:
+        #   # Verifying artifact /tmp/048982138: FAILED: source used to generate the binary does not match provenance: expected source 'kptdev/kpt', got 'GoogleContainerTools/kpt'
+        #   type: github_release
+        #   asset: multiple.intoto.jsonl
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: Version == "v1.0.0-beta.36"
+        asset: kpt_{{.OS}}_{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: kpt_darwin_{{.Arch}}
+            format: raw
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.0.0-beta.49")
+        asset: kpt_{{.OS}}_{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.0.0-beta.51")
+        asset: kpt_{{.OS}}_{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.0.0-beta.55")
+        asset: kpt_{{.OS}}_{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: kpt_{{.OS}}_{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin

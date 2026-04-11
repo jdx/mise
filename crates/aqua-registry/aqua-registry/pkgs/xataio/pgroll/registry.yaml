@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: xataio
+    repo_name: pgroll
+    description: PostgreSQL zero-downtime migrations made easy
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.1")
+        asset: pgroll.{{.OS}}.{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        replacements:
+          darwin: macos
+          windows: win
+      - version_constraint: "true"
+        asset: pgroll.{{.OS}}.{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+          windows: win
+        checksum:
+          type: github_release
+          asset: pgroll_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

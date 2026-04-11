@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: google
+    repo_name: jsonnet
+    asset: jsonnet-bin-{{.Version}}-linux.tar.gz
+    supported_envs:
+      - linux/amd64
+    description: Jsonnet - The data templating language
+    files:
+      - name: jsonnet
+      - name: jsonnetfmt

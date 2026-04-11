@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: CrociDB
+    repo_name: bulletty
+    description: bulletty is a pretty feed reader for the terminal that stores the articles as Markdown
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.7"
+        asset: bulletty-{{.Version}}-{{.OS}}_x86-64.{{.Format}}
+        format: zip
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "v0.1.8"
+        error_message: This version is unavailable because the asset format is invalid.
+      - version_constraint: Version == "v0.1.9"
+        asset: bulletty-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            replacements: {}
+      - version_constraint: "true"
+        asset: bulletty-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            replacements: {}

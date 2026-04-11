@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: grampelberg
+    repo_name: kty
+    description: The terminal for Kubernetes
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        asset: kuberift-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64
+      - version_constraint: semver("<= 0.2.0")
+        asset: kuberift-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux
+          - darwin/arm64
+      - version_constraint: Version == "v0.2.1"
+        asset: kty-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: linux
+            format: raw
+            asset: kuberift-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - linux
+          # opening tar archive for reading: wrapping file reader: gzip: invalid header
+          # - darwin/arm64
+      - version_constraint: "true"
+        asset: kty-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - linux
+          - darwin/arm64

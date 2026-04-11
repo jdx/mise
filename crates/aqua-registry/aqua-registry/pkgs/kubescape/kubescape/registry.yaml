@@ -1,0 +1,185 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubescape
+    repo_name: kubescape
+    description: Kubescape is an open-source Kubernetes security platform for your IDE, CI/CD pipelines, and clusters. It includes risk analysis, security, compliance, and misconfiguration scanning, saving Kubernetes users and administrators precious time, effort, and resources
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.38")
+        asset: kubescape
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 1.0.97")
+        asset: kubescape-{{.OS}}-latest
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        replacements:
+          darwin: macos
+          linux: ubuntu
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: Version == "v1.0.98"
+        no_asset: true
+      - version_constraint: semver("<= 1.0.107")
+        asset: kubescape-{{.OS}}-latest
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        replacements:
+          darwin: macos
+          linux: ubuntu
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: Version == "v1.0.108"
+        asset: kubescape-{{.OS}}-latest
+        format: raw
+        rosetta2: true
+        replacements:
+          darwin: macos
+          linux: ubuntu
+        supported_envs:
+          - darwin
+          - linux/amd64
+      - version_constraint: semver("<= 2.0.147")
+        asset: kubescape-{{.OS}}-latest
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        replacements:
+          darwin: macos
+          linux: ubuntu
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: semver("<= 2.0.168")
+        asset: kubescape-{{.OS}}-latest
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        replacements:
+          darwin: macos
+          linux: ubuntu
+        checksum:
+          type: github_release
+          asset: kubescape-{{.OS}}-latest-sha256
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: Version == "v2.0.169"
+        asset: kubescape-{{.OS}}-latest
+        format: raw
+        rosetta2: true
+        replacements:
+          darwin: macos
+          linux: ubuntu
+        checksum:
+          type: github_release
+          asset: kubescape-{{.OS}}-latest-sha256
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 2.0.183")
+        asset: kubescape-{{.OS}}-latest
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        replacements:
+          darwin: macos
+          linux: ubuntu
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}-sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: semver("<= 2.1.1")
+        asset: kubescape-{{.OS}}-latest.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        replacements:
+          darwin: macos
+          linux: ubuntu
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: semver("<= 2.2.6")
+        asset: kubescape-{{.OS}}-latest
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        replacements:
+          darwin: macos
+          linux: ubuntu
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: semver("<= 3.0.3")
+        asset: kubescape-{{.OS}}-latest
+        format: raw
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        replacements:
+          darwin: macos
+          linux: ubuntu
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            goarch: arm64
+            asset: kubescape-{{.Arch}}-{{.OS}}-latest
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: semver("<= 3.0.46")
+        asset: kubescape-{{.OS}}-latest.{{.Format}}
+        format: tar.gz
+        complete_windows_ext: false
+        files:
+          - name: kubescape
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          darwin: macos
+          linux: ubuntu
+        overrides:
+          - goarch: arm64
+            asset: kubescape-{{.Arch}}-{{.OS}}-latest.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: "true"
+        asset: kubescape_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.sha256
+          algorithm: sha256

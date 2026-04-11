@@ -1,0 +1,121 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: iawia002
+    repo_name: lux
+    aliases:
+      - name: iawia002/annie
+    description: Fast and simple video download library and CLI tool written in Go
+    asset: lux_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      amd64: x86_64
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+    checksum:
+      type: github_release
+      asset: lux_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 0.17.2")
+    version_overrides:
+      - version_constraint: semver(">= 0.14.0")
+        replacements:
+          amd64: 64-bit
+          arm64: ARM64
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+      - version_constraint: semver(">= 0.12.0")
+        overrides:
+          - goos: windows
+            format: zip
+            replacements:
+              arm64: arm64
+        replacements:
+          amd64: 64-bit
+          arm64: ARM64
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+      - version_constraint: semver(">= 0.11.0")
+        asset: annie_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        files:
+          - name: annie
+        overrides:
+          - goos: windows
+            format: zip
+            replacements:
+              arm64: arm64
+        replacements:
+          amd64: 64-bit
+          arm64: ARM64
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        checksum:
+          type: github_release
+          asset: annie_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver(">= 0.6.6")
+        asset: annie_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        files:
+          - name: annie
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: ARM64
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: 64-bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: annie_{{.Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver(">= 0.6.3")
+        asset: annie_{{.OS}}_{{.Arch}}
+        files:
+          - name: annie
+        format: raw
+        overrides: []
+        replacements: {}
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true
+        checksum:
+          enabled: false
+      - version_constraint: semver("< 0.6.3")
+        asset: annie_{{.OS}}_{{.Arch}}
+        files:
+          - name: annie
+        format: raw
+        overrides: []
+        replacements: {}
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        checksum:
+          enabled: false

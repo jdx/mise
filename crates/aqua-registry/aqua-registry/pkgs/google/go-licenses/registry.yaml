@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: google
+    repo_name: go-licenses
+    description: A lightweight tool to report on the licenses used by a Go package and its dependencies. Highlight! Versioned external URL to licenses can be found at the same time
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver(">= 2.0.0")
+        path: github.com/google/go-licenses/v{{(semver .Version).Major}}
+      - version_constraint: "true"

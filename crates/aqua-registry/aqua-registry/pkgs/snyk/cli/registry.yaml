@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: snyk
+    repo_name: cli
+    description: Snyk CLI scans and monitors your projects for security vulnerabilities
+    files:
+      - name: snyk
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.1036.0"
+        no_asset: true
+      - version_constraint: semver("<= 1.850.0")
+        asset: snyk-{{.OS}}
+        format: raw
+        replacements:
+          windows: win
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.1229.0")
+        asset: snyk-{{.OS}}
+        format: raw
+        replacements:
+          darwin: macos
+          windows: win
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: snyk-{{.OS}}-{{.Arch}}
+      - version_constraint: "true"
+        asset: snyk-{{.OS}}
+        format: raw
+        replacements:
+          darwin: macos
+          windows: win
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: snyk-{{.OS}}-{{.Arch}}
+          - goos: darwin
+            goarch: arm64
+            asset: snyk-{{.OS}}-{{.Arch}}

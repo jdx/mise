@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubernetes
+    repo_name: node-problem-detector
+    description: This is a place for various problem detectors running on the Kubernetes nodes
+    files:
+      - name: node-problem-detector
+        src: bin/{{.FileName}}
+      - name: health-checker
+        src: bin/{{.FileName}}
+      - name: log-counter
+        src: bin/{{.FileName}}
+    version_filter: not (Version matches "-(alpha|beta|rc)$")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.8.11"
+        no_asset: true
+      - version_constraint: Version == "v0.8.8"
+        asset: node-problem-detector-{{.Version}}-{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        supported_envs:
+          - linux/amd64
+          - windows
+        overrides:
+          - goos: windows
+            files:
+              - name: node-problem-detector.exe
+                src: bin/{{.FileName}}
+              - name: health-checker.exe
+                src: bin/{{.FileName}}
+      - version_constraint: Version == "v0.8.12"
+        asset: node-problem-detector-{{.Version}}-{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha512"
+          algorithm: sha512
+        supported_envs:
+          - linux
+          - windows
+        overrides:
+          - goos: windows
+            files:
+              - name: node-problem-detector.exe
+                src: bin/{{.FileName}}
+              - name: health-checker.exe
+                src: bin/{{.FileName}}
+      - version_constraint: Version == "v0.8.13"
+        asset: node-problem-detector-{{.Version}}-{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        supported_envs:
+          - linux
+          - windows
+        overrides:
+          - goos: windows
+            files:
+              - name: node-problem-detector.exe
+                src: bin/{{.FileName}}
+              - name: health-checker.exe
+                src: bin/{{.FileName}}
+      - version_constraint: semver("<= 0.8.7")
+        asset: node-problem-detector-{{.Version}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.8.10")
+        asset: node-problem-detector-{{.Version}}-{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        supported_envs:
+          - linux
+          - windows
+        overrides:
+          - goos: windows
+            files:
+              - name: node-problem-detector.exe
+                src: bin/{{.FileName}}
+              - name: health-checker.exe
+                src: bin/{{.FileName}}
+      - version_constraint: semver("<= 0.8.15")
+        asset: node-problem-detector-{{.Version}}-{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha512"
+          algorithm: sha512
+        supported_envs:
+          - linux
+          - windows
+        overrides:
+          - goos: windows
+            files:
+              - name: node-problem-detector.exe
+                src: bin/{{.FileName}}
+              - name: health-checker.exe
+                src: bin/{{.FileName}}
+      - version_constraint: "true"
+        asset: node-problem-detector-{{.Version}}-{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        supported_envs:
+          - linux
+          - windows
+        overrides:
+          - goos: windows
+            files:
+              - name: node-problem-detector.exe
+                src: bin/{{.FileName}}
+              - name: health-checker.exe
+                src: bin/{{.FileName}}

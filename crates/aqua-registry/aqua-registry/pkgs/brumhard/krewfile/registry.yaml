@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: brumhard
+    repo_name: krewfile
+    description: Declarative krew plugin management
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.6.1")
+        type: go_install
+      - version_constraint: "true"
+        asset: krewfile_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: krewfile_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+          - goos: darwin
+            asset: krewfile_{{.OS}}_all.{{.Format}}

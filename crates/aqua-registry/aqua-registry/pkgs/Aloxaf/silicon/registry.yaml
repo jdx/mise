@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Aloxaf
+    repo_name: silicon
+    description: Create beautiful image of your source code
+    asset: silicon-{{.Version}}-{{.Arch}}-{{.OS}}.tar.gz
+    rosetta2: true
+    replacements:
+      darwin: apple-darwin
+      windows: pc-windows-msvc
+      linux: unknown-linux-gnu
+      amd64: x86_64
+    version_constraint: semver("> 0.5.0")
+    supported_envs:
+      - darwin
+      - amd64
+    version_overrides:
+      - version_constraint: semver("= 0.5.0")
+        supported_envs:
+          - darwin
+          - linux/amd64
+      - version_constraint: "true"
+        replacements:
+          darwin: apple-darwin
+          windows: pc-windows-gnu
+          linux: unknown-linux-gnu
+          amd64: x86_64

@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: suzuki-shunsuke
+    repo_name: rgo
+    description: rgo is a CLI to release a Homebrew-tap recipe, Scoop App Manifest, and a winget manifest built with GoReleaser
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.3")
+        type: github_content
+        path: rgo
+        supported_envs:
+          - darwin
+          - linux
+      - version_constraint: "true"
+        asset: rgo_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: rgo_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+            bundle:
+              type: github_release
+              asset: rgo_{{trimV .Version}}_checksums.txt.bundle
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
+        overrides:
+          - goos: windows
+            format: zip

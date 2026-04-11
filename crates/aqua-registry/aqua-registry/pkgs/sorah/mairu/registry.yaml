@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sorah
+    repo_name: mairu
+    description: on-memory AWS credentials agent and executor
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: mairu-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+          - goos: darwin
+            goarch: amd64
+            asset: mairu-universal-{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin

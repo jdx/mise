@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: microsoft
+    repo_name: ripgrep-prebuilt
+    asset: ripgrep-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    description: Builds ripgrep on Azure Pipelines for multiple platforms and makes the binaries available as Github releases
+    format: tar.gz
+    replacements:
+      darwin: apple-darwin
+      windows: pc-windows-msvc
+      linux: unknown-linux-musl
+      arm64: aarch64
+      amd64: x86_64
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: rg

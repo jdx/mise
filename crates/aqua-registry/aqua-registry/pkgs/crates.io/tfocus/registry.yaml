@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: crates.io/tfocus
+    type: cargo
+    repo_owner: nwiizo
+    repo_name: tfocus
+    description: Terminal UI for Terraform workspace management
+    crate: tfocus

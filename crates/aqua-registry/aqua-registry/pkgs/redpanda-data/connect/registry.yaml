@@ -1,0 +1,112 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: redpanda-data
+    repo_name: connect
+    aliases:
+      - name: Jeffail/benthos
+      - name: benthosdev/benthos
+    description: Fancy stream processing made operationally mundane
+    files:
+      # At v4.28.0, the binary is renamed from benthos to redpanda-connect
+      - name: benthos
+      - name: redpanda-connect
+    version_constraint: "false"
+    version_overrides:
+      # v0.10.7 and v0.11.1 doesn't work
+      - version_constraint: semver("<= 0.11.1") or Version == "v1.7.8"
+        no_asset: true
+      - version_constraint: semver("<= 0.11.1")
+        asset: benthos_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: benthos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 3.7.0")
+        asset: benthos_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: benthos
+        checksum:
+          type: github_release
+          asset: benthos_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 3.43.0-rc1")
+        asset: benthos_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: benthos
+        checksum:
+          type: github_release
+          asset: benthos_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 3.54.1")
+        asset: benthos_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: benthos
+        checksum:
+          type: github_release
+          asset: benthos_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 4.27.0")
+        asset: benthos_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: benthos
+        checksum:
+          type: github_release
+          asset: benthos_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 4.66.1")
+        asset: redpanda-connect_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: redpanda-connect
+        checksum:
+          type: github_release
+          asset: redpanda-connect_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: Version == "v4.67.5"
+        asset: redpanda-connect_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: redpanda-connect
+        checksum:
+          type: github_release
+          asset: redpanda-connect_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: Version == "v4.68.0"
+        asset: redpanda-connect_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: redpanda-connect
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: redpanda-connect_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: redpanda-connect
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256

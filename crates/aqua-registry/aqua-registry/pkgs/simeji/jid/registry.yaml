@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: simeji
+    repo_name: jid
+    asset: jid_{{.OS}}_{{.Arch}}.zip
+    description: json incremental digger
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    rosetta2: true
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

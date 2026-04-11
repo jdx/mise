@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: JohnnyMorganz
+    repo_name: StyLua
+    description: A Lua code formatter
+    files:
+      - name: stylua
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.12.5")
+        asset: stylua-{{trimV .Version}}-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+          windows: win64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.13.1")
+        asset: stylua-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+          windows: win64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.14.3")
+        asset: stylua-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+          windows: win64
+        overrides:
+          - goos: darwin
+            goarch: arm64
+            asset: stylua-{{.OS}}-{{.Arch}}.{{.Format}}
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.19.1")
+        asset: stylua-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+      - version_constraint: "true"
+        asset: stylua-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: linux
+            goarch: amd64
+            asset: stylua-{{.OS}}-{{.Arch}}-musl.{{.Format}}

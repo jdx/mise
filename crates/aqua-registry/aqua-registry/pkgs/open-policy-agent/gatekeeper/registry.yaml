@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: open-policy-agent
+    repo_name: gatekeeper
+    description: "Gatekeeper - Policy Controller for Kubernetes"
+    files:
+      - name: gator
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v3.12.0-rc.0" || semver("<= 3.7.0-beta.2")
+        no_asset: true
+      - version_constraint: "true"
+        asset: gator-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: gator
+        checksum:
+          type: github_release
+          asset: sha256sums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin

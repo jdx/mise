@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jacobdeichert
+    repo_name: mask
+    description: A CLI task runner defined by a simple markdown file
+    asset: mask-{{.SemVer}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: zip
+    overrides:
+      - goos: darwin
+        replacements:
+          arm64: aarch64
+    replacements:
+      amd64: x86_64
+      darwin: apple-darwin
+      linux: unknown-linux-musl
+      windows: pc-windows-msvc
+    files:
+      - name: mask
+        src: mask-{{.SemVer}}-{{.Arch}}-{{.OS}}/mask
+    supported_envs:
+      - darwin
+      - amd64
+    version_prefix: mask/
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha256"
+      algorithm: sha256
+    version_constraint: semver(">= 0.11.4")
+    version_overrides:
+      - version_constraint: semver(">= 0.11.3")
+        asset: mask-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        version_prefix: ""
+        checksum:
+          enabled: false
+      - version_constraint: semver(">= 0.11.2")
+        asset: mask-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        version_prefix: ""
+        checksum:
+          enabled: false
+      - version_constraint: semver(">= 0.11.1")
+        asset: mask-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+          - darwin
+        version_prefix: ""
+        checksum:
+          enabled: false
+      - version_constraint: semver("< 0.11.1")
+        asset: mask-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        overrides: []
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+          - darwin
+        version_prefix: ""
+        rosetta2: true
+        checksum:
+          enabled: false

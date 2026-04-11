@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: ryan-pip
+    repo_name: acli-versions
+    name: atlassian.com/acli
+    description: Software to interact with Atlassian Cloud from the terminal
+    link: https://developer.atlassian.com/cloud/acli/
+    version_source: github_tag
+    url: https://acli.atlassian.com/{{.OS}}/{{.Version}}/acli_{{.Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    format: tar.gz
+    files:
+      - name: acli
+        src: acli_{{.Version}}_{{.OS}}_{{.Arch}}/acli
+    supported_envs:
+      - linux/amd64
+      - linux/arm64
+      - darwin/amd64
+      - darwin/arm64

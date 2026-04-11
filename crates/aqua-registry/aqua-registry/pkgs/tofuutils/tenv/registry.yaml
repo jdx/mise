@@ -1,0 +1,160 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: tofuutils
+    repo_name: tenv
+    description: OpenTofu / Terraform version manager
+    files:
+      - name: tenv
+      - name: terraform
+      - name: tofu
+      - name: terragrunt
+      - name: tf
+      - name: atmos
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.5")
+        asset: tenv_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: tenv
+          - name: terraform
+          - name: tofu
+        checksum:
+          type: github_release
+          asset: tenv_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: Version == "v1.0.6"
+        asset: tenv_.{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: tenv
+          - name: terraform
+          - name: tofu
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          enabled: false
+      - version_constraint: Version == "v1.0.7"
+        asset: tenv_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: tenv
+          - name: terraform
+          - name: tofu
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: tenv_{{.Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.1.1")
+        # 1.0.8 terragrunt
+        asset: tenv_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: tenv
+          - name: terraform
+          - name: tofu
+          - name: terragrunt
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: tenv_{{.Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.10.2")
+        # 1.2.0 tf
+        asset: tenv_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: tenv
+          - name: terraform
+          - name: tofu
+          - name: terragrunt
+          - name: tf
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: tenv_{{.Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.11.19")
+        # 1.11.0 atmos
+        asset: tenv_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: tenv
+          - name: terraform
+          - name: tofu
+          - name: terragrunt
+          - name: tf
+          - name: atmos
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: tenv_{{.Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: tenv_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: tenv
+          - name: terraform
+          - name: tofu
+          - name: terragrunt
+          - name: tf
+          - name: atmos
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: tenv_{{.Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - https://github.com/tofuutils/tenv/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/tofuutils/tenv/releases/download/{{.Version}}/tenv_{{.Version}}_checksums.txt.sig
+              - --certificate
+              - https://github.com/tofuutils/tenv/releases/download/{{.Version}}/tenv_{{.Version}}_checksums.txt.pem

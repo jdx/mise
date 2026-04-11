@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: cloudflare/cfssl/cfssljson
+    type: github_release
+    repo_owner: cloudflare
+    repo_name: cfssl
+    description: "CFSSL: Cloudflare's PKI and TLS toolkit"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.2.0")
+        asset: cfssljson_{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          arm64: arm
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+      - version_constraint: semver("<= 1.3.4")
+        no_asset: true
+      - version_constraint: semver("<= 1.6.3")
+        asset: cfssljson_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: cfssl_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: cfssljson_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: cfssl_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

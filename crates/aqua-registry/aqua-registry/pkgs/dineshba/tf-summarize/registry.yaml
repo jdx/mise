@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: dineshba
+    repo_name: tf-summarize
+    description: A command-line utility to print the summary of the terraform plan
+    asset: tf-summarize_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    checksum:
+      type: github_release
+      asset: tf-summarize_SHA256SUMS
+      algorithm: sha256
+    version_constraint: semver(">= 0.3.6")
+    version_overrides:
+      - version_constraint: semver(">= 0.2.5")
+        format: zip
+        overrides: []
+      - version_constraint: semver(">= 0.2.0")
+        format: zip
+        overrides: []
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver(">= 0.0.2")
+        asset: terraform-plan-summary_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        overrides: []
+        files:
+          - name: tf-plan-summarize
+        supported_envs:
+          - linux
+          - darwin
+        checksum:
+          type: github_release
+          asset: terraform-plan-summary_SHA256SUMS
+          algorithm: sha256
+      - version_constraint: Version == "v0.0.1"
+        asset: terraform-plan-summary_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        overrides: []
+        files:
+          - name: terraform-plan-summarize
+            src: terraform-plan-summary
+        supported_envs:
+          - linux
+          - darwin
+        checksum:
+          type: github_release
+          asset: terraform-plan-summary_SHA256SUMS
+          algorithm: sha256

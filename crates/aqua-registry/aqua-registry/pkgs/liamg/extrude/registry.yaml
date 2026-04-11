@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: liamg
+    repo_name: extrude
+    description: ":detective: Analyse binaries for missing security features, information disclosure and more"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: extrude-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: extrude_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

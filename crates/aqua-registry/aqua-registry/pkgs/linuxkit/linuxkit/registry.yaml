@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: linuxkit
+    repo_name: linuxkit
+    description: A toolkit for building secure, portable and lean operating systems for containers
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.8"
+        asset: linuxkit-linux-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.7.0")
+        asset: linuxkit-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: "true"
+        asset: linuxkit-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

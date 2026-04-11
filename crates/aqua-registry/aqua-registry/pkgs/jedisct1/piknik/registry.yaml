@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jedisct1
+    repo_name: piknik
+    description: Copy/paste anything over the network
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.3")
+        asset: piknik-{{.OS}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: macos
+          windows: win64
+        files:
+          - name: piknik
+            src: "{{.OS}}/piknik"
+        overrides:
+          - goos: linux
+            asset: piknik-{{.OS}}_{{.Arch}}-{{.Version}}.{{.Format}}
+            replacements:
+              amd64: x86_64
+            files:
+              - name: piknik
+                src: "{{.OS}}-{{.Arch}}/piknik"
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: piknik-{{.OS}}_{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: macos
+          windows: win64
+        files:
+          - name: piknik
+            src: "{{.OS}}/piknik"
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+            files:
+              - name: piknik
+                src: "{{.OS}}-{{.Arch}}/piknik"
+          - goos: darwin
+            asset: piknik-{{.OS}}-{{.Version}}.{{.Format}}
+          - goos: windows
+            format: zip
+            asset: piknik-{{.OS}}-{{.Version}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

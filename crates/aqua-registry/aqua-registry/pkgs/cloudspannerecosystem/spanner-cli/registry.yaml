@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: cloudspannerecosystem
+    repo_name: spanner-cli
+    description: Interactive command line tool for Cloud Spanner

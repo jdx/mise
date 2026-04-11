@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: yonaskolb
+    repo_name: XcodeGen
+    description: A Swift command line tool for generating your Xcode project
+    asset: xcodegen.zip
+    files:
+      - name: xcodegen
+        src: xcodegen/bin/xcodegen
+    supported_envs:
+      - darwin

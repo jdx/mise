@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: aptly-dev
+    repo_name: aptly
+    description: aptly - Debian repository management tool
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.3.0")
+        no_asset: true
+      - version_constraint: semver("<= 1.5.0")
+        asset: aptly_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        files:
+          - name: aptly
+            src: "{{.AssetWithoutExt}}/aptly"
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: aptly_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: aptly
+            src: "{{.AssetWithoutExt}}/aptly"
+        supported_envs:
+          - linux
+          - darwin

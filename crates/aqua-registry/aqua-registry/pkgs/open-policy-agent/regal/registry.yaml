@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: open-policy-agent
+    repo_name: regal
+    aliases:
+      - name: StyraInc/regal
+      - name: StyraOSS/regal
+    description: Regal is a linter for Rego, with the goal of making your Rego magnificent
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: regal_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

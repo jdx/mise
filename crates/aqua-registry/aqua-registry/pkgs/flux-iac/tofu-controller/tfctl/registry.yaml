@@ -1,0 +1,104 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: flux-iac/tofu-controller/tfctl
+    type: github_release
+    repo_owner: flux-iac
+    repo_name: tofu-controller
+    aliases:
+      - name: weaveworks/tf-controller
+    description: A GitOps OpenTofu and Terraform controller for Flux
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.9.4")
+        no_asset: true
+      - version_constraint: semver("<= 0.15.1")
+        asset: tfctl_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: tf-controller_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/flux-iac/tofu-controller/releases/download/{{.Version}}/tf-controller_{{trimV .Version}}_checksums.txt.pem
+              - --certificate-identity
+              - https://github.com/weaveworks/tf-controller/.github/workflows/release.yaml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/flux-iac/tofu-controller/releases/download/{{.Version}}/tf-controller_{{trimV .Version}}_checksums.txt.sig
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.16.0-rc.4")
+        asset: tfctl_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: tf-controller_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/flux-iac/tofu-controller/releases/download/{{.Version}}/tf-controller_{{trimV .Version}}_checksums.txt.pem
+              - --certificate-identity
+              - https://github.com/flux-iac/tofu-controller/.github/workflows/release.yaml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/flux-iac/tofu-controller/releases/download/{{.Version}}/tf-controller_{{trimV .Version}}_checksums.txt.sig
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.16.0-rc.7")
+        asset: tfctl_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: tofu-controller_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/flux-iac/tofu-controller/releases/download/{{.Version}}/tofu-controller_{{trimV .Version}}_checksums.txt.pem
+              - --certificate-identity
+              - https://github.com/flux-iac/tofu-controller/.github/workflows/release.yaml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/flux-iac/tofu-controller/releases/download/{{.Version}}/tofu-controller_{{trimV .Version}}_checksums.txt.sig
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: tfctl_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: tofu-controller_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: tofu-controller_{{trimV .Version}}_checksums.txt.sigstore.json
+            opts:
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --certificate-identity
+              - https://github.com/flux-iac/tofu-controller/.github/workflows/release.yaml@refs/tags/{{.Version}}
+        supported_envs:
+          - linux
+          - darwin

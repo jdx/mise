@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: planetscale
+    repo_name: cli
+    asset: pscale_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: The CLI for PlanetScale Database
+    replacements:
+      darwin: macOS
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: pscale
+    checksum:
+      type: github_release
+      asset: pscale_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

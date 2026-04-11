@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_archive
+    repo_owner: tfutils
+    repo_name: tfenv
+    description: Terraform version manager
+    supported_envs:
+      - darwin
+      - linux
+    files:
+      - name: tfenv
+        src: tfenv-{{trimV .Version}}/bin/tfenv
+      - name: terraform
+        src: tfenv-{{trimV .Version}}/bin/terraform

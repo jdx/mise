@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mattn
+    repo_name: memo
+    description: Memo Life For You
+    rosetta2: true
+    supported_envs:
+      - darwin
+      - amd64
+    asset: memo_{{.Version}}_{{.OS}}_amd64.{{.Format}}
+    files:
+      - name: memo
+        src: memo_{{.Version}}_{{.OS}}_amd64/memo
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz

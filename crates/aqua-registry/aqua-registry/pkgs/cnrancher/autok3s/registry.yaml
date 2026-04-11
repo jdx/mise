@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cnrancher
+    repo_name: autok3s
+    description: Run K3s Everywhere
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.4.7-rc2")
+        asset: autok3s_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: autok3s_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256

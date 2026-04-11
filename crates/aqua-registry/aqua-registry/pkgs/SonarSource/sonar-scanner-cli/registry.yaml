@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: SonarSource
+    repo_name: sonar-scanner-cli
+    description: Scanner CLI for SonarQube (Server, Cloud)
+    files:
+      - name: sonar-scanner
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 4.1.0")
+        no_asset: true
+      - version_constraint: semver("< 6.1.0")
+        url: https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-{{.SemVer}}-{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: sonar-scanner
+            src: sonar-scanner-{{.SemVer}}-{{.OS}}-{{.Arch}}/bin/sonar-scanner
+        replacements:
+          darwin: macosx
+        overrides:
+          - goos: windows
+            files:
+              - name: sonar-scanner.bat
+                src: sonar-scanner-{{.SemVer}}-{{.OS}}-{{.Arch}}/bin/sonar-scanner.bat
+      - version_constraint: "true"
+        url: https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-{{.SemVer}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: sonar-scanner
+            src: sonar-scanner-{{.SemVer}}-{{.OS}}-{{.Arch}}/bin/sonar-scanner
+        replacements:
+          darwin: macosx
+          amd64: x64
+          arm64: aarch64
+        overrides:
+          - goos: windows
+            files:
+              - name: sonar-scanner.bat
+                src: sonar-scanner-{{.SemVer}}-{{.OS}}-{{.Arch}}/bin/sonar-scanner.bat

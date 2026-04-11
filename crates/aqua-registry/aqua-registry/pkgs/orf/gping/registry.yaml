@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: orf
+    repo_name: gping
+    description: Ping, but with a graph
+    version_filter: |
+      not (Version startsWith "pinger-")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.2.0")
+        asset: gping-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v1.2.1"
+        asset: gping-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          windows: Windows
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: Linux
+          - goos: linux
+            goarch: arm64
+            asset: gping-{{.Arch}}-{{.OS}}.{{.Format}}
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-musl
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 1.18.0")
+        version_prefix: gping-
+        asset: gping-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          windows: Windows
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: Linux
+          - goos: linux
+            goarch: arm64
+            asset: gping-{{.Arch}}-{{.OS}}.{{.Format}}
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-musl
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        version_prefix: gping-
+        asset: gping-{{.OS}}-gnu-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        overrides:
+          - goos: darwin
+            asset: gping-{{.OS}}-{{.Arch}}.{{.Format}}
+          - goos: windows
+            format: zip
+            asset: gping-{{.OS}}-msvc-{{.Arch}}.{{.Format}}

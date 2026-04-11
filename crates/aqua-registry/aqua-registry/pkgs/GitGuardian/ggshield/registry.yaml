@@ -1,0 +1,85 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: GitGuardian
+    repo_name: ggshield
+    description: Detect and validate 500+ types of hardcoded secrets with advanced checks. Use it as a pre-commit hook, GitHub Action, or CLI for proactive secret detection and security
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.26.0")
+        no_asset: true
+      - version_constraint: semver("<= 1.28.0")
+        asset: ggshield-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: pkg
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        overrides:
+          - goos: linux
+            format: tar.gz
+            files:
+              - name: ggshield
+                src: ggshield-{{trimV .Version}}-{{.Arch}}-{{.OS}}/ggshield
+          - goos: darwin
+            format: pkg
+            files:
+              - name: ggshield
+                src: Payload/opt/gitguardian/ggshield-{{trimV .Version}}/ggshield
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 1.30.2")
+        asset: ggshield-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            format: tar.gz
+            files:
+              - name: ggshield
+                src: ggshield-{{trimV .Version}}-{{.Arch}}-{{.OS}}/ggshield
+          - goos: darwin
+            format: pkg
+            files:
+              - name: ggshield
+                src: Payload/opt/gitguardian/ggshield-{{trimV .Version}}/ggshield
+          - goos: windows
+            format: zip
+            files:
+              - name: ggshield
+                src: ggshield-{{trimV .Version}}-{{.Arch}}-{{.OS}}/ggshield.exe
+        supported_envs:
+          - darwin
+          - windows/amd64
+          - linux/amd64
+      - version_constraint: "true"
+        asset: ggshield-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: ggshield
+            src: ggshield-{{trimV .Version}}-{{.Arch}}-{{.OS}}/ggshield
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: ggshield
+                src: ggshield-{{trimV .Version}}-{{.Arch}}-{{.OS}}/ggshield.exe
+          - goos: linux
+            files:
+              - name: ggshield
+                src: ggshield-{{trimV .Version}}-{{.Arch}}-{{.OS}}/ggshield
+        supported_envs:
+          - darwin
+          - windows/amd64
+          - linux/amd64

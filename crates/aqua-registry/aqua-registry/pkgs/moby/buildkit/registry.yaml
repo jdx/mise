@@ -1,0 +1,128 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: moby
+    repo_name: buildkit
+    description: concurrent, cache-efficient, and Dockerfile-agnostic builder toolkit
+    files:
+      - name: buildctl
+        src: bin/{{.FileName}}
+    version_filter: not (Version matches "-(alpha|beta|rc)")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.8.3")
+        asset: buildkit-{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            goarch: amd64
+            files:
+              - name: buildctl
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-aarch64
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-arm
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-i386
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-ppc64le
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-riscv64
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-s390x
+                src: bin/{{.FileName}}
+              - name: buildkit-runc
+                src: bin/{{.FileName}}
+              - name: buildkitd
+                src: bin/{{.FileName}}
+          - goos: linux
+            goarch: arm64
+            files:
+              - name: buildctl
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-arm
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-i386
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-ppc64le
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-riscv64
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-s390x
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-x86_64
+                src: bin/{{.FileName}}
+              - name: buildkit-runc
+                src: bin/{{.FileName}}
+              - name: buildkitd
+                src: bin/{{.FileName}}
+      - version_constraint: "true"
+        asset: buildkit-{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: linux
+            goarch: amd64
+            files:
+              - name: buildctl
+                src: bin/{{.FileName}}
+              - name: buildkit-cni-bridge
+                src: bin/{{.FileName}}
+              - name: buildkit-cni-firewall
+                src: bin/{{.FileName}}
+              - name: buildkit-cni-host-local
+                src: bin/{{.FileName}}
+              - name: buildkit-cni-loopback
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-aarch64
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-arm
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-i386
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-ppc64le
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-riscv64
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-s390x
+                src: bin/{{.FileName}}
+              - name: buildkit-runc
+                src: bin/{{.FileName}}
+              - name: buildkitd
+                src: bin/{{.FileName}}
+          - goos: linux
+            goarch: arm64
+            files:
+              - name: buildctl
+                src: bin/{{.FileName}}
+              - name: buildkit-cni-bridge
+                src: bin/{{.FileName}}
+              - name: buildkit-cni-firewall
+                src: bin/{{.FileName}}
+              - name: buildkit-cni-host-local
+                src: bin/{{.FileName}}
+              - name: buildkit-cni-loopback
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-arm
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-i386
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-ppc64le
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-riscv64
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-s390x
+                src: bin/{{.FileName}}
+              - name: buildkit-qemu-x86_64
+                src: bin/{{.FileName}}
+              - name: buildkit-runc
+                src: bin/{{.FileName}}
+              - name: buildkitd
+                src: bin/{{.FileName}}
+          - goos: windows
+            files:
+              - name: buildctl
+                src: bin/{{.FileName}}
+              - name: buildkitd
+                src: bin/{{.FileName}}

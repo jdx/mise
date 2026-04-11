@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mislav
+    repo_name: hub
+    aliases:
+      - name: github/hub
+    rosetta2: true
+    asset: hub-{{.OS}}-{{.Arch}}-{{trimV .Version}}.{{.Format}}
+    description: A command-line tool that makes git easier to use with GitHub
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    format: tgz
+    overrides:
+      - goos: windows
+        format: zip
+        files:
+          - name: hub
+            src: bin/hub.exe
+    files:
+      - name: hub
+        src: hub-{{.OS}}-{{.Arch}}-{{trimV .Version}}/bin/hub

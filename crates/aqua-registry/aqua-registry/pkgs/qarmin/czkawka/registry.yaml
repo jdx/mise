@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: qarmin
+    repo_name: czkawka
+    description: Multi functional app to find duplicates, empty folders, similar images etc
+    version_filter: Version != "Nightly"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "1.0.1"
+        asset: "{{.OS}}_czkawka_cli"
+        format: raw
+        replacements:
+          darwin: MAC
+          linux: LINUX
+          windows: WINDOWS
+        overrides:
+          - goos: darwin
+            asset: "{{.OS}}_OS_ACHTUNG_czkawka_cli"
+          - goos: windows
+            asset: "{{.OS}}_ACHTUNG_czkawka_cli"
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "1.3.0"
+        asset: "{{.OS}}_czkawka_cli"
+        format: raw
+        replacements:
+          darwin: mac
+        overrides:
+          - goos: windows
+            asset: "{{.OS}}czkawka_cli"
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.0.0")
+        asset: czkawka_cli
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 2.3.0")
+        asset: "{{.OS}}_czkawka_cli"
+        format: raw
+        replacements:
+          darwin: mac
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.3.2")
+        no_asset: true
+      - version_constraint: semver("<= 9.0.0")
+        asset: "{{.OS}}_czkawka_cli"
+        format: raw
+        replacements:
+          darwin: mac
+        overrides:
+          - envs:
+              - darwin/arm64
+              - linux/arm64
+            asset: "{{.OS}}_czkawka_cli_arm"
+      - version_constraint: "true"
+        asset: "{{.OS}}_czkawka_cli_{{.Arch}}"
+        format: raw
+        overrides:
+          - goos: windows
+            asset: "{{.OS}}_czkawka_cli"
+        replacements:
+          amd64: x86_64
+          darwin: mac

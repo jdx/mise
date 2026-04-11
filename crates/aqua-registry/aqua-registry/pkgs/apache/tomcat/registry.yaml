@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: apache
+    repo_name: tomcat
+    description: Apache Tomcat
+    version_source: github_tag
+    format: tar.gz
+    files:
+      - name: catalina.sh
+        src: apache-tomcat-{{.SemVer}}/bin/catalina.sh
+    overrides:
+      - envs:
+          - windows
+        files:
+          - name: catalina.bat
+            src: apache-tomcat-{{.SemVer}}/bin/catalina.bat
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 9.0.0")
+        no_asset: true
+      - version_constraint: semver("< 9.0.2")
+        url: https://archive.apache.org/dist/tomcat/tomcat-9/v{{.SemVer}}/bin/apache-tomcat-{{.SemVer}}.{{.Format}}
+        checksum:
+          type: http
+          url: https://archive.apache.org/dist/tomcat/tomcat-9/v{{.SemVer}}/bin/apache-tomcat-{{.SemVer}}.{{.Format}}.md5
+          file_format: regexp
+          algorithm: md5
+          pattern:
+            checksum: ^(\b[A-Fa-f0-9]{32}\b)
+      - version_constraint: semver("< 10.0.0")
+        url: https://archive.apache.org/dist/tomcat/tomcat-9/v{{.SemVer}}/bin/apache-tomcat-{{.SemVer}}.{{.Format}}
+        checksum:
+          type: http
+          url: https://archive.apache.org/dist/tomcat/tomcat-9/v{{.SemVer}}/bin/apache-tomcat-{{.SemVer}}.{{.Format}}.sha512
+          file_format: regexp
+          algorithm: sha512
+          pattern:
+            checksum: ^(\b[A-Fa-f0-9]{128}\b)
+      - version_constraint: semver("< 11.0.0")
+        url: https://archive.apache.org/dist/tomcat/tomcat-10/v{{.SemVer}}/bin/apache-tomcat-{{.SemVer}}.{{.Format}}
+        checksum:
+          type: http
+          url: https://archive.apache.org/dist/tomcat/tomcat-10/v{{.SemVer}}/bin/apache-tomcat-{{.SemVer}}.{{.Format}}.sha512
+          file_format: regexp
+          algorithm: sha512
+          pattern:
+            checksum: ^(\b[A-Fa-f0-9]{128}\b)
+      - version_constraint: semver("< 12.0.0")
+        url: https://archive.apache.org/dist/tomcat/tomcat-11/v{{.SemVer}}/bin/apache-tomcat-{{.SemVer}}.{{.Format}}
+        checksum:
+          type: http
+          url: https://archive.apache.org/dist/tomcat/tomcat-11/v{{.SemVer}}/bin/apache-tomcat-{{.SemVer}}.{{.Format}}.sha512
+          file_format: regexp
+          algorithm: sha512
+          pattern:
+            checksum: ^(\b[A-Fa-f0-9]{128}\b)
+      - version_constraint: "true"
+        no_asset: true

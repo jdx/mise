@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: haskell
+    repo_name: ghcup-hs
+    url: https://downloads.haskell.org/~ghcup/{{trimV .Version}}/{{.Arch}}-{{.OS}}-ghcup-{{trimV .Version}}
+    format: raw
+    link: https://www.haskell.org/ghcup/
+    description: GHCup is an installer for the general purpose language Haskell
+    replacements:
+      arm64: aarch64
+      amd64: x86_64
+      darwin: apple-darwin
+    files:
+      - name: ghcup
+        src: "{{.Arch}}-{{.OS}}-ghcup-{{trimV .Version}}"
+    supported_envs:
+      - linux
+      - darwin

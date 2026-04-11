@@ -1,0 +1,181 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: bvaisvil
+    repo_name: zenith
+    description: "Zenith - sort of like top or htop but with zoom-able charts, CPU, GPU, network, and disk usage"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.5.6"
+        asset: "{{.Arch}}-{{.OS}}.{{.Format}}"
+        format: tar.gz
+        replacements:
+          darwin: MacOS
+        files:
+          - name: zenith
+            src: "{{.AssetWithoutExt}}/zenith"
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+          - goos: darwin
+            asset: "{{.OS}}.{{.Format}}"
+            files:
+              - name: zenith
+                src: macos/zenith
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "0.13.1"
+        asset: zenith.{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tgz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "0.14.0"
+        asset: zenith.{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tgz
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "0.14.1"
+        asset: zenith.{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tgz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: arm64
+            files:
+              - name: zenith
+                src: "{{.AssetWithoutExt}}"
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.7.2")
+        asset: zenith.{{.OS}}.{{.Format}}
+        format: tgz
+        replacements:
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.7.5")
+        asset: zenith.{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: MacOS
+        overrides:
+          - goos: linux
+            format: tgz
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.8.1")
+        asset: zenith.{{.OS}}.{{.Format}}
+        format: tgz
+        replacements:
+          darwin: MacOS
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.9.2")
+        asset: zenith.{{.OS}}.{{.Format}}
+        format: tgz
+        replacements:
+          darwin: MacOS
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.11.0")
+        asset: zenith.{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tgz
+        replacements:
+          darwin: MacOS
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+          - goos: darwin
+            asset: zenith.{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.13.0")
+        asset: zenith.{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tgz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: zenith.{{.Arch}}_{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: zenith-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: macOS
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: Linux-gnu
+          - goos: linux
+            goarch: arm64
+            asset: zenith-{{.OS}}-musl-{{.Arch}}.{{.Format}}
+            replacements:
+              linux: Linux
+        supported_envs:
+          - linux
+          - darwin

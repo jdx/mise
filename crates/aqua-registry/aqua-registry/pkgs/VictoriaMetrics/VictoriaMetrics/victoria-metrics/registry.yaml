@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: VictoriaMetrics/VictoriaMetrics/victoria-metrics
+    type: github_release
+    repo_owner: VictoriaMetrics
+    repo_name: VictoriaMetrics
+    description: "VictoriaMetrics: fast, cost-effective monitoring solution and time series database"
+    version_filter: not (Version endsWith "-victorialogs")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 1.2.1")
+        no_asset: true
+      - version_constraint: semver("<= 1.29.4")
+        asset: victoria-metrics-{{.Version}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: victoria-metrics
+            src: victoria-metrics-prod
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 1.52.0")
+        asset: victoria-metrics-{{.Version}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: victoria-metrics
+            src: victoria-metrics-prod
+        checksum:
+          type: github_release
+          asset: victoria-metrics-{{.Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 1.72.0")
+        asset: victoria-metrics-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: victoria-metrics
+            src: victoria-metrics-prod
+        checksum:
+          type: github_release
+          asset: victoria-metrics-{{.Arch}}-{{.Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+      - version_constraint: semver("<= 1.78.1")
+        asset: victoria-metrics-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: victoria-metrics
+            src: victoria-metrics-prod
+        overrides:
+          - goos: darwin
+            asset: victoria-metrics-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.89.1")
+        asset: victoria-metrics-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: victoria-metrics
+            src: victoria-metrics-prod
+        checksum:
+          type: github_release
+          asset: victoria-metrics-{{.OS}}-{{.Arch}}-{{.Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("> 1.97.1, <= 1.97.17") or semver("> 1.102.1, <= 1.102.21") or semver("> 1.110.0, <= 1.110.8")
+        no_asset: true
+      - version_constraint: "true"
+        asset: victoria-metrics-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: victoria-metrics
+            src: victoria-metrics-prod
+        checksum:
+          type: github_release
+          asset: victoria-metrics-{{.OS}}-{{.Arch}}-{{.Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: victoria-metrics
+                src: victoria-metrics-{{.OS}}-{{.Arch}}-prod.exe

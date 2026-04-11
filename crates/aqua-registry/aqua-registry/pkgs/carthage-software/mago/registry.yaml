@@ -1,0 +1,133 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: carthage-software
+    repo_name: mago
+    description: Mago is a toolchain for PHP that aims to provide a set of tools to help developers write better code
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.0.12"
+        asset: mago-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        files:
+          - name: mago
+            src: mago-{{.Version}}-{{.Arch}}-{{.OS}}/mago
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip
+      - version_constraint: Version == "0.13.0"
+        asset: mago-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu
+        files:
+          - name: mago
+            src: mago-{{.Version}}-{{.Arch}}-{{.OS}}/mago
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+      - version_constraint: Version == "1.2.0"
+        asset: mago-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          windows: pc-windows-gnu
+        files:
+          - name: mago
+            src: mago-{{.Version}}-{{.Arch}}-{{.OS}}/mago
+        supported_envs:
+          - windows
+      - version_constraint: Version == "1.2.1"
+        asset: mago-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu
+        files:
+          - name: mago
+            src: mago-{{.Version}}-{{.Arch}}-{{.OS}}/mago
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - windows
+      - version_constraint: semver("<= 0.0.11")
+        asset: mago-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86-64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: linux-gnu
+        files:
+          - name: mago
+            src: mago-{{.Version}}-{{.Arch}}-{{.OS}}/mago
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: mago-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+          - goos: darwin
+            goarch: arm64
+            asset: mago-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+          - goos: windows
+            format: zip
+      - version_constraint: semver("< 1.5.0")
+        asset: mago-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        files:
+          - name: mago
+            src: mago-{{.Version}}-{{.Arch}}-{{.OS}}/mago
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: mago-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        files:
+          - name: mago
+            src: mago-{{.Version}}-{{.Arch}}-{{.OS}}/mago
+        overrides:
+          - goos: windows
+            format: zip
+        github_artifact_attestations:
+          signer_workflow: carthage-software/mago/.github/workflows/cd.yml

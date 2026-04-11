@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kellyjonbrazil
+    repo_name: jc
+    description: CLI tool and python library that converts the output of popular command-line tools, file-types, and common strings to JSON, YAML, or Dictionaries. This allows piping of output to tools like jq and simplifying automation scripts
+    asset: jc-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+        asset: jc-{{trimV .Version}}-{{.OS}}.{{.Format}}
+        files:
+          - name: jc
+            src: jc-{{trimV .Version}}-windows/jc.exe
+    replacements:
+      amd64: x86_64
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    version_constraint: semver(">= 1.21.0")
+    version_overrides:
+      - version_constraint: semver(">= 1.19.0")
+        overrides:
+          - goos: windows
+            format: zip
+            asset: jc-{{trimV .Version}}-{{.OS}}.{{.Format}}
+      - version_constraint: semver("< 1.19.0")
+        overrides: []
+        supported_envs:
+          - linux/amd64
+          - darwin

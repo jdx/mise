@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: gurgeous
+    repo_name: tennis
+    description: stylish CSV tables in your terminal
+    search_words:
+      - csv
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: tennis_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: tennis_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        files:
+          - name: tennis
+            src: tennis_{{trimV .Version}}_{{.OS}}_{{.Arch}}/tennis
+        supported_envs:
+          - linux
+          - darwin/arm64

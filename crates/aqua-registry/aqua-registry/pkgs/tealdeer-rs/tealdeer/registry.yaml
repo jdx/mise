@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: tealdeer-rs
+    repo_name: tealdeer
+    aliases:
+      - name: dbrgn/tealdeer
+    description: A very fast implementation of tldr in Rust
+    files:
+      - name: tldr
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.1.0")
+        asset: tldr-{{.Arch}}-musl
+        format: raw
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 1.4.1")
+        asset: tldr-{{.OS}}-{{.Arch}}-musl
+        format: raw
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 1.6.1")
+        asset: tealdeer-{{.OS}}-{{.Arch}}-musl
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: tealdeer-{{.OS}}-{{.Arch}}
+          - goos: windows
+            asset: tealdeer-{{.OS}}-{{.Arch}}-msvc
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: tealdeer-{{.OS}}-{{.Arch}}-musl
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: tealdeer-{{.OS}}-{{.Arch}}
+          - goos: windows
+            asset: tealdeer-{{.OS}}-{{.Arch}}-msvc

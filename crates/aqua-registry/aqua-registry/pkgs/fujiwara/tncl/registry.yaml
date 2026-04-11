@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: fujiwara
+    repo_name: tncl
+    description: tncl is a tiny "nc -l" implementation
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.2")
+        no_asset: true
+      - version_constraint: "true"
+        asset: tncl-{{.Arch}}-{{.OS}}-musl
+        format: raw
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        supported_envs:
+          - linux

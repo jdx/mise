@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: erikjuhani
+    repo_name: basalt
+    description: TUI Application to manage Obsidian notes directly from the terminal
+    version_prefix: basalt/v
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.3.1")
+        no_asset: true
+      - version_constraint: Version == "basalt/v0.10.4"
+        asset: basalt-{{.SemVer}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: basalt
+            src: target/{{.Arch}}-{{.OS}}/release/basalt
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: basalt-{{.SemVer}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: basalt
+            src: target/{{.Arch}}-{{.OS}}/release/basalt
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            checksum:
+              enabled: false

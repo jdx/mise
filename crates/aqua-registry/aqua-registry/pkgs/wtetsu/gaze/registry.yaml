@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: wtetsu
+    repo_name: gaze
+    asset: gaze_{{.OS}}_{{.Version}}.{{.Format}}
+    format: zip
+    description: Executes commands for you
+    replacements:
+      darwin: macos
+      arm64: arm
+      amd64: amd
+    overrides:
+      - goos: darwin
+        asset: gaze_{{.OS}}_{{.Arch}}_{{.Version}}.{{.Format}}
+        files:
+          - name: gaze
+            src: gaze_{{.OS}}_{{.Arch}}_{{.Version}}/gaze
+    supported_envs:
+      - darwin
+      - amd64
+    files:
+      - name: gaze
+        src: gaze_{{.OS}}_{{.Version}}/gaze

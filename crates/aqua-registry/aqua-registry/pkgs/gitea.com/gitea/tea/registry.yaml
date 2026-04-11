@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: gitea.com/gitea/tea
+    type: http
+    description: Command line tool to interact with Gitea servers
+    link: https://gitea.com/gitea/tea
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        format: xz
+        url: https://gitea.com/gitea/tea/releases/download/{{.Version}}/tea-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        windows_arm_emulation: true
+        files:
+          - name: tea
+            src: tea-{{trimV .Version}}-{{.OS}}-{{.Arch}}
+        checksum:
+          type: http
+          url: https://gitea.com/gitea/tea/releases/download/{{.Version}}/tea-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}.sha256
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            url: https://gitea.com/gitea/tea/releases/download/{{.Version}}/tea-{{trimV .Version}}-{{.OS}}-{{.Arch}}.exe.{{.Format}}
+            checksum:
+              type: http
+              url: https://gitea.com/gitea/tea/releases/download/{{.Version}}/tea-{{trimV .Version}}-{{.OS}}-{{.Arch}}.exe.{{.Format}}.sha256
+              algorithm: sha256

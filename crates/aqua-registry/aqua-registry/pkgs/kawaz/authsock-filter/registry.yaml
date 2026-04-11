@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kawaz
+    repo_name: authsock-filter
+    description: SSH agent proxy with filtering and logging
+    asset: authsock-filter-{{.Arch}}-{{.OS}}.tar.gz
+    format: tar.gz
+    files:
+      - name: authsock-filter
+    replacements:
+      amd64: x86_64
+      arm64: aarch64
+      darwin: apple-darwin
+      linux: unknown-linux-gnu
+    supported_envs:
+      - darwin
+      - linux/amd64
+    rosetta2: true

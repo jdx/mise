@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    name: golang/tools/godoc
+    repo_owner: golang
+    repo_name: tools
+    description: Godoc extracts and generates documentation for Go programs
+    link: https://pkg.go.dev/golang.org/x/tools/cmd/godoc
+    version_source: github_tag
+    version_filter: not (Version startsWith "gopls/")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver(">= 0.37.0")
+        error_message: |
+          Versions >= 0.37.0 are not supported.
+          Please use `go doc -http` instead.
+          https://github.com/golang/go/issues/59056#issuecomment-3254809429
+      - version_constraint: "true"
+        path: golang.org/x/tools/cmd/godoc

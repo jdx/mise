@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: spinnaker/spin
+    type: http
+    format: raw
+    repo_owner: spinnaker
+    repo_name: spin
+    rosetta2: true
+    url: https://storage.googleapis.com/spinnaker-artifacts/spin/{{trimV .Version}}/{{.OS}}/{{.Arch}}/spin
+    description: Spinnaker CLI
+    supported_envs:
+      - darwin
+      - amd64
+    files:
+      - name: spin

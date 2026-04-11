@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    name: winebarrel/cronplan/cronplan
+    repo_owner: winebarrel
+    repo_name: cronplan
+    description: Cron expression parser for Amazon EventBridge
+    asset: cronplan_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    version_constraint: semver(">= 1.8.1")
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    version_overrides:
+      - version_constraint: semver(">= 1.2.0")
+        checksum:
+          type: github_release
+          asset: cronplan-checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

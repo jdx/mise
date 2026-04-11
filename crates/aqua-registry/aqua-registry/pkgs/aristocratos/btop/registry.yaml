@@ -1,0 +1,157 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: aristocratos
+    repo_name: btop
+    description: A monitor of resources
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.7")
+        asset: btop-{{trimV .Version}}-{{.OS}}-armel.{{.Format}}
+        format: tbz
+        files:
+          - name: btop
+            src: bin/btop
+        replacements:
+          arm64: aarch64
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: btop-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        supported_envs:
+          - linux
+      - version_constraint: semver("<= 1.0.16")
+        asset: btop-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tbz
+        files:
+          - name: btop
+            src: bin/btop
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        supported_envs:
+          - linux
+      - version_constraint: semver("<= 1.0.24")
+        asset: btop-{{trimV .Version}}-{{.Arch}}-{{.OS}}-musl.{{.Format}}
+        format: tbz
+        files:
+          - name: btop
+            src: bin/btop
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        supported_envs:
+          - linux
+      - version_constraint: Version == "v1.1.0"
+        asset: btop-{{trimV .Version}}-{{.Arch}}-{{.OS}}-musl.{{.Format}}
+        format: tbz
+        files:
+          - name: btop
+            src: bin/btop
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            asset: btop-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: Version == "v1.1.1"
+        asset: btop-{{trimV .Version}}-{{.Arch}}-{{.OS}}-musl.{{.Format}}
+        format: tbz
+        files:
+          - name: btop
+            src: bin/btop
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            asset: btop-{{trimV .Version}}-{{.Arch}}-{{.OS}}-monterey.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: Version == "v1.1.2"
+        asset: btop-{{trimV .Version}}-{{.Arch}}-{{.OS}}-musl.{{.Format}}
+        format: tbz
+        files:
+          - name: btop
+            src: bin/btop
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            asset: btop-{{trimV .Version}}-{{.Arch}}-{{.OS}}-monterey.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.2.13")
+        asset: btop-{{.Arch}}-{{.OS}}-musl.{{.Format}}
+        format: tbz
+        files:
+          - name: btop
+            src: btop/bin/btop
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            asset: btop-{{.Arch}}-{{.OS}}-monterey.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: Version == "v1.2.13"
+        asset: btop-{{.Arch}}-{{.OS}}-musl.{{.Format}}
+        format: tbz
+        files:
+          - name: btop
+            src: btop/bin/btop
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            asset: btop-{{.Arch}}-{{.OS}}-ventura.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.4.5")
+        asset: btop-{{.Arch}}-{{.OS}}-musl.{{.Format}}
+        format: tbz
+        files:
+          - name: btop
+            src: btop/bin/btop
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        supported_envs:
+          - linux
+      - version_constraint: "true"
+        asset: btop-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tbz
+        files:
+          - name: btop
+            src: btop/bin/btop
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux

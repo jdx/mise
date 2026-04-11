@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: reemus-dev
+    repo_name: gitnr
+    description: Create `.gitignore` files using one or more templates from TopTal, GitHub or your own collection
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: gitnr-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+          windows: win
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

@@ -1,0 +1,19 @@
+packages:
+  - type: github_release
+    repo_owner: grafana
+    repo_name: mcp-grafana
+    description: MCP server for Grafana
+    asset: mcp-grafana_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    replacements:
+      amd64: x86_64
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+    checksum:
+      type: github_release
+      asset: mcp-grafana_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    overrides:
+      - goos: windows
+        format: zip

@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: playwright-community
+    repo_name: playwright-go
+    description: Playwright for Go a browser automation library to control Chromium, Firefox and WebKit with a single API
+    files:
+      - name: playwright
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        path: github.com/playwright-community/playwright-go/cmd/playwright

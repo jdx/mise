@@ -1,0 +1,87 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: siderolabs
+    repo_name: talos
+    aliases:
+      - name: talos-systems/talos
+    description: Talos Linux is a modern Linux distribution built for Kubernetes
+    version_filter: not (Version matches "-(alpha|beta|rc)")
+    asset: talosctl-{{.OS}}-{{.Arch}}
+    format: raw
+    files:
+      - name: talosctl
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.2.9"
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: sha512sum.txt
+          algorithm: sha512
+      - version_constraint: semver("<= 0.2.0")
+        asset: osctl-{{.OS}}-{{.Arch}}
+        files:
+          - name: osctl
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin/amd64
+      - version_constraint: semver("<= 0.3.3")
+        asset: osctl-{{.OS}}-{{.Arch}}
+        files:
+          - name: osctl
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: sha512sum.txt
+          algorithm: sha512
+        supported_envs:
+          - linux/amd64
+          - darwin/amd64
+      - version_constraint: semver("<= 0.10.4")
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin/amd64
+      - version_constraint: semver("<= 0.12.3")
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.8.4")
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.11.3")
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - https://github.com/siderolabs/talos/.github/workflows/ci.yaml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+            bundle:
+              type: github_release
+              asset: sha256sum.txt.bundle

@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: devops-works
+    repo_name: dw-query-digest
+    description: MySQL slow log analyzer. Alternative to pt-query-digest
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1"
+        no_asset: true
+      - version_constraint: Version == "v0.8"
+        asset: dw-query-digest-{{.OS}}
+        format: raw
+        complete_windows_ext: false
+        replacements:
+          windows: win
+        checksum:
+          type: github_release
+          asset: SHA512SUMS
+          algorithm: sha512
+        supported_envs:
+          - darwin
+          - windows/amd64
+      - version_constraint: semver("<= 0.7.0")
+        asset: dw-query-digest-{{.OS}}
+        format: raw
+        complete_windows_ext: false
+        replacements:
+          windows: win
+        supported_envs:
+          - darwin
+          - windows/amd64
+      - version_constraint: "true"
+        asset: dw-query-digest_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

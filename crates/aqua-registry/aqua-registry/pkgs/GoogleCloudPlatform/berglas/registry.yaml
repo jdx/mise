@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: GoogleCloudPlatform
+    repo_name: berglas
+    description: A tool for managing secrets on Google Cloud
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.7.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: berglas_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: berglas_{{trimV .Version}}_SHA512SUMS
+          algorithm: sha512
+        overrides:
+          - goos: windows
+            format: zip

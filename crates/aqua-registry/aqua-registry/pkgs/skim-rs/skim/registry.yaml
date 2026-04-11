@@ -1,0 +1,126 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: skim-rs
+    repo_name: skim
+    description: Fuzzy Finder in rust
+    aliases:
+      - name: lotabout/skim
+    files:
+      - name: sk
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1-alpha"
+        no_asset: true
+      - version_constraint: Version == "v0.9.4"
+        asset: skim-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.5.0")
+        asset: skim-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.6.9")
+        asset: skim-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: skim-{{.Version}}-{{.Arch}}-{{.OS}}eabi.{{.Format}}
+            replacements:
+              arm64: arm
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.9.3")
+        asset: skim-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            asset: skim-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+            replacements:
+              arm64: arm
+              linux: unknown-linux-gnueabi
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.10.4")
+        no_asset: true
+      - version_constraint: semver("<= 0.14.3")
+        asset: skim-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tgz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.15.3")
+        no_asset: true
+      - version_constraint: semver("<= 0.20.5")
+        asset: skim-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tgz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: skim-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        files:
+          - name: sk
+            src: "{{.AssetWithoutExt}}/sk"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+        supported_envs:
+          - linux
+          - darwin

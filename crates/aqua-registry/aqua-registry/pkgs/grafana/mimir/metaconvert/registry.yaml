@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: grafana/mimir/metaconvert
+    type: github_release
+    repo_owner: grafana
+    repo_name: mimir
+    description: Grafana Mimir provides horizontally scalable, highly available, multi-tenant, long-term storage for Prometheus
+    asset: metaconvert-{{.OS}}-{{.Arch}}
+    format: raw
+    version_prefix: mimir-
+    supported_envs:
+      - linux
+      - darwin

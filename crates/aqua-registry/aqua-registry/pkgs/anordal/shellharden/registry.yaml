@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: anordal
+    repo_name: shellharden
+    aliases:
+      # The registry had registered this name when this tool was first registered.
+      # https://github.com/aquaproj/aqua-registry/pull/13784
+      - name: crates.io/shellharden
+    description: The corrective bash syntax highlighter
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 4.3.0")
+        type: cargo
+        crate: shellharden
+      - version_constraint: "true"
+        asset: shellharden-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: shellharden-{{.Arch}}-{{.OS}}.sha512
+          algorithm: sha512
+        overrides:
+          - goos: windows
+            format: zip

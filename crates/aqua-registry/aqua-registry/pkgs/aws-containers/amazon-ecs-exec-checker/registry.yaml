@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_content
+    repo_owner: aws-containers
+    repo_name: amazon-ecs-exec-checker
+    description: Pre-flight checks for ECS Exec
+    supported_envs:
+      - darwin
+      - linux
+    format: raw
+    path: check-ecs-exec.sh
+    files:
+      - name: check-ecs-exec

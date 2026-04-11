@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: k1LoW
+    repo_name: tbls-ask
+    description: tbls-ask is an external subcommand of tbls for asking LLM of the datasource
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.1") or Version == "v0.1.1"
+        no_asset: true
+      - version_constraint: "true"
+        asset: tbls-ask_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            format: zip
+        supported_envs:
+          - linux
+          - darwin

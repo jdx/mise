@@ -1,0 +1,206 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sass
+    repo_name: dart-sass
+    description: The reference implementation of Sass, written in Dart
+    files:
+      - name: sass
+        src: dart-sass/sass
+    windows_ext: .bat
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "1.23.5"
+        no_asset: true
+      - version_constraint: Version in ["1.20.0", "1.49.10"]
+        asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: Version == "1.23.6"
+        asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x64
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "1.24.1"
+        asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version in ["1.56.0", "1.63.0"]
+        asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: Version in ["1.59.0", "1.69.0"]
+        asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux
+      - version_constraint: semver("<= 1.25.0")
+        asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.26.0-test.3")
+        asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 1.26.3")
+        asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.26.6")
+        asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 1.49.9")
+        asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.64.2")
+        asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 1.65.1")
+        asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 1.69.5")
+        asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 1.71.0")
+        asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: linux
+            goarch: amd64
+            asset: dart-sass-{{.Version}}-{{.OS}}-musl-{{.Arch}}.{{.Format}}
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 1.72.0")
+        asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+          - goos: windows
+            format: zip
+            asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+      - version_constraint: semver("< 1.86.1")
+        asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: linux
+            asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: linux
+            asset: dart-sass-{{.Version}}-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+            github_artifact_attestations:
+              signer_workflow: sass/dart-sass/.github/workflows/build-linux.yml
+          - goos: darwin
+            github_artifact_attestations:
+              signer_workflow: sass/dart-sass/.github/workflows/build-macos.yml
+          - goos: windows
+            format: zip
+            github_artifact_attestations:
+              signer_workflow: sass/dart-sass/.github/workflows/build-windows.yml

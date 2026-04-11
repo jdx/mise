@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: dolthub
+    repo_name: dolt
+    asset: dolt-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: Dolt – It's Git for Data
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    version_constraint: semver(">= 0.40.29")
+    files:
+      - name: dolt
+        src: dolt-{{.OS}}-{{.Arch}}/bin/dolt
+    version_overrides:
+      - version_constraint: semver(">= 0.40.15")
+        files:
+          - name: dolt
+            src: dolt-{{.OS}}-{{.Arch}}/bin/dolt
+          - name: git-dolt
+            src: dolt-{{.OS}}-{{.Arch}}/bin/git-dolt
+          - name: git-dolt-smudge
+            src: dolt-{{.OS}}-{{.Arch}}/bin/git-dolt-smudge
+      - version_constraint: "true"
+        supported_envs:
+          - darwin
+          - amd64
+        files:
+          - name: dolt
+            src: dolt-{{.OS}}-{{.Arch}}/bin/dolt
+          - name: git-dolt
+            src: dolt-{{.OS}}-{{.Arch}}/bin/git-dolt
+          - name: git-dolt-smudge
+            src: dolt-{{.OS}}-{{.Arch}}/bin/git-dolt-smudge

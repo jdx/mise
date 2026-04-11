@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: FeLvi-zzz
+    repo_name: tentez
+    description: Tentez helps you switching traffic
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: tentez-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true

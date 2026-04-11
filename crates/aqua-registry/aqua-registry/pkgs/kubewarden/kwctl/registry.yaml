@@ -1,0 +1,90 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubewarden
+    repo_name: kwctl
+    description: Go-to CLI tool for Kubewarden users
+    files:
+      - name: kwctl
+        src: kwctl-{{.OS}}-{{.Arch}}
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.4.1"
+        asset: kwctl-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        overrides:
+          - goos: windows
+            asset: kwctl-{{.OS}}-{{.Arch}}.exe.{{.Format}}
+      - version_constraint: Version == "v1.7.0-rc2"
+        asset: default.kwctl-{{.OS}}-{{.Arch}}.kwctl-darwin-x86_64.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        overrides:
+          - goos: linux
+            goarch: amd64
+            asset: default.kwctl-{{.OS}}-{{.Arch}}.kwctl-linux-x86_64.{{.Format}}
+          - goos: linux
+            goarch: arm64
+            asset: default.kwctl-{{.OS}}-{{.Arch}}.kwctl-linux-aarch64.{{.Format}}
+          - goos: darwin
+            goarch: arm64
+            asset: default.kwctl-{{.OS}}-{{.Arch}}.kwctl-darwin-aarch64.{{.Format}}
+          - goos: windows
+            asset: default.kwctl-{{.OS}}-{{.Arch}}.kwctl-windows-x86_64.exe.{{.Format}}
+            replacements: {}
+      - version_constraint: semver("<= 0.1.1")
+        asset: kwctl.{{.Format}}
+        format: zip
+        files:
+          - name: kwctl
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.2.4")
+        asset: kwctl-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: kwctl
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.2.5-rc2")
+        asset: kwctl-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+      - version_constraint: semver("<= 1.1.1")
+        asset: kwctl-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            asset: kwctl-{{.OS}}-{{.Arch}}.exe.{{.Format}}
+      - version_constraint: "true"
+        asset: kwctl-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        overrides:
+          - goos: windows
+            asset: kwctl-{{.OS}}-{{.Arch}}.exe.{{.Format}}
+            replacements: {}

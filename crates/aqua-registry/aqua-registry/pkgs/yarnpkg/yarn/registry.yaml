@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: yarnpkg
+    repo_name: yarn
+    search_words:
+      - v1 only
+    description: "The 1.x line is frozen - features and bugfixes now happen on https://github.com/yarnpkg/berry"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: yarn-{{.Version}}.tar.gz
+        files:
+          - name: yarn
+            src: "{{.AssetWithoutExt}}/bin/yarn"

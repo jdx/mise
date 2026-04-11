@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cloudposse
+    repo_name: github-commenter
+    description: Command line utility for creating GitHub comments on Commits, Pull Request Reviews or Issues
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["0.11.1", "0.11.3", "0.11.4"]
+        no_asset: true
+      - version_constraint: Version == "0.6.0"
+        asset: github-commenter_.{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "0.10.0"
+        asset: github-commenter_{{.OS}}_{{.Arch}}-r0
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - darwin
+      - version_constraint: Version in ["0.11.5"]
+        asset: github-commenter_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "0.16.0"
+        asset: github-commenter_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.12.0")
+        asset: github-commenter_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.14.0")
+        asset: github-commenter_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.16.1")
+        asset: github-commenter_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "0.16.2"
+        asset: github-commenter_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.19.0")
+        asset: github-commenter_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: github-commenter_{{.Version}}_SHA256SUMS
+          algorithm: sha256
+      - version_constraint: semver("<= 0.27.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: github-commenter_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: github-commenter_{{.Version}}_SHA256SUMS
+          algorithm: sha256

@@ -1,0 +1,121 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubernetes-sigs
+    repo_name: zeitgeist
+    description: "Zeitgeist: the language-agnostic dependency checker"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.0.2"
+        asset: zeitgeist_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.0.17")
+        asset: zeitgeist_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - linux/amd64
+          - darwin
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.3.2")
+        no_asset: true
+      - version_constraint: Version == "v0.3.4"
+        asset: zeitgeist
+        format: raw
+        supported_envs:
+          - windows/amd64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/kubernetes-sigs/zeitgeist/\\.github/workflows/release\\.yml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/kubernetes-sigs/zeitgeist/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate
+              - https://github.com/kubernetes-sigs/zeitgeist/releases/download/{{.Version}}/checksums.txt.pem
+      - version_constraint: Version == "v0.3.5"
+        asset: zeitgeist_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/kubernetes-sigs/zeitgeist/\\.github/workflows/release\\.yml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/kubernetes-sigs/zeitgeist/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate
+              - https://github.com/kubernetes-sigs/zeitgeist/releases/download/{{.Version}}/checksums.txt.pem
+      - version_constraint: Version == "v0.4.0"
+        no_asset: true
+      - version_constraint: Version == "v0.4.1"
+        asset: zeitgeist_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/kubernetes-sigs/zeitgeist/\\.github/workflows/release\\.yml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/kubernetes-sigs/zeitgeist/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate
+              - https://github.com/kubernetes-sigs/zeitgeist/releases/download/{{.Version}}/checksums.txt.pem
+      - version_constraint: "true"
+        asset: zeitgeist-{{.Arch}}-{{.OS}}
+        format: raw
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/kubernetes-sigs/zeitgeist/\\.github/workflows/release\\.yml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/kubernetes-sigs/zeitgeist/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate
+              - https://github.com/kubernetes-sigs/zeitgeist/releases/download/{{.Version}}/checksums.txt.pem

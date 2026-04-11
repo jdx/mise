@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: slsa-framework/slsa-github-generator/slsa-builder-go
+    repo_owner: slsa-framework
+    repo_name: slsa-github-generator
+    description: builds and generates SLSA3+ provenance for Go projects
+    link: https://github.com/slsa-framework/slsa-github-generator/tree/main/internal/builders/go
+    # Officially only an asset for linux/amd64 is released.
+    # So we support other platforms by `go_install` package.
+    type: go_install
+    path: github.com/slsa-framework/slsa-github-generator/internal/builders/go
+    files:
+      - name: slsa-builder-go
+    overrides:
+      - goos: linux
+        goarch: amd64
+        type: github_release
+        asset: slsa-builder-go-{{.OS}}-{{.Arch}}
+        format: raw

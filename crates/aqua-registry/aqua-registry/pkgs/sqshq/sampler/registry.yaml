@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sqshq
+    repo_name: sampler
+    description: Tool for shell commands execution, visualization and alerting. Configured with a simple YAML file
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.9.0-beta"
+        no_asset: true
+      - version_constraint: Version == "v0.9.1-beta"
+        asset: sampler-0.9.1-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "v1.0.0"
+        asset: sampler-{{trimV .Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v1.0.1"
+        asset: sampler-{{trimV .Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: sampler-{{trimV .Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

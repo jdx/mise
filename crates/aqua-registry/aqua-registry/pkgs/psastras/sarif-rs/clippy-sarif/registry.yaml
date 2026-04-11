@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: psastras/sarif-rs/clippy-sarif
+    type: github_release
+    repo_owner: psastras
+    repo_name: sarif-rs
+    description: Convert clippy output into SARIF
+    version_filter: not (Version matches "-latest$")
+    version_prefix: clippy-sarif-
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "clippy-sarif-v0.2.23"
+        asset: clippy-sarif-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tgz
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+        files:
+          - name: clippy-sarif
+            src: target/release/{{.FileName}}-{{.Arch}}-{{.OS}}
+      - version_constraint: Version == "clippy-sarif-v0.6.2"
+        asset: clippy-sarif-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.4.2")
+        asset: clippy-sarif-{{.Arch}}-{{.OS}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: clippy-sarif-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64

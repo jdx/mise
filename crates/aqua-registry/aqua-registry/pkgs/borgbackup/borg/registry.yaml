@@ -1,0 +1,154 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: borgbackup
+    repo_name: borg
+    description: Deduplicating archiver with compression and authenticated encryption
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["0.28.0", "0.28.1", "0.30.1"] || semver(">= 1.2.0-a2, <= 1.2.0-a5")
+        no_asset: true
+      - version_constraint: Version in ["1.0.1", "1.1.15b1"]
+        asset: borg-{{.OS}}64
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "1.0.3"
+        asset: borg-{{.OS}}64
+        format: raw
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version in ["0.26.1", "0.27.0"] || semver("<= 1.2.0b3")
+        asset: borg-{{.OS}}64
+        format: raw
+        replacements:
+          darwin: macosx
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 1.2.0") || Version == "1.3.0a1"
+        asset: borg-{{.OS}}64
+        format: raw
+        replacements:
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version in ["1.2.7", "1.2.8", "1.2.9"]
+        asset: borg-{{.OS}}64
+        format: raw
+        replacements:
+          linux: linuxnewer
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 1.2.6") || semver(">= 2.0.0a2, <= 2.0.0-b1") || Version in ["2.0.0b2", "2.0.0b3", "2.0.0b6", "2.0.0b7"]
+        asset: borg-{{.OS}}64
+        format: raw
+        replacements:
+          linux: linuxnew
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "2.0.0b4"
+        asset: borg-{{.OS}}64
+        format: raw
+        replacements:
+          linux: linuxnew
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "2.0.0b5"
+        asset: borg-{{.OS}}{{.Arch}}
+        format: raw
+        replacements:
+          linux: linuxnew
+          darwin: macos
+          amd64: "64"
+          arm64: -arm
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 1.4.0-rc1") || Version == "2.0.0b8"
+        asset: borg-{{.OS}}
+        format: raw
+        replacements:
+          linux: linux-glibc236
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version in ["2.0.0b12", "2.0.0b13", "2.0.0b14", "2.0.0b19"]
+        asset: borg-{{.OS}}-glibc236
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 1.4.1") || semver(">= 2.0.0b10, <= 2.0.0b18") || Version == "2.0.0b9"
+        asset: borg-{{.OS}}
+        format: raw
+        replacements:
+          linux: linux-glibc236
+          darwin: macos1012
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 1.4.2") || Version == "2.0.0b19"
+        asset: borg-{{.OS}}-{{.Arch}}-gh
+        format: raw
+        replacements:
+          linux: linux-glibc235
+          amd64: x86_64
+        overrides:
+          - goos: darwin
+            goarch: amd64
+            replacements:
+              darwin: macos-13
+          - goos: darwin
+            goarch: arm64
+            replacements:
+              darwin: macos-14
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.4.3")
+        asset: borg-{{.OS}}-{{.Arch}}-gh
+        format: raw
+        replacements:
+          linux: linux-glibc235
+          amd64: x86_64
+        overrides:
+          - goos: darwin
+            goarch: amd64
+            replacements:
+              darwin: macos-13
+          - goos: darwin
+            goarch: arm64
+            replacements:
+              darwin: macos-14
+        supported_envs:
+          - linux
+          - darwin
+        github_artifact_attestations:
+          signer_workflow: borgbackup/borg/.github/workflows/ci.yml
+      - version_constraint: "true"
+        asset: borg-{{.OS}}-{{.Arch}}-gh
+        format: raw
+        replacements:
+          linux: linux-glibc235
+          amd64: x86_64
+        overrides:
+          - goos: darwin
+            goarch: amd64
+            replacements:
+              darwin: macos-15
+          - goos: darwin
+            goarch: arm64
+            replacements:
+              darwin: macos-15
+        supported_envs:
+          - linux
+          - darwin
+        github_artifact_attestations:
+          signer_workflow: borgbackup/borg/.github/workflows/ci.yml

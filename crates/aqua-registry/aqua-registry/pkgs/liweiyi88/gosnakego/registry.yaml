@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: liweiyi88
+    repo_name: gosnakego
+    description: A snake game written in Go
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1"
+        asset: gosnakego_{{.OS}}_{{.Arch}}
+        format: raw
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        complete_windows_ext: false
+      - version_constraint: semver("<= v0.2.0")
+        asset: gosnakego_{{.OS}}_{{.Arch}}
+        format: raw
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+      - version_constraint: semver("<= v0.3.1")
+        asset: gosnakego_{{.OS}}_{{.Arch}}
+        format: raw
+        supported_envs:
+          - darwin
+          - windows/amd64
+        rosetta2: true
+      - version_constraint: Version == "v0.3.2"
+        no_asset: true
+      - version_constraint: "true"
+        asset: gosnakego_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: gosnakego_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

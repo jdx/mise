@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: project-copacetic
+    repo_name: copacetic
+    description: CLI tool for directly patching container images using reports from vulnerability scanners
+    asset: copa_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    files:
+      - name: copa
+    supported_envs:
+      - linux
+      - darwin
+    checksum:
+      type: github_release
+      asset: copacetic_checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 0.3.0")
+    version_overrides:
+      - version_constraint: semver(">= 0.2.0")
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("< 0.2.0")
+        supported_envs:
+          - linux/amd64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256

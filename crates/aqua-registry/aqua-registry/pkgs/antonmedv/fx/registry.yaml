@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: antonmedv
+    repo_name: fx
+    description: Command-line tool and terminal JSON viewer
+    version_constraint: semver(">= 21.0.0")
+    asset: fx_{{.OS}}_{{.Arch}}
+    version_overrides:
+      - version_constraint: "true"
+        asset: fx-{{.OS}}.zip
+        replacements:
+          darwin: macos
+          windows: win.exe
+        files:
+          - name: fx
+            src: fx-{{.OS}}

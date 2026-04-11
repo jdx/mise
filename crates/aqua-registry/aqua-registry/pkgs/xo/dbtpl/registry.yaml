@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: xo
+    repo_name: dbtpl
+    aliases:
+      - name: xo/xo
+    description: Command line tool to generate idiomatic Go code for SQL databases supporting PostgreSQL, MySQL, SQLite, Oracle, and Microsoft SQL Server
+    files:
+      - name: xo
+      - name: dbtpl
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.2")
+        asset: xo-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.bz2
+        windows_arm_emulation: true
+        files:
+          - name: xo
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: xo-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.bz2
+        windows_arm_emulation: true
+        files:
+          - name: dbtpl
+        overrides:
+          - goos: windows
+            format: zip

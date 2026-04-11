@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jessfraz
+    repo_name: dockfmt
+    description: Dockerfile format and parser. Like `gofmt` but for Dockerfiles
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: dockfmt-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        overrides:
+          - goos: darwin
+            # Pre built binaries don't work on macOS because they are too old.
+            # https://github.com/aquaproj/aqua-registry/pull/23000#issuecomment-2116536645
+            type: go_install
+            path: github.com/jessfraz/dockfmt
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.md5"
+          algorithm: md5

@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: apple/pkl-go/pkl-gen-go
+    type: github_release
+    repo_owner: apple
+    repo_name: pkl-go
+    description: Generates Go bindings for a Pkl module
+    version_filter: 'Version startsWith "v"'
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: pkl-gen-go-{{.OS}}-{{.Arch}}.bin
+        format: raw
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            asset: pkl-gen-go-{{.OS}}.bin
+        supported_envs:
+          - linux
+          - darwin

@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: MusicDin
+    repo_name: kubitect
+    description: Kubitect provides a simple way to set up a highly available Kubernetes cluster across multiple hosts
+    asset: kubitect-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    version_constraint: semver(">= 2.1.0")
+    supported_envs:
+      - darwin
+      - linux
+    version_overrides:
+      - version_constraint: "true"
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        overrides:
+          - goos: windows
+            format: zip

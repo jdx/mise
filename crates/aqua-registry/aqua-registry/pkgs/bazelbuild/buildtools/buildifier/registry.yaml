@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: bazelbuild/buildtools/buildifier
+    type: github_release
+    repo_owner: bazelbuild
+    repo_name: buildtools
+    description: Format BUILD, BUILD.bazel and BUCK files in a standard way
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.4.3"
+        asset: buildifier.{{.OS}}
+        format: raw
+        replacements:
+          darwin: OSX
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "0.25.0"
+        asset: buildifier.{{.OS}}
+        format: raw
+        replacements:
+          darwin: mac
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "4.0.0"
+        asset: buildifier-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "4.0.1"
+        asset: buildifier-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 0.22.0")
+        asset: buildifier.{{.OS}}
+        format: raw
+        replacements:
+          darwin: osx
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 3.5.0")
+        asset: buildifier.{{.OS}}
+        format: raw
+        replacements:
+          darwin: mac
+        overrides:
+          - goos: windows
+            asset: buildifier
+        supported_envs:
+          - darwin
+          - windows/amd64
+      - version_constraint: "true"
+        asset: buildifier-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true

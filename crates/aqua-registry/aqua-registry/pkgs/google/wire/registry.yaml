@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: google
+    repo_name: wire
+    description: Compile-time Dependency Injection for Go
+    path: github.com/google/wire/cmd/wire

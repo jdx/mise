@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: Azure
+    repo_name: mapotf
+    description: mapotf stands for MetA PrOgramming for TerraForm. mapotf is a meta programming tool designed to work with Terraform

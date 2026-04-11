@@ -1,0 +1,145 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Orange-OpenSource
+    repo_name: hurl
+    description: Hurl, run and test HTTP requests with plain text
+    files:
+      - name: hurl
+      - name: hurlfmt
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.1.0")
+        asset: hurl-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: hurl
+            src: hurl-{{.Version}}/hurl
+          - name: hurlfmt
+            src: hurl-{{.Version}}/hurlfmt
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 1.6.0")
+        asset: hurl-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: hurl
+            src: hurl-{{.Version}}/hurl
+          - name: hurlfmt
+            src: hurl-{{.Version}}/hurlfmt
+        replacements:
+          amd64: x86_64
+          darwin: osx
+          windows: win64
+        overrides:
+          - goos: windows
+            format: zip
+            asset: hurl-{{.Version}}-{{.OS}}.{{.Format}}
+            files:
+              - name: hurl
+              - name: hurlfmt
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "1.6.1"
+        asset: hurl-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: hurl
+            src: hurl-{{.Version}}/hurl
+          - name: hurlfmt
+            src: hurl-{{.Version}}/hurlfmt
+        replacements:
+          amd64: x86_64
+          darwin: osx
+          windows: win64
+        overrides:
+          - goos: windows
+            format: zip
+            asset: hurl-{{.Version}}-{{.OS}}.{{.Format}}
+            files:
+              - name: hurl
+              - name: hurlfmt
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 4.0.0")
+        asset: hurl-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: hurl
+            src: hurl-{{.Version}}/hurl
+          - name: hurlfmt
+            src: hurl-{{.Version}}/hurlfmt
+        replacements:
+          amd64: x86_64
+          darwin: macos
+          windows: win64
+        overrides:
+          - goos: windows
+            format: zip
+            asset: hurl-{{.Version}}-{{.OS}}.{{.Format}}
+            files:
+              - name: hurl
+              - name: hurlfmt
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 4.2.0")
+        asset: hurl-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: hurl
+            src: hurl-{{.Version}}-{{.Arch}}-{{.OS}}/hurl
+          - name: hurlfmt
+            src: hurl-{{.Version}}-{{.Arch}}-{{.OS}}/hurlfmt
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: hurl
+              - name: hurlfmt
+      - version_constraint: "true"
+        asset: hurl-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: hurl
+            src: hurl-{{.Version}}-{{.Arch}}-{{.OS}}/bin/hurl
+          - name: hurlfmt
+            src: hurl-{{.Version}}-{{.Arch}}-{{.OS}}/bin/hurlfmt
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: hurl
+              - name: hurlfmt

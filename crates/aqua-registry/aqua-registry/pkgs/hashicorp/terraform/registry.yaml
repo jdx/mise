@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: hashicorp
+    repo_name: terraform
+    url: https://releases.hashicorp.com/terraform/{{trimV .Version}}/terraform_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+    description: Terraform enables you to safely and predictably create, change, and improve infrastructure. It is an open source tool that codifies APIs into declarative configuration files that can be shared amongst team members, treated as code, edited, reviewed, and versioned
+    supported_envs:
+      - linux
+      - darwin
+      - amd64
+    checksum:
+      type: http
+      url: https://releases.hashicorp.com/terraform/{{trimV .Version}}/terraform_{{trimV .Version}}_SHA256SUMS
+      algorithm: sha256
+    version_constraint: semver(">= 1.0.2")
+    version_overrides:
+      - version_constraint: "true"
+        rosetta2: true

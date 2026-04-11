@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Songmu
+    repo_name: godzil
+    asset: godzil_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    description: A Go Authoring tool
+    overrides:
+      - goos: linux
+        format: tar.gz
+    files:
+      - name: godzil
+        src: godzil_{{.Version}}_{{.OS}}_{{.Arch}}/godzil

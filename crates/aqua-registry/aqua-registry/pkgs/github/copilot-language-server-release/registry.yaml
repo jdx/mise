@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: github
+    repo_name: copilot-language-server-release
+    description: The Copilot Language Server enables any editor or IDE to integrate with GitHub Copilot via the language server protocol
+    files:
+      - name: copilot-language-server
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.276.0")
+        asset: copilot-language-server-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          windows: win32
+          amd64: x64
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+        files:
+          - name: copilot-language-server
+      - version_constraint: "true"
+        asset: copilot-language-server-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          windows: win32
+          amd64: x64
+        files:
+          - name: copilot-language-server

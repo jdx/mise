@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: theupdateframework/go-tuf/tuf
+    type: github_release
+    repo_owner: theupdateframework
+    repo_name: go-tuf
+    description: Go implementation of The Update Framework (TUF)
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver(">= 2.0.0")
+        error_message: |
+          They decided to leave go-tuf as a library only.
+          https://github.com/theupdateframework/go-tuf/releases/tag/v2.0.0
+      - version_constraint: "true"
+        asset: tuf_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - amd64
+        checksum:
+          type: github_release
+          asset: tuf_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

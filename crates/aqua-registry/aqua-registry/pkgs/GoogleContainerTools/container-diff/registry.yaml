@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: GoogleContainerTools
+    repo_name: container-diff
+    url: https://storage.googleapis.com/container-diff/{{.Version}}/container-diff-{{.OS}}-amd64
+    description: "container-diff: Diff your Docker containers"
+    files:
+      - name: container-diff
+        src: container-diff-{{.OS}}-amd64

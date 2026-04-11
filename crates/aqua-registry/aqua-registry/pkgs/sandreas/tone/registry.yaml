@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sandreas
+    repo_name: tone
+    description: tone is a cross platform audio tagger and metadata editor to dump and modify metadata for a wide variety of formats, including mp3, m4b, flac and more. It has no dependencies and can be downloaded as single binary for Windows, macOS, Linux and other common platforms
+    version_constraint: "false"
+    files:
+      - name: tone
+        src: "{{.AssetWithoutExt}}/tone"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.4")
+        asset: tone-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: osx
+          windows: win
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: tone
+      - version_constraint: "true"
+        asset: tone-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: osx
+          windows: win
+        overrides:
+          - goos: linux
+            goarch: amd64
+            asset: tone-{{trimV .Version}}-{{.OS}}-musl-{{.Arch}}.{{.Format}}
+          - goos: windows
+            format: zip
+            files:
+              - name: tone

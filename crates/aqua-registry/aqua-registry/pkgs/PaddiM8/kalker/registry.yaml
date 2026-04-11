@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: PaddiM8
+    repo_name: kalker
+    description: Kalker is a calculator program that supports user-defined variables, functions, differentiation, and integration
+    asset: kalker-{{.OS}}.{{.Format}}
+    format: zip
+    overrides:
+      - goos: linux
+        format: raw
+        asset: kalker-{{.OS}}
+    replacements:
+      darwin: macOS
+    supported_envs:
+      - linux/amd64
+      - darwin
+    rosetta2: true
+    files:
+      - name: kalker
+        src: target/release/kalker
+    version_constraint: semver(">= 1.0.0")
+    version_overrides:
+      - version_constraint: semver(">= 0.3.4")
+        asset: kalk-{{.OS}}.{{.Format}}
+        overrides:
+          - goos: linux
+            format: raw
+            asset: kalk-{{.OS}}
+        files:
+          - name: kalker
+            src: target/release/kalk
+      - version_constraint: semver(">= 0.3.3")
+        asset: kalk-{{.OS}}
+        format: raw
+        overrides:
+          - goos: windows
+            asset: kalk
+        replacements:
+          darwin: macOS
+          linux: Linux
+        supported_envs:
+          - darwin
+          - amd64
+        files:
+          - name: kalker
+            src: target/release/kalk
+      - version_constraint: semver(">= 0.2.0")
+        asset: kalk_cli_{{.OS}}64
+        format: raw
+        overrides: []
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+        rosetta2: false
+      - version_constraint: semver("< 0.2.0")
+        asset: kalk_cli
+        format: raw
+        overrides: []
+        supported_envs:
+          - linux/amd64
+        rosetta2: false

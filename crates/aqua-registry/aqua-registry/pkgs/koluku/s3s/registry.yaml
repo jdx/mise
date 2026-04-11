@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: koluku
+    repo_name: s3s
+    description: Easy S3 select like searching in directories
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: s3s_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

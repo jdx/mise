@@ -1,0 +1,87 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: fission
+    repo_name: fission
+    description: Fast and Simple Serverless Functions for Kubernetes
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.12.0")
+        asset: fission-cli-{{.OS}}
+        format: raw
+        replacements:
+          darwin: osx
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.14.1")
+        asset: fission-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 1.17.0-rc2")
+        asset: fission-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.20.5")
+        asset: fission-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.21.0")
+        asset: fission-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        slsa_provenance:
+          type: github_release
+          asset: fission_{{.Version}}.intoto.jsonl
+        cosign:
+          opts:
+            - --certificate
+            - https://github.com/fission/fission/releases/download/{{.Version}}/{{.Asset}}.pem
+            - --certificate-identity
+            - https://github.com/fission/fission/.github/workflows/release.yaml@refs/tags/{{.Version}}
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
+            - --signature
+            - https://github.com/fission/fission/releases/download/{{.Version}}/{{.Asset}}.sig
+      - version_constraint: "true"
+        asset: fission-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sig.bundle
+            opts:
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --certificate-identity
+              - https://github.com/fission/fission/.github/workflows/release.yaml@refs/tags/{{.Version}}
+        cosign:
+          bundle:
+            type: github_release
+            asset: "{{.Asset}}.sig.bundle"
+          opts:
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
+            - --certificate-identity
+            - https://github.com/fission/fission/.github/workflows/release.yaml@refs/tags/{{.Version}}
+        github_artifact_attestations:
+          signer_workflow: fission/fission/.github/workflows/release.yaml

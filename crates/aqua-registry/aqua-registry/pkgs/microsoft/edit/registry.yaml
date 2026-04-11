@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: microsoft
+    repo_name: edit
+    description: We all edit
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.2.1"
+        asset: edit-1.2.0-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.zst
+        overrides:
+          - goos: windows
+            asset: edit-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+            format: zip
+            files:
+              - name: edit
+                src: "{{.AssetWithoutExt}}/edit.exe"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          linux: linux-gnu
+        supported_envs:
+          - linux
+          - windows
+      - version_constraint: Version == "v1.0.0"
+        asset: edit-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: xz
+        files:
+          - name: edit
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          linux: linux-gnu
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: edit
+                src: "{{.AssetWithoutExt}}/edit.exe"
+        supported_envs:
+          - linux
+          - windows
+      - version_constraint: "true"
+        asset: edit-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.zst
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: edit
+                src: "{{.AssetWithoutExt}}/edit.exe"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          linux: linux-gnu
+        supported_envs:
+          - linux
+          - windows

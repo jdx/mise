@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: citrusframework
+    repo_name: yaks
+    asset: yaks-{{trimV .Version}}-{{.OS}}-{{.Arch}}.tar.gz
+    description: YAKS is a platform to enable Cloud Native BDD testing on Kubernetes
+    replacements:
+      amd64: 64bit
+      darwin: mac
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true

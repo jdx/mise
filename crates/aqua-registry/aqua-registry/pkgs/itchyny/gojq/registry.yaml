@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: itchyny
+    repo_name: gojq
+    asset: gojq_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    description: Pure Go implementation of jq
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz
+    files:
+      - name: gojq
+        src: gojq_{{.Version}}_{{.OS}}_{{.Arch}}/gojq

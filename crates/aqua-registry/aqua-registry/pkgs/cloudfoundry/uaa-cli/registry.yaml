@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cloudfoundry
+    repo_name: uaa-cli
+    description: CLI for UAA written in Go
+    files:
+      - name: uaa
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.0.1"
+        no_asset: true
+      - version_constraint: semver("<= 0.10.0")
+        asset: uaa-{{.OS}}-{{.Arch}}-{{.Version}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: uaa
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: uaa-{{.OS}}-{{.Arch}}-{{.Version}}
+        format: raw
+        windows_arm_emulation: true
+        files:
+          - name: uaa
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

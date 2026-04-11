@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: tsenart
+    repo_name: vegeta
+    description: HTTP load testing tool and library. It's over 9000
+    rosetta2: true
+    supported_envs:
+      - darwin
+      - linux/amd64
+    asset: vegeta_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    checksum:
+      type: github_release
+      asset: vegeta_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

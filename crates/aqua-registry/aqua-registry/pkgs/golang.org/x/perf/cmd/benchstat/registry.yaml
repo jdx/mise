@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    path: golang.org/x/perf/cmd/benchstat
+    description: Benchstat computes and compares statistics about benchmarks
+    link: https://pkg.go.dev/golang.org/x/perf/cmd/benchstat
+    go_version_path: golang.org/x/perf

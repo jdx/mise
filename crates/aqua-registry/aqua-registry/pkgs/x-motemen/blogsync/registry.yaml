@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: x-motemen
+    repo_name: blogsync
+    asset: blogsync_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    description: Push and pull blog entries from/to local filesystem
+    overrides:
+      - goos: linux
+        format: tar.gz
+    files:
+      - name: blogsync
+        src: blogsync_{{.Version}}_{{.OS}}_{{.Arch}}/blogsync
+    version_constraint: semver(">= 0.12.3")
+    version_overrides:
+      - version_constraint: semver("= 0.12.2")
+        supported_envs:
+          - darwin
+          - linux
+      - version_constraint: "true"
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - amd64

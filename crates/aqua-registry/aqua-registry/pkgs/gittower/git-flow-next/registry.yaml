@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: gittower
+    repo_name: git-flow-next
+    description: A modern reimplementation of git-flow in Go that offers greater flexibility while maintaining backward compatibility with the original git-flow and git-flow-avh
+    files:
+      - name: git-flow
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0-alpha.1"
+        no_asset: true
+      - version_constraint: "true"
+        asset: git-flow-next-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: git-flow
+            src: git-flow-{{.Version}}-{{.OS}}-{{.Arch}}
+        checksum:
+          type: github_release
+          asset: git-flow-next-{{.Version}}-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

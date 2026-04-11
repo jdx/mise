@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: porter-dev
+    repo_name: porter
+    asset: porter_{{.Version}}_{{title .OS}}_x86_64.zip
+    description: Kubernetes powered PaaS that runs in your own cloud
+    supported_envs:
+      - darwin
+      - linux

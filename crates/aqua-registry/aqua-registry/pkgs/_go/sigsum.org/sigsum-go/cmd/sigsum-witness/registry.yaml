@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: _go/sigsum.org/sigsum-go#cmd/sigsum-witness
+    type: go_install
+    description: One of Sigsum command line tools
+    path: sigsum.org/sigsum-go/cmd/sigsum-witness
+    go_version_path: sigsum.org/sigsum-go

@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: palantir
+    repo_name: conjure-typescript
+    description: Conjure generator for TypeScript clients
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        files:
+          - name: conjure-typescript
+            src: conjure-typescript-{{.Version}}/bin/conjure-typescript
+        url: https://repo.maven.apache.org/maven2/com/palantir/conjure/typescript/conjure-typescript/{{.Version}}/conjure-typescript-{{.Version}}.{{.Format}}
+        format: tgz
+        checksum:
+          type: http
+          url: https://repo.maven.apache.org/maven2/com/palantir/conjure/typescript/conjure-typescript/{{.Version}}/conjure-typescript-{{.Version}}.{{.Format}}.sha256
+          algorithm: sha256

@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: ziglang
+    repo_name: zig
+    description: General-purpose programming language and toolchain for maintaining robust, optimal, and reusable software
+    link: https://ziglang.org/
+    version_source: github_tag
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version contains "-dev"
+        url: https://ziglang.org/builds/zig-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        minisign:
+          type: http
+          url: https://ziglang.org/builds/zig-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}.minisig
+          public_key: "RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U"
+        replacements:
+          darwin: macos
+          arm64: aarch64
+          amd64: x86_64
+        files:
+          - name: zig
+            src: zig-{{.OS}}-{{.Arch}}-{{.Version}}/zig
+        format: tar.xz
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.14.0")
+        url: https://ziglang.org/download/{{.Version}}/zig-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        minisign:
+          type: http
+          url: https://ziglang.org/download/{{.Version}}/zig-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}.minisig
+          public_key: "RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U"
+        replacements:
+          darwin: macos
+          arm64: aarch64
+          amd64: x86_64
+        files:
+          - name: zig
+            src: zig-{{.OS}}-{{.Arch}}-{{.Version}}/zig
+        format: tar.xz
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        url: https://ziglang.org/download/{{.Version}}/zig-{{.Arch}}-{{.OS}}-{{.Version}}.{{.Format}}
+        minisign:
+          type: http
+          url: https://ziglang.org/download/{{.Version}}/zig-{{.Arch}}-{{.OS}}-{{.Version}}.{{.Format}}.minisig
+          public_key: "RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U"
+        replacements:
+          darwin: macos
+          arm64: aarch64
+          amd64: x86_64
+        files:
+          - name: zig
+            src: zig-{{.Arch}}-{{.OS}}-{{.Version}}/zig
+        format: tar.xz
+        overrides:
+          - goos: windows
+            format: zip

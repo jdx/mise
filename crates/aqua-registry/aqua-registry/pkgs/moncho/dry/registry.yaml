@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: moncho
+    repo_name: dry
+    description: dry - A Docker manager for the terminal @
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.3-beta.2", "v0.9-beta.6"] or semver("> 0.3-beta.10, <= 0.4-beta.5")
+        no_asset: true
+      - version_constraint: semver("<= 0.9-beta.9")
+        asset: dry-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.10-beta.1")
+        asset: dry-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+      - version_constraint: "true"
+        asset: dry-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        complete_windows_ext: false

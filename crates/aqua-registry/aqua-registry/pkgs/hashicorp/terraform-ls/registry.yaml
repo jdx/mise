@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - repo_owner: hashicorp
+    repo_name: terraform-ls
+    description: Terraform Language Server
+    type: http
+    url: https://releases.hashicorp.com/terraform-ls/{{trimV .Version}}/terraform-ls_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+    checksum:
+      type: http
+      url: https://releases.hashicorp.com/terraform-ls/{{trimV .Version}}/terraform-ls_{{trimV .Version}}_SHA256SUMS
+      algorithm: sha256
+    version_constraint: semver(">= 0.23.0")
+    # 0.23.0: Support windows/arm64
+    version_overrides:
+      - version_constraint: semver(">= 0.14.0")
+        # 0.14.0: Support darwin/arm64
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+      - version_constraint: semver(">= 0.12.0")
+        # 0.12.0: Support linux/arm64
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+      - version_constraint: semver(">= 0.2.1")
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - amd64
+      - version_constraint: semver("< 0.2.1")
+        # 0.1.0 and 0.2.0 were released only at GitHub Releases
+        type: github_release
+        asset: terraform-ls_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: terraform-ls_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
+      - version_constraint: "true"

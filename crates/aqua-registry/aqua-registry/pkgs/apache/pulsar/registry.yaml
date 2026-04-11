@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: apache
+    repo_name: pulsar
+    description: Apache Pulsar - distributed pub-sub messaging system
+    url: https://dist.apache.org/repos/dist/release/pulsar/pulsar-{{trimV .Version}}/apache-pulsar-{{trimV .Version}}-bin.tar.gz
+    format: tar.gz
+    files:
+      - name: pulsar
+        src: apache-pulsar-{{trimV .Version}}/bin/pulsar
+      - name: pulsar-admin
+        src: apache-pulsar-{{trimV .Version}}/bin/pulsar-admin
+      - name: pulsar-client
+        src: apache-pulsar-{{trimV .Version}}/bin/pulsar-client
+      - name: pulsar-perf
+        src: apache-pulsar-{{trimV .Version}}/bin/pulsar-perf
+      - name: pulsar-shell
+        src: apache-pulsar-{{trimV .Version}}/bin/pulsar-shell
+      - name: bookkeeper
+        src: apache-pulsar-{{trimV .Version}}/bin/bookkeeper

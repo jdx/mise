@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Getdeck
+    repo_name: getdeck
+    description: A CLI that creates reproducible Kubernetes environments for development and testing
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.1")
+        no_asset: true
+      - version_constraint: semver("<= 0.6.0")
+        asset: deck-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        supported_envs:
+          - linux/amd64
+        files:
+          - name: deck
+      - version_constraint: semver("<= 0.7.1")
+        asset: deck-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        overrides:
+          - goos: darwin
+            asset: deck-{{.Version}}-{{.OS}}-universal.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+        files:
+          - name: deck
+      - version_constraint: "true"
+        asset: deck-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        overrides:
+          - goos: darwin
+            asset: deck-{{.Version}}-{{.OS}}-universal.{{.Format}}
+          - goos: windows
+            replacements:
+              amd64: x86_64
+            files:
+              - name: deck
+                src: dist/deck
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        files:
+          - name: deck

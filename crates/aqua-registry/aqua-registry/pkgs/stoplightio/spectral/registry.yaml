@@ -1,0 +1,148 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: stoplightio
+    repo_name: spectral
+    description: A flexible JSON/YAML linter for creating automated style guides, with baked in support for OpenAPI (v3.1, v3.0, and v2.0), Arazzo v1.0, as well as AsyncAPI v2.x
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v4.0.0-beta.7"
+        asset: spectral-cli
+        format: raw
+        supported_envs:
+          - windows/amd64
+      - version_constraint: Version == "v4.2.0-beta5"
+        asset: spectral-cli
+        format: raw
+        supported_envs:
+          - windows/amd64
+      - version_constraint: Version == "v4.2.0"
+        asset: spectral-{{.OS}}
+        format: raw
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: windows
+            asset: spectral-cli
+        supported_envs:
+          - darwin
+          - windows/amd64
+      - version_constraint: Version == "v5.4.0-beta1"
+        asset: spectral-{{.OS}}
+        format: raw
+        replacements:
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v6.7.0"
+        asset: spectral-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            asset: spectral
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 3.1.0")
+        no_asset: true
+      - version_constraint: semver("<= 4.0.0-beta.6")
+        asset: spectral-{{.OS}}
+        format: raw
+        replacements:
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 4.1.0-beta2")
+        asset: spectral-{{.OS}}
+        format: raw
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: windows
+            asset: spectral-cli
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 4.1.0")
+        asset: spectral-cli
+        format: raw
+        supported_envs:
+          - windows/amd64
+      - version_constraint: semver("<= 4.2.0-beta4")
+        asset: spectral-{{.OS}}
+        format: raw
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: windows
+            asset: spectral-cli
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 5.0.0-beta3")
+        asset: spectral-cli
+        format: raw
+        supported_envs:
+          - windows/amd64
+      - version_constraint: semver("<= 5.5.0-beta3")
+        asset: spectral-{{.OS}}
+        format: raw
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: windows
+            asset: spectral-cli
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 5.5.0-beta5")
+        asset: spectral-{{.OS}}
+        format: raw
+        replacements:
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 6.2.1")
+        asset: spectral-{{.OS}}
+        format: raw
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: windows
+            asset: spectral-cli
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 6.6.0")
+        asset: spectral-{{.OS}}
+        format: raw
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: windows
+            asset: spectral
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: spectral-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            asset: spectral

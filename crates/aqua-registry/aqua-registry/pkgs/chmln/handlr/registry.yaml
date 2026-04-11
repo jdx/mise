@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: chmln
+    repo_name: handlr
+    asset: handlr
+    format: raw
+    description: A better xdg-utils
+    supported_envs:
+      - linux/amd64

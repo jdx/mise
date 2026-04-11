@@ -1,0 +1,162 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: gogs
+    repo_name: gogs
+    description: Gogs is a painless self-hosted Git service
+    files:
+      - name: gogs
+        src: gogs/gogs
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.12.4-rc.1", "v0.12.5-rc.1", "v0.12.6-rc.1", "v0.12.7-rc.1", "v0.12.8-rc.1", "v0.12.9-rc.1", "v0.12.10-rc.1", "v0.12.11-rc.1", "v0.13.0-rc.1", "v0.13.3-rc.1", "v0.14.0", "latest-commit-build", "release-archive-testing"]
+        no_asset: true
+      - version_constraint: Version == "v0.3.1"
+        asset: "{{.OS}}_{{.Arch}}.{{.Format}}"
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.5.11"
+        asset: "{{.OS}}_{{.Arch}}.{{.Format}}"
+        format: zip
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.12.0"
+        type: http
+        url: https://dl.gogs.io/{{trimV .Version}}/gogs_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: http
+          url: https://dl.gogs.io/{{trimV .Version}}/checksum_sha256.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.12.3"
+        asset: gogs_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: http
+          url: https://dl.gogs.io/{{trimV .Version}}/checksum_sha256.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+            replacements:
+              arm64: armv8
+      - version_constraint: Version in ["v0.12.4", "v0.12.5", "v0.12.6"]
+        asset: gogs_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        checksum:
+          type: http
+          url: https://dl.gogs.io/{{trimV .Version}}/checksum_sha256.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+            replacements:
+              arm64: armv8
+      - version_constraint: Version in ["v0.12.7", "v0.12.8", "v0.12.9", "v0.12.10", "v0.12.11", "v0.13.0", "v0.13.2", "v0.13.3", "v0.13.4"]
+        asset: gogs_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksum_sha256.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+            replacements:
+              arm64: armv8
+      - version_constraint: Version in ["v0.14.0-rc.1", "v0.14.1-rc.1"]
+        asset: gogs_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        overrides:
+          - goos: linux
+            format: tar.gz
+      - version_constraint: semver("<= 0.4.1")
+        no_asset: true
+      - version_constraint: semver("<= 0.6.15")
+        asset: "{{.OS}}_{{.Arch}}.{{.Format}}"
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.9.97")
+        asset: "{{.OS}}_{{.Arch}}.{{.Format}}"
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.11.91")
+        type: http
+        url: https://dl.gogs.io/{{trimV .Version}}/gogs_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: http
+          url: https://dl.gogs.io/{{trimV .Version}}/checksum_sha256.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+            replacements:
+              arm64: armv5
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.12.2")
+        asset: gogs_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: http
+          url: https://dl.gogs.io/{{trimV .Version}}/checksum_sha256.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.13.4-rc.3")
+        no_asset: true
+      - version_constraint: "true"
+        asset: gogs_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: http
+          url: https://dl.gogs.io/{{trimV .Version}}/checksum_sha256.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz

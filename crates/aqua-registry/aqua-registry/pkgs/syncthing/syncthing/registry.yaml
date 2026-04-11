@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: syncthing
+    repo_name: syncthing
+    description: Open Source Continuous File Synchronization
+    files:
+      - name: syncthing
+        src: syncthing-{{.OS}}-{{.Arch}}-{{.Version}}/syncthing
+    version_filter: not (Version matches "-rc")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.12.25"
+        asset: syncthing-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macosx
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.13.3")
+        no_asset: true
+      - version_constraint: Version in ["v0.14.22", "v1.6.0", "v1.20.0"]
+        no_asset: true
+      - version_constraint: semver("<= 0.14.48")
+        asset: syncthing-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macosx
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 1.5.0")
+        asset: syncthing-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 1.12.1")
+        asset: syncthing-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            format: tar.gz
+      - version_constraint: semver("<= 1.18.2")
+        asset: syncthing-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            format: tar.gz
+      - version_constraint: semver("<= 2.0.13")
+        asset: syncthing-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            format: tar.gz
+      - version_constraint: "true"
+        asset: syncthing-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            format: tar.gz
+        github_artifact_attestations:
+          signer_workflow: syncthing/syncthing/.github/workflows/build-syncthing.yaml

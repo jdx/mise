@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: golang-migrate
+    repo_name: migrate
+    description: Database migrations. CLI and Golang library
+    asset: migrate.{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    version_constraint: semver(">= 4.15.0")
+    version_overrides:
+      - version_constraint: "true"
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        files:
+          - name: migrate
+            src: migrate.{{.OS}}-{{.Arch}}
+        overrides:
+          - goos: windows
+            format: tar.gz
+            asset: migrate.windows-amd64.exe.tar.gz
+            files:
+              - name: migrate
+                src: migrate.{{.OS}}-{{.Arch}}.exe
+    checksum:
+      type: github_release
+      asset: sha256sum.txt
+      algorithm: sha256

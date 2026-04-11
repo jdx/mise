@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: grafana/mimir/query-tee
+    type: github_release
+    repo_owner: grafana
+    repo_name: mimir
+    description: Grafana Mimir provides horizontally scalable, highly available, multi-tenant, long-term storage for Prometheus
+    asset: query-tee-{{.OS}}-{{.Arch}}
+    format: raw
+    supported_envs:
+      - linux
+      - darwin
+    version_prefix: mimir-

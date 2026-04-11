@@ -1,0 +1,109 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: benbjohnson
+    repo_name: litestream
+    description: Streaming replication for SQLite
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.3.3"
+        asset: litestream-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            asset: litestream-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.3.8-beta0"
+        asset: litestream-{{.Version}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - linux
+      - version_constraint: Version == "v0.3.10"
+        asset: litestream-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "v0.3.11-beta1"
+        asset: litestream-v0.3.11-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        overrides:
+          - goos: linux
+            format: tar.gz
+            asset: litestream-{{.Version}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: Version == "v0.3.11-beta2"
+        asset: litestream-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - linux
+      - version_constraint: semver("<= 0.2.0")
+        asset: litestream-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.3.2")
+        asset: litestream-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.3.7")
+        asset: litestream-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            format: tar.gz
+            asset: litestream-{{.Version}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+          - goos: windows
+            asset: litestream-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+      - version_constraint: semver("<= 0.3.9")
+        asset: litestream-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        overrides:
+          - goos: linux
+            format: tar.gz
+            asset: litestream-{{.Version}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.3.10-beta2")
+        no_asset: true
+      - version_constraint: semver("<= 0.3.13")
+        asset: litestream-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: litestream-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

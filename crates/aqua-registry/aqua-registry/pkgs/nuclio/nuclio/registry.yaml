@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: nuclio
+    repo_name: nuclio
+    description: High-Performance Serverless event and data processing platform
+    asset: nuctl-{{.Version}}-{{.OS}}-{{.Arch}}
+    format: raw
+    complete_windows_ext: false
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    rosetta2: true

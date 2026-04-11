@@ -1,0 +1,85 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: duckdb
+    repo_name: duckdb
+    description: DuckDB is an analytical in-process SQL database management system
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        no_asset: true
+      - version_constraint: Version == "v0.2.8"
+        asset: duckdb_cli-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: Version in ["v1.2.0", "v1.2.1", "v1.2.2"]
+        asset: duckdb_cli-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: osx
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            asset: duckdb_cli-{{.OS}}-universal.{{.Format}}
+      - version_constraint: semver("<= 0.1.8")
+        no_asset: true
+      - version_constraint: semver("<= 0.3.2")
+        asset: duckdb_cli-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: osx
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.4.0")
+        asset: duckdb_cli-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          darwin: osx
+        overrides:
+          - goos: darwin
+            asset: duckdb_cli-{{.OS}}-universal.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.0.0")
+        asset: duckdb_cli-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          darwin: osx
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            asset: duckdb_cli-{{.OS}}-universal.{{.Format}}
+      - version_constraint: semver("<= 1.1.3")
+        asset: duckdb_cli-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: osx
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            asset: duckdb_cli-{{.OS}}-universal.{{.Format}}
+      - version_constraint: "true"
+        asset: duckdb_cli-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: osx
+        overrides:
+          - goos: darwin
+            asset: duckdb_cli-{{.OS}}-universal.{{.Format}}

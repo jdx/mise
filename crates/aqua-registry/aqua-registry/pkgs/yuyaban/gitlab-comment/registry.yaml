@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: yuyaban
+    repo_name: gitlab-comment
+    description: About gitlab-comment is a CLI command to post Merge Request Note
+    asset: gitlab-comment_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    checksum:
+      type: github_release
+      asset: gitlab-comment_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+      cosign:
+        opts:
+          - --certificate-identity-regexp
+          - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+          - --certificate-oidc-issuer
+          - "https://token.actions.githubusercontent.com"
+          - --signature
+          - https://github.com/yuyaban/gitlab-comment/releases/download/{{.Version}}/gitlab-comment_{{trimV .Version}}_checksums.txt.sig
+          - --certificate
+          - https://github.com/yuyaban/gitlab-comment/releases/download/{{.Version}}/gitlab-comment_{{trimV .Version}}_checksums.txt.pem
+    slsa_provenance:
+      type: github_release
+      asset: multiple.intoto.jsonl

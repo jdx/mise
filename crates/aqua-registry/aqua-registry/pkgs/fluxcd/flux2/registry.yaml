@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: fluxcd
+    repo_name: flux2
+    description: Open and extensible continuous delivery solution for Kubernetes. Powered by GitOps Toolkit
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.25.2")
+        asset: flux_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+        files:
+          - name: flux
+        checksum:
+          type: github_release
+          asset: flux_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 2.0.0")
+        asset: flux_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+        files:
+          - name: flux
+        checksum:
+          type: github_release
+          asset: flux_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - https://github.com/fluxcd/flux2/.github/workflows/release.yaml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/fluxcd/flux2/releases/download/{{.Version}}/flux_{{trimV .Version}}_checksums.txt.sig
+              - --certificate
+              - https://github.com/fluxcd/flux2/releases/download/{{.Version}}/flux_{{trimV .Version}}_checksums.txt.pem
+      - version_constraint: "true"
+        asset: flux_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+        files:
+          - name: flux
+        checksum:
+          type: github_release
+          asset: flux_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - https://github.com/fluxcd/flux2/.github/workflows/release.yaml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/fluxcd/flux2/releases/download/{{.Version}}/flux_{{trimV .Version}}_checksums.txt.sig
+              - --certificate
+              - https://github.com/fluxcd/flux2/releases/download/{{.Version}}/flux_{{trimV .Version}}_checksums.txt.pem
+        slsa_provenance:
+          type: github_release
+          asset: provenance.intoto.jsonl

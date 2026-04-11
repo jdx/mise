@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: liquidmetal-dev/flintlock/flintlock-metrics
+    type: github_release
+    repo_owner: liquidmetal-dev
+    repo_name: flintlock
+    description: Lock, Stock, and Two Smoking MicroVMs. Create and manage the lifecycle of MicroVMs backed by containerd
+    version_filter: not (Version matches "-alpha")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: flintlock-metrics_{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux

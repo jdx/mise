@@ -1,0 +1,108 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jj-vcs
+    repo_name: jj
+    aliases:
+      - name: martinvonz/jj
+    description: A Git-compatible VCS that is both simple and powerful
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.3.1", "v0.5.0"]
+        no_asset: true
+      - version_constraint: semver("<= 0.3.0")
+        asset: jj_{{.Version}}_{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu
+        checksum:
+          type: github_release
+          asset: jj_{{.Version}}_{{.Arch}}-{{.OS}}.{{.Format}}.sha256sum
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: semver("<= 0.13.0")
+        asset: jj-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.17.1")
+        asset: jj-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+          arm64: aarch64
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.18.0"
+        asset: jj-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+          arm64: aarch64
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.20.0")
+        asset: jj-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+          arm64: aarch64
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          # darwin/amd64 was dropped. https://github.com/martinvonz/jj/pull/3999#issuecomment-2198984242
+          - darwin/arm64
+          - windows
+          - linux
+      - version_constraint: "true"
+        asset: jj-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+          arm64: aarch64
+        overrides:
+          - goos: windows
+            format: zip

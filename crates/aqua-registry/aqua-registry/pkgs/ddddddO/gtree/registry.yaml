@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ddddddO
+    repo_name: gtree
+    description: Generate directory trees and the directories itself using Markdown or Programmatically. Provide CLI, Golang library and Web (using WebAssembly)
+    asset: gtree_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      amd64: x86_64
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+    checksum:
+      type: github_release
+      asset: gtree_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 1.8.4")
+    version_overrides:
+      - version_constraint: Version == "v1.8.3"
+        no_asset: true
+      - version_constraint: semver(">= 1.2.0")
+        replacements:
+          amd64: x86_64
+      - version_constraint: semver("< 1.2.0")
+        asset: gentree_{{.OS}}_{{.Arch}}.{{.Format}}
+        files:
+          - name: gentree
+        overrides: []
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux
+          - darwin
+        checksum:
+          type: github_release
+          asset: gentree_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

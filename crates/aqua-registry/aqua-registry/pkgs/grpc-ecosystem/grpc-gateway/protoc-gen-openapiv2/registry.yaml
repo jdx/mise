@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: grpc-ecosystem/grpc-gateway/protoc-gen-openapiv2
+    type: github_release
+    repo_owner: grpc-ecosystem
+    repo_name: grpc-gateway
+    description: gRPC to JSON proxy generator following the gRPC HTTP spec
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 2.0.0") || Version == "v2.16.1"
+        no_asset: true
+      - version_constraint: semver("<= 2.10.1")
+        asset: protoc-gen-openapiv2-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: grpc-gateway_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.13.0")
+        asset: protoc-gen-openapiv2-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: grpc-gateway_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 2.16.0")
+        asset: protoc-gen-openapiv2-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: grpc-gateway_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+      - version_constraint: "true"
+        asset: protoc-gen-openapiv2-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: grpc-gateway_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl

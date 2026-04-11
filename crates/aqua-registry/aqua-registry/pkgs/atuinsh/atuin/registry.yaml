@@ -1,0 +1,160 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: atuinsh
+    repo_name: atuin
+    description: Magical shell history
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.6.3")
+        asset: atuin-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: atuin
+            src: "{{.AssetWithoutExt}}/atuin"
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 13.0.1")
+        asset: atuin-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: atuin
+            src: "{{.AssetWithoutExt}}/atuin"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 14.0.1")
+        asset: atuin-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: atuin
+            src: "{{.AssetWithoutExt}}/atuin"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v15.0.0"
+        asset: atuin-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        rosetta2: true # asset for darwin/arm64 is unavailable
+        format: tar.gz
+        files:
+          - name: atuin
+            src: "{{.AssetWithoutExt}}/atuin"
+        replacements:
+          linux: unknown-linux-musl
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+        supported_envs:
+          - linux/amd64 # linux/arm64 is unavailable
+          - darwin
+      - version_constraint: semver("<= 18.2.0")
+        asset: atuin-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: atuin
+            src: "{{.AssetWithoutExt}}/atuin"
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("< 18.4.0")
+        asset: atuin-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: atuin
+            src: "{{.AssetWithoutExt}}/atuin"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 18.10.0")
+        asset: atuin-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: atuin
+            src: "{{.AssetWithoutExt}}/atuin"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: atuinsh/atuin/.github/workflows/release.yml
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: atuin-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: atuin
+            src: "{{.AssetWithoutExt}}/atuin"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+            files:
+              - name: atuin
+        github_artifact_attestations:
+          signer_workflow: atuinsh/atuin/.github/workflows/release.yml
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64

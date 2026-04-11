@@ -1,0 +1,85 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: opengrep
+    repo_name: opengrep
+    description: Static code analysis engine to find security issues in code
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.1")
+        asset: opengrep_{{.OS}}_{{.Arch}}
+        format: raw
+        replacements:
+          darwin: osx
+        overrides:
+          - goos: linux
+            asset: opengrep_many{{.OS}}_x86
+          - goos: windows
+            asset: opengrep_{{.OS}}_x86
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64
+          - windows/amd64
+      - version_constraint: semver("<= 1.1.4")
+        asset: opengrep_many{{.OS}}_x86
+        format: raw
+        replacements:
+          darwin: osx
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: opengrep_many{{.OS}}_{{.Arch}}
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            asset: opengrep_{{.OS}}_{{.Arch}}
+          - goos: windows
+            asset: opengrep_{{.OS}}_x86
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+      - version_constraint: semver("<= 1.4.2")
+        asset: opengrep_{{.OS}}_x86
+        format: raw
+        replacements:
+          darwin: osx
+        overrides:
+          - goos: linux
+            goarch: amd64
+            asset: opengrep_many{{.OS}}_x86
+          - goos: linux
+            goarch: arm64
+            asset: opengrep_many{{.OS}}_{{.Arch}}
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            goarch: arm64
+            asset: opengrep_{{.OS}}_{{.Arch}}
+      - version_constraint: "true"
+        asset: opengrep_{{.OS}}_x86
+        format: raw
+        replacements:
+          darwin: osx
+        overrides:
+          - goos: linux
+            goarch: amd64
+            asset: opengrep_many{{.OS}}_x86
+          - goos: linux
+            goarch: arm64
+            asset: opengrep_many{{.OS}}_{{.Arch}}
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            goarch: arm64
+            asset: opengrep_{{.OS}}_{{.Arch}}
+        cosign:
+          opts:
+            - --certificate
+            - https://github.com/opengrep/opengrep/releases/download/{{.Version}}/{{.Asset}}.cert
+            - --signature
+            - https://github.com/opengrep/opengrep/releases/download/{{.Version}}/{{.Asset}}.sig
+            - --certificate-identity-regexp
+            - https://github.com/opengrep/opengrep.+
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com

@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: stackrox
+    repo_name: stackrox
+    name: stackrox/stackrox/roxctl
+    description: CLI for StackRox Kubernetes Security Platform
+    link: https://www.stackrox.io/
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 4.4.8")
+        url: https://mirror.openshift.com/pub/rhacs/assets/{{.Version}}/bin/{{.OS}}/roxctl
+        format: raw
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+        checksum:
+          type: http
+          url: https://mirror.openshift.com/pub/rhacs/assets/{{.Version}}/bin/{{.OS}}/sha256sum.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        url: https://mirror.openshift.com/pub/rhacs/assets/{{.Version}}/bin/{{.OS}}/roxctl
+        format: raw
+        overrides:
+          - goos: windows
+            url: https://mirror.openshift.com/pub/rhacs/assets/{{.Version}}/bin/windows/roxctl.exe
+          - goarch: arm64
+            url: https://mirror.openshift.com/pub/rhacs/assets/{{.Version}}/bin/{{.OS}}/roxctl-arm64
+        checksum:
+          type: http
+          url: https://mirror.openshift.com/pub/rhacs/assets/{{.Version}}/bin/{{.OS}}/sha256sum.txt
+          algorithm: sha256

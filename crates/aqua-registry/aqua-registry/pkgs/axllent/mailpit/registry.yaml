@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: axllent
+    repo_name: mailpit
+    description: An email and SMTP testing tool with API for developers
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.6.15"
+        no_asset: true
+      - version_constraint: semver("<= 1.2.1")
+        asset: mailpit-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: mailpit-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip

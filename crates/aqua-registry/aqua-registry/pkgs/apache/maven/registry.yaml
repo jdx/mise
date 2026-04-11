@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: apache
+    repo_name: maven
+    description: Apache Maven core
+    version_prefix: maven-
+    version_constraint: "false"
+    version_filter: not (Version matches "-(rc|alpha|beta)")
+    version_overrides:
+      - version_constraint: semver("<= 3.2.5")
+        url: https://archive.apache.org/dist/maven/maven-{{(semver .SemVer).Major}}/{{.SemVer}}/binaries/apache-maven-{{.SemVer}}-bin.{{.Format}}
+        format: tar.gz
+        files:
+          - name: mvn
+            src: apache-maven-{{.SemVer}}/bin/mvn
+        overrides:
+          - goos: windows
+            files:
+              - name: mvn
+                src: apache-maven-{{.SemVer}}/bin/mvn.bat
+      - version_constraint: "true"
+        url: https://archive.apache.org/dist/maven/maven-{{(semver .SemVer).Major}}/{{.SemVer}}/binaries/apache-maven-{{.SemVer}}-bin.{{.Format}}
+        format: tar.gz
+        files:
+          - name: mvn
+            src: apache-maven-{{.SemVer}}/bin/mvn
+        overrides:
+          - goos: windows
+            files:
+              - name: mvn
+                src: apache-maven-{{.SemVer}}/bin/mvn.cmd

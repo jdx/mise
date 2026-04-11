@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: smithy-lang
+    repo_name: smithy
+    description: Smithy is a protocol-agnostic interface definition language and set of tools for generating clients, servers, and documentation for any programming language
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.47.0")
+        asset: smithy-cli-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: smithy
+            src: bin/smithy
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            replacements:
+              amd64: x64
+      - version_constraint: "true"
+        asset: smithy-cli-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: smithy
+            src: smithy-cli-{{.OS}}-{{.Arch}}/bin/smithy
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            replacements:
+              amd64: x64

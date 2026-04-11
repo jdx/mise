@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: hokaccha
+    repo_name: spannerdef
+    description: Idempotent Google Cloud Spanner schema management by SQL, inspired by sqldef
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: spannerdef-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin

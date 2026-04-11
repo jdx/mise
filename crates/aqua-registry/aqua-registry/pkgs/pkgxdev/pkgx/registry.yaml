@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: pkgxdev
+    repo_name: pkgx
+    description: “run anything” from the creator of `brew`
+    asset: pkgx-{{trimV .Version}}+{{.OS}}+{{.Arch}}.{{.Format}}
+    format: tar.xz
+    replacements:
+      arm64: aarch64
+      amd64: x86-64
+    supported_envs:
+      - linux
+      - darwin
+    version_constraint: semver(">= 1.0.0")
+    version_overrides:
+      - version_constraint: Version == "v0.14.2"
+        asset: tea-{{trimV .Version}}+{{.OS}}+{{.Arch}}.{{.Format}}
+        files:
+          - name: tea
+        overrides:
+          - goos: darwin
+            goarch: arm64
+            asset: tea-+{{.OS}}+{{.Arch}}.{{.Format}}
+      - version_constraint: semver(">= 0.11.14")
+        asset: tea-{{trimV .Version}}+{{.OS}}+{{.Arch}}.{{.Format}}
+        files:
+          - name: tea
+      - version_constraint: semver(">= 0.8.8")
+        asset: tea-{{trimV .Version}}+{{.OS}}+{{.Arch}}.{{.Format}}
+        files:
+          - name: tea
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver(">= 0.6.6")
+        no_asset: true
+      - version_constraint: semver("< 0.6.6")
+        asset: tea-{{trimV .Version}}+{{.OS}}+{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: tea
+            src: tea.xyz/{{.Version}}/bin/tea
+        supported_envs:
+          - linux/amd64
+          - darwin

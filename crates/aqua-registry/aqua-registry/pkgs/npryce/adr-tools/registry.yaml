@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_archive
+    repo_owner: npryce
+    repo_name: adr-tools
+    description: Command-line tools for working with Architecture Decision Records
+    files:
+      - name: adr
+        src: adr-tools-{{.Version}}/src/adr

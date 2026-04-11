@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: joehillen
+    repo_name: sysz
+    description: An fzf  terminal UI for systemctl
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: sysz
+        supported_envs:
+          - linux
+          - darwin

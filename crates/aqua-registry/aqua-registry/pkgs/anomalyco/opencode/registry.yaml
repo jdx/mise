@@ -1,0 +1,135 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: anomalyco
+    repo_name: opencode
+    aliases:
+      - name: sst/opencode
+    description: The AI coding agent built for the terminal
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.1.84", "v0.1.92", "v0.1.115", "v0.1.124"]
+        asset: opencode-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version in ["v0.1.139", "v0.1.142"]
+        asset: opencode-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version in ["v0.1.150", "v0.1.156", "v0.1.159", "v0.1.167", "v0.1.170", "v0.1.180", "v0.2.5"]
+        asset: opencode-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+      - version_constraint: Version in ["v0.3.11", "v0.3.25"]
+        asset: opencode-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: Version == "v1.0.92"
+        asset: opencode-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+        supported_envs:
+          - darwin
+          - windows/amd64
+      - version_constraint: Version == "v1.0.93"
+        asset: opencode-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+        overrides:
+          - goos: linux
+            format: tar.gz
+      - version_constraint: semver("<= 0.0.52")
+        asset: opencode-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: mac
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.1.61")
+        asset: opencode-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+      - version_constraint: semver("<= 0.1.129")
+        asset: opencode-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.3.18")
+        asset: opencode-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+      - version_constraint: semver("<= 0.3.20")
+        asset: opencode-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.3.31")
+        asset: opencode-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+      - version_constraint: semver("<= 0.3.34")
+        asset: opencode-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.0.91")
+        asset: opencode-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+      - version_constraint: "true"
+        asset: opencode-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+        overrides:
+          - goos: linux
+            format: tar.gz

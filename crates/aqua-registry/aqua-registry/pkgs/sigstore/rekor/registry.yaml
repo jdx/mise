@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sigstore
+    repo_name: rekor
+    description: Software Supply Chain Transparency Log
+    files:
+      - name: rekor-cli
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.3.0")
+        no_asset: true
+      - version_constraint: Version == "v0.3.0"
+        asset: rekor-cli-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: rekor-cli_checksums.txt
+          algorithm: sha256
+      - version_constraint: Version == "v0.4.0"
+        asset: rekor-cli-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: rekor_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.4.2")
+        asset: rekor-cli-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: rekor_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/sigstore/rekor/releases/download/{{.Version}}/rekor_checksums.txt-keyless.pem
+              - --certificate-identity
+              - keyless@projectsigstore.iam.gserviceaccount.com
+              - --certificate-oidc-issuer
+              - https://accounts.google.com
+              - --signature
+              - https://github.com/sigstore/rekor/releases/download/{{.Version}}/rekor_checksums.txt-keyless.sig
+      - version_constraint: "true"
+        asset: rekor-cli-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: rekor_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: "rekor_checksums.txt-keyless.sigstore.json"
+            opts:
+              - --certificate-identity
+              - keyless@projectsigstore.iam.gserviceaccount.com
+              - --certificate-oidc-issuer
+              - https://accounts.google.com

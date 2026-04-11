@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ko1nksm
+    repo_name: shdotenv
+    description: dotenv for shells with support for POSIX-compliant and multiple .env file syntax
+    asset: shdotenv
+    supported_envs:
+      - linux
+      - darwin

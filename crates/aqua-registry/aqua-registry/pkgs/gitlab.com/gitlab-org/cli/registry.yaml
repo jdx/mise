@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: gitlab.com/gitlab-org/cli
+    # TODO: Support GitLab
+    # repo_owner: gitlab-org
+    # repo_name: cli
+    aliases:
+      - name: profclems/glab
+    type: http
+    link: https://gitlab.com/gitlab-org/cli
+    description: A GitLab CLI tool bringing GitLab to your command line
+    files:
+      - name: glab
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.22.0")
+        type: github_release
+        repo_owner: profclems
+        repo_name: glab
+        rosetta2: true
+        windows_arm_emulation: true
+        asset: glab_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          darwin: macOS
+          linux: Linux
+          386: i386
+          amd64: x86_64
+          windows: Windows
+        files:
+          - name: glab
+            src: bin/glab
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.46.1")
+        url: https://gitlab.com/gitlab-org/cli/-/releases/{{.Version}}/downloads/glab_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: glab
+            src: bin/glab
+        replacements:
+          linux: Linux
+          windows: Windows
+          darwin: macOS
+          amd64: x86_64
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        url: https://gitlab.com/gitlab-org/cli/-/releases/{{.Version}}/downloads/glab_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: glab
+            src: bin/glab
+        overrides:
+          - goos: windows
+            format: zip

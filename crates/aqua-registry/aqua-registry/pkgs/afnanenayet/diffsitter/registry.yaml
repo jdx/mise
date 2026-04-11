@@ -1,0 +1,324 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: afnanenayet
+    repo_name: diffsitter
+    description: A tree-sitter based AST difftool to get meaningful semantic diffs
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.1"
+        asset: diffsitter-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.1.3")
+        asset: diffsitter-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: diffsitter
+            src: target/release/diffsitter
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.1.5"
+        no_asset: true
+      - version_constraint: Version == "v0.1.6"
+        asset: diffsitter-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: diffsitter
+            src: diffsitter-{{.OS}}-{{.Arch}}/diffsitter
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.2.0-2")
+        asset: diffsitter-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: diffsitter
+            src: diffsitter-{{.OS}}-{{.Arch}}/diffsitter
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: diffsitter
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.2.0-3"
+        asset: diffsitter-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: diffsitter
+            src: diffsitter-{{.OS}}-{{.Arch}}/diffsitter
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: diffsitter
+            checksum:
+              enabled: false
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+        checksum:
+          type: github_release
+          asset: diffsitter-{{.OS}}-{{.Arch}}.tar.gz.sha256sum
+          algorithm: sha256
+      - version_constraint: Version == "v0.2.0"
+        asset: diffsitter-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: diffsitter
+            src: diffsitter-{{.OS}}-{{.Arch}}/diffsitter
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: diffsitter
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.3.0-1"
+        asset: diffsitter-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: diffsitter
+            src: diffsitter-{{.OS}}-{{.Arch}}/diffsitter
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: diffsitter
+            checksum:
+              enabled: false
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: Version == "v0.3.0"
+        asset: diffsitter-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: diffsitter
+            src: diffsitter-{{.OS}}-{{.Arch}}/diffsitter
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.6.4")
+        asset: diffsitter-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: diffsitter
+            src: diffsitter-{{.OS}}-{{.Arch}}/diffsitter
+          - name: git-diffsitter
+            src: diffsitter-{{.OS}}-{{.Arch}}/git-diffsitter
+        overrides:
+          - goos: windows
+            format: zip
+            checksum:
+              enabled: false
+            files:
+              - name: diffsitter
+              - name: git-diffsitter
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: Version == "v0.6.5"
+        asset: diffsitter-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: diffsitter
+            src: diffsitter-{{.Arch}}-{{.OS}}/diffsitter
+          - name: git-diffsitter
+            src: diffsitter-{{.Arch}}-{{.OS}}/git-diffsitter
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            checksum:
+              enabled: false
+            files:
+              - name: diffsitter
+              - name: git-diffsitter
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: Version == "v0.6.6"
+        asset: diffsitter-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: diffsitter
+            src: diffsitter-{{.Arch}}-{{.OS}}/diffsitter
+          - name: git-diffsitter
+            src: diffsitter-{{.Arch}}-{{.OS}}/git-diffsitter
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            checksum:
+              enabled: false
+            files:
+              - name: diffsitter
+              - name: git-diffsitter
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: semver("<= 0.7.1")
+        asset: diffsitter-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: diffsitter
+            src: diffsitter-{{.Arch}}-{{.OS}}/diffsitter
+          - name: git-diffsitter
+            src: diffsitter-{{.Arch}}-{{.OS}}/git-diffsitter
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            checksum:
+              enabled: false
+            files:
+              - name: diffsitter
+              - name: git-diffsitter
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: Version == "v0.7.2"
+        asset: diffsitter-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: diffsitter
+            src: diffsitter-{{.Arch}}-{{.OS}}/diffsitter
+          - name: git-diffsitter
+            src: diffsitter-{{.Arch}}-{{.OS}}/git-diffsitter
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux
+          - darwin
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: Version == "v0.7.3"
+        asset: diffsitter-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: diffsitter
+            src: diffsitter-{{.Arch}}-{{.OS}}/diffsitter
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            checksum:
+              enabled: false
+            files:
+              - name: diffsitter
+              - name: git-diffsitter
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: diffsitter-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        complete_windows_ext: false
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: diffsitter-{{.Arch}}-{{.OS}}.sha256
+          algorithm: sha256

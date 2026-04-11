@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: schemalex
+    repo_name: schemalex
+    asset: schemalex_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    description: Generate difference sql of two mysql schema
+    overrides:
+      - goos: linux
+        format: tar.gz
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    files:
+      - name: schemadiff
+        src: schemalex_{{.OS}}_{{.Arch}}/schemadiff
+      - name: schemalex
+        src: schemalex_{{.OS}}_{{.Arch}}/schemalex
+      - name: schemalint
+        src: schemalex_{{.OS}}_{{.Arch}}/schemalint

@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: projectdiscovery
+    repo_name: naabu
+    description: A fast port scanner written in go with a focus on reliability and simplicity. Designed to be used in combination with other tools for attack surface discovery in bug bounties and pentests
+    rosetta2: true
+    asset: naabu_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+    replacements:
+      darwin: macOS
+    version_constraint: semver(">= 2.0.9")
+    supported_envs:
+      - darwin
+      - amd64
+    version_overrides:
+      - version_constraint: semver("= 2.0.8")
+        supported_envs:
+          - darwin
+          - linux/amd64
+      - version_constraint: "true"
+        supported_envs:
+          - windows
+          - darwin
+          - linux/amd64
+    checksum:
+      type: github_release
+      asset: naabu-{{.OS}}-checksums.txt
+      algorithm: sha256
+      replacements:
+        darwin: mac

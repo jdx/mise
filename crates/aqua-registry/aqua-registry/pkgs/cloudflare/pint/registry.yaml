@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cloudflare
+    repo_name: pint
+    description: Prometheus rule linter/validator
+    asset: pint-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    files:
+      - name: pint
+        src: pint-{{.GOOS}}-{{.GOARCH}}
+    format: tar.gz
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 0.31.0")
+    version_overrides:
+      - version_constraint: semver(">= 0.16.0")
+        replacements:
+          amd64: x86_64
+      - version_constraint: semver(">= 0.1.5")
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+      - version_constraint: semver("< 0.1.5")
+        asset: pint_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows

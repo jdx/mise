@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: harelba
+    repo_name: q
+    description: q - Run SQL directly on CSV or TSV files
+    rosetta2: true
+    supported_envs:
+      - darwin
+      - amd64
+    version_constraint: semver(">= 3.1.6")
+    asset: "{{.OS}}-q"
+    replacements:
+      windows: win
+      darwin: macos
+    version_overrides:
+      - version_constraint: "true"
+        asset: q-{{.Arch}}-{{.OS}}
+        replacements:
+          darwin: Darwin
+          linux: Linux
+          amd64: x86_64
+        overrides:
+          - goos: windows
+            asset: q-AMD64-Windows.exe

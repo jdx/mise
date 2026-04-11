@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: github
+    repo_name: git-sizer
+    description: Compute various size metrics for a Git repository, flagging those that might cause problems
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.3.0")
+        asset: git-sizer-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: git-sizer-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

@@ -1,0 +1,329 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: cri-o
+    repo_name: cri-o
+    description: Open Container Initiative-based implementation of Kubernetes Container Runtime Interface
+    url: https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz
+    checksum:
+      type: http
+      url: https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.sha256sum
+      algorithm: sha256
+    supported_envs:
+      - linux
+    files:
+      - name: conmon
+        src: cri-o/bin/{{.FileName}}
+      - name: conmonrs
+        src: cri-o/bin/{{.FileName}}
+      - name: crictl
+        src: cri-o/bin/{{.FileName}}
+      - name: crio
+        src: cri-o/bin/{{.FileName}}
+      - name: crun
+        src: cri-o/bin/{{.FileName}}
+      - name: pinns
+        src: cri-o/bin/{{.FileName}}
+      - name: runc
+        src: cri-o/bin/{{.FileName}}
+    version_filter: Version matches "v[0-9]+.[0-9]+.[0-9]+$"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.24.6"
+        supported_envs:
+          - linux/amd64
+        files:
+          - name: conmon
+            src: cri-o/bin/{{.FileName}}
+          - name: crictl
+            src: cri-o/bin/{{.FileName}}
+          - name: crio
+            src: cri-o/bin/{{.FileName}}
+          - name: crio-status
+            src: cri-o/bin/{{.FileName}}
+          - name: crun
+            src: cri-o/bin/{{.FileName}}
+          - name: pinns
+            src: cri-o/bin/{{.FileName}}
+          - name: runc
+            src: cri-o/bin/{{.FileName}}
+        overrides:
+          - goarch: arm64
+            files:
+              - name: conmon
+                src: cri-o/bin/{{.FileName}}
+              - name: crictl
+                src: cri-o/bin/{{.FileName}}
+              - name: crio
+                src: cri-o/bin/{{.FileName}}
+              - name: crio-status
+                src: cri-o/bin/{{.FileName}}
+              - name: crun
+                src: cri-o/bin/{{.FileName}}
+              - name: pinns
+                src: cri-o/bin/{{.FileName}}
+      - version_constraint: Version == "v1.25.4"
+        files:
+          - name: conmon
+            src: cri-o/bin/{{.FileName}}
+          - name: crictl
+            src: cri-o/bin/{{.FileName}}
+          - name: crio
+            src: cri-o/bin/{{.FileName}}
+          - name: crio-status
+            src: cri-o/bin/{{.FileName}}
+          - name: crun
+            src: cri-o/bin/{{.FileName}}
+          - name: pinns
+            src: cri-o/bin/{{.FileName}}
+          - name: runc
+            src: cri-o/bin/{{.FileName}}
+        overrides:
+          - goarch: arm64
+            files:
+              - name: conmon
+                src: cri-o/bin/{{.FileName}}
+              - name: crictl
+                src: cri-o/bin/{{.FileName}}
+              - name: crio
+                src: cri-o/bin/{{.FileName}}
+              - name: crio-status
+                src: cri-o/bin/{{.FileName}}
+              - name: crun
+                src: cri-o/bin/{{.FileName}}
+              - name: pinns
+                src: cri-o/bin/{{.FileName}}
+      - version_constraint: semver("<= 1.24.5")
+        files:
+          - name: conmon
+            src: cri-o/bin/{{.FileName}}
+          - name: crictl
+            src: cri-o/bin/{{.FileName}}
+          - name: crio
+            src: cri-o/bin/{{.FileName}}
+          - name: crio-status
+            src: cri-o/bin/{{.FileName}}
+          - name: crun
+            src: cri-o/bin/{{.FileName}}
+          - name: pinns
+            src: cri-o/bin/{{.FileName}}
+          - name: runc
+            src: cri-o/bin/{{.FileName}}
+        overrides:
+          - goarch: arm64
+            files:
+              - name: conmon
+                src: cri-o/bin/{{.FileName}}
+              - name: crictl
+                src: cri-o/bin/{{.FileName}}
+              - name: crio
+                src: cri-o/bin/{{.FileName}}
+              - name: crio-status
+                src: cri-o/bin/{{.FileName}}
+              - name: crun
+                src: cri-o/bin/{{.FileName}}
+              - name: pinns
+                src: cri-o/bin/{{.FileName}}
+      - version_constraint: semver("<= 1.28.1")
+        cosign:
+          opts:
+            - --certificate-identity
+            - "https://github.com/cri-o/cri-o/.github/workflows/test.yml@refs/tags/{{.Version}}"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"
+            - --certificate
+            - https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.cert
+            - --signature
+            - https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.sig
+        files:
+          - name: conmon
+            src: cri-o/bin/{{.FileName}}
+          - name: crictl
+            src: cri-o/bin/{{.FileName}}
+          - name: crio
+            src: cri-o/bin/{{.FileName}}
+          - name: crio-status
+            src: cri-o/bin/{{.FileName}}
+          - name: crun
+            src: cri-o/bin/{{.FileName}}
+          - name: pinns
+            src: cri-o/bin/{{.FileName}}
+          - name: runc
+            src: cri-o/bin/{{.FileName}}
+      - version_constraint: Version == "v1.28.2"
+        cosign:
+          opts:
+            - --certificate-identity
+            - "https://github.com/cri-o/packaging/.github/workflows/obs.yml@refs/heads/main"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"
+            - --certificate
+            - https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.cert
+            - --signature
+            - https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.sig
+        files:
+          - name: conmon
+            src: cri-o/bin/{{.FileName}}
+          - name: conmonrs
+            src: cri-o/bin/{{.FileName}}
+          - name: crictl
+            src: cri-o/bin/{{.FileName}}
+          - name: crio
+            src: cri-o/bin/{{.FileName}}
+          - name: crun
+            src: cri-o/bin/{{.FileName}}
+          - name: pinns
+            src: cri-o/bin/{{.FileName}}
+          - name: runc
+            src: cri-o/bin/{{.FileName}}
+      - version_constraint: semver("<= 1.28.8")
+        cosign:
+          opts:
+            - --certificate-identity
+            - "https://github.com/cri-o/packaging/.github/workflows/obs.yml@refs/heads/main"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"
+            - --certificate
+            - https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.cert
+            - --signature
+            - https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.sig
+        files:
+          - name: crictl
+            src: cri-o/bin/{{.FileName}}
+          - name: crio
+            src: cri-o/bin/{{.FileName}}
+          - name: crio-conmon
+            src: cri-o/bin/{{.FileName}}
+          - name: crio-conmonrs
+            src: cri-o/bin/{{.FileName}}
+          - name: crio-crun
+            src: cri-o/bin/{{.FileName}}
+          - name: crio-runc
+            src: cri-o/bin/{{.FileName}}
+          - name: pinns
+            src: cri-o/bin/{{.FileName}}
+      - version_constraint: semver("<= 1.29.0")
+        cosign:
+          opts:
+            - --certificate-identity
+            - "https://github.com/cri-o/packaging/.github/workflows/obs.yml@refs/heads/main"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"
+            - --certificate
+            - https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.cert
+            - --signature
+            - https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.sig
+        files:
+          - name: conmon
+            src: cri-o/bin/{{.FileName}}
+          - name: conmonrs
+            src: cri-o/bin/{{.FileName}}
+          - name: crictl
+            src: cri-o/bin/{{.FileName}}
+          - name: crio
+            src: cri-o/bin/{{.FileName}}
+          - name: crun
+            src: cri-o/bin/{{.FileName}}
+          - name: pinns
+            src: cri-o/bin/{{.FileName}}
+          - name: runc
+            src: cri-o/bin/{{.FileName}}
+      - version_constraint: semver("<= 1.29.6")
+        cosign:
+          opts:
+            - --certificate-identity
+            - "https://github.com/cri-o/packaging/.github/workflows/obs.yml@refs/heads/main"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"
+            - --certificate
+            - https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.cert
+            - --signature
+            - https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.sig
+        files:
+          - name: crictl
+            src: cri-o/bin/{{.FileName}}
+          - name: crio
+            src: cri-o/bin/{{.FileName}}
+          - name: crio-conmon
+            src: cri-o/bin/{{.FileName}}
+          - name: crio-conmonrs
+            src: cri-o/bin/{{.FileName}}
+          - name: crio-crun
+            src: cri-o/bin/{{.FileName}}
+          - name: crio-runc
+            src: cri-o/bin/{{.FileName}}
+          - name: pinns
+            src: cri-o/bin/{{.FileName}}
+      - version_constraint: semver("<= 1.29.13")
+        cosign:
+          opts:
+            - --certificate-identity
+            - "https://github.com/cri-o/packaging/.github/workflows/obs.yml@refs/heads/main"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"
+            - --certificate
+            - https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.cert
+            - --signature
+            - https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.sig
+        files:
+          - name: conmon
+            src: cri-o/bin/{{.FileName}}
+          - name: conmonrs
+            src: cri-o/bin/{{.FileName}}
+          - name: crictl
+            src: cri-o/bin/{{.FileName}}
+          - name: crio
+            src: cri-o/bin/{{.FileName}}
+          - name: crun
+            src: cri-o/bin/{{.FileName}}
+          - name: pinns
+            src: cri-o/bin/{{.FileName}}
+          - name: runc
+            src: cri-o/bin/{{.FileName}}
+      - version_constraint: semver("<= 1.30.3")
+        cosign:
+          opts:
+            - --certificate-identity
+            - "https://github.com/cri-o/packaging/.github/workflows/obs.yml@refs/heads/main"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"
+            - --certificate
+            - https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.cert
+            - --signature
+            - https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.sig
+        files:
+          - name: crictl
+            src: cri-o/bin/{{.FileName}}
+          - name: crio
+            src: cri-o/bin/{{.FileName}}
+          - name: crio-conmon
+            src: cri-o/bin/{{.FileName}}
+          - name: crio-conmonrs
+            src: cri-o/bin/{{.FileName}}
+          - name: crio-crun
+            src: cri-o/bin/{{.FileName}}
+          - name: crio-runc
+            src: cri-o/bin/{{.FileName}}
+          - name: pinns
+            src: cri-o/bin/{{.FileName}}
+      - version_constraint: semver("<= 1.34.1")
+        cosign:
+          opts:
+            - --certificate-identity
+            - "https://github.com/cri-o/packaging/.github/workflows/obs.yml@refs/heads/main"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"
+            - --certificate
+            - https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.cert
+            - --signature
+            - https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.sig
+      - version_constraint: "true"
+        cosign:
+          bundle:
+            type: http
+            url: https://storage.googleapis.com/cri-o/artifacts/cri-o.{{.Arch}}.{{.Version}}.tar.gz.bundle
+          opts:
+            - --certificate-identity
+            - "https://github.com/cri-o/packaging/.github/workflows/obs.yml@refs/heads/main"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"

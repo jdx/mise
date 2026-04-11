@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: getsentry
+    repo_name: sentry-cli
+    description: A command line utility to work with Sentry
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: sentry-cli-{{.OS}}-{{.Arch}}
+    replacements:
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+      amd64: x86_64
+    overrides:
+      - goos: linux
+        replacements:
+          arm64: aarch64

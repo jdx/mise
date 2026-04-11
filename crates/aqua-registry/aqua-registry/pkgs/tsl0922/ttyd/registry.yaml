@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: tsl0922
+    repo_name: ttyd
+    description: Share your terminal over the web
+    asset: ttyd.{{.Arch}}
+    format: raw
+    replacements:
+      amd64: x86_64
+      arm64: aarch64
+      windows: win32
+    overrides:
+      - goos: windows
+        goarch: amd64
+        asset: ttyd.{{.OS}}.exe
+    supported_envs:
+      - linux
+      - windows/amd64
+    version_constraint: semver(">= 1.7.3")
+    version_overrides:
+      - version_constraint: semver(">= 1.7.0")
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          windows: win10
+        overrides:
+          - goos: windows
+            goarch: amd64
+            asset: ttyd.{{.OS}}.exe
+      - version_constraint: semver("< 1.7.0")
+        supported_envs:
+          - linux
+      - version_constraint: "true"

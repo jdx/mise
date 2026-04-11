@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: biomejs
+    repo_name: biome
+    description: A toolchain for web projects, aimed to provide functionalities to maintain them. Biome offers formatter and linter, usable via CLI and LSP
+    version_filter: |
+      let words = ["lsp", "js-api", "nightly"];
+      not any(words, {Version matches #})
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "@biomejs/biome@2.0.1"
+        no_asset: true
+      - version_constraint: semver("< 2.0.0")
+        version_prefix: cli/v
+        asset: biome-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x64
+          windows: win32
+      - version_constraint: semver("<= 2.3.8")
+        version_prefix: "@biomejs/biome@"
+        asset: biome-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x64
+          windows: win32
+      - version_constraint: "true"
+        version_prefix: "@biomejs/biome@"
+        asset: biome-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x64
+          windows: win32
+        github_artifact_attestations:
+          signer_workflow: biomejs/biome/.github/workflows/release.yml

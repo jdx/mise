@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: release-plz
+    repo_name: release-plz
+    description: Publish Rust crates from CI with a Release PR
+    version_prefix: release-plz-
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["release-plz-v0.3.35", "release-plz-v0.3.54", "release-plz-v0.3.109"]
+        no_asset: true
+      - version_constraint: Version in ["release-plz-v0.3.2", "release-plz-v0.3.26"]
+        asset: release-plz-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.2.44")
+        no_asset: true
+      - version_constraint: semver("<= 0.3.19")
+        asset: release-plz-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: semver("<= 0.3.45")
+        asset: release-plz-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+      - version_constraint: semver("<= 0.3.47")
+        no_asset: true
+      - version_constraint: semver("<= 0.3.147")
+        asset: release-plz-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+      - version_constraint: "true"
+        asset: release-plz-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - linux
+          - windows
+          - darwin/arm64
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc

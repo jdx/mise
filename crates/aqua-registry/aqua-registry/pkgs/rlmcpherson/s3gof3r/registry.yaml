@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: rlmcpherson
+    repo_name: s3gof3r
+    description: Fast, concurrent, streaming access to Amazon S3, including gof3r, a CLI
+    rosetta2: true
+    supported_envs:
+      - darwin
+      - amd64
+    files:
+      - name: gof3r
+        src: gof3r_{{trimV .Version}}_{{.OS}}_{{.Arch}}/gof3r
+    asset: gof3r_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: raw
+        asset: gof3r.exe
+      - goos: darwin
+        format: zip

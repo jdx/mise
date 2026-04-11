@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kdash-rs
+    repo_name: kdash
+    description: A simple and fast dashboard for Kubernetes
+    asset: kdash-{{.OS}}.{{.Format}}
+    format: tar.gz
+    rosetta2: true
+    replacements:
+      darwin: macos
+    supported_envs:
+      - darwin
+      - amd64
+    checksum:
+      type: github_release
+      asset: kdash-{{.OS}}.sha256
+      algorithm: sha256
+    version_constraint: semver(">= 0.4.3")
+    version_overrides:
+      - version_constraint: semver(">= 0.3.3")
+        replacements:
+          darwin: macos
+          linux: linux-musl
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        overrides: &kdash_rs_overrides_1
+          - goos: windows
+            checksum:
+              type: github_release
+              asset: kdash-{{.OS}}.sha256
+              algorithm: sha256
+          - goos: linux
+            goarch: arm64
+            asset: kdash-aarch64-musl.tar.gz
+            checksum:
+              type: github_release
+              asset: kdash-aarch64-musl.sha256
+              algorithm: sha256
+      - version_constraint: semver(">= 0.0.4")
+        overrides: *kdash_rs_overrides_1
+        replacements:
+          darwin: macos
+          linux: linux-musl
+      - version_constraint: semver("< 0.0.4")
+        overrides: *kdash_rs_overrides_1

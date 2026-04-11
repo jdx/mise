@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: artempyanykh
+    repo_name: marksman
+    description: Write Markdown with code assist and intelligence in the comfort of your favourite editor
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 2022-03-26")
+        asset: zeta-note-{{.OS}}
+        format: raw
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2023-04-12")
+        asset: marksman-{{.OS}}
+        format: raw
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: windows
+            asset: marksman
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: marksman-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x64
+          - goos: darwin
+            asset: marksman-{{.OS}}
+          - goos: windows
+            asset: marksman

@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: ubicloud/cli
+    type: github_release
+    repo_owner: ubicloud
+    repo_name: cli
+    description: Command line program for interacting with Ubicloud
+    files:
+      - name: ubi
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: ubi-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip

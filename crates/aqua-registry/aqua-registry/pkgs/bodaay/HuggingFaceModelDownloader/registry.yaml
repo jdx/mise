@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: bodaay
+    repo_name: HuggingFaceModelDownloader
+    description: Simple go utility to download HuggingFace Models and Datasets
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.0")
+        asset: hfdownloader_{{.OS}}_{{.Arch}}_{{.Version}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: hfdownloader
+      - version_constraint: "true"
+        asset: hfdownloader_{{.OS}}_{{.Arch}}_{{.Version}}
+        format: raw
+        windows_arm_emulation: true
+        files:
+          - name: hfdownloader

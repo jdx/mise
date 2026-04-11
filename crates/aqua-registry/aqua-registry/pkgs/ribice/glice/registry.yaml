@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: ribice
+    repo_name: glice
+    description: Go license and dependency checker
+    path: github.com/ribice/glice/v2/cmd/glice

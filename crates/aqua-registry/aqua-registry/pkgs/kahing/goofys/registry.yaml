@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kahing
+    repo_name: goofys
+    description: a high-performance, POSIX-ish Amazon S3 file system written in Go
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: goofys
+        supported_envs:
+          - linux/amd64

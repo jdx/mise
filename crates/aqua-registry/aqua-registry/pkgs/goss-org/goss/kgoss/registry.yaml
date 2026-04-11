@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: goss-org/goss/kgoss
+    type: github_content
+    repo_owner: goss-org
+    repo_name: goss
+    aliases:
+      - name: aelsabbahy/goss/kgoss
+    description: kgoss is a wrapper for goss that aims to bring the simplicity of testing with goss to containers running in pods in Kubernetes
+    supported_envs:
+      - darwin
+      - linux
+    path: extras/kgoss/kgoss
+    files:
+      - name: kgoss
+    checksum:
+      enabled: false

@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: ariga/atlas/community
+    type: http
+    repo_owner: ariga
+    repo_name: atlas
+    url: https://release.ariga.io/atlas/atlas-community-{{.OS}}-{{.Arch}}-{{.Version}}
+    description: A modern tool for managing database schemas (Community Edition)
+    link: https://atlasgo.io/community-edition
+    format: raw
+    supported_envs:
+      - darwin
+      - linux
+    files:
+      - name: atlas
+    checksum:
+      type: http
+      url: https://release.ariga.io/atlas/atlas-community-{{.OS}}-{{.Arch}}-{{.Version}}.sha256
+      file_format: raw
+      algorithm: sha256
+    version_constraint: semver(">= 0.22.0")
+    # https://github.com/ariga/atlas/issues/3296#issuecomment-2574924728
+    # > Old Versions of Atlas
+    # > As part of our Supported Version Policy mentioned above, binaries for versions that were published more than 6 months ago will be removed from the CDN and Docker Hub.
+    version_overrides:
+      - version_constraint: semver("< 0.21.0")
+        no_asset: true

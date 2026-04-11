@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: aws
+    repo_name: aws-cli
+    description: The AWS Command Line Interface (AWS CLI) is a unified tool that provides a consistent interface for interacting with all parts of Amazon Web Services
+    version_source: github_tag
+    url: https://awscli.amazonaws.com/awscli-exe-{{.OS}}-{{.Arch}}-{{.Version}}.zip
+    overrides:
+      - goos: darwin
+        url: https://awscli.amazonaws.com/AWSCLIV2-{{.Version}}.{{.Format}}
+        format: pkg
+        files:
+          - name: aws
+            src: aws-cli.pkg/Payload/aws-cli/aws
+          - name: aws_completer
+            src: aws-cli.pkg/Payload/aws-cli/aws_completer
+    files:
+      - name: aws
+        src: aws/dist/aws
+      - name: aws_completer
+        src: aws/dist/aws_completer
+    replacements:
+      amd64: x86_64
+      arm64: aarch64
+    supported_envs:
+      - linux
+      - darwin

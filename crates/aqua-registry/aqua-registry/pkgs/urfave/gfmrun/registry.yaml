@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: urfave
+    repo_name: gfmrun
+    description: GitHub-Flavored Markdown Runner
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.2.0")
+        no_asset: true
+      - version_constraint: Version == "v1.2.12-beta"
+        asset: gfmrun-{{.OS}}-{{.Arch}}-{{.Version}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          windows: win
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: gfmrun-{{.OS}}-{{.Arch}}-{{.Version}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

@@ -1,0 +1,261 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: WebAssembly
+    repo_name: wabt
+    description: The WebAssembly Binary Toolkit
+    asset: wabt-{{.Version}}-{{.OS}}.{{.Format}}
+    format: tar.gz
+    replacements:
+      darwin: macos-12
+      linux: ubuntu
+    supported_envs:
+      - amd64
+      - darwin
+    rosetta2: true
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha256"
+      algorithm: sha256
+    files:
+      - name: spectest-interp
+        src: wabt-{{.Version}}/bin/spectest-interp
+      - name: wasm-decompile
+        src: wabt-{{.Version}}/bin/wasm-decompile
+      - name: wasm-interp
+        src: wabt-{{.Version}}/bin/wasm-interp
+      - name: wasm-objdump
+        src: wabt-{{.Version}}/bin/wasm-objdump
+      - name: wasm-stats
+        src: wabt-{{.Version}}/bin/wasm-stats
+      - name: wasm-strip
+        src: wabt-{{.Version}}/bin/wasm-strip
+      - name: wasm-validate
+        src: wabt-{{.Version}}/bin/wasm-validate
+      - name: wasm2c
+        src: wabt-{{.Version}}/bin/wasm2c
+      - name: wasm2wat
+        src: wabt-{{.Version}}/bin/wasm2wat
+      - name: wast2json
+        src: wabt-{{.Version}}/bin/wast2json
+      - name: wat-desugar
+        src: wabt-{{.Version}}/bin/wat-desugar
+      - name: wat2wasm
+        src: wabt-{{.Version}}/bin/wat2wasm
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver(">= 1.0.35")
+        asset: wabt-{{.Version}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            asset: wabt-{{.Version}}-{{.OS}}.{{.Format}}
+        replacements:
+          darwin: macos-14
+          linux: ubuntu-20.04
+        supported_envs:
+          - darwin
+          - amd64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: Version == "1.0.34"
+      - version_constraint: Version == "1.0.33"
+        files: &wabt_files_1
+          - name: spectest-interp
+            src: wabt-{{.Version}}/bin/spectest-interp
+          - name: wasm-interp
+            src: wabt-{{.Version}}/bin/wasm-interp
+          - name: wasm-objdump
+            src: wabt-{{.Version}}/bin/wasm-objdump
+          - name: wasm-opcodecnt
+            src: wabt-{{.Version}}/bin/wasm-opcodecnt
+          - name: wasm-validate
+            src: wabt-{{.Version}}/bin/wasm-validate
+          - name: wasm2c
+            src: wabt-{{.Version}}/bin/wasm2c
+          - name: wasm2wat
+            src: wabt-{{.Version}}/bin/wasm2wat
+          - name: wast2json
+            src: wabt-{{.Version}}/bin/wast2json
+          - name: wat-desugar
+            src: wabt-{{.Version}}/bin/wat-desugar
+          - name: wat2wasm
+            src: wabt-{{.Version}}/bin/wat2wasm
+      - version_constraint: semver(">= 1.0.17")
+        files: *wabt_files_1
+        replacements:
+          darwin: macos
+          linux: ubuntu
+      - version_constraint: semver(">= 1.0.15")
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: wasm-decompile
+              - name: wasm-interp
+              - name: wasm-objdump
+              - name: wasm-opcodecnt
+              - name: wasm-strip
+              - name: wasm-validate
+              - name: wasm2c
+              - name: wasm2wat
+              - name: wast2json
+              - name: wat-desugar
+              - name: wat2wasm
+        replacements:
+          darwin: osx
+          windows: win64
+        files:
+          - name: wasm-decompile
+            src: wabt-{{.Version}}/wasm-decompile
+          - name: wasm-interp
+            src: wabt-{{.Version}}/wasm-interp
+          - name: wasm-objdump
+            src: wabt-{{.Version}}/wasm-objdump
+      - version_constraint: semver(">= 1.0.14")
+        format: zip
+        replacements:
+          windows: win64
+        supported_envs:
+          - windows/amd64
+        rosetta2: false # https://github.com/aquaproj/aqua-registry/pull/15753#issuecomment-1736713576
+        files:
+          - name: wasm-decompile
+          - name: wasm-interp
+          - name: wasm-objdump
+          - name: wasm-opcodecnt
+          - name: wasm-strip
+          - name: wasm-validate
+          - name: wasm2c
+          - name: wasm2wat
+          - name: wast2json
+          - name: wat-desugar
+          - name: wat2wasm
+      - version_constraint: semver(">= 1.0.13")
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: wasm-decompile
+              - name: wasm-interp
+              - name: wasm-objdump
+              - name: wasm-opcodecnt
+              - name: wasm-strip
+              - name: wasm-validate
+              - name: wasm2c
+              - name: wasm2wat
+              - name: wast2json
+              - name: wat-desugar
+              - name: wat2wasm
+        replacements:
+          windows: win64
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+        rosetta2: false # https://github.com/aquaproj/aqua-registry/pull/15753#issuecomment-1736713576
+        files:
+          - name: wasm-decompile
+            src: wabt-{{.Version}}/wasm-decompile
+          - name: wasm-interp
+            src: wabt-{{.Version}}/wasm-interp
+          - name: wasm-objdump
+            src: wabt-{{.Version}}/wasm-objdump
+      - version_constraint: semver(">= 1.0.5")
+        overrides:
+          - goos: windows
+            format: zip
+            checksum:
+              enabled: false
+            files:
+              - name: spectest-interp
+              - name: wabt-unittests
+              - name: wasm-interp
+              - name: wasm-objdump
+              - name: wasm-opcodecnt
+              - name: wasm-validate
+              - name: wasm2c
+              - name: wasm2wat
+              - name: wast2json
+              - name: wat-desugar
+              - name: wat2wasm
+        replacements:
+          darwin: osx
+          windows: win64
+        files:
+          - name: spectest-interp
+            src: wabt-{{.Version}}/spectest-interp
+          - name: wasm-interp
+            src: wabt-{{.Version}}/wasm-interp
+          - name: wasm-objdump
+            src: wabt-{{.Version}}/wasm-objdump
+          - name: wasm-opcodecnt
+            src: wabt-{{.Version}}/wasm-opcodecnt
+          - name: wasm-validate
+            src: wabt-{{.Version}}/wasm-validate
+          - name: wasm2c
+            src: wabt-{{.Version}}/wasm2c
+          - name: wasm2wat
+            src: wabt-{{.Version}}/wasm2wat
+          - name: wast2json
+            src: wabt-{{.Version}}/wast2json
+          - name: wat-desugar
+            src: wabt-{{.Version}}/wat-desugar
+          - name: wat2wasm
+            src: wabt-{{.Version}}/wat2wasm
+      - version_constraint: semver(">= 1.0.3")
+        replacements:
+          darwin: osx
+        supported_envs:
+          - linux/amd64
+          - darwin
+        files:
+          - name: spectest-interp
+            src: wabt-{{.Version}}/spectest-interp
+          - name: wasm-interp
+            src: wabt-{{.Version}}/wasm-interp
+          - name: wasm-objdump
+            src: wabt-{{.Version}}/wasm-objdump
+          - name: wasm-opcodecnt
+            src: wabt-{{.Version}}/wasm-opcodecnt
+          - name: wasm-validate
+            src: wabt-{{.Version}}/wasm-validate
+          - name: wasm2c
+            src: wabt-{{.Version}}/wasm2c
+          - name: wasm2wat
+            src: wabt-{{.Version}}/wasm2wat
+          - name: wast2json
+            src: wabt-{{.Version}}/wast2json
+          - name: wat-desugar
+            src: wabt-{{.Version}}/wat-desugar
+          - name: wat2wasm
+            src: wabt-{{.Version}}/wat2wasm
+      - version_constraint: semver("< 1.0.3")
+        replacements: {}
+        supported_envs:
+          - linux/amd64
+        rosetta2: false # https://github.com/aquaproj/aqua-registry/pull/15753#issuecomment-1736713576
+        files:
+          - name: spectest-interp
+            src: wabt-{{.Version}}/spectest-interp
+          - name: wasm-interp
+            src: wabt-{{.Version}}/wasm-interp
+          - name: wasm-objdump
+            src: wabt-{{.Version}}/wasm-objdump
+          - name: wasm-opcodecnt
+            src: wabt-{{.Version}}/wasm-opcodecnt
+          - name: wasm-validate
+            src: wabt-{{.Version}}/wasm-validate
+          - name: wasm2c
+            src: wabt-{{.Version}}/wasm2c
+          - name: wasm2wat
+            src: wabt-{{.Version}}/wasm2wat
+          - name: wast2json
+            src: wabt-{{.Version}}/wast2json
+          - name: wat-desugar
+            src: wabt-{{.Version}}/wat-desugar
+          - name: wat2wasm
+            src: wabt-{{.Version}}/wat2wasm

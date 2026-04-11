@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    name: golang/tools/goimports
+    aliases: # Set aliases to keep the compatibility
+      - name: golang.org/x/tools/cmd/goimports
+    path: golang.org/x/tools/cmd/goimports
+    repo_owner: golang
+    repo_name: tools
+    description: updates your Go import lines, adding missing ones and removing unreferenced ones
+    link: https://pkg.go.dev/golang.org/x/tools/cmd/goimports
+    version_source: github_tag
+    version_filter: not (Version startsWith "gopls/")
+    files:
+      - name: goimports

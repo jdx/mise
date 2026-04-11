@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: yarnpkg
+    repo_name: berry
+    description: Active development trunk for Yarn
+    files:
+      - name: yarn
+    version_constraint: "false"
+    version_prefix: "@yarnpkg/cli/"
+    version_overrides:
+      - version_constraint: "true"
+        url: https://repo.yarnpkg.com/{{.SemVer}}/packages/yarnpkg-cli/bin/yarn.js
+        format: raw
+        complete_windows_ext: false

@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: tailscale
+    repo_name: tailscale
+    description: The easiest, most secure way to use WireGuard and 2FA
+    url: https://pkgs.tailscale.com/stable/tailscale_{{trimV .Version}}_{{.Arch}}.{{.Format}}
+    format: tgz
+    files:
+      - name: tailscale
+        src: "{{.AssetWithoutExt}}/tailscale"
+      - name: tailscaled
+        src: "{{.AssetWithoutExt}}/tailscaled"
+    overrides:
+      - goos: darwin
+        url: https://pkgs.tailscale.com/stable/Tailscale-{{trimV .Version}}-macos.{{.Format}}
+        format: pkg
+        files:
+          - name: tailscale
+            src: Distribution.pkg/Payload/Contents/MacOS/Tailscale
+    supported_envs:
+      - linux
+      - darwin

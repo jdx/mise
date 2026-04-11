@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: controlplaneio
+    repo_name: kubectl-kubesec
+    description: Security risk analysis for Kubernetes resources
+    asset: kubectl-kubesec_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    checksum:
+      type: github_release
+      asset: kubectl-kubesec_checksums.txt
+      algorithm: sha256
+    files:
+      - name: kubectl-kubesec_scan
+        src: kubectl-scan
+    version_constraint: semver(">= 1.1.0")
+    version_overrides:
+      - version_constraint: semver(">= 1.0.2")
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+      - version_constraint: semver(">= 1.0.1")
+        supported_envs:
+          - linux/amd64
+          - darwin
+        rosetta2: true
+      - version_constraint: semver("< 1.0.1")
+        asset: kubectl-kubesec_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        files:
+          - name: kubectl-kubesec_scan
+            src: scan
+        checksum:
+          type: github_release
+          asset: kubectl-kubesec_{{.Version}}_checksums.txt
+          algorithm: sha256

@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: newrelic
+    repo_name: newrelic-cli
+    description: The New Relic Command Line Interface
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: newrelic-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    files:
+      - name: newrelic
+    replacements:
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+      386: i386
+      amd64: x86_64
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    checksum:
+      type: github_release
+      asset: newrelic-cli_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

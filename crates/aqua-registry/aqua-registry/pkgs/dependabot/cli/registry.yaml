@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: dependabot
+    repo_name: cli
+    description: A tool for testing and debugging Dependabot update jobs
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v1.25.0", "v1.33.0"]
+        no_asset: true
+      - version_constraint: "true"
+        asset: dependabot-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.md5"
+          algorithm: md5
+        overrides:
+          - goos: windows
+            format: zip
+        files:
+          - name: dependabot

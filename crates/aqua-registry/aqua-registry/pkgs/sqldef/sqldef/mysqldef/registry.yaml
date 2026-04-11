@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: sqldef/sqldef/mysqldef
+    aliases:
+      - name: k0kubun/sqldef/mysqldef
+    type: github_release
+    repo_owner: sqldef
+    repo_name: sqldef
+    description: Idempotent schema management for MySQL
+    asset: mysqldef_{{.OS}}_{{.Arch}}.{{.Format}}
+    files:
+      - name: mysqldef
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz
+    version_constraint: semver(">= 0.9.1")
+    # darwin/arm64 is supported
+    supported_envs:
+      - darwin
+      - linux
+      - windows/amd64
+    version_overrides:
+      - version_constraint: semver(">= 0.1.1")
+        rosetta2: true
+        # windows/amd64 is supported
+        # linux/arm64 is supported
+      - version_constraint: "true"
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - linux/amd64

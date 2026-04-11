@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: pgrok/pgrok/pgrokd
+    type: github_release
+    repo_owner: pgrok
+    repo_name: pgrok
+    description: (Server) Poor man's ngrok - a multi-tenant HTTP reverse tunnel solution through SSH remote port forwarding
+    asset: pgrokd_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: pgrokd
+    checksum:
+      type: github_release
+      asset: checksums.pgrokd.txt
+      algorithm: sha256

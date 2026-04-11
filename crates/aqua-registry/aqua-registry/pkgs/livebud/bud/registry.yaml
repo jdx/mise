@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: livebud
+    repo_name: bud
+    description: The Full-Stack Web Framework for Go
+    supported_envs:
+      - darwin
+      - linux/amd64
+    asset: bud_{{.Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    files:
+      - name: bud
+        src: bud_{{.Version}}_{{.OS}}_{{.Arch}}/bud
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sue445
+    repo_name: plant_erd
+    description: ERD exporter with PlantUML and mermaid format
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.4.1.rc1"
+        no_asset: true
+      - version_constraint: Version in ["v0.0.1", "v0.2.0.rc1", "v0.2.0.rc1", "v0.2.0.rc1", "v0.2.0.rc1", "v0.2.0.rc1", "v0.2.0.rc1", "v0.2.0.rc1", "v0.2.0.rc1", "v0.2.0.rc1"]
+        asset: plant_erd_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: plant_erd
+            src: "{{.AssetWithoutExt}}"
+        overrides:
+          - goos: windows
+            asset: plant_erd_{{.OS}}_{{.Arch}}.exe.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: plant_erd_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: plant_erd
+            src: "{{.AssetWithoutExt}}"
+        overrides:
+          - goos: windows
+            asset: plant_erd_{{.OS}}_{{.Arch}}.exe.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

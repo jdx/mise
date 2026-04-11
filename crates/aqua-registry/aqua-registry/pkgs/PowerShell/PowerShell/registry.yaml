@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: PowerShell
+    repo_name: PowerShell
+    description: PowerShell for every system
+    files:
+      - name: pwsh
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 6.1.6")
+        asset: powershell-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x64
+          darwin: osx
+          windows: win
+        overrides:
+          - goos: windows
+            format: zip
+            asset: PowerShell-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: semver("<= 7.0.13")
+        asset: powershell-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x64
+          darwin: osx
+          windows: win
+        overrides:
+          - goos: windows
+            format: zip
+            asset: PowerShell-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+      - version_constraint: >-
+          semver("<= 7.4.7") ||
+          (semver(">= 7.5.0-preview.1, <= 7.5.1")) ||
+          (semver(">= 7.6.0-preview.1, <= 7.6.0-preview.4"))
+        asset: powershell-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+          darwin: osx
+          windows: win
+        checksum:
+          type: github_release
+          asset: hashes.sha256
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            asset: PowerShell-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+      - version_constraint: "true"
+        asset: powershell-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+          darwin: osx
+          windows: win
+        overrides:
+          - goos: windows
+            format: zip
+            asset: PowerShell-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}

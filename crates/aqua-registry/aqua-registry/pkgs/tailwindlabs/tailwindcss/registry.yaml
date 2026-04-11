@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: tailwindlabs
+    repo_name: tailwindcss
+    description: A utility-first CSS framework for rapid UI development
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 3.0.2")
+        no_asset: true
+      - version_constraint: semver("<= 3.0.7")
+        asset: tailwindcss-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 3.2.4")
+        asset: tailwindcss-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+      - version_constraint: semver("<= 3.2.7")
+        asset: tailwindcss-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x64
+          darwin: macos
+      - version_constraint: semver("<= 3.4.17")
+        asset: tailwindcss-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: sha256sums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: tailwindcss-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: sha256sums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            asset: tailwindcss-{{.OS}}-{{.Arch}}-musl

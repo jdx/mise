@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: aws
+    repo_name: amazon-ecs-cli
+    description: The Amazon ECS CLI enables users to run their applications on ECS/Fargate using the Docker Compose file format, quickly provision resources, push/pull images in ECR, and monitor running applications on ECS/Fargate
+    format: raw
+    url: https://amazon-ecs-cli.s3.amazonaws.com/ecs-cli-{{.OS}}-{{.Arch}}-{{.Version}}
+    supported_envs:
+      - darwin
+      - linux
+    rosetta2: true
+    files:
+      - name: ecs-cli
+    checksum:
+      type: http
+      algorithm: md5
+      url: https://amazon-ecs-cli.s3.amazonaws.com/ecs-cli-{{.OS}}-{{.Arch}}-{{.Version}}.md5
+    version_constraint: semver(">= 1.20.0")
+    version_overrides:
+      - version_constraint: semver(">= 1.0.0")
+        supported_envs:
+          - darwin
+          - amd64
+      - version_constraint: "true"
+        supported_envs:
+          - darwin
+          - linux/amd64

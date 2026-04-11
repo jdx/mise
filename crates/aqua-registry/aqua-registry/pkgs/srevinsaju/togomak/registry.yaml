@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: srevinsaju
+    repo_name: togomak
+    description: A declarative pipeline orchestrator with the magic of HCL as a configuration language, inspired from Terraform's architecture
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.1-alpha.5")
+        asset: togomak_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: togomak_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: Version == "0.0.3"
+        asset: togomak_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: togomak_{{.Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: togomak_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: togomak_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

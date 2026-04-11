@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: shenwei356
+    repo_name: rush
+    description: A cross-platform command-line tool for executing jobs in parallel
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.4.2")
+        asset: rush_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            asset: rush_{{.OS}}_{{.Arch}}.exe.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: rush_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            asset: rush_{{.OS}}_{{.Arch}}.exe.{{.Format}}

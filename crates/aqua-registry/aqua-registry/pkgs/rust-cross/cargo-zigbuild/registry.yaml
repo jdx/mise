@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: rust-cross
+    repo_name: cargo-zigbuild
+    description: Compile Cargo project with zig as linker
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.9.0")
+        asset: cargo-zigbuild-{{.Version}}.{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+              arm64: aarch64
+          - goos: darwin
+            asset: cargo-zigbuild-{{.Version}}.{{.OS}}.{{.Format}}
+            checksum:
+              enabled: false
+          - goos: windows
+            format: zip
+            asset: cargo-zigbuild-{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+            replacements:
+              amd64: x64
+            checksum:
+              enabled: false
+      - version_constraint: Version == "v0.10.0"
+        asset: cargo-zigbuild-{{.Version}}.{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            asset: cargo-zigbuild-{{.Version}}.{{.OS}}.{{.Format}}
+            checksum:
+              enabled: false
+          - goos: windows
+            format: zip
+            asset: cargo-zigbuild-{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+            replacements:
+              amd64: x64
+            checksum:
+              enabled: false
+        supported_envs:
+          - linux/arm64
+          - darwin
+          - windows
+      - version_constraint: semver("<= 0.21.4")
+        asset: cargo-zigbuild-{{.Version}}.{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+              arm64: aarch64
+          - goos: darwin
+            asset: cargo-zigbuild-{{.Version}}.{{.OS}}.{{.Format}}
+          - goos: windows
+            format: zip
+            asset: cargo-zigbuild-{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+            replacements:
+              amd64: x64
+      - version_constraint: "true"
+        asset: cargo-zigbuild-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        files:
+          - name: cargo-zigbuild
+            src: "{{.AssetWithoutExt}}/{{.FileName}}"
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: cargo-zigbuild

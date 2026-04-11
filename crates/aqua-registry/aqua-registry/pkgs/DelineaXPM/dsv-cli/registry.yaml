@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: DelineaXPM
+    repo_name: dsv-cli
+    aliases:
+      - name: thycotic/dsv-cli
+    link: https://docs.delinea.com/dsv/current/cli-ref
+    description: Delinea DevOps Secrets Vault is a secret vault automation tool for the management of credentials for applications, databases, CI/CD tools, and services
+    search_words:
+      - secrets
+      - vault
+    files:
+      - name: dsv
+    supported_envs:
+      - darwin
+      - amd64
+    asset: dsv-{{.OS}}-{{.Arch}}
+    format: raw
+    replacements:
+      amd64: x64
+      windows: win
+    version_constraint: semver(">= 1.39.9")
+    checksum:
+      type: github_release
+      asset: checksums-sha256.txt
+      algorithm: sha256
+    version_overrides:
+      - version_constraint: semver(">= 1.39.5")
+        checksum:
+          enabled: false
+      - version_constraint: semver(">= 1.39.1")
+        checksum:
+          enabled: false
+        replacements:
+          windows: win
+      - version_constraint: semver(">= 1.33.0")
+        checksum:
+          enabled: false
+      - version_constraint: "true"
+        rosetta2: true
+        checksum:
+          enabled: false

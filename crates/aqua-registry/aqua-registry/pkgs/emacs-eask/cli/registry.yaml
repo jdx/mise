@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: emacs-eask
+    repo_name: cli
+    description: CLI for building, running, testing, and managing your Emacs Lisp dependencies
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.6.0")
+        no_asset: true
+      - version_constraint: semver("<= 0.9.3")
+        asset: eask_{{.Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: eask
+        replacements:
+          amd64: x64
+          darwin: macos
+          windows: win
+      - version_constraint: "true"
+        asset: eask_{{.Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: eask
+        replacements:
+          amd64: x64
+          darwin: macos
+          windows: win
+        overrides:
+          - goos: windows
+            format: zip

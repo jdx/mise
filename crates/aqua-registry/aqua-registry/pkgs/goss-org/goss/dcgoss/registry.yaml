@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: goss-org/goss/dcgoss
+    type: github_content
+    repo_owner: goss-org
+    repo_name: goss
+    aliases:
+      - name: aelsabbahy/goss/dcgoss
+    description: dcgoss is a convenience wrapper around goss that aims to bring the simplicity of goss to docker-compose managed containers
+    supported_envs:
+      - darwin
+      - linux
+    path: extras/dcgoss/dcgoss
+    files:
+      - name: dcgoss
+    checksum:
+      enabled: false

@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kashav
+    repo_name: fsql
+    description: Search for files using a fun query language
+    version_constraint: semver(">= 0.5.1")
+    # asset name was changed
+    asset: fsql-{{trimV .Version}}-fsql-{{.OS}}-{{.Arch}}.tar.gz
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    # asset structure was changed
+    files:
+      - name: fsql
+        src: fsql-{{.OS}}-{{.Arch}}/fsql
+    version_overrides:
+      - version_constraint: semver("= 0.5.0")
+        # No asset was released
+        type: go_install
+        path: github.com/kashav/fsql/cmd/fsql
+        files:
+          - name: fsql
+      - version_constraint: semver("= 0.4.0")
+        asset: fsql-{{trimV .Version}}-{{.OS}}-{{.Arch}}.tar.gz
+        # arm64 wasn't supported
+        rosetta2: true
+        files:
+          - name: fsql
+            src: "{{.OS}}-{{.Arch}}/fsql"
+        supported_envs:
+          - darwin
+          - amd64
+      - version_constraint: semver(">= 0.3.0")
+        # asset name was changed
+        asset: fsql-{{trimV .Version}}-{{.OS}}-{{.Arch}}.tar.gz
+        rosetta2: true
+        # asset structure was changed
+        files:
+          - name: fsql
+            src: "{{.OS}}-{{.Arch}}/fsql"
+      - version_constraint: "true"
+        asset: "{{.OS}}_{{.Arch}}.tar.gz"
+        rosetta2: true
+        overrides:
+          - goos: windows
+            asset: "{{.OS}}_{{.Arch}}.zip"
+        files:
+          - name: fsql

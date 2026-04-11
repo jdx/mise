@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sinclairtarget
+    repo_name: git-who
+    description: Git blame for file trees
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.2"
+        asset: "{{.OS}}_{{.Arch}}.{{.Format}}"
+        format: tar.gz
+        files:
+          - name: git-who
+            src: "{{.OS}}_{{.Arch}}/git-who"
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: gitwho_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: git-who
+            src: "{{.OS}}_{{.Arch}}/git-who"
+        supported_envs:
+          - linux
+          - darwin

@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: awslabs
+    repo_name: amazon-ecr-credential-helper
+    description: Automatically gets credentials for Amazon ECR on docker push/docker pull
+    format: raw
+    url: https://amazon-ecr-credential-helper-releases.s3.us-east-2.amazonaws.com/{{trimV .Version}}/{{.OS}}-{{.Arch}}/docker-credential-ecr-login
+    supported_envs:
+      - linux
+      - darwin
+      - amd64
+    files:
+      - name: docker-credential-ecr-login
+    checksum:
+      type: http
+      algorithm: sha256
+      url: https://amazon-ecr-credential-helper-releases.s3.us-east-2.amazonaws.com/{{trimV .Version}}/{{.OS}}-{{.Arch}}/docker-credential-ecr-login.sha256
+    overrides:
+      - goos: windows
+        checksum:
+          type: http
+          algorithm: sha256
+          url: https://amazon-ecr-credential-helper-releases.s3.us-east-2.amazonaws.com/{{trimV .Version}}/{{.OS}}-{{.Arch}}/docker-credential-ecr-login.exe.sha256
+    version_constraint: semver(">= 0.6.0")
+    version_overrides:
+      - version_constraint: semver(">= 0.3.1")
+        rosetta2: true

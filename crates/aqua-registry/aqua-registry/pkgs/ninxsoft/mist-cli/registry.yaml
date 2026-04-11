@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ninxsoft
+    repo_name: mist-cli
+    description: A Mac command-line tool that automatically downloads macOS Firmwares / Installers
+    asset: mist-cli.{{trimV .Version}}.{{.Format}}
+    format: pkg
+    files:
+      - name: mist
+        src: Payload/usr/local/bin/mist
+    supported_envs:
+      - darwin

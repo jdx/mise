@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: fishi0x01
+    repo_name: vsh
+    description: "vsh - HashiCorp Vault interactive shell and cli tool"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.9.0")
+        asset: vsh_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: SHA256SUM
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: vsh_{{.OS}}_{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: SHA256SUM
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin

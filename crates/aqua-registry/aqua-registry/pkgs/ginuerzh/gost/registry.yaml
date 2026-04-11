@@ -1,0 +1,145 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ginuerzh
+    repo_name: gost
+    description: GO Simple Tunnel - a simple tunnel written in golang
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["2.1-rc1", "v2.3-dev"]
+        no_asset: true
+      - version_constraint: Version in ["2.0", "2.1", "v2.2"]
+        asset: gost_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: gost
+            src: "{{.AssetWithoutExt}}/gost"
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            files:
+              - name: gost
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v2.4-dev"
+        asset: gost_{{trimV .Version}}20170303_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: gost
+            src: "{{.AssetWithoutExt}}/gost"
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            files:
+              - name: gost
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v2.11.2"
+        asset: gost-{{.OS}}-{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: gz
+        windows_arm_emulation: true
+        files:
+          - name: gost
+            src: "{{.AssetWithoutExt}}"
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: gost
+                src: gost-{{.OS}}-{{.Arch}}.exe
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.0")
+        asset: gost_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: gost
+            src: "{{.AssetWithoutExt}}/gost"
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            files:
+              - name: gost
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.2-rc2")
+        no_asset: true
+      - version_constraint: semver("<= 2.8.1")
+        asset: gost_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: gost
+            src: "{{.AssetWithoutExt}}/gost"
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            files:
+              - name: gost
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.11.1")
+        asset: gost-{{.OS}}-{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: gost
+            src: "{{.AssetWithoutExt}}"
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: gost
+                src: gost-{{.OS}}-{{.Arch}}.exe
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.11.5")
+        asset: gost-{{.OS}}-{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: gz
+        files:
+          - name: gost
+            src: "{{.AssetWithoutExt}}"
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: gost
+                src: gost-{{.OS}}-{{.Arch}}.exe
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: "true"
+        asset: gost_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

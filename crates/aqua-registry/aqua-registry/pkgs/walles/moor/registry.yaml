@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: walles
+    repo_name: moor
+    description: Moor is a pager. It's designed to just do the right thing without any configuration
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.23.3"
+        asset: moar-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        files:
+          - name: moar
+        supported_envs:
+          - windows
+      - version_constraint: semver("<= 0.9.7")
+        no_asset: true
+      - version_constraint: semver("<= 1.8.1")
+        asset: moar-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        files:
+          - name: moar
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 1.11.4")
+        asset: moar-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: moar
+        supported_envs:
+          - darwin
+          - windows
+      - version_constraint: semver("<= 1.23.7")
+        asset: moar-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: moar
+            link: moar
+        supported_envs:
+          - darwin
+          - windows
+      - version_constraint: semver("<= 1.31.4")
+        asset: moar-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: moar
+            link: moar
+        supported_envs:
+          - darwin
+          - windows
+          - linux/amd64
+      - version_constraint: semver("<= 1.33.0")
+        asset: moar-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        files:
+          - name: moar
+            link: moar
+        supported_envs:
+          - darwin
+          - windows
+          - linux/amd64
+      - version_constraint: "true"
+        asset: moor-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        files:
+          - name: moor
+            link: moor
+        supported_envs:
+          - darwin
+          - windows
+          - linux/amd64

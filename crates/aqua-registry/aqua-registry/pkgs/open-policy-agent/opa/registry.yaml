@@ -1,0 +1,111 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: open-policy-agent
+    repo_name: opa
+    description: Open Policy Agent (OPA) is an open source, general-purpose policy engine
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.5.1")
+        asset: opa_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.5.2"
+        no_asset: true
+      - version_constraint: semver("<= 0.6.0")
+        asset: opa_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.24.0")
+        asset: opa_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.28.0")
+        asset: opa_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.29.3")
+        asset: opa_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.35.0")
+        asset: opa_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            asset: opa_{{.OS}}_{{.Arch}}_static
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.36.0"
+        asset: opa_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            asset: opa_{{.OS}}_{{.Arch}}_static
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: Version == "v0.36.1"
+        asset: opa_{{.OS}}_{{.Arch}}_static
+        format: raw
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            asset: opa_{{.OS}}_{{.Arch}}.exe
+          - goos: darwin
+            goarch: amd64
+            asset: opa_{{.OS}}_{{.Arch}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: opa_{{.OS}}_{{.Arch}}_static
+        format: raw
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            asset: opa_{{.OS}}_{{.Arch}}.exe
+          - goos: darwin
+            goarch: amd64
+            asset: opa_{{.OS}}_{{.Arch}}
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256

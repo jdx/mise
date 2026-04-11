@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: itchio
+    repo_name: butler
+    description: Command-line itch.io helper
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        url: https://broth.itch.zone/butler/{{.OS}}-{{.Arch}}/{{trimV .Version}}/archive/default
+        format: zip
+        append_ext: false
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - amd64
+          - darwin
+          - windows

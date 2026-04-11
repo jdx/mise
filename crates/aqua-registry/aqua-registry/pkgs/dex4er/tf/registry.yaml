@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: dex4er
+    repo_name: tf
+    description: Less verbose and more shell friendly Terraform
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.7.0")
+        type: github_content
+        format: raw
+        path: tf.sh
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: tf-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

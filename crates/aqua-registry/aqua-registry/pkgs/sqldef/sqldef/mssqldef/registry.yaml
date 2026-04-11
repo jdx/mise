@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: sqldef/sqldef/mssqldef
+    aliases:
+      - name: k0kubun/sqldef/mssqldef
+    type: github_release
+    repo_owner: sqldef
+    repo_name: sqldef
+    description: Idempotent schema management for Microsoft SQL Server
+    asset: mssqldef_{{.OS}}_{{.Arch}}.{{.Format}}
+    files:
+      - name: mssqldef
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz
+    supported_envs:
+      - darwin
+      - linux
+      - windows/amd64

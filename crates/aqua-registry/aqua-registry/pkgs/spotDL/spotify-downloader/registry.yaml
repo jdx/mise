@@ -1,0 +1,91 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: spotDL
+    repo_name: spotify-downloader
+    description: Download your Spotify playlists and songs along with album art and metadata (from YouTube if a match is found)
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v3.2.1", "v3.3.2", "v3.4.0", "v3.4.2", "v3.3.3", "v3.4.1", "v3.5.0", "v3.6.1"]
+        no_asset: true
+      - version_constraint: Version == "v3.1.0"
+        asset: spotDL.{{.OS}}
+        format: raw
+        replacements:
+          windows: win64
+        supported_envs:
+          - windows/amd64
+      - version_constraint: Version == "v4.0.0rc1"
+        asset: spotdl-4.0.0-{{.OS}}
+        format: raw
+        replacements:
+          arm64: aarch64
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: spotdl-4.0.0-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: Version == "v4.0.0"
+        asset: spotdl-{{trimV .Version}}-{{.OS}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v4.0.3"
+        asset: spotdl-4.0.2-{{.OS}}
+        format: raw
+        replacements:
+          arm64: aarch64
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: spotdl-4.0.2-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: Version == "v4.2.3"
+        asset: spotdl-4.2.2-{{.OS}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 3.9.6")
+        no_asset: true
+      - version_constraint: semver("<= 4.0.5")
+        asset: spotdl-{{trimV .Version}}-{{.OS}}
+        format: raw
+        replacements:
+          arm64: aarch64
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: spotdl-{{trimV .Version}}-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 4.2.2")
+        asset: spotdl-{{trimV .Version}}-{{.OS}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 4.2.5")
+        asset: spotdl-{{trimV .Version}}-{{.OS}}
+        format: raw
+        replacements:
+          arm64: aarch64
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: spotdl-{{trimV .Version}}-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: spotdl-{{trimV .Version}}-{{.OS}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+          - darwin

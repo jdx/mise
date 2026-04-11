@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: AGWA
+    repo_name: git-crypt
+    description: Transparent file encryption in git
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.8.0"
+        asset: git-crypt-{{.Version}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: linux
+            asset: git-crypt-{{.Version}}-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - linux/amd64
+      - version_constraint: "true"
+        asset: git-crypt-{{.Version}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: linux
+            asset: git-crypt-{{.Version}}-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - linux/amd64
+          - windows

@@ -1,0 +1,141 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: smallstep
+    repo_name: certificates
+    description: A private certificate authority (X.509 & SSH) & ACME server for secure automated certificate management, so you can use TLS everywhere & SSO for SSH
+    version_filter: not (Version matches "-rc")
+    files:
+      - name: step-ca
+        src: step-ca_{{.OS}}_{{.Arch}}/step-ca
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.15.1", "v0.17.5"]
+        no_asset: true
+      - version_constraint: semver("<= 0.13.3")
+        asset: step-certificates_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: step-ca
+            src: step-certificates_{{trimV .Version}}/bin/step-ca
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.14.1")
+        asset: step-certificates_{{.OS}}_{{trimV .Version}}-dev_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: step-ca
+            src: step-certificates_{{trimV .Version}}-dev/bin/step-ca
+        rosetta2: true
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.15.8")
+        asset: step-certificates_{{.OS}}_{{trimV .Version}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: step-ca
+            src: step-certificates_{{trimV .Version}}/bin/step-ca
+        rosetta2: true
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.15.15")
+        asset: step-ca_{{.OS}}_{{trimV .Version}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: step-ca
+            src: step-ca_{{trimV .Version}}/bin/step-ca
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.17.2")
+        asset: step-ca_{{.OS}}_{{trimV .Version}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: step-ca
+            src: step-ca_{{trimV .Version}}/bin/step-ca
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.17.4")
+        asset: step-ca_{{.OS}}_{{trimV .Version}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: step-ca
+            src: step-ca_{{trimV .Version}}/bin/step-ca
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.22.1")
+        asset: step-ca_{{.OS}}_{{trimV .Version}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: step-ca
+            src: step-ca_{{trimV .Version}}/bin/step-ca
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.24.2")
+        asset: step-ca_{{.OS}}_{{trimV .Version}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: step-ca
+            src: step-ca_{{trimV .Version}}/step-ca
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/smallstep/certificates/releases/download/{{.Version}}/checksums.txt.pem
+              - --certificate-identity
+              - https://github.com/smallstep/certificates/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/smallstep/certificates/releases/download/{{.Version}}/checksums.txt.sig
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: step-ca_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/smallstep/certificates/releases/download/{{.Version}}/checksums.txt.pem
+              - --certificate-identity
+              - https://github.com/smallstep/workflows/.github/workflows/goreleaser.yml@refs/heads/main
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/smallstep/certificates/releases/download/{{.Version}}/checksums.txt.sig
+        overrides:
+          - goos: windows
+            format: zip

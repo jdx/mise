@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mas-cli
+    repo_name: mas
+    description: Mac App Store command line interface
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.2.1"
+        no_asset: true
+      - version_constraint: semver("<= 1.4.2")
+        asset: mas-cli.{{.Format}}
+        format: zip
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 1.8.6")
+        asset: mas.{{.Format}}
+        format: pkg
+        files:
+          - name: mas
+            src: mas_components.pkg/Payload/usr/local/bin/mas
+        supported_envs:
+          - darwin
+      - version_constraint: semver("< 3.0.0")
+        asset: mas-{{trimV .Version}}.{{.Format}}
+        format: pkg
+        files:
+          - name: mas
+            src: mas_components.pkg/Payload/mas
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 3.1.0")
+        asset: mas-{{trimV .Version}}-{{.Arch}}.{{.Format}}
+        format: pkg
+        replacements:
+          amd64: x86_64
+        files:
+          - name: mas
+            src: mas_components.pkg/Payload/mas
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 4.1.0")
+        asset: mas-{{trimV .Version}}-{{.Arch}}.{{.Format}}
+        format: pkg
+        replacements:
+          amd64: x86_64
+        files:
+          - name: mas
+            src: mas_components.pkg/Payload/usr/local/opt/mas/bin/mas
+        supported_envs:
+          - darwin
+      - version_constraint: "true"
+        asset: mas-{{trimV .Version}}-{{.Arch}}.{{.Format}}
+        format: pkg
+        replacements:
+          amd64: x86_64
+        files:
+          - name: mas
+            src: mas.pkg/Payload/usr/local/opt/mas/bin/mas
+        supported_envs:
+          - darwin

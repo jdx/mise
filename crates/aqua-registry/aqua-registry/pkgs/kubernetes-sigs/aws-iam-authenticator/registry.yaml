@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubernetes-sigs
+    repo_name: aws-iam-authenticator
+    description: A tool to use AWS IAM credentials to authenticate to a Kubernetes cluster
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.1.0", "v0.5.4", "v0.5.27", "v0.6.20"]
+        no_asset: true
+      - version_constraint: Version == "v0.3.0"
+        asset: heptio-authenticator-aws_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: authenticator_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.4.0-alpha.3")
+        asset: aws-iam-authenticator_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: authenticator_{{.Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.5.3")
+        asset: aws-iam-authenticator_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: authenticator_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: aws-iam-authenticator_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: authenticator_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

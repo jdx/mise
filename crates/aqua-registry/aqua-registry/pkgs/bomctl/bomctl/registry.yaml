@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: bomctl
+    repo_name: bomctl
+    description: Format agnostic SBOM tooling
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.8")
+        asset: bomctl_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: bomctl_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - "https://github.com/bomctl/bomctl/.github/workflows/goreleaser.yml@refs/tags/{{.Version}}"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/bomctl/bomctl/releases/download/{{.Version}}/bomctl_{{trimV .Version}}_checksums.txt-keyless.sig
+              - --certificate
+              - https://github.com/bomctl/bomctl/releases/download/{{.Version}}/bomctl_{{trimV .Version}}_checksums.txt-keyless.pem
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: bomctl_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: bomctl_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - "https://github.com/bomctl/bomctl/.github/workflows/goreleaser.yml@refs/tags/{{.Version}}"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/bomctl/bomctl/releases/download/{{.Version}}/bomctl_{{trimV .Version}}_checksums.txt-keyless.sig
+              - --certificate
+              - https://github.com/bomctl/bomctl/releases/download/{{.Version}}/bomctl_{{trimV .Version}}_checksums.txt-keyless.pem
+        github_artifact_attestations:
+          signer_workflow: bomctl/bomctl/.github/workflows/goreleaser.yml
+        overrides:
+          - goos: windows
+            format: zip

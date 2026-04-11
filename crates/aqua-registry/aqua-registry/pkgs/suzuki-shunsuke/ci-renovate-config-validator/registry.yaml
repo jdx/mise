@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_content
+    repo_owner: suzuki-shunsuke
+    repo_name: ci-renovate-config-validator
+    path: ci-renovate-config-validator
+    description: script to validate Renovate configuration file with renovate-config-validator

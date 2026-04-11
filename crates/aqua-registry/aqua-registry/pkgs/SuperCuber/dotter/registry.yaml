@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: SuperCuber
+    repo_name: dotter
+    description: A dotfile manager and templater written in rust
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.12.15")
+        asset: dotter
+        format: raw
+        windows_arm_emulation: true
+        supported_envs:
+          - linux
+          - windows
+      - version_constraint: semver("<= 0.13.0")
+        asset: dotter
+        format: raw
+        windows_arm_emulation: true
+        overrides:
+          - goos: darwin
+            asset: dotter.arm
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
+      - version_constraint: "true"
+        asset: dotter-{{.OS}}-{{.Arch}}-musl
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: dotter-{{.OS}}-{{.Arch}}.arm
+            replacements:
+              amd64: amd64
+          - goos: windows
+            asset: dotter-{{.OS}}-{{.Arch}}-msvc
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows

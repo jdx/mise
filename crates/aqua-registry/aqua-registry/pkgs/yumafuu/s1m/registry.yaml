@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: yumafuu
+    repo_name: s1m
+    description: TUI Application for AWS Systems Manager Parameter Store (ssm)
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.2.2", "v0.2.3"]
+        no_asset: true
+      - version_constraint: "true"
+        asset: s1m_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: s1m_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

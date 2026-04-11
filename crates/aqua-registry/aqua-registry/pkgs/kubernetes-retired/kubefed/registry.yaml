@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubernetes-retired
+    repo_name: kubefed
+    aliases:
+      - name: kubernetes-sigs/kubefed
+    description: kubefedctl controls a Kubernetes Cluster Federation
+    rosetta2: true
+    supported_envs:
+      - darwin
+      - linux/amd64
+    asset: kubefedctl-{{trimV .Version}}-{{.OS}}-{{.Arch}}.tgz
+    files:
+      - name: kubefedctl

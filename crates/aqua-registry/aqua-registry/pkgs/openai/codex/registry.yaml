@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: openai
+    repo_name: codex
+    description: Lightweight coding agent that runs in your terminal
+    version_prefix: rust-
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.19.0")
+        asset: codex-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zst
+        files:
+          - name: codex
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: codex-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zst
+        windows_arm_emulation: true
+        files:
+          - name: codex
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            asset: codex-{{.Arch}}-{{.OS}}.exe.{{.Format}}

@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: buildkite
+    repo_name: agent
+    description: The Buildkite Agent is an open-source toolkit written in Golang for securely running build jobs on any device or network
+    asset: buildkite-agent-{{.OS}}-{{.Arch}}-{{.Version|trimV}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: buildkite-agent
+    supported_envs:
+      - linux
+      - darwin
+      - amd64

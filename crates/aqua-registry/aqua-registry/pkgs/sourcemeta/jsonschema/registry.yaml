@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sourcemeta
+    repo_name: jsonschema
+    description: The CLI for working with JSON Schema. Covers formatting, linting, testing, bundling, and more for both local development and CI/CD pipelines
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "continuous"
+        error_message: "The version 'continuous' is not supported. Please use a specific version."
+      - version_constraint: semver("<= 0.4.1")
+        asset: jsonschema-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: jsonschema
+            src: "{{.AssetWithoutExt}}/bin/jsonschema"
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64
+          - windows
+      - version_constraint: semver("<= 7.2.2")
+        asset: jsonschema-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: jsonschema
+            src: "{{.AssetWithoutExt}}/bin/jsonschema"
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 7.3.0")
+        asset: jsonschema-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: jsonschema
+            src: "{{.AssetWithoutExt}}/bin/jsonschema"
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+      - version_constraint: "true"
+        asset: jsonschema-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: jsonschema
+            src: "{{.AssetWithoutExt}}/bin/jsonschema"
+        replacements:
+          amd64: x86_64

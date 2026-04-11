@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  # TODO: Merge this package with eza-community/eza
+  # https://github.com/aquaproj/aqua/issues/2649
+  - name: crates.io/eza
+    type: cargo
+    repo_owner: eza-community
+    repo_name: eza
+    description: A modern replacement for ls
+    crate: eza

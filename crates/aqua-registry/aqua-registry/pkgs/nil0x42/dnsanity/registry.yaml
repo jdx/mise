@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: nil0x42
+    repo_name: dnsanity
+    description: High-performance DNS validator using template-based verification
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: dnsanity-{{.OS}}-{{.Arch}}-{{.Version}}
+        format: raw
+        replacements:
+          amd64: x64
+          darwin: mac
+        supported_envs:
+          - linux/amd64
+          - darwin

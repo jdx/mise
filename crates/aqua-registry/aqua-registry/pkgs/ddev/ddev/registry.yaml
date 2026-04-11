@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ddev
+    repo_name: ddev
+    aliases:
+      - name: drud/ddev
+    asset: ddev_{{.OS}}-{{.Arch}}.{{.Version}}.{{.Format}}
+    format: tar.gz
+    description: "DDEV: a local web development environment system for PHP"
+    replacements:
+      darwin: macos
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

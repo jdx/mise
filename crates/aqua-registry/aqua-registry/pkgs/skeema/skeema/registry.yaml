@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: skeema
+    repo_name: skeema
+    description: Declarative pure-SQL schema management for MySQL and MariaDB (Community Edition)
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.0")
+        asset: skeema_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+        checksum:
+          type: github_release
+          asset: skeema_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: Version == "v1.0.1"
+        asset: skeema_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          darwin: Mac
+          linux: Linux
+        supported_envs:
+          - linux/amd64
+          - darwin
+        checksum:
+          type: github_release
+          asset: skeema_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.5.3")
+        asset: skeema_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          darwin: mac
+        supported_envs:
+          - linux/amd64
+          - darwin
+        checksum:
+          type: github_release
+          asset: skeema_checksums_{{trimV .Version}}.txt
+          algorithm: sha256
+      - version_constraint: Version == "v1.6.0"
+        asset: skeema_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: mac
+        supported_envs:
+          - linux/amd64
+          - darwin
+        checksum:
+          type: github_release
+          asset: skeema_checksums_{{trimV .Version}}.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: skeema_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: mac
+        supported_envs:
+          - linux
+          - darwin
+        checksum:
+          type: github_release
+          asset: skeema_checksums_{{trimV .Version}}.txt
+          algorithm: sha256

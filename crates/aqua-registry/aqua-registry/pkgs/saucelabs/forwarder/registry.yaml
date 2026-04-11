@@ -1,0 +1,146 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: saucelabs
+    repo_name: forwarder
+    description: Forwarder is a production-ready, fast MITM proxy with PAC support. It's suitable for debugging, intercepting and manipulating HTTP traffic. It's used as a core component of Sauce Labs Sauce Connect Proxy
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.0.0-rc0"
+        asset: forwarder_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums
+          algorithm: sha256
+      - version_constraint: Version == "v1.0.0-rc2"
+        asset: forwarder-{{trimV .Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        checksum:
+          type: github_release
+          asset: checksums
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+      - version_constraint: Version == "v1.0.0"
+        asset: forwarder-{{trimV .Version}}_{{.OS}}-signed.{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        checksum:
+          type: github_release
+          asset: checksums
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+            asset: forwarder-{{trimV .Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
+          - goos: windows
+            asset: forwarder-{{trimV .Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
+      - version_constraint: Version == "v1.2.0"
+        asset: forwarder-{{trimV .Version}}_{{.OS}}.all.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        checksum:
+          type: github_release
+          asset: checksums
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+            asset: forwarder-{{trimV .Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
+          - goos: windows
+            asset: forwarder-{{trimV .Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
+      - version_constraint: semver("<= 0.1.12")
+        asset: forwarder_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: forwarder_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.1.15")
+        asset: forwarder_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: forwarder_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.3.4")
+        asset: forwarder_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: forwarder_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.0.2")
+        asset: forwarder-{{trimV .Version}}_{{.OS}}-signed.all.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        checksum:
+          type: github_release
+          asset: checksums
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+            asset: forwarder-{{trimV .Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
+          - goos: windows
+            asset: forwarder-{{trimV .Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
+      - version_constraint: semver("<= 1.1.0-rc1")
+        asset: forwarder-{{trimV .Version}}_{{.OS}}.all.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        checksum:
+          type: github_release
+          asset: checksums
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+            asset: forwarder-{{trimV .Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
+          - goos: windows
+            asset: forwarder-{{trimV .Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
+      - version_constraint: semver("<= 1.4.0")
+        asset: forwarder-{{trimV .Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        checksum:
+          type: github_release
+          asset: checksums
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: darwin
+            asset: forwarder-{{trimV .Version}}_{{.OS}}-signed.all.{{.Format}}
+      - version_constraint: "true"
+        asset: forwarder-{{trimV .Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        checksum:
+          type: github_release
+          asset: checksums
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: forwarder-{{trimV .Version}}_{{.OS}}.all.{{.Format}}
+          - goos: linux
+            format: tar.gz

@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: tfmigrator
+    repo_name: cli
+    description: CLI to migrate Terraform Configuration and State
+    asset: tfmigrator_{{.OS}}_amd64.tar.gz
+    files:
+      - name: tfmigrator
+    version_constraint: semver(">= 0.2.2")
+    slsa_provenance:
+      type: github_release
+      asset: multiple.intoto.jsonl
+    checksum:
+      type: github_release
+      asset: tfmigrator_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+      cosign:
+        opts:
+          - --certificate-identity-regexp
+          - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+          - --certificate-oidc-issuer
+          - "https://token.actions.githubusercontent.com"
+          - --signature
+          - https://github.com/tfmigrator/cli/releases/download/{{.Version}}/tfmigrator_{{trimV .Version}}_checksums.txt.sig
+          - --certificate
+          - https://github.com/tfmigrator/cli/releases/download/{{.Version}}/tfmigrator_{{trimV .Version}}_checksums.txt.pem
+    version_overrides:
+      - version_constraint: "true"
+        slsa_provenance:
+          enabled: false
+        checksum:
+          type: github_release
+          asset: tfmigrator_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: carvel-dev
+    repo_name: kwt
+    aliases:
+      - name: vmware-tanzu/carvel-kwt
+    description: Kubernetes Workstation Tools CLI
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.6")
+        asset: kwt-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: kwt-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin

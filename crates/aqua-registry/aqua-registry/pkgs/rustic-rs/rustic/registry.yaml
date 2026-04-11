@@ -1,0 +1,144 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: rustic-rs
+    repo_name: rustic
+    description: rustic - fast, encrypted, and deduplicated backups powered by Rust
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.10.2"
+        asset: rustic-{{.Version}}-1-g189b17c-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: rustic-{{.Version}}-1-{{.Arch}}-{{.OS}}.{{.Format}}
+          - goos: darwin
+            goarch: arm64
+            asset: rustic-{{.Version}}-1-{{.Arch}}-{{.OS}}.{{.Format}}
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+      - version_constraint: semver("<= 0.2.0-rc1")
+        asset: rustic_{{trimV .Version}}_{{.Arch}}_64-{{.OS}}.{{.Format}}
+        format: bz2
+        files:
+          - name: rustic
+            src: rustic_0.2.0-rc1_x64_64-unknown-linux-musl
+        replacements:
+          amd64: x64
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.2.2")
+        asset: rustic-rs-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: rustic
+            src: rustic-rs
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-gnu
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+        supported_envs:
+          - linux
+          - darwin
+        checksum:
+          type: github_release
+          asset: rustic-rs-{{.Version}}-{{.Arch}}-{{.OS}}.sha256
+          algorithm: sha256
+      - version_constraint: semver("<= 0.3.0")
+        asset: rustic-rs-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: rustic
+            src: rustic-rs
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-gnu
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.4.4")
+        asset: rustic-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.5.4")
+        asset: rustic-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+      - version_constraint: Version == "v0.6.0"
+        no_asset: true
+      - version_constraint: "true"
+        asset: rustic-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+        supported_envs:
+          - linux
+          - darwin

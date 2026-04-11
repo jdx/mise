@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cubefs
+    repo_name: cubefs
+    description: cloud-native distributed storage
+    files:
+      - name: cfs-authtool
+        src: cubefs/build/bin/cfs-authtool
+      - name: cfs-bcache
+        src: cubefs/build/bin/cfs-bcache
+      - name: cfs-cli
+        src: cubefs/build/bin/cfs-cli
+      - name: cfs-client
+        src: cubefs/build/bin/cfs-client
+      - name: cfs-deploy
+        src: cubefs/build/bin/cfs-deploy
+      - name: cfs-fsck
+        src: cubefs/build/bin/cfs-fsck
+      - name: cfs-preload
+        src: cubefs/build/bin/cfs-preload
+      - name: cfs-server
+        src: cubefs/build/bin/cfs-server
+    version_filter: not (Version matches "-(beta|rc)")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 2.4.3")
+        no_asset: true
+      - version_constraint: semver("<= 3.5.2")
+        asset: cubefs-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256sum"
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+      - version_constraint: "true"
+        asset: cubefs-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: cfs-authtool
+            src: cubefs/build/bin/cfs-authtool
+          - name: cfs-bcache
+            src: cubefs/build/bin/cfs-bcache
+          - name: cfs-cli
+            src: cubefs/build/bin/cfs-cli
+          - name: cfs-client
+            src: cubefs/build/bin/cfs-client
+          - name: cfs-deploy
+            src: cubefs/build/bin/cfs-deploy
+          - name: cfs-fsck
+            src: cubefs/build/bin/cfs-fsck
+          - name: cfs-server
+            src: cubefs/build/bin/cfs-server
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256sum"
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64

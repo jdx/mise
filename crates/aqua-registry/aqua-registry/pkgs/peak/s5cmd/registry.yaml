@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: peak
+    repo_name: s5cmd
+    description: Parallel S3 and local filesystem execution tool
+    replacements:
+      darwin: macOS
+      linux: Linux
+      windows: Windows
+      386: 32bit
+      amd64: 64bit
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    asset: s5cmd_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+    checksum:
+      type: github_release
+      asset: s5cmd_checksums.txt
+      algorithm: sha256

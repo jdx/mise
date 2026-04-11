@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mattn
+    repo_name: bsky
+    description: A cli application for bluesky social
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.0.40"
+        no_asset: true
+      - version_constraint: Version == "v0.0.63"
+        asset: bsky-{{.OS}}-{{trimV .Version}}.{{.Format}}
+        format: zip
+        overrides:
+          - goos: darwin
+            asset: bsky-{{.OS}}-.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: bsky-{{.OS}}-{{trimV .Version}}.{{.Format}}
+        format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

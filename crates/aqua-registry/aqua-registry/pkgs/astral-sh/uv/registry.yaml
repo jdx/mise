@@ -1,0 +1,109 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: astral-sh
+    repo_name: uv
+    description: An extremely fast Python package installer and resolver, written in Rust
+    version_constraint: "false"
+    files:
+      - name: uv
+      - name: uvx
+    version_overrides:
+      - version_constraint: semver("<= 0.2.19")
+        asset: uv-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: uv
+            src: "{{.AssetWithoutExt}}/uv"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: uv
+      - version_constraint: Version == "0.2.20"
+        asset: uv-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: uv
+            src: "{{.AssetWithoutExt}}/uv"
+          - name: uvx
+            src: "{{.AssetWithoutExt}}/uvx"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: uv
+      - version_constraint: semver("<= 0.9.7") || Version == "0.9.11"
+        asset: uv-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: uv
+            src: "{{.AssetWithoutExt}}/uv"
+          - name: uvx
+            src: "{{.AssetWithoutExt}}/uvx"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: uv
+              - name: uvx
+      - version_constraint: "true"
+        asset: uv-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: uv
+            src: "{{.AssetWithoutExt}}/uv"
+          - name: uvx
+            src: "{{.AssetWithoutExt}}/uvx"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: uv
+              - name: uvx
+        github_artifact_attestations:
+          signer_workflow: astral-sh/uv/.github/workflows/release.yml

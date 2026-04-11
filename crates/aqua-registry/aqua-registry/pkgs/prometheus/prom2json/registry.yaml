@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: prometheus
+    repo_name: prom2json
+    asset: prom2json-{{trimV .Version}}.{{.OS}}-{{.Arch}}.tar.gz
+    description: A tool to scrape a Prometheus client and dump the result as JSON
+    checksum:
+      type: github_release
+      asset: sha256sums.txt
+      algorithm: sha256
+    files:
+      - name: prom2json
+        src: prom2json-{{trimV .Version}}.{{.OS}}-{{.Arch}}/prom2json
+    version_constraint: semver(">= 1.3.1")
+    version_overrides:
+      - version_constraint: "true"
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - linux
+          - amd64

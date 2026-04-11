@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: hashicorp
+    repo_name: terraform-mcp-server
+    description: The Terraform MCP Server provides seamless integration with Terraform ecosystem, enabling advanced automation and interaction capabilities for Infrastructure as Code (IaC) development
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        path: github.com/hashicorp/terraform-mcp-server/cmd/terraform-mcp-server

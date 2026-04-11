@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kkdai
+    repo_name: youtube
+    asset: youtubedr_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    description: Download Youtube Video in Golang
+    files:
+      - name: youtubedr
+    checksum:
+      type: github_release
+      asset: youtubedr_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

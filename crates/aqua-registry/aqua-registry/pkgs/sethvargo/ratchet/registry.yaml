@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sethvargo
+    repo_name: ratchet
+    description: A tool for securing CI/CD workflows with version pinning
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.10.0")
+        asset: ratchet_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: ratchet_{{trimV .Version}}_SHA512SUMS
+          algorithm: sha512
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: ratchet_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: ratchet_{{trimV .Version}}_SHA512SUMS
+          algorithm: sha512
+        overrides:
+          - goos: windows
+            format: zip
+        github_artifact_attestations:
+          signer_workflow: sethvargo/ratchet/.github/workflows/release.yml

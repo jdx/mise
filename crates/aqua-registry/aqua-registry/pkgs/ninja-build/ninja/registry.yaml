@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ninja-build
+    repo_name: ninja
+    description: a small build system with a focus on speed
+    version_filter: not (Version startsWith "release-")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.3.4")
+        no_asset: true
+      - version_constraint: semver("<= 1.11.1")
+        asset: ninja-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: mac
+          windows: win
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: ninja-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: mac
+          windows: win
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: ninja-{{.OS}}-{{.Arch}}.{{.Format}}
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            goarch: arm64
+            asset: ninja-{{.OS}}{{.Arch}}.{{.Format}}

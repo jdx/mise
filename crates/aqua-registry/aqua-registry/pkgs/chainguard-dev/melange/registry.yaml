@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: chainguard-dev
+    repo_name: melange
+    description: build APKs from source code
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.0")
+        asset: melange_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: melange
+            src: melange_{{trimV .Version}}_{{.OS}}_{{.Arch}}/melange
+        supported_envs:
+          - linux
+        cosign:
+          opts:
+            - --certificate-identity-regexp
+            - "https://github\\.com/chainguard-dev/melange/\\.github/workflows/release\\.yaml@.*"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"
+            - --signature
+            - https://github.com/chainguard-dev/melange/releases/download/{{.Version}}/melange_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}.sig
+            - --certificate
+            - https://github.com/chainguard-dev/melange/releases/download/{{.Version}}/melange_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}.crt
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/chainguard-dev/melange/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/chainguard-dev/melange/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate
+              - https://github.com/chainguard-dev/melange/releases/download/{{.Version}}/checksums.txt.crt
+      - version_constraint: "true"
+        asset: melange_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: melange
+            src: melange_{{trimV .Version}}_{{.OS}}_{{.Arch}}/melange
+        supported_envs:
+          - linux
+          - darwin
+        cosign:
+          opts:
+            - --certificate-identity-regexp
+            - "https://github\\.com/chainguard-dev/melange/\\.github/workflows/release\\.yaml@.*"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"
+            - --signature
+            - https://github.com/chainguard-dev/melange/releases/download/{{.Version}}/melange_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}.sig
+            - --certificate
+            - https://github.com/chainguard-dev/melange/releases/download/{{.Version}}/melange_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}.crt
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/chainguard-dev/melange/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/chainguard-dev/melange/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate
+              - https://github.com/chainguard-dev/melange/releases/download/{{.Version}}/checksums.txt.crt

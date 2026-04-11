@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: yassinebridi
+    repo_name: serpl
+    description: A simple terminal UI for search and replace, ala VS Code
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: serpl-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: serpl-{{.Version}}-{{.OS}}-{{.Arch}}.sha256
+          algorithm: sha256

@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: zigtools
+    repo_name: zls
+    description: A Zig language server supporting Zig developers with features like autocomplete and goto definition
+    link: https://zigtools.org/
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.9.0")
+        url: https://builds.zigtools.org/zls-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        rosetta2: true
+        windows_arm_emulation: true
+        minisign:
+          type: http
+          url: https://builds.zigtools.org/zls-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}.minisig
+          public_key: "RWR+9B91GBZ0zOjh6Lr17+zKf5BoSuFvrx2xSeDE57uIYvnKBGmMjOex"
+        replacements:
+          darwin: macos
+          arm64: aarch64
+          amd64: x86_64
+        format: tar.xz
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "0.10.0"
+        url: https://builds.zigtools.org/zls-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        windows_arm_emulation: true
+        minisign:
+          type: http
+          url: https://builds.zigtools.org/zls-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}.minisig
+          public_key: "RWR+9B91GBZ0zOjh6Lr17+zKf5BoSuFvrx2xSeDE57uIYvnKBGmMjOex"
+        replacements:
+          darwin: macos
+          arm64: aarch64
+          amd64: x86_64
+        format: tar.xz
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.14.0")
+        url: https://builds.zigtools.org/zls-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        windows_arm_emulation: true
+        minisign:
+          type: http
+          url: https://builds.zigtools.org/zls-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}.minisig
+          public_key: "RWR+9B91GBZ0zOjh6Lr17+zKf5BoSuFvrx2xSeDE57uIYvnKBGmMjOex"
+        replacements:
+          darwin: macos
+          arm64: aarch64
+          amd64: x86_64
+        format: tar.xz
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        url: https://builds.zigtools.org/zls-{{.Arch}}-{{.OS}}-{{.Version}}.{{.Format}}
+        windows_arm_emulation: true
+        minisign:
+          type: http
+          url: https://builds.zigtools.org/zls-{{.Arch}}-{{.OS}}-{{.Version}}.{{.Format}}.minisig
+          public_key: "RWR+9B91GBZ0zOjh6Lr17+zKf5BoSuFvrx2xSeDE57uIYvnKBGmMjOex"
+        replacements:
+          darwin: macos
+          arm64: aarch64
+          amd64: x86_64
+        format: tar.xz
+        overrides:
+          - goos: windows
+            format: zip

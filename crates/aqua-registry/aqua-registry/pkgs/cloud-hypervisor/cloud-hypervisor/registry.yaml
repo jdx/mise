@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cloud-hypervisor
+    repo_name: cloud-hypervisor
+    description: Cloud Hypervisor is an open source Virtual Machine Monitor (VMM) that runs on top of KVM hypervisor and Microsoft Hypervisor (MSHV)
+    format: raw
+    supported_envs:
+      - linux
+    asset: cloud-hypervisor-static
+    overrides:
+      - goarch: arm64
+        asset: cloud-hypervisor-static-aarch64

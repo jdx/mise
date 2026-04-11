@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: acorn-io
+    repo_name: runtime
+    aliases:
+      - name: acorn-io/acorn
+    description: A simple application deployment framework for Kubernetes
+    asset: acorn-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    files:
+      - name: acorn
+    format: tar.gz
+    replacements:
+      darwin: macOS
+    overrides:
+      - goos: darwin
+        asset: acorn-{{.Version}}-{{.OS}}-universal.{{.Format}}
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

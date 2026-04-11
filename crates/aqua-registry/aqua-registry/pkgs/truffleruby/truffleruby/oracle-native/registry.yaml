@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: truffleruby/truffleruby/oracle-native
+    aliases:
+      - name: oracle/truffleruby/oracle-native
+    type: github_release
+    repo_owner: truffleruby
+    repo_name: truffleruby
+    description: |
+      A high performance implementation of the Ruby programming language, built on GraalVM
+
+      *Oracle GraalVM Native Standalone Version*
+
+      ## Setup
+
+      If you are using RubyGems or similar, please follow the steps below.
+
+      1. Install truffleruby with aqua
+      2. Install dependent libraries (make, gcc, g++, libssl-dev, libyaml-dev, libz-dev)
+      3. Run the shell script to enable dependent libraries ($EXTRACTED_DIRECTORY/lib/truffle/post_install_hook.sh)
+
+      For more information, see the following document:
+
+      - https://github.com/oracle/truffleruby/blob/master/doc/user/installing-llvm.md
+      - https://github.com/oracle/truffleruby/blob/master/doc/user/installing-libssl.md
+      - https://github.com/oracle/truffleruby/blob/master/doc/user/installing-libyaml.md
+      - https://github.com/oracle/truffleruby/blob/master/doc/user/installing-zlib.md
+      - https://github.com/oracle/truffleruby/blob/master/doc/user/installing-truffleruby.md#after-downloading
+    files:
+      - name: bundle
+        src: "{{.AssetWithoutExt}}/bin/{{.FileName}}"
+      - name: bundler
+        src: "{{.AssetWithoutExt}}/bin/{{.FileName}}"
+      - name: erb
+        src: "{{.AssetWithoutExt}}/bin/{{.FileName}}"
+      - name: gem
+        src: "{{.AssetWithoutExt}}/bin/{{.FileName}}"
+      - name: irb
+        src: "{{.AssetWithoutExt}}/bin/{{.FileName}}"
+      - name: racc
+        src: "{{.AssetWithoutExt}}/bin/{{.FileName}}"
+      - name: rake
+        src: "{{.AssetWithoutExt}}/bin/{{.FileName}}"
+      - name: rbs
+        src: "{{.AssetWithoutExt}}/bin/{{.FileName}}"
+      - name: rdbg
+        src: "{{.AssetWithoutExt}}/bin/{{.FileName}}"
+      - name: rdoc
+        src: "{{.AssetWithoutExt}}/bin/{{.FileName}}"
+      - name: ri
+        src: "{{.AssetWithoutExt}}/bin/{{.FileName}}"
+      - name: ruby
+        src: "{{.AssetWithoutExt}}/bin/{{.FileName}}"
+      - name: syntax_suggest
+        src: "{{.AssetWithoutExt}}/bin/{{.FileName}}"
+      - name: truffleruby
+        src: "{{.AssetWithoutExt}}/bin/{{.FileName}}"
+      - name: truffleruby-polyglot-get
+        src: "{{.AssetWithoutExt}}/bin/{{.FileName}}"
+    version_filter: not (Version matches "-(dev|rc|preview)")
+    version_prefix: graal-
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: truffleruby-{{.SemVer}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          arm64: aarch64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin

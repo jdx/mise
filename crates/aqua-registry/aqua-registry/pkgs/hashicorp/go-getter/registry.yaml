@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: hashicorp
+    repo_name: go-getter
+    description: Package for downloading things from a string URL using a variety of protocols
+    rosetta2: true
+    supported_envs:
+      - darwin
+      - amd64
+    asset: go-getter_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+    checksum:
+      type: github_release
+      asset: go-getter_{{trimV .Version}}_SHA256SUMS
+      algorithm: sha256

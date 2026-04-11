@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: climech
+    repo_name: grit
+    asset: grit_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: Multitree-based personal task manager
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    files:
+      - name: grit
+        src: grit_{{.Version}}_{{.OS}}_{{.Arch}}/grit
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

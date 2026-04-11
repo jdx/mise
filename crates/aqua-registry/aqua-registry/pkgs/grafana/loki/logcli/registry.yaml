@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: grafana/loki/logcli
+    type: github_release
+    repo_owner: grafana
+    repo_name: loki
+    description: LogCLI is the command-line interface to Grafana Loki
+    supported_envs:
+      - linux
+      - darwin
+      - amd64
+    asset: logcli-{{.OS}}-{{.Arch}}.zip
+    overrides:
+      - goos: windows
+        asset: logcli-{{.OS}}-{{.Arch}}.exe.zip
+    files:
+      - name: logcli
+        src: logcli-{{.OS}}-{{.Arch}}
+    checksum:
+      type: github_release
+      asset: SHA256SUMS
+      algorithm: sha256

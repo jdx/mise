@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: hetznercloud
+    repo_name: cli
+    asset: hcloud-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: A command-line interface for Hetzner Cloud
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: hcloud
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

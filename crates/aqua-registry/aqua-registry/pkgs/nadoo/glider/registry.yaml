@@ -1,0 +1,138 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: nadoo
+    repo_name: glider
+    description: glider is a forward proxy with multiple protocols support, and also a dns/dhcp server with ipset management features(like dnsmasq)
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.5.3"
+        no_asset: true
+      - version_constraint: Version == "v0.7.0"
+        asset: glider-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: glider-{{.Version}}-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        files:
+          - name: glider
+            src: glider-{{.Version}}-{{.OS}}-{{.Arch}}/glider
+      - version_constraint: Version == "v0.15.0"
+        asset: glider_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          darwin: mac
+        checksum:
+          type: github_release
+          asset: glider_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        files:
+          - name: glider
+            src: glider_{{trimV .Version}}_{{.OS}}_{{.Arch}}/glider
+      - version_constraint: semver("<= 0.3.2")
+        asset: glider-{{.Version}}-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: mac
+          windows: win
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        files:
+          - name: glider
+      - version_constraint: semver("<= 0.6.11")
+        asset: glider-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macosx
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        files:
+          - name: glider
+      - version_constraint: semver("<= 0.13.0")
+        asset: glider_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: glider_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        files:
+          - name: glider
+            src: "{{.AssetWithoutExt}}/glider"
+      - version_constraint: semver("<= 0.14.0")
+        asset: glider_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: glider_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        files:
+          - name: glider
+            src: "{{.AssetWithoutExt}}/glider"
+      - version_constraint: semver("<= 0.15.2")
+        asset: glider_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: mac
+        checksum:
+          type: github_release
+          asset: glider_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        files:
+          - name: glider
+            src: "{{.AssetWithoutExt}}/glider"
+      - version_constraint: semver("<= 0.16.3")
+        asset: glider_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: glider_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        files:
+          - name: glider
+            src: "{{.AssetWithoutExt}}/glider"
+      - version_constraint: "true"
+        asset: glider_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: glider_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        files:
+          - name: glider
+            src: "{{.AssetWithoutExt}}/glider"

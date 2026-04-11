@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: containers
+    repo_name: conmon
+    description: An OCI container runtime monitor
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 2.0.9") || Version in ["v2.1.1", "v2.0.29", "v2.0.28", "v2.0.21"]
+        no_asset: true
+      - version_constraint: semver("<= 2.0.17") || Version in ["v2.0.20", "v2.0.24"]
+        asset: conmon
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 2.0.19")
+        asset: conmon-{{trimV .Version}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 2.0.23") || Version == "v2.0.25"
+        asset: conmon-{{trimV .Version}}.{{.Format}}
+        format: zip
+        supported_envs:
+          - linux
+        files:
+          - name: conmon
+            src: result/bin/conmon
+      - version_constraint: semver("<= 2.0.32") && semver(">= 2.0.30")
+        asset: conmon-{{.Arch}}.{{.Format}}
+        format: zip
+        supported_envs:
+          - linux
+        replacements:
+          amd64: x86
+          arm64: arm
+        files:
+          - name: conmon
+            src: bin/conmon
+      - version_constraint: "true"
+        asset: conmon.{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux

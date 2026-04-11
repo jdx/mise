@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mrjackwills
+    repo_name: oxker
+    description: A simple tui to view & control docker containers
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.10.3")
+        asset: oxker_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: linux
+            format: tar.gz
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - windows/amd64
+      - version_constraint: "true"
+        asset: oxker_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        overrides:
+          - goos: darwin
+            asset: oxker_apple_{{.OS}}_{{.Arch}}.{{.Format}}
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+            replacements: {}
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64

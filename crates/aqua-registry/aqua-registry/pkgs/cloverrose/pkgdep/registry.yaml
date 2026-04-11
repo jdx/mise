@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cloverrose
+    repo_name: pkgdep
+    description: pkgdep checks if package dependency follows rule
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: pkgdep_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: pkgdep
+            src: "pkgdep_{{.OS}}_{{.Arch}}/pkgdep"
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: pkgdep_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ogham
+    repo_name: dog
+    description: A command-line DNS client
+    rosetta2: true
+    supported_envs:
+      - darwin
+      - amd64
+    asset: dog-{{.Version}}-{{.Arch}}-{{.OS}}.zip
+    replacements:
+      amd64: x86_64
+      windows: pc-windows-msvc
+      darwin: apple-darwin
+      linux: unknown-linux-gnu
+    files:
+      - name: dog
+        src: bin/dog
+    checksum:
+      type: github_release
+      asset: SHA256SUMS
+      algorithm: sha256

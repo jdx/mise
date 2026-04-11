@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: mailru
+    repo_name: easyjson
+    description: Fast JSON serializer for golang
+    path: github.com/mailru/easyjson/easyjson

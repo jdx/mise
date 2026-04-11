@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: github.com/zeromicro/go-zero/tools/goctl
+    type: go_install
+    repo_owner: zeromicro
+    repo_name: go-zero
+    description: A cloud-native Go microservices framework with cli tool for productivity
+    path: github.com/zeromicro/go-zero/tools/goctl
+    version_filter: Version startsWith "tools/goctl/"
+    files:
+      - name: goctl

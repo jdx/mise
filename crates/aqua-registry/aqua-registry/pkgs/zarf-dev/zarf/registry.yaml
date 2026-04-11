@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: zarf-dev
+    repo_name: zarf
+    description: The Airgap Native Packager Manager for Kubernetes
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.51.0")
+        error_message: Please use v0.51.0 or later
+      - version_constraint: "true"
+        asset: zarf_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        replacements:
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: gsamokovarov
+    repo_name: jump
+    description: Jump helps you navigate faster by learning your habits
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.30.1"
+        asset: jump_{{.OS}}_{{.Arch}}_binary
+        format: raw
+        overrides:
+          - goos: windows
+            asset: jump
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: Version == "v0.40.0"
+        asset: jump_{{.OS}}_{{.Arch}}_binary
+        format: raw
+        replacements:
+          darwin: osx
+        overrides:
+          - goos: darwin
+            asset: jump_{{.OS}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.41.0"
+        asset: jump_{{.OS}}
+        format: raw
+        replacements:
+          darwin: osx
+        overrides:
+          - goos: linux
+            asset: jump_{{.OS}}_{{.Arch}}_binary
+          - goos: darwin
+            goarch: arm64
+            asset: jump_{{.OS}}_{{.Arch}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.19.0")
+        no_asset: true
+      - version_constraint: semver("<= 0.30.0")
+        asset: jump_{{.OS}}_{{.Arch}}_binary
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.51.0")
+        asset: jump_{{.OS}}_{{.Arch}}_binary
+        format: raw
+        replacements:
+          darwin: osx
+        overrides:
+          - goos: darwin
+            goarch: amd64
+            asset: jump_{{.OS}}
+          - goos: darwin
+            goarch: arm64
+            asset: jump_{{.OS}}_{{.Arch}}
+          - goos: windows
+            asset: jump
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: jump_{{.OS}}_{{.Arch}}_binary
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          arm64: arm
+        supported_envs:
+          - linux
+          - windows/amd64

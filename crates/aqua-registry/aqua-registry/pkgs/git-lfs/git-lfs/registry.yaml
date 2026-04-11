@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: git-lfs
+    repo_name: git-lfs
+    asset: git-lfs-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+    description: Git extension for versioning large files
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz
+    version_constraint: semver(">= 3.2.0")
+    files:
+      - name: git-lfs
+        src: git-lfs-{{trimV .Version}}/git-lfs
+    version_overrides:
+      - version_constraint: "true"
+        files:
+          - name: git-lfs
+            src: git-lfs
+    checksum:
+      enabled: false

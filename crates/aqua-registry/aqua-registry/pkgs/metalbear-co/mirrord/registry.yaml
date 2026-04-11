@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: metalbear-co
+    repo_name: mirrord
+    description: By mirroring traffic to and from your machine, mirrord surrounds your local service with a mirror image of its cloud environment
+    replacements:
+      darwin: mac
+      amd64: x86_64
+      arm64: aarch64
+    version_constraint: semver(">= 2.2.1")
+    supported_envs:
+      - linux
+      - darwin
+    rosetta2: true
+    format: zip
+    asset: mirrord_{{.OS}}_{{.Arch}}.{{.Format}}
+    overrides:
+      - goos: darwin
+        replacements:
+          amd64: universal
+    version_overrides:
+      - version_constraint: semver("< 2.2.1")
+        rosetta2: false
+        asset: mirrord_{{.OS}}_{{.Arch}}
+        format: raw
+        overrides: []
+        supported_envs:
+          - linux/amd64
+          - darwin

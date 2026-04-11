@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: BeaconBay
+    repo_name: ck
+    description: Local first semantic and hybrid BM25 grep / search tool for use by AI and humans
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: ck-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            checksum:
+              type: github_release
+              asset: "{{.Asset}}.sha256"
+              file_format: regexp
+              algorithm: sha256
+              pattern:
+                checksum: "([a-f0-9]{64})"
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows

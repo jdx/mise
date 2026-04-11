@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: lima-vm
+    repo_name: lima
+    description: Linux virtual machines, with a focus on running containers
+    files:
+      - name: lima
+        src: bin/lima
+      - name: limactl
+        src: bin/limactl
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.1.1"
+        error_message: |
+          aqua doesn't support this version.
+          Please update this package.
+          https://github.com/aquaproj/aqua-registry/issues/36874
+          https://github.com/lima-vm/lima/pull/3621
+      - version_constraint: Version == "v0.7.0"
+        no_asset: true
+      - version_constraint: Version == "v0.1.0"
+        asset: lima-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - darwin
+      - version_constraint: semver("< 0.23.0")
+        asset: lima-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: lima-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: lima-vm/lima/.github/workflows/release.yml
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - darwin

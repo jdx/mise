@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: danielfoehrKn/kubeswitch/switch-sh
+    type: github_release
+    repo_owner: danielfoehrKn
+    repo_name: kubeswitch
+    asset: switch.sh
+    format: raw
+    description: The kubectx for operators
+    supported_envs:
+      - linux
+      - darwin
+    files:
+      - name: kubeswitch.sh

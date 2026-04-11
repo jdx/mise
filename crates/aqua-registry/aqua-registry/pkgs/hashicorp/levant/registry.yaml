@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: hashicorp
+    repo_name: levant
+    rosetta2: true
+    url: https://releases.hashicorp.com/levant/{{trimV .Version}}/levant_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+    description: An open source templating and deployment tool for HashiCorp Nomad jobs
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    checksum:
+      type: http
+      url: https://releases.hashicorp.com/levant/{{trimV .Version}}/levant_{{trimV .Version}}_SHA256SUMS
+      algorithm: sha256

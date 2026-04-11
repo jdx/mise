@@ -1,0 +1,130 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: 99designs
+    repo_name: aws-vault
+    description: A vault for securely storing and accessing AWS credentials in development environments
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v2.3.2"
+        asset: aws-vault-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v2.3.3"
+        asset: aws-vault-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 2.3.1")
+        asset: aws-vault-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 2.4.1")
+        asset: aws-vault-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 3.4.0")
+        asset: aws-vault-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 4.6.4")
+        asset: aws-vault-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 5.0.1")
+        asset: aws-vault-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: dmg
+        rosetta2: true
+        overrides:
+          - goos: linux
+            format: raw
+            asset: aws-vault-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 5.1.2")
+        asset: aws-vault-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: dmg
+        rosetta2: true
+        overrides:
+          - goos: linux
+            format: raw
+            asset: aws-vault-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 6.2.0")
+        asset: aws-vault-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: dmg
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: raw
+            asset: aws-vault-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 6.4.0")
+        asset: aws-vault-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: dmg
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: raw
+            asset: aws-vault-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: aws-vault-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            format: dmg
+            asset: aws-vault-{{.OS}}-{{.Arch}}.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+          - windows/arm64

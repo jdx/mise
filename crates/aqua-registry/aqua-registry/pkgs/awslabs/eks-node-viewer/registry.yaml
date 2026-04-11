@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: awslabs
+    repo_name: eks-node-viewer
+    description: EKS Node Viewer
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.0")
+        no_asset: true
+      - version_constraint: semver("<= 0.2.1")
+        asset: eks-node-viewer_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        overrides:
+          - goos: darwin
+            asset: eks-node-viewer_{{.OS}}_all
+          - goos: windows
+            format: zip
+            asset: eks-node-viewer_{{.OS}}_{{.Arch}}.{{.Format}}
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        checksum:
+          type: github_release
+          asset: eks-node-viewer_{{trimV .Version}}_sha256_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: eks-node-viewer_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        overrides:
+          - goos: darwin
+            asset: eks-node-viewer_{{.OS}}_all
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: eks-node-viewer_{{trimV .Version}}_sha256_checksums.txt
+          algorithm: sha256

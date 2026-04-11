@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: tuist
+    repo_name: tuist
+    description: A toolchain to generate Xcode projects from Swift packages
+    version_filter: Version matches "^[0-9]"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 4.139.1")
+        asset: tuist.zip
+        format: zip
+        supported_envs:
+          - darwin
+        checksum:
+          type: github_release
+          asset: SHASUMS256.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: tuist.zip
+        format: zip
+        checksum:
+          type: github_release
+          asset: SHASUMS256.txt
+          algorithm: sha256
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        overrides:
+          - goos: linux
+            asset: tuist-linux-{{.Arch}}.tar.gz
+            format: tar.gz
+        supported_envs:
+          - darwin
+          - linux

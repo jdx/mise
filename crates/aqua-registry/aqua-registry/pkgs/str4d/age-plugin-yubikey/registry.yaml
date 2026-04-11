@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: str4d
+    repo_name: age-plugin-yubikey
+    description: YubiKey plugin for age
+    version_constraint: "false"
+    files:
+      - name: age-plugin-yubikey
+        src: age-plugin-yubikey/age-plugin-yubikey
+    version_overrides:
+      - version_constraint: semver("<= 0.3.0")
+        asset: age-plugin-yubikey-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.4.0")
+        asset: age-plugin-yubikey-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - amd64
+      - version_constraint: "true"
+        asset: age-plugin-yubikey-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin/arm64
+          - linux/amd64
+          - windows

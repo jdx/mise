@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: microsoft/vscode/code
+    type: http
+    repo_owner: microsoft
+    repo_name: vscode
+    description: Visual Studio Code
+    link: https://code.visualstudio.com/
+    search_words:
+      - visual studio code
+    url: https://update.code.visualstudio.com/{{trimV .Version}}/cli-{{.OS}}-{{.Arch}}/stable
+    replacements:
+      windows: win32
+      amd64: x64
+    format: tar.gz
+    append_ext: false
+    overrides:
+      - goos: windows
+        format: zip
+    version_constraint: semver(">= 1.73.0")
+    version_overrides:
+      - version_constraint: semver("< 1.73.0")
+        no_asset: true

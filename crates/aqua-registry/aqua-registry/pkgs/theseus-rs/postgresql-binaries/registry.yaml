@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: theseus-rs
+    repo_name: postgresql-binaries
+    description: PostgreSQL binaries for Linux, MacOS and Windows
+    files:
+      - name: psql
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: postgresql-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: psql
+            src: postgresql-{{.Version}}-{{.Arch}}-{{.OS}}/bin/psql
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu # https://github.com/aquaproj/aqua-registry/issues/34136
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            files:
+              - name: psql
+                src: postgresql-{{.Version}}-{{.Arch}}-{{.OS}}/bin/psql.exe
+            checksum:
+              # Skip because the contents of the provided file cannot be handled
+              enabled: false
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256

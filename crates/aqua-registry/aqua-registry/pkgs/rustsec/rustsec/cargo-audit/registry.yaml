@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: rustsec/rustsec/cargo-audit
+    type: github_release
+    repo_owner: rustsec
+    repo_name: rustsec
+    version_prefix: cargo-audit/v
+    description: Audit your dependencies for crates
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.17.1"
+        no_asset: true
+      - version_constraint: "true"
+        asset: cargo-audit-{{.Arch}}-{{.OS}}-v{{.SemVer}}.{{.Format}}
+        format: tgz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: cargo-audit
+            src: cargo-audit-{{.Arch}}-{{.OS}}-v{{.SemVer}}/cargo-audit
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip

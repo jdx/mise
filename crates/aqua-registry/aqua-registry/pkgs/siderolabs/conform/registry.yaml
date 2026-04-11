@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: siderolabs
+    repo_name: conform
+    aliases:
+      - name: talos-systems/conform
+    description: Policy enforcement for your pipelines
+    supported_envs:
+      - darwin
+      - linux
+    format: raw
+    asset: conform-{{.OS}}-{{.Arch}}
+    checksum:
+      type: github_release
+      asset: sha512sum.txt
+      algorithm: sha512

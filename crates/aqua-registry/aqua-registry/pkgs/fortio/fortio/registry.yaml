@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: fortio
+    repo_name: fortio
+    asset: fortio-{{.OS}}_{{.Arch}}-{{trimV .Version}}.{{.Format}}
+    format: tgz
+    description: Fortio load testing library, command line tool, advanced echo server and web UI in go (golang). Allows to specify a set query-per-second load and record latency histograms and other useful stats
+    replacements:
+      windows: win
+    overrides:
+      - goos: windows
+        format: zip
+        asset: fortio_{{.OS}}_{{trimV .Version}}.{{.Format}}
+        files:
+          - name: fortio
+    files:
+      - name: fortio
+        src: usr/bin/fortio
+    supported_envs:
+      - linux
+      - windows/amd64

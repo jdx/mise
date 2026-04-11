@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: linebender
+    repo_name: resvg
+    description: An SVG rendering library
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.15.0")
+        error_message: This version is not supported. Please use a newer version.
+      - version_constraint: Version == "0.45.0"
+        asset: resvg-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.41.0")
+        asset: resvg-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+          windows: win64
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            asset: resvg-{{.OS}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.44.0")
+        asset: resvg-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          windows: win64
+        overrides:
+          - goos: linux
+            format: tar.gz
+            asset: resvg-{{.OS}}-{{.Arch}}.{{.Format}}
+            replacements:
+              amd64: x86_64
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: "true"
+        asset: resvg-{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+          windows: win64
+        overrides:
+          - goos: linux
+            format: tar.gz
+            asset: resvg-{{.OS}}-{{.Arch}}.{{.Format}}
+          - goos: darwin
+            asset: resvg-{{.OS}}-{{.Arch}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

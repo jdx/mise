@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: yaml
+    repo_name: yamlscript
+    description: Programming in YAML
+    version_constraint: "false"
+    asset: ys-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.xz
+    files:
+      - name: ys
+        src: "{{.AssetWithoutExt}}/ys"
+    replacements:
+      amd64: x64
+      arm64: aarch64
+      darwin: macos
+    version_overrides:
+      - version_constraint: Version in ["0.1.29", "0.1.44", "0.1.50"]
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version in ["0.1.36", "0.1.63", "0.1.64", "0.1.66"] or semver(">= 0.1.69, <= 0.1.71")
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version in ["0.1.40", "0.1.60", "0.1.61"]
+        supported_envs:
+          - linux
+          - darwin/arm64
+      - version_constraint: semver("<= 0.1.33") or semver(">= 0.1.36, <=0.1.39") or Version == "0.1.45"
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64
+      - version_constraint: semver("<= 0.2.8")
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64

@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: rubenv
+    repo_name: sql-migrate
+    description: SQL schema migration tool for Go
+    path: github.com/rubenv/sql-migrate/sql-migrate

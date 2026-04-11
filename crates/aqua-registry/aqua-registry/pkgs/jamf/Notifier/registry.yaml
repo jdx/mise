@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jamf
+    repo_name: Notifier
+    description: Swift project which can post macOS alert or banner notifications on 10.15+ clients
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 2.3.0")
+        asset: dataJAR-Notifier-{{.Version}}.{{.Format}}
+        format: pkg
+        files:
+          - name: Notifier
+            src: Payload/Applications/Utilities/Notifier.app/Contents/MacOS/Notifier
+        supported_envs:
+          - darwin
+      - version_constraint: "true"
+        asset: Notifier-{{.Version}}.{{.Format}}
+        format: pkg
+        files:
+          - name: Notifier
+            src: Payload/Applications/Utilities/Notifier.app/Contents/MacOS/Notifier
+        supported_envs:
+          - darwin

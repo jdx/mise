@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: x-motemen
+    repo_name: ghq
+    asset: ghq_{{.OS}}_{{.Arch}}.zip
+    description: Remote repository management made easy
+    files:
+      - name: ghq
+        src: ghq_{{.OS}}_{{.Arch}}/ghq
+    version_constraint: semver(">= 1.3.0")
+    version_overrides:
+      - version_constraint: "true"
+        supported_envs:
+          - amd64
+          - darwin
+        rosetta2: true
+    checksum:
+      type: github_release
+      asset: SHASUMS
+      file_format: regexp
+      algorithm: sha1
+      pattern:
+        checksum: ^(\b[A-Fa-f0-9]{40}\b)
+        file: "^\\b[A-Fa-f0-9]{40}\\b\\s+(\\S+)$"

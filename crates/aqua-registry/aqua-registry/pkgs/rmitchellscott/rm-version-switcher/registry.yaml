@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: rmitchellscott
+    repo_name: rm-version-switcher
+    description: A beginner-friendly application for switching between installed reMarkable OS versions with an interactive interface
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: rm-version-switcher-aarch64.tar.gz
+        files:
+          - name: rm-version-switcher
+            src: rm-version-switcher-aarch64
+        supported_envs:
+          - linux/arm64

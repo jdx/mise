@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: naggie
+    repo_name: dstask
+    description: Git powered terminal-based todo manager -- markdown note page per task. Single binary
+    rosetta2: true
+    asset: dstask-{{.OS}}-{{.Arch}}
+    supported_envs:
+      - darwin
+      - linux/amd64

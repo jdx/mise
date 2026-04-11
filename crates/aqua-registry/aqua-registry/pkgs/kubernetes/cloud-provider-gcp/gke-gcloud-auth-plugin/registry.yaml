@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: kubernetes/cloud-provider-gcp/gke-gcloud-auth-plugin
+    type: go_build
+    repo_owner: kubernetes
+    repo_name: cloud-provider-gcp
+    description: cloud-provider-gcp contains several projects used to run Kubernetes in Google Cloud
+    files:
+      - name: gke-gcloud-auth-plugin
+        src: ./cmd/gke-gcloud-auth-plugin
+        dir: cloud-provider-gcp-{{trimV .Version}}

@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: istio/istio/istioctl
+    type: github_release
+    repo_owner: istio
+    repo_name: istio
+    description: The istioctl tool is a configuration command line utility that allows service operators to debug and diagnose their Istio service mesh deployments
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    replacements:
+      darwin: osx
+      windows: win
+    asset: istioctl-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
+    files:
+      - name: istioctl
+    overrides:
+      - goos: darwin
+        goarch: amd64
+        asset: istioctl-{{.Version}}-osx.tar.gz
+      - goos: windows
+        asset: istioctl-{{.Version}}-win.zip
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha256"
+      algorithm: sha256

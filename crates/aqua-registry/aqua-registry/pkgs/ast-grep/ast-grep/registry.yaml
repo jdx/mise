@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ast-grep
+    repo_name: ast-grep
+    description: A CLI tool for code structural search, lint and rewriting. Written in Rust
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.6.6")
+        asset: sg-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        files:
+          - name: sg
+      - version_constraint: semver("<= 0.13.2")
+        asset: sg-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        files:
+          - name: sg
+      - version_constraint: Version == "0.14.0"
+        asset: sg-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux
+        files:
+          - name: sg
+      - version_constraint: semver("<= 0.22.0")
+        asset: sg-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        files:
+          - name: sg
+      - version_constraint: "true"
+        asset: app-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        files:
+          - name: sg
+          - name: ast-grep
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc

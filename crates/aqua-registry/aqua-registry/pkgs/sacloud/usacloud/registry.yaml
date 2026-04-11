@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sacloud
+    repo_name: usacloud
+    description: "CLI client for the Sakura Cloud"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.16.0", "v0.27.0", "v0.30.0"]
+        no_asset: true
+      - version_constraint: semver("<= 1.0.0-beta.1")
+        asset: usacloud_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.1.4")
+        asset: usacloud_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: usacloud_SHA256SUMS
+          algorithm: sha256
+      - version_constraint: semver("<= 1.6.1")
+        asset: usacloud_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: usacloud_SHA256SUMS
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: usacloud_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: usacloud_SHA256SUMS
+          algorithm: sha256

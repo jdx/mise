@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: palantir
+    repo_name: conjure-rust
+    description: Conjure support for Rust
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        files:
+          - name: conjure-rust
+            src: conjure-rust-{{.Version}}/bin/conjure-rust
+        url: https://repo.maven.apache.org/maven2/com/palantir/conjure/rust/conjure-rust/{{.Version}}/conjure-rust-{{.Version}}.{{.Format}}
+        format: tgz
+        replacements:
+          arm64: aarch64
+        checksum:
+          type: http
+          url: https://repo.maven.apache.org/maven2/com/palantir/conjure/rust/conjure-rust/{{.Version}}/conjure-rust-{{.Version}}.{{.Format}}.sha256
+          algorithm: sha256

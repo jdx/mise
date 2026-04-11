@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_content
+    repo_owner: travis-ci
+    repo_name: gimme
+    path: gimme
+    description: Install go, yay
+    supported_envs:
+      - darwin
+      - linux

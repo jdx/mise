@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: carvel-dev
+    repo_name: vendir
+    aliases:
+      - name: vmware-tanzu/carvel-vendir
+    description: Easy way to vendor portions of git repos, github releases, helm charts, docker image contents, etc. declaratively
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.17.0")
+        asset: vendir-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.24.0")
+        asset: vendir-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 0.38.0")
+        asset: vendir-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: vendir-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/carvel-dev/vendir/releases/download/{{.Version}}/checksums.txt.pem
+              - --certificate-identity
+              - https://github.com/carvel-dev/vendir/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/carvel-dev/vendir/releases/download/{{.Version}}/checksums.txt.sig

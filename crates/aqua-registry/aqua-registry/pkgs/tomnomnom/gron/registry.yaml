@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: tomnomnom
+    repo_name: gron
+    description: Make JSON greppable
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.6.1"
+        asset: gron-{{.OS}}-{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tgz
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.1.2")
+        asset: gron-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.2.0")
+        asset: gron-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tgz
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.2.2")
+        asset: gron-{{.OS}}-{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tgz
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.6.0")
+        asset: gron-{{.OS}}-{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tgz
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: gron-{{.OS}}-{{.Arch}}-{{trimV .Version}}.{{.Format}}
+        format: tgz
+        overrides:
+          - goos: windows
+            format: zip

@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    name: bufbuild/connect-go/protoc-gen-connect-go
+    repo_owner: bufbuild
+    repo_name: connect-go
+    description: A better gRPC
+    path: github.com/bufbuild/connect-go/cmd/protoc-gen-connect-go
+    files:
+      - name: protoc-gen-connect-go

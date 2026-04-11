@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: aws
+    repo_name: copilot-cli
+    description: The AWS Copilot CLI is a tool for developers to build, release and operate production ready containerized applications on AWS App Runner, Amazon ECS, and AWS Fargate
+    asset: copilot_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    overrides:
+      - goos: windows
+        asset: copilot-windows.exe
+    replacements:
+      darwin: macOS
+    files:
+      - name: copilot

@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: go-jira
+    repo_name: jira
+    description: simple jira command line client in Go
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.12")
+        asset: jira-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.1.0")
+        asset: jira-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.1.7")
+        asset: jira-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.0.20")
+        asset: jira-{{.OS}}-10.6-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            asset: jira-{{.OS}}-{{.Arch}}
+          - goos: windows
+            asset: jira-{{.OS}}-4.0-{{.Arch}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: jira-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

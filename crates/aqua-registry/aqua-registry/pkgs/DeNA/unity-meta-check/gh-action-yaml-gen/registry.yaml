@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: DeNA/unity-meta-check/gh-action-yaml-gen
+    type: github_release
+    repo_owner: DeNA
+    repo_name: unity-meta-check
+    description: A cli tool to automatically generate action.yaml for DeNA/unity-meta-check
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 3.3.0")
+        asset: gh-action-yaml-gen-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - linux/amd64
+          - windows
+      - version_constraint: "true"
+        asset: gh-action-yaml-gen-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - linux
+          - windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

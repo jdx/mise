@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Stranger6667
+    repo_name: jsonschema
+    description: A high-performance JSON Schema validator for Rust
+    version_prefix: cli-
+    files:
+      - name: jsonschema-cli
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: jsonschema-cli-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip

@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: eza-community
+    repo_name: eza
+    description: A modern, maintained replacement for ls
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.10.9")
+        type: cargo
+        crate: eza
+      - version_constraint: Version == "v0.11.0"
+        asset: "{{.Arch}}-{{.OS}}-eza"
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-gnu
+          windows: pc-windows-gnu
+        overrides:
+          - envs:
+              - darwin
+              - windows/arm64
+            type: cargo
+            crate: eza
+          - goos: linux
+            replacements:
+              arm64: aarch64
+      - version_constraint: Version == "v0.11.1"
+        asset: eza_{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-gnu
+          windows: pc-windows-gnu
+        overrides:
+          - envs:
+              - darwin
+              - windows/arm64
+            type: cargo
+            crate: eza
+          - goos: linux
+            format: tar.gz
+            replacements:
+              arm64: aarch64
+      - version_constraint: "true"
+        asset: eza_{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          windows: pc-windows-gnu
+        overrides:
+          - envs:
+              - darwin
+              - windows/arm64
+            type: cargo
+            crate: eza
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-gnu
+          - goos: windows
+            asset: eza.exe_{{.Arch}}-{{.OS}}.{{.Format}}

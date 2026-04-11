@@ -1,0 +1,243 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: foresterre
+    repo_name: cargo-msrv
+    description: Find the minimum supported Rust version (MSRV) for your project
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.2.0"
+        asset: cargo-msrv-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          windows: pc-windows-msvc
+        supported_envs:
+          - windows
+      - version_constraint: Version == "v0.11.1-testing.1"
+        asset: cargo-msrv_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          windows: Windows
+        supported_envs:
+          - windows
+      - version_constraint: Version == "v0.11.1-testing.2"
+        asset: cargo-msrv_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          linux: Linux
+          windows: Windows
+        overrides:
+          - goos: linux
+            format: tar
+        supported_envs:
+          - linux/amd64
+          - windows
+      - version_constraint: Version == "v0.11.1-testing.3"
+        asset: cargo-msrv_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.7.0") or semver("> 0.10.0, <= 0.12.0") or Version in ["v0.11.0", "v0.15.0", "v0.16.0-beta.12", "v0.16.0-beta.16", "v0.16.0-beta.21", "v0.17.0"]
+        no_asset: true
+      - version_constraint: semver("<= 0.14.2") or Version == "v0.15.1"
+        asset: cargo-msrv_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.16.0-beta.3")
+        no_asset: true
+      - version_constraint: semver("<= 0.16.0-beta.5")
+        asset: cargo-msrv-{{.Arch}}-{{.OS}}-{{.Version}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: cargo-msrv
+            src: "{{.AssetWithoutExt}}/cargo-msrv"
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            format: tgz
+        supported_envs:
+          - linux/amd64
+          - windows
+      - version_constraint: semver("<= 0.16.0-beta.8")
+        asset: cargo-msrv-{{.Arch}}-{{.OS}}-{{.Version}}.{{.Format}}
+        format: tgz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: cargo-msrv
+            src: "{{.AssetWithoutExt}}/cargo-msrv"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.16.0-beta.10")
+        no_asset: true
+      - version_constraint: Version == "v0.16.0-beta.11"
+        asset: cargo-msrv-{{.Arch}}-{{.OS}}-{{.Version}}.{{.Format}}
+        format: tgz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: cargo-msrv
+            src: "{{.AssetWithoutExt}}/cargo-msrv"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.16.0-beta.15")
+        asset: cargo-msrv-{{.Arch}}-{{.OS}}-{{.Version}}.{{.Format}}
+        format: tgz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: cargo-msrv
+            src: "{{.AssetWithoutExt}}/cargo-msrv"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.16.0-beta.20")
+        asset: cargo-msrv-{{.Arch}}-{{.OS}}-{{.Version}}.{{.Format}}
+        format: tgz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: cargo-msrv
+            src: "{{.AssetWithoutExt}}/cargo-msrv"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.16.1")
+        asset: cargo-msrv-{{.Arch}}-{{.OS}}-{{.Version}}.{{.Format}}
+        format: tgz
+        windows_arm_emulation: true
+        files:
+          - name: cargo-msrv
+            src: "{{.AssetWithoutExt}}/cargo-msrv"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.16.3")
+        asset: cargo-msrv-{{.Arch}}-{{.OS}}-{{.Version}}.{{.Format}}
+        format: tgz
+        windows_arm_emulation: true
+        files:
+          - name: cargo-msrv
+            src: "{{.AssetWithoutExt}}/cargo-msrv"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: cargo-msrv-{{.Arch}}-{{.OS}}-{{.Version}}.{{.Format}}
+        format: tgz
+        windows_arm_emulation: true
+        files:
+          - name: cargo-msrv
+            src: "{{.AssetWithoutExt}}/cargo-msrv"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

@@ -1,0 +1,91 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: KusionStack
+    repo_name: kusion
+    description: Deliver intentions to Kubernetes and Clouds
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.4.1")
+        asset: kusion-{{.OS}}.{{.Format}}
+        format: tgz
+        rosetta2: true
+        files:
+          - name: kusion
+            src: bin/kusion
+        checksum:
+          type: github_release
+          asset: kusion-{{.OS}}.tgz.md5.txt
+          algorithm: md5
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.5.3")
+        asset: kusion-{{.OS}}.{{.Format}}
+        format: tgz
+        files:
+          - name: kusion
+            src: bin/kusion
+        checksum:
+          type: github_release
+          asset: kusion-{{.OS}}.tgz.md5.txt
+          algorithm: md5
+        overrides:
+          - goos: darwin
+            goarch: arm64
+            asset: kusion-{{.OS}}-{{.Arch}}.{{.Format}}
+            checksum:
+              type: github_release
+              asset: kusion-{{.OS}}-{{.Arch}}.tgz.md5.txt
+              algorithm: md5
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.7.2")
+        asset: kusion-{{.OS}}.{{.Format}}
+        format: tgz
+        files:
+          - name: kusion
+            src: bin/kusion
+        checksum:
+          type: github_release
+          asset: kusion-{{.OS}}.{{.Format}}.md5.txt
+          algorithm: md5
+        replacements:
+          linux: ubuntu
+        overrides:
+          - goos: darwin
+            goarch: arm64
+            asset: kusion-{{.OS}}-{{.Arch}}.{{.Format}}
+            checksum:
+              type: github_release
+              asset: kusion-{{.OS}}-{{.Arch}}.{{.Format}}.md5.txt
+              algorithm: md5
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.10.0")
+        asset: kusion_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: kusion_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

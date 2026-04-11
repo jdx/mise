@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: noborus
+    repo_name: ov
+    description: Feature-rich terminal-based text viewer.  It is a so-called terminal pager
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.11.0-beta.1"
+        no_asset: true
+      - version_constraint: Version == "v0.0.1rc1"
+        asset: ov-{{.OS}}-10.6-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            asset: ov-{{.OS}}-{{.Arch}}
+          - goos: windows
+            asset: ov-{{.OS}}-4.0-{{.Arch}}
+      - version_constraint: Version == "v0.0.2"
+        asset: oviewer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 0.0.5")
+        asset: oviewer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: oviewer_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.8.1")
+        asset: ov_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: ov_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.9.2")
+        asset: ov_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: ov_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: ov_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: ov_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

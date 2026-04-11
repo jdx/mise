@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: suzuki-shunsuke
+    repo_name: discussion-slack-notifier
+    asset: discussion-slack-notifier_{{.OS}}_{{.Arch}}.tar.gz
+    description: Notify GitHub Discussions events to Slack with GitHub Actions
+    supported_envs:
+      - darwin
+      - linux
+    checksum:
+      type: github_release
+      asset: discussion-slack-notifier_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

@@ -1,0 +1,113 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubernetes-sigs
+    repo_name: kustomize
+    description: Customization of kubernetes YAML configurations
+    asset: kustomize_{{.SemVer}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    version_prefix: kustomize/
+    version_constraint: semver(">= 5.2.1")
+    version_overrides:
+      - version_constraint: semver(">= 5.2.0")
+        asset: kustomize_v5.2.0_{{.OS}}_{{.Arch}}.{{.Format}}
+        files:
+          - name: kustomize
+            src: output/kustomize
+      - version_constraint: semver(">= 5.1.0")
+        asset: kustomize_{{.SemVer}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        overrides: []
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true
+        checksum: &kustomize_checksum
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver(">= 4.5.4")
+        asset: kustomize_{{.SemVer}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        overrides: []
+        checksum: *kustomize_checksum
+      - version_constraint: semver(">= 4.4.1")
+        asset: kustomize_{{.SemVer}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        overrides: []
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        checksum: *kustomize_checksum
+      - version_constraint: semver(">= 4.2.0")
+        asset: kustomize_{{.SemVer}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        overrides: []
+        supported_envs:
+          - linux
+          - darwin
+        checksum: *kustomize_checksum
+      - version_constraint: semver(">= 3.8.6")
+        asset: kustomize_{{.SemVer}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        overrides: []
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true
+        checksum: *kustomize_checksum
+      - version_constraint: semver(">= 3.7.0")
+        asset: kustomize_{{.SemVer}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        overrides: []
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        checksum: *kustomize_checksum
+      - version_constraint: semver(">= 3.5.5")
+        asset: kustomize_{{.SemVer}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        overrides: []
+        supported_envs:
+          - linux/amd64
+          - darwin
+        rosetta2: true
+        checksum: *kustomize_checksum
+      - version_constraint: semver(">= 3.3.0")
+        asset: kustomize_{{.SemVer}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        overrides: []
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        checksum: *kustomize_checksum
+      - version_constraint: semver(">= 3.2.1")
+        asset: kustomize_kustomize.{{.SemVer}}_{{.OS}}_{{.Arch}}
+        format: raw
+        overrides: []
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        checksum:
+          enabled: false
+      - version_constraint: semver(">= 2.1.0")
+        asset: kustomize_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        overrides: []
+        supported_envs:
+          - linux/amd64
+          - darwin
+        version_prefix: ""
+        rosetta2: true
+        checksum: *kustomize_checksum
+      - version_constraint: semver(">= 1.0.1")
+        asset: kustomize_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        overrides: []
+        supported_envs:
+          - darwin
+          - amd64
+        version_prefix: ""
+        rosetta2: true
+        checksum: *kustomize_checksum

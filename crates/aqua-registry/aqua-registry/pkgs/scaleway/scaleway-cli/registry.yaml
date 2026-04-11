@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: scaleway
+    repo_name: scaleway-cli
+    description: Command Line Interface for Scaleway
+    format: raw
+    files:
+      - name: scw
+    version_constraint: semver(">= 2.5.1")
+    asset: scaleway-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+    version_overrides:
+      - version_constraint: "true"
+        asset: scw-{{trimV .Version}}-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - darwin
+          - amd64
+        replacements:
+          amd64: x86_64
+    checksum:
+      type: github_release
+      asset: SHA256SUMS
+      algorithm: sha256

@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: AlexNabokikh
+    repo_name: tfsort
+    description: A CLI utility to sort Terraform variables and outputs
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: tfsort_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: tfsort_{{trimV .Version}}_{{.OS}}_all.{{.Format}}

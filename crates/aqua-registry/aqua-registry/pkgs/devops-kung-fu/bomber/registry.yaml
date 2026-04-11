@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: devops-kung-fu
+    repo_name: bomber
+    description: Scans Software Bill of Materials (SBOMs) for security vulnerabilities
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.1")
+        asset: bomber_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: darwin
+            asset: bomber_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+          - goos: linux
+            files:
+              # https://github.com/devops-kung-fu/bomber/pull/27
+              - name: bomber
+                src: hookz
+        supported_envs:
+          - linux
+          - darwin
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.3.2")
+        asset: bomber_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: darwin
+            asset: bomber_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.3.5")
+        asset: bomber_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: darwin
+            asset: bomber_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.4.1")
+        asset: bomber_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: darwin
+            asset: bomber_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: bomber_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: darwin
+            asset: bomber_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

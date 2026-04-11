@@ -1,0 +1,112 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kool-dev
+    repo_name: kool
+    description: "From local development to the cloud: web apps development with containers made easy"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.3")
+        no_asset: true
+      - version_constraint: semver("<= 1.0.6")
+        asset: kool-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+        checksum:
+          type: github_release
+          asset: kool-{{.OS}}-{{.Arch}}.checksum
+          algorithm: sha1
+      - version_constraint: semver("<= 1.0.15")
+        asset: kool-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+          - darwin
+        checksum:
+          type: github_release
+          asset: kool-{{.OS}}-{{.Arch}}.checksum
+          algorithm: sha1
+      - version_constraint: Version == "1.0.16"
+        asset: kool-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            asset: kool.exe
+            replacements:
+              amd64: amd64
+            checksum:
+              type: github_release
+              asset: kool.exe.checksum
+              algorithm: sha1
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        checksum:
+          type: github_release
+          asset: kool-{{.OS}}-{{.Arch}}.checksum
+          algorithm: sha1
+      - version_constraint: semver("<= 1.10.1")
+        asset: kool-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            asset: kool
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: semver("<= 1.14.0")
+        asset: kool-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            asset: kool
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: semver("<= 2.2.0")
+        asset: kool-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            asset: kool
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: kool-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          # https://github.com/kool-dev/kool/pull/491
+          # Drop native windows support
+          - linux
+          - darwin
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256

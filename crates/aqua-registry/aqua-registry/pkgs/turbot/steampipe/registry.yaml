@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: turbot
+    repo_name: steampipe
+    asset: steampipe_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: Use SQL to instantly query your cloud services (AWS, Azure, GCP and more). Open source CLI. No DB required
+    overrides:
+      - goos: darwin
+        format: zip
+    supported_envs:
+      - linux
+      - darwin
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

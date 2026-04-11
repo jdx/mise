@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: crates.io/dd-rust-license-tool
+    type: cargo
+    repo_owner: DataDog
+    repo_name: rust-license-tool
+    description: A tool for creating the `LICENSE-3rdparty.csv` file for DataDog open-source Rust projects
+    crate: dd-rust-license-tool

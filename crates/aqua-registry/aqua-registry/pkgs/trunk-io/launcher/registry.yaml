@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: trunk-io/launcher
+    type: http
+    # https://github.com/aquaproj/aqua-registry/issues/13989#issuecomment-1802981855
+    link: https://docs.trunk.io/reference/components#trunk-launcher
+    description: trunk launcher is a bash script that enables users to easily switch between multiple versions of trunk
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        type: http
+        url: https://trunk.io/releases/launcher/{{.Version}}/trunk
+        format: raw
+        complete_windows_ext: false
+        files:
+          - name: trunk

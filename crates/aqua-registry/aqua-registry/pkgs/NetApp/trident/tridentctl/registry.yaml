@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: NetApp
+    repo_name: trident
+    name: NetApp/trident/tridentctl
+    description: Storage orchestrator for containers
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        rosetta2: true
+        asset: trident-installer-{{trimV .Version}}.tar.gz
+        files:
+          - name: tridentctl
+            src: trident-installer/tridentctl
+        overrides:
+          - goos: darwin
+            files:
+              - name: tridentctl
+                src: trident-installer/extras/macos/bin/tridentctl
+        supported_envs:
+          - darwin
+          - linux/amd64

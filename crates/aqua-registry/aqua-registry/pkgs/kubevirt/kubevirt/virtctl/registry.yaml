@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: kubevirt/kubevirt/virtctl
+    type: github_release
+    repo_owner: kubevirt
+    repo_name: kubevirt
+    description: Kubernetes Virtualization API and runtime in order to define and manage virtual machines
+    asset: virtctl-{{.Version}}-{{.OS}}-{{.Arch}} # Workaround of a bug. https://github.com/aquaproj/aqua-registry/pull/18326#issuecomment-1862164476
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.1-alpha.6")
+        no_asset: true
+      - version_constraint: semver("<= 0.2.0")
+        asset: virtctl-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "v0.3.0-alpha.0"
+        asset: virtctl-v0.3.0-{{.OS}}-{{.Arch}}.0-179-ge1a1ac09-linux-amd64
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.3.0")
+        asset: virtctl-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.6.4")
+        asset: virtctl-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.7.0-alpha.0"
+        asset: virtctl-v0.6.1-alpha.0-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.7.0")
+        asset: virtctl-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: virtctl-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: itchyny
+    repo_name: json2yaml
+    asset: json2yaml_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    description: An efficient JSON to YAML converter written in Go language
+    overrides:
+      - goos: linux
+        format: tar.gz
+    files:
+      - name: json2yaml
+        src: json2yaml_{{.Version}}_{{.OS}}_{{.Arch}}/json2yaml

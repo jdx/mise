@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mitoma
+    repo_name: sver
+    description: Version generator based on source code
+    asset: sver_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    replacements:
+      darwin: macos
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    checksum:
+      type: github_release
+      asset: SHASUMS256.txt
+      algorithm: sha256
+    version_constraint: semver(">= 0.1.14")
+    version_overrides:
+      - version_constraint: Version == "v0.1.13"
+        checksum:
+          enabled: false
+      - version_constraint: semver(">= 0.1.7")
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - amd64
+        checksum:
+          enabled: false
+      - version_constraint: semver(">= 0.1.2")
+        replacements: {}
+        checksum:
+          enabled: false
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: semver("< 0.1.2")
+        asset: sver_{{.OS}}_{{.Arch}}.{{.Format}}
+        replacements: {}
+        checksum:
+          enabled: false
+        files:
+          - name: sver
+            src: sver_{{.OS}}_{{.Arch}}/sver
+        supported_envs:
+          - linux/amd64

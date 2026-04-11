@@ -1,0 +1,96 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: maxpert
+    repo_name: marmot
+    description: A distributed SQLite server with MySQL wire compatible interface
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.4.1-alpha"
+        asset: marmot-v0.4.1-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - linux
+      - version_constraint: semver("<= 0.3.1")
+        asset: marmot-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.md5"
+          algorithm: md5
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.3.5")
+        asset: marmot-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.md5"
+          algorithm: md5
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.8.5-beta.3")
+        asset: marmot-{{.Version}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - linux
+      - version_constraint: semver("<= 0.8.8-alpha.4")
+        asset: marmot-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: linux
+            asset: marmot-{{.Version}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 2.0.1-beta.2")
+        asset: marmot-{{.Version}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - linux
+      - version_constraint: semver("<= 2.0.5")
+        asset: marmot-{{.Version}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: darwin
+            asset: marmot-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 2.1.2")
+        asset: marmot-{{.Version}}-beta-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: darwin
+            asset: marmot-{{.Version}}-beta-{{.OS}}-{{.Arch}}.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 2.2.0")
+        asset: marmot-{{.Version}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: darwin
+            asset: marmot-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 2.4.2")
+        asset: marmot-{{.Version}}-beta-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: linux
+            asset: marmot-{{.Version}}-beta-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: marmot-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: linux
+            asset: marmot-{{.Version}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin

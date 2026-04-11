@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: elkowar
+    repo_name: pipr
+    description: A tool to interactively write shell pipelines
+    asset: pipr
+    format: raw
+    supported_envs:
+      - linux/amd64

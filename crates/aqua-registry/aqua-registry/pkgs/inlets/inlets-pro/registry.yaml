@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: inlets
+    repo_name: inlets-pro
+    description: Secure HTTP and TCP tunnels that just work
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: inlets-pro
+    overrides:
+      - goos: darwin
+        goarch: arm64
+        asset: inlets-pro-darwin-arm64
+      - goos: darwin
+        asset: inlets-pro-darwin
+      - goarch: arm64
+        asset: inlets-pro-arm64
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha256"
+      algorithm: sha256

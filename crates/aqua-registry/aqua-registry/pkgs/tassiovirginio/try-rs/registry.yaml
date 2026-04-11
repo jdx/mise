@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: tassiovirginio
+    repo_name: try-rs
+    description: A blazing fast, Rust-based workspace manager for your temporary experiments
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.1.0", "v0.1.15"]
+        no_asset: true
+      - version_constraint: Version == "v0.1.22"
+        asset: try-rs-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - windows/amd64
+      - version_constraint: semver("<= 0.1.6")
+        asset: try-rs-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.1.21")
+        asset: try-rs-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.1.27")
+        asset: try-rs-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: windows
+            format: raw
+            asset: try-rs-{{.OS}}-{{.Arch}}
+          - goos: linux
+            checksum:
+              type: github_release
+              asset: "{{.Asset}}.sha256"
+              algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: semver("<= 0.1.29")
+        asset: try-rs-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - windows/amd64
+      - version_constraint: "true"
+        asset: try-rs-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: windows
+            format: raw
+            asset: try-rs-{{.OS}}-{{.Arch}}
+          - goos: linux
+            checksum:
+              type: github_release
+              asset: "{{.Asset}}.sha256"
+              algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - windows/amd64

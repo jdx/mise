@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: clowdhaus
+    repo_name: eksup
+    description: EKS cluster upgrade guidance
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0-alpha"
+        no_asset: true
+      - version_constraint: semver("<= 0.10.0")
+        asset: eksup-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: eksup
+            src: "{{.AssetWithoutExt}}/eksup"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            asset: eksup-{{.Version}}-{{.Arch}}-{{.OS}}eabihf.{{.Format}}
+            replacements:
+              arm64: arm
+              linux: unknown-linux-gnu
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: eksup-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: eksup
+            src: "{{.AssetWithoutExt}}/eksup"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc

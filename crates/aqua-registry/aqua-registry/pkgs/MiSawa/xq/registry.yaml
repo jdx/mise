@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: MiSawa
+    repo_name: xq
+    asset: xq-{{.Version}}-{{.Arch}}-{{.OS}}.tar.gz
+    description: Pure rust implementation of jq
+    replacements:
+      amd64: x86_64
+      arm64: aarch64
+      darwin: apple-darwin
+      linux: unknown-linux-musl
+      windows: pc-windows-msvc
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    files:
+      - name: xq
+        src: xq-{{.Version}}-{{.Arch}}-{{.OS}}/xq

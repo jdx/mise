@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ko-build
+    repo_name: ko
+    aliases:
+      - name: google/ko
+    asset: ko_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    description: Build and deploy Go applications on Kubernetes
+    replacements:
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+      386: i386
+      amd64: x86_64
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    slsa_provenance:
+      type: github_release
+      asset: multiple.intoto.jsonl
+    version_constraint: semver("> 0.12.0")
+    version_overrides:
+      - version_constraint: 'semver("<=0.12.0")'
+        slsa_provenance:
+          enabled: false

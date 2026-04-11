@@ -1,0 +1,172 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: pen-lang
+    repo_name: pen
+    description: The parallel, concurrent, and functional programming language for scalable software development
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.3")
+        asset: pen-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: pen
+            src: bin/pen
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.1.9")
+        asset: pen-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: pen
+            src: bin/pen
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.1.10"
+        asset: pen-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        rosetta2: true
+        files:
+          - name: pen
+            src: target/release/pen
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "v0.1.11"
+        asset: pen-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        files:
+          - name: pen
+            src: target/release/pen
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "v0.1.12"
+        asset: pen-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        rosetta2: true
+        files:
+          - name: pen
+            src: target/release/pen
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 0.1.14")
+        asset: pen-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        rosetta2: true
+        files:
+          - name: pen
+            src: target/release/pen
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.1.15"
+        no_asset: true
+      - version_constraint: semver("<= 0.1.23")
+        asset: pen-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        rosetta2: true
+        files:
+          - name: pen
+            src: target/release/pen
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.1.25")
+        no_asset: true
+      - version_constraint: semver("<= 0.6.6")
+        asset: pen-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        rosetta2: true
+        files:
+          - name: pen
+            src: target/release/pen
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.6.7"
+        asset: pen-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        files:
+          - name: pen
+            src: target/release/pen
+        replacements:
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64
+      - version_constraint: Version == "v0.6.8"
+        asset: pen-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        files:
+          - name: pen
+            src: target/release/pen
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: pen-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        files:
+          - name: pen
+            src: target/release/pen
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        replacements:
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64

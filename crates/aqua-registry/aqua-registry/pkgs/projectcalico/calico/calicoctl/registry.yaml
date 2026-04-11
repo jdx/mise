@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+---
+packages:
+  - name: projectcalico/calico/calicoctl
+    type: github_release
+    repo_owner: projectcalico
+    repo_name: calico
+    asset: calicoctl-{{.OS}}-{{.Arch}}
+    format: raw
+    description: CLI tool for Calico cloud native networking and network security
+    link: https://projectcalico.docs.tigera.io/
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    files:
+      - name: calicoctl
+    checksum:
+      type: github_release
+      asset: SHA256SUMS
+      algorithm: sha256
+    version_constraint: semver(">= 3.23.0")
+    version_overrides:
+      - version_constraint: "true"
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - linux
+          - amd64

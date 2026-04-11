@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: cloudnative-pg/cloudnative-pg/kubectl-cnpg
+    type: github_release
+    repo_owner: cloudnative-pg
+    repo_name: cloudnative-pg
+    description: CloudNativePG is a comprehensive platform designed to seamlessly manage PostgreSQL databases within Kubernetes environments, covering the entire operational lifecycle from initial deployment to ongoing maintenance
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: kubectl-cnpg_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: cnpg-{{trimV .Version}}-checksums.txt
+          algorithm: sha256

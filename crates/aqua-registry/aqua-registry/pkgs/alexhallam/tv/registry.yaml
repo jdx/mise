@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: alexhallam
+    repo_name: tv
+    description: (tv) Tidy Viewer is a cross-platform CLI csv pretty printer that uses column styling to maximize viewer enjoyment
+    files:
+      - name: tidy-viewer
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.18")
+        error_message: The version is too old. Please upgrade to a newer version.
+      - version_constraint: semver("<= 1.4.6")
+        asset: tidy-viewer--{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: tidy-viewer
+            src: "{{.AssetWithoutExt}}/tidy-viewer"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.4.30")
+        asset: tidy-viewer-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: tidy-viewer
+            src: "{{.AssetWithoutExt}}/tidy-viewer"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.5.2")
+        asset: tidy-viewer-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: tidy-viewer
+            src: "{{.AssetWithoutExt}}/tidy-viewer"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            format: tgz
+            asset: tidy-viewer-{{.Version}}.{{.Format}}
+            files:
+              - name: tidy-viewer
+                src: usr/bin/tidy-viewer
+          - goos: darwin
+            format: tar.gz
+        supported_envs:
+          - darwin
+          - windows
+          - linux/amd64
+      - version_constraint: semver("<= 1.6.5")
+        no_asset: true
+      - version_constraint: "true"
+        asset: tidy-viewer-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            format: tar.gz
+          - goos: linux
+            format: tgz
+            asset: tidy-viewer-{{.Version}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - linux/amd64

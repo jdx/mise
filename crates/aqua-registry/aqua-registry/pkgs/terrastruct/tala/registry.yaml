@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: terrastruct
+    repo_name: tala
+    asset: tala-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
+    description: A diagram layout engine designed specifically for software architecture diagrams
+    replacements:
+      darwin: macos
+    files:
+      - name: d2plugin-tala
+        src: tala-{{.Version}}/bin/d2plugin-tala

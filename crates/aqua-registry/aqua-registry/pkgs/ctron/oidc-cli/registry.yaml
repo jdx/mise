@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ctron
+    repo_name: oidc-cli
+    description: A command line tool to work with OIDC tokens
+    files:
+      - name: oidc
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.2"
+        no_asset: true
+      - version_constraint: semver("<= 0.5.1")
+        asset: oidc-{{.Arch}}-{{.OS}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+      - version_constraint: "true"
+        asset: oidc-{{.Arch}}-{{.OS}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        github_artifact_attestations:
+          signer_workflow: ctron/oidc-cli/.github/workflows/release.yaml

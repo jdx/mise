@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: robscott
+    repo_name: kube-capacity
+    asset: kube-capacity_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    description: A simple CLI that provides an overview of the resource requests, limits, and utilization in a Kubernetes cluster
+    format: tar.gz
+    replacements:
+      amd64: x86_64
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: kube-capacity
+        src: kube-capacity
+      - name: kubectl-resource_capacity
+        src: kube-capacity
+    version_constraint: semver(">= 0.7.4")
+    version_overrides:
+      - version_constraint: "true"
+        overrides: []
+        asset: kube-capacity_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        replacements:
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+          amd64: x86_64
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

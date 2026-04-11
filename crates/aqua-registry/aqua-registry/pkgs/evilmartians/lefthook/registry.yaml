@@ -1,0 +1,261 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: evilmartians
+    repo_name: lefthook
+    description: Fast and powerful Git hooks manager for any type of projects
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.5"
+        no_asset: true
+      - version_constraint: Version == "v0.2.0"
+        asset: hookah_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: hookah_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        files:
+          - name: hookah
+      - version_constraint: Version == "v0.5.3"
+        asset: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: lefthook_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.6.3"
+        asset: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: lefthook_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: lefthook
+        files:
+          - name: lefthook
+            src: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+      - version_constraint: Version == "v0.7.3"
+        asset: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: lefthook_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: lefthook
+        files:
+          - name: lefthook
+            src: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+      - version_constraint: semver("<= 0.2.3")
+        asset: hookah_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: hookah_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        files:
+          - name: hookah
+      - version_constraint: semver("<= 0.5.2")
+        asset: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: lefthook_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.7.2")
+        asset: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: lefthook_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: lefthook
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        files:
+          - name: lefthook
+            src: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+      - version_constraint: semver("<= 0.7.7")
+        asset: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: lefthook_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.5.1")
+        asset: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: gz
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: lefthook_checksums.txt
+          algorithm: sha256
+        files:
+          - name: lefthook
+            src: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+      - version_constraint: semver("<= 1.6.18")
+        asset: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: gz
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: lefthook_checksums.txt
+          algorithm: sha256
+        files:
+          - name: lefthook
+            src: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+      - version_constraint: semver("<= 1.10.1")
+        asset: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: gz
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: lefthook_checksums.txt
+          algorithm: sha256
+        files:
+          - name: lefthook
+            src: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+      - version_constraint: semver("<= 2.0.4")
+        asset: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: gz
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: lefthook_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        files:
+          - name: lefthook
+            src: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+      - version_constraint: "true"
+        asset: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: gz
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: lefthook_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        files:
+          - name: lefthook
+            src: lefthook_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        github_artifact_attestations:
+          signer_workflow: evilmartians/lefthook/.github/workflows/release.yml

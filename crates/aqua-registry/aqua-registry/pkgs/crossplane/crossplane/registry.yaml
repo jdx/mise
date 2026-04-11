@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: crossplane
+    repo_name: crossplane
+    format: raw
+    url: https://releases.crossplane.io/stable/{{.Version}}/bin/{{.OS}}_{{.Arch}}/crank
+    description: The Crossplane CLI extends kubectl with functionality to build, push, and install Crossplane packages
+    supported_envs:
+      - darwin
+      - linux
+      - amd64

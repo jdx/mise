@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mattn
+    repo_name: zig-update
+    description: Zig updator
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.1")
+        asset: zig-update_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: zig-update
+            src: zig-update_{{.Version}}_{{.OS}}_{{.Arch}}/zig-update
+        overrides:
+          - goos: linux
+            format: tar.gz
+      - version_constraint: semver("<= 0.0.3")
+        no_asset: true
+      - version_constraint: "true"
+        asset: zig-update_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: zig-update
+            src: zig-update_{{.Version}}_{{.OS}}_{{.Arch}}/zig-update
+        overrides:
+          - goos: linux
+            format: tar.gz

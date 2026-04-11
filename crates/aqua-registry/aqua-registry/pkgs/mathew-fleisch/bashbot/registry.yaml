@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mathew-fleisch
+    repo_name: bashbot
+    description: A slack-bot written in golang for infrastructure/devops teams
+    asset: bashbot-{{.OS}}-{{.Arch}}
+    format: raw
+    supported_envs:
+      - linux
+      - darwin
+    version_prefix: bashbot-
+    version_constraint: semver(">= 2.0.0")
+    version_overrides:
+      - version_constraint: semver("< 2.0.0")
+        version_prefix: ""

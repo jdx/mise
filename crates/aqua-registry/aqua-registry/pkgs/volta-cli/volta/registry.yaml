@@ -1,0 +1,154 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: volta-cli
+    repo_name: volta
+    description: "Volta: JS Toolchains as Code"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.5")
+        asset: notion-{{trimV .Version}}-{{.OS}}.sh
+        format: raw
+        rosetta2: true
+        files:
+          - name: notion
+        replacements:
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.3.0")
+        asset: notion-{{trimV .Version}}-{{.OS}}-openssl-1.0.sh
+        format: raw
+        rosetta2: true
+        files:
+          - name: notion
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: notion-{{trimV .Version}}-{{.OS}}.sh
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.4.1")
+        asset: notion-{{trimV .Version}}-{{.OS}}-openssl-1.0.1.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          darwin: macos
+        files:
+          - name: notion
+        overrides:
+          - goos: darwin
+            asset: notion-{{trimV .Version}}-{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.7.2")
+        asset: volta-{{trimV .Version}}-{{.OS}}-openssl-1.0.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: volta-{{trimV .Version}}-{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 1.0.0")
+        asset: volta-{{trimV .Version}}-{{.OS}}-openssl-1.0.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: volta-{{trimV .Version}}-{{.OS}}.{{.Format}}
+          - goos: windows
+            format: zip
+            asset: volta-{{trimV .Version}}-{{.OS}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.0.6")
+        asset: volta-{{trimV .Version}}-{{.OS}}-openssl-1.0.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: darwin
+            goarch: amd64
+            asset: volta-{{trimV .Version}}-{{.OS}}.{{.Format}}
+          - goos: darwin
+            goarch: arm64
+            asset: volta-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            asset: volta-{{trimV .Version}}-{{.OS}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.0.8")
+        asset: volta-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            asset: volta-{{trimV .Version}}-{{.OS}}-openssl-1.0.{{.Format}}
+          - goos: darwin
+            goarch: amd64
+            asset: volta-{{trimV .Version}}-{{.OS}}.{{.Format}}
+          - goos: darwin
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            asset: volta-{{trimV .Version}}-{{.OS}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.1.1")
+        asset: volta-{{trimV .Version}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: darwin
+            goarch: arm64
+            asset: volta-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: volta-{{trimV .Version}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: volta-{{trimV .Version}}-{{.OS}}-arm.{{.Format}}
+          - goos: windows
+            format: zip
+          - goos: windows
+            goarch: arm64
+            asset: volta-{{trimV .Version}}-{{.OS}}-arm64.{{.Format}}
+            format: zip

@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: blender
+    repo_name: blender
+    description: Blender is a free and open-source 3D computer graphics software
+    version_source: github_tag
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        url: https://download.blender.org/release/Blender{{(semver .Version).Major}}.{{(semver .Version).Minor}}/blender-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.xz
+        replacements:
+          amd64: x64
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - windows
+          - darwin/arm64
+        files:
+          - name: blender
+            src: blender-{{trimV .Version}}-{{.OS}}-{{.Arch}}/blender
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: blender
+                src: blender-{{trimV .Version}}-{{.OS}}-{{.Arch}}/blender.exe
+          - goos: darwin
+            format: dmg
+            files:
+              - name: blender
+                src: Blender.app/Contents/MacOS/Blender

@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: livesense-inc
+    repo_name: go-simple-http-redirector
+    description: Redirect HTTP requests to specific URI
+    files:
+      - name: redirector
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: redirector-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: redirector_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+        files:
+          - name: redirector

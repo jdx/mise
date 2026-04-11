@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: achristmascarl
+    repo_name: rainfrog
+    description: a database management tui for postgres
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.12")
+        asset: rainfrog-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: rainfrog-{{.Version}}-{{.OS}}-{{.Arch}}.sha256
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: rainfrog-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: rainfrog-{{.Version}}-{{.Arch}}-{{.OS}}.sha256
+          algorithm: sha256

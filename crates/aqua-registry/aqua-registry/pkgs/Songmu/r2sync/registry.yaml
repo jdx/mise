@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Songmu
+    repo_name: r2sync
+    description: r2sync is a command-line tool for synchronizing files between a local directory and Cloudflare R2
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.1")
+        no_asset: true
+      - version_constraint: "true"
+        asset: r2sync_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux
+          - darwin
+        files:
+          - name: r2sync
+            src: r2sync_{{.Version}}_{{.OS}}_{{.Arch}}/r2sync

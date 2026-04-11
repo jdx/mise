@@ -1,0 +1,136 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: apache
+    repo_name: maven-mvnd
+    description: Apache Maven Daemon
+    files:
+      - name: mvnd
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.0.1"
+        asset: mvnd-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "0.0.2"
+        asset: mvnd-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: mvnd
+            src: "{{.AssetWithoutExt}}/bin/mvnd"
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: x86_64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version in ["1.0-m6", "1.0-m8"]
+        asset: maven-mvnd-{{.Version}}-m39-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: mvnd
+            src: "{{.AssetWithoutExt}}/bin/mvnd"
+        replacements:
+          arm64: aarch64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "1.0-m7"
+        # Maven Daemon comes into two different flavours: m39 which embeds Maven 3.9.x, and m40 which embeds Maven 4.0.0-alpha-x.
+        asset: maven-mvnd-{{.Version}}-m39-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: mvnd
+            src: "{{.AssetWithoutExt}}/bin/mvnd"
+        replacements:
+          arm64: aarch64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "1.0.2"
+        asset: maven-mvnd-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: mvnd
+            src: "{{.AssetWithoutExt}}/bin/mvnd"
+        replacements:
+          arm64: aarch64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.0.8")
+        asset: mvnd-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: mvnd
+            src: "{{.AssetWithoutExt}}/bin/mvnd"
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.7.1")
+        asset: mvnd-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: mvnd
+            src: "{{.AssetWithoutExt}}/bin/mvnd"
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.8.1")
+        asset: maven-mvnd-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: mvnd
+            src: "{{.AssetWithoutExt}}/bin/mvnd"
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: maven-mvnd-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: mvnd
+            src: "{{.AssetWithoutExt}}/bin/mvnd"
+        replacements:
+          arm64: aarch64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

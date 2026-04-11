@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: psf
+    repo_name: black
+    description: The uncompromising Python code formatter
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "22.8.0"
+        asset: black_{{.OS}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+          - windows
+      - version_constraint: semver("<= 19.10b0")
+        asset: black
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 20.8b1")
+        no_asset: true
+      - version_constraint: semver("<= 21.5b1")
+        asset: black
+        format: raw
+        supported_envs:
+          - windows
+      - version_constraint: semver("<= 25.9.0")
+        asset: black_{{.OS}}
+        format: raw
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: black_{{.OS}}
+        format: raw
+        replacements:
+          arm64: arm
+          darwin: macos
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: black_{{.OS}}-{{.Arch}}
+          - goos: windows
+            goarch: arm64
+            asset: black_{{.OS}}-{{.Arch}}

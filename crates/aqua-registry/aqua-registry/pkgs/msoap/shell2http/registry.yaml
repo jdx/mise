@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: msoap
+    repo_name: shell2http
+    description: Executing shell commands via HTTP server
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "1.1"
+        asset: shell2http_{{.Version}}.{{.Arch}}.{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "1.2"
+        asset: shell2http-{{.Version}}.{{.Arch}}.{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "1.7"
+        asset: shell2http-{{.Version}}.{{.OS}}.{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 1.4.0")
+        asset: shell2http-{{.Version}}.{{.Arch}}.{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.6.0")
+        asset: shell2http-{{.Version}}.{{.Arch}}.{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 1.13.0")
+        asset: shell2http-{{.Version}}.{{.OS}}.{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: shell2http_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

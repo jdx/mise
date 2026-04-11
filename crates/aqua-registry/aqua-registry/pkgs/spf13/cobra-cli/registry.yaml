@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: spf13
+    repo_name: cobra-cli
+    description: Cobra CLI tool to generate applications and commands

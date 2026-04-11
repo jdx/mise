@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Crocmagnon
+    repo_name: fatcontext
+    description: detects nested contexts in loops
+    version_constraint: "false"
+    version_overrides:
+      # foreshadow is used instead of fatcontext
+      - version_constraint: semver("<= 0.1.3")
+        no_asset: true
+      - version_constraint: "true"
+        asset: fatcontext_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: fatcontext_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

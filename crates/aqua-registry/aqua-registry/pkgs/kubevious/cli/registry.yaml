@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubevious
+    repo_name: cli
+    description: "Kubevious CLI - Prevent Kubernetes disasters at the early stages"
+    files:
+      - name: kubevious
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: kubevious-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x64
+          darwin: macos
+          windows: win

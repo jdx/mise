@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: containers
+    repo_name: crun
+    asset: crun-{{.Version}}-{{.OS}}-{{.Arch}}
+    format: raw
+    description: A fast and lightweight fully featured OCI runtime and C library for running containers
+    supported_envs:
+      - linux

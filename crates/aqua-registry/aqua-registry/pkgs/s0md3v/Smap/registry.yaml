@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: s0md3v
+    repo_name: Smap
+    description: a drop-in replacement for Nmap powered by shodan.io
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: smap_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.xz
+    overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      darwin: macOS
+    files:
+      - name: smap
+        src: smap_{{.Version}}_{{.OS}}_{{.Arch}}/smap
+    checksum:
+      type: github_release
+      asset: smap_{{.Version}}--sha256_checksums.txt
+      algorithm: sha256
