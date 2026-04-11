@@ -6,7 +6,7 @@ use crate::platform::Platform;
 use crate::{dirs, env, file};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
-use confique::{Config, Partial};
+use confique::{Config, Layer};
 use eyre::{Result, bail};
 use indexmap::{IndexMap, indexmap};
 use itertools::Itertools;
@@ -197,7 +197,7 @@ impl serde::Serialize for PythonUvVenvAuto {
     }
 }
 
-pub type SettingsPartial = <Settings as Config>::Partial;
+pub type SettingsPartial = <Settings as Config>::Layer;
 
 static BASE_SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);

@@ -427,7 +427,7 @@ mod tests {
     use crate::cli::args::{BackendArg, BackendResolution};
     use crate::config::settings::{Settings, SettingsPartial};
     use crate::toolset::{ResolveOptions, ToolSource, parse_tool_options};
-    use confique::Partial;
+    use confique::Layer;
     use pretty_assertions::assert_str_eq;
     use std::sync::Arc;
     use test_log::test;
