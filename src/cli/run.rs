@@ -342,8 +342,7 @@ impl Run {
                 || has_usage_deps(&task.depends_post_raw)
                 || has_usage_deps(&task.wait_for_raw)
             {
-                let usage_values =
-                    crate::task::parse_usage_values_from_task(&config, task).await?;
+                let usage_values = crate::task::parse_usage_values_from_task(&config, task).await?;
                 if !usage_values.is_empty() {
                     task.render_depends_with_usage(&config, &usage_values)
                         .await?;
