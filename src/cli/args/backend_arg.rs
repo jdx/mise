@@ -55,7 +55,12 @@ pub struct BackendArg {
 
 impl<A: AsRef<str>> From<A> for BackendArg {
     fn from(s: A) -> Self {
-        let short = unalias_backend(s.as_ref()).to_string();
+        let mut short = unalias_backend(s.as_ref()).to_string();
+        // Normalize underscores to dashes in tool names (not backend:path syntax).
+        // Env vars like MISE_CLAUDE_CODE_VERSION lose dashes via to_shouty_snake_case.
+        if !short.contains(':') {
+            short = short.replace('_', "-");
+        }
         // Check if this is a full backend identifier (e.g., "aqua:oven-sh/bun")
         // If so, treat it as explicit since the user specified the backend
         let explicit = if let Some((prefix, _)) = short.split_once(':') {
@@ -724,5 +729,20 @@ mod tests {
             "gitlab:jdxcode/mise-test-fixtures[asset_pattern=hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]",
             fa.full_with_opts()
         );
+    }
+
+    #[test]
+    fn test_backend_arg_underscore_normalization() {
+        // Underscores in plain tool names should become dashes
+        let ba: BackendArg = "claude_code".into();
+        assert_eq!(ba.short, "claude-code");
+
+        // Backend-prefixed names should not be normalized
+        let ba: BackendArg = "aqua:some_org/some_tool".into();
+        assert!(ba.short.contains('_'));
+
+        // Single-word tools unaffected
+        let ba: BackendArg = "node".into();
+        assert_eq!(ba.short, "node");
     }
 }
