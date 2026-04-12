@@ -72,9 +72,7 @@ pub fn npm_semver_range_filter(versions: &[String], query: &str) -> Option<Vec<S
             .filter(|v| {
                 let version = v.as_str();
                 NodeVersion::parse(version)
-                    .or_else(|_| {
-                        NodeVersion::parse(version.trim_start_matches(['v', 'V']))
-                    })
+                    .or_else(|_| NodeVersion::parse(version.trim_start_matches(['v', 'V'])))
                     .is_ok_and(|version| range.satisfies(&version))
             })
             .cloned()
