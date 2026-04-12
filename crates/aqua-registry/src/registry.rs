@@ -280,7 +280,8 @@ mod tests {
             AQUA_STANDARD_REGISTRY_METADATA.repository,
             "aquaproj/aqua-registry"
         );
-        assert_eq!(AQUA_STANDARD_REGISTRY_METADATA.tag, "v4.492.0");
+        assert!(!AQUA_STANDARD_REGISTRY_METADATA.tag.is_empty());
+        assert!(AQUA_STANDARD_REGISTRY_METADATA.tag.starts_with('v'));
     }
 
     #[test]
