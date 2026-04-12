@@ -73,7 +73,7 @@ pub fn npm_semver_range_filter(versions: &[String], query: &str) -> Option<Vec<S
                 let version = v.as_str();
                 NodeVersion::parse(version)
                     .or_else(|_| {
-                        NodeVersion::parse(version.trim_start_matches(|c| c == 'v' || c == 'V'))
+                        NodeVersion::parse(version.trim_start_matches(['v', 'V']))
                     })
                     .is_ok_and(|version| range.satisfies(&version))
             })
