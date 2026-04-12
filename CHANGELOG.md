@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026.4.10](https://github.com/jdx/mise/compare/v2026.4.9..v2026.4.10) - 2026-04-12
+
+### 🐛 Bug Fixes
+
+- ignore MISE_TOOL_VERSION in nested postinstall runs by @risu729 in [#9050](https://github.com/jdx/mise/pull/9050)
+
 ## [2026.4.9](https://github.com/jdx/mise/compare/v2026.4.8..v2026.4.9) - 2026-04-11
 
 ### 🐛 Bug Fixes
