@@ -69,7 +69,7 @@ Users can install additional versions in their own directory — those take prio
 system versions. To customize the system directory, set `MISE_SYSTEM_DATA_DIR`.
 
 You can also configure additional shared directories with `MISE_SHARED_INSTALL_DIRS`
-(colon-separated paths) or the `shared_install_dirs` setting.
+(paths separated by `:` on Unix and `;` on Windows) or the `shared_install_dirs` setting.
 
 ### Devcontainers with home directory mounts
 
