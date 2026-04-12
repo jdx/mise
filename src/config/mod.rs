@@ -882,27 +882,31 @@ fn configs_at_root<'a>(dir: &Path, config_files: &'a ConfigMap) -> Vec<&'a Arc<d
     let mut configs: Vec<&'a Arc<dyn ConfigFile>> = DEFAULT_CONFIG_FILENAMES
         .iter()
         .rev()
-        .flat_map(|f| {
-            if f.contains('*') {
-                // Handle glob patterns by matching against actual config file paths
-                glob(dir, f)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter_map(|path| config_files.get(&path))
-                    .collect::<Vec<_>>()
-            } else {
-                // Handle regular filenames
-                config_files
-                    .get(&dir.join(f))
-                    .into_iter()
-                    .collect::<Vec<_>>()
-            }
-        })
+        .flat_map(|f| configs_for_filename_at_root(dir, f, config_files))
         .collect();
     // Remove duplicates while preserving order
     let mut seen = std::collections::HashSet::new();
     configs.retain(|cf| seen.insert(cf.get_path().to_path_buf()));
     configs
+}
+
+fn configs_for_filename_at_root<'a>(
+    dir: &Path,
+    filename: &str,
+    config_files: &'a ConfigMap,
+) -> Vec<&'a Arc<dyn ConfigFile>> {
+    if filename.contains('*') {
+        // Handle glob patterns by matching against actual config file paths.
+        let mut paths = glob(dir, filename).unwrap_or_default();
+        paths.reverse();
+        paths
+            .into_iter()
+            .filter_map(|path| config_files.get(&path))
+            .collect()
+    } else {
+        // Handle regular filenames.
+        config_files.get(&dir.join(filename)).into_iter().collect()
+    }
 }
 
 fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
@@ -2569,6 +2573,57 @@ mod tests {
         assert!(result.contains_key(&file1_path));
         assert!(result.contains_key(&file2_path));
         assert!(!result.contains_key(&sub_dir));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_conf_d_task_config_precedence() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let temp_path = temp_dir.path();
+        let conf_d = temp_path.join(".config/mise/conf.d");
+        fs::create_dir_all(&conf_d)?;
+
+        let base_path = conf_d.join("01.toml");
+        let override_path = conf_d.join("02-override.toml");
+        fs::write(
+            &base_path,
+            r#"
+[task_config]
+includes = ["base-tasks"]
+dir = "base-dir"
+"#,
+        )?;
+        fs::write(
+            &override_path,
+            r#"
+[task_config]
+includes = ["override-tasks"]
+dir = "override-dir"
+"#,
+        )?;
+
+        let mut config_files = ConfigMap::default();
+        config_files.insert(
+            base_path.clone(),
+            Arc::new(MiseToml::from_file(&base_path)?),
+        );
+        config_files.insert(
+            override_path.clone(),
+            Arc::new(MiseToml::from_file(&override_path)?),
+        );
+
+        let configs =
+            configs_for_filename_at_root(temp_path, ".config/mise/conf.d/*.toml", &config_files);
+        assert_eq!(configs.first().unwrap().get_path(), override_path);
+        assert_eq!(
+            configs.iter().find_map(|cf| cf.task_config().dir.clone()),
+            Some("override-dir".into())
+        );
+        assert_eq!(
+            replacement_task_include_specs_for_dir(temp_path, &configs, &[]),
+            vec![(temp_path.to_path_buf(), "override-tasks".into())]
+        );
 
         Ok(())
     }
