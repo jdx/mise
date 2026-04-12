@@ -36,7 +36,7 @@ go in `[tools]` in `mise.toml`.
 
 ### `tags`
 
-Specify go build tags (passed as `go install --tags`):
+Specify go build tags (passed as `go install -tags`):
 
 ```toml
 [tools]
