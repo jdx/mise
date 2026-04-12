@@ -5798,6 +5798,7 @@ dependencies = [
  "mockito",
  "netrc-rs",
  "nix 0.31.2",
+ "nodejs-semver",
  "num_cpus",
  "number_prefix",
  "once_cell",
@@ -6015,6 +6016,18 @@ dependencies = [
  "cfg-if",
  "cfg_aliases",
  "libc",
+]
+
+[[package]]
+name = "nodejs-semver"
+version = "4.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a29bc3430baa1e00e10d9aa5f4ed19ce4433eecb40e3926ade5ff2954cc2f3a"
+dependencies = [
+ "bytecount",
+ "miette",
+ "thiserror 2.0.18",
+ "winnow 0.7.15",
 ]
 
 [[package]]

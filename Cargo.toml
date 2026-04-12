@@ -121,6 +121,7 @@ minisign-verify = "0.2"
 md-5 = "0.11"
 miette = { version = "7", features = ["fancy"] }
 netrc-rs = "0.1"
+nodejs-semver = "4.2"
 num_cpus = "1"
 number_prefix = "0.4"
 once_cell = "1"

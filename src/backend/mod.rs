@@ -1458,6 +1458,10 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
+        if let Some(matches) = crate::semver::npm_semver_range_filter(&versions, query) {
+            return matches;
+        }
+
         let escaped_query = regex::escape(query);
         let query_pattern = if query == "latest" {
             "v?[0-9].*"

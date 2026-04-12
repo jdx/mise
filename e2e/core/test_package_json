@@ -11,7 +11,7 @@ cat >package.json <<'EOF'
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": ">=22.0.0"
+      "version": ">=22.0.0 <23.0.0"
     }
   }
 }
