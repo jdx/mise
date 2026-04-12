@@ -55,12 +55,14 @@ pub struct BackendArg {
 
 impl<A: AsRef<str>> From<A> for BackendArg {
     fn from(s: A) -> Self {
-        let mut short = unalias_backend(s.as_ref()).to_string();
+        let unaliased = unalias_backend(s.as_ref());
         // Normalize underscores to dashes in tool names (not backend:path syntax).
         // Env vars like MISE_CLAUDE_CODE_VERSION lose dashes via to_shouty_snake_case.
-        if !short.contains(':') {
-            short = short.replace('_', "-");
-        }
+        let short = if !unaliased.contains(':') && unaliased.contains('_') {
+            unaliased.replace('_', "-")
+        } else {
+            unaliased.to_string()
+        };
         // Check if this is a full backend identifier (e.g., "aqua:oven-sh/bun")
         // If so, treat it as explicit since the user specified the backend
         let explicit = if let Some((prefix, _)) = short.split_once(':') {

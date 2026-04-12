@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+# Verify that MISE_<TOOL>_VERSION env vars normalize underscores back to dashes.
+# Without the fix, MISE_TINY_DASH_VERSION resolves to "tiny_dash" (underscore)
+# instead of "tiny-dash", causing a registry lookup failure.
+export MISE_TINY_DASH_VERSION=1.0.0
+
+# The underscore form "tiny_dash" should never appear — it means normalization failed
+assert_not_contains "mise ls 2>&1" "tiny_dash"
