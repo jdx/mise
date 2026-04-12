@@ -26,6 +26,11 @@ struct DevEngine {
     version: Option<String>,
 }
 
+pub fn is_package_json(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|file_name| file_name == "package.json")
+}
+
 /// Deserialize a field that may be a single object or an array (take the first element).
 /// The npm devEngines spec allows both forms.
 fn deserialize_one_or_first<'de, D>(
@@ -62,8 +67,8 @@ impl PackageJsonData {
             .and_then(|de| de.runtime.as_ref())
             .filter(|r| r.name.as_deref() == Some(tool_name))
             .and_then(|r| r.version.as_deref())
-            .map(normalize_semver_range)
             .filter(|v| !v.is_empty())
+            .map(str::to_string)
     }
 
     /// Extract a package manager version for the given tool name.
@@ -75,8 +80,8 @@ impl PackageJsonData {
             .and_then(|de| de.package_manager.as_ref())
             .filter(|pm| pm.name.as_deref() == Some(tool_name))
             .and_then(|pm| pm.version.as_deref())
-            .map(normalize_semver_range)
             .filter(|v| !v.is_empty())
+            .map(str::to_string)
             .or_else(|| {
                 // Fall back to packageManager field (e.g. "pnpm@9.1.0+sha256.abc")
                 let pm_field = self.package_manager.as_deref()?;
@@ -92,12 +97,6 @@ impl PackageJsonData {
                 Some(version.to_string())
             })
     }
-}
-
-/// Preserve npm semver ranges from package.json for resolution against the
-/// backend's available versions.
-fn normalize_semver_range(input: &str) -> String {
-    input.trim().to_string()
 }
 
 pub fn parse(path: &Path, tool_name: &str) -> Result<Vec<String>> {
@@ -123,21 +122,6 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
-
-    #[test]
-    fn test_normalize_semver_range() {
-        assert_eq!(normalize_semver_range(" >=18.0.0 "), ">=18.0.0");
-        assert_eq!(normalize_semver_range("^20.0.0"), "^20.0.0");
-        assert_eq!(normalize_semver_range("~18.2.0"), "~18.2.0");
-        assert_eq!(normalize_semver_range("9.1.0"), "9.1.0");
-        assert_eq!(normalize_semver_range("18"), "18");
-        assert_eq!(normalize_semver_range("*"), "*");
-        assert_eq!(normalize_semver_range("x"), "x");
-        assert_eq!(
-            normalize_semver_range(">=20 <21 || >=22"),
-            ">=20 <21 || >=22"
-        );
-    }
 
     #[test]
     fn test_parse_package_json() {
@@ -178,20 +162,6 @@ mod tests {
 
         assert_eq!(parse(&path, "bun").unwrap(), vec!["1.0.0".to_string()]);
         assert_eq!(parse(&path, "node").unwrap(), Vec::<String>::new());
-    }
-
-    #[test]
-    fn test_normalize_semver_range_upper_bound() {
-        assert_eq!(normalize_semver_range("<18.0.0"), "<18.0.0");
-        assert_eq!(normalize_semver_range("<=18.0.0"), "<=18.0.0");
-    }
-
-    #[test]
-    fn test_normalize_semver_range_wildcards() {
-        assert_eq!(normalize_semver_range("18.x"), "18.x");
-        assert_eq!(normalize_semver_range("18.*"), "18.*");
-        assert_eq!(normalize_semver_range("18.2.x"), "18.2.x");
-        assert_eq!(normalize_semver_range("18.2.*"), "18.2.*");
     }
 
     #[test]

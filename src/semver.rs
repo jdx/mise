@@ -61,7 +61,7 @@ pub fn chunkify_version(v: &str) -> Vec<String> {
 /// existing fuzzy matching for aliases and non-semver tools.
 pub fn npm_semver_range_filter(versions: &[String], query: &str) -> Option<Vec<String>> {
     let query = query.trim();
-    if !looks_like_npm_semver_range(query) {
+    if !is_npm_semver_range_query(query) {
         return None;
     }
     let range = Range::parse(query).ok()?;
@@ -80,7 +80,7 @@ pub fn npm_semver_range_filter(versions: &[String], query: &str) -> Option<Vec<S
     )
 }
 
-fn looks_like_npm_semver_range(query: &str) -> bool {
+pub fn is_npm_semver_range_query(query: &str) -> bool {
     if query.is_empty() || query.eq_ignore_ascii_case("latest") {
         return false;
     }

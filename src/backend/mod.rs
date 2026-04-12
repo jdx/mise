@@ -951,7 +951,7 @@ pub trait Backend: Debug + Send + Sync {
     /// every backend needing to implement `package.json` support. For other files, it
     /// delegates to `_parse_idiomatic_file`.
     async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
-        if path.file_name().is_some_and(|f| f == "package.json") {
+        if crate::config::config_file::idiomatic_version::package_json::is_package_json(path) {
             return crate::config::config_file::idiomatic_version::package_json::parse(
                 path,
                 self.id(),
@@ -1458,10 +1458,6 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
-        if let Some(matches) = crate::semver::npm_semver_range_filter(&versions, query) {
-            return matches;
-        }
-
         let escaped_query = regex::escape(query);
         let query_pattern = if query == "latest" {
             "v?[0-9].*"

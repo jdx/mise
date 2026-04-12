@@ -327,9 +327,13 @@ fn extract_version(tool: &str, path: &Path) -> Option<String> {
     let filename = path.file_name()?.to_str()?;
     let content = file::read_to_string(path).ok()?;
 
-    match (tool, filename) {
+    match tool {
         // Node.js version from package.json engines
-        ("node", "package.json") => {
+        "node"
+            if crate::config::config_file::idiomatic_version::package_json::is_package_json(
+                path,
+            ) =>
+        {
             let json: serde_json::Value = serde_json::from_str(&content).ok()?;
             json.get("engines")
                 .and_then(|e| e.get("node"))
@@ -337,7 +341,7 @@ fn extract_version(tool: &str, path: &Path) -> Option<String> {
                 .map(|s| s.to_string())
         }
         // Python version from pyproject.toml
-        ("python", "pyproject.toml") => {
+        "python" if filename == "pyproject.toml" => {
             let doc: toml::Value = toml::from_str(&content).ok()?;
             doc.get("project")
                 .and_then(|p| p.get("requires-python"))
@@ -349,16 +353,16 @@ fn extract_version(tool: &str, path: &Path) -> Option<String> {
                 .filter(|s| !s.is_empty())
         }
         // Go version from go.mod
-        ("go", "go.mod") => content
+        "go" if filename == "go.mod" => content
             .lines()
             .find(|line| line.starts_with("go "))
             .map(|line| line.trim_start_matches("go ").trim().to_string()),
         // Version files (simple text content)
-        (_, f) if f.starts_with('.') && f.ends_with("-version") => {
+        _ if filename.starts_with('.') && filename.ends_with("-version") => {
             let v = content.trim().to_string();
             if v.is_empty() { None } else { Some(v) }
         }
-        (_, ".nvmrc") => {
+        _ if filename == ".nvmrc" => {
             let v = content.trim().to_string();
             if v.is_empty() { None } else { Some(v) }
         }
