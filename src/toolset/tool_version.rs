@@ -296,8 +296,11 @@ impl ToolVersion {
                 return build(v.clone());
             }
         }
-        if is_package_json_idiomatic_request(&request)
-            && crate::semver::is_npm_semver_range_query(&v)
+        if matches!(
+            request.source(),
+            ToolSource::IdiomaticVersionFile(path)
+                if crate::config::config_file::idiomatic_version::package_json::is_package_json(path)
+        ) && crate::semver::is_npm_semver_range_query(&v)
         {
             if !opts.latest_versions {
                 let installed_versions = backend.list_installed_versions();
@@ -513,15 +516,6 @@ fn has_linked_version(ba: &BackendArg) -> bool {
         }
     }
     false
-}
-
-fn is_package_json_idiomatic_request(request: &ToolRequest) -> bool {
-    match request.source() {
-        ToolSource::IdiomaticVersionFile(path) => {
-            crate::config::config_file::idiomatic_version::package_json::is_package_json(path)
-        }
-        _ => false,
-    }
 }
 
 impl Display for ResolveOptions {
