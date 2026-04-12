@@ -172,11 +172,13 @@ fn package_registry_yaml(package: &Value) -> Result<String> {
 }
 
 fn canonical_package_id(package: &Value) -> Option<String> {
-    string_field(package, "name").or_else(|| {
-        let repo_owner = string_field(package, "repo_owner")?;
-        let repo_name = string_field(package, "repo_name")?;
-        Some(format!("{repo_owner}/{repo_name}"))
-    })
+    string_field(package, "name")
+        .or_else(|| {
+            let repo_owner = string_field(package, "repo_owner")?;
+            let repo_name = string_field(package, "repo_name")?;
+            Some(format!("{repo_owner}/{repo_name}"))
+        })
+        .or_else(|| string_field(package, "path"))
 }
 
 fn package_aliases(package: &Value) -> Vec<String> {

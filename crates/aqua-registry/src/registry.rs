@@ -275,6 +275,18 @@ mod tests {
     }
 
     #[test]
+    fn test_baked_registry_path_only_package_lookup() {
+        let registry = baked_registry_file("golang.org/x/perf/cmd/benchstat").unwrap();
+        let registry = serde_yaml::from_str::<RegistryYaml>(registry).unwrap();
+
+        let package = registry.packages.into_iter().next().unwrap();
+        assert_eq!(
+            package.path.as_deref(),
+            Some("golang.org/x/perf/cmd/benchstat")
+        );
+    }
+
+    #[test]
     fn test_baked_registry_metadata() {
         assert_eq!(
             AQUA_STANDARD_REGISTRY_METADATA.repository,
