@@ -849,18 +849,17 @@ mod tests {
     #[test]
     fn test_split_colon_list() {
         let cases: Vec<(&str, Vec<&str>)> = vec![
-            ("", vec![]),              // empty string — was causing panic
-            (":", vec![]),             // colon only
-            (":::", vec![]),           // multiple colons
+            ("", vec![]),    // empty string — was causing panic
+            (":", vec![]),   // colon only
+            (":::", vec![]), // multiple colons
             ("mise.toml", vec!["mise.toml"]),
             ("a:b", vec!["a", "b"]),
-            (":a:b:", vec!["a", "b"]),  // leading/trailing colons
-            ("a::b", vec!["a", "b"]),   // consecutive colons
+            (":a:b:", vec!["a", "b"]), // leading/trailing colons
+            ("a::b", vec!["a", "b"]),  // consecutive colons
         ];
         for (input, expected) in cases {
             let result = split_colon_list(input);
-            let expected: IndexSet<String> =
-                expected.into_iter().map(|s| s.to_string()).collect();
+            let expected: IndexSet<String> = expected.into_iter().map(|s| s.to_string()).collect();
             assert_eq!(result, expected, "input: {input:?}");
         }
     }
