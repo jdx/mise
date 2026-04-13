@@ -1,3 +1,4 @@
+use std::io::IsTerminal;
 use std::sync::Mutex;
 
 use demand::{Confirm, Dialog, DialogButton};
@@ -10,11 +11,22 @@ static MUTEX: Mutex<()> = Mutex::new(());
 
 static SKIP_PROMPT: Mutex<bool> = Mutex::new(false);
 
+/// Returns true if the current process can safely show an interactive prompt.
+///
+/// Requires stderr to be a TTY (so the prompt is visible) AND stdout to be a
+/// TTY. When stdout is not a TTY the process is running inside a command
+/// substitution (`$(…)`) or process substitution (`<(…)`), contexts where
+/// stdin may report as a TTY yet be unable to deliver input — leading to an
+/// unrecoverable hang. See https://github.com/jdx/mise/discussions/8940
+fn can_prompt() -> bool {
+    console::user_attended_stderr() && std::io::stdout().is_terminal() && env::__USAGE.is_none()
+}
+
 pub fn confirm<S: Into<String>>(message: S) -> eyre::Result<bool> {
     let _lock = MUTEX.lock().unwrap(); // Prevent multiple prompts at once
     ctrlc::show_cursor_after_ctrl_c();
 
-    if !console::user_attended_stderr() || env::__USAGE.is_some() {
+    if !can_prompt() {
         return Ok(false);
     }
     let theme = get_theme();
@@ -29,7 +41,7 @@ pub fn confirm_with_all<S: Into<String>>(message: S) -> eyre::Result<bool> {
     let _lock = MUTEX.lock().unwrap(); // Prevent multiple prompts at once
     ctrlc::show_cursor_after_ctrl_c();
 
-    if !console::user_attended_stderr() || env::__USAGE.is_some() {
+    if !can_prompt() {
         return Ok(false);
     }
 
