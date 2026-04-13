@@ -4,9 +4,16 @@ use std::path::PathBuf;
 
 use crate::env;
 
+#[derive(Debug, clap::Parser)]
 pub struct SelfUpdate {}
 
 impl SelfUpdate {
+    pub async fn run(self) -> eyre::Result<()> {
+        if let Some(instructions) = upgrade_instructions_text() {
+            warn!("{}", instructions);
+        }
+        eyre::bail!("mise's self-update feature has been disabled at build time, cannot update");
+    }
     pub fn is_available() -> bool {
         false
     }

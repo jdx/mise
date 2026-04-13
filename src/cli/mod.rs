@@ -241,7 +241,6 @@ pub enum Commands {
     Reshim(reshim::Reshim),
     Run(Box<run::Run>),
     Search(search::Search),
-    #[cfg(feature = "self_update")]
     SelfUpdate(self_update::SelfUpdate),
     Set(set::Set),
     Settings(settings::Settings),
@@ -311,7 +310,6 @@ impl Commands {
             Self::Reshim(cmd) => cmd.run().await,
             Self::Run(cmd) => (*cmd).run().await,
             Self::Search(cmd) => cmd.run().await,
-            #[cfg(feature = "self_update")]
             Self::SelfUpdate(cmd) => cmd.run().await,
             Self::Set(cmd) => cmd.run().await,
             Self::Settings(cmd) => cmd.run().await,
