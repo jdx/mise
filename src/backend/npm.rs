@@ -331,7 +331,7 @@ impl NPMBackend {
     /// which is when the --min-release-age flag was added (npm/cli#8965).
     fn npm_version_supports_min_release_age(version: &str) -> bool {
         let trimmed = version.trim().trim_start_matches('v');
-        let mut parts = trimmed.split(|c: char| c == '.' || c == '-' || c == '+');
+        let mut parts = trimmed.split(['.', '-', '+']);
         let major: u64 = match parts.next().and_then(|p| p.parse().ok()) {
             Some(v) => v,
             None => return false,
