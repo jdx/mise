@@ -1,5 +1,18 @@
 # Changelog
 
+## [2026.4.11](https://github.com/jdx/mise/compare/v2026.4.10..v2026.4.11) - 2026-04-13
+
+### 🐛 Bug Fixes
+
+- **(docs)** typo in Go Backend by @dolmen in [#9065](https://github.com/jdx/mise/pull/9065)
+- **(task)** render dependency templates even when no args are passed by @MatthiasGrandl in [#9062](https://github.com/jdx/mise/pull/9062)
+- support npm semver ranges in devEngines by @risu729 in [#9061](https://github.com/jdx/mise/pull/9061)
+
+### New Contributors
+
+- @dolmen made their first contribution in [#9065](https://github.com/jdx/mise/pull/9065)
+- @MatthiasGrandl made their first contribution in [#9062](https://github.com/jdx/mise/pull/9062)
+
 ## [2026.4.10](https://github.com/jdx/mise/compare/v2026.4.9..v2026.4.10) - 2026-04-12
 
 ### 🐛 Bug Fixes
