@@ -105,10 +105,12 @@ This uses `git credential fill` and supports credentials stored by helpers such 
 
 ### Debugging token resolution
 
+Use `mise token forgejo` to see which token mise would use for a given host:
+
 ```sh
-mise forgejo token
-mise forgejo token --unmask
-mise forgejo token forgejo.mycompany.com
+mise token forgejo
+mise token forgejo --unmask
+mise token forgejo forgejo.mycompany.com
 ```
 
 ## Tool Options

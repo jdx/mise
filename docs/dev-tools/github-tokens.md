@@ -130,12 +130,12 @@ use_git_credentials = true
 
 ## Debugging Token Resolution
 
-Use `mise github token` to see which token mise would use for a given host:
+Use `mise token github` to see which token mise would use for a given host:
 
 ```sh
-mise github token                           # check github.com (masked)
-mise github token --unmask                  # show full token
-mise github token github.mycompany.com      # check a GHE host
+mise token github                           # check github.com (masked)
+mise token github --unmask                  # show full token
+mise token github github.mycompany.com      # check a GHE host
 ```
 
 ## GitHub Enterprise
