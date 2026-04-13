@@ -37,7 +37,7 @@ assert_not_contains "readlink $shimdir/dummy" "$shimdir"
 
 # The mise shim itself must not be circular
 if [ -L "$shimdir/mise" ]; then
-  assert_not_contains "readlink $shimdir/mise" "$shimdir"
+	assert_not_contains "readlink $shimdir/mise" "$shimdir"
 fi
 
 # Doctor should not report missing shims
