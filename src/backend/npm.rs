@@ -165,7 +165,6 @@ impl Backend for NPMBackend {
                         NpmPackageManager::Bun,
                         before_date,
                         Timestamp::now(),
-                        false,
                     )
                 });
                 CmdLineRunner::new("bun")
@@ -200,7 +199,6 @@ impl Backend for NPMBackend {
                         NpmPackageManager::Pnpm,
                         before_date,
                         Timestamp::now(),
-                        false,
                     )
                 });
                 CmdLineRunner::new("pnpm")
@@ -228,14 +226,16 @@ impl Backend for NPMBackend {
             }
             _ => {
                 let install_before_args = if let Some(before_date) = ctx.before_date {
-                    let supports_min_release_age =
-                        self.npm_supports_min_release_age_flag(&ctx.config).await;
-                    Self::build_transitive_release_age_args(
-                        NpmPackageManager::Npm,
-                        before_date,
-                        Timestamp::now(),
-                        supports_min_release_age,
-                    )
+                    let now = Timestamp::now();
+                    if self.npm_supports_min_release_age_flag(&ctx.config).await {
+                        Self::build_npm_min_release_age_args(before_date, now)
+                    } else {
+                        Self::build_transitive_release_age_args(
+                            NpmPackageManager::Npm,
+                            before_date,
+                            now,
+                        )
+                    }
                 } else {
                     Vec::new()
                 };
@@ -292,23 +292,9 @@ impl NPMBackend {
         package_manager: NpmPackageManager,
         before_date: Timestamp,
         now: Timestamp,
-        npm_supports_min_release_age: bool,
     ) -> Vec<OsString> {
         match package_manager {
-            NpmPackageManager::Npm => {
-                if npm_supports_min_release_age {
-                    // npm 11.10.0+ supports --min-release-age, the purpose-built flag for
-                    // supply chain protection (npm/cli#8965). It mirrors bun/pnpm semantics
-                    // and is preferred over --before, which was designed for reproducible
-                    // builds rather than security.
-                    let seconds = Self::elapsed_seconds_ceil(before_date, now);
-                    let days = seconds.div_ceil(86400);
-                    vec![format!("--min-release-age={days}").into()]
-                } else {
-                    // Fallback for npm < 11.10.0
-                    vec!["--before".into(), before_date.to_string().into()]
-                }
-            }
+            NpmPackageManager::Npm => vec!["--before".into(), before_date.to_string().into()],
             NpmPackageManager::Bun => {
                 let seconds = Self::elapsed_seconds_ceil(before_date, now);
                 vec!["--minimum-release-age".into(), seconds.to_string().into()]
@@ -319,6 +305,17 @@ impl NPMBackend {
                 vec![format!("--config.minimumReleaseAge={minutes}").into()]
             }
         }
+    }
+
+    /// Build install args for npm 11.10.0+, which supports the
+    /// `--min-release-age=<days>` flag introduced in npm/cli#8965. This is
+    /// preferred over `--before` because it mirrors bun/pnpm's age-based
+    /// semantics and is the purpose-built flag for supply chain protection,
+    /// whereas `--before` was originally designed for reproducible builds.
+    fn build_npm_min_release_age_args(before_date: Timestamp, now: Timestamp) -> Vec<OsString> {
+        let seconds = Self::elapsed_seconds_ceil(before_date, now);
+        let days = seconds.div_ceil(86400);
+        vec![format!("--min-release-age={days}").into()]
     }
 
     fn elapsed_seconds_ceil(before_date: Timestamp, now: Timestamp) -> u64 {
@@ -475,16 +472,13 @@ mod tests {
     }
 
     #[test]
-    fn test_build_transitive_release_age_args_for_npm_legacy() {
-        // npm < 11.10.0 falls back to --before for backwards compatibility
+    fn test_build_transitive_release_age_args_for_npm() {
+        // The npm arm of build_transitive_release_age_args always emits the
+        // legacy --before flag; npm 11.10.0+ goes through build_npm_min_release_age_args.
         let before_date: Timestamp = "2024-01-02T03:04:05Z".parse().unwrap();
         let now: Timestamp = "2024-01-03T03:04:05Z".parse().unwrap();
-        let args = NPMBackend::build_transitive_release_age_args(
-            NpmPackageManager::Npm,
-            before_date,
-            now,
-            false,
-        );
+        let args =
+            NPMBackend::build_transitive_release_age_args(NpmPackageManager::Npm, before_date, now);
         assert_eq!(
             args,
             vec![
@@ -495,59 +489,38 @@ mod tests {
     }
 
     #[test]
-    fn test_build_transitive_release_age_args_for_npm_min_release_age() {
-        // npm 11.10.0+ uses --min-release-age=<days>
+    fn test_build_npm_min_release_age_args_full_days() {
         let before_date: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
         let now: Timestamp = "2024-01-04T00:00:00Z".parse().unwrap();
-        let args = NPMBackend::build_transitive_release_age_args(
-            NpmPackageManager::Npm,
-            before_date,
-            now,
-            true,
-        );
+        let args = NPMBackend::build_npm_min_release_age_args(before_date, now);
         assert_eq!(args, vec![OsString::from("--min-release-age=3")]);
     }
 
     #[test]
-    fn test_build_transitive_release_age_args_for_npm_min_release_age_zero_when_before_equals_now()
-    {
+    fn test_build_npm_min_release_age_args_partial_day_rounds_up() {
+        // Partial day rounds up so the protection window is never shorter than requested
+        let before_date: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
+        let now: Timestamp = "2024-01-01T00:00:01Z".parse().unwrap();
+        let args = NPMBackend::build_npm_min_release_age_args(before_date, now);
+        assert_eq!(args, vec![OsString::from("--min-release-age=1")]);
+    }
+
+    #[test]
+    fn test_build_npm_min_release_age_args_zero_when_before_equals_now() {
         // before_date == now → 0 elapsed seconds → 0 days. Verifies we never panic
         // or emit a malformed flag in the boundary case (callers may pass before_date
         // resolved to "now" when no protection is requested).
         let timestamp: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
-        let args = NPMBackend::build_transitive_release_age_args(
-            NpmPackageManager::Npm,
-            timestamp,
-            timestamp,
-            true,
-        );
+        let args = NPMBackend::build_npm_min_release_age_args(timestamp, timestamp);
         assert_eq!(args, vec![OsString::from("--min-release-age=0")]);
-    }
-
-    #[test]
-    fn test_build_transitive_release_age_args_for_npm_min_release_age_partial_day() {
-        // Partial day rounds up so the protection window is never shorter than requested
-        let before_date: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
-        let now: Timestamp = "2024-01-01T00:00:01Z".parse().unwrap();
-        let args = NPMBackend::build_transitive_release_age_args(
-            NpmPackageManager::Npm,
-            before_date,
-            now,
-            true,
-        );
-        assert_eq!(args, vec![OsString::from("--min-release-age=1")]);
     }
 
     #[test]
     fn test_build_transitive_release_age_args_for_bun() {
         let before_date: Timestamp = "2024-01-02T03:04:04.100Z".parse().unwrap();
         let now: Timestamp = "2024-01-02T03:04:05Z".parse().unwrap();
-        let args = NPMBackend::build_transitive_release_age_args(
-            NpmPackageManager::Bun,
-            before_date,
-            now,
-            false,
-        );
+        let args =
+            NPMBackend::build_transitive_release_age_args(NpmPackageManager::Bun, before_date, now);
         assert_eq!(
             args,
             vec![OsString::from("--minimum-release-age"), OsString::from("1")]
@@ -562,7 +535,6 @@ mod tests {
             NpmPackageManager::Pnpm,
             before_date,
             now,
-            false,
         );
         assert_eq!(args, vec![OsString::from("--config.minimumReleaseAge=1")]);
     }
