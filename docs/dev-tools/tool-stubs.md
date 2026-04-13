@@ -38,6 +38,8 @@ Tool stub configuration is essentially a subset of what can be done in `mise.tom
 - `tool` - Explicit tool name or backend specification (e.g., "python", "github:cli/cli"). This is the only field unique to tool stubs - it specifies which tool entry from the configuration to use. If omitted and a `url` field is present, defaults to the HTTP backend.
 - `version` - The version of the tool to use
 - `bin` - The binary name to execute within the tool (defaults to the stub filename)
+- `os` - Restrict the stub to specific operating systems (e.g., `os = ["linux", "macos"]`). Same semantics as the `os` filter in `mise.toml`.
+- `arch` - Restrict the stub to specific CPU architectures (e.g., `arch = ["arm64"]`). Same semantics as the `arch` filter in `mise.toml`. When both `os` and `arch` are specified, both must match.
 
 ## HTTP Stubs
 

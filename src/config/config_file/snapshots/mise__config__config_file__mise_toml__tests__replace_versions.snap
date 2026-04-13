@@ -1,5 +1,6 @@
 ---
 source: src/config/config_file/mise_toml.rs
+assertion_line: 2347
 expression: cf.to_toolset().unwrap()
 ---
 Toolset {
@@ -13,6 +14,7 @@ Toolset {
                     version: "16.0.1",
                     options: ToolVersionOptions {
                         os: None,
+                        arch: None,
                         depends: None,
                         install_env: {},
                         opts: {},
@@ -26,6 +28,7 @@ Toolset {
                     version: "18.0.1",
                     options: ToolVersionOptions {
                         os: None,
+                        arch: None,
                         depends: None,
                         install_env: {},
                         opts: {},

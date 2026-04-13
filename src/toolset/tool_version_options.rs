@@ -10,6 +10,7 @@ pub const EPHEMERAL_OPT_KEYS: &[&str] =
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct ToolVersionOptions {
     pub os: Option<Vec<String>>,
+    pub arch: Option<Vec<String>>,
     pub depends: Option<Vec<String>>,
     pub install_env: IndexMap<String, String>,
     #[serde(flatten)]
@@ -24,6 +25,7 @@ impl Eq for ToolVersionOptions {}
 impl std::hash::Hash for ToolVersionOptions {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.os.hash(state);
+        self.arch.hash(state);
         self.depends.hash(state);
 
         // Hash install_env in sorted order for deterministic hashing

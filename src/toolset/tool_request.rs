@@ -173,6 +173,16 @@ impl ToolRequest {
             | Self::System { options, .. } => &options.os,
         }
     }
+    pub fn arch(&self) -> &Option<Vec<String>> {
+        match self {
+            Self::Version { options, .. }
+            | Self::Prefix { options, .. }
+            | Self::Ref { options, .. }
+            | Self::Path { options, .. }
+            | Self::Sub { options, .. }
+            | Self::System { options, .. } => &options.arch,
+        }
+    }
     pub fn set_options(&mut self, options: ToolVersionOptions) -> &mut Self {
         match self {
             Self::Version { options: o, .. }
@@ -358,12 +368,25 @@ impl ToolRequest {
     }
 
     pub fn is_os_supported(&self) -> bool {
+        self.matches_current_platform() && self.ba().is_os_supported()
+    }
+
+    /// Pure check of the `os` and `arch` filters against the current
+    /// platform. Split out from `is_os_supported` so unit tests can
+    /// exercise the filter without touching the install-state singleton
+    /// that `BackendArg::is_os_supported` consults.
+    fn matches_current_platform(&self) -> bool {
         if let Some(os) = self.os()
             && !os.contains(&crate::cli::version::OS)
         {
             return false;
         }
-        self.ba().is_os_supported()
+        if let Some(arch) = self.arch()
+            && !arch.contains(&crate::cli::version::ARCH)
+        {
+            return false;
+        }
+        true
     }
 }
 
@@ -426,7 +449,7 @@ mod tests {
     use super::{ToolRequest, effective_before_date, version_sub};
     use crate::cli::args::{BackendArg, BackendResolution};
     use crate::config::settings::{Settings, SettingsPartial};
-    use crate::toolset::{ResolveOptions, ToolSource, parse_tool_options};
+    use crate::toolset::{ResolveOptions, ToolSource, ToolVersionOptions, parse_tool_options};
     use confique::Layer;
     use pretty_assertions::assert_str_eq;
     use std::sync::Arc;
@@ -444,6 +467,22 @@ mod tests {
             backend: backend.clone(),
             version: "latest".to_string(),
             options: backend.opts(),
+            source: ToolSource::Argument,
+        }
+    }
+
+    fn make_request_with_options(options: ToolVersionOptions) -> ToolRequest {
+        let backend = Arc::new(BackendArg::new_raw(
+            "core:dummy".to_string(),
+            Some("core:dummy".to_string()),
+            "dummy".to_string(),
+            Some(options.clone()),
+            BackendResolution::new(true),
+        ));
+        ToolRequest::Version {
+            backend: backend.clone(),
+            version: "latest".to_string(),
+            options,
             source: ToolSource::Argument,
         }
     }
@@ -515,5 +554,59 @@ mod tests {
         assert_str_eq!(version_sub("0.1.0", "1"), "0");
         assert_str_eq!(version_sub("1.2.3", "0.2.4"), "0");
         assert_str_eq!(version_sub("1.3.3", "0.2.4"), "1.0");
+    }
+
+    #[test]
+    fn test_arch_filter_matches_current() {
+        // Including the current ARCH should keep the tool supported
+        let request = make_request_with_options(ToolVersionOptions {
+            arch: Some(vec![crate::cli::version::ARCH.clone()]),
+            ..Default::default()
+        });
+        assert!(request.matches_current_platform());
+    }
+
+    #[test]
+    fn test_arch_filter_excludes_current() {
+        // A non-matching arch should disable the tool
+        let request = make_request_with_options(ToolVersionOptions {
+            arch: Some(vec!["nonexistent-arch".to_string()]),
+            ..Default::default()
+        });
+        assert!(!request.matches_current_platform());
+    }
+
+    #[test]
+    fn test_arch_and_os_must_both_match() {
+        // os matches but arch does not → not supported
+        let request = make_request_with_options(ToolVersionOptions {
+            os: Some(vec![crate::cli::version::OS.clone()]),
+            arch: Some(vec!["nonexistent-arch".to_string()]),
+            ..Default::default()
+        });
+        assert!(!request.matches_current_platform());
+
+        // arch matches but os does not → not supported (symmetric check)
+        let request = make_request_with_options(ToolVersionOptions {
+            os: Some(vec!["nonexistent-os".to_string()]),
+            arch: Some(vec![crate::cli::version::ARCH.clone()]),
+            ..Default::default()
+        });
+        assert!(!request.matches_current_platform());
+
+        // both match → supported
+        let request = make_request_with_options(ToolVersionOptions {
+            os: Some(vec![crate::cli::version::OS.clone()]),
+            arch: Some(vec![crate::cli::version::ARCH.clone()]),
+            ..Default::default()
+        });
+        assert!(request.matches_current_platform());
+    }
+
+    #[test]
+    fn test_arch_unset_does_not_filter() {
+        // No arch field means no architecture filtering is applied
+        let request = make_request_with_options(ToolVersionOptions::default());
+        assert!(request.matches_current_platform());
     }
 }

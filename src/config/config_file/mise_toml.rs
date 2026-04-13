@@ -571,7 +571,7 @@ impl ConfigFile for MiseToml {
         let is_tools_sorted = is_tools_sorted(&tools); // was it previously sorted (if so we'll keep it sorted)
         let existing = tools.entry(ba.clone()).or_default();
         let output_empty_opts = |opts: &ToolVersionOptions| {
-            if opts.os.is_some() || !opts.install_env.is_empty() {
+            if opts.os.is_some() || opts.arch.is_some() || !opts.install_env.is_empty() {
                 return false;
             }
             if let Some(reg_ba) = REGISTRY.get(ba.short.as_str()).and_then(|b| b.ba())
@@ -621,6 +621,13 @@ impl ConfigFile for MiseToml {
                         arr.push(Value::from(o));
                     }
                     table.insert("os", Value::Array(arr));
+                }
+                if let Some(arch) = options.arch {
+                    let mut arr = Array::new();
+                    for a in arch {
+                        arr.push(Value::from(a));
+                    }
+                    table.insert("arch", Value::Array(arr));
                 }
                 if !options.install_env.is_empty() {
                     let mut env = InlineTable::new();
@@ -770,8 +777,9 @@ impl ConfigFile for MiseToml {
                             ba_opts.opts.entry(k).or_insert(v);
                         }
                     }
-                    // Copy os, depends, and install_env from config (not cached)
+                    // Copy os, arch, depends, and install_env from config (not cached)
                     ba_opts.os = options.os.clone();
+                    ba_opts.arch = options.arch.clone();
                     ba_opts.depends = options.depends.clone();
                     ba_opts.install_env = options.install_env.clone();
                     ba.set_opts(Some(ba_opts.clone()));
@@ -1568,6 +1576,21 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                                 return Err(de::Error::custom("os must be a string or array"));
                             }
                         },
+                        "arch" => match v {
+                            toml::Value::Array(s) => {
+                                options.arch = Some(
+                                    s.iter().map(|v| v.as_str().unwrap().to_string()).collect(),
+                                );
+                            }
+                            toml::Value::String(s) => {
+                                // Convert {{version}} to {version} for backend templating
+                                let s = s.replace("{{version}}", "{version}");
+                                options.opts.insert(k, toml::Value::String(s));
+                            }
+                            _ => {
+                                return Err(de::Error::custom("arch must be a string or array"));
+                            }
+                        },
                         "depends" => {
                             match v {
                                 toml::Value::Array(arr) => {
@@ -1706,6 +1729,21 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                             }
                             _ => {
                                 return Err(de::Error::custom("os must be a string or array"));
+                            }
+                        },
+                        "arch" => match v {
+                            toml::Value::Array(s) => {
+                                options.arch = Some(
+                                    s.iter().map(|v| v.as_str().unwrap().to_string()).collect(),
+                                );
+                            }
+                            toml::Value::String(s) => {
+                                // Convert {{version}} to {version} for backend templating
+                                let s = s.replace("{{version}}", "{version}");
+                                options.opts.insert(k, toml::Value::String(s));
+                            }
+                            _ => {
+                                return Err(de::Error::custom("arch must be a string or array"));
                             }
                         },
                         "depends" => {

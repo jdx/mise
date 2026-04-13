@@ -196,6 +196,31 @@ The `os` field accepts an array of operating system identifiers:
 
 If a tool specifies an `os` restriction and the current operating system is not in the list, mise will skip installing and using that tool.
 
+## Architecture-Specific Tools
+
+You can also restrict tools to specific CPU architectures using the `arch` field. This is useful when prebuilt binaries are only published for some architectures and you want to fall back to a different backend on others.
+
+```toml
+[tools]
+# Use the prebuilt binary on arm64 (Apple Silicon, ARM Linux)
+"aqua:sharkdp/fd" = { version = "latest", arch = ["arm64"] }
+
+# Compile from source on x64 where no prebuilt binary is available
+"cargo:fd-find" = { version = "latest", arch = ["x64"] }
+
+# Combine with `os` for finer-grained targeting
+"npm:my-tool" = { version = "latest", os = ["linux"], arch = ["x64"] }
+```
+
+The `arch` field accepts an array of architecture identifiers:
+
+- `"x64"` - 64-bit x86 (also known as `x86_64` / `amd64`)
+- `"arm64"` - 64-bit ARM (also known as `aarch64`)
+
+Other values from [`std::env::consts::ARCH`](https://doc.rust-lang.org/std/env/consts/constant.ARCH.html) (such as `"x86"`, `"arm"`, `"riscv64"`) are also accepted as-is for less common platforms.
+
+If a tool specifies an `arch` restriction and the current architecture is not in the list, mise will skip installing and using that tool. When both `os` and `arch` are specified, both must match.
+
 ## Tool Dependencies
 
 You can declare explicit installation dependencies between tools using the `depends` field. This ensures that one tool is fully installed before another begins installing.

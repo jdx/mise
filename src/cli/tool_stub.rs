@@ -24,6 +24,8 @@ pub struct ToolStubFile {
     pub install_env: indexmap::IndexMap<String, String>,
     #[serde(default)]
     pub os: Option<Vec<String>>,
+    #[serde(default)]
+    pub arch: Option<Vec<String>>,
     pub lock: Option<ToolStubLock>,
     #[serde(flatten, deserialize_with = "deserialize_tool_stub_options")]
     pub opts: indexmap::IndexMap<String, toml::Value>,
@@ -57,7 +59,7 @@ where
             // Skip known special fields that are handled separately
             if matches!(
                 key.as_str(),
-                "version" | "bin" | "tool" | "install_env" | "os" | "lock"
+                "version" | "bin" | "tool" | "install_env" | "os" | "arch" | "lock"
             ) {
                 continue;
             }
@@ -199,6 +201,7 @@ impl ToolStubFile {
 
         let options = ToolVersionOptions {
             os: self.os.clone(),
+            arch: self.arch.clone(),
             depends: None,
             install_env: self.install_env.clone(),
             opts,
