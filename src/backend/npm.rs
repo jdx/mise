@@ -350,11 +350,18 @@ impl NPMBackend {
 
     /// Detect whether the locally installed npm supports --min-release-age
     /// by invoking `npm --version`. Returns false on any failure so callers
-    /// transparently fall back to the older --before flag.
+    /// transparently fall back to the older --before flag. Failures are
+    /// logged at debug level so users can troubleshoot why the fallback
+    /// flag was chosen.
     async fn npm_supports_min_release_age_flag(&self, config: &Arc<Config>) -> bool {
         let env = match self.dependency_env(config).await {
             Ok(env) => env,
-            Err(_) => return false,
+            Err(e) => {
+                debug!(
+                    "npm version detection: dependency_env failed, using --before fallback: {e:#}"
+                );
+                return false;
+            }
         };
         let output = match cmd!(NPM_PROGRAM, "--version")
             .full_env(env)
@@ -362,7 +369,12 @@ impl NPMBackend {
             .read()
         {
             Ok(s) => s,
-            Err(_) => return false,
+            Err(e) => {
+                debug!(
+                    "npm version detection: `npm --version` failed, using --before fallback: {e:#}"
+                );
+                return false;
+            }
         };
         Self::npm_version_supports_min_release_age(&output)
     }
@@ -494,6 +506,22 @@ mod tests {
             true,
         );
         assert_eq!(args, vec![OsString::from("--min-release-age=3")]);
+    }
+
+    #[test]
+    fn test_build_transitive_release_age_args_for_npm_min_release_age_zero_when_before_equals_now()
+    {
+        // before_date == now → 0 elapsed seconds → 0 days. Verifies we never panic
+        // or emit a malformed flag in the boundary case (callers may pass before_date
+        // resolved to "now" when no protection is requested).
+        let timestamp: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
+        let args = NPMBackend::build_transitive_release_age_args(
+            NpmPackageManager::Npm,
+            timestamp,
+            timestamp,
+            true,
+        );
+        assert_eq!(args, vec![OsString::from("--min-release-age=0")]);
     }
 
     #[test]
