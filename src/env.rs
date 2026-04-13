@@ -835,6 +835,32 @@ mod tests {
     }
 
     #[test]
+    fn test_split_colon_filters_empty_segments() {
+        // Verify that split(':').filter(|s| !s.is_empty()) correctly
+        // handles empty strings, which is the pattern needed for
+        // MISE_OVERRIDE_CONFIG_FILENAMES and similar colon-separated
+        // env vars. Without the filter, "" produces [""] (length 1),
+        // which causes panics downstream in config_root().
+        let cases: Vec<(&str, Vec<&str>)> = vec![
+            ("", vec![]),                              // empty string
+            (":", vec![]),                             // colon only
+            (":::", vec![]),                           // multiple colons
+            ("mise.toml", vec!["mise.toml"]),           // normal single
+            ("a:b", vec!["a", "b"]),                    // normal multi
+            (":a:b:", vec!["a", "b"]),                  // leading/trailing colons
+            ("a::b", vec!["a", "b"]),                   // consecutive colons
+        ];
+        for (input, expected) in cases {
+            let result: Vec<String> = input
+                .split(':')
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect();
+            assert_eq!(result, expected, "input: {input:?}");
+        }
+    }
+
+    #[test]
     fn test_token_overwrite() {
         // Clean up any existing environment variables that might interfere
         remove_var("MISE_GITHUB_TOKEN");

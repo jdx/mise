@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Regression test: MISE_OVERRIDE_CONFIG_FILENAMES set to empty string
+# should not cause a panic. An empty value should be treated the same
+# as the variable being unset (i.e., use default config filenames).
+#
+# Background: split(':') on "" produces [""], a set with one empty-string
+# entry. This non-empty set bypasses the default config filename list and
+# injects "" as a config filename, which eventually causes a panic in
+# config_root() during Config::load.
+#
+# See: https://github.com/jdx/mise/issues/XXXX
+
+echo 'tools.dummy = "1"' >mise.toml
+
+# Empty string — should behave like unset (use mise.toml)
+MISE_OVERRIDE_CONFIG_FILENAMES="" assert_succeed "mise ls"
+
+# Colon-only — split produces ["", ""], both empty, should behave like unset
+MISE_OVERRIDE_CONFIG_FILENAMES=":" assert_succeed "mise ls"
+
+# Trailing/leading colons — should ignore empty segments
+echo 'tools.dummy = "2"' >mise.ci.toml
+MISE_OVERRIDE_CONFIG_FILENAMES=":mise.ci.toml:" assert "mise ls dummy" "dummy  2 (missing)  ~/workdir/mise.ci.toml  2"
