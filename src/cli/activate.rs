@@ -75,7 +75,12 @@ impl Activate {
 
         let mise_bin = if cfg!(target_os = "linux") {
             // linux dereferences symlinks, so use argv0 instead
-            PathBuf::from(&*env::ARGV0)
+            let argv0 = PathBuf::from(&*env::ARGV0);
+            if argv0.is_absolute() {
+                argv0
+            } else {
+                which::which(&*env::ARGV0).unwrap_or_else(|_| env::MISE_BIN.clone())
+            }
         } else {
             env::MISE_BIN.clone()
         };
