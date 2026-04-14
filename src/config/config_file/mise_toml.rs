@@ -642,13 +642,35 @@ impl ConfigFile for MiseToml {
             let mut arr = Array::new();
             for tr in versions {
                 let v = tr.version();
-                if output_empty_opts(&tr.options()) {
+                let opts = tr.options();
+                if output_empty_opts(&opts) {
                     arr.push(v.to_string());
                 } else {
                     let mut table = InlineTable::new();
                     table.insert("version", v.to_string().into());
-                    for (k, v) in tr.options().opts {
-                        table.insert(k, toml_value_to_edit(v.clone()));
+                    for (k, val) in opts.opts {
+                        table.insert(k, toml_value_to_edit(val.clone()));
+                    }
+                    if let Some(os) = opts.os {
+                        let mut a = Array::new();
+                        for o in os {
+                            a.push(Value::from(o));
+                        }
+                        table.insert("os", Value::Array(a));
+                    }
+                    if let Some(arch) = opts.arch {
+                        let mut a = Array::new();
+                        for x in arch {
+                            a.push(Value::from(x));
+                        }
+                        table.insert("arch", Value::Array(a));
+                    }
+                    if !opts.install_env.is_empty() {
+                        let mut env = InlineTable::new();
+                        for (k, v) in opts.install_env {
+                            env.insert(k, v.into());
+                        }
+                        table.insert("install_env", env.into());
                     }
                     arr.push(table);
                 }
@@ -1562,30 +1584,46 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                             );
                         }
                         "os" => match v {
-                            toml::Value::Array(s) => {
+                            toml::Value::Array(arr) => {
                                 options.os = Some(
-                                    s.iter().map(|v| v.as_str().unwrap().to_string()).collect(),
+                                    arr.iter()
+                                        .map(|v| {
+                                            v.as_str()
+                                                .ok_or_else(|| {
+                                                    de::Error::custom(
+                                                        "os array must contain only strings",
+                                                    )
+                                                })
+                                                .map(|s| s.to_string())
+                                        })
+                                        .collect::<Result<Vec<_>, _>>()?,
                                 );
                             }
                             toml::Value::String(s) => {
-                                // Convert {{version}} to {version} for backend templating
-                                let s = s.replace("{{version}}", "{version}");
-                                options.opts.insert(k, toml::Value::String(s));
+                                options.os = Some(vec![s]);
                             }
                             _ => {
                                 return Err(de::Error::custom("os must be a string or array"));
                             }
                         },
                         "arch" => match v {
-                            toml::Value::Array(s) => {
+                            toml::Value::Array(arr) => {
                                 options.arch = Some(
-                                    s.iter().map(|v| v.as_str().unwrap().to_string()).collect(),
+                                    arr.iter()
+                                        .map(|v| {
+                                            v.as_str()
+                                                .ok_or_else(|| {
+                                                    de::Error::custom(
+                                                        "arch array must contain only strings",
+                                                    )
+                                                })
+                                                .map(|s| s.to_string())
+                                        })
+                                        .collect::<Result<Vec<_>, _>>()?,
                                 );
                             }
                             toml::Value::String(s) => {
-                                // Convert {{version}} to {version} for backend templating
-                                let s = s.replace("{{version}}", "{version}");
-                                options.opts.insert(k, toml::Value::String(s));
+                                options.arch = Some(vec![s]);
                             }
                             _ => {
                                 return Err(de::Error::custom("arch must be a string or array"));
@@ -1717,30 +1755,46 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                                 .map_err(de::Error::custom)?;
                         }
                         "os" => match v {
-                            toml::Value::Array(s) => {
+                            toml::Value::Array(arr) => {
                                 options.os = Some(
-                                    s.iter().map(|v| v.as_str().unwrap().to_string()).collect(),
+                                    arr.iter()
+                                        .map(|v| {
+                                            v.as_str()
+                                                .ok_or_else(|| {
+                                                    de::Error::custom(
+                                                        "os array must contain only strings",
+                                                    )
+                                                })
+                                                .map(|s| s.to_string())
+                                        })
+                                        .collect::<Result<Vec<_>, _>>()?,
                                 );
                             }
                             toml::Value::String(s) => {
-                                // Convert {{version}} to {version} for backend templating
-                                let s = s.replace("{{version}}", "{version}");
-                                options.opts.insert(k, toml::Value::String(s));
+                                options.os = Some(vec![s]);
                             }
                             _ => {
                                 return Err(de::Error::custom("os must be a string or array"));
                             }
                         },
                         "arch" => match v {
-                            toml::Value::Array(s) => {
+                            toml::Value::Array(arr) => {
                                 options.arch = Some(
-                                    s.iter().map(|v| v.as_str().unwrap().to_string()).collect(),
+                                    arr.iter()
+                                        .map(|v| {
+                                            v.as_str()
+                                                .ok_or_else(|| {
+                                                    de::Error::custom(
+                                                        "arch array must contain only strings",
+                                                    )
+                                                })
+                                                .map(|s| s.to_string())
+                                        })
+                                        .collect::<Result<Vec<_>, _>>()?,
                                 );
                             }
                             toml::Value::String(s) => {
-                                // Convert {{version}} to {version} for backend templating
-                                let s = s.replace("{{version}}", "{version}");
-                                options.opts.insert(k, toml::Value::String(s));
+                                options.arch = Some(vec![s]);
                             }
                             _ => {
                                 return Err(de::Error::custom("arch must be a string or array"));
