@@ -76,6 +76,50 @@ pub use deps::{Deps, TaskKey};
 use task_dep::TaskDep;
 use task_sources::{RawOutputTemplates, TaskOutputs};
 
+/// Represents a tool value in task-level tools field.
+/// Supports both string syntax (e.g., "1.0.0") and object syntax
+/// (e.g., { version = "1.0.0", targets = ["x86_64"] })
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum TaskToolValue {
+    String(String),
+    Map(TaskToolValueMap),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskToolValueMap {
+    pub version: String,
+    #[serde(flatten)]
+    pub opts: IndexMap<String, toml::Value>,
+}
+
+impl TaskToolValue {
+    /// Convert to a tool specification string for ToolArg parsing.
+    /// String values become "{tool}@{version}".
+    /// Map values become "{tool}[{opts}]@{version}" where opts are serialized.
+    pub fn to_tool_spec(&self, tool: &str) -> String {
+        match self {
+            TaskToolValue::String(version) => format!("{tool}@{version}"),
+            TaskToolValue::Map(map) => {
+                if map.opts.is_empty() {
+                    format!("{tool}@{}", map.version)
+                } else {
+                    let opts_str = map
+                        .opts
+                        .iter()
+                        .map(|(k, v)| match v {
+                            toml::Value::String(s) => format!("{k}={s}"),
+                            _ => format!("{k}={v}"),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    format!("{tool}[{}]@{}", opts_str, map.version)
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum RunEntry {
@@ -303,7 +347,7 @@ pub struct Task {
     #[serde(default)]
     pub silent: Silent,
     #[serde(default)]
-    pub tools: IndexMap<String, String>,
+    pub tools: IndexMap<String, TaskToolValue>,
     #[serde(default)]
     pub usage: String,
     #[serde(default)]
@@ -488,7 +532,29 @@ impl Task {
             .parse_table("tools")
             .map(|t| {
                 t.into_iter()
-                    .filter_map(|(k, v)| v.as_str().map(|vs| (k, vs.to_string())))
+                    .filter_map(|(k, v)| {
+                        if let toml::Value::String(s) = &v {
+                            Some((k, TaskToolValue::String(s.clone())))
+                        } else if let toml::Value::Table(table) = &v {
+                            if let Some(toml::Value::String(version)) = table.get("version") {
+                                let mut opts = IndexMap::new();
+                                for (ok, ov) in table.iter().filter(|(ok, _)| *ok != "version") {
+                                    opts.insert(ok.clone(), ov.clone());
+                                }
+                                Some((
+                                    k,
+                                    TaskToolValue::Map(TaskToolValueMap {
+                                        version: version.clone(),
+                                        opts,
+                                    }),
+                                ))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -1123,7 +1189,19 @@ impl Task {
             *shell = tera.render_str(shell, &tera_ctx)?;
         }
         for (_, v) in &mut self.tools {
-            *v = tera.render_str(v, &tera_ctx)?;
+            match v {
+                TaskToolValue::String(s) => {
+                    *v = TaskToolValue::String(tera.render_str(s, &tera_ctx)?);
+                }
+                TaskToolValue::Map(map) => {
+                    map.version = tera.render_str(&map.version, &tera_ctx)?;
+                    for (_ok, ov) in &mut map.opts {
+                        if let toml::Value::String(s) = ov {
+                            *ov = toml::Value::String(tera.render_str(s, &tera_ctx)?);
+                        }
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -2621,6 +2699,8 @@ echo "test"
         use std::os::unix::fs::PermissionsExt;
         use tempfile::tempdir;
 
+        use super::TaskToolValue;
+
         let temp_dir = tempdir().unwrap();
         let tasks_dir = temp_dir.path().join("tasks");
         fs::create_dir(&tasks_dir).unwrap();
@@ -2663,9 +2743,18 @@ echo "test"
             "Expected 'ruby' in tools: {:?}",
             task.tools
         );
-        assert_eq!(task.tools.get("node").unwrap(), "20");
-        assert_eq!(task.tools.get("python").unwrap(), "3.11");
-        assert_eq!(task.tools.get("ruby").unwrap(), "3.2");
+        assert_eq!(
+            task.tools.get("node").unwrap(),
+            &TaskToolValue::String("20".to_string())
+        );
+        assert_eq!(
+            task.tools.get("python").unwrap(),
+            &TaskToolValue::String("3.11".to_string())
+        );
+        assert_eq!(
+            task.tools.get("ruby").unwrap(),
+            &TaskToolValue::String("3.2".to_string())
+        );
     }
 
     #[tokio::test]
@@ -2676,6 +2765,8 @@ echo "test"
         use std::fs;
         use std::os::unix::fs::PermissionsExt;
         use tempfile::tempdir;
+
+        use super::TaskToolValue;
 
         let temp_dir = tempdir().unwrap();
         let tasks_dir = temp_dir.path().join("tasks");
@@ -2713,8 +2804,14 @@ echo "test"
             "Expected '1password-cli' in tools: {:?}",
             task.tools
         );
-        assert_eq!(task.tools.get("git-cliff").unwrap(), "1.0");
-        assert_eq!(task.tools.get("1password-cli").unwrap(), "2.0");
+        assert_eq!(
+            task.tools.get("git-cliff").unwrap(),
+            &TaskToolValue::String("1.0".to_string())
+        );
+        assert_eq!(
+            task.tools.get("1password-cli").unwrap(),
+            &TaskToolValue::String("2.0".to_string())
+        );
     }
 
     #[test]

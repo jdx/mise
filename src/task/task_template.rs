@@ -1,7 +1,7 @@
 use crate::config::config_file::mise_toml::EnvList;
 use crate::config::config_file::toml::deserialize_arr;
 use crate::task::task_sources::TaskOutputs;
-use crate::task::{RunEntry, Silent, Task, TaskConfirm, TaskDep};
+use crate::task::{RunEntry, Silent, Task, TaskDep, TaskToolValue};
 use indexmap::IndexMap;
 use serde::Deserialize;
 
@@ -14,7 +14,7 @@ pub struct TaskTemplate {
     #[serde(default, rename = "alias", deserialize_with = "deserialize_arr")]
     pub aliases: Vec<String>,
     #[serde(default)]
-    pub confirm: Option<TaskConfirm>,
+    pub confirm: Option<String>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub depends: Vec<TaskDep>,
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -42,7 +42,7 @@ pub struct TaskTemplate {
     #[serde(default)]
     pub silent: Option<Silent>,
     #[serde(default)]
-    pub tools: IndexMap<String, String>,
+    pub tools: IndexMap<String, TaskToolValue>,
     #[serde(default)]
     pub usage: String,
     #[serde(default)]
@@ -258,13 +258,16 @@ mod tests {
     #[test]
     fn test_merge_template_tools_deep_merge() {
         let mut task = Task {
-            tools: IndexMap::from([("node".to_string(), "20".to_string())]),
+            tools: IndexMap::from([("node".to_string(), TaskToolValue::String("20".to_string()))]),
             ..Default::default()
         };
         let template = TaskTemplate {
             tools: IndexMap::from([
-                ("python".to_string(), "3.12".to_string()),
-                ("node".to_string(), "18".to_string()), // Should be overridden by task
+                (
+                    "python".to_string(),
+                    TaskToolValue::String("3.12".to_string()),
+                ),
+                ("node".to_string(), TaskToolValue::String("18".to_string())), // Should be overridden by task
             ]),
             ..Default::default()
         };
@@ -273,8 +276,14 @@ mod tests {
 
         // Should have both tools, with task's node version
         assert_eq!(task.tools.len(), 2);
-        assert_eq!(task.tools.get("node"), Some(&"20".to_string()));
-        assert_eq!(task.tools.get("python"), Some(&"3.12".to_string()));
+        assert_eq!(
+            task.tools.get("node"),
+            Some(&TaskToolValue::String("20".to_string()))
+        );
+        assert_eq!(
+            task.tools.get("python"),
+            Some(&TaskToolValue::String("3.12".to_string()))
+        );
     }
 
     #[test]
