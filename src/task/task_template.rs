@@ -1,7 +1,7 @@
 use crate::config::config_file::mise_toml::EnvList;
 use crate::config::config_file::toml::deserialize_arr;
 use crate::task::task_sources::TaskOutputs;
-use crate::task::{RunEntry, Silent, Task, TaskDep};
+use crate::task::{RunEntry, Silent, Task, TaskConfirm, TaskDep};
 use indexmap::IndexMap;
 use serde::Deserialize;
 
@@ -14,7 +14,7 @@ pub struct TaskTemplate {
     #[serde(default, rename = "alias", deserialize_with = "deserialize_arr")]
     pub aliases: Vec<String>,
     #[serde(default)]
-    pub confirm: Option<String>,
+    pub confirm: Option<TaskConfirm>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub depends: Vec<TaskDep>,
     #[serde(default, deserialize_with = "deserialize_arr")]
