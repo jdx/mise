@@ -1,0 +1,5 @@
+aliases = ["copilot-cli"]
+backends = ["aqua:github/copilot-cli", "github:github/copilot-cli", "npm:@github/copilot"]
+description = "GitHub Copilot CLI brings the power of Copilot coding agent directly to your terminal."
+test = { cmd = "copilot --version", expected = "GitHub Copilot CLI {{version}}" }
+
