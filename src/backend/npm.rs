@@ -379,6 +379,24 @@ impl NPMBackend {
     }
 
     async fn detect_npm_supports_min_release_age_flag(&self, config: &Arc<Config>) -> bool {
+        // When npm is explicitly managed by mise (e.g. `mise use npm@11.10.0`),
+        // pull the resolved version from the dependency ToolSet and skip the
+        // subprocess entirely.
+        if let Ok(ts) = self.dependency_toolset(config).await {
+            for (ba, tvl) in &ts.versions {
+                if ba.short == "npm" {
+                    if let Some(tv) = tvl.versions.first() {
+                        debug!(
+                            "npm version detection: found npm {} in ToolSet, skipping subprocess",
+                            tv.version
+                        );
+                        return Self::npm_version_supports_min_release_age(&tv.version);
+                    }
+                }
+            }
+        }
+
+        // Fallback for node-bundled npm: run `npm --version`
         let env = match self.dependency_env(config).await {
             Ok(env) => env,
             Err(e) => {
