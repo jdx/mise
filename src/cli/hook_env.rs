@@ -425,20 +425,34 @@ impl HookEnv {
         installs: &[PathBuf],
         to_remove: &[PathBuf],
     ) -> Result<Option<EnvDiffOperation>> {
-        let mut diff = DirenvDiff::parse(input)?;
+        let mut diff = DirenvDiff::parse(input)
+            .inspect_err(|err| debug!("Failed to parse diff, error: '{:?}'", err))?;
         if diff.new_path().is_empty() {
             return Ok(None);
         }
         for path in to_remove {
-            diff.remove_path_from_old_and_new(path)?;
+            diff.remove_path_from_old_and_new(path).inspect_err(|err| {
+                debug!(
+                    "Failed to remove path from diff: '{:?}' path: '{}'",
+                    err,
+                    path.display()
+                )
+            })?;
         }
         for install in installs {
-            diff.add_path_to_old_and_new(install)?;
+            diff.add_path_to_old_and_new(install).inspect_err(|err| {
+                debug!(
+                    "Failed to add path to diff: '{:?}' path: '{}'",
+                    err,
+                    install.display()
+                )
+            })?;
         }
 
         Ok(Some(EnvDiffOperation::Change(
             "DIRENV_DIFF".into(),
-            diff.dump()?,
+            diff.dump()
+                .inspect_err(|err| debug!("Failed to dump diff: '{:?}'", err))?,
         )))
     }
 

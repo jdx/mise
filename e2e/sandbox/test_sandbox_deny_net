@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+# Test that --deny-net prevents network access
+
+# With --deny-net, network should be blocked
+# curl will fail because it can't create sockets (Linux: seccomp) or connect (macOS: Seatbelt)
+assert_fail "mise x --deny-net -- curl -sf -o /dev/null --connect-timeout 2 https://1.1.1.1/dns-query"

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::{cmp::Ordering, sync::LazyLock};
 use std::{collections::BTreeMap, sync::Arc};
 
-use crate::backend::ABackend;
+use crate::backend::{ABackend, VersionInfo};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::env;
@@ -13,7 +13,7 @@ use crate::env;
 use crate::file;
 use crate::hash::hash_to_str;
 use crate::lockfile::{CondaPackageInfo, LockfileTool, PlatformInfo};
-use crate::toolset::{ToolRequest, ToolVersionOptions, tool_request};
+use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, tool_request};
 use console::style;
 use dashmap::DashMap;
 use eyre::{Result, bail};
@@ -294,6 +294,40 @@ impl ToolVersion {
             }
             if let Some(v) = matches.last() {
                 return build(v.clone());
+            }
+        }
+        if matches!(
+            request.source(),
+            ToolSource::IdiomaticVersionFile(path)
+                if crate::config::config_file::idiomatic_version::package_json::is_package_json(path)
+        ) && crate::semver::is_npm_semver_range_query(&v)
+        {
+            if !opts.latest_versions {
+                let installed_versions = backend.list_installed_versions();
+                if let Some(matches) =
+                    crate::semver::npm_semver_range_filter(&installed_versions, &v)
+                    && let Some(v) = matches.last()
+                {
+                    return build(v.clone());
+                }
+            }
+            if !is_offline {
+                let versions = match opts.before_date {
+                    Some(before) => {
+                        let versions_with_info =
+                            backend.list_remote_versions_with_info(config).await?;
+                        VersionInfo::filter_by_date(versions_with_info, before)
+                            .into_iter()
+                            .map(|v| v.version)
+                            .collect()
+                    }
+                    None => backend.list_remote_versions(config).await?,
+                };
+                if let Some(matches) = crate::semver::npm_semver_range_filter(&versions, &v)
+                    && let Some(v) = matches.last()
+                {
+                    return build(v.clone());
+                }
             }
         }
         // When OFFLINE, skip ALL remote version fetching regardless of version format

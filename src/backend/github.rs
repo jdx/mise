@@ -501,8 +501,9 @@ impl Backend for UnifiedGitBackend {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> Result<Vec<std::path::PathBuf>> {
-        if self.get_filter_bins(tv).is_some() {
-            return Ok(vec![tv.install_path().join(".mise-bins")]);
+        let mise_bins_dir = tv.install_path().join(".mise-bins");
+        if self.get_filter_bins(tv).is_some() || mise_bins_dir.is_dir() {
+            return Ok(vec![mise_bins_dir]);
         }
 
         self.discover_bin_paths(tv)
@@ -545,7 +546,7 @@ impl Backend for UnifiedGitBackend {
         match asset {
             Ok(asset) => {
                 // Detect provenance availability from release assets and attestation API
-                let provenance = if !self.is_gitlab() && !self.is_forgejo() {
+                let mut provenance = if !self.is_gitlab() && !self.is_forgejo() {
                     self.detect_provenance_type(
                         tv,
                         &opts,
@@ -558,6 +559,27 @@ impl Backend for UnifiedGitBackend {
                 } else {
                     None
                 };
+
+                // For the current platform, verify provenance cryptographically at lock time.
+                // This ensures the lockfile's provenance entry is backed by actual verification,
+                // not just an API query. Cross-platform entries remain detection-only.
+                if provenance.is_some() && target.is_current() {
+                    match self
+                        .verify_provenance_at_lock_time(tv, &opts, &repo, &api_url, &asset)
+                        .await
+                    {
+                        Ok(verified) => provenance = Some(verified),
+                        Err(e) => {
+                            // Clear provenance so install-time verification will run.
+                            warn!(
+                                "lock-time provenance verification failed for {}, \
+                                 will be verified at install time: {e}",
+                                self.ba.full()
+                            );
+                            provenance = None;
+                        }
+                    }
+                }
 
                 Ok(PlatformInfo {
                     url: Some(asset.url),
@@ -659,12 +681,158 @@ impl UnifiedGitBackend {
                 target.arch_name().to_string(),
                 target.qualifier().map(|s| s.to_string()),
             );
-            if picker.pick_best_provenance(&asset_names).is_some() {
-                return Some(ProvenanceType::Slsa { url: None });
+            if let Some(provenance_name) = picker.pick_best_provenance(&asset_names) {
+                let url = release
+                    .assets
+                    .iter()
+                    .find(|a| a.name == provenance_name)
+                    .map(|a| a.browser_download_url.clone());
+                return Some(ProvenanceType::Slsa { url });
             }
         }
 
         None
+    }
+
+    /// Verify provenance at lock time by downloading the artifact to a temp directory
+    /// and running cryptographic verification. Only called for the current platform
+    /// during `mise lock`.
+    async fn verify_provenance_at_lock_time(
+        &self,
+        tv: &ToolVersion,
+        opts: &ToolVersionOptions,
+        repo: &str,
+        api_url: &str,
+        asset: &ReleaseAsset,
+    ) -> Result<ProvenanceType> {
+        let tmp_dir = tempfile::tempdir()?;
+        let filename = get_filename_from_url(&asset.url);
+        let artifact_path = tmp_dir.path().join(&filename);
+
+        info!(
+            "downloading artifact for lock-time provenance verification: {}",
+            filename
+        );
+
+        // Use the API URL with appropriate headers for downloading
+        let download_url = if self.is_gitlab() {
+            asset.url.clone()
+        } else {
+            asset.url_api.clone()
+        };
+        let headers = if self.is_gitlab() {
+            gitlab::get_headers(&download_url)
+        } else if self.is_forgejo() {
+            forgejo::get_headers(&download_url)
+        } else {
+            github::get_headers(&download_url)
+        };
+        HTTP.download_file_with_headers(&download_url, &artifact_path, &headers, None)
+            .await?;
+
+        let settings = Settings::get();
+
+        // Try GitHub artifact attestations first (highest priority)
+        if settings.github_attestations && settings.github.github_attestations {
+            let parts: Vec<&str> = repo.split('/').collect();
+            if parts.len() == 2 {
+                let (owner, repo_name) = (parts[0], parts[1]);
+                match sigstore_verification::verify_github_attestation(
+                    &artifact_path,
+                    owner,
+                    repo_name,
+                    env::GITHUB_TOKEN.as_deref(),
+                    None,
+                )
+                .await
+                {
+                    Ok(true) => {
+                        debug!("lock-time GitHub attestations verified for {}", repo);
+                        return Ok(ProvenanceType::GithubAttestations);
+                    }
+                    Ok(false) => {
+                        return Err(eyre::eyre!(
+                            "GitHub artifact attestations verification returned false"
+                        ));
+                    }
+                    Err(sigstore_verification::AttestationError::NoAttestations) => {
+                        debug!("no GitHub attestations found at lock time, trying SLSA");
+                    }
+                    Err(e) => {
+                        return Err(eyre::eyre!(
+                            "GitHub artifact attestations verification failed: {e}"
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Fall back to SLSA provenance
+        if settings.slsa && settings.github.slsa {
+            let version = &tv.version;
+            let version_prefix = opts.get("version_prefix");
+            let release =
+                try_with_v_prefix_and_repo(version, version_prefix, Some(repo), |candidate| {
+                    let api_url = api_url.to_string();
+                    let repo = repo.to_string();
+                    async move { github::get_release_for_url(&api_url, &repo, &candidate).await }
+                })
+                .await?;
+
+            let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
+            let current_platform = PlatformTarget::from_current();
+            let picker = AssetPicker::with_libc(
+                current_platform.os_name().to_string(),
+                current_platform.arch_name().to_string(),
+                current_platform.qualifier().map(|s| s.to_string()),
+            );
+
+            if let Some(provenance_name) = picker.pick_best_provenance(&asset_names) {
+                let provenance_asset = release
+                    .assets
+                    .iter()
+                    .find(|a| a.name == provenance_name)
+                    .expect("provenance asset should exist since we found its name");
+
+                let provenance_path = tmp_dir.path().join(&provenance_asset.name);
+                HTTP.download_file(
+                    &provenance_asset.browser_download_url,
+                    &provenance_path,
+                    None,
+                )
+                .await?;
+
+                let provenance_url = provenance_asset.browser_download_url.clone();
+                match sigstore_verification::verify_slsa_provenance(
+                    &artifact_path,
+                    &provenance_path,
+                    1u8,
+                )
+                .await
+                {
+                    Ok(true) => {
+                        debug!("lock-time SLSA provenance verified for {}", repo);
+                        return Ok(ProvenanceType::Slsa {
+                            url: Some(provenance_url),
+                        });
+                    }
+                    Ok(false) => {
+                        return Err(eyre::eyre!("SLSA provenance verification failed"));
+                    }
+                    Err(e) => {
+                        if is_slsa_format_issue(&e) {
+                            debug!("SLSA provenance file not in verifiable format: {e}");
+                        } else {
+                            return Err(eyre::eyre!("SLSA verification error: {e}"));
+                        }
+                    }
+                }
+            }
+        }
+
+        Err(eyre::eyre!(
+            "provenance was detected but could not be verified at lock time"
+        ))
     }
 
     fn is_gitlab(&self) -> bool {
@@ -794,7 +962,9 @@ impl UnifiedGitBackend {
 
         self.verify_checksum(ctx, tv, &file_path)?;
 
-        if has_lockfile_integrity {
+        let settings = Settings::get();
+        let force_verify = settings.force_provenance_verify();
+        if has_lockfile_integrity && !force_verify {
             // Still check that the recorded provenance type's setting is enabled —
             // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;

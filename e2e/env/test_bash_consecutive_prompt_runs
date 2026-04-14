@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Verify that bash does not fall into an every-other-prompt pattern after the
+# first PROMPT_COMMAND run. Two consecutive prompt runs without a directory
+# change should both run hook-env normally.
+
+eval "$(mise activate bash --status)"
+
+if [[ ${__MISE_BASH_CHPWD_RAN:-unset} != "0" ]]; then
+	echo "expected __MISE_BASH_CHPWD_RAN=0 after activation"
+	exit 1
+fi
+
+_mise_hook_prompt_command >/dev/null 2>&1 || true
+
+if [[ ${__MISE_BASH_CHPWD_RAN:-unset} != "0" ]]; then
+	echo "expected no chpwd skip flag after the first prompt"
+	exit 1
+fi
+
+_mise_hook_prompt_command >/dev/null 2>&1 || true
+
+if [[ ${__MISE_BASH_CHPWD_RAN:-unset} != "0" ]]; then
+	echo "expected no chpwd skip flag after the second prompt"
+	exit 1
+fi

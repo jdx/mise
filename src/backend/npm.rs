@@ -11,7 +11,9 @@ use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
 use async_trait::async_trait;
+use jiff::Timestamp;
 use serde_json::Value;
+use std::ffi::OsString;
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -158,6 +160,13 @@ impl Backend for NPMBackend {
         self.check_install_deps(&ctx.config).await;
         match Settings::get().npm.package_manager {
             NpmPackageManager::Bun => {
+                let install_before_args = ctx.before_date.map_or_else(Vec::new, |before_date| {
+                    Self::build_transitive_release_age_args(
+                        NpmPackageManager::Bun,
+                        before_date,
+                        Timestamp::now(),
+                    )
+                });
                 CmdLineRunner::new("bun")
                     .arg("install")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
@@ -167,6 +176,7 @@ impl Backend for NPMBackend {
                     // https://github.com/jdx/mise/discussions/7541
                     .arg("--linker")
                     .arg("hoisted")
+                    .args(install_before_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
                     .env("BUN_INSTALL_GLOBAL_DIR", tv.install_path())
@@ -184,6 +194,13 @@ impl Backend for NPMBackend {
             NpmPackageManager::Pnpm => {
                 let bin_dir = tv.install_path().join("bin");
                 crate::file::create_dir_all(&bin_dir)?;
+                let install_before_args = ctx.before_date.map_or_else(Vec::new, |before_date| {
+                    Self::build_transitive_release_age_args(
+                        NpmPackageManager::Pnpm,
+                        before_date,
+                        Timestamp::now(),
+                    )
+                });
                 CmdLineRunner::new("pnpm")
                     .arg("add")
                     .arg("--global")
@@ -192,6 +209,7 @@ impl Backend for NPMBackend {
                     .arg(tv.install_path())
                     .arg("--global-bin-dir")
                     .arg(&bin_dir)
+                    .args(install_before_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
                     .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
@@ -207,12 +225,20 @@ impl Backend for NPMBackend {
                     .execute()?;
             }
             _ => {
+                let install_before_args = ctx.before_date.map_or_else(Vec::new, |before_date| {
+                    Self::build_transitive_release_age_args(
+                        NpmPackageManager::Npm,
+                        before_date,
+                        Timestamp::now(),
+                    )
+                });
                 CmdLineRunner::new(NPM_PROGRAM)
                     .arg("install")
                     .arg("-g")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
                     .arg("--prefix")
                     .arg(tv.install_path())
+                    .args(install_before_args)
                     .with_pr(ctx.pr.as_ref())
                     .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
                     .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
@@ -255,6 +281,34 @@ impl NPMBackend {
         }
     }
 
+    fn build_transitive_release_age_args(
+        package_manager: NpmPackageManager,
+        before_date: Timestamp,
+        now: Timestamp,
+    ) -> Vec<OsString> {
+        match package_manager {
+            NpmPackageManager::Npm => vec!["--before".into(), before_date.to_string().into()],
+            NpmPackageManager::Bun => {
+                let seconds = Self::elapsed_seconds_ceil(before_date, now);
+                vec!["--minimum-release-age".into(), seconds.to_string().into()]
+            }
+            NpmPackageManager::Pnpm => {
+                let seconds = Self::elapsed_seconds_ceil(before_date, now);
+                let minutes = seconds.div_ceil(60);
+                vec![format!("--config.minimumReleaseAge={minutes}").into()]
+            }
+        }
+    }
+
+    fn elapsed_seconds_ceil(before_date: Timestamp, now: Timestamp) -> u64 {
+        if before_date >= now {
+            return 0;
+        }
+        let nanos = now.as_nanosecond() - before_date.as_nanosecond();
+        u64::try_from((nanos + 999_999_999) / 1_000_000_000)
+            .expect("elapsed timestamp delta must fit into u64")
+    }
+
     /// Check dependencies for version checking (always needs npm)
     async fn ensure_npm_for_version_check(&self, config: &Arc<Config>) {
         // We always need npm for querying package versions
@@ -262,6 +316,7 @@ impl NPMBackend {
         self.warn_if_dependency_missing(
             config,
             "npm", // Use "npm" for dependency check, which will check npm.cmd on Windows
+            &["node", "npm"],
             "To use npm packages with mise, you need to install Node.js first:\n\
               mise use node@latest\n\n\
             Note: npm is required for querying package information, even when using bun for installation.",
@@ -276,6 +331,7 @@ impl NPMBackend {
                 self.warn_if_dependency_missing(
                     config,
                     "bun",
+                    &["bun"],
                     "To use npm packages with bun, you need to install bun first:\n\
                       mise use bun@latest\n\n\
                     Or switch back to npm by setting:\n\
@@ -287,6 +343,7 @@ impl NPMBackend {
                 self.warn_if_dependency_missing(
                     config,
                     "pnpm",
+                    &["pnpm"],
                     "To use npm packages with pnpm, you need to install pnpm first:\n\
                       mise use pnpm@latest\n\n\
                     Or switch back to npm by setting:\n\
@@ -298,6 +355,7 @@ impl NPMBackend {
                 self.warn_if_dependency_missing(
                     config,
                     "npm",
+                    &["node", "npm"],
                     "To use npm packages with mise, you need to install Node.js first:\n\
                       mise use node@latest\n\n\
                     Alternatively, you can use bun or pnpm instead of npm by setting:\n\
@@ -313,6 +371,7 @@ impl NPMBackend {
 mod tests {
     use super::*;
     use crate::cli::args::{BackendArg, BackendResolution};
+    use pretty_assertions::assert_eq;
 
     fn create_npm_backend(tool: &str) -> NPMBackend {
         let ba = BackendArg::new_raw(
@@ -343,5 +402,44 @@ mod tests {
         assert!(deps.contains(&"npm"));
         assert!(!deps.contains(&"bun"));
         assert!(!deps.contains(&"pnpm"));
+    }
+
+    #[test]
+    fn test_build_transitive_release_age_args_for_npm() {
+        let before_date: Timestamp = "2024-01-02T03:04:05Z".parse().unwrap();
+        let now: Timestamp = "2024-01-03T03:04:05Z".parse().unwrap();
+        let args =
+            NPMBackend::build_transitive_release_age_args(NpmPackageManager::Npm, before_date, now);
+        assert_eq!(
+            args,
+            vec![
+                OsString::from("--before"),
+                OsString::from("2024-01-02T03:04:05Z")
+            ]
+        );
+    }
+
+    #[test]
+    fn test_build_transitive_release_age_args_for_bun() {
+        let before_date: Timestamp = "2024-01-02T03:04:04.100Z".parse().unwrap();
+        let now: Timestamp = "2024-01-02T03:04:05Z".parse().unwrap();
+        let args =
+            NPMBackend::build_transitive_release_age_args(NpmPackageManager::Bun, before_date, now);
+        assert_eq!(
+            args,
+            vec![OsString::from("--minimum-release-age"), OsString::from("1")]
+        );
+    }
+
+    #[test]
+    fn test_build_transitive_release_age_args_for_pnpm() {
+        let before_date: Timestamp = "2024-01-02T03:03:05.100Z".parse().unwrap();
+        let now: Timestamp = "2024-01-02T03:04:05Z".parse().unwrap();
+        let args = NPMBackend::build_transitive_release_age_args(
+            NpmPackageManager::Pnpm,
+            before_date,
+            now,
+        );
+        assert_eq!(args, vec![OsString::from("--config.minimumReleaseAge=1")]);
     }
 }

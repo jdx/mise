@@ -1,9 +1,12 @@
+use crate::config::Settings;
+use crate::tokens;
 use eyre::Result;
 use heck::ToKebabCase;
 use reqwest::IntoUrl;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 use std::path::PathBuf;
 use std::sync::LazyLock as Lazy;
 use tokio::sync::{RwLock, RwLockReadGuard};
@@ -56,6 +59,8 @@ static RELEASE_CACHE: Lazy<RwLock<CacheGroup<GitlabRelease>>> = Lazy::new(Defaul
 static TAGS_CACHE: Lazy<RwLock<CacheGroup<Vec<String>>>> = Lazy::new(Default::default);
 
 pub static API_URL: &str = "https://gitlab.com/api/v4";
+
+pub static API_PATH: &str = "/api/v4";
 
 async fn get_tags_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<String>>> {
     TAGS_CACHE
@@ -238,18 +243,196 @@ fn cache_dir() -> PathBuf {
 pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     let mut headers = HeaderMap::new();
     let url = url.into_url().unwrap();
-    let mut set_headers = |token: &str| {
+    let lookup_host = url.host_str().unwrap_or("gitlab.com");
+
+    if let Some((token, _source)) = resolve_token(lookup_host) {
         headers.insert(
             reqwest::header::AUTHORIZATION,
             HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
         );
-    };
-    if url.host_str() == Some("gitlab.com") {
-        if let Some(token) = env::GITLAB_TOKEN.as_ref() {
-            set_headers(token);
-        }
-    } else if let Some(token) = env::MISE_GITLAB_ENTERPRISE_TOKEN.as_ref() {
-        set_headers(token);
     }
+
     headers
+}
+
+/// The source from which a GitLab token was resolved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TokenSource {
+    EnvVar(&'static str),
+    TokensFile,
+    GlabCli,
+    CredentialCommand,
+    GitCredential,
+}
+
+impl fmt::Display for TokenSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TokenSource::EnvVar(name) => write!(f, "{name}"),
+            TokenSource::TokensFile => write!(f, "gitlab_tokens.toml"),
+            TokenSource::GlabCli => write!(f, "glab CLI (config.yml)"),
+            TokenSource::CredentialCommand => write!(f, "credential_command"),
+            TokenSource::GitCredential => write!(f, "git credential fill"),
+        }
+    }
+}
+
+/// Resolve the GitLab token for the given hostname.
+///
+/// Priority:
+/// 1. `MISE_GITLAB_ENTERPRISE_TOKEN` env var (non-gitlab.com only)
+/// 2. `MISE_GITLAB_TOKEN` / `GITLAB_TOKEN` env vars
+/// 3. `credential_command` (if set)
+/// 4. `gitlab_tokens.toml` (per-host)
+/// 5. glab CLI token (from `config.yml`)
+/// 6. `git credential fill` (if enabled)
+pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
+    let settings = Settings::get();
+    let is_gitlab_com = host == "gitlab.com";
+
+    // 1. Enterprise token (non-gitlab.com only)
+    if !is_gitlab_com && let Some(token) = env::MISE_GITLAB_ENTERPRISE_TOKEN.as_deref() {
+        return Some((
+            token.to_string(),
+            TokenSource::EnvVar("MISE_GITLAB_ENTERPRISE_TOKEN"),
+        ));
+    }
+
+    // 2. Standard env vars
+    for var_name in &["MISE_GITLAB_TOKEN", "GITLAB_TOKEN"] {
+        if let Some(token) = std::env::var(var_name)
+            .ok()
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+        {
+            return Some((token, TokenSource::EnvVar(var_name)));
+        }
+    }
+
+    // 3. credential_command
+    let credential_command = &settings.gitlab.credential_command;
+    if !credential_command.is_empty()
+        && let Some(token) =
+            tokens::get_credential_command_token("gitlab", credential_command, host)
+    {
+        return Some((token, TokenSource::CredentialCommand));
+    }
+
+    // 4. gitlab_tokens.toml
+    if let Some(token) = MISE_GITLAB_TOKENS.get(host) {
+        return Some((token.clone(), TokenSource::TokensFile));
+    }
+
+    // 5. glab CLI config.yml
+    if settings.gitlab.glab_cli_tokens
+        && let Some(token) = GLAB_HOSTS.get(host)
+    {
+        return Some((token.clone(), TokenSource::GlabCli));
+    }
+
+    // 6. git credential fill
+    if settings.gitlab.use_git_credentials
+        && let Some(token) = tokens::get_git_credential_token("gitlab", host)
+    {
+        return Some((token, TokenSource::GitCredential));
+    }
+
+    None
+}
+
+/// Returns true if the given hostname has a token available from a non-env-var source.
+pub fn is_gitlab_host(host: &str) -> bool {
+    MISE_GITLAB_TOKENS.contains_key(host)
+        || (Settings::get().gitlab.glab_cli_tokens && GLAB_HOSTS.contains_key(host))
+}
+
+// ── gitlab_tokens.toml ─────────────────────────────────────────────
+
+static MISE_GITLAB_TOKENS: Lazy<HashMap<String, String>> = Lazy::new(|| {
+    tokens::read_tokens_toml("gitlab_tokens.toml", "gitlab_tokens.toml").unwrap_or_default()
+});
+
+// ── glab CLI config.yml ────────────────────────────────────────────
+
+static GLAB_HOSTS: Lazy<HashMap<String, String>> =
+    Lazy::new(|| read_glab_hosts().unwrap_or_default());
+
+fn glab_config_path() -> Option<PathBuf> {
+    if let Ok(dir) = std::env::var("GLAB_CONFIG_DIR") {
+        return Some(PathBuf::from(dir).join("config.yml"));
+    }
+
+    let xdg_path = env::XDG_CONFIG_HOME.join("glab-cli/config.yml");
+    if xdg_path.exists() {
+        return Some(xdg_path);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let macos_path = dirs::HOME.join("Library/Application Support/glab-cli/config.yml");
+        if macos_path.exists() {
+            return Some(macos_path);
+        }
+    }
+
+    Some(xdg_path)
+}
+
+fn read_glab_hosts() -> Option<HashMap<String, String>> {
+    let path = glab_config_path()?;
+    let contents = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => {
+            trace!("glab config.yml not readable at {}: {e}", path.display());
+            return None;
+        }
+    };
+    match tokens::yaml_hosts_to_tokens(&contents) {
+        Some(tokens) => Some(tokens),
+        None => {
+            debug!("failed to parse glab config.yml at {}", path.display());
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_gitlab_tokens() {
+        let toml = r#"
+[tokens."gitlab.com"]
+token = "glpat_abc123"
+
+[tokens."gitlab.mycompany.com"]
+token = "glpat_def456"
+"#;
+        let result = tokens::parse_tokens_toml(toml).unwrap();
+        assert_eq!(result.get("gitlab.com").unwrap(), "glpat_abc123");
+        assert_eq!(result.get("gitlab.mycompany.com").unwrap(), "glpat_def456");
+    }
+
+    #[test]
+    fn test_parse_gitlab_tokens_empty() {
+        assert!(tokens::parse_tokens_toml("").is_none());
+    }
+
+    #[test]
+    fn test_parse_gitlab_tokens_empty_tokens() {
+        let toml = "[tokens]\n";
+        let result = tokens::parse_tokens_toml(toml).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_gitlab_tokens_missing_token_field() {
+        let toml = r#"
+[tokens."gitlab.com"]
+something_else = "value"
+"#;
+        let result = tokens::parse_tokens_toml(toml).unwrap();
+        assert!(result.is_empty());
+    }
 }

@@ -53,16 +53,24 @@ impl Backend for VfoxBackend {
         let this = self;
         timeout::run_with_timeout_async(
             || async {
-                let (vfox, _log_rx) = this.plugin.vfox();
+                let (mut vfox, _log_rx) = this.plugin.vfox();
                 this.ensure_plugin_installed(config).await?;
+                if let Ok(dep_env) = this.dependency_env(config).await {
+                    vfox.cmd_env = Some(dep_env.into_iter().collect());
+                }
 
                 // Use backend methods if the plugin supports them
                 if this.is_backend_plugin() {
                     Settings::get().ensure_experimental("custom backends")?;
                     debug!("Using backend method for plugin: {}", this.pathname);
                     let tool_name = this.get_tool_name()?;
+                    let opts = config
+                        .get_tool_opts(&this.ba)
+                        .await?
+                        .map(|o| o.opts)
+                        .unwrap_or_default();
                     let versions = vfox
-                        .backend_list_versions(&this.pathname, tool_name)
+                        .backend_list_versions(&this.pathname, tool_name, opts)
                         .await
                         .wrap_err("Backend list versions method failed")?;
                     return Ok(versions
@@ -106,6 +114,9 @@ impl Backend for VfoxBackend {
                 info!("{}", line);
             }
         });
+        if let Ok(dep_env) = self.dependency_env(&ctx.config).await {
+            vfox.cmd_env = Some(dep_env.into_iter().collect());
+        }
 
         // Use backend methods if the plugin supports them
         if self.is_backend_plugin() {
@@ -118,7 +129,7 @@ impl Backend for VfoxBackend {
                 &tv.version,
                 tv.install_path(),
                 tv.download_path(),
-                tool_opts.opts_as_strings(),
+                tool_opts.opts,
             )
             .await
             .wrap_err("Backend install method failed")?;
@@ -379,7 +390,10 @@ impl VfoxBackend {
         cache
             .get_or_try_init_async(async || {
                 self.ensure_plugin_installed(config).await?;
-                let (vfox, _log_rx) = self.plugin.vfox();
+                let (mut vfox, _log_rx) = self.plugin.vfox();
+                if let Ok(dep_env) = self.dependency_env(config).await {
+                    vfox.cmd_env = Some(dep_env.into_iter().collect());
+                }
 
                 // Use backend methods if the plugin supports them
                 let env_keys = if self.is_backend_plugin() {
@@ -389,18 +403,7 @@ impl VfoxBackend {
                         tool_name,
                         &tv.version,
                         tv.install_path(),
-                        opts.opts
-                            .iter()
-                            .map(|(k, v)| {
-                                (
-                                    k.clone(),
-                                    match v {
-                                        toml::Value::String(s) => s.clone(),
-                                        _ => v.to_string(),
-                                    },
-                                )
-                            })
-                            .collect(),
+                        opts.opts.clone(),
                     )
                     .await
                     .wrap_err("Backend exec env method failed")?

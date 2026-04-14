@@ -129,6 +129,49 @@ run = "./deploy.sh"
 
 Note: These environment variables are passed only to the specified dependency, not to the current task or other dependencies.
 
+#### Passing parent task arguments to dependencies
+
+You can forward a parent task's arguments to its dependencies using <span v-pre>`{{usage.*}}`</span> templates.
+Both the parent and child tasks must define a `usage` spec for the arguments they accept:
+
+```mise-toml
+[tasks.build]
+usage = 'arg "<app>"'
+run = 'echo "building {{usage.app}}"'
+
+[tasks.deploy]
+usage = 'arg "<app>"'
+depends = [{ task = "build", args = ["{{usage.app}}"] }]
+run = 'echo "deploying {{usage.app}}"'
+```
+
+Running `mise run deploy myapp` passes `"myapp"` to both `deploy` and its `build` dependency.
+
+This also works with the string syntax:
+
+```mise-toml
+[tasks.deploy]
+usage = 'arg "<app>"'
+depends = ["build {{usage.app}}"]
+run = 'echo "deploying {{usage.app}}"'
+```
+
+And with flags:
+
+```mise-toml
+[tasks.compile]
+usage = 'flag "--target <target>"'
+run = 'echo "compiling for $usage_target"'
+
+[tasks.package]
+usage = 'flag "--target <target>"'
+depends = [{ task = "compile", args = ["--target", "{{usage.target}}"] }]
+run = 'echo "packaging for $usage_target"'
+```
+
+Arguments flow through dependency chains — if A depends on B which depends on C, each task can
+forward its resolved arguments to its own dependencies.
+
 ### `depends_post`
 
 - **Type**: `string | string[] | { task: string, args?: string[], env?: { [key]: string } }[]`
@@ -227,7 +270,11 @@ run = "echo my internal task"
 - **Type**: `string`
 
 A message to show before running the task. This is useful for tasks that are destructive or take a long
-time to run. The user will be prompted to confirm before the task is run.
+time to run. The user will be prompted to confirm before the task's own `run` command executes.
+
+::: warning
+`confirm` only guards the task's own `run` command. Dependencies (`depends`) will execute **before** the confirmation prompt appears. If you need confirmation before dependencies run, add `confirm` to the dependency tasks themselves, or use `run = [{ task = "..." }]` instead of `depends`.
+:::
 
 ```mise-toml
 [tasks.release]
@@ -301,6 +348,32 @@ has changed since the last build.
 
 The [`task_source_files`](../templates.md#task-source-files) function can be used to iterate over a task's
 `sources` within its template context.
+
+#### Dependency invalidation
+
+When a task depends on another task that also has `sources` defined, and the dependency runs because
+its sources changed, the dependent task will also re-run — even if the dependent's own sources haven't
+changed. This is useful for monorepo workflows where downstream tasks should be invalidated by upstream
+changes:
+
+```mise-toml
+[tasks."core:build"]
+run = "tsc -p packages/core"
+sources = ["packages/core/src/**/*.ts"]
+outputs = ["packages/core/dist/**/*.js"]
+
+[tasks."frontend:build"]
+run = "tsc -p packages/frontend"
+sources = ["packages/frontend/src/**/*.ts"]
+outputs = ["packages/frontend/dist/**/*.js"]
+depends = ["core:build"]
+```
+
+If a file in `packages/core/src/` changes, both `core:build` and `frontend:build` will run. If nothing
+changes, both are skipped.
+
+Note that dependencies **without** `sources` (which always run) do not trigger this invalidation —
+otherwise `sources` on the dependent task would be effectively useless.
 
 ### `outputs`
 
@@ -529,15 +602,44 @@ dir = "{{cwd}}"
 
 ### `task_config.includes`
 
-Add toml files containing toml tasks, or file tasks to include when looking for tasks.
+Set the toml files and file-task directories mise should search when looking for tasks.
 
 ```toml
 [task_config]
 includes = [
     "tasks.toml", # a task toml file
-    "mytasks"     # a directory containing file tasks (in addition to the default file tasks directories)
+    "mytasks"     # a directory containing file tasks
 ]
 ```
+
+When `task_config.includes` is set, it replaces the default file-task directories for that config scope instead of adding to them.
+
+The default file-task directories are:
+
+- `mise-tasks`
+- `.mise-tasks`
+- `.mise/tasks`
+- `.config/mise/tasks`
+- `mise/tasks`
+
+If you want to keep the defaults and add another directory, include the defaults explicitly:
+
+```toml
+[task_config]
+includes = [
+    "mise-tasks",
+    ".mise-tasks",
+    ".mise/tasks",
+    ".config/mise/tasks",
+    "mise/tasks",
+    "mytasks",
+    "tasks.toml",
+]
+```
+
+For local and monorepo task discovery, mise uses the nearest config file that defines `task_config.includes`.
+That means a child config's `includes` replaces both the defaults and any `includes` defined by parent configs for that directory.
+Global config files are loaded independently, so each global config file uses its own `task_config.includes` or the default directories if `includes` is unset.
 
 If using included task toml files, note that they have a different format than the `mise.toml` file. They are just a list of tasks.
 The file should be the same format as the `[tasks]` section of `mise.toml` but without the `[task]` prefix:

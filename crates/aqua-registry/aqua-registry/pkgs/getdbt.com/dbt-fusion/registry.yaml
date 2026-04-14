@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: ryan-pip
+    repo_name: dbt-fusion-versions
+    name: getdbt.com/dbt-fusion
+    description: The next-generation engine for dbt
+    link: https://docs.getdbt.com/docs/local/install-dbt
+    version_source: github_tag
+    url: https://public.cdn.getdbt.com/fs/cli/fs-{{.Version}}-{{.Arch}}-{{.OS}}.tar.gz
+    format: tar.gz
+    replacements:
+      linux: unknown-linux-gnu
+      darwin: apple-darwin
+      amd64: x86_64
+      arm64: aarch64
+    supported_envs:
+      - linux/amd64
+      - linux/arm64
+      - darwin/amd64
+      - darwin/arm64
+    files:
+      - name: dbt

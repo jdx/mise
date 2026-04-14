@@ -41,7 +41,7 @@ REMOTE_TASKS_DIR="${MISE_CACHE_DIR}/remote-git-tasks-cache"
 LOCAL_CACHE_HASH=$(echo -n "${LOCAL_GIT_URL}v2025.1.17" | shasum -a 256 | cut -d' ' -f1)
 MISE_LOCAL_CACHE_DIR="${REMOTE_TASKS_DIR}/${LOCAL_CACHE_HASH}"
 
-cargo init --name hello_cargo
+git init
 
 # Ensure cleanup on exit
 cleanup() {

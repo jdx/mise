@@ -43,8 +43,24 @@ See the [Python Cookbook](/mise-cookbook/python.html) for common tasks and examp
 
 ## Automatic virtualenv activation
 
-Python comes with virtualenv support built in, use it with `mise.toml` configuration like
-one of the following:
+mise has two ways to manage Python virtualenvs:
+
+| Mechanism             | Best for                     | Config location      |
+| --------------------- | ---------------------------- | -------------------- |
+| `python.uv_venv_auto` | uv projects (with `uv.lock`) | `[settings]` section |
+| `_.python.venv`       | Projects not using uv        | `[env]` section      |
+
+**`python.uv_venv_auto`** detects and sources the `.venv` managed by `uv`. Use `"source"` to only activate existing venvs, or `"create|source"` to create if missing. See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for full examples.
+
+**`_.python.venv`** creates/activates a venv and adds it to PATH. It works with both `mise activate` and `mise exec`. Use this for projects that don't use uv.
+
+::: warning
+These are separate mechanisms with different code paths. Options like `uv_create_args` and `python_create_args` in `_.python.venv` are not used by `python.uv_venv_auto`.
+:::
+
+### `_.python.venv` configuration
+
+Use `_.python.venv` in the `[env]` section of `mise.toml`:
 
 ```toml
 [tools]
@@ -71,9 +87,24 @@ _.python.venv = { path = ".venv", create = true, uv_create_args = ['--seed'] }
 The venv will need to be created manually with `python -m venv /path/to/venv` unless `create=true`.
 See [env-directives](https://mise.jdx.dev/environments/#env-directives) for `_.python.venv`.
 
+::: tip
+Virtualenv activation requires `mise activate` or `mise exec`. When using [shims](/dev-tools/shims) alone, the venv's `bin/` directory is not added to PATH, so `which python` will point to the shim rather than the venv's interpreter.
+:::
+
+### `python.uv_venv_auto` setting
+
+For uv-managed projects (those with a `uv.lock` file), you can use the `python.uv_venv_auto` setting to automatically source or create the `.venv` that uv manages. See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for full examples.
+
+```toml [mise.toml]
+[settings]
+python.uv_venv_auto = "source"        # activate existing .venv
+# or
+python.uv_venv_auto = "create|source" # create .venv if missing, then activate
+```
+
 ## mise & uv
 
-If you have installed `uv` (for example, with `mise use -g uv@latest`), `mise` will use it to create virtual environments. Otherwise, it will use the built-in `python -m venv` command.
+If you have installed `uv` (for example, with `mise use -g uv@latest`), `mise` will use it to create virtual environments via `_.python.venv`. Otherwise, it will use the built-in `python -m venv` command.
 
 Note that `uv` does not include `pip` by default (as `uv` provides `uv pip` instead). If you need the `pip` package, add the `uv_create_args = ['--seed']` option.
 

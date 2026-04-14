@@ -2,10 +2,11 @@ use crate::cli::Cli;
 use crate::config::ALL_TOML_CONFIG_FILES;
 use crate::duration;
 use crate::file::FindUp;
+use crate::platform::Platform;
 use crate::{dirs, env, file};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
-use confique::{Config, Partial};
+use confique::{Config, Layer};
 use eyre::{Result, bail};
 use indexmap::{IndexMap, indexmap};
 use itertools::Itertools;
@@ -196,7 +197,7 @@ impl serde::Serialize for PythonUvVenvAuto {
     }
 }
 
-pub type SettingsPartial = <Settings as Config>::Partial;
+pub type SettingsPartial = <Settings as Config>::Layer;
 
 static BASE_SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
@@ -407,44 +408,26 @@ impl Settings {
             self.not_found_auto_install = false;
             self.task.run_auto_install = false;
         }
-        if let Some(false) = self.asdf {
-            self.disable_backends.push("asdf".to_string());
+        if let Some(go_default_packages_file) = &self.go_default_packages_file {
+            self.go.default_packages_file = go_default_packages_file.clone();
         }
-        if let Some(false) = self.vfox {
-            self.disable_backends.push("vfox".to_string());
+        if let Some(go_download_mirror) = &self.go_download_mirror {
+            self.go.download_mirror = go_download_mirror.clone();
         }
-        if let Some(disable_default_shorthands) = self.disable_default_shorthands {
-            self.disable_default_registry = disable_default_shorthands;
+        if let Some(go_repo) = &self.go_repo {
+            self.go.repo = go_repo.clone();
         }
-        if let Some(cargo_binstall) = self.cargo_binstall {
-            self.cargo.binstall = cargo_binstall;
+        if let Some(go_set_gobin) = self.go_set_gobin {
+            self.go.set_gobin = Some(go_set_gobin);
         }
-        if let Some(pipx_uvx) = self.pipx_uvx {
-            self.pipx.uvx = Some(pipx_uvx);
+        if let Some(go_set_gopath) = self.go_set_gopath {
+            self.go.set_gopath = go_set_gopath;
         }
-        if let Some(python_compile) = self.python_compile {
-            self.python.compile = Some(python_compile);
+        if let Some(go_set_goroot) = self.go_set_goroot {
+            self.go.set_goroot = go_set_goroot;
         }
-        if let Some(python_default_packages_file) = &self.python_default_packages_file {
-            self.python.default_packages_file = Some(python_default_packages_file.clone());
-        }
-        if let Some(python_patch_url) = &self.python_patch_url {
-            self.python.patch_url = Some(python_patch_url.clone());
-        }
-        if let Some(python_patches_directory) = &self.python_patches_directory {
-            self.python.patches_directory = Some(python_patches_directory.clone());
-        }
-        if let Some(python_precompiled_arch) = &self.python_precompiled_arch {
-            self.python.precompiled_arch = Some(python_precompiled_arch.clone());
-        }
-        if let Some(python_precompiled_os) = &self.python_precompiled_os {
-            self.python.precompiled_os = Some(python_precompiled_os.clone());
-        }
-        if let Some(python_pyenv_repo) = &self.python_pyenv_repo {
-            self.python.pyenv_repo = python_pyenv_repo.clone();
-        }
-        if let Some(python_venv_stdlib) = self.python_venv_stdlib {
-            self.python.venv_stdlib = python_venv_stdlib;
+        if let Some(go_skip_checksum) = self.go_skip_checksum {
+            self.go.skip_checksum = go_skip_checksum;
         }
         if self.npm.bun {
             self.npm.package_manager = NpmPackageManager::Bun;
@@ -538,6 +521,21 @@ impl Settings {
 
     pub fn lockfile_enabled(&self) -> bool {
         self.lockfile.unwrap_or(true)
+    }
+
+    /// Returns configured lockfile platforms parsed into Platform structs, or None for defaults.
+    /// Errors on invalid platform strings (same validation as `mise lock --platform`).
+    pub fn lockfile_platforms(&self) -> Result<Option<Vec<Platform>>> {
+        match &self.lockfile_platforms {
+            Some(platforms) if !platforms.is_empty() => {
+                Ok(Some(Platform::parse_multiple(platforms)?))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    pub fn force_provenance_verify(&self) -> bool {
+        self.locked_verify_provenance || self.paranoid
     }
 
     pub fn ensure_experimental(&self, what: &str) -> Result<()> {

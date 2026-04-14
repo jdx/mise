@@ -182,7 +182,7 @@ auto = true
 [prepare.ansible-galaxy]
 auto = true
 depends = ["uv"]
-run = "ansible-galaxy install -f requirements.yml"
+run = "ansible-galaxy install -r requirements.yml && touch .galaxy-installed"
 sources = ["requirements.yml"]
 outputs = [".galaxy-installed"]
 ```

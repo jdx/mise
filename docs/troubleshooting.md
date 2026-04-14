@@ -22,6 +22,30 @@ Also see the [shebang](/tips-and-tricks#shebang) example for a way to make scrip
 the runtime.
 That is another way to use mise without activation.
 
+## Slow shell prompts {#slow-shell-prompts}
+
+`mise activate` runs a hook on every prompt to check if tools or env vars need updating. This typically takes only a few milliseconds, but if your prompts feel sluggish you can profile it with `MISE_TIMINGS`:
+
+First deactivate mise so the prompt hook doesn't interfere with your measurement, then run `hook-env` manually with timings:
+
+```sh
+mise deactivate
+
+# Show timing per major step (color-coded: red = slow)
+MISE_TIMINGS=1 mise hook-env -s bash 2>&1 >/dev/null
+
+# Or use =2 for detailed per-step breakdowns with cumulative time
+MISE_TIMINGS=2 mise hook-env -s bash 2>&1 >/dev/null
+```
+
+Replace `bash` with your shell. Common causes of slow prompts:
+
+- Expensive `_.source` scripts in `mise.toml` — these re-run on every prompt
+- Large numbers of tools or plugins
+- Network-dependent operations in env directives
+
+Note that [`mise activate --shims`](/dev-tools/shims) moves the cost from every prompt to every tool invocation, which may or may not be faster depending on your workflow. See [Shims vs PATH](/dev-tools/shims.html#shims-vs-path) for tradeoffs.
+
 ## mise is failing or not working right
 
 First try setting `MISE_DEBUG=1` or `MISE_TRACE=1` and see if that gives you more information.
@@ -164,6 +188,76 @@ This can happen if the tool is hosted on GitHub, and you've hit the API rate lim
 common running mise in a CI environment like GitHub Actions.
 
 See [GitHub Tokens](/dev-tools/github-tokens.html) for how to configure authentication and avoid rate limits.
+
+## Tool not found after `mise install` or `mise use` in a script
+
+If you run `mise use` or `mise install` inside a script and then immediately try to use the
+tool, it may not be found. This is because `mise activate` updates PATH at the next prompt,
+which never happens in a script.
+
+**Solutions:**
+
+```bash
+# Option 1: Use mise exec (recommended)
+mise install
+mise exec -- my-tool --version
+
+# Option 2: Re-evaluate the environment after install
+mise install
+eval "$(mise hook-env)"
+my-tool --version
+
+# Option 3: Use shims (they always resolve dynamically)
+export PATH="$HOME/.local/share/mise/shims:$PATH"
+mise install
+my-tool --version
+```
+
+## Creating `~/.bash_profile` breaks existing `~/.profile` on Ubuntu/Debian
+
+On many Linux distributions, `~/.profile` sources `~/.bashrc` and sets up your environment.
+However, if `~/.bash_profile` exists, bash reads that **instead of** `~/.profile`.
+
+If you followed setup instructions that created `~/.bash_profile` for mise, your existing
+`~/.profile` configuration (including PATH, environment variables, etc.) may stop loading.
+
+**Fix:** Add mise activation to `~/.bashrc` instead, or source `~/.profile` from your
+`~/.bash_profile`:
+
+```bash
+# ~/.bash_profile
+[[ -f ~/.profile ]] && source ~/.profile
+```
+
+## Tasks with `redact` env vars break `raw` output
+
+If you have `redact = true` on any env var in your config, tasks with `raw = true` will appear
+to produce no output. This is because mise intercepts stdout/stderr to perform redaction, which
+conflicts with raw mode.
+
+**Workaround**: Remove `redact` from env vars that don't need it, or accept that raw tasks
+won't produce visible output when redactions are active.
+
+## `mise activate` in CI / non-interactive shells
+
+`mise activate` hooks into the shell prompt to update PATH, so historically it didn't work
+in non-interactive shells. With the addition of `chpwd` support, it does work in more
+situations now, but we still recommend these approaches for CI and scripts:
+
+```bash
+# Option 1: Use shims (recommended for CI)
+export PATH="$HOME/.local/share/mise/shims:$PATH"
+# In GitHub Actions, use: echo "$HOME/.local/share/mise/shims" >> $GITHUB_PATH
+
+# Option 2: Use mise exec
+mise exec -- npm test
+
+# Option 3: Manually call hook-env after activate
+eval "$(mise activate bash)"
+eval "$(mise hook-env)"
+```
+
+See also the [CI/CD section](/tips-and-tricks.html#ci-cd) in Tips & Tricks.
 
 ## Auto-install on command not found handler does not work for new tools
 

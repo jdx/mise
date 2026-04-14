@@ -48,6 +48,11 @@ pub struct Vfox {
     /// no checksums, attestation always runs regardless of this flag.
     /// Set by the caller when the lockfile already has a provenance entry from a prior install.
     pub skip_verification: bool,
+    /// Optional environment to set on plugins before executing backend hooks.
+    /// When set, `plugin.set_cmd_env()` is called so Lua `cmd.exec()` uses this env
+    /// instead of inheriting the process environment. This allows dependency tools'
+    /// bin paths to be on PATH during version resolution and installation.
+    pub cmd_env: Option<IndexMap<String, String>>,
     log_tx: Option<mpsc::Sender<String>>,
 }
 
@@ -73,7 +78,7 @@ impl Vfox {
     }
 
     pub async fn list_available_versions(&self, sdk: &str) -> Result<Vec<AvailableVersion>> {
-        let sdk = self.get_sdk(sdk)?;
+        let sdk = self.get_sdk_with_env(sdk)?;
         sdk.available_async().await
     }
 
@@ -117,6 +122,14 @@ impl Vfox {
 
     pub fn get_sdk(&self, name: &str) -> Result<Plugin> {
         Plugin::from_name_or_dir(name, &self.plugin_dir.join(name))
+    }
+
+    fn get_sdk_with_env(&self, name: &str) -> Result<Plugin> {
+        let plugin = self.get_sdk(name)?;
+        if let Some(env) = &self.cmd_env {
+            plugin.set_cmd_env(env)?;
+        }
+        Ok(plugin)
     }
 
     pub fn install_plugin(&self, sdk: &str) -> Result<Plugin> {
@@ -170,7 +183,7 @@ impl Vfox {
         install_dir: ID,
     ) -> Result<InstallResult> {
         self.install_plugin(sdk)?;
-        let sdk = self.get_sdk(sdk)?;
+        let sdk = self.get_sdk_with_env(sdk)?;
         let pre_install = sdk.pre_install(version).await?;
         let install_dir = install_dir.as_ref();
         trace!("{pre_install:?}");
@@ -214,7 +227,7 @@ impl Vfox {
         os: &str,
         arch: &str,
     ) -> Result<PreInstall> {
-        let sdk = self.get_sdk(sdk)?;
+        let sdk = self.get_sdk_with_env(sdk)?;
         sdk.pre_install_for_platform(version, os, arch).await
     }
 
@@ -248,7 +261,7 @@ impl Vfox {
         options: T,
     ) -> Result<Vec<EnvKey>> {
         debug!("Getting env keys for {sdk} version {version}");
-        let sdk = self.get_sdk(sdk)?;
+        let sdk = self.get_sdk_with_env(sdk)?;
         let sdk_info = sdk.sdk_info(
             version.to_string(),
             self.install_dir.join(&sdk.name).join(version),
@@ -274,6 +287,13 @@ impl Vfox {
         if !plugin.get_metadata()?.hooks.contains("mise_env") {
             return Ok(MiseEnvResult::default());
         }
+        if log::log_enabled!(log::Level::Trace) {
+            if let Some(path) = env.get("PATH") {
+                trace!("[vfox:{sdk}] mise_env PATH: {path}");
+            } else {
+                trace!("[vfox:{sdk}] mise_env: no PATH in env");
+            }
+        }
         plugin.set_cmd_env(env)?;
         let ctx = MiseEnvContext {
             args: vec![],
@@ -282,10 +302,16 @@ impl Vfox {
         plugin.mise_env(ctx).await
     }
 
-    pub async fn backend_list_versions(&self, sdk: &str, tool: &str) -> Result<Vec<String>> {
-        let plugin = self.get_sdk(sdk)?;
+    pub async fn backend_list_versions(
+        &self,
+        sdk: &str,
+        tool: &str,
+        options: IndexMap<String, toml::Value>,
+    ) -> Result<Vec<String>> {
+        let plugin = self.get_sdk_with_env(sdk)?;
         let ctx = BackendListVersionsContext {
             tool: tool.to_string(),
+            options,
         };
         plugin.backend_list_versions(ctx).await.map(|r| r.versions)
     }
@@ -297,9 +323,9 @@ impl Vfox {
         version: &str,
         install_path: PathBuf,
         download_path: PathBuf,
-        options: IndexMap<String, String>,
+        options: IndexMap<String, toml::Value>,
     ) -> Result<()> {
-        let plugin = self.get_sdk(sdk)?;
+        let plugin = self.get_sdk_with_env(sdk)?;
         let ctx = BackendInstallContext {
             tool: tool.to_string(),
             version: version.to_string(),
@@ -317,9 +343,9 @@ impl Vfox {
         tool: &str,
         version: &str,
         install_path: PathBuf,
-        options: IndexMap<String, String>,
+        options: IndexMap<String, toml::Value>,
     ) -> Result<Vec<EnvKey>> {
-        let plugin = self.get_sdk(sdk)?;
+        let plugin = self.get_sdk_with_env(sdk)?;
         let ctx = BackendExecEnvContext {
             tool: tool.to_string(),
             version: version.to_string(),
@@ -548,6 +574,7 @@ impl Default for Vfox {
             download_dir: home().join(".version-fox/downloads"),
             install_dir: home().join(".version-fox/installs"),
             skip_verification: false,
+            cmd_env: None,
             log_tx: None,
         }
     }
@@ -573,6 +600,7 @@ mod tests {
                 download_dir: PathBuf::from("test/downloads"),
                 install_dir: PathBuf::from("test/installs"),
                 skip_verification: false,
+                cmd_env: None,
                 log_tx: None,
             }
         }
@@ -673,5 +701,34 @@ mod tests {
         let metadata = vfox.metadata("dummy").await.unwrap();
         let out = format!("{metadata:?}");
         assert_snapshot!(out);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_backend_list_versions_with_cmd_env() {
+        let mut vfox = Vfox::test();
+        let mut env = IndexMap::new();
+        env.insert("MY_TEST_VAR".to_string(), "hello".to_string());
+        env.insert(
+            "PATH".to_string(),
+            std::env::var("PATH").unwrap_or_default(),
+        );
+        vfox.cmd_env = Some(env);
+
+        let versions = vfox
+            .backend_list_versions("dummy-backend", "test-tool", IndexMap::new())
+            .await
+            .unwrap();
+        assert_eq!(versions, vec!["hello".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_backend_list_versions_without_cmd_env() {
+        let vfox = Vfox::test();
+        let versions = vfox
+            .backend_list_versions("dummy-backend", "test-tool", IndexMap::new())
+            .await
+            .unwrap();
+        assert_eq!(versions, vec!["fallback".to_string()]);
     }
 }

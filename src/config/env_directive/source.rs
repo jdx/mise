@@ -37,6 +37,9 @@ impl EnvResults {
                             // TODO: perhaps deal with path removals as well
                             if let Some(new_path) = v.strip_suffix(&orig_path) {
                                 for p in env::split_paths(new_path) {
+                                    if p.as_os_str().is_empty() {
+                                        continue;
+                                    }
                                     paths.push((p, source.to_path_buf()));
                                 }
                             }

@@ -64,6 +64,7 @@ mod shell_alias;
 mod sync;
 mod tasks;
 mod test_tool;
+mod token;
 mod tool;
 pub mod tool_stub;
 mod trust;
@@ -249,6 +250,7 @@ pub enum Commands {
     Sync(sync::Sync),
     Tasks(tasks::Tasks),
     TestTool(test_tool::TestTool),
+    Token(token::Token),
     Tool(tool::Tool),
     ToolStub(tool_stub::ToolStub),
     Trust(trust::Trust),
@@ -318,6 +320,7 @@ impl Commands {
             Self::Sync(cmd) => cmd.run().await,
             Self::Tasks(cmd) => cmd.run().await,
             Self::TestTool(cmd) => cmd.run().await,
+            Self::Token(cmd) => cmd.run().await,
             Self::Tool(cmd) => cmd.run().await,
             Self::ToolStub(cmd) => cmd.run().await,
             Self::Trust(cmd) => cmd.run().await,
@@ -670,6 +673,15 @@ impl Cli {
                         skip_tools: false,
                         no_prepare: false,
                         fresh_env: false,
+                        deny_all: false,
+                        deny_read: false,
+                        deny_write: false,
+                        deny_net: false,
+                        deny_env: false,
+                        allow_read: vec![],
+                        allow_write: vec![],
+                        allow_net: vec![],
+                        allow_env: vec![],
                     })));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(

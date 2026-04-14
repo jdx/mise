@@ -3,6 +3,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::duration;
 use crate::file::{display_path, is_executable};
+use crate::sandbox::SandboxConfig;
 use crate::task::TaskKey;
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_list::split_task_spec;
@@ -28,7 +29,7 @@ use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use std::time::{Duration, SystemTime};
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 use xx::file;
 
 /// Global lock for interactive task exclusivity.
@@ -59,6 +60,8 @@ pub struct TaskExecutorConfig {
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
+    /// CLI-level sandbox overrides (merged with task-level sandbox config)
+    pub sandbox: crate::sandbox::SandboxConfig,
 }
 
 /// Executes tasks with proper context, environment, and output handling
@@ -76,6 +79,7 @@ pub struct TaskExecutor {
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
+    pub sandbox: crate::sandbox::SandboxConfig,
 }
 
 impl TaskExecutor {
@@ -96,6 +100,7 @@ impl TaskExecutor {
             continue_on_error: config.continue_on_error,
             dry_run: config.dry_run,
             skip_deps: config.skip_deps,
+            sandbox: config.sandbox,
         }
     }
 
@@ -124,6 +129,42 @@ impl TaskExecutor {
         self.output_handler.raw(task)
     }
 
+    /// Build a SandboxConfig for a task by merging task-level config with CLI overrides.
+    fn build_sandbox_for_task(&self, task: &Task) -> SandboxConfig {
+        let mut config = SandboxConfig {
+            deny_read: task.deny_all || task.deny_read || self.sandbox.deny_read,
+            deny_write: task.deny_all || task.deny_write || self.sandbox.deny_write,
+            deny_net: task.deny_all || task.deny_net || self.sandbox.deny_net,
+            deny_env: task.deny_all || task.deny_env || self.sandbox.deny_env,
+            allow_read: task
+                .allow_read
+                .iter()
+                .chain(self.sandbox.allow_read.iter())
+                .cloned()
+                .collect(),
+            allow_write: task
+                .allow_write
+                .iter()
+                .chain(self.sandbox.allow_write.iter())
+                .cloned()
+                .collect(),
+            allow_net: task
+                .allow_net
+                .iter()
+                .chain(self.sandbox.allow_net.iter())
+                .cloned()
+                .collect(),
+            allow_env: task
+                .allow_env
+                .iter()
+                .chain(self.sandbox.allow_env.iter())
+                .cloned()
+                .collect(),
+        };
+        config.resolve_paths();
+        config
+    }
+
     pub fn task_timings(&self) -> bool {
         let output_mode = self.output_handler.output(None);
         self.timings
@@ -134,26 +175,33 @@ impl TaskExecutor {
             )
     }
 
+    /// Run a task, returning true if the task actually executed (not skipped).
+    #[allow(clippy::too_many_arguments)]
     pub async fn run_task_sched(
         &self,
         task: &Task,
         config: &Arc<Config>,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         completed_tasks: HashSet<TaskKey>,
-    ) -> Result<()> {
+        dep_ran: bool,
+        semaphore: Arc<Semaphore>,
+        permit: &mut Option<OwnedSemaphorePermit>,
+    ) -> Result<bool> {
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
         if Settings::get().task.skip.contains(&task.name) {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "skipping task");
             }
-            return Ok(());
+            return Ok(false);
         }
-        if !self.force && sources_are_fresh(task, config).await? {
+        // If any dependency actually ran, skip the source freshness check
+        // so that downstream tasks are invalidated by upstream changes
+        if !self.force && !dep_ran && sources_are_fresh(task, config).await? {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "sources up-to-date, skipping");
             }
-            return Ok(());
+            return Ok(false);
         }
 
         let mut tools = self.tool.clone();
@@ -288,6 +336,8 @@ impl TaskExecutor {
                 sched_tx,
                 confirm_guard,
                 &completed_tasks,
+                semaphore,
+                permit,
             )
             .await?;
             trace!(
@@ -310,7 +360,7 @@ impl TaskExecutor {
 
         save_checksum(task, config).await?;
 
-        Ok(())
+        Ok(true)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -324,6 +374,8 @@ impl TaskExecutor {
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
         existing_guard: Option<RuntimeLockGuard<'static>>,
         completed_tasks: &HashSet<TaskKey>,
+        semaphore: Arc<Semaphore>,
+        permit: &mut Option<OwnedSemaphorePermit>,
     ) -> Result<()> {
         let (env, task_env) = full_env;
         use crate::task::RunEntry;
@@ -366,6 +418,11 @@ impl TaskExecutor {
                         Some(override_env.as_slice())
                     };
                     guard = None; // drop lock before waiting on sub-tasks
+                    // Release the semaphore permit before waiting on sub-tasks to
+                    // avoid deadlock when MISE_JOBS=1 (the sub-task needs a permit
+                    // but we're holding the only one).
+                    let had_permit = permit.is_some();
+                    *permit = None;
                     self.inject_and_wait(
                         config,
                         &[resolved_spec],
@@ -376,6 +433,9 @@ impl TaskExecutor {
                         completed_tasks,
                     )
                     .await?;
+                    if had_permit {
+                        *permit = Some(semaphore.clone().acquire_owned().await?);
+                    }
                 }
                 RunEntry::TaskGroup { tasks } => {
                     let resolved_tasks: Vec<String> = tasks
@@ -383,6 +443,8 @@ impl TaskExecutor {
                         .map(|t| crate::task::resolve_task_pattern(t, Some(task)))
                         .collect();
                     guard = None; // drop lock before waiting on sub-tasks
+                    let had_permit = permit.is_some();
+                    *permit = None;
                     self.inject_and_wait(
                         config,
                         &resolved_tasks,
@@ -393,6 +455,9 @@ impl TaskExecutor {
                         completed_tasks,
                     )
                     .await?;
+                    if had_permit {
+                        *permit = Some(semaphore.clone().acquire_owned().await?);
+                    }
                 }
             }
         }
@@ -764,11 +829,19 @@ impl TaskExecutor {
         let program = program.to_executable();
         let redactions = config.redactions();
         let raw = self.raw(Some(task));
+        let sandbox = self.build_sandbox_for_task(task);
+        let env = if sandbox.is_active() {
+            Settings::get().ensure_experimental("sandbox")?;
+            &sandbox.filter_env(env)
+        } else {
+            env
+        };
         let mut cmd = CmdLineRunner::new(program.clone())
             .args(args)
             .envs(env)
             .redact(redactions.deref().clone())
-            .raw(raw);
+            .raw(raw)
+            .with_sandbox(sandbox);
         if raw && !redactions.is_empty() {
             if task.interactive && !task.raw && !Settings::get().raw {
                 hint!(
@@ -849,7 +922,7 @@ impl TaskExecutor {
                 }
                 // Show progress indicator except when both streams are fully suppressed
                 if !task.silent.suppresses_both() {
-                    let pr = self.output_handler.task_prs.get(task).unwrap().clone();
+                    let pr = self.output_handler.get_or_init_task_pr(task);
                     cmd = cmd.with_pr_arc(pr);
                 }
             }
@@ -925,6 +998,8 @@ impl TaskExecutor {
         if let Some(timeout) = effective_timeout {
             cmd = cmd.with_timeout(timeout);
         }
+        // Apply sandbox async (DNS resolution for macOS) before blocking execute
+        cmd.apply_sandbox().await?;
         // cmd.execute() is blocking (calls cp.wait()), so use block_in_place
         // to avoid starving the tokio runtime while holding the TASK_RUNTIME_LOCK guard.
         tokio::task::block_in_place(|| cmd.execute())?;

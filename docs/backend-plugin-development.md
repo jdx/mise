@@ -33,10 +33,12 @@ Lists available versions for a tool:
 ```lua
 function PLUGIN:BackendListVersions(ctx)
     local tool = ctx.tool
+    local options = ctx.options
     local versions = {}
 
     -- Your logic to fetch versions for the tool
     -- Example: query an API, parse a registry, etc.
+    -- Access custom options via options["key"] or options.key
 
     return {versions = versions}
 end
@@ -226,26 +228,35 @@ Backend plugins receive context through the `ctx` parameter passed to each hook 
 
 ### BackendListVersions Context
 
-| Variable   | Description   | Example      |
-| ---------- | ------------- | ------------ |
-| `ctx.tool` | The tool name | `"prettier"` |
+| Variable      | Description                 | Example                   |
+| ------------- | --------------------------- | ------------------------- |
+| `ctx.tool`    | The tool name               | `"prettier"`              |
+| `ctx.options` | Tool options from mise.toml | `{channels = {"a", "b"}}` |
 
 ### BackendInstall Context
 
-| Variable            | Description            | Example                                                            |
-| ------------------- | ---------------------- | ------------------------------------------------------------------ |
-| `ctx.tool`          | The tool name          | `"prettier"`                                                       |
-| `ctx.version`       | The requested version  | `"3.0.0"`                                                          |
-| `ctx.install_path`  | Installation directory | `"/home/user/.local/share/mise/installs/vfox-npm-prettier/3.0.0"`  |
-| `ctx.download_path` | Download directory     | `"/home/user/.local/share/mise/downloads/vfox-npm-prettier/3.0.0"` |
+| Variable            | Description                 | Example                                                            |
+| ------------------- | --------------------------- | ------------------------------------------------------------------ |
+| `ctx.tool`          | The tool name               | `"prettier"`                                                       |
+| `ctx.version`       | The requested version       | `"3.0.0"`                                                          |
+| `ctx.install_path`  | Installation directory      | `"/home/user/.local/share/mise/installs/vfox-npm-prettier/3.0.0"`  |
+| `ctx.download_path` | Download directory          | `"/home/user/.local/share/mise/downloads/vfox-npm-prettier/3.0.0"` |
+| `ctx.options`       | Tool options from mise.toml | `{exe = "rg"}`                                                     |
 
 ### BackendExecEnv Context
 
-| Variable           | Description            | Example                                                           |
-| ------------------ | ---------------------- | ----------------------------------------------------------------- |
-| `ctx.tool`         | The tool name          | `"prettier"`                                                      |
-| `ctx.version`      | The requested version  | `"3.0.0"`                                                         |
-| `ctx.install_path` | Installation directory | `"/home/user/.local/share/mise/installs/vfox-npm-prettier/3.0.0"` |
+| Variable           | Description                 | Example                                                           |
+| ------------------ | --------------------------- | ----------------------------------------------------------------- |
+| `ctx.tool`         | The tool name               | `"prettier"`                                                      |
+| `ctx.version`      | The requested version       | `"3.0.0"`                                                         |
+| `ctx.install_path` | Installation directory      | `"/home/user/.local/share/mise/installs/vfox-npm-prettier/3.0.0"` |
+| `ctx.options`      | Tool options from mise.toml | `{exe = "rg"}`                                                    |
+
+> [!TIP]
+> Option values preserve their TOML types as native Lua equivalents. Strings remain strings,
+> arrays become Lua sequence tables, and nested tables become Lua map tables. For example,
+> `channels = ["conda-forge", "robostack"]` in `mise.toml` becomes a Lua table you can
+> iterate with `ipairs(ctx.options.channels)`.
 
 ## Testing Your Plugin
 
@@ -348,7 +359,7 @@ Handle different operating systems:
 
 ```lua
 local function create_dir(path)
-    local cmd = RUNTIME.osType == "Windows" and "mkdir" or "mkdir -p"
+    local cmd = RUNTIME.osType == "windows" and "mkdir" or "mkdir -p"
     os.execute(cmd .. " " .. path)
 end
 ```
@@ -411,8 +422,8 @@ end
 
 The `RUNTIME` object provides:
 
-- `RUNTIME.osType`: Operating system type (Windows, Linux, Darwin)
-- `RUNTIME.archType`: Architecture (amd64, arm64, etc.)
+- `RUNTIME.osType`: Operating system type ("windows", "linux", "darwin")
+- `RUNTIME.archType`: Architecture (`"amd64"`, `"arm64"`, `"x86"`, etc.)
 - `RUNTIME.envType`: libc environment type (`"gnu"` on glibc Linux, `"musl"` on musl Linux, `nil` on Windows/macOS and undetected systems)
 - `RUNTIME.version`: vfox runtime version
 - `RUNTIME.pluginDirPath`: Plugin directory path

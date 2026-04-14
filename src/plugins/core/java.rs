@@ -169,7 +169,7 @@ impl JavaPlugin {
             let entry = entry?;
             let dest = tv.install_path().join(entry.file_name());
             trace!("moving {:?} to {:?}", entry.path(), &dest);
-            file::rename(entry.path(), dest)?;
+            file::move_file(entry.path(), dest)?;
         }
 
         if cfg!(target_os = "macos") {
@@ -196,7 +196,7 @@ impl JavaPlugin {
                 }
                 let dest = tv.install_path().join("Contents").join(entry.file_name());
                 trace!("moving {:?} to {:?}", entry.path(), &dest);
-                file::rename(entry.path(), dest)?;
+                file::move_file(entry.path(), dest)?;
             }
             file::make_symlink(
                 tv.install_path().as_path(),

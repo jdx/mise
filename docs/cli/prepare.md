@@ -61,9 +61,6 @@ mise prepare --skip npm   # Skip npm prepare
 
 Configuration:
 
-```
-Configure prepare providers in mise.toml:
-
 ```toml
 # Built-in npm provider (auto-detects lockfile)
 [prepare.npm]
@@ -78,5 +75,4 @@ run = "npm run codegen"
 
 [prepare]
 disable = ["npm"]        # Disable specific providers at runtime
-```
 ```

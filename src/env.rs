@@ -244,14 +244,14 @@ pub static MISE_DEFAULT_CONFIG_FILENAME: Lazy<String> = Lazy::new(|| {
 pub static MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES: Lazy<Option<IndexSet<String>>> =
     Lazy::new(|| match var("MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES") {
         Ok(v) if v == "none" => Some([].into()),
-        Ok(v) => Some(v.split(':').map(|s| s.to_string()).collect()),
+        Ok(v) => Some(split_colon_list(&v)),
         Err(_) => {
             miserc::get_override_tool_versions_filenames().map(|v| v.iter().cloned().collect())
         }
     });
 pub static MISE_OVERRIDE_CONFIG_FILENAMES: Lazy<IndexSet<String>> =
     Lazy::new(|| match var("MISE_OVERRIDE_CONFIG_FILENAMES") {
-        Ok(v) => v.split(':').map(|s| s.to_string()).collect(),
+        Ok(v) => split_colon_list(&v),
         Err(_) => miserc::get_override_config_filenames()
             .map(|v| v.iter().cloned().collect())
             .unwrap_or_default(),
@@ -450,8 +450,6 @@ pub static GITLAB_TOKEN: Lazy<Option<String>> =
     Lazy::new(|| get_token(&["MISE_GITLAB_TOKEN", "GITLAB_TOKEN"]));
 pub static MISE_GITLAB_ENTERPRISE_TOKEN: Lazy<Option<String>> =
     Lazy::new(|| get_token(&["MISE_GITLAB_ENTERPRISE_TOKEN"]));
-pub static FORGEJO_TOKEN: Lazy<Option<String>> =
-    Lazy::new(|| get_token(&["MISE_FORGEJO_TOKEN", "FORGEJO_TOKEN"]));
 pub static MISE_FORGEJO_ENTERPRISE_TOKEN: Lazy<Option<String>> =
     Lazy::new(|| get_token(&["MISE_FORGEJO_ENTERPRISE_TOKEN"]));
 
@@ -646,16 +644,36 @@ fn environment(args: &[String]) -> Vec<String> {
         // When running as shim, ignore command line args and use env vars only
         vec![]
     } else {
+        // Subcommands where positional args accept hyphen values, so -E after the
+        // first positional would be a task arg, not a global flag.
+        let run_subcommands: HashSet<&str> = HashSet::from(["run", "r"]);
         // Try to get from command line args first
-        args.windows(2)
-            .take_while(|window| !window.iter().any(|a| a == "--"))
-            .filter_map(|window| {
-                if arg_defs.contains(&*window[0]) {
-                    Some(window[1].clone())
-                } else {
-                    None
+        // Handles both `--env production` (separate args) and `--env=production` (joined with =)
+        let mut values = Vec::new();
+        let mut it = args.iter().take_while(|a| a.as_str() != "--");
+        let mut in_run_subcommand = false;
+        while let Some(arg) = it.next() {
+            if let Some((flag, value)) = arg.split_once('=') {
+                if arg_defs.contains(flag) {
+                    values.push(value.to_string());
                 }
-            })
+            } else if arg_defs.contains(arg.as_str()) {
+                if let Some(next) = it.next() {
+                    values.push(next.to_string());
+                }
+            } else if !arg.starts_with('-') {
+                // After `run`/`r`, the first positional is the task name — everything
+                // after that belongs to the task, so stop scanning for env flags.
+                if in_run_subcommand {
+                    break;
+                }
+                if run_subcommands.contains(arg.as_str()) {
+                    in_run_subcommand = true;
+                }
+            }
+        }
+        values
+            .into_iter()
             .flat_map(|s| {
                 s.split(',')
                     .filter(|s| !s.is_empty())
@@ -718,6 +736,18 @@ fn linux_glibc_version() -> Option<(u32, u32)> {
 #[cfg(not(target_os = "linux"))]
 fn linux_glibc_version() -> Option<(u32, u32)> {
     None
+}
+
+/// Split a colon-separated string into a set, filtering empty segments.
+/// Empty segments arise from empty strings, leading/trailing colons, or
+/// consecutive colons — all of which should be ignored rather than
+/// injected as empty paths into config discovery.
+fn split_colon_list(value: &str) -> IndexSet<String> {
+    value
+        .split(':')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect()
 }
 
 fn filename(path: &str) -> &str {
@@ -814,6 +844,24 @@ mod tests {
             PathBuf::from("/foo/bar")
         );
         remove_var("MISE_TEST_PATH");
+    }
+
+    #[test]
+    fn test_split_colon_list() {
+        let cases: Vec<(&str, Vec<&str>)> = vec![
+            ("", vec![]),    // empty string — was causing panic
+            (":", vec![]),   // colon only
+            (":::", vec![]), // multiple colons
+            ("mise.toml", vec!["mise.toml"]),
+            ("a:b", vec!["a", "b"]),
+            (":a:b:", vec!["a", "b"]), // leading/trailing colons
+            ("a::b", vec!["a", "b"]),  // consecutive colons
+        ];
+        for (input, expected) in cases {
+            let result = split_colon_list(input);
+            let expected: IndexSet<String> = expected.into_iter().map(|s| s.to_string()).collect();
+            assert_eq!(result, expected, "input: {input:?}");
+        }
     }
 
     #[test]

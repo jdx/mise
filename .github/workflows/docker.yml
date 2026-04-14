@@ -23,6 +23,7 @@ jobs:
         flavor:
           - alpine
           - deb
+          - e2e
           - rpm
           - copr
     runs-on: ubuntu-latest

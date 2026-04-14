@@ -147,6 +147,7 @@ export default withMermaid(
             { text: "Task Configuration", link: "/tasks/task-configuration" },
             { text: "Task Templates", link: "/tasks/templates" },
             { text: "Monorepo Tasks", link: "/tasks/monorepo" },
+            { text: "Sandboxing", link: "/sandboxing" },
           ],
         },
         {
@@ -276,6 +277,9 @@ export default withMermaid(
       },
     },
     vite: {
+      build: {
+        target: "es2022",
+      },
       plugins: [
         groupIconVitePlugin({
           customIcon: {

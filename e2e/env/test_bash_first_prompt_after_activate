@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Verify that the first PROMPT_COMMAND run after `mise activate bash` still runs
+# hook-env. This protects the startup path where bash may mutate PATH during
+# shell initialization before the first prompt is rendered.
+
+eval "$(mise activate bash --status)"
+
+if [[ ${__MISE_BASH_CHPWD_RAN:-unset} != "0" ]]; then
+	echo "expected __MISE_BASH_CHPWD_RAN=0 after activation"
+	exit 1
+fi
+
+_mise_hook_prompt_command >/dev/null 2>&1 || true
+
+if [[ ${__MISE_BASH_CHPWD_RAN:-unset} != "0" ]]; then
+	echo "expected first prompt after activation to leave __MISE_BASH_CHPWD_RAN unchanged"
+	exit 1
+fi

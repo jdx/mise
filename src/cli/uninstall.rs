@@ -125,20 +125,27 @@ impl Uninstall {
                     .filter(|v| v.starts_with(&query))
                     .collect_vec(),
             };
-            let mut tvs = matches
-                .into_iter()
-                .map(|v| {
-                    let tvr = ToolRequest::new(backend.ba().clone(), v, ToolSource::Unknown)?;
-                    let tv = ToolVersion::new(tvr, v.into());
-                    Ok((backend.clone(), tv))
-                })
-                .collect::<Result<Vec<_>>>()?;
+
+            let mut tvs = Vec::new();
+
             if let Some(tvr) = &ta.tvr {
                 tvs.push((
                     backend.clone(),
                     tvr.resolve(config, &Default::default()).await?,
                 ));
             }
+
+            tvs.extend(
+                matches
+                    .into_iter()
+                    .map(|v| {
+                        let tvr = ToolRequest::new(backend.ba().clone(), v, ToolSource::Unknown)?;
+                        let tv = ToolVersion::new(tvr, v.into());
+                        Ok((backend.clone(), tv))
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+            );
+
             if tvs.is_empty() {
                 warn!(
                     "no versions found for {}",
