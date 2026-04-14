@@ -385,13 +385,14 @@ impl NPMBackend {
         if let Ok(ts) = self.dependency_toolset(config).await {
             for (ba, tvl) in &ts.versions {
                 if ba.short == "npm"
-                    && let Some(tv) = tvl.versions.first() {
-                        debug!(
-                            "npm version detection: found npm {} in ToolSet, skipping subprocess",
-                            tv.version
-                        );
-                        return Self::npm_version_supports_min_release_age(&tv.version);
-                    }
+                    && let Some(tv) = tvl.versions.first()
+                {
+                    debug!(
+                        "npm version detection: found npm {} in ToolSet, skipping subprocess",
+                        tv.version
+                    );
+                    return Self::npm_version_supports_min_release_age(&tv.version);
+                }
             }
         }
 
