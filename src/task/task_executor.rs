@@ -1031,7 +1031,7 @@ impl TaskExecutor {
             "yes" | "y" | "true" => Ok(true),
             "no" | "n" | "false" => Ok(false),
             _ => Err(eyre!(
-                "invalid task confirm default: {default:?}, expected one of yes/no/true/false"
+                "invalid task confirm default: {default:?}, expected one of yes/no/y/n/true/false"
             )),
         }
     }

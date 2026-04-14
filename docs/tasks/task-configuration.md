@@ -267,7 +267,7 @@ run = "echo my internal task"
 
 ### `confirm`
 
-- **Type**: `string` | `{ message: string, default?: string }`
+- **Type**: `string` | `{ message: string, default: string }`
 
 A message to show before running the task. This is useful for tasks that are destructive or take a long
 time to run. The user will be prompted to confirm before the task's own `run` command executes.

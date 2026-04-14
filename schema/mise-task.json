@@ -73,28 +73,29 @@
               ]
             },
             "confirm": {
-                "oneOf": [
-                    {
-                        "description": "confirmation message before running this task",
-                        "type": "string"
+              "oneOf": [
+                {
+                  "description": "confirmation message before running this task",
+                  "type": "string"
+                },
+                {
+                  "description": "confirmation message before running this task with default value",
+                  "properties": {
+                    "message": {
+                      "description": "confirmation message before running this task",
+                      "type": "string"
                     },
-                    {
-                        "description": "confirmation message before running this task with default value",
-                        "properties": {
-                            "message": {
-                                "description": "confirmation message before running this task",
-                                "type": "string"
-                            },
-                            "default": {
-                                "description": "default value for confirmation (yes/no/true/false)",
-                                "type": "string"
-                            }
-                        },
-                        "required": ["message"],
-                        "additionalProperties": false,
-                        "type": "object"
+                    "default": {
+                      "description": "default value for confirmation (yes/no/true/false)",
+                      "enum": ["yes", "no", "y", "n", "true", "false"],
+                      "type": "string"
                     }
-                ]
+                  },
+                  "required": ["message", "default"],
+                  "additionalProperties": false,
+                  "type": "object"
+                }
+              ]
             },
             "depends": {
               "oneOf": [
@@ -864,28 +865,29 @@
           ]
         },
         "confirm": {
-            "oneOf": [
-                {
-                    "description": "confirmation message before running this task",
-                    "type": "string"
+          "oneOf": [
+            {
+              "description": "confirmation message before running this task",
+              "type": "string"
+            },
+            {
+              "description": "confirmation message before running this task with default value",
+              "properties": {
+                "message": {
+                  "description": "confirmation message before running this task",
+                  "type": "string"
                 },
-                {
-                    "description": "confirmation message before running this task with default value",
-                    "properties": {
-                        "message": {
-                            "description": "confirmation message before running this task",
-                            "type": "string"
-                        },
-                        "default": {
-                            "description": "default value for confirmation (yes/no/true/false)",
-                            "type": "string"
-                        }
-                    },
-                    "required": ["message"],
-                    "additionalProperties": false,
-                    "type": "object"
+                "default": {
+                  "description": "default value for confirmation (yes/no/true/false)",
+                  "enum": ["yes", "no", "y", "n", "true", "false"],
+                  "type": "string"
                 }
-            ]
+              },
+              "required": ["message", "default"],
+              "additionalProperties": false,
+              "type": "object"
+            }
+          ]
         },
         "depends": {
           "oneOf": [

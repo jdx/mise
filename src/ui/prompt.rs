@@ -11,7 +11,7 @@ static MUTEX: Mutex<()> = Mutex::new(());
 static SKIP_PROMPT: Mutex<bool> = Mutex::new(false);
 
 pub fn confirm<S: Into<String>>(message: S) -> eyre::Result<bool> {
-    confirm_with_default(message, false)
+    confirm_with_default(message, true)
 }
 
 pub fn confirm_with_default<S: Into<String>>(message: S, default_yes: bool) -> eyre::Result<bool> {
