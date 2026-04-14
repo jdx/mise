@@ -227,7 +227,14 @@ impl Backend for NPMBackend {
             _ => {
                 let install_before_args = if let Some(before_date) = ctx.before_date {
                     let now = Timestamp::now();
-                    if self.npm_supports_min_release_age_flag(&ctx.config).await {
+                    // --min-release-age is day-granular, so fall back to --before for
+                    // sub-day windows (e.g. install_before = "1h") to preserve the
+                    // exact cutoff. div_ceil(86400) on <24h would round up to 1 day
+                    // and broaden the window, breaking backwards compatibility.
+                    let elapsed = Self::elapsed_seconds_ceil(before_date, now);
+                    let use_modern = elapsed >= 86400
+                        && self.npm_supports_min_release_age_flag(&ctx.config).await;
+                    if use_modern {
                         Self::build_npm_min_release_age_args(before_date, now)
                     } else {
                         Self::build_transitive_release_age_args(
@@ -329,9 +336,16 @@ impl NPMBackend {
 
     /// Returns true if the npm major.minor.patch version is >= 11.10.0,
     /// which is when the --min-release-age flag was added (npm/cli#8965).
+    /// Pre-release / build-metadata tags are rejected because in strict
+    /// semver `11.10.0-pre.1 < 11.10.0`, so a pre-release that shipped
+    /// before the flag landed would otherwise be misclassified as supporting
+    /// it and crash with an unknown-flag error.
     fn npm_version_supports_min_release_age(version: &str) -> bool {
         let trimmed = version.trim().trim_start_matches('v');
-        let mut parts = trimmed.split(['.', '-', '+']);
+        if trimmed.contains('-') || trimmed.contains('+') {
+            return false;
+        }
+        let mut parts = trimmed.split('.');
         let major: u64 = match parts.next().and_then(|p| p.parse().ok()) {
             Some(v) => v,
             None => return false,
@@ -350,7 +364,21 @@ impl NPMBackend {
     /// transparently fall back to the older --before flag. Failures are
     /// logged at debug level so users can troubleshoot why the fallback
     /// flag was chosen.
+    ///
+    /// The result is cached for the lifetime of the process via OnceLock so
+    /// repeated installs in one mise invocation only spawn `npm --version` once.
     async fn npm_supports_min_release_age_flag(&self, config: &Arc<Config>) -> bool {
+        static CACHE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if let Some(&cached) = CACHE.get() {
+            return cached;
+        }
+        let result = self.detect_npm_supports_min_release_age_flag(config).await;
+        // OK if another thread won the race; both compute the same bool.
+        let _ = CACHE.set(result);
+        result
+    }
+
+    async fn detect_npm_supports_min_release_age_flag(&self, config: &Arc<Config>) -> bool {
         let env = match self.dependency_env(config).await {
             Ok(env) => env,
             Err(e) => {
@@ -551,9 +579,13 @@ mod tests {
         assert!(NPMBackend::npm_version_supports_min_release_age(
             "11.10.0\n"
         ));
-        // Pre-release of a supported version still satisfies the gate
-        assert!(NPMBackend::npm_version_supports_min_release_age(
+        // Pre-release tags are rejected (11.10.0-pre.1 < 11.10.0 in semver)
+        assert!(!NPMBackend::npm_version_supports_min_release_age(
             "11.10.0-pre.1"
+        ));
+        // Build metadata is also rejected for safety
+        assert!(!NPMBackend::npm_version_supports_min_release_age(
+            "11.10.0+build.1"
         ));
 
         assert!(!NPMBackend::npm_version_supports_min_release_age("11.9.9"));
