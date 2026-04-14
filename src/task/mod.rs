@@ -42,6 +42,7 @@ pub(crate) fn reset() {
 pub type FailedTasks = Arc<std::sync::Mutex<Vec<(Task, Option<i32>)>>>;
 
 mod deps;
+pub mod task_confirm;
 pub mod task_context_builder;
 mod task_dep;
 pub mod task_executor;
@@ -60,6 +61,7 @@ pub mod task_sources;
 pub mod task_template;
 pub mod task_tool_installer;
 
+pub use task_confirm::TaskConfirm;
 pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax};
 pub use task_output::TaskOutput;
 pub use task_script_parser::{has_any_args_defined, has_any_usage_spec};
@@ -264,7 +266,7 @@ pub struct Task {
     #[serde(skip)]
     pub config_root: Option<PathBuf>,
     #[serde(default)]
-    pub confirm: Option<String>,
+    pub confirm: Option<TaskConfirm>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub depends: Vec<TaskDep>,
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -458,7 +460,13 @@ impl Task {
             .or(p.parse_str("alias").map(|s| vec![s]))
             .or(p.parse_str("aliases").map(|s| vec![s]))
             .unwrap_or_default();
-        task.confirm = p.parse_str("confirm");
+        task.confirm = p
+            .get_raw("confirm")
+            .map(|v| {
+                TaskConfirm::deserialize(v.clone())
+                    .map_err(|e| eyre!("failed to parse confirm field in task header: {e}"))
+            })
+            .transpose()?;
         task.depends = p.parse_array("depends").unwrap_or_default();
         task.depends_post = p.parse_array("depends_post").unwrap_or_default();
         task.wait_for = p.parse_array("wait_for").unwrap_or_default();
@@ -1800,7 +1808,7 @@ mod tests {
     use crate::{config::Config, dirs};
     use pretty_assertions::assert_eq;
 
-    use super::name_from_path;
+    use super::{TaskConfirm, name_from_path};
 
     // Thread-local storage to capture parser state during tests
     thread_local! {
@@ -2577,7 +2585,10 @@ echo "test"
         assert_eq!(task.shell, Some("bash -c".to_string()));
         assert_eq!(task.quiet, true);
         assert!(!task.tools.is_empty());
-        assert_eq!(task.confirm, Some("Are you sure?".to_string()));
+        assert_eq!(
+            task.confirm,
+            Some(TaskConfirm::Message("Are you sure?".to_string()))
+        );
 
         let mut parsed_fields =
             take_captured_fields().expect("Parser fields should have been captured");

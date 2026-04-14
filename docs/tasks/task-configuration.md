@@ -267,7 +267,7 @@ run = "echo my internal task"
 
 ### `confirm`
 
-- **Type**: `string`
+- **Type**: `string` | `{ message: string, default?: string }`
 
 A message to show before running the task. This is useful for tasks that are destructive or take a long
 time to run. The user will be prompted to confirm before the task's own `run` command executes.
@@ -278,7 +278,7 @@ time to run. The user will be prompted to confirm before the task's own `run` co
 
 ```mise-toml
 [tasks.release]
-confirm = "Are you sure you want to cut a release?"
+confirm = { message = "Are you sure you want to cut a release?", default = "no" }
 description = 'Cut a new release'
 file = 'scripts/release.sh'
 ```
