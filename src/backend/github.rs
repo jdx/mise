@@ -488,9 +488,9 @@ impl Backend for UnifiedGitBackend {
         if let Some(digest) = digest
             && let Err(e) =
                 crate::toolset::install_state::write_checksum(&self.ba.short, &tv.version, digest)
-            {
-                warn!("failed to write checksum for {}: {e}", tv);
-            }
+        {
+            warn!("failed to write checksum for {}: {e}", tv);
+        }
 
         Ok(tv)
     }
