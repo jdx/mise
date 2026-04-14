@@ -144,7 +144,7 @@ impl RunEntry {
     }
 
     pub fn has_tera_template(&self) -> bool {
-        let has_ref = |s: &str| s.contains("{{");
+        let has_ref = |s: &str| s.contains("{{") || s.contains("{%") || s.contains("{#");
         match self {
             RunEntry::Script(_) => false,
             RunEntry::SingleTask { task, args, env } => {
