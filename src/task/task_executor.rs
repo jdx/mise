@@ -384,8 +384,7 @@ impl TaskExecutor {
         let needs_tera = task.run().iter().any(RunEntry::has_tera_template);
         let mut tera_state = if needs_tera {
             let usage_values = crate::task::parse_usage_values_from_task(config, task).await?;
-            let config_root = task.config_root.clone().unwrap_or_default();
-            let tera = crate::tera::get_tera(Some(&config_root));
+            let tera = crate::tera::get_tera(task.config_root.as_deref());
             let mut tera_ctx = task.tera_ctx(config).await?;
             if !usage_values.is_empty() {
                 tera_ctx.insert("usage", &usage_values);
