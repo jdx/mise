@@ -1,3 +1,3 @@
 backends = ["github:openfga/openfga"]
 description = "A high performance and flexible authorization/permission engine built for developers and inspired by Google Zanzibar"
-test = { cmd = "openfga version 2>&1 | grep -o 'v[0-9.]*'", expected = "v{{version}}" }
+test = { cmd = "openfga version 2>&1", expected = "v{{version}}" }
