@@ -2818,7 +2818,7 @@
                   "type": "string"
                 },
                 "default": {
-                  "description": "default value for confirmation (yes/no/y/n/true/false)",
+                  "description": "default value for confirmation (yes/no/true/false)",
                   "enum": ["yes", "no", "y", "n", "true", "false"],
                   "type": "string"
                 }
