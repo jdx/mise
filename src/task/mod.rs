@@ -117,6 +117,48 @@ impl std::hash::Hash for RunEntry {
     }
 }
 
+impl RunEntry {
+    pub fn render(
+        &self,
+        tera: &mut tera::Tera,
+        tera_ctx: &tera::Context,
+    ) -> crate::Result<Self> {
+        match self {
+            RunEntry::Script(s) => Ok(RunEntry::Script(s.clone())),
+            RunEntry::SingleTask { task, args, env } => {
+                let task = tera.render_str(task, tera_ctx)?;
+                let args = args
+                    .iter()
+                    .map(|a| tera.render_str(a, tera_ctx))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let env = env
+                    .iter()
+                    .map(|(k, v)| Ok((k.clone(), tera.render_str(v, tera_ctx)?)))
+                    .collect::<Result<IndexMap<_, _>, tera::Error>>()?;
+                Ok(RunEntry::SingleTask { task, args, env })
+            }
+            RunEntry::TaskGroup { tasks } => {
+                let tasks = tasks
+                    .iter()
+                    .map(|t| tera.render_str(t, tera_ctx))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(RunEntry::TaskGroup { tasks })
+            }
+        }
+    }
+
+    pub fn has_tera_template(&self) -> bool {
+        let has_ref = |s: &str| s.contains("{{");
+        match self {
+            RunEntry::Script(_) => false,
+            RunEntry::SingleTask { task, args, env } => {
+                has_ref(task) || args.iter().any(|a| has_ref(a)) || env.values().any(|v| has_ref(v))
+            }
+            RunEntry::TaskGroup { tasks } => tasks.iter().any(|t| has_ref(t)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum Silent {
     #[default]
