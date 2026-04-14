@@ -118,11 +118,7 @@ impl std::hash::Hash for RunEntry {
 }
 
 impl RunEntry {
-    pub fn render(
-        &self,
-        tera: &mut tera::Tera,
-        tera_ctx: &tera::Context,
-    ) -> crate::Result<Self> {
+    pub fn render(&self, tera: &mut tera::Tera, tera_ctx: &tera::Context) -> crate::Result<Self> {
         match self {
             RunEntry::Script(s) => Ok(RunEntry::Script(s.clone())),
             RunEntry::SingleTask { task, args, env } => {
