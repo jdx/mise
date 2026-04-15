@@ -432,6 +432,7 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 | npm        | `package.json`                            |
 | opentofu   | `.opentofu-version`                       |
 | packer     | `.packer-version`                         |
+| perl       | `.perl-version`                           |
 | pnpm       | `package.json`                            |
 | python     | `.python-version`, `.python-versions`     |
 | ruby       | `.ruby-version`, `Gemfile`                |
