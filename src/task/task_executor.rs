@@ -1026,13 +1026,23 @@ impl TaskExecutor {
         false
     }
 
+    fn parse_confirm_default(default: &str) -> Result<bool> {
+        match default.trim().to_ascii_lowercase().as_str() {
+            "yes" | "y" | "true" => Ok(true),
+            "no" | "n" | "false" => Ok(false),
+            _ => Err(eyre!(
+                "invalid task confirm default: {default:?}, expected one of yes/no/y/n/true/false"
+            )),
+        }
+    }
+
     async fn check_confirmation(
         &self,
         config: &Arc<Config>,
         task: &Task,
         env: &BTreeMap<String, String>,
     ) -> Result<()> {
-        if let Some(confirm_template) = &task.confirm
+        if let Some(confirm) = &task.confirm
             && !Settings::get().yes
         {
             let config_root = task.config_root.clone().unwrap_or_default();
@@ -1048,8 +1058,12 @@ impl TaskExecutor {
             }
             tera_ctx.insert("usage", &usage_ctx);
 
-            let message = tera.render_str(confirm_template, &tera_ctx)?;
-            if !crate::ui::confirm(&message).unwrap_or(false) {
+            let message = tera.render_str(confirm.message(), &tera_ctx)?;
+            let default_yes = match confirm.default_value() {
+                Some(default) => Self::parse_confirm_default(default)?,
+                None => true, // keep backwards compatible default of yes if not specified
+            };
+            if !crate::ui::prompt::confirm_with_default(&message, default_yes).unwrap_or(false) {
                 return Err(eyre!("aborted by user"));
             }
         }

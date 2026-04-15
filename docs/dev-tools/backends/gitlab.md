@@ -100,10 +100,12 @@ This uses `git credential fill` and supports credentials stored by helpers such 
 
 ### Debugging token resolution
 
+Use `mise token gitlab` to see which token mise would use for a given host:
+
 ```sh
-mise gitlab token
-mise gitlab token --unmask
-mise gitlab token gitlab.mycompany.com
+mise token gitlab
+mise token gitlab --unmask
+mise token gitlab gitlab.mycompany.com
 ```
 
 ## Tool Options

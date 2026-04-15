@@ -3,7 +3,7 @@ source: src/shell/bash.rs
 expression: bash.activate(opts)
 ---
 # shellcheck shell=bash
-__MISE_EXE=/some/dir/mise
+export __MISE_EXE=/some/dir/mise
 __MISE_FLAGS=(--status)
 __MISE_HOOK_ENABLED=1
 
