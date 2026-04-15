@@ -110,12 +110,12 @@ impl CondaBackend {
             .transpose()
     }
 
-    fn build_solver_task<'a>(
-        flat_records: &'a [RepoDataRecord],
+    fn build_solver_task(
+        flat_records: &[RepoDataRecord],
         specs: Vec<MatchSpec>,
         virtual_packages: Vec<GenericVirtualPackage>,
         before_date: Option<Timestamp>,
-    ) -> Result<SolverTask<[&'a [RepoDataRecord]; 1]>> {
+    ) -> Result<SolverTask<[&[RepoDataRecord]; 1]>> {
         Ok(SolverTask {
             available_packages: [flat_records],
             specs,
