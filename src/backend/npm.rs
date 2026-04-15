@@ -2,6 +2,7 @@ use crate::Result;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
+use crate::backend::platform_target::PlatformTarget;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -11,10 +12,11 @@ use crate::duration::{elapsed_seconds_ceil, process_now};
 use crate::install_context::InstallContext;
 use crate::semver::{semver_is_at_least, semver_is_older_than, semver_triplet};
 use crate::timeout;
-use crate::toolset::{ToolVersion, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use async_trait::async_trait;
 use jiff::Timestamp;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::Path;
 use std::{fmt::Debug, sync::Arc};
@@ -97,6 +99,23 @@ impl Backend for NPMBackend {
 
     fn get_optional_dependencies(&self) -> eyre::Result<Vec<&str>> {
         Ok(vec!["aube"])
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        request: &ToolRequest,
+        _target: &PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        let opts = request.options();
+        let mut result = BTreeMap::new();
+
+        for key in install_time_option_keys() {
+            if let Some(value) = opts.get(&key) {
+                result.insert(key, value.to_string());
+            }
+        }
+
+        result
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
@@ -185,6 +204,7 @@ impl Backend for NPMBackend {
             .await;
         self.check_install_deps(&ctx.config, package_manager, Some(&ctx.ts))
             .await;
+        let options = tv.request.options();
         let install_before_args = match ctx.before_date {
             Some(before_date) => {
                 self.warn_if_package_manager_may_not_support_release_age(ctx, package_manager)
@@ -202,7 +222,7 @@ impl Backend for NPMBackend {
                     .await
                     .unwrap_or_else(|| AUBE_PROGRAM.into());
                 self.write_aube_npmrc(&tv.install_path(), ctx.before_date)?;
-                CmdLineRunner::new(aube_program)
+                let mut cmd = CmdLineRunner::new(aube_program)
                     .arg("add")
                     .arg("--global")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
@@ -215,11 +235,14 @@ impl Backend for NPMBackend {
                             .list_paths(&ctx.config)
                             .await,
                     )?
-                    .current_dir(tv.install_path())
-                    .execute()?;
+                    .current_dir(tv.install_path());
+                if let Some(args) = options.get("aube_args") {
+                    cmd = cmd.args(shell_words::split(args)?);
+                }
+                cmd.execute()?;
             }
             NpmPackageManager::Bun => {
-                CmdLineRunner::new("bun")
+                let mut cmd = CmdLineRunner::new("bun")
                     .arg("install")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
                     .arg("--global")
@@ -240,13 +263,16 @@ impl Backend for NPMBackend {
                             .list_paths(&ctx.config)
                             .await,
                     )?
-                    .current_dir(tv.install_path())
-                    .execute()?;
+                    .current_dir(tv.install_path());
+                if let Some(args) = options.get("bun_args") {
+                    cmd = cmd.args(shell_words::split(args)?);
+                }
+                cmd.execute()?;
             }
             NpmPackageManager::Pnpm => {
                 let bin_dir = tv.install_path().join("bin");
                 crate::file::create_dir_all(&bin_dir)?;
-                CmdLineRunner::new("pnpm")
+                let mut cmd = CmdLineRunner::new("pnpm")
                     .arg("add")
                     .arg("--global")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
@@ -266,11 +292,14 @@ impl Backend for NPMBackend {
                     )?
                     // required to avoid pnpm error "global bin dir isn't in PATH"
                     // https://github.com/pnpm/pnpm/issues/9333
-                    .prepend_path(vec![bin_dir])?
-                    .execute()?;
+                    .prepend_path(vec![bin_dir])?;
+                if let Some(args) = options.get("pnpm_args") {
+                    cmd = cmd.args(shell_words::split(args)?);
+                }
+                cmd.execute()?;
             }
             _ => {
-                CmdLineRunner::new(NPM_PROGRAM)
+                let mut cmd = CmdLineRunner::new(NPM_PROGRAM)
                     .arg("install")
                     .arg("-g")
                     .arg(format!("{}@{}", self.tool_name(), tv.version))
@@ -286,8 +315,11 @@ impl Backend for NPMBackend {
                             .await?
                             .list_paths(&ctx.config)
                             .await,
-                    )?
-                    .execute()?;
+                    )?;
+                if let Some(args) = options.get("npm_args") {
+                    cmd = cmd.args(shell_words::split(args)?);
+                }
+                cmd.execute()?;
             }
         }
         Ok(tv)
@@ -646,6 +678,16 @@ impl NPMBackend {
     }
 }
 
+/// Returns install-time-only option keys for NPM backend.
+pub fn install_time_option_keys() -> Vec<String> {
+    vec![
+        "npm_args".into(),
+        "pnpm_args".into(),
+        "bun_args".into(),
+        "aube_args".into(),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -906,5 +948,45 @@ mod tests {
             NPMBackend::toolset_package_manager_version(&ts, "pnpm"),
             None
         );
+    }
+
+    #[test]
+    fn test_resolve_lockfile_options_includes_install_args_only() {
+        let backend = create_npm_backend("react-devtools");
+        let mut options = ToolVersionOptions::default();
+        options.opts.insert(
+            "npm_args".to_string(),
+            toml::Value::String("--ignore-scripts=false".into()),
+        );
+        options.opts.insert(
+            "bun_args".to_string(),
+            toml::Value::String("--allow-same-version".into()),
+        );
+        options.opts.insert(
+            "aube_args".to_string(),
+            toml::Value::String("--loglevel=warn".into()),
+        );
+        options.install_env.insert(
+            "NPM_CONFIG_REGISTRY".to_string(),
+            "https://registry.example.com".to_string(),
+        );
+
+        let request =
+            ToolRequest::new_opts(backend.ba().clone(), "latest", options, ToolSource::Unknown)
+                .unwrap();
+        let resolved = backend.resolve_lockfile_options(&request, &PlatformTarget::from_current());
+        assert_eq!(
+            resolved.get("npm_args"),
+            Some(&"--ignore-scripts=false".to_string())
+        );
+        assert_eq!(
+            resolved.get("bun_args"),
+            Some(&"--allow-same-version".to_string())
+        );
+        assert_eq!(
+            resolved.get("aube_args"),
+            Some(&"--loglevel=warn".to_string())
+        );
+        assert!(!resolved.contains_key("install_env.NPM_CONFIG_REGISTRY"));
     }
 }

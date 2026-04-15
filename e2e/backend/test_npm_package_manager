@@ -25,6 +25,12 @@ if ! command -v pnpm >/dev/null 2>&1; then
 	assert_succeed "mise use pnpm@latest"
 fi
 
+# Ensure aube is available
+if ! command -v aube >/dev/null 2>&1; then
+	echo "aube not available in test environment, installing..."
+	assert_succeed "mise use aube@latest"
+fi
+
 # Test 1: Default behavior (npm) - checks npm.package_manager="npm" implicitly
 echo "Testing npm backend with default settings (npm)..."
 unset MISE_NPM_BUN
@@ -35,9 +41,14 @@ assert_succeed "mise ls-remote npm:tiny >/dev/null"
 echo "✓ npm backend lists versions using npm"
 
 # Test installation using npm (default)
+cat >.mise.toml <<EOF
+[tools]
+"npm:tiny" = { version = "latest", npm_args = "--foreground-scripts" }
+EOF
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
-assert_succeed "MISE_DEBUG=1 mise install npm:tiny@latest >/tmp/npm_debug.log 2>&1"
+assert_succeed "MISE_DEBUG=1 mise install >/tmp/npm_debug.log 2>&1"
 assert_contains "cat /tmp/npm_debug.log" "--before"
+assert_contains "cat /tmp/npm_debug.log" "--foreground-scripts"
 echo "✓ npm backend successfully installs package using npm (default)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
@@ -45,8 +56,13 @@ mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 echo "Testing npm.package_manager=bun..."
 export MISE_NPM_PACKAGE_MANAGER=bun
 
-assert_succeed "MISE_DEBUG=1 mise install npm:tiny@latest >/tmp/bun_debug.log 2>&1"
+cat >.mise.toml <<EOF
+[tools]
+"npm:tiny" = { version = "latest", bun_args = "--verbose" }
+EOF
+assert_succeed "MISE_DEBUG=1 mise install >/tmp/bun_debug.log 2>&1"
 assert_contains "cat /tmp/bun_debug.log" "--minimum-release-age"
+assert_contains "cat /tmp/bun_debug.log" "--verbose"
 echo "✓ npm backend successfully installs package using bun (package_manager=bun)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
@@ -54,13 +70,32 @@ mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 echo "Testing npm.package_manager=pnpm..."
 export MISE_NPM_PACKAGE_MANAGER=pnpm
 
-if ! MISE_DEBUG=1 mise install npm:tiny@latest >/tmp/pnpm_debug.log 2>&1; then
+cat >.mise.toml <<EOF
+[tools]
+"npm:tiny" = { version = "latest", pnpm_args = "--loglevel=warn" }
+EOF
+if ! MISE_DEBUG=1 mise install >/tmp/pnpm_debug.log 2>&1; then
 	echo "Command failed. Output:"
 	cat /tmp/pnpm_debug.log
 	exit 1
 fi
 assert_contains "cat /tmp/pnpm_debug.log" "--config.minimumReleaseAge="
+assert_contains "cat /tmp/pnpm_debug.log" "--loglevel=warn"
 echo "✓ npm backend successfully installs package using pnpm (package_manager=pnpm)"
+mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
+
+# Test 4: npm.package_manager = "aube"
+echo "Testing npm.package_manager=aube..."
+export MISE_NPM_PACKAGE_MANAGER=aube
+
+cat >.mise.toml <<EOF
+[tools]
+"npm:tiny" = { version = "latest", aube_args = "--reporter append-only" }
+EOF
+assert_succeed "MISE_DEBUG=1 mise install >/tmp/aube_debug.log 2>&1"
+assert_contains "cat /tmp/aube_debug.log" "--reporter"
+assert_contains "cat /tmp/aube_debug.log" "append-only"
+echo "✓ npm backend successfully installs package using aube (package_manager=aube)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
 unset MISE_NPM_PACKAGE_MANAGER

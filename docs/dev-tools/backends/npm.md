@@ -68,3 +68,35 @@ Set these with `mise settings set [VARIABLE] [VALUE]` or by setting the environm
 import Settings from '/components/settings.vue';
 </script>
 <Settings child="npm" :level="3" />
+
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the `npm` backend—these
+go in `[tools]` in `mise.toml`.
+
+### `npm_args`
+
+Additional arguments to pass to `npm` installs when `settings.npm.package_manager = "npm"`.
+
+### `pnpm_args`
+
+Additional arguments to pass to `pnpm` installs when `settings.npm.package_manager = "pnpm"`.
+
+### `bun_args`
+
+Additional arguments to pass to `bun` installs when `settings.npm.package_manager = "bun"`.
+
+### `aube_args`
+
+Additional arguments to pass to `aube add --global` when
+`settings.npm.package_manager = "aube"`.
+
+For example, to allow a pnpm build script for a package:
+
+```toml
+[tools]
+"npm:react-devtools" = {
+  version = "latest",
+  pnpm_args = "--ignore-scripts=false --allow-build=electron",
+}
+```

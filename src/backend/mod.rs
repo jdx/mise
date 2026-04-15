@@ -290,6 +290,7 @@ pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<Stri
         BackendType::Ubi => ubi::install_time_option_keys(),
         BackendType::Cargo => cargo::install_time_option_keys(),
         BackendType::Go => go::install_time_option_keys(),
+        BackendType::Npm => npm::install_time_option_keys(),
         BackendType::Pipx => pipx::install_time_option_keys(),
         _ => vec![],
     }
