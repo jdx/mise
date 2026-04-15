@@ -1,0 +1,9 @@
+description = "Incus migrate imports existing systems into Incus"
+os = ["linux"]
+
+[[backends]]
+full = "github:lxc/incus"
+
+[backends.options]
+asset_pattern = "bin.linux.incus-migrate.{{ arch(x64='x86_64', arm64='aarch64') }}"
+bin = "incus-migrate"

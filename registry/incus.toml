@@ -1,0 +1,18 @@
+description = "Incus is a modern, secure and powerful system container and virtual machine manager"
+os = ["linux", "macos", "windows", "freebsd"]
+
+[[backends]]
+full = "aqua:lxc/incus"
+
+[[backends]]
+full = "github:lxc/incus"
+
+[backends.options]
+asset_pattern = "bin.{{ os() }}.incus.{{ arch(x64='x86_64', arm64='aarch64') }}{% if os() == 'windows' %}.exe{% endif %}"
+bin = "incus"
+
+[backends.options.platforms.windows-x64]
+bin = "incus.exe"
+
+[backends.options.platforms.windows-arm64]
+bin = "incus.exe"
