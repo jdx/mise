@@ -878,6 +878,18 @@ pub fn parse_url_replacements(input: &str) -> Result<IndexMap<String, String>, s
     serde_json::from_str(input)
 }
 
+/// Parse a path list from an environment variable using the OS-native path
+/// separator (`:` on Unix, `;` on Windows). This correctly handles Windows
+/// absolute paths whose drive letters contain `:` (e.g. `C:\foo`).
+fn list_by_os_path_separator<C>(input: &str) -> Result<C, std::convert::Infallible>
+where
+    C: FromIterator<PathBuf>,
+{
+    Ok(std::env::split_paths(input)
+        .filter(|p| !p.as_os_str().is_empty())
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1069,5 +1081,55 @@ mod tests {
         assert!(node.configure_cmd(path).contains("--verbose"));
         assert!(node.make_cmd().starts_with("gmake -j4 -s"));
         assert_eq!(node.make_install_cmd(), "gmake install --no-strip");
+    }
+
+    #[test]
+    fn test_list_by_os_path_separator_empty() {
+        let result: Result<Vec<PathBuf>, _> = list_by_os_path_separator("");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_list_by_os_path_separator_single() {
+        #[cfg(not(windows))]
+        let (input, expected) = ("/foo/bar", PathBuf::from("/foo/bar"));
+        #[cfg(windows)]
+        let (input, expected) = (r"C:\foo\bar", PathBuf::from(r"C:\foo\bar"));
+        let result: Vec<PathBuf> = list_by_os_path_separator(input).unwrap();
+        assert_eq!(result, vec![expected]);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_list_by_os_path_separator_multiple_unix() {
+        let result: Vec<PathBuf> = list_by_os_path_separator("/foo:/bar").unwrap();
+        assert_eq!(result, vec![PathBuf::from("/foo"), PathBuf::from("/bar")]);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_list_by_os_path_separator_multiple_windows() {
+        let result: Vec<PathBuf> = list_by_os_path_separator(r"C:\foo;D:\bar").unwrap();
+        assert_eq!(
+            result,
+            vec![PathBuf::from(r"C:\foo"), PathBuf::from(r"D:\bar")]
+        );
+    }
+
+    #[test]
+    fn test_list_by_os_path_separator_as_btreeset() {
+        // Verify the function works with BTreeSet as the collection type,
+        // matching the field types used in Settings (e.g. trusted_config_paths).
+        #[cfg(not(windows))]
+        let (input, a, b) = ("/foo:/bar", PathBuf::from("/foo"), PathBuf::from("/bar"));
+        #[cfg(windows)]
+        let (input, a, b) = (
+            r"C:\foo;D:\bar",
+            PathBuf::from(r"C:\foo"),
+            PathBuf::from(r"D:\bar"),
+        );
+        let result: BTreeSet<PathBuf> = list_by_os_path_separator(input).unwrap();
+        assert_eq!(result, [a, b].into_iter().collect());
     }
 }
