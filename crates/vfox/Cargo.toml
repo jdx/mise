@@ -71,12 +71,7 @@ native-tls = [
   "reqwest/native-tls",
   "mise-sigstore/native-tls",
 ]
-rustls = [
-  "xx/rustls",
-  "xx/http",
-  "reqwest/rustls-tls",
-  "mise-sigstore/rustls",
-]
+rustls = ["xx/rustls", "xx/http", "reqwest/rustls-tls", "mise-sigstore/rustls"]
 rustls-native-roots = [
   "reqwest/rustls-tls-native-roots",
   "xx/http",

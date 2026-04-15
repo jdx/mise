@@ -23,4 +23,7 @@ thiserror = "2"
 default = ["rustls"]
 native-tls = ["reqwest/native-tls", "sigstore-verify/native-tls"]
 rustls = ["reqwest/rustls-tls", "sigstore-verify/rustls"]
-rustls-native-roots = ["reqwest/rustls-tls-native-roots", "sigstore-verify/rustls"]
+rustls-native-roots = [
+  "reqwest/rustls-tls-native-roots",
+  "sigstore-verify/rustls",
+]
