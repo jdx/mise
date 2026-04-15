@@ -44,6 +44,17 @@ to use the aqua backend. To see these tools, run `mise registry | grep aqua:`.
 
 ## Tool Options
 
+### `vars`
+
+Some aqua registry entries define template variables (for example `{{.Vars.channel}}`).
+Set them via tool options using either top-level keys or a nested `vars` table:
+
+```toml
+[tools]
+"aqua:flutter/flutter" = { version = "3.32.8", channel = "stable" }
+"aqua:scenarigo/scenarigo" = { version = "0.21.0", vars = { go_version = "1.24" } }
+```
+
 ### `symlink_bins`
 
 Some tools bundle extra executables that you may not want exposed on PATH. For example, `aws-cli` bundles

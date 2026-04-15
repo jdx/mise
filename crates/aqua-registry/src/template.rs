@@ -147,23 +147,36 @@ fn lex(code: &str) -> Result<Vec<Token<'_>>> {
             // Check if this is a property access (after ) or identifier)
             let next_char = code.chars().nth(1);
             if next_char.is_some_and(|c| c.is_alphabetic()) {
-                // This could be .Key or .Property
-                let end = code[1..]
+                // This could be .Key or .Property, and can also include chained fields
+                // like .Vars.channel.
+                let first_end = code[1..]
                     .chars()
                     .enumerate()
                     .find(|(_, c)| !c.is_alphanumeric() && *c != '_')
                     .map(|(i, _)| i + 1)
                     .unwrap_or(code.len());
 
-                // If preceded by RParen, it's a property access
                 if tokens.last().is_some_and(|t| t.is_r_paren()) {
                     tokens.push(Token::Dot);
-                    tokens.push(Token::Ident(&code[1..end]));
+                    tokens.push(Token::Ident(&code[1..first_end]));
                 } else {
-                    // Otherwise it's a key reference
-                    tokens.push(Token::Key(&code[1..end]));
+                    tokens.push(Token::Key(&code[1..first_end]));
                 }
-                code = &code[end..];
+                code = &code[first_end..];
+
+                while code.starts_with(".")
+                    && code.chars().nth(1).is_some_and(|c| c.is_alphabetic())
+                {
+                    let end = code[1..]
+                        .chars()
+                        .enumerate()
+                        .find(|(_, c)| !c.is_alphanumeric() && *c != '_')
+                        .map(|(i, _)| i + 1)
+                        .unwrap_or(code.len());
+                    tokens.push(Token::Dot);
+                    tokens.push(Token::Ident(&code[1..end]));
+                    code = &code[end..];
+                }
             } else {
                 tokens.push(Token::Dot);
                 code = &code[1..];
@@ -300,7 +313,17 @@ fn parse_arg(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Resul
         }
         Some(Token::Key(k)) => {
             tokens.next();
-            Ok(Expr::Var(k.to_string()))
+            let mut result = Expr::Var(k.to_string());
+            while matches!(tokens.peek(), Some(Token::Dot)) {
+                tokens.next(); // consume dot
+                skip_whitespace(tokens);
+                if let Some(Token::Ident(prop)) = tokens.next() {
+                    result = Expr::PropertyAccess(Box::new(result), prop.to_string());
+                } else {
+                    bail!("expected identifier after dot");
+                }
+            }
+            Ok(result)
         }
         Some(Token::String(s)) => {
             tokens.next();
@@ -442,6 +465,12 @@ impl<'a> Evaluator<'a> {
 
     /// Evaluate property access
     fn eval_property(&self, expr: &Expr, prop: &str) -> Result<Box<dyn Value>> {
+        if let Expr::Var(name) = expr {
+            let key = format!("{name}.{prop}");
+            if let Some(value) = self.ctx.get(&key) {
+                return Ok(Box::new(StringValue(value.clone())) as Box<dyn Value>);
+            }
+        }
         let value = self.eval_value(expr)?;
         let prop_value = value.get_property(prop)?;
         Ok(Box::new(StringValue(prop_value)) as Box<dyn Value>)
@@ -682,5 +711,19 @@ mod tests {
         let tmpl = r#"{{.AssetWithoutExt | trimSuffix "-bin"}}/bin/gradle"#;
         let ctx = hashmap(vec![("AssetWithoutExt", "gradle-8.14.3-bin")]);
         assert_eq!(render(tmpl, &ctx).unwrap(), "gradle-8.14.3/bin/gradle");
+    }
+
+    #[test]
+    fn test_render_vars_property_access() {
+        let tmpl = "{{.Vars.channel}}";
+        let ctx = hashmap(vec![("Vars.channel", "stable")]);
+        assert_eq!(render(tmpl, &ctx).unwrap(), "stable");
+    }
+
+    #[test]
+    fn test_render_vars_property_in_function_arg() {
+        let tmpl = "{{title .Vars.channel}}";
+        let ctx = hashmap(vec![("Vars.channel", "stable")]);
+        assert_eq!(render(tmpl, &ctx).unwrap(), "Stable");
     }
 }

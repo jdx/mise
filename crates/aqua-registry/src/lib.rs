@@ -13,7 +13,8 @@ pub use registry::{
     NoOpCacheStore, package_ids,
 };
 pub use types::{
-    AquaChecksum, AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType, RegistryYaml,
+    AquaChecksum, AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType, AquaVar,
+    RegistryYaml,
 };
 
 use thiserror::Error;

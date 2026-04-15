@@ -13,7 +13,7 @@ use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolVersion, ToolVersionOptions};
 use crate::ui::progress_report::SingleReport;
 use crate::{
     aqua::aqua_registry_wrapper::{
@@ -31,7 +31,10 @@ use itertools::Itertools;
 use regex::Regex;
 use std::borrow::Cow;
 use std::fmt::Debug;
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 #[derive(Debug)]
 pub struct AquaBackend {
@@ -55,10 +58,7 @@ impl Backend for AquaBackend {
     }
 
     async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
-        let pkg = match AQUA_REGISTRY
-            .package_with_version(&self.id, &[&tv.version])
-            .await
-        {
+        let pkg = match self.package_with_options(tv, &[&tv.version]).await {
             Ok(pkg) => pkg,
             Err(_) => return 3, // fallback to default
         };
@@ -320,9 +320,7 @@ impl Backend for AquaBackend {
             Some(v_prefixed) => vec![v.as_str(), v_prefixed.as_str()],
             None => vec![v.as_str()],
         };
-        let pkg = AQUA_REGISTRY
-            .package_with_version(&self.id, &versions)
-            .await?;
+        let pkg = self.package_with_options(&tv, &versions).await?;
         if let Some(prefix) = &pkg.version_prefix
             && !v.starts_with(prefix)
         {
@@ -506,6 +504,7 @@ impl Backend for AquaBackend {
                 let pkg = AQUA_REGISTRY
                     .package_with_version(&self.id, &[&tv.version])
                     .await?;
+                let pkg = Self::apply_var_options(pkg, tv.request.options());
 
                 let srcs = self.srcs(&pkg, tv)?;
                 let paths = if srcs.is_empty() {
@@ -600,7 +599,10 @@ impl Backend for AquaBackend {
         // Using package_with_version() here would apply overrides for the current host
         // platform first, which can leak host-specific overrides into cross-platform lock.
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
-        let pkg = pkg.with_version(&versions, target_os, target_arch);
+        let pkg = Self::apply_var_options(
+            pkg.with_version(&versions, target_os, target_arch),
+            tv.request.options(),
+        );
 
         // Apply version prefix if present
         if let Some(prefix) = &pkg.version_prefix
@@ -723,6 +725,33 @@ impl Backend for AquaBackend {
 }
 
 impl AquaBackend {
+    async fn package_with_options(
+        &self,
+        tv: &ToolVersion,
+        versions: &[&str],
+    ) -> Result<AquaPackage> {
+        let pkg = AQUA_REGISTRY
+            .package_with_version(&self.id, versions)
+            .await?;
+        Ok(Self::apply_var_options(pkg, tv.request.options()))
+    }
+
+    fn apply_var_options(pkg: AquaPackage, opts: ToolVersionOptions) -> AquaPackage {
+        if pkg.vars.is_empty() {
+            return pkg;
+        }
+        let var_values: HashMap<String, String> = pkg
+            .vars
+            .iter()
+            .filter_map(|var| {
+                opts.get_nested_string(&format!("vars.{}", var.name))
+                    .or_else(|| opts.get(&var.name).map(|s| s.to_string()))
+                    .map(|value| (var.name.clone(), value))
+            })
+            .collect();
+        pkg.with_var_values(&var_values)
+    }
+
     /// Detect provenance type from aqua registry package config.
     ///
     /// Returns the highest-priority provenance type that is configured and

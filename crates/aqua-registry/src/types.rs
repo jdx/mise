@@ -38,6 +38,7 @@ pub struct AquaPackage {
     pub complete_windows_ext: bool,
     pub supported_envs: Vec<String>,
     pub files: Vec<AquaFile>,
+    pub vars: Vec<AquaVar>,
     pub replacements: HashMap<String, String>,
     pub version_prefix: Option<String>,
     version_filter: Option<String>,
@@ -54,6 +55,8 @@ pub struct AquaPackage {
     pub no_asset: bool,
     pub error_message: Option<String>,
     pub path: Option<String>,
+    #[serde(skip)]
+    var_values: HashMap<String, String>,
 }
 
 /// Override configuration for specific OS/architecture combinations
@@ -63,6 +66,15 @@ struct AquaOverride {
     pkg: AquaPackage,
     goos: Option<String>,
     goarch: Option<String>,
+}
+
+/// Variable definition for Aqua templates
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct AquaVar {
+    pub name: String,
+    pub default: Option<String>,
+    #[serde(default)]
+    pub required: bool,
 }
 
 /// File definition within a package
@@ -195,6 +207,7 @@ impl Default for AquaPackage {
             complete_windows_ext: true,
             supported_envs: Vec::new(),
             files: Vec::new(),
+            vars: Vec::new(),
             replacements: HashMap::new(),
             version_prefix: None,
             version_filter: None,
@@ -210,6 +223,7 @@ impl Default for AquaPackage {
             no_asset: false,
             error_message: None,
             path: None,
+            var_values: HashMap::new(),
         }
     }
 }
@@ -231,6 +245,12 @@ impl AquaPackage {
         }) {
             self = apply_override(self, &avo.pkg)
         }
+        self
+    }
+
+    /// Apply user-provided variable values used by aqua `vars` templates.
+    pub fn with_var_values(mut self, var_values: &HashMap<String, String>) -> AquaPackage {
+        self.var_values = var_values.clone();
         self
     }
 
@@ -401,9 +421,32 @@ impl AquaPackage {
         ctx.insert("GOARCH".to_string(), replace(actual_arch));
         ctx.insert("Arch".to_string(), replace(actual_arch));
         ctx.insert("Format".to_string(), replace(&self.format));
+        ctx.extend(self.vars_ctx()?);
         ctx.extend(overrides.clone());
 
         crate::template::render(s, &ctx)
+    }
+
+    fn vars_ctx(&self) -> Result<HashMap<String, String>> {
+        let mut ctx = HashMap::new();
+        for var in &self.vars {
+            let value = self
+                .var_values
+                .get(&var.name)
+                .cloned()
+                .or_else(|| self.var_values.get(&format!("vars.{}", var.name)).cloned())
+                .or_else(|| var.default.clone());
+            match value {
+                Some(value) => {
+                    ctx.insert(format!("Vars.{}", var.name), value);
+                }
+                None if var.required => {
+                    return Err(eyre!("required aqua var not set: {}", var.name));
+                }
+                None => {}
+            }
+        }
+        Ok(ctx)
     }
 
     /// Set up version filter expression if configured
@@ -560,6 +603,9 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
     }
     if !avo.files.is_empty() {
         orig.files = avo.files.clone();
+    }
+    if !avo.vars.is_empty() {
+        orig.vars = avo.vars.clone();
     }
     orig.replacements.extend(avo.replacements.clone());
     if let Some(avo_version_prefix) = avo.version_prefix.clone() {
@@ -1029,5 +1075,57 @@ mod tests {
                 "Asset string should not have double .exe, got: {s}"
             );
         }
+    }
+
+    #[test]
+    fn test_vars_default_value() {
+        let pkg = AquaPackage {
+            asset: "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string(),
+            vars: vec![AquaVar {
+                name: "channel".to_string(),
+                default: Some("stable".to_string()),
+                required: false,
+            }],
+            ..Default::default()
+        };
+        let asset = pkg.asset("1.0.0", "linux", "amd64").unwrap();
+        assert_eq!(asset, "tool-stable-1.0.0.tar.gz");
+    }
+
+    #[test]
+    fn test_vars_override_value() {
+        let mut var_values = HashMap::new();
+        var_values.insert("channel".to_string(), "beta".to_string());
+        let pkg = AquaPackage {
+            asset: "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string(),
+            vars: vec![AquaVar {
+                name: "channel".to_string(),
+                default: Some("stable".to_string()),
+                required: false,
+            }],
+            ..Default::default()
+        }
+        .with_var_values(&var_values);
+        let asset = pkg.asset("1.0.0", "linux", "amd64").unwrap();
+        assert_eq!(asset, "tool-beta-1.0.0.tar.gz");
+    }
+
+    #[test]
+    fn test_vars_required_missing() {
+        let pkg = AquaPackage {
+            asset: "tool-{{.Vars.channel}}-{{.Version}}.tar.gz".to_string(),
+            vars: vec![AquaVar {
+                name: "channel".to_string(),
+                default: None,
+                required: true,
+            }],
+            ..Default::default()
+        };
+        let err = pkg.asset("1.0.0", "linux", "amd64").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("required aqua var not set: channel"),
+            "unexpected error: {err}"
+        );
     }
 }
