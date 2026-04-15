@@ -230,7 +230,8 @@ impl GoBackend {
                             ProxyVersionInfoResult::Error => return Ok(None),
                         }
                     }
-                    let mut version_infos = fetch_proxy_version_infos(&proxies, path, &versions).await;
+                    let mut version_infos =
+                        fetch_proxy_version_infos(&proxies, path, &versions).await;
                     version_infos.sort_by_cached_key(|v| Versioning::new(&v.version));
                     return Ok(Some(version_infos));
                 }
