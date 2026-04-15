@@ -332,6 +332,13 @@ pub struct Task {
     pub global: bool,
     #[serde(default)]
     pub raw: bool,
+    /// When true, mise does not parse arguments to the task at all:
+    /// the usage spec parser is bypassed and `--help`/`-h` are passed through
+    /// to the underlying command instead of being intercepted by mise.
+    /// Useful when the task is a thin proxy for a tool that already has its
+    /// own argument parser (e.g. `next build`, Django manage.py, argparse).
+    #[serde(default)]
+    pub raw_args: bool,
     #[serde(default)]
     pub interactive: bool,
     #[serde(default)]
@@ -422,6 +429,13 @@ pub struct Task {
     pub depends_post_raw: Option<Vec<TaskDep>>,
     #[serde(skip)]
     pub wait_for_raw: Option<Vec<TaskDep>>,
+
+    /// Args supplied after a literal `--` separator on the command line.
+    /// Tracked separately from `args` so the usage parser can be bypassed
+    /// when these contain `--help`/`-h`, restoring the documented escape
+    /// hatch for passing help through to the underlying command.
+    #[serde(skip)]
+    pub trailing_args: Vec<String>,
 }
 
 impl Task {
@@ -518,6 +532,7 @@ impl Task {
         task.dir = p.parse_str("dir");
         task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
         task.raw = p.parse_bool("raw").unwrap_or_default();
+        task.raw_args = p.parse_bool("raw_args").unwrap_or_default();
         task.interactive = p.parse_bool("interactive").unwrap_or_default();
         task.sources = p.parse_array("sources").unwrap_or_default();
         task.outputs = p.get_raw("outputs").map(|to| to.into()).unwrap_or_default();
@@ -920,7 +935,18 @@ impl Task {
         let (spec, scripts) = self
             .parse_usage_spec_with_vars(config, cwd.clone(), env, extra_vars.clone())
             .await?;
-        if has_any_args_defined(&spec) {
+        // Skip the usage parser entirely when the task opts into raw arg
+        // passthrough, or when the user explicitly asked for `--help`/`-h`
+        // to reach the underlying command via `mise run task -- --help`.
+        // Without this bypass the usage crate intercepts `--help` even after
+        // `--`, which breaks proxy tasks that wrap tools with their own
+        // argument parsers.
+        let bypass_parser = self.raw_args
+            || self
+                .trailing_args
+                .iter()
+                .any(|a| a == "--help" || a == "-h");
+        if !bypass_parser && has_any_args_defined(&spec) {
             let scripts_only = self.run_script_strings();
             let scripts = Self::make_script_parser(cwd, extra_vars)
                 .parse_run_scripts_with_args(config, self, &scripts_only, env, args, &spec)
@@ -1510,6 +1536,8 @@ impl Default for Task {
             hide: false,
             global: false,
             raw: false,
+            raw_args: false,
+            trailing_args: vec![],
             interactive: false,
             sources: vec![],
             outputs: Default::default(),
@@ -2632,6 +2660,7 @@ echo "hello world"
 #MISE dir="/some/dir"
 #MISE hide=true
 #MISE raw=true
+#MISE raw_args=true
 #MISE interactive=true
 #MISE sources=["src1.txt", "src2.txt"]
 #MISE outputs=["out1.txt"]
@@ -2658,6 +2687,7 @@ echo "test"
         assert_eq!(task.dir, Some("/some/dir".to_string()));
         assert_eq!(task.hide, true);
         assert_eq!(task.raw, true);
+        assert_eq!(task.raw_args, true);
         assert_eq!(task.interactive, true);
         assert_eq!(task.sources, vec!["src1.txt", "src2.txt"]);
         assert_eq!(task.shell, Some("bash -c".to_string()));

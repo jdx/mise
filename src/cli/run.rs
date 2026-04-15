@@ -267,17 +267,22 @@ impl Run {
             let task_list = get_task_lists(&config, &args, false, false).await?;
 
             if let Some(task) = task_list.first() {
-                // Get usage spec to check if task has defined args/flags
-                let spec = task.parse_usage_spec_for_display(&config).await?;
+                // raw_args tasks act as proxies for tools that handle their
+                // own --help — fall through to normal execution so the flag
+                // reaches the underlying command instead of mise.
+                if !task.raw_args {
+                    // Get usage spec to check if task has defined args/flags
+                    let spec = task.parse_usage_spec_for_display(&config).await?;
 
-                if has_any_usage_spec(&spec) {
-                    // Task has usage spec defined, render help using usage library
-                    println!("{}", usage::docs::cli::render_help(&spec, &spec.cmd, true));
-                } else {
-                    // Task has no usage defined, show basic task info
-                    display_task_help(task)?;
+                    if has_any_usage_spec(&spec) {
+                        // Task has usage spec defined, render help using usage library
+                        println!("{}", usage::docs::cli::render_help(&spec, &spec.cmd, true));
+                    } else {
+                        // Task has no usage defined, show basic task info
+                        display_task_help(task)?;
+                    }
+                    return Ok(());
                 }
-                return Ok(());
             } else {
                 // No task found, show run command help
                 self.get_clap_command().print_long_help()?;
@@ -319,10 +324,13 @@ impl Run {
 
         let mut task_list = get_task_lists(&config, &args, true, self.skip_deps).await?;
 
-        // Args after -- go directly to tasks (no prefix)
+        // Args after -- go directly to tasks (no prefix). They are also
+        // recorded on `trailing_args` so the task renderer can detect
+        // `-- --help` / `-- -h` and bypass the usage parser for them.
         if !self.args_last.is_empty() {
             for task in &mut task_list {
                 task.args.extend(self.args_last.clone());
+                task.trailing_args = self.args_last.clone();
             }
         }
 
