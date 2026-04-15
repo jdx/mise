@@ -249,9 +249,12 @@ This follows the same semantics as Git's `GIT_CEILING_DIRECTORIES`.
 This is an early-init setting: it must be set in `.miserc.toml`, environment
 variables, or CLI flags. Setting it in `mise.toml` will have no effect because
 config file discovery has already occurred by the time `mise.toml` is read.
+
+Paths are separated by the OS path separator when using the environment variable
+(`:` on Unix, `;` on Windows).
 """
 env = "MISE_CEILING_PATHS"
-parse_env = "list_by_colon"
+parse_env = "list_by_os_path_separator"
 rc = true
 rust_type = "BTreeSet<PathBuf>"
 type = "ListPath"
@@ -996,9 +999,12 @@ This is a list of config paths that mise will ignore.
 This is an early-init setting: it must be set in `.miserc.toml`, environment
 variables, or CLI flags. Setting it in `mise.toml` will have no effect because
 config file discovery has already occurred by the time `mise.toml` is read.
+
+Paths are separated by the OS path separator when using the environment variable
+(`:` on Unix, `;` on Windows).
 """
 env = "MISE_IGNORED_CONFIG_PATHS"
-parse_env = "list_by_colon"
+parse_env = "list_by_os_path_separator"
 rc = true
 rust_type = "BTreeSet<PathBuf>"
 type = "ListPath"
@@ -1809,11 +1815,12 @@ This is useful for shared environments like Docker containers or bastion hosts w
 base set of tools is pre-installed in a shared location, and users can install additional
 tools in their own directory.
 
-Paths are colon-separated when using the environment variable.
+Paths are separated by the OS path separator when using the environment variable
+(`:` on Unix, `;` on Windows).
 """
 env = "MISE_SHARED_INSTALL_DIRS"
 optional = true
-parse_env = "list_by_colon"
+parse_env = "list_by_os_path_separator"
 rust_type = "Vec<PathBuf>"
 type = "ListPath"
 
@@ -1948,8 +1955,14 @@ type = "Path"
 [task.disable_paths]
 default = []
 description = "Paths that mise will not look for tasks in."
+docs = """
+Paths that mise will not look for tasks in.
+
+Paths are separated by the OS path separator when using the environment variable
+(`:` on Unix, `;` on Windows).
+"""
 env = "MISE_TASK_DISABLE_PATHS"
-parse_env = "list_by_colon"
+parse_env = "list_by_os_path_separator"
 rust_type = "BTreeSet<PathBuf>"
 type = "ListPath"
 
@@ -2216,9 +2229,11 @@ type = "Bool"
 default = []
 description = """This is a list of config paths that mise will automatically mark as \
 trusted. Any config files under these paths will be trusted without prompting. \
-Set to `["/"]` to trust all config files, effectively disabling the trust mechanism."""
+Set to `["/"]` to trust all config files, effectively disabling the trust mechanism. \
+Paths are separated by the OS path separator when using the environment variable \
+(`:` on Unix, `;` on Windows)."""
 env = "MISE_TRUSTED_CONFIG_PATHS"
-parse_env = "list_by_colon"
+parse_env = "list_by_os_path_separator"
 rust_type = "BTreeSet<PathBuf>"
 type = "ListPath"
 
