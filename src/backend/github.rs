@@ -52,10 +52,10 @@ enum VerificationStatus {
 /// Check if an SLSA verification error indicates a format/parsing issue rather than
 /// an actual verification failure. Some provenance files (e.g., BuildKit raw provenance)
 /// exist but aren't in a sigstore-verifiable format.
-fn is_slsa_format_issue(e: &sigstore_verification::AttestationError) -> bool {
+fn is_slsa_format_issue(e: &mise_sigstore::AttestationError) -> bool {
     match e {
-        sigstore_verification::AttestationError::NoAttestations => true,
-        sigstore_verification::AttestationError::Verification(msg) => {
+        mise_sigstore::AttestationError::NoAttestations => true,
+        mise_sigstore::AttestationError::Verification(msg) => {
             msg.contains("does not contain valid attestations")
                 || msg.contains("No certificate found")
                 || msg.contains("neither DSSE envelope nor message signature")
@@ -475,30 +475,21 @@ impl UnifiedGitBackend {
             let parts: Vec<&str> = repo.split('/').collect();
             if parts.len() == 2 {
                 let (owner, repo_name) = (parts[0], parts[1]);
-                match sigstore_verification::sources::github::GitHubSource::new(
+                match mise_sigstore::has_github_attestations(
                     owner,
                     repo_name,
+                    digest,
                     env::GITHUB_TOKEN.as_deref(),
-                ) {
-                    Ok(source) => {
-                        use sigstore_verification::AttestationSource;
-                        let artifact_ref = sigstore_verification::ArtifactRef::from_digest(digest);
-                        match source.fetch_attestations(&artifact_ref).await {
-                            Ok(attestations) if !attestations.is_empty() => {
-                                return Some(ProvenanceType::GithubAttestations);
-                            }
-                            Ok(_) => {}
-                            Err(e) => {
-                                warn!(
-                                    "GitHub attestation API query failed for {owner}/{repo_name}: {e}. \
-                                     Lockfile may not record github-attestations provenance."
-                                );
-                            }
-                        }
+                )
+                .await
+                {
+                    Ok(true) => {
+                        return Some(ProvenanceType::GithubAttestations);
                     }
+                    Ok(false) => {}
                     Err(e) => {
                         warn!(
-                            "Failed to create GitHub attestation source for {owner}/{repo_name}: {e}. \
+                            "GitHub attestation API query failed for {owner}/{repo_name}: {e}. \
                              Lockfile may not record github-attestations provenance."
                         );
                     }
@@ -572,7 +563,7 @@ impl UnifiedGitBackend {
             let parts: Vec<&str> = repo.split('/').collect();
             if parts.len() == 2 {
                 let (owner, repo_name) = (parts[0], parts[1]);
-                match sigstore_verification::verify_github_attestation(
+                match mise_sigstore::verify_github_attestation(
                     &artifact_path,
                     owner,
                     repo_name,
@@ -590,7 +581,7 @@ impl UnifiedGitBackend {
                             "GitHub artifact attestations verification returned false"
                         ));
                     }
-                    Err(sigstore_verification::AttestationError::NoAttestations) => {
+                    Err(mise_sigstore::AttestationError::NoAttestations) => {
                         debug!("no GitHub attestations found at lock time, trying SLSA");
                     }
                     Err(e) => {
@@ -638,12 +629,8 @@ impl UnifiedGitBackend {
                 .await?;
 
                 let provenance_url = provenance_asset.browser_download_url.clone();
-                match sigstore_verification::verify_slsa_provenance(
-                    &artifact_path,
-                    &provenance_path,
-                    1u8,
-                )
-                .await
+                match mise_sigstore::verify_slsa_provenance(&artifact_path, &provenance_path, 1u8)
+                    .await
                 {
                     Ok(true) => {
                         debug!("lock-time SLSA provenance verified for {}", repo);
@@ -1565,7 +1552,7 @@ impl UnifiedGitBackend {
         }
         let (owner, repo_name) = (parts[0], parts[1]);
 
-        match sigstore_verification::verify_github_attestation(
+        match mise_sigstore::verify_github_attestation(
             file_path,
             owner,
             repo_name,
@@ -1582,7 +1569,7 @@ impl UnifiedGitBackend {
                 }
                 Ok(verified)
             }
-            Err(sigstore_verification::AttestationError::NoAttestations) => {
+            Err(mise_sigstore::AttestationError::NoAttestations) => {
                 Err(VerificationStatus::NoAttestations)
             }
             Err(e) => Err(VerificationStatus::Error(e.to_string())),
@@ -1673,7 +1660,7 @@ impl UnifiedGitBackend {
 
         // Verify the provenance
         let provenance_download_url = provenance_asset.browser_download_url.clone();
-        match sigstore_verification::verify_slsa_provenance(
+        match mise_sigstore::verify_slsa_provenance(
             file_path,
             &provenance_path,
             1, // Minimum SLSA level
@@ -1918,14 +1905,14 @@ mod tests {
 
     #[test]
     fn test_is_slsa_format_issue_no_attestations() {
-        let err = sigstore_verification::AttestationError::NoAttestations;
+        let err = mise_sigstore::AttestationError::NoAttestations;
         assert!(is_slsa_format_issue(&err));
     }
 
     #[test]
     fn test_is_slsa_format_issue_invalid_format() {
         // This is the exact error from BuildKit raw provenance files parsed line-by-line
-        let err = sigstore_verification::AttestationError::Verification(
+        let err = mise_sigstore::AttestationError::Verification(
             "File does not contain valid attestations or SLSA provenance".to_string(),
         );
         assert!(is_slsa_format_issue(&err));
@@ -1933,7 +1920,7 @@ mod tests {
 
     #[test]
     fn test_is_slsa_format_issue_no_certificate() {
-        let err = sigstore_verification::AttestationError::Verification(
+        let err = mise_sigstore::AttestationError::Verification(
             "No certificate found in attestation bundle".to_string(),
         );
         assert!(is_slsa_format_issue(&err));
@@ -1941,7 +1928,7 @@ mod tests {
 
     #[test]
     fn test_is_slsa_format_issue_no_dsse_envelope() {
-        let err = sigstore_verification::AttestationError::Verification(
+        let err = mise_sigstore::AttestationError::Verification(
             "Bundle has neither DSSE envelope nor message signature".to_string(),
         );
         assert!(is_slsa_format_issue(&err));
@@ -1950,7 +1937,7 @@ mod tests {
     #[test]
     fn test_is_slsa_format_issue_real_verification_failure() {
         // Digest mismatch = real verification failure, NOT a format issue
-        let err = sigstore_verification::AttestationError::Verification(
+        let err = mise_sigstore::AttestationError::Verification(
             "Artifact digest mismatch: expected abc123".to_string(),
         );
         assert!(!is_slsa_format_issue(&err));
@@ -1959,7 +1946,7 @@ mod tests {
     #[test]
     fn test_is_slsa_format_issue_signature_failure() {
         // Signature verification failure = real failure, NOT a format issue
-        let err = sigstore_verification::AttestationError::Verification(
+        let err = mise_sigstore::AttestationError::Verification(
             "P-256 signature verification failed: invalid signature".to_string(),
         );
         assert!(!is_slsa_format_issue(&err));
@@ -1967,7 +1954,7 @@ mod tests {
 
     #[test]
     fn test_is_slsa_format_issue_api_error() {
-        let err = sigstore_verification::AttestationError::Api("connection refused".to_string());
+        let err = mise_sigstore::AttestationError::Api("connection refused".to_string());
         assert!(!is_slsa_format_issue(&err));
     }
 }

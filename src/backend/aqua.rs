@@ -851,7 +851,7 @@ impl AquaBackend {
             .as_ref()
             .and_then(|att| att.signer_workflow.clone());
 
-        match sigstore_verification::verify_github_attestation(
+        match mise_sigstore::verify_github_attestation(
             artifact_path,
             &pkg.repo_owner,
             &pkg.repo_name,
@@ -920,9 +920,7 @@ impl AquaBackend {
         HTTP.download_file(&provenance_url, &provenance_path, pr)
             .await?;
 
-        match sigstore_verification::verify_slsa_provenance(artifact_path, &provenance_path, 1u8)
-            .await
-        {
+        match mise_sigstore::verify_slsa_provenance(artifact_path, &provenance_path, 1u8).await {
             Ok(true) => {
                 debug!("SLSA provenance verified");
                 Ok(provenance_url)
@@ -1037,7 +1035,7 @@ impl AquaBackend {
                 checksum_path.with_extension("sig")
             };
 
-            match sigstore_verification::verify_cosign_signature_with_key(
+            match mise_sigstore::verify_cosign_signature_with_key(
                 checksum_path,
                 &sig_path,
                 &key_path,
@@ -1068,8 +1066,7 @@ impl AquaBackend {
             let bundle_path = download_dir.join(get_filename_from_url(&bundle_url));
             HTTP.download_file(&bundle_url, &bundle_path, pr).await?;
 
-            match sigstore_verification::verify_cosign_signature(checksum_path, &bundle_path).await
-            {
+            match mise_sigstore::verify_cosign_signature(checksum_path, &bundle_path).await {
                 Ok(true) => {
                     debug!("cosign (bundle) verified");
                     Ok(())

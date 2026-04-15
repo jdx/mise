@@ -625,7 +625,7 @@ impl PythonPlugin {
         ctx.pr
             .set_message("verify GitHub artifact attestations".to_string());
 
-        match sigstore_verification::verify_github_attestation(
+        match mise_sigstore::verify_github_attestation(
             tarball_path,
             "astral-sh",
             "python-build-standalone",
@@ -646,7 +646,7 @@ impl PythonPlugin {
             Ok(false) => Err(eyre!(
                 "GitHub artifact attestations verification failed for python@{version}\n{ATTESTATION_HELP}"
             )),
-            Err(sigstore_verification::AttestationError::NoAttestations) => Err(eyre!(
+            Err(mise_sigstore::AttestationError::NoAttestations) => Err(eyre!(
                 "No GitHub artifact attestations found for python@{version}\n{ATTESTATION_HELP}"
             )),
             Err(e) => Err(eyre!(

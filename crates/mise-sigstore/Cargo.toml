@@ -1,0 +1,26 @@
+[package]
+name = "mise-sigstore"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Sigstore verification helpers for mise"
+repository = "https://github.com/jdx/mise"
+
+[dependencies]
+hex = "0.4"
+base64 = "0.22"
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sigstore-trust-root = { version = "0.6.4", default-features = false }
+sigstore-types = { version = "0.6.4", default-features = false }
+sigstore-verify = { version = "0.6.4", default-features = false }
+snap = "1"
+thiserror = "2"
+
+[features]
+default = ["rustls"]
+native-tls = ["reqwest/native-tls", "sigstore-verify/native-tls"]
+rustls = ["reqwest/rustls-tls", "sigstore-verify/rustls"]
+rustls-native-roots = ["reqwest/rustls-tls-native-roots", "sigstore-verify/rustls"]
