@@ -174,8 +174,7 @@ impl Backend for AquaBackend {
             p.cosign
                 .as_ref()
                 .is_some_and(|cosign| cosign.enabled.unwrap_or(true))
-                || p
-                    .checksum
+                || p.checksum
                     .as_ref()
                     .and_then(|c| c.cosign.as_ref())
                     .is_some_and(|cosign| cosign.enabled.unwrap_or(true))
@@ -738,7 +737,10 @@ impl AquaBackend {
     }
 
     fn checksum_cosign_config(pkg: &AquaPackage) -> Option<(&AquaChecksum, &AquaCosign)> {
-        let checksum = pkg.checksum.as_ref().filter(|checksum| checksum.enabled())?;
+        let checksum = pkg
+            .checksum
+            .as_ref()
+            .filter(|checksum| checksum.enabled())?;
         let cosign = checksum
             .cosign
             .as_ref()
@@ -1086,8 +1088,7 @@ impl AquaBackend {
             let bundle_path = download_dir.join(get_filename_from_url(&bundle_url));
             HTTP.download_file(&bundle_url, &bundle_path, pr).await?;
 
-            match sigstore_verification::verify_cosign_signature(target_path, &bundle_path).await
-            {
+            match sigstore_verification::verify_cosign_signature(target_path, &bundle_path).await {
                 Ok(true) => {
                     debug!("cosign (bundle) verified");
                     Ok(())
@@ -1787,7 +1788,7 @@ impl AquaBackend {
                 download_path,
                 Some(ctx.pr.as_ref()),
             )
-                .await?;
+            .await?;
 
             ctx.pr.set_message("✓ Cosign verified".to_string());
             self.record_cosign_provenance(tv);
