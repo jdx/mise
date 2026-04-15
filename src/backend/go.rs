@@ -4,7 +4,7 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
-use crate::cmd::CmdLineRunner;
+use crate::cmd::{CmdLineRunner, cmd};
 use crate::config::Config;
 use crate::config::Settings;
 use crate::hash::hash_to_str;
@@ -14,8 +14,11 @@ use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion};
 use async_trait::async_trait;
 use dashmap::DashMap;
-use std::collections::BTreeMap;
+use serde_json::Deserializer;
+use std::collections::{BTreeMap, HashMap};
+use std::ffi::OsString;
 use std::{fmt::Debug, sync::Arc};
+use tokio::sync::Semaphore;
 use versions::Versioning;
 use xx::regex;
 
@@ -161,6 +164,8 @@ pub fn install_time_option_keys() -> Vec<String> {
 }
 
 const DEFAULT_GOPROXY: &str = "https://proxy.golang.org,direct";
+const GO_PROXY_VERSION_INFO_CONCURRENCY: usize = 20;
+const GO_LIST_VERSION_INFO_BATCH_SIZE: usize = 50;
 
 impl GoBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
@@ -210,9 +215,22 @@ impl GoBackend {
             let path = &candidates[*idx];
             match result {
                 ProxyListResult::Versions(versions) if !versions.is_empty() => {
-                    let mut version_infos =
-                        fetch_proxy_version_infos(&proxies, path, versions).await;
-                    version_infos.retain(|v| Versioning::new(&v.version).is_some());
+                    let versions: Vec<String> = versions
+                        .iter()
+                        .filter(|v| Versioning::new(v.trim_start_matches('v')).is_some())
+                        .cloned()
+                        .collect();
+                    if versions.is_empty() {
+                        let encoded = encode_module_path(path);
+                        match query_proxy_latest(&proxies, &encoded).await {
+                            ProxyVersionInfoResult::Found(info) => {
+                                return Ok(Some(vec![version_info_from_metadata(info)]));
+                            }
+                            ProxyVersionInfoResult::NotFound => continue,
+                            ProxyVersionInfoResult::Error => return Ok(None),
+                        }
+                    }
+                    let mut version_infos = fetch_proxy_version_infos(&proxies, path, &versions).await;
                     version_infos.sort_by_cached_key(|v| Versioning::new(&v.version));
                     return Ok(Some(version_infos));
                 }
@@ -291,7 +309,6 @@ impl GoBackend {
         mod_path: &str,
         versions: &[String],
     ) -> Vec<VersionInfo> {
-        let mut infos = Vec::with_capacity(versions.len());
         let env = match self.dependency_env(config).await {
             Ok(env) => env,
             Err(_) => {
@@ -305,24 +322,41 @@ impl GoBackend {
             }
         };
 
-        for version in versions {
-            let module = format!("{mod_path}@{version}");
-            let info = cmd!("go", "list", "-mod=readonly", "-m", "-json", module)
-                .full_env(env.clone())
-                .read()
-                .ok()
-                .and_then(|raw| serde_json::from_str::<GoModuleVersionMetadata>(&raw).ok());
+        let mut metadata_by_version = HashMap::with_capacity(versions.len());
+        for chunk in versions.chunks(GO_LIST_VERSION_INFO_BATCH_SIZE) {
+            let mut args = vec![
+                OsString::from("list"),
+                OsString::from("-mod=readonly"),
+                OsString::from("-m"),
+                OsString::from("-json"),
+            ];
+            for version in chunk {
+                args.push(format!("{mod_path}@{version}").into());
+            }
+            let Ok(raw) = cmd("go", args).full_env(&env).read() else {
+                continue;
+            };
+            let Ok(infos) = Deserializer::from_str(&raw)
+                .into_iter::<GoModuleVersionMetadata>()
+                .collect::<Result<Vec<_>, _>>()
+            else {
+                continue;
+            };
+            for info in infos {
+                metadata_by_version.insert(info.version.clone(), info);
+            }
+        }
 
-            infos.push(match info {
+        versions
+            .iter()
+            .map(|version| match metadata_by_version.remove(version) {
                 Some(info) => version_info_from_metadata(info),
                 None => VersionInfo {
                     version: version.trim_start_matches('v').to_string(),
                     ..Default::default()
                 },
-            });
-        }
-
-        infos
+            })
+            .collect()
     }
 }
 
@@ -500,16 +534,20 @@ async fn fetch_proxy_version_infos(
     path: &str,
     versions: &[String],
 ) -> Vec<VersionInfo> {
-    let encoded = encode_module_path(path);
+    let encoded = Arc::new(encode_module_path(path));
+    let proxies = Arc::new(proxies.to_vec());
+    let sem = Arc::new(Semaphore::new(GO_PROXY_VERSION_INFO_CONCURRENCY));
     let mut join_set = tokio::task::JoinSet::new();
 
     for version in versions {
-        let proxies = proxies.to_vec();
+        let proxies = proxies.clone();
         let encoded = encoded.clone();
+        let sem = sem.clone();
         let version = version.clone();
         join_set.spawn(async move {
+            let _permit = sem.acquire_owned().await.expect("semaphore closed");
             let endpoint = format!("{encoded}/@v/{version}.info");
-            let info = query_proxy_version_metadata(&proxies, &endpoint).await;
+            let info = query_proxy_version_metadata(proxies.as_slice(), &endpoint).await;
             (version, info)
         });
     }
