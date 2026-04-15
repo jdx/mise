@@ -43,7 +43,11 @@ pub async fn has_github_attestations(
     token: Option<&str>,
 ) -> Result<bool, AttestationError> {
     let digest = digest.strip_prefix("sha256:").unwrap_or(digest);
-    let response = fetch_github_attestations(owner, repo, digest, token).await?;
+    let response = match fetch_github_attestations(owner, repo, digest, token).await {
+        Ok(response) => response,
+        Err(AttestationError::NoAttestations) => return Ok(false),
+        Err(e) => return Err(e),
+    };
     Ok(!response.attestations.is_empty())
 }
 
@@ -305,7 +309,12 @@ fn verify_workflow_identity(
             "signing certificate did not include an identity".to_string(),
         ));
     };
-    if actual == expected || actual.contains(expected) || expected.contains(actual) {
+    if expected.is_empty() || actual.is_empty() {
+        return Err(AttestationError::Verification(
+            "signing certificate identity or expected workflow is empty".to_string(),
+        ));
+    }
+    if actual == expected || actual.contains(expected) {
         Ok(())
     } else {
         Err(AttestationError::Verification(format!(
