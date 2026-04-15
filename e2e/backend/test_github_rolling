@@ -45,13 +45,13 @@ assert_contains "mise x -- hello-world" "hello world"
 # Test 5: After upgrade, mise outdated should no longer report it
 assert_not_contains "mise outdated" "mise-test-fixtures"
 
-# Test 6: Verify rolling=true with declared version works the same way
+# Test 6: Verify rolling = true (TOML boolean) with declared version works the same way
 cat <<EOF >mise.toml
 [tools."github:jdx/mise-test-fixtures"]
 version = "1.0.0"
 asset_pattern = "hello-world-1.0.0.tar.gz"
 bin_path = "hello-world-1.0.0/bin"
-rolling = "true"
+rolling = true
 postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"
 EOF
 

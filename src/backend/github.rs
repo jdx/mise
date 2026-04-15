@@ -198,7 +198,7 @@ impl Backend for UnifiedGitBackend {
 
         // Parse rolling release options
         let rolling_regex = parse_rolling_regex(&opts);
-        let rolling_flag = opts.get("rolling").is_some_and(|v| v == "true");
+        let rolling_flag = opts.get_bool("rolling");
         let declared_version = if rolling_flag || rolling_regex.is_some() {
             config.get_tool_version(&self.ba).await?
         } else {

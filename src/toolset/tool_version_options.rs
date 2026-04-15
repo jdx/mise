@@ -74,6 +74,17 @@ impl ToolVersionOptions {
         self.opts.get(key).and_then(|v| v.as_str())
     }
 
+    /// Get a boolean value for a key. Handles both `toml::Value::Boolean`
+    /// and `toml::Value::String` (e.g., "true"/"false"). Returns `false`
+    /// if the key is absent or cannot be parsed as a boolean.
+    pub fn get_bool(&self, key: &str) -> bool {
+        self.opts.get(key).is_some_and(|v| match v {
+            toml::Value::Boolean(b) => *b,
+            toml::Value::String(s) => s == "true",
+            _ => false,
+        })
+    }
+
     /// Convert opts to string values, extracting inner strings from
     /// `toml::Value::String` and calling `to_string()` on other types.
     pub fn opts_as_strings(&self) -> IndexMap<String, String> {
@@ -615,5 +626,41 @@ mod tests {
             ..Default::default()
         };
         assert!(tvo.is_empty());
+    }
+
+    #[test]
+    fn test_get_bool_boolean_value() {
+        let mut opts = IndexMap::new();
+        opts.insert("flag".to_string(), toml::Value::Boolean(true));
+        let tvo = ToolVersionOptions {
+            opts,
+            ..Default::default()
+        };
+        assert!(tvo.get_bool("flag"));
+    }
+
+    #[test]
+    fn test_get_bool_string_value() {
+        let mut opts = IndexMap::new();
+        opts.insert("flag".to_string(), s("true"));
+        let tvo = ToolVersionOptions {
+            opts,
+            ..Default::default()
+        };
+        assert!(tvo.get_bool("flag"));
+    }
+
+    #[test]
+    fn test_get_bool_false_and_missing() {
+        let mut opts = IndexMap::new();
+        opts.insert("flag".to_string(), toml::Value::Boolean(false));
+        opts.insert("other".to_string(), s("false"));
+        let tvo = ToolVersionOptions {
+            opts,
+            ..Default::default()
+        };
+        assert!(!tvo.get_bool("flag"));
+        assert!(!tvo.get_bool("other"));
+        assert!(!tvo.get_bool("missing"));
     }
 }
