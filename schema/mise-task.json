@@ -172,20 +172,7 @@
                         "type": "string"
                       },
                       "os": {
-                        "oneOf": [
-                          {
-                            "description": "operating system to install on",
-                            "type": "array"
-                          },
-                          {
-                            "description": "option to pass to tool",
-                            "type": "string"
-                          },
-                          {
-                            "description": "option to pass to tool",
-                            "type": "boolean"
-                          }
-                        ]
+                        "$ref": "#/$defs/os_filter"
                       }
                     },
                     "required": ["version"],
@@ -964,20 +951,7 @@
                     "type": "string"
                   },
                   "os": {
-                    "oneOf": [
-                      {
-                        "description": "operating system to install on",
-                        "type": "array"
-                      },
-                      {
-                        "description": "option to pass to tool",
-                        "type": "string"
-                      },
-                      {
-                        "description": "option to pass to tool",
-                        "type": "boolean"
-                      }
-                    ]
+                    "$ref": "#/$defs/os_filter"
                   }
                 },
                 "required": ["version"],
@@ -1218,6 +1192,26 @@
         "description": "value of variable",
         "type": "string"
       }
+    },
+    "os_filter_item": {
+      "description": "operating system or os/arch pair to install on",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.+-]+(/[A-Za-z0-9_.+-]+)?$",
+      "examples": ["linux", "macos", "windows", "macos/arm64", "linux/x64"]
+    },
+    "os_filter": {
+      "description": "operating system filters to install on",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/os_filter_item"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/os_filter_item"
+          }
+        }
+      ]
     }
   },
   "description": "Config file for included mise tasks (https://mise.jdx.dev/tasks/#task-configuration)",
