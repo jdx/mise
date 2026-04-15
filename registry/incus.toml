@@ -1,8 +1,10 @@
 description = "Incus is a modern, secure and powerful system container and virtual machine manager"
 os = ["linux", "macos", "windows", "freebsd"]
+test = { cmd = "incus --version", expected = "{{ version | split(pat='.') | slice(start=0, end=2) | join(sep='.') }}" }
 
 [[backends]]
 full = "aqua:lxc/incus"
+platforms = ["linux", "macos", "windows"]
 
 [[backends]]
 full = "github:lxc/incus"

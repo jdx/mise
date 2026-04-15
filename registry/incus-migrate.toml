@@ -1,5 +1,6 @@
 description = "Incus migrate imports existing systems into Incus"
 os = ["linux"]
+test = { cmd = "incus-migrate --version", expected = "{{ version | split(pat='.') | slice(start=0, end=2) | join(sep='.') }}" }
 
 [[backends]]
 full = "github:lxc/incus"
