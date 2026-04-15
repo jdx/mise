@@ -415,6 +415,14 @@ impl Client {
             eprintln!("{} {url} {}", verb_label, resp.status());
         }
         debug!("{} {url} {}", verb_label, resp.status());
+        // For 403 responses, read the body to include in the error so callers
+        // can distinguish rate limiting from IP allow list blocks and other causes.
+        if resp.status().as_u16() == 403 {
+            let headers = resp.headers().clone();
+            display_github_rate_limit_headers(403, &headers);
+            let body = resp.text().await.unwrap_or_default();
+            bail!("HTTP status client error (403 Forbidden) for url ({url}): {body}");
+        }
         display_github_rate_limit(&resp);
         resp.error_for_status_ref()?;
         Ok(resp)
@@ -528,15 +536,19 @@ pub fn apply_url_replacements(url: &mut Url) {
 }
 
 fn display_github_rate_limit(resp: &Response) {
-    let status = resp.status().as_u16();
+    display_github_rate_limit_headers(resp.status().as_u16(), resp.headers());
+}
+
+/// Check response headers for GitHub rate limit signals and emit appropriate warnings.
+/// Used for both 429 responses (via `display_github_rate_limit`) and 403 responses
+/// where we've already consumed the body to include in the error message.
+fn display_github_rate_limit_headers(status: u16, headers: &HeaderMap) {
     if status == 403 || status == 429 {
-        let remaining = resp
-            .headers()
+        let remaining = headers
             .get("x-ratelimit-remaining")
             .and_then(|r| r.to_str().ok());
         if remaining.is_some_and(|r| r == "0") {
-            if let Some(reset_time) = resp
-                .headers()
+            if let Some(reset_time) = headers
                 .get("x-ratelimit-reset")
                 .and_then(|h| h.to_str().ok())
                 .and_then(|s| s.parse::<i64>().ok())
@@ -550,8 +562,7 @@ fn display_github_rate_limit(resp: &Response) {
             return;
         }
         // retry-after header is processed only if x-ratelimit-remaining is not 0 or is missing
-        if let Some(retry_after) = resp
-            .headers()
+        if let Some(retry_after) = headers
             .get("retry-after")
             .and_then(|h| h.to_str().ok())
             .and_then(|s| s.parse::<u64>().ok())
