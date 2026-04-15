@@ -107,9 +107,10 @@ impl TaskToolValue {
                     let opts_str = map
                         .opts
                         .iter()
-                        .map(|(k, v)| match v {
-                            toml::Value::String(s) => format!("{k}={s}"),
-                            _ => format!("{k}={v}"),
+                        .filter_map(|(k, v)| match v {
+                            toml::Value::String(s) => Some(format!("{k}={s}")),
+                            toml::Value::Table(_) | toml::Value::Array(_) => None,
+                            _ => Some(format!("{k}={v}")),
                         })
                         .collect::<Vec<_>>()
                         .join(",");
