@@ -169,15 +169,23 @@ fn handle_err(err: Report) -> eyre::Result<()> {
 fn show_github_rate_limit_err(err: &Report) {
     let msg = format!("{err:?}");
     if msg.contains("HTTP status client error (403 Forbidden) for url (https://api.github.com") {
-        warn!(
-            "GitHub API returned a 403 Forbidden error. This likely means you have exceeded the rate limit."
-        );
         if env::GITHUB_TOKEN.is_none() {
+            warn!(
+                "GitHub API returned a 403 Forbidden error with no GITHUB_TOKEN set."
+            );
             warn!(indoc!(
                 r#"GITHUB_TOKEN is not set. This means mise is making unauthenticated requests to GitHub which have a lower rate limit.
                    To increase the rate limit, set the GITHUB_TOKEN environment variable to a GitHub personal access token.
                    Create a token at https://github.com/settings/tokens and set it as GITHUB_TOKEN in your environment.
                    You do not need to give this token any scopes."#
+            ));
+        } else {
+            warn!(indoc!(
+                r#"GitHub API returned a 403 Forbidden error. This can have several causes:
+                   - Rate limit exceeded: check x-ratelimit-remaining in the response headers
+                   - IP allow list: the target GitHub organization has an IP allow list enabled and your IP is not permitted
+                   - Token permissions: the token may not have access to the required resources
+                   Run with MISE_LOG_LEVEL=debug for the full response body which will identify the exact cause."#
             ));
         }
     }
