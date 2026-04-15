@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+# Regression test: when shims are on PATH and a "mise" shim exists (e.g. because
+# core:rust is managed and ~/.cargo/bin contains the mise binary),
+# `mise reshim` should still create shims pointing to the real mise binary,
+# not to the mise shim itself (which would create a circular symlink).
+# Similarly, `mise doctor` should not report shims as missing.
+
+shimdir="$MISE_DATA_DIR/shims"
+mise_bin="$(which mise)"
+
+# Install a tool so there are shims to create
+mise i dummy@latest
+
+# Reshim without shims on PATH — baseline
+mise reshim
+
+# Verify shim was created and points to the real binary
+assert "readlink $shimdir/dummy" "$mise_bin"
+
+# Simulate what happens when core:rust is in the toolset: the mise binary
+# itself ends up with a shim because ~/.cargo/bin (containing mise) is scanned
+# as a tool bin directory. Create a mise shim pointing to the real binary.
+ln -sf "$mise_bin" "$shimdir/mise"
+
+# Now put shims on PATH (as mise activate --shims does in non-interactive shells)
+export PATH="$shimdir:$PATH"
+
+# Reshim WITH shims on PATH and a mise shim present.
+# Previously this caused file::which("mise") to find the shim, leading to
+# circular symlinks (shim pointing to itself) and broken doctor output.
+mise reshim
+
+# Shim should still point to the real mise binary, not to the shim directory
+assert "readlink $shimdir/dummy" "$mise_bin"
+assert_not_contains "readlink $shimdir/dummy" "$shimdir"
+
+# The mise shim itself must not be circular
+if [ -L "$shimdir/mise" ]; then
+	assert_not_contains "readlink $shimdir/mise" "$shimdir"
+fi
+
+# Doctor should not report missing shims
+assert_not_contains "mise doctor" "shims are missing"
