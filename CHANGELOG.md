@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026.4.14](https://github.com/jdx/mise/compare/v2026.4.13..v2026.4.14) - 2026-04-15
+
+### Chore
+
+- bump sigstore-verification by @jdx in [#9128](https://github.com/jdx/mise/pull/9128)
+
 ## [2026.4.13](https://github.com/jdx/mise/compare/v2026.4.12..v2026.4.13) - 2026-04-15
 
 ### 🐛 Bug Fixes
