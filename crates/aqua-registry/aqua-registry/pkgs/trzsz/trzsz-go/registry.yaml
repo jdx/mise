@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: trzsz
+    repo_name: trzsz-go
+    description: trzsz-go is the go version of trzsz, makes all terminals that support local shell to support trzsz ( trz / tsz )
+    files:
+      - name: trzsz
+        src: "{{.AssetWithoutExt}}/trzsz"
+      - name: trz
+        src: "{{.AssetWithoutExt}}/trz"
+      - name: tsz
+        src: "{{.AssetWithoutExt}}/tsz"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.8"
+        asset: trzsz_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.1.7")
+        asset: trzsz_{{.OS}}_{{.Arch}}.{{.Format}}
+        files:
+          - name: trzsz
+            src: "bin/trzsz"
+          - name: trz
+            src: "bin/trz"
+          - name: tsz
+            src: "bin/tsz"
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: trzsz_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: trzsz_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
