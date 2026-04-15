@@ -416,9 +416,16 @@ env = "MISE_DOTNET_REGISTRY_URL"
 type = "Url"
 
 [enable_tools]
-default = []
-description = "Tools defined in mise.toml that should be used - all other tools are ignored"
+description = "Tools defined in mise.toml that should be used - all other tools are ignored when set"
+docs = """
+When unset, all tools are enabled unless they appear in
+[`disable_tools`](/configuration/settings.html#disable_tools).
+
+When explicitly set, only the listed tools are enabled. Setting this to `[]`
+disables all tools.
+"""
 env = "MISE_ENABLE_TOOLS"
+optional = true
 parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"

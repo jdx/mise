@@ -183,15 +183,18 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
             .flat_map(|ist| arg_to_backend(ist.clone().into())),
     );
     time!("load_tools install_state");
+    let settings = Settings::get();
+    let enable_tools = settings.enable_tools();
+    let disable_tools = settings.disable_tools();
     tools.retain(|backend| {
         tool_enabled(
-            &Settings::get().enable_tools(),
-            &Settings::get().disable_tools(),
+            enable_tools.as_ref(),
+            &disable_tools,
             &backend.id().to_string(),
         )
     });
     tools.retain(|backend| {
-        !Settings::get()
+        !settings
             .disable_backends
             .contains(&backend.get_type().to_string())
     });

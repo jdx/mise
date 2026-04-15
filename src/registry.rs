@@ -210,14 +210,13 @@ impl Display for RegistryTool {
 }
 
 pub fn tool_enabled<T: Ord>(
-    enable_tools: &BTreeSet<T>,
+    enable_tools: Option<&BTreeSet<T>>,
     disable_tools: &BTreeSet<T>,
     name: &T,
 ) -> bool {
-    if enable_tools.is_empty() {
-        !disable_tools.contains(name)
-    } else {
-        enable_tools.contains(name)
+    match enable_tools {
+        Some(enable_tools) => enable_tools.contains(name),
+        None => !disable_tools.contains(name),
     }
 }
 
@@ -231,17 +230,18 @@ mod tests {
         use super::*;
         let name = "cargo";
 
-        assert!(tool_enabled(&BTreeSet::new(), &BTreeSet::new(), &name));
-        assert!(tool_enabled(
-            &BTreeSet::from(["cargo"]),
-            &BTreeSet::new(),
-            &name
-        ));
+        assert!(tool_enabled(None, &BTreeSet::new(), &name));
         assert!(!tool_enabled(
+            Some(&BTreeSet::new()),
             &BTreeSet::new(),
-            &BTreeSet::from(["cargo"]),
             &name
         ));
+        assert!(tool_enabled(
+            Some(&BTreeSet::from(["cargo"])),
+            &BTreeSet::new(),
+            &name
+        ));
+        assert!(!tool_enabled(None, &BTreeSet::from(["cargo"]), &name));
     }
 
     #[tokio::test]

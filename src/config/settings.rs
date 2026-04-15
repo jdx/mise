@@ -644,11 +644,13 @@ impl Settings {
             .collect()
     }
 
-    pub fn enable_tools(&self) -> BTreeSet<String> {
-        self.enable_tools
-            .iter()
-            .map(|t| t.trim().to_string())
-            .collect()
+    pub fn enable_tools(&self) -> Option<BTreeSet<String>> {
+        self.enable_tools.as_ref().map(|tools| {
+            tools
+                .iter()
+                .map(|t| t.trim().to_string())
+                .collect::<BTreeSet<_>>()
+        })
     }
 
     pub fn partial_as_dict(partial: &SettingsPartial) -> eyre::Result<toml::Table> {
