@@ -158,5 +158,5 @@ pub fn aqua_suggest(query: &str) -> Vec<String> {
 
 // Re-export types and static for compatibility
 pub use aqua_registry::{
-    AquaChecksum, AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType,
+    AquaChecksum, AquaChecksumType, AquaCosign, AquaMinisignType, AquaPackage, AquaPackageType,
 };

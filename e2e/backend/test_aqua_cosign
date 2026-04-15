@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Test native Cosign verification for aqua packages
-# Uses fork-cleaner which has bundle-based cosign (native verification),
-# unlike sops which only has opts-based cosign (CLI pass-through).
+# Test native Cosign verification for aqua packages.
+# Covers both checksum-level cosign and top-level binary cosign.
 
 set -euo pipefail
 
@@ -10,7 +9,7 @@ export MISE_AQUA_COSIGN=true
 export MISE_AQUA_SLSA=false
 export MISE_AQUA_GITHUB_ATTESTATIONS=false
 
-echo "=== Testing Native Cosign Verification ==="
+echo "=== Testing Native Cosign Verification (checksum-level) ==="
 
 # Test: Install fork-cleaner which has cosign bundle verification configured
 echo "Installing fork-cleaner with native Cosign verification..."
@@ -33,8 +32,23 @@ fi
 assert_contains "mise x aqua:caarlos0/fork-cleaner@2.4.0 -- fork-cleaner --version" "2.4.0"
 echo "✓ fork-cleaner installed and working correctly"
 
-# Cleanup
-mise uninstall aqua:caarlos0/fork-cleaner@2.4.0 || true
+echo "=== Testing Native Cosign Verification (top-level binary config) ==="
+echo "Installing envsense with top-level binary Cosign verification..."
+
+output=$(mise install aqua:technicalpickles/envsense@0.3.4 2>&1)
+echo "$output"
+
+if echo "$output" | grep -q "verify artifact with cosign"; then
+	echo "✅ Native top-level binary Cosign verification was used"
+else
+	echo "❌ ERROR: top-level binary Cosign verification message not found in output"
+	echo "Output was:"
+	echo "$output"
+	exit 1
+fi
+
+assert_contains "mise x aqua:technicalpickles/envsense@0.3.4 -- which envsense" "envsense"
+echo "✓ envsense installed and working correctly"
 
 echo ""
 echo "=== Native Cosign Verification Test Passed ✓ ==="

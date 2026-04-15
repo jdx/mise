@@ -17,7 +17,7 @@ use crate::toolset::{EPHEMERAL_OPT_KEYS, ToolRequest, ToolVersion, ToolVersionOp
 use crate::ui::progress_report::SingleReport;
 use crate::{
     aqua::aqua_registry_wrapper::{
-        AQUA_REGISTRY, AquaChecksum, AquaChecksumType, AquaMinisignType, AquaPackage,
+        AQUA_REGISTRY, AquaChecksum, AquaChecksumType, AquaCosign, AquaMinisignType, AquaPackage,
         AquaPackageType,
     },
     cache::{CacheManager, CacheManagerBuilder},
@@ -169,12 +169,16 @@ impl Backend for AquaBackend {
             features.push(SecurityFeature::Slsa { level: None });
         }
 
-        // Cosign (nested in checksum) - check registry config OR actual release assets
+        // Cosign - check registry config OR actual release assets
         let has_cosign_config = all_pkgs.iter().any(|p| {
-            p.checksum
+            p.cosign
                 .as_ref()
-                .and_then(|c| c.cosign.as_ref())
                 .is_some_and(|cosign| cosign.enabled.unwrap_or(true))
+                || p
+                    .checksum
+                    .as_ref()
+                    .and_then(|c| c.cosign.as_ref())
+                    .is_some_and(|cosign| cosign.enabled.unwrap_or(true))
         });
         let has_cosign_assets = release_assets.iter().any(|a| {
             let name = a.name.to_lowercase();
@@ -864,6 +868,25 @@ impl AquaBackend {
         }
     }
 
+    fn has_native_cosign(cosign: &AquaCosign) -> bool {
+        cosign.enabled != Some(false) && (cosign.key.is_some() || cosign.bundle.is_some())
+    }
+
+    fn binary_cosign_config(pkg: &AquaPackage) -> Option<&AquaCosign> {
+        pkg.cosign
+            .as_ref()
+            .filter(|cosign| Self::has_native_cosign(cosign))
+    }
+
+    fn checksum_cosign_config(pkg: &AquaPackage) -> Option<(&AquaChecksum, &AquaCosign)> {
+        let checksum = pkg.checksum.as_ref().filter(|checksum| checksum.enabled())?;
+        let cosign = checksum
+            .cosign
+            .as_ref()
+            .filter(|cosign| Self::has_native_cosign(cosign))?;
+        Some((checksum, cosign))
+    }
+
     /// Detect provenance type from aqua registry package config.
     ///
     /// Returns the highest-priority provenance type that is configured and
@@ -899,16 +922,13 @@ impl AquaBackend {
             return Some(ProvenanceType::Slsa { url: None });
         }
 
-        // Check for cosign (nested under checksum config, requires checksum enabled)
+        // Check for cosign.
         // Only record cosign provenance if we can actually verify it natively
         // (key-based or bundle-based). Tools that only use opts require the external
         // cosign CLI which we don't shell out to.
         if settings.aqua.cosign
-            && let Some(checksum) = &pkg.checksum
-            && checksum.enabled()
-            && let Some(cosign) = checksum.cosign.as_ref()
-            && cosign.enabled != Some(false)
-            && (cosign.key.is_some() || cosign.bundle.is_some())
+            && (Self::binary_cosign_config(pkg).is_some()
+                || Self::checksum_cosign_config(pkg).is_some())
         {
             return Some(ProvenanceType::Cosign);
         }
@@ -965,15 +985,19 @@ impl AquaBackend {
                 Ok(ProvenanceType::Minisign)
             }
             ProvenanceType::Cosign => {
-                let checksum_config = pkg
-                    .checksum
-                    .as_ref()
-                    .wrap_err("cosign provenance detected but no checksum config found")?;
-                let checksum_path = self
-                    .download_checksum_file(checksum_config, pkg, v, tmp_dir.path(), None)
-                    .await?;
-                self.run_cosign_check(&checksum_path, pkg, v, tmp_dir.path(), None)
-                    .await?;
+                if let Some(cosign) = Self::binary_cosign_config(pkg) {
+                    self.run_cosign_check(&artifact_path, cosign, pkg, v, tmp_dir.path(), None)
+                        .await?;
+                } else {
+                    let (checksum_config, cosign) = Self::checksum_cosign_config(pkg).wrap_err(
+                        "cosign provenance detected but no supported binary/checksum config found",
+                    )?;
+                    let checksum_path = self
+                        .download_checksum_file(checksum_config, pkg, v, tmp_dir.path(), None)
+                        .await?;
+                    self.run_cosign_check(&checksum_path, cosign, pkg, v, tmp_dir.path(), None)
+                        .await?;
+                }
                 Ok(ProvenanceType::Cosign)
             }
         }
@@ -1128,22 +1152,16 @@ impl AquaBackend {
         Ok(())
     }
 
-    /// Download cosign key/signature/bundle and verify checksums file.
-    /// The checksum file must already be downloaded at `checksum_path`.
+    /// Download cosign key/signature/bundle and verify a target file.
     async fn run_cosign_check(
         &self,
-        checksum_path: &Path,
+        target_path: &Path,
+        cosign: &AquaCosign,
         pkg: &AquaPackage,
         v: &str,
         download_dir: &Path,
         pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
-        let cosign = pkg
-            .checksum
-            .as_ref()
-            .and_then(|c| c.cosign.as_ref())
-            .wrap_err("cosign provenance detected but no config found")?;
-
         if let Some(key) = &cosign.key {
             let mut key_pkg = pkg.clone();
             (key_pkg.repo_owner, key_pkg.repo_name) =
@@ -1178,11 +1196,11 @@ impl AquaBackend {
                 HTTP.download_file(&sig_url, &path, pr).await?;
                 path
             } else {
-                checksum_path.with_extension("sig")
+                target_path.with_extension("sig")
             };
 
             match crate::github::sigstore::verify_cosign_signature_with_key(
-                checksum_path,
+                target_path,
                 &sig_path,
                 &key_path,
             )
@@ -1212,9 +1230,7 @@ impl AquaBackend {
             let bundle_path = download_dir.join(get_filename_from_url(&bundle_url));
             HTTP.download_file(&bundle_url, &bundle_path, pr).await?;
 
-            match crate::github::sigstore::verify_cosign_signature(checksum_path, &bundle_path)
-                .await
-            {
+            match crate::github::sigstore::verify_cosign_signature(target_path, &bundle_path).await {
                 Ok(true) => {
                     debug!("cosign (bundle) verified");
                     Ok(())
@@ -1638,6 +1654,24 @@ impl AquaBackend {
         }
 
         let download_path = tv.download_path();
+        let mut cosign_already_verified = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|pi| pi.provenance.as_ref())
+            .is_some_and(|p| *p > ProvenanceType::Cosign);
+
+        let binary_cosign_configured = Self::binary_cosign_config(pkg).is_some();
+        if !skip_cosign
+            && Settings::get().aqua.cosign
+            && !cosign_already_verified
+            && binary_cosign_configured
+        {
+            let artifact_path = download_path.join(filename);
+            self.cosign_artifact(ctx, pkg, v, tv, &artifact_path, &download_path)
+                .await?;
+            cosign_already_verified = binary_cosign_configured;
+        }
+
         if let Some(checksum) = &pkg.checksum
             && checksum.enabled()
         {
@@ -1650,19 +1684,7 @@ impl AquaBackend {
 
             let needs_cosign = !skip_cosign
                 && Settings::get().aqua.cosign
-                && checksum
-                    .cosign
-                    .as_ref()
-                    .is_some_and(|c| c.enabled != Some(false));
-            // Short-circuit cosign if a higher-priority mechanism already recorded provenance.
-            // Safe to cache: provenance is only modified by the single-threaded verification
-            // methods above (attestations, slsa, minisign), all of which have completed by now.
-            let cosign_already_verified = needs_cosign
-                && tv
-                    .lock_platforms
-                    .get(&platform_key)
-                    .and_then(|pi| pi.provenance.as_ref())
-                    .is_some_and(|p| *p > ProvenanceType::Cosign);
+                && Self::checksum_cosign_config(pkg).is_some();
             // Re-download only if the checksum file doesn't exist yet. An existing file
             // from a prior attempt is trusted because the download directory is version-specific
             // and the final artifact is independently verified by verify_checksum at the end.
@@ -1861,6 +1883,47 @@ impl AquaBackend {
         Ok(())
     }
 
+    async fn cosign_artifact(
+        &self,
+        ctx: &InstallContext,
+        pkg: &AquaPackage,
+        v: &str,
+        tv: &mut ToolVersion,
+        artifact_path: &Path,
+        download_path: &Path,
+    ) -> Result<()> {
+        if !Settings::get().aqua.cosign {
+            return Ok(());
+        }
+        if let Some(cosign) = &pkg.cosign {
+            if cosign.enabled == Some(false) {
+                debug!("cosign is disabled for {tv}");
+                return Ok(());
+            }
+
+            if cosign.key.is_none() && cosign.bundle.is_none() {
+                debug!("cosign for {tv} uses opts-only config, skipping native verification");
+                return Ok(());
+            }
+
+            ctx.pr
+                .set_message("verify artifact with cosign".to_string());
+            self.run_cosign_check(
+                artifact_path,
+                cosign,
+                pkg,
+                v,
+                download_path,
+                Some(ctx.pr.as_ref()),
+            )
+            .await?;
+
+            ctx.pr.set_message("✓ Cosign verified".to_string());
+            self.record_cosign_provenance(tv);
+        }
+        Ok(())
+    }
+
     async fn cosign_checksums(
         &self,
         ctx: &InstallContext,
@@ -1887,21 +1950,32 @@ impl AquaBackend {
 
             ctx.pr
                 .set_message("verify checksums with cosign".to_string());
-            self.run_cosign_check(checksum_path, pkg, v, download_path, Some(ctx.pr.as_ref()))
+            self.run_cosign_check(
+                checksum_path,
+                cosign,
+                pkg,
+                v,
+                download_path,
+                Some(ctx.pr.as_ref()),
+            )
                 .await?;
 
             ctx.pr.set_message("✓ Cosign verified".to_string());
-            let platform_key = self.get_platform_key();
-            let pi = tv.lock_platforms.entry(platform_key).or_default();
-            if pi
-                .provenance
-                .as_ref()
-                .is_none_or(|p| *p < ProvenanceType::Cosign)
-            {
-                pi.provenance = Some(ProvenanceType::Cosign);
-            }
+            self.record_cosign_provenance(tv);
         }
         Ok(())
+    }
+
+    fn record_cosign_provenance(&self, tv: &mut ToolVersion) {
+        let platform_key = self.get_platform_key();
+        let pi = tv.lock_platforms.entry(platform_key).or_default();
+        if pi
+            .provenance
+            .as_ref()
+            .is_none_or(|p| *p < ProvenanceType::Cosign)
+        {
+            pi.provenance = Some(ProvenanceType::Cosign);
+        }
     }
 
     fn install(
