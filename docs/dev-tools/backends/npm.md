@@ -14,7 +14,7 @@ When [`install_before`](/configuration/settings.html#install_before) is set, the
 forwards that cutoff to transitive dependency resolution during install. This relies on the
 configured package manager supporting its native release-age flag:
 
-- `npm >= 6.9.0` using `--before <timestamp>` (`Node >= 10.16.0` if you rely on bundled npm)
+- `npm >= 11.10.0` using `--min-release-age=<days>`; `npm 6.9.0–11.9.x` using `--before <timestamp>` (sub-day `install_before` windows also use `--before` since `--min-release-age` is day-granular)
 - `bun >= 1.3.0` using `--minimum-release-age <seconds>`
 - `pnpm >= 10.16.0` using `--config.minimumReleaseAge=<minutes>`
 
