@@ -1,5 +1,23 @@
 # Changelog
 
+## [2026.4.13](https://github.com/jdx/mise/compare/v2026.4.12..v2026.4.13) - 2026-04-15
+
+### 🐛 Bug Fixes
+
+- **(go)** honor install_before for module versions by @mariusvniekerk in [#9097](https://github.com/jdx/mise/pull/9097)
+- **(vfox-plugin)** support Git URL with commit hash for mise.toml by @Oyami-Srk in [#9099](https://github.com/jdx/mise/pull/9099)
+- `MISE_FETCH_REMOTE_VERSIONS_CACHE` not respected by @mcncl in [#9096](https://github.com/jdx/mise/pull/9096)
+
+### 📦️ Dependency Updates
+
+- unblock cargo-deny advisories check by @jdx in [#9112](https://github.com/jdx/mise/pull/9112)
+
+### New Contributors
+
+- @mariusvniekerk made their first contribution in [#9097](https://github.com/jdx/mise/pull/9097)
+- @mcncl made their first contribution in [#9096](https://github.com/jdx/mise/pull/9096)
+- @Oyami-Srk made their first contribution in [#9099](https://github.com/jdx/mise/pull/9099)
+
 ## [2026.4.12](https://github.com/jdx/mise/compare/v2026.4.11..v2026.4.12) - 2026-04-15
 
 ### 🚀 Features
