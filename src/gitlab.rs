@@ -13,7 +13,7 @@ use tokio::sync::{RwLock, RwLockReadGuard};
 use xx::regex;
 
 use crate::cache::{CacheManager, CacheManagerBuilder};
-use crate::{dirs, duration, env};
+use crate::{dirs, env};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitlabRelease {
@@ -69,7 +69,7 @@ async fn get_tags_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<String>
         .entry(key.to_string())
         .or_insert_with(|| {
             CacheManagerBuilder::new(cache_dir().join(format!("{key}-tags.msgpack.z")))
-                .with_fresh_duration(Some(duration::DAILY))
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .build()
         });
     TAGS_CACHE.read().await
@@ -82,7 +82,7 @@ async fn get_releases_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<Git
         .entry(key.to_string())
         .or_insert_with(|| {
             CacheManagerBuilder::new(cache_dir().join(format!("{key}-releases.msgpack.z")))
-                .with_fresh_duration(Some(duration::DAILY))
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .build()
         });
     RELEASES_CACHE.read().await
@@ -95,7 +95,7 @@ async fn get_release_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<GitlabRe
         .entry(key.to_string())
         .or_insert_with(|| {
             CacheManagerBuilder::new(cache_dir().join(format!("{key}.msgpack.z")))
-                .with_fresh_duration(Some(duration::DAILY))
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .build()
         });
     RELEASE_CACHE.read().await
