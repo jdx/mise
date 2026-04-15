@@ -1081,15 +1081,9 @@ impl TaskExecutor {
         let (spec, _) = task
             .parse_usage_spec_with_vars(config, self.cd.clone(), env, extra_vars)
             .await?;
-        // Mirror the bypass logic in `Task::render_run_scripts_with_args`:
         // raw_args tasks (and `-- --help`/`-- -h` ad-hoc invocations) must
         // skip the usage parser so it can't intercept --help.
-        let bypass_parser = task.raw_args
-            || task
-                .trailing_args
-                .iter()
-                .any(|a| a == "--help" || a == "-h");
-        if !bypass_parser
+        if !task.should_bypass_usage_parser()
             && (!spec.cmd.args.is_empty()
                 || !spec.cmd.flags.is_empty()
                 || !spec.cmd.subcommands.is_empty())

@@ -846,6 +846,24 @@ impl Task {
         Ok((depends, depends_post))
     }
 
+    /// True when mise should not run the usage parser against this task's
+    /// args. Either the task opted in via `raw_args = true`, or the user
+    /// passed `--help`/`-h` after `--` for an ad-hoc passthrough.
+    ///
+    /// A second, inner `--` inside `trailing_args` acts as an escape hatch:
+    /// scanning stops there, so `mise run task -- -- --help` lets the user
+    /// pass a literal `--help` through the usage parser without triggering
+    /// the bypass.
+    pub fn should_bypass_usage_parser(&self) -> bool {
+        if self.raw_args {
+            return true;
+        }
+        self.trailing_args
+            .iter()
+            .take_while(|a| a.as_str() != "--")
+            .any(|a| a == "--help" || a == "-h")
+    }
+
     fn populate_spec_metadata(&self, spec: &mut usage::Spec) {
         spec.name = self.display_name.clone();
         spec.bin = self.display_name.clone();
@@ -941,12 +959,7 @@ impl Task {
         // Without this bypass the usage crate intercepts `--help` even after
         // `--`, which breaks proxy tasks that wrap tools with their own
         // argument parsers.
-        let bypass_parser = self.raw_args
-            || self
-                .trailing_args
-                .iter()
-                .any(|a| a == "--help" || a == "-h");
-        if !bypass_parser && has_any_args_defined(&spec) {
+        if !self.should_bypass_usage_parser() && has_any_args_defined(&spec) {
             let scripts_only = self.run_script_strings();
             let scripts = Self::make_script_parser(cwd, extra_vars)
                 .parse_run_scripts_with_args(config, self, &scripts_only, env, args, &spec)

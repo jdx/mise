@@ -333,7 +333,9 @@ mise run manage migrate --fake  # all flags reach manage.py unchanged
 Without `raw_args`, mise intercepts `--help` and prints its own task help. As
 an ad-hoc alternative for individual invocations, you can also use
 `mise run task -- --help` — the `--` separator now bypasses mise's usage
-parser specifically for `--help`/`-h`.
+parser specifically for `--help`/`-h`. A second, inner `--` escapes that
+escape: `mise run task -- -- --help` lets the usage parser see `--help` as
+a literal positional argument.
 
 ### `interactive`
 

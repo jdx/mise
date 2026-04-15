@@ -40,3 +40,22 @@ assert "mise run normal -- -h" "got: -h"
 
 # Without `--` and without raw_args, mise still owns --help (no regression)
 assert_contains "mise run normal --help 2>&1 || true" "Usage: normal"
+
+# Inner `--` after the trailing-args separator escapes the bypass: --help
+# is then treated as a literal arg by the usage parser instead of triggering
+# the help passthrough. (The usage parser itself consumes the inner `--`
+# as its end-of-options marker, leaving `--help` as a positional value.)
+assert "mise run -q normal -- -- --help 2>&1" "got:--help"
+
+# File-based task with raw_args=true: shebang script gets real positional
+# parameters, so $@ actually receives the forwarded args (unlike inline
+# TOML scripts where args are appended to the command string).
+mkdir -p mise-tasks
+cat <<'EOF' >mise-tasks/file_proxy
+#!/usr/bin/env bash
+#MISE raw_args=true
+echo "got:$*"
+EOF
+chmod +x mise-tasks/file_proxy
+assert "mise run file_proxy --help" "got:--help"
+assert "mise run file_proxy migrate --fake" "got:migrate --fake"
