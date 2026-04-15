@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # Test that tool_alias with asset_pattern uses the alias-specific options
 # Regression test for https://github.com/jdx/mise/discussions/8847
+# Regression test for https://github.com/jdx/mise/discussions/9074
 # When both the original tool and an aliased tool are configured with different
-# asset_pattern values, each should use its own pattern.
+# asset_pattern values, each should use its own pattern. Distinct aliases that
+# resolve to the same backend/version must also be scheduled as distinct installs.
 
 cat <<'EOF' >mise.toml
 [tool_alias]
+hw1 = "github:jdx/mise-test-fixtures"
 hw2 = "github:jdx/mise-test-fixtures"
 
-[tools."github:jdx/mise-test-fixtures"]
+[tools.hw1]
 version = "1.0.0"
 asset_pattern = "hello-world-1.0.0.tar.gz"
 bin_path = "hello-world-1.0.0/bin"
@@ -24,5 +27,6 @@ EOF
 mise install
 # Both should install successfully with the correct asset
 assert_contains "mise x -- hello-world" "hello world"
-# The aliased tool should have installed using hello-world-2.0.0.tar.gz
+# Both aliases should have installed using their own asset patterns
+assert "test -d ~/.local/share/mise/installs/hw1/1.0.0/hello-world-1.0.0"
 assert "test -d ~/.local/share/mise/installs/hw2/1.0.0/hello-world-2.0.0"
