@@ -1,0 +1,3 @@
+backends = ["github:clintmod/rite", "go:github.com/clintmod/rite/cmd/rite"]
+description = "Task runner with Unix-native variable precedence; hard fork of go-task"
+test = { cmd = "rite --version", expected = "v{{version}}" }
