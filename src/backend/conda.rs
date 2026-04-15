@@ -12,8 +12,10 @@ use crate::toolset::ToolVersion;
 use crate::{backend::Backend, dirs, parallel};
 use crate::{file, hash};
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use eyre::Result;
 use itertools::Itertools;
+use jiff::Timestamp;
 use rattler::install::{InstallDriver, InstallOptions, PythonInfo, link_package};
 use rattler_conda_types::{
     Channel, ChannelConfig, GenericVirtualPackage, MatchSpec, ParseStrictness,
@@ -21,7 +23,8 @@ use rattler_conda_types::{
 };
 use rattler_repodata_gateway::{Gateway, RepoData};
 use rattler_solve::{
-    ChannelPriority, SolveStrategy, SolverImpl, SolverTask, resolvo::Solver as ResolvoSolver,
+    ChannelPriority, ExcludeNewer, SolveStrategy, SolverImpl, SolverTask,
+    resolvo::Solver as ResolvoSolver,
 };
 use rattler_virtual_packages::{VirtualPackageOverrides, VirtualPackages};
 use serde::{Deserialize, Serialize};
@@ -92,6 +95,42 @@ impl CondaBackend {
             .unwrap_or_default()
     }
 
+    fn solver_exclude_newer(before_date: Option<Timestamp>) -> Result<Option<ExcludeNewer>> {
+        before_date
+            .map(|before_date| {
+                DateTime::parse_from_rfc3339(&before_date.to_string())
+                    .map(|dt| ExcludeNewer::from(dt.with_timezone(&Utc)))
+                    .map_err(|e| {
+                        eyre::eyre!(
+                            "failed to convert install_before timestamp for conda solve: {}",
+                            e
+                        )
+                    })
+            })
+            .transpose()
+    }
+
+    fn build_solver_task<'a>(
+        flat_records: &'a [RepoDataRecord],
+        specs: Vec<MatchSpec>,
+        virtual_packages: Vec<GenericVirtualPackage>,
+        before_date: Option<Timestamp>,
+    ) -> Result<SolverTask<[&'a [RepoDataRecord]; 1]>> {
+        Ok(SolverTask {
+            available_packages: [flat_records],
+            specs,
+            virtual_packages,
+            locked_packages: vec![],
+            pinned_packages: vec![],
+            constraints: vec![],
+            timeout: None,
+            channel_priority: ChannelPriority::Strict,
+            exclude_newer: Self::solver_exclude_newer(before_date)?,
+            strategy: SolveStrategy::Highest,
+            dependency_overrides: vec![],
+        })
+    }
+
     /// Flatten gateway RepoData into owned records for the solver, deduplicating
     /// by URL to avoid DuplicateRecords errors when the same package appears in
     /// multiple subdir queries (e.g. platform + noarch).
@@ -109,6 +148,7 @@ impl CondaBackend {
         &self,
         specs: Vec<MatchSpec>,
         platform: CondaPlatform,
+        before_date: Option<Timestamp>,
     ) -> Result<Vec<RepoDataRecord>> {
         let channel = self.channel()?;
         let gateway = Self::create_gateway();
@@ -122,19 +162,12 @@ impl CondaBackend {
         let flat_records = Self::flatten_repodata(&repodata);
         let virtual_packages = Self::detect_virtual_packages(platform);
 
-        let task = SolverTask {
-            available_packages: [flat_records.as_slice()],
+        let task = Self::build_solver_task(
+            flat_records.as_slice(),
             specs,
             virtual_packages,
-            locked_packages: vec![],
-            pinned_packages: vec![],
-            constraints: vec![],
-            timeout: None,
-            channel_priority: ChannelPriority::Strict,
-            exclude_newer: None,
-            strategy: SolveStrategy::Highest,
-            dependency_overrides: vec![],
-        };
+            before_date,
+        )?;
 
         let mut solver = ResolvoSolver;
         let result = solver
@@ -331,7 +364,7 @@ impl CondaBackend {
 
         ctx.pr.set_message("fetching repodata".to_string());
         let records = self
-            .solve_packages(vec![match_spec], CondaPlatform::current())
+            .solve_packages(vec![match_spec], CondaPlatform::current(), ctx.before_date)
             .await?;
 
         // Separate main package from deps
@@ -557,7 +590,9 @@ impl CondaBackend {
         let match_spec = MatchSpec::from_str(&spec_str, ParseStrictness::Lenient)
             .map_err(|e| eyre::eyre!("invalid conda spec '{}': {}", spec_str, e))?;
 
-        let records = self.solve_packages(vec![match_spec], platform).await?;
+        let records = self
+            .solve_packages(vec![match_spec], platform, None)
+            .await?;
 
         let tool_name_norm = tool_name.to_lowercase();
         let mut result = BTreeMap::new();
@@ -677,7 +712,7 @@ impl Backend for CondaBackend {
             }
         };
 
-        let records = match self.solve_packages(vec![match_spec], platform).await {
+        let records = match self.solve_packages(vec![match_spec], platform, None).await {
             Ok(r) => r,
             Err(e) => {
                 debug!(
@@ -737,5 +772,46 @@ impl Backend for CondaBackend {
         } else {
             Ok(vec![install_path.join("bin")])
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CondaBackend;
+    use chrono::{DateTime, Utc};
+    use jiff::Timestamp;
+    use pretty_assertions::assert_eq;
+    use rattler_conda_types::{MatchSpec, ParseStrictness};
+    use rattler_solve::ExcludeNewer;
+
+    #[test]
+    fn test_solver_exclude_newer_from_before_date() {
+        let before_date: Timestamp = "2024-01-02T03:04:05Z".parse().unwrap();
+        let exclude_newer = CondaBackend::solver_exclude_newer(Some(before_date)).unwrap();
+        let expected = DateTime::parse_from_rfc3339("2024-01-02T03:04:05Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert_eq!(exclude_newer, Some(ExcludeNewer::from(expected)));
+    }
+
+    #[test]
+    fn test_build_solver_task_wires_exclude_newer() {
+        let spec =
+            MatchSpec::from_str("python", ParseStrictness::Lenient).expect("valid conda spec");
+        let before_date: Timestamp = "2024-01-02T03:04:05Z".parse().unwrap();
+        let task =
+            CondaBackend::build_solver_task(&[], vec![spec], vec![], Some(before_date)).unwrap();
+        let expected = DateTime::parse_from_rfc3339("2024-01-02T03:04:05Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert_eq!(task.exclude_newer, Some(ExcludeNewer::from(expected)));
+    }
+
+    #[test]
+    fn test_build_solver_task_without_before_date() {
+        let spec =
+            MatchSpec::from_str("python", ParseStrictness::Lenient).expect("valid conda spec");
+        let task = CondaBackend::build_solver_task(&[], vec![spec], vec![], None).unwrap();
+        assert_eq!(task.exclude_newer, None);
     }
 }
