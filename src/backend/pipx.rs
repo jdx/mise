@@ -18,6 +18,7 @@ use async_trait::async_trait;
 use eyre::{Result, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
+use jiff::Timestamp;
 use regex::Regex;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -229,6 +230,7 @@ impl Backend for PIPXBackend {
                 ctx.pr.as_ref(),
             )
             .await?;
+            cmd = Self::apply_transitive_install_before(cmd, PipxInstaller::Uvx, ctx.before_date);
             if let Some(args) = tv.request.options().get("uvx_args") {
                 cmd = cmd.args(shell_words::split(args)?);
             }
@@ -244,6 +246,7 @@ impl Backend for PIPXBackend {
                 ctx.pr.as_ref(),
             )
             .await?;
+            cmd = Self::apply_transitive_install_before(cmd, PipxInstaller::Pipx, ctx.before_date);
             if let Some(args) = tv.request.options().get("pipx_args") {
                 cmd = cmd.args(shell_words::split(args)?);
             }
@@ -288,6 +291,32 @@ pub fn install_time_option_keys() -> Vec<String> {
 }
 
 impl PIPXBackend {
+    fn transitive_install_before_env(
+        installer: PipxInstaller,
+        before_date: Option<Timestamp>,
+    ) -> Option<(&'static str, String)> {
+        before_date.map(|before_date| {
+            let env_key = match installer {
+                PipxInstaller::Uvx => "UV_EXCLUDE_NEWER",
+                PipxInstaller::Pipx => "PIP_EXCLUDE_NEWER",
+            };
+            (env_key, before_date.to_string())
+        })
+    }
+
+    fn apply_transitive_install_before<'a>(
+        mut cmd: CmdLineRunner<'a>,
+        installer: PipxInstaller,
+        before_date: Option<Timestamp>,
+    ) -> CmdLineRunner<'a> {
+        if let Some((env_key, env_value)) =
+            Self::transitive_install_before_env(installer, before_date)
+        {
+            cmd = cmd.env(env_key, env_value);
+        }
+        cmd
+    }
+
     pub fn from_arg(ba: BackendArg) -> Self {
         Self {
             latest_version_cache: CacheManagerBuilder::new(
@@ -639,4 +668,43 @@ fn fix_venv_python_symlink(install_path: &Path, pkg_name: &str) -> Result<()> {
 #[cfg(not(unix))]
 fn fix_venv_python_symlink(_install_path: &Path, _pkg_name: &str) -> Result<()> {
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PipxInstaller {
+    Uvx,
+    Pipx,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PIPXBackend, PipxInstaller};
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_transitive_install_before_env_for_uvx() {
+        let before_date = "2024-01-02T03:04:05Z".parse().unwrap();
+        let env = PIPXBackend::transitive_install_before_env(PipxInstaller::Uvx, Some(before_date));
+        assert_eq!(
+            env,
+            Some(("UV_EXCLUDE_NEWER", "2024-01-02T03:04:05Z".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_transitive_install_before_env_for_pipx() {
+        let before_date = "2024-01-02T03:04:05Z".parse().unwrap();
+        let env =
+            PIPXBackend::transitive_install_before_env(PipxInstaller::Pipx, Some(before_date));
+        assert_eq!(
+            env,
+            Some(("PIP_EXCLUDE_NEWER", "2024-01-02T03:04:05Z".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_transitive_install_before_env_without_cutoff() {
+        let env = PIPXBackend::transitive_install_before_env(PipxInstaller::Pipx, None);
+        assert_eq!(env, None);
+    }
 }
