@@ -20,14 +20,19 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise.toml"]
+include = ["mise.toml", "mise-age.toml"]
 EOF
 
 # Create a mise.toml exercising task properties that were previously broken
 cat >"$HOME/workdir/mise.toml" <<'TOML'
+env_file = ".env"
+env_path = "./bin"
+
 [task_templates.base]
 quiet = true
 dir = "{{config_root}}"
+deny_net = true
+allow_env = ["CI"]
 
 [tasks.build]
 description = "Build the project"
@@ -36,6 +41,8 @@ run = "cargo build"
 dir = "{{config_root}}"
 quiet = true
 usage = "build [args]"
+deny_env = true
+allow_read = ["."]
 
 [tasks.lint]
 extends = "base"
@@ -43,9 +50,18 @@ run = "cargo clippy"
 description = "Lint the project"
 TOML
 
+# Create a separate file for age schema coverage so mise does not try to decrypt
+# placeholder values while running tombi through `mise x`.
+cat >"$HOME/workdir/mise-age.toml" <<'TOML'
+[env]
+SECRET_SIMPLE = { age = "AGE-SECRET", tools = true }
+SECRET_COMPLEX = { age = { value = "AGE-SECRET", format = "raw", tools = true, redact = true } }
+TOML
+
 # tombi lint should succeed with no errors (warnings about table order are ok)
 cd "$HOME/workdir"
 assert_succeed "$TOMBI lint --offline --no-cache --quiet mise.toml"
+assert_succeed "$TOMBI lint --offline --no-cache --quiet mise-age.toml"
 
 # Verify that invalid properties on tasks are rejected
 cat >"$HOME/workdir/mise-bad.toml" <<'TOML'
@@ -64,10 +80,18 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-tmpl.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-tmpl.toml"]
 EOF
 
 assert_fail "$TOMBI lint --offline --no-cache --quiet mise-bad.toml"
+
+# Verify that options for complex age values must be nested inside age
+cat >"$HOME/workdir/mise-bad-age.toml" <<'TOML'
+[env]
+SECRET = { age = { value = "AGE-SECRET" }, tools = true }
+TOML
+
+assert_fail "$TOMBI lint --offline --no-cache --quiet mise-bad-age.toml"
 
 # Verify that extends is rejected on task_templates (not supported at runtime)
 cat >"$HOME/workdir/mise-bad-tmpl.toml" <<'TOML'

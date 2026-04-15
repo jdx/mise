@@ -2476,4 +2476,94 @@ backend = "conda:jq"
         };
         assert!(!info.is_empty());
     }
+
+    #[test]
+    fn test_set_platform_info_all_platforms_get_slsa_url() {
+        // Regression guard: when all platforms have Slsa { url: Some(...) },
+        // the lockfile should serialize ALL entries with the expanded form.
+        let mut lockfile = Lockfile::default();
+        let platforms = vec!["linux-x64", "linux-arm64", "macos-x64", "macos-arm64"];
+        for platform in &platforms {
+            lockfile.set_platform_info(
+                "sops",
+                "3.12.1",
+                Some("aqua:getsops/sops"),
+                &BTreeMap::new(),
+                platform,
+                PlatformInfo {
+                    checksum: Some("sha256:abc123".to_string()),
+                    url: Some(format!("https://example.com/sops-{platform}.tar.gz")),
+                    provenance: Some(ProvenanceType::Slsa {
+                        url: Some(format!("https://example.com/sops-{platform}.intoto.jsonl")),
+                    }),
+                    ..Default::default()
+                },
+            );
+        }
+        let temp_dir = std::env::temp_dir();
+        let test_lockfile = temp_dir.join("test_provenance_all_platforms.lock");
+        lockfile.save(&test_lockfile).unwrap();
+        let serialized = std::fs::read_to_string(&test_lockfile).unwrap();
+        let _ = std::fs::remove_file(&test_lockfile);
+        // ALL platform entries should have the expanded provenance.slsa form
+        for platform in &platforms {
+            assert!(
+                serialized.contains(&format!("\"platforms.{platform}\".provenance.slsa")),
+                "platform {platform} should have expanded provenance.slsa form, got:\n{serialized}"
+            );
+        }
+        // No short-form provenance should appear
+        assert!(
+            !serialized.contains("provenance = \"slsa\""),
+            "no short-form provenance should appear, got:\n{serialized}"
+        );
+    }
+
+    #[test]
+    fn test_set_platform_info_none_provenance_preserves_existing_url() {
+        // When new PlatformInfo has provenance=None, existing Slsa URL should be preserved
+        let mut lockfile = Lockfile::default();
+        // First: set platform info with Slsa URL
+        lockfile.set_platform_info(
+            "sops",
+            "3.12.1",
+            Some("aqua:getsops/sops"),
+            &BTreeMap::new(),
+            "linux-x64",
+            PlatformInfo {
+                checksum: Some("sha256:abc123".to_string()),
+                url: Some("https://example.com/sops.tar.gz".to_string()),
+                provenance: Some(ProvenanceType::Slsa {
+                    url: Some("https://example.com/sops.intoto.jsonl".to_string()),
+                }),
+                ..Default::default()
+            },
+        );
+        // Second: set same platform with provenance=None (simulates verification failure)
+        lockfile.set_platform_info(
+            "sops",
+            "3.12.1",
+            Some("aqua:getsops/sops"),
+            &BTreeMap::new(),
+            "linux-x64",
+            PlatformInfo {
+                checksum: Some("sha256:abc123".to_string()),
+                url: Some("https://example.com/sops.tar.gz".to_string()),
+                provenance: None,
+                ..Default::default()
+            },
+        );
+        // The existing Slsa URL should be preserved by merge
+        let tool = &lockfile.tools["sops"][0];
+        let info = &tool.platforms["linux-x64"];
+        match &info.provenance {
+            Some(ProvenanceType::Slsa { url }) => {
+                assert_eq!(
+                    url.as_deref(),
+                    Some("https://example.com/sops.intoto.jsonl")
+                );
+            }
+            other => panic!("expected Slsa provenance with URL, got: {other:?}"),
+        }
+    }
 }

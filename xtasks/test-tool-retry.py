@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 #MISE description="Retry failed test-tools with grace period for recent upstream releases"
 #USAGE flag "--grace-period" help="Ignore failures from tools whose upstream released <7 days ago"
+#USAGE flag "--check-only" help="Skip retrying tools, only check grace period (use with --grace-period)"
 #USAGE arg "<tools>..." help="Failed tools to retry"
 """Retries failed test-tool runs. With --grace-period, tools backed by
 GitHub/aqua whose latest upstream release is less than 7 days old have
@@ -113,16 +114,20 @@ def check_grace_period(tools: list[str]) -> list[str]:
 
 def main():
     grace_period = "--grace-period" in sys.argv
+    check_only = "--check-only" in sys.argv
     tools = [a for a in sys.argv[1:] if not a.startswith("-")]
 
     if not tools:
-        print("Usage: test-tool-retry [--grace-period] <tool1> [tool2] ...")
+        print("Usage: test-tool-retry [--grace-period] [--check-only] <tool1> [tool2] ...")
         sys.exit(1)
 
-    still_failing = retry_tools(tools)
-    if not still_failing:
-        print("All tools passed on retry.")
-        sys.exit(0)
+    if check_only:
+        still_failing = tools
+    else:
+        still_failing = retry_tools(tools)
+        if not still_failing:
+            print("All tools passed on retry.")
+            sys.exit(0)
 
     if not grace_period:
         print(f"Failed tools: {', '.join(still_failing)}")

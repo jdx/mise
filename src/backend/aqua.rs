@@ -660,6 +660,28 @@ impl Backend for AquaBackend {
         // Detect provenance from aqua registry config
         let mut provenance = self.detect_provenance_type(&pkg);
 
+        // Resolve SLSA provenance URL for all platforms (not just current).
+        // This ensures deterministic lockfile output regardless of host platform.
+        if matches!(provenance, Some(ProvenanceType::Slsa { url: None })) {
+            match self
+                .resolve_slsa_url(&pkg, &v, target_os, target_arch)
+                .await
+            {
+                Ok(resolved_url) => {
+                    provenance = Some(ProvenanceType::Slsa {
+                        url: Some(resolved_url),
+                    });
+                }
+                Err(e) => {
+                    warn!(
+                        "failed to resolve SLSA provenance URL for {} ({}-{}), \
+                         lockfile entry will use short form: {e}",
+                        self.id, target_os, target_arch
+                    );
+                }
+            }
+        }
+
         // For the current platform, verify provenance cryptographically at lock time.
         // This ensures the lockfile's provenance entry is backed by actual verification,
         // not just registry metadata. Cross-platform entries remain detection-only.
@@ -854,15 +876,14 @@ impl AquaBackend {
         }
     }
 
-    /// Download SLSA provenance file and verify against an already-downloaded artifact.
-    /// Returns the provenance download URL on success.
-    async fn run_slsa_check(
+    /// Resolve the SLSA provenance URL for a target platform without downloading.
+    /// Uses cached GitHub release data or template-based URL construction.
+    async fn resolve_slsa_url(
         &self,
-        artifact_path: &Path,
         pkg: &AquaPackage,
         v: &str,
-        download_dir: &Path,
-        pr: Option<&dyn SingleReport>,
+        target_os: &str,
+        target_arch: &str,
     ) -> Result<String> {
         let slsa = pkg
             .slsa_provenance
@@ -873,22 +894,31 @@ impl AquaBackend {
         (slsa_pkg.repo_owner, slsa_pkg.repo_name) =
             resolve_repo_info(slsa.repo_owner.as_ref(), slsa.repo_name.as_ref(), pkg);
 
-        let (provenance_path, provenance_url) = match slsa.r#type.as_deref().unwrap_or_default() {
+        match slsa.r#type.as_deref().unwrap_or_default() {
             "github_release" => {
-                let asset_strs = slsa.asset_strs(pkg, v, os(), arch())?;
+                let asset_strs = slsa.asset_strs(&slsa_pkg, v, target_os, target_arch)?;
                 let (url, _) = self.github_release_asset(&slsa_pkg, v, asset_strs).await?;
-                let path = download_dir.join(get_filename_from_url(&url));
-                HTTP.download_file(&url, &path, pr).await?;
-                (path, url)
+                Ok(url)
             }
-            "http" => {
-                let url = slsa.url(pkg, v, os(), arch())?;
-                let path = download_dir.join(get_filename_from_url(&url));
-                HTTP.download_file(&url, &path, pr).await?;
-                (path, url)
-            }
-            t => return Err(eyre!("unsupported slsa type: {t}")),
-        };
+            "http" => slsa.url(&slsa_pkg, v, target_os, target_arch),
+            t => Err(eyre!("unsupported slsa type: {t}")),
+        }
+    }
+
+    /// Download SLSA provenance file and verify against an already-downloaded artifact.
+    /// Returns the provenance download URL on success.
+    async fn run_slsa_check(
+        &self,
+        artifact_path: &Path,
+        pkg: &AquaPackage,
+        v: &str,
+        download_dir: &Path,
+        pr: Option<&dyn SingleReport>,
+    ) -> Result<String> {
+        let provenance_url = self.resolve_slsa_url(pkg, v, os(), arch()).await?;
+        let provenance_path = download_dir.join(get_filename_from_url(&provenance_url));
+        HTTP.download_file(&provenance_url, &provenance_path, pr)
+            .await?;
 
         match sigstore_verification::verify_slsa_provenance(artifact_path, &provenance_path, 1u8)
             .await

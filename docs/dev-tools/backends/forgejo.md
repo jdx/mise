@@ -4,7 +4,7 @@ You may install Codeberg and other Forgejo compatible release assets directly us
 
 By default, the Forgejo backend uses the public Codeberg instance at [https://codeberg.org](https://codeberg.org). For other or self-hosted Forgejo instances, you can specify a custom API URL using the `api_url` tool option.
 
-The code for this is inside of the mise repository at [`./src/backend/forgejo.rs`](https://github.com/jdx/mise/blob/main/src/backend/forgejo.rs).
+The code for this is inside of the mise repository at [`src/backend/github.rs`](https://github.com/jdx/mise/blob/main/src/backend/github.rs).
 
 ## Usage
 
@@ -105,10 +105,12 @@ This uses `git credential fill` and supports credentials stored by helpers such 
 
 ### Debugging token resolution
 
+Use `mise token forgejo` to see which token mise would use for a given host:
+
 ```sh
-mise forgejo token
-mise forgejo token --unmask
-mise forgejo token forgejo.mycompany.com
+mise token forgejo
+mise token forgejo --unmask
+mise token forgejo forgejo.mycompany.com
 ```
 
 ## Tool Options
@@ -133,7 +135,7 @@ mise install forgejo:user/repo
 ```
 
 ::: tip
-The autodetection logic is implemented in [`src/backend/asset_detector.rs`](https://github.com/jdx/mise/blob/main/src/backend/asset_detector.rs), which is shared by the Forgejo, GitHub and GitLab backends.
+The autodetection logic is implemented in [`src/backend/asset_matcher.rs`](https://github.com/jdx/mise/blob/main/src/backend/asset_matcher.rs), which is shared by the Forgejo, GitHub and GitLab backends.
 :::
 
 ### `asset_pattern`

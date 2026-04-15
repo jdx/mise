@@ -951,7 +951,7 @@ pub trait Backend: Debug + Send + Sync {
     /// every backend needing to implement `package.json` support. For other files, it
     /// delegates to `_parse_idiomatic_file`.
     async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
-        if path.file_name().is_some_and(|f| f == "package.json") {
+        if crate::config::config_file::idiomatic_version::package_json::is_package_json(path) {
             return crate::config::config_file::idiomatic_version::package_json::parse(
                 path,
                 self.id(),
@@ -1405,10 +1405,14 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     async fn dependency_env(&self, config: &Arc<Config>) -> eyre::Result<BTreeMap<String, String>> {
+        // Use full_env_without_tools to avoid triggering `tools = true` env module
+        // hooks (e.g., MiseEnv Lua hooks). Those modules may depend on tools that
+        // are not in the dependency toolset, causing "command not found" errors.
+        // The dependency env only needs tool bin paths on PATH, not module outputs.
         let mut env = self
             .dependency_toolset(config)
             .await?
-            .full_env(config)
+            .full_env_without_tools(config)
             .await?;
 
         // Remove mise shims from PATH to prevent infinite shim recursion when a

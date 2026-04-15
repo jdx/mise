@@ -40,6 +40,12 @@ impl Backend for UbiBackend {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
+        deprecated_at!(
+            "2026.4.0",
+            "2027.1.0",
+            "ubi",
+            "The ubi backend is deprecated. Use the github backend instead (e.g., github:owner/repo)."
+        );
         if name_is_url(&self.tool_name()) {
             Ok(vec![VersionInfo {
                 version: "latest".to_string(),
@@ -193,9 +199,11 @@ impl Backend for UbiBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        deprecated!(
+        deprecated_at!(
+            "2026.4.0",
+            "2027.1.0",
             "ubi",
-            "The ubi backend is deprecated. Use the github backend instead (e.g., github:owner/repo)"
+            "The ubi backend is deprecated. Use the github backend instead (e.g., github:owner/repo)."
         );
         // Check if lockfile has URL for this platform
         let platform_key = self.get_platform_key();

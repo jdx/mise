@@ -573,7 +573,7 @@ fn default_backoff_strategy(retries: i64) -> impl Iterator<Item = std::time::Dur
 #[cfg(test)]
 mod tests {
     use super::*;
-    use confique::Partial;
+    use confique::Layer;
     use indexmap::IndexMap;
     use url::Url;
 

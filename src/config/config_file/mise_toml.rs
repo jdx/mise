@@ -2253,6 +2253,46 @@ mod tests {
         file::remove_file(&p).unwrap();
     }
 
+    #[test]
+    fn test_tasks_confirm_parses() {
+        let body = r#"
+[tasks.deploy]
+confirm = { message = "Are you sure you want to deploy to ({{ env.HOME }})?", default = "no" }
+run = 'echo " $usage_environment"'
+"#;
+
+        let path = std::path::Path::new("/tmp/mise.toml");
+        let rf = MiseToml::from_str(body, path).unwrap();
+        let task = rf.tasks.0.get("deploy").expect("deploy task should exist");
+
+        assert!(matches!(
+            task.confirm,
+            Some(crate::task::TaskConfirm::Options { .. })
+        ));
+    }
+
+    #[test]
+    fn test_task_templates_confirm_parses() {
+        let body = r#"
+[task_templates.deploy]
+confirm = { message = "Are you sure?", default = "no" }
+run = 'echo "template"'
+"#;
+
+        let path = std::path::Path::new("/tmp/mise.toml");
+        let rf = MiseToml::from_str(body, path).unwrap();
+        let template = rf
+            .task_templates
+            .0
+            .get("deploy")
+            .expect("deploy template should exist");
+
+        assert!(matches!(
+            template.confirm,
+            Some(crate::task::TaskConfirm::Options { .. })
+        ));
+    }
+
     #[tokio::test]
     async fn test_remove_alias() {
         let _config = Config::get().await.unwrap();

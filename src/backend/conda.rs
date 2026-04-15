@@ -132,8 +132,8 @@ impl CondaBackend {
             timeout: None,
             channel_priority: ChannelPriority::Strict,
             exclude_newer: None,
-            min_age: None,
             strategy: SolveStrategy::Highest,
+            dependency_overrides: vec![],
         };
 
         let mut solver = ResolvoSolver;
