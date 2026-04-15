@@ -399,15 +399,14 @@ impl BackendArg {
         if split_bracketed_opts(&full).is_some() {
             return full;
         }
-        if let Some(opts) = &self.opts {
-            if let Some(opts_str) = serialize_tool_options(
+        if let Some(opts) = &self.opts
+            && let Some(opts_str) = serialize_tool_options(
                 opts.opts
                     .iter()
                     .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str())),
             ) {
                 return format!("{full}[{opts_str}]");
             }
-        }
         full
     }
 
