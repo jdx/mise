@@ -404,9 +404,10 @@ impl BackendArg {
                 opts.opts
                     .iter()
                     .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str())),
-            ) {
-                return format!("{full}[{opts_str}]");
-            }
+            )
+        {
+            return format!("{full}[{opts_str}]");
+        }
         full
     }
 
