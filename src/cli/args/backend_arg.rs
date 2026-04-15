@@ -4,7 +4,10 @@ use crate::config::Config;
 use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state::InstallStateTool;
-use crate::toolset::{EPHEMERAL_OPT_KEYS, ToolVersionOptions, install_state, parse_tool_options};
+use crate::toolset::{
+    EPHEMERAL_OPT_KEYS, ToolVersionOptions, install_state, parse_tool_options,
+    serialize_tool_options,
+};
 use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
 use eyre::{Result, bail};
@@ -397,18 +400,11 @@ impl BackendArg {
             return full;
         }
         if let Some(opts) = &self.opts {
-            let opts_str = opts
-                .opts
-                .iter()
-                .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str()))
-                .filter_map(|(k, v)| match v {
-                    toml::Value::String(s) => Some(format!("{k}={s}")),
-                    toml::Value::Table(_) | toml::Value::Array(_) => None,
-                    _ => Some(format!("{k}={v}")),
-                })
-                .collect::<Vec<_>>()
-                .join(",");
-            if !full.contains(['[', ']']) && !opts_str.is_empty() {
+            if let Some(opts_str) = serialize_tool_options(
+                opts.opts
+                    .iter()
+                    .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str())),
+            ) {
                 return format!("{full}[{opts_str}]");
             }
         }
@@ -697,6 +693,44 @@ mod tests {
             "http:hello-lock[url=https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]",
             fa.full_with_opts()
         );
+    }
+
+    #[tokio::test]
+    async fn test_full_with_opts_round_trips_comma_strings() {
+        let _config = Config::get().await.unwrap();
+
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "query".to_string(),
+            toml::Value::String("first,second=value".to_string()),
+        );
+
+        let mut fa: BackendArg = "http:hello-lock".into();
+        fa.set_opts(Some(opts));
+
+        let serialized = fa.full_with_opts();
+        assert_str_eq!(r#"http:hello-lock[query="first,second=value"]"#, serialized);
+
+        let reparsed: BackendArg = serialized.as_str().into();
+        let reparsed_opts = reparsed.opts();
+        assert_eq!(reparsed_opts.get("query"), Some("first,second=value"));
+        assert!(!reparsed_opts.contains_key("second"));
+    }
+
+    #[tokio::test]
+    async fn test_full_with_opts_omits_empty_brackets_for_complex_opts() {
+        let _config = Config::get().await.unwrap();
+
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "targets".to_string(),
+            toml::Value::Array(vec![toml::Value::String("x86_64".to_string())]),
+        );
+
+        let mut fa: BackendArg = "npm:prettier".into();
+        fa.set_opts(Some(opts));
+
+        assert_str_eq!("npm:prettier", fa.full_with_opts());
     }
 
     #[tokio::test]
