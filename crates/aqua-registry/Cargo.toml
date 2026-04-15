@@ -47,6 +47,7 @@ tokio = { version = "1", features = ["sync"] }
 
 # Logging
 log = "0.4"
+zstd = "0.13"
 
 
 [dev-dependencies]
@@ -55,3 +56,4 @@ tokio = { version = "1", features = ["rt", "macros"] }
 [build-dependencies]
 eyre = "0.6"
 serde_yaml = "0.9"
+zstd = "0.13"

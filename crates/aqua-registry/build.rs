@@ -16,13 +16,14 @@ fn main() -> Result<()> {
 #[derive(Debug)]
 struct PackageRegistry {
     id: String,
-    content: String,
+    compressed_content: Vec<u8>,
     aliases: Vec<String>,
 }
 
 fn generate_baked_registry(out_dir: &str) -> Result<()> {
     let files_dest_path = Path::new(out_dir).join("aqua_standard_registry_files.rs");
     let aliases_dest_path = Path::new(out_dir).join("aqua_standard_registry_aliases.rs");
+    let blobs_dir = Path::new(out_dir).join("aqua_standard_registry_blobs");
 
     let registry_file = find_registry_file()?;
 
@@ -57,9 +58,13 @@ fn generate_baked_registry(out_dir: &str) -> Result<()> {
             registry_file.display()
         ));
     }
+    fs::create_dir_all(&blobs_dir).wrap_err("Failed to create baked registry blob directory")?;
 
-    fs::write(files_dest_path, registry_files_code(&registries))
-        .wrap_err("Failed to write baked registry files")?;
+    fs::write(
+        files_dest_path,
+        registry_files_code(&registries, &blobs_dir)?,
+    )
+    .wrap_err("Failed to write baked registry files")?;
     fs::write(aliases_dest_path, registry_aliases_code(&registries))
         .wrap_err("Failed to write baked registry aliases")?;
     Ok(())
@@ -111,24 +116,37 @@ fn package_registries(packages: &[Value]) -> Result<Vec<PackageRegistry>> {
             continue;
         };
         let content = package_registry_yaml(package)?;
+        let compressed_content = compress_registry_yaml(&content)?;
         let aliases = package_aliases(package);
         registries.push(PackageRegistry {
             id,
-            content,
+            compressed_content,
             aliases,
         });
     }
     Ok(registries)
 }
 
-fn registry_files_code(registries: &[PackageRegistry]) -> String {
-    let mut entries = registries
-        .iter()
-        .map(|registry| (registry.id.clone(), registry.content.clone()))
-        .collect::<Vec<_>>();
-    entries.sort_by(|a, b| a.0.cmp(&b.0));
+fn registry_files_code(registries: &[PackageRegistry], blobs_dir: &Path) -> Result<String> {
+    let mut entries = registries.iter().collect::<Vec<_>>();
+    entries.sort_by(|a, b| a.id.cmp(&b.id));
 
-    registry_map_code(&entries)
+    let mut code = String::from("HashMap::from([\n");
+    for (idx, registry) in entries.into_iter().enumerate() {
+        let blob_path = blobs_dir.join(format!("{idx}.zst"));
+        fs::write(&blob_path, &registry.compressed_content).wrap_err_with(|| {
+            format!(
+                "Failed to write compressed registry blob {}",
+                blob_path.display()
+            )
+        })?;
+        code.push_str(&format!(
+            "    ({:?}, include_bytes!({blob_path:?}).as_slice()),\n",
+            registry.id
+        ));
+    }
+    code.push_str("])");
+    Ok(code)
 }
 
 fn registry_aliases_code(registries: &[PackageRegistry]) -> String {
@@ -169,6 +187,11 @@ fn package_registry_yaml(package: &Value) -> Result<String> {
     );
     serde_yaml::to_string(&Value::Mapping(registry))
         .wrap_err("Failed to serialize aqua package registry")
+}
+
+fn compress_registry_yaml(content: &str) -> Result<Vec<u8>> {
+    zstd::stream::encode_all(content.as_bytes(), zstd::DEFAULT_COMPRESSION_LEVEL)
+        .wrap_err("Failed to compress aqua package registry")
 }
 
 fn canonical_package_id(package: &Value) -> Option<String> {

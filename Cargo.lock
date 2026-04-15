@@ -244,6 +244,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "versions 6.3.2",
+ "zstd",
 ]
 
 [[package]]
