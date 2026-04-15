@@ -358,12 +358,40 @@ impl ToolRequest {
     }
 
     pub fn is_os_supported(&self) -> bool {
-        if let Some(os) = self.os()
-            && !os.contains(&crate::cli::version::OS)
-        {
-            return false;
+        if let Some(os_list) = self.os() {
+            let current_os = &crate::cli::version::OS;
+            let current_arch = &crate::cli::version::ARCH;
+            let matched = os_list.iter().any(|entry| {
+                if let Some((os, arch)) = entry.split_once('/') {
+                    normalize_os(os) == current_os.as_str()
+                        && normalize_arch(arch) == current_arch.as_str()
+                } else {
+                    normalize_os(entry) == current_os.as_str()
+                }
+            });
+            if !matched {
+                return false;
+            }
         }
         self.ba().is_os_supported()
+    }
+}
+
+/// Normalize OS name aliases to the canonical form used by `std::env::consts::OS`.
+fn normalize_os(os: &str) -> &str {
+    match os {
+        "darwin" | "macos" => "macos",
+        "windows" | "win" => "windows",
+        other => other,
+    }
+}
+
+/// Normalize architecture name aliases to the canonical form used by `cli::version::ARCH`.
+fn normalize_arch(arch: &str) -> &str {
+    match arch {
+        "x86_64" | "amd64" | "x64" => "x64",
+        "aarch64" | "arm64" => "arm64",
+        other => other,
     }
 }
 
@@ -515,5 +543,27 @@ mod tests {
         assert_str_eq!(version_sub("0.1.0", "1"), "0");
         assert_str_eq!(version_sub("1.2.3", "0.2.4"), "0");
         assert_str_eq!(version_sub("1.3.3", "0.2.4"), "1.0");
+    }
+
+    #[test]
+    fn test_normalize_os() {
+        use super::normalize_os;
+        assert_eq!(normalize_os("macos"), "macos");
+        assert_eq!(normalize_os("darwin"), "macos");
+        assert_eq!(normalize_os("linux"), "linux");
+        assert_eq!(normalize_os("windows"), "windows");
+        assert_eq!(normalize_os("win"), "windows");
+        assert_eq!(normalize_os("freebsd"), "freebsd");
+    }
+
+    #[test]
+    fn test_normalize_arch() {
+        use super::normalize_arch;
+        assert_eq!(normalize_arch("arm64"), "arm64");
+        assert_eq!(normalize_arch("aarch64"), "arm64");
+        assert_eq!(normalize_arch("x64"), "x64");
+        assert_eq!(normalize_arch("x86_64"), "x64");
+        assert_eq!(normalize_arch("amd64"), "x64");
+        assert_eq!(normalize_arch("riscv64"), "riscv64");
     }
 }
