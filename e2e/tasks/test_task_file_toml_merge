@@ -37,3 +37,28 @@ assert_contains "mise tasks ls" "Echo the configured TASK_VAR"
 # And through `tasks ls --json` with the expected env directive.
 assert_contains "mise tasks ls --json" '"description": "Echo the configured TASK_VAR"'
 assert_contains "mise tasks ls --json" '"TASK_VAR=from-toml"'
+
+# Overlay deps (including usage-arg refs) survive re-rendering. The overlay
+# adds a `depends` with a `{{usage.app}}` template that must resolve when
+# the parent task receives `--app=demo` from the CLI.
+cat <<'SCRIPT' >.mise/tasks/parent
+#!/usr/bin/env bash
+#USAGE flag "--app <app>"
+echo "parent app=$usage_app"
+SCRIPT
+chmod +x .mise/tasks/parent
+
+cat <<'SCRIPT' >.mise/tasks/child
+#!/usr/bin/env bash
+echo "child got: $*"
+SCRIPT
+chmod +x .mise/tasks/child
+
+cat <<'EOF' >>mise.toml
+
+[tasks.parent]
+depends = ["child {{usage.app}}"]
+EOF
+
+assert_contains "mise run parent --app demo" "child got: demo"
+assert_contains "mise run parent --app demo" "parent app=demo"

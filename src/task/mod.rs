@@ -1263,20 +1263,38 @@ impl Task {
             .extend(other.env.0.into_iter().map(|d| (d, overlay_src.clone())));
         self.overlay_vars
             .extend(other.vars.0.into_iter().map(|d| (d, overlay_src.clone())));
-        self.depends.extend(other.depends.clone());
-        self.depends_post.extend(other.depends_post.clone());
-        self.wait_for.extend(other.wait_for.clone());
-        // Keep the *_raw snapshots in sync so `render_depends_with_usage`
-        // re-renders the merged set rather than silently dropping overlay deps.
-        if let Some(raw) = self.depends_raw.as_mut() {
-            raw.extend(other.depends);
-        }
-        if let Some(raw) = self.depends_post_raw.as_mut() {
-            raw.extend(other.depends_post);
-        }
-        if let Some(raw) = self.wait_for_raw.as_mut() {
-            raw.extend(other.wait_for);
-        }
+        // Keep the *_raw (pre-render) snapshots in sync with the live deps
+        // so `render_depends_with_usage` re-renders the merged set rather
+        // than silently dropping overlay deps. Prefer the overlay's raw
+        // (unrendered) templates so `{{usage.*}}` refs survive re-rendering;
+        // fall back to the rendered form if raw wasn't captured.
+        // Compute/initialize the *_raw snapshots BEFORE extending the live
+        // deps, so if a snapshot is missing we seed it from just self's
+        // pre-overlay deps rather than the already-extended list.
+        let other_depends_raw = other
+            .depends_raw
+            .clone()
+            .unwrap_or_else(|| other.depends.clone());
+        let other_depends_post_raw = other
+            .depends_post_raw
+            .clone()
+            .unwrap_or_else(|| other.depends_post.clone());
+        let other_wait_for_raw = other
+            .wait_for_raw
+            .clone()
+            .unwrap_or_else(|| other.wait_for.clone());
+        self.depends_raw
+            .get_or_insert_with(|| self.depends.clone())
+            .extend(other_depends_raw);
+        self.depends_post_raw
+            .get_or_insert_with(|| self.depends_post.clone())
+            .extend(other_depends_post_raw);
+        self.wait_for_raw
+            .get_or_insert_with(|| self.wait_for.clone())
+            .extend(other_wait_for_raw);
+        self.depends.extend(other.depends);
+        self.depends_post.extend(other.depends_post);
+        self.wait_for.extend(other.wait_for);
         if other.dir.is_some() {
             self.dir = other.dir;
         }
