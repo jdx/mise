@@ -131,10 +131,17 @@ impl Backend for NPMBackend {
         self.ensure_npm_for_version_check(config).await;
 
         // dist-tags returns the absolute latest; bypass it when install_before
-        // is set so that `mise latest` / `mise edit` respect the date cutoff.
+        // is set (per-tool or global) so that callers like `mise latest` / `mise edit`
+        // that reach this method without a before_date context respect the cutoff.
         // (See jdx/mise#9136)
-        if let Some(before) = Settings::get()
-            .install_before
+        let before_str = config
+            .get_tool_opts(self.ba())
+            .await
+            .ok()
+            .flatten()
+            .and_then(|opts| opts.get("install_before").map(|s| s.to_string()))
+            .or_else(|| Settings::get().install_before.clone());
+        if let Some(before) = before_str
             .as_deref()
             .map(crate::duration::parse_into_timestamp)
             .transpose()?
