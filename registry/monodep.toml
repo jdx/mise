@@ -1,0 +1,3 @@
+backends = ["asdf:gracefullight/mise-monodep-plugin"]
+description = "Polyglot monorepo dependency deduplication for mise-managed workspaces (Node.js + Python hardlink dedup)"
+test = { cmd = "monodep --help", expected = "Monorepo dependency deduplication" }
