@@ -1,0 +1,7 @@
+backends = [
+  "aqua:containers/podlet",
+  "github:containers/podlet",
+  "cargo:podlet",
+]
+description = "Generate Podman Quadlet files from a Podman command, compose file, or existing object"
+test = { cmd = "podlet --version", expected = "podlet {{version}}" }

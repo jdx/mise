@@ -535,7 +535,8 @@ of what is set in `mise.toml`/`.tool-versions`.
 ### `MISE_TRUSTED_CONFIG_PATHS`
 
 This is a list of paths that mise will automatically mark as
-trusted. They can be separated with `:`.
+trusted. They are separated according to platform conventions for the PATH
+environment variable: `:` on Unix and `;` on Windows.
 
 ### `MISE_CEILING_PATHS`
 
