@@ -32,6 +32,7 @@ cat <<EOF >mise.toml
 "npm:prettier" = "latest"
 EOF
 mise install
+assert_not_empty "mise ls --installed npm:prettier 2>/dev/null | awk '{print \$2}' | head -1"
 installed_ver=$(mise ls --installed npm:prettier 2>/dev/null | awk '{print $2}' | head -1)
 # The latest version should be 3.x or higher (definitely not 2.8.8)
 assert_not_contains "echo '$installed_ver'" "2.8.8"
