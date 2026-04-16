@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+# Test that a `[tasks.<name>]` TOML block merges metadata (env, description,
+# dir, aliases, depends, etc.) into an auto-discovered file task of the same
+# name. Previously the file task silently won and the TOML block was discarded.
+# See jdx/mise#8673 (comment by calebhearth).
+
+mkdir -p .mise/tasks
+
+cat <<'SCRIPT' >.mise/tasks/echo-env
+#!/usr/bin/env bash
+echo "TASK_VAR=${TASK_VAR:-<unset>}"
+echo "DESC:${MISE_TASK_DESCRIPTION:-<none>}"
+SCRIPT
+chmod +x .mise/tasks/echo-env
+
+cat <<'EOF' >mise.toml
+[tasks.echo-env]
+description = "Echo the configured TASK_VAR"
+env = { TASK_VAR = "from-toml" }
+EOF
+
+# TOML env merges into the file task.
+assert_contains "mise run echo-env" "TASK_VAR=from-toml"
+
+# TOML description merges in and is surfaced through `tasks ls`.
+assert_contains "mise tasks ls" "Echo the configured TASK_VAR"
+
+# And through `tasks ls --json` with the expected env directive.
+assert_contains "mise tasks ls --json" '"description": "Echo the configured TASK_VAR"'
+assert_contains "mise tasks ls --json" '"TASK_VAR=from-toml"'

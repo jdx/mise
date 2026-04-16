@@ -128,6 +128,10 @@ impl TasksInfo {
 
     async fn display_json(&self, config: &Arc<Config>, task: &Task) -> Result<()> {
         let spec = task.parse_usage_spec_for_display(config).await?;
+        let resolved_dir = task
+            .dir(config)
+            .await?
+            .map(|p| p.to_string_lossy().to_string());
         let o = json!({
             "name": task.display_name,
             "aliases": task.aliases,
@@ -137,7 +141,7 @@ impl TasksInfo {
             "depends_post": task.depends_post,
             "wait_for": task.wait_for,
             "env": task.env.0.iter().map(|d| d.to_string()).collect::<Vec<_>>(),
-            "dir": task.dir,
+            "dir": resolved_dir,
             "hide": task.hide,
             "raw": task.raw,
             "interactive": task.interactive,

@@ -1218,6 +1218,71 @@ impl Task {
         })
     }
 
+    /// Overlay metadata from a `[tasks.<name>]` TOML block onto this task.
+    ///
+    /// Used when a file task (auto-discovered executable script) and a TOML
+    /// `[tasks.<name>]` block share the same name: the TOML block is treated
+    /// as a metadata overlay on top of the file task, so users can add env,
+    /// description, dependencies, etc. in `mise.toml` without having to move
+    /// the script out of the auto-discovered tasks directory.
+    ///
+    /// `self` is the file-task base (keeps its `run`/`file`/`config_source`);
+    /// `other` contributes its non-default fields.
+    pub fn merge_toml_overlay(&mut self, other: Task) {
+        if !other.description.is_empty() {
+            self.description = other.description;
+        }
+        for alias in other.aliases {
+            if !self.aliases.contains(&alias) {
+                self.aliases.push(alias);
+            }
+        }
+        // env/vars: append so the TOML block's entries resolve after the
+        // file task's and take precedence on key collisions.
+        self.env.0.extend(other.env.0);
+        self.vars.0.extend(other.vars.0);
+        self.depends.extend(other.depends);
+        self.depends_post.extend(other.depends_post);
+        self.wait_for.extend(other.wait_for);
+        if other.dir.is_some() {
+            self.dir = other.dir;
+        }
+        if other.hide {
+            self.hide = true;
+        }
+        if other.raw {
+            self.raw = true;
+        }
+        if other.raw_args {
+            self.raw_args = true;
+        }
+        if other.interactive {
+            self.interactive = true;
+        }
+        if other.quiet {
+            self.quiet = true;
+        }
+        if !matches!(other.silent, Silent::Off) {
+            self.silent = other.silent;
+        }
+        self.sources.extend(other.sources);
+        if other.shell.is_some() {
+            self.shell = other.shell;
+        }
+        if other.timeout.is_some() {
+            self.timeout = other.timeout;
+        }
+        if other.confirm.is_some() {
+            self.confirm = other.confirm;
+        }
+        for (k, v) in other.tools {
+            self.tools.insert(k, v);
+        }
+        if !other.usage.is_empty() {
+            self.usage = other.usage;
+        }
+    }
+
     pub async fn render(&mut self, config: &Arc<Config>, config_root: &Path) -> Result<()> {
         let mut tera = get_tera(Some(config_root));
         let tera_ctx = self.tera_ctx(config).await?;

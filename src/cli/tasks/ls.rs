@@ -143,7 +143,7 @@ impl TasksLs {
         } else if self.usage {
             self.display_usage(&config, tasks).await?;
         } else if self.json {
-            self.display_json(tasks)?;
+            self.display_json(&config, tasks).await?;
         } else {
             self.display(tasks)?;
         }
@@ -208,38 +208,42 @@ impl TasksLs {
         Ok(())
     }
 
-    fn display_json(&self, tasks: Vec<Task>) -> Result<()> {
-        let array_items = tasks
-            .into_iter()
-            .map(|task| {
-                json!({
-                  "name": task.display_name,
-                  "aliases": task.aliases,
-                  "description": task.description,
-                  "source": task.config_source,
-                  "depends": task.depends,
-                  "depends_post": task.depends_post,
-                  "wait_for": task.wait_for,
-                  "env": task.env.0.iter().map(|d| d.to_string()).collect::<Vec<_>>(),
-                  "dir": task.dir,
-                  "hide": task.hide,
-                  "global": task.global,
-                  "raw": task.raw,
-                  "interactive": task.interactive,
-                  "sources": task.sources,
-                  "outputs": task.outputs,
-                  "shell": task.shell,
-                  "quiet": task.quiet,
-                  "silent": task.silent,
-                  "tools": task.tools,
-                  "usage": task.usage,
-                  "timeout": task.timeout,
-                  "run": task.run_script_strings(),
-                  "args": task.args,
-                  "file": task.file
-                })
-            })
-            .collect::<serde_json::Value>();
+    async fn display_json(&self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<()> {
+        let mut array_items: Vec<serde_json::Value> = Vec::with_capacity(tasks.len());
+        for task in tasks {
+            // Report the resolved dir (including any inherited task_config.dir)
+            // so consumers see the directory the task will actually run in.
+            let resolved_dir = task
+                .dir(config)
+                .await?
+                .map(|p| p.to_string_lossy().to_string());
+            array_items.push(json!({
+                "name": task.display_name,
+                "aliases": task.aliases,
+                "description": task.description,
+                "source": task.config_source,
+                "depends": task.depends,
+                "depends_post": task.depends_post,
+                "wait_for": task.wait_for,
+                "env": task.env.0.iter().map(|d| d.to_string()).collect::<Vec<_>>(),
+                "dir": resolved_dir,
+                "hide": task.hide,
+                "global": task.global,
+                "raw": task.raw,
+                "interactive": task.interactive,
+                "sources": task.sources,
+                "outputs": task.outputs,
+                "shell": task.shell,
+                "quiet": task.quiet,
+                "silent": task.silent,
+                "tools": task.tools,
+                "usage": task.usage,
+                "timeout": task.timeout,
+                "run": task.run_script_strings(),
+                "args": task.args,
+                "file": task.file,
+            }));
+        }
         miseprintln!("{}", serde_json::to_string_pretty(&array_items)?);
         Ok(())
     }
