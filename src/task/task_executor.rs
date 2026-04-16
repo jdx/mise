@@ -1106,9 +1106,12 @@ impl TaskExecutor {
         let (spec, _) = task
             .parse_usage_spec_with_vars(config, self.cd.clone(), env, extra_vars)
             .await?;
-        if !spec.cmd.args.is_empty()
-            || !spec.cmd.flags.is_empty()
-            || !spec.cmd.subcommands.is_empty()
+        // raw_args tasks (and `-- --help`/`-- -h` ad-hoc invocations) must
+        // skip the usage parser so it can't intercept --help.
+        if !task.should_bypass_usage_parser()
+            && (!spec.cmd.args.is_empty()
+                || !spec.cmd.flags.is_empty()
+                || !spec.cmd.subcommands.is_empty())
         {
             let args: Vec<String> = get_args();
             trace!("Parsing usage spec for {:?}", args);
