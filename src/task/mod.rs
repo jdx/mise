@@ -1024,19 +1024,18 @@ impl Task {
     }
 
     pub fn estyled_prefix(&self) -> String {
-        static COLORS: Lazy<Vec<Color>> = Lazy::new(|| {
-            vec![
-                Color::Blue,
-                Color::Magenta,
-                Color::Cyan,
-                Color::Green,
-                Color::Yellow,
-                Color::Red,
-            ]
-        });
-        let idx = self.display_name.chars().map(|c| c as usize).sum::<usize>() % COLORS.len();
+        static COLORS: Lazy<Vec<Color>> =
+            Lazy::new(|| vec![Color::Blue, Color::Magenta, Color::Cyan, Color::Green]);
+        let hash = self.display_name.chars().map(|c| c as usize).sum::<usize>();
+        let mut styled = style::estyle(self.prefix()).fg(COLORS[hash % COLORS.len()]);
+        match (hash / COLORS.len()) % 4 {
+            1 => styled = styled.bold(),
+            2 => styled = styled.dim(),
+            3 => styled = styled.bright(),
+            _ => {}
+        }
 
-        style::ereset() + &style::estyle(self.prefix()).fg(COLORS[idx]).to_string()
+        style::ereset() + &styled.to_string()
     }
 
     pub async fn dir(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
@@ -2951,5 +2950,42 @@ echo "test"
 
         let matches = tasks.get_matching("//:pr:remove").unwrap();
         assert_eq!(matches, vec![&"//:pr:remove".to_string()]);
+    }
+
+    #[test]
+    fn test_estyled_prefix_no_red_or_yellow() {
+        let names = [
+            "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india",
+            "juliet", "kilo", "lima", "mike", "november", "oscar", "papa", "build", "test", "lint",
+            "deploy", "clean", "start", "stop", "check",
+        ];
+        let red_fg = "\x1b[31m";
+        let yellow_fg = "\x1b[33m";
+        let bright_red = "\x1b[38;5;9m";
+        let bright_yellow = "\x1b[38;5;11m";
+
+        for name in &names {
+            let task = Task {
+                display_name: name.to_string(),
+                ..Default::default()
+            };
+            let styled = task.estyled_prefix();
+            assert!(
+                !styled.contains(red_fg),
+                "task {name:?} prefix contains red"
+            );
+            assert!(
+                !styled.contains(yellow_fg),
+                "task {name:?} prefix contains yellow"
+            );
+            assert!(
+                !styled.contains(bright_red),
+                "task {name:?} prefix contains bright red"
+            );
+            assert!(
+                !styled.contains(bright_yellow),
+                "task {name:?} prefix contains bright yellow"
+            );
+        }
     }
 }
