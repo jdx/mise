@@ -81,17 +81,17 @@ echo '~/.local/bin/mise activate pwsh | Out-String | Invoke-Expression' >> ~/.co
 ### Execute commands with specific tools
 
 ```sh-session
-$ mise exec node@24 -- node -v
-mise node@24.x.x ✓ installed
-v24.x.x
+$ mise exec node@26 -- node -v
+mise node@26.x.x ✓ installed
+v26.x.x
 ```
 
 ### Install tools
 
 ```sh-session
-$ mise use --global node@24 go@1
+$ mise use --global node@26 go@1
 $ node -v
-v24.x.x
+v26.x.x
 $ go version
 go version go1.x.x macos/arm64
 ```

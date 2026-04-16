@@ -1228,7 +1228,7 @@ pub trait Backend: Debug + Send + Sync {
     ) -> Result<Vec<PathBuf>> {
         match tv.request {
             ToolRequest::System { .. } => Ok(vec![]),
-            _ => Ok(vec![tv.install_path().join("bin")]),
+            _ => Ok(vec![tv.runtime_path().join("bin")]),
         }
     }
 
