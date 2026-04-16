@@ -70,7 +70,7 @@ pub use task_template::TaskTemplate;
 use crate::config::config_file::ConfigFile;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
-use crate::toolset::Toolset;
+use crate::toolset::{Toolset, serialize_tool_options};
 use crate::ui::style;
 pub use deps::{Deps, TaskKey};
 use task_dep::TaskDep;
@@ -101,19 +101,10 @@ impl TaskToolValue {
         match self {
             TaskToolValue::String(version) => format!("{tool}@{version}"),
             TaskToolValue::Map(map) => {
-                if map.opts.is_empty() {
-                    format!("{tool}@{}", map.version)
+                if let Some(opts_str) = serialize_tool_options(map.opts.iter()) {
+                    format!("{tool}[{opts_str}]@{}", map.version)
                 } else {
-                    let opts_str = map
-                        .opts
-                        .iter()
-                        .map(|(k, v)| match v {
-                            toml::Value::String(s) => format!("{k}={s}"),
-                            _ => format!("{k}={v}"),
-                        })
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    format!("{tool}[{}]@{}", opts_str, map.version)
+                    format!("{tool}@{}", map.version)
                 }
             }
         }
@@ -2889,6 +2880,100 @@ echo "test"
             task.tools.get("1password-cli").unwrap(),
             &TaskToolValue::String("2.0".to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn test_to_tool_spec_round_trips_string_opts() {
+        use indexmap::IndexMap;
+
+        use crate::cli::args::ToolArg;
+        use crate::config::Config;
+
+        use super::{TaskToolValue, TaskToolValueMap};
+
+        let _config = Config::get().await.unwrap();
+
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "query".to_string(),
+            toml::Value::String("first,second=value".to_string()),
+        );
+        opts.insert(
+            "targets".to_string(),
+            toml::Value::Array(vec![toml::Value::String("x86_64".to_string())]),
+        );
+
+        let tool = TaskToolValue::Map(TaskToolValueMap {
+            version: "1.0.0".to_string(),
+            opts,
+        });
+
+        let spec = tool.to_tool_spec("http:hello");
+        assert_eq!(spec, r#"http:hello[query="first,second=value"]@1.0.0"#);
+
+        let parsed: ToolArg = spec.parse().unwrap();
+        let parsed_opts = parsed.ba.opts();
+        assert_eq!(parsed_opts.get("query"), Some("first,second=value"));
+        assert!(!parsed_opts.contains_key("targets"));
+        assert!(!parsed_opts.contains_key("second"));
+    }
+
+    #[tokio::test]
+    async fn test_to_tool_spec_round_trips_quoted_string_opts() {
+        use indexmap::IndexMap;
+
+        use crate::cli::args::ToolArg;
+        use crate::config::Config;
+
+        use super::{TaskToolValue, TaskToolValueMap};
+
+        let _config = Config::get().await.unwrap();
+
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "pattern".to_string(),
+            toml::Value::String(r#"a"b"#.to_string()),
+        );
+        opts.insert(
+            "bin_path".to_string(),
+            toml::Value::String("bin[debug]".to_string()),
+        );
+
+        let tool = TaskToolValue::Map(TaskToolValueMap {
+            version: "1.0.0".to_string(),
+            opts,
+        });
+
+        let spec = tool.to_tool_spec("http:hello");
+        assert_eq!(
+            spec,
+            r#"http:hello[pattern='a"b',bin_path="bin[debug]"]@1.0.0"#
+        );
+
+        let parsed: ToolArg = spec.parse().unwrap();
+        let parsed_opts = parsed.ba.opts();
+        assert_eq!(parsed_opts.get("pattern"), Some(r#"a"b"#));
+        assert_eq!(parsed_opts.get("bin_path"), Some("bin[debug]"));
+    }
+
+    #[test]
+    fn test_to_tool_spec_omits_empty_brackets_for_complex_opts() {
+        use indexmap::IndexMap;
+
+        use super::{TaskToolValue, TaskToolValueMap};
+
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "targets".to_string(),
+            toml::Value::Array(vec![toml::Value::String("x86_64".to_string())]),
+        );
+
+        let tool = TaskToolValue::Map(TaskToolValueMap {
+            version: "1.0.0".to_string(),
+            opts,
+        });
+
+        assert_eq!(tool.to_tool_spec("cross"), "cross@1.0.0");
     }
 
     #[test]
