@@ -228,7 +228,11 @@ fn serialize_tool_option(key: &str, value: &toml::Value) -> Option<String> {
 }
 
 fn string_requires_tool_option_quotes(s: &str) -> bool {
-    s.contains(',') || s.contains('"') || s.contains('[') || s.contains(']')
+    s.contains(',')
+        || s.contains('"')
+        || s.contains('\'')
+        || s.contains('[')
+        || s.contains(']')
 }
 
 /// Try parsing an options string as a TOML inline table.
@@ -507,6 +511,22 @@ mod tests {
         let reparsed = parse_tool_options(&serialized);
         assert_eq!(reparsed.get("pattern"), Some(r#"a"b"#));
         assert_eq!(reparsed.get("bin_path"), Some("bin[debug]"));
+    }
+
+    #[test]
+    fn test_serialize_tool_options_preserves_single_quote_wrapped_strings() {
+        let mut opts = IndexMap::new();
+        opts.insert("pattern".to_string(), toml::Value::String("'hi'".to_string()));
+        opts.insert(
+            "bin_path".to_string(),
+            toml::Value::String("bin".to_string()),
+        );
+
+        let serialized = serialize_tool_options(opts.iter()).unwrap();
+        let reparsed = parse_tool_options(&serialized);
+
+        assert_eq!(reparsed.get("pattern"), Some("'hi'"));
+        assert_eq!(reparsed.get("bin_path"), Some("bin"));
     }
 
     #[test]
