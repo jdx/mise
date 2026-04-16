@@ -108,8 +108,6 @@ async fn tasks_for_missing_task_error(
     config: &Config,
     name: &str,
 ) -> Result<(Arc<BTreeMap<String, Task>>, bool)> {
-    let tasks = config.tasks().await?;
-
     // In monorepos, users usually need `tasks ls --all` after a miss. Load that
     // same view for the error so sibling package tasks can be suggested.
     if (name.starts_with("//") || config.is_monorepo())
@@ -121,6 +119,7 @@ async fn tasks_for_missing_task_error(
         return Ok((all_tasks, true));
     }
 
+    let tasks = config.tasks().await?;
     Ok((tasks, false))
 }
 
