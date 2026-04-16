@@ -1,6 +1,6 @@
 backends = [
-  "github:containers/podlet",
   "aqua:containers/podlet",
+  "github:containers/podlet",
   "cargo:podlet",
 ]
 description = "Generate Podman Quadlet files from a Podman command, compose file, or existing object"
