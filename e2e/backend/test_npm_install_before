@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Test install_before with npm backend (dist-tag fallback)
+# Regression test for https://github.com/jdx/mise/discussions/9136
+
+require_cmd npm
+
+export NPM_CONFIG_FUND=false
+
+mise use node
+
+# Test: npm with install_before should resolve to an older version
+# prettier 3.0.0 was released 2023-07-05, 2.8.8 was released 2023-05-23
+# Setting install_before to 2023-06-01 should give us 2.8.8 (not 3.x)
+mise uninstall npm:prettier --all 2>/dev/null || true
+rm -f mise.toml
+cat <<EOF >mise.toml
+[settings]
+install_before = "2023-06-01"
+
+[tools]
+"npm:prettier" = "latest"
+EOF
+mise install
+installed=$(mise ls --installed npm:prettier --json 2>/dev/null | grep -o '"version":"[^"]*"' | head -1)
+assert_contains "echo '$installed'" "2.8.8"
+
+# Test: without install_before, latest is the absolute latest (newer than 2.8.8)
+mise uninstall npm:prettier --all 2>/dev/null || true
+rm -f mise.toml
+cat <<EOF >mise.toml
+[tools]
+"npm:prettier" = "latest"
+EOF
+mise install
+installed_ver=$(mise ls --installed npm:prettier 2>&1 | awk '{print $2}')
+# The latest version should be 3.x or higher (definitely not 2.8.8)
+assert_not_contains "echo '$installed_ver'" "2.8.8"

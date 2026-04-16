@@ -1767,7 +1767,7 @@ pub fn ensure_provenance_setting_enabled(
     Ok(())
 }
 
-fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
+pub(crate) fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
     match list.contains(&query.to_string()) {
         true => Some(query.to_string()),
         false => list.last().map(|s| s.to_string()),
