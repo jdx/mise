@@ -456,7 +456,7 @@ pub fn resolve_token_for_api_url(api_url: &str) -> Option<String> {
         .ok()
         .and_then(|u| u.host_str().map(|h| h.to_string()));
     let host = host.as_deref().unwrap_or("api.github.com");
-    let lookup_host = canonical_host(Some(host)).unwrap_or(host);
+    let lookup_host = canonical_host(host.as_deref()).unwrap_or("github.com");
     resolve_token(lookup_host).map(|(t, _)| t)
 }
 
