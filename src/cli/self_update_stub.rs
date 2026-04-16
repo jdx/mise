@@ -5,7 +5,22 @@ use std::path::PathBuf;
 use crate::env;
 
 #[derive(Debug, Default, clap::Args)]
-pub struct SelfUpdate {}
+pub struct SelfUpdate {
+    /// Update to a specific version
+    version: Option<String>,
+
+    /// Update even if already up to date
+    #[clap(long, short)]
+    force: bool,
+
+    /// Skip confirmation prompt
+    #[clap(long, short)]
+    yes: bool,
+
+    /// Disable auto-updating plugins
+    #[clap(long)]
+    no_plugins: bool,
+}
 
 impl SelfUpdate {
     pub async fn run(self) -> crate::Result<()> {
