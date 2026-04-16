@@ -21,8 +21,8 @@ install_before = "2023-06-01"
 "npm:prettier" = "latest"
 EOF
 mise install
-installed=$(mise ls --installed npm:prettier --json 2>/dev/null | grep -o '"version":"[^"]*"' | head -1)
-assert_contains "echo '$installed'" "2.8.8"
+installed_ver=$(mise ls --installed npm:prettier 2>/dev/null | awk '{print $2}' | head -1)
+assert_contains "echo '$installed_ver'" "2.8.8"
 
 # Test: without install_before, latest is the absolute latest (newer than 2.8.8)
 mise uninstall npm:prettier --all 2>/dev/null || true
@@ -32,6 +32,6 @@ cat <<EOF >mise.toml
 "npm:prettier" = "latest"
 EOF
 mise install
-installed_ver=$(mise ls --installed npm:prettier 2>&1 | awk '{print $2}')
+installed_ver=$(mise ls --installed npm:prettier 2>/dev/null | awk '{print $2}' | head -1)
 # The latest version should be 3.x or higher (definitely not 2.8.8)
 assert_not_contains "echo '$installed_ver'" "2.8.8"

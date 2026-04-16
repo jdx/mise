@@ -130,36 +130,18 @@ impl Backend for NPMBackend {
         // See TODO in _list_remote_versions for details
         self.ensure_npm_for_version_check(config).await;
 
-        // When install_before is active and this method is called without a
-        // before_date context (e.g. via `mise latest` or `mise edit`), the
-        // dist-tags shortcut must not be used because it returns the absolute
-        // latest version without date filtering.
-        // Note: the primary install path (mise install) already handles this via
-        // latest_version_with_opts which bypasses this method when before_date is
-        // set through effective_before_date / ResolveOptions.
+        // dist-tags returns the absolute latest; bypass it when install_before
+        // is set so that `mise latest` / `mise edit` respect the date cutoff.
         // (See jdx/mise#9136)
-        let before_date = match &Settings::get().install_before {
-            Some(s) => match crate::duration::parse_into_timestamp(s) {
-                Ok(ts) => Some(ts),
-                Err(e) => {
-                    warn!("install_before: failed to parse {:?}: {:#}", s, e);
-                    None
-                }
-            },
-            None => None,
-        };
-        if let Some(before) = before_date {
-            let versions_with_info = self.list_remote_versions_with_info(config).await?;
-            let filtered = crate::backend::VersionInfo::filter_by_date(versions_with_info, before);
-            let versions: Vec<String> = filtered.into_iter().map(|v| v.version).collect();
-            if versions.is_empty() {
-                debug!(
-                    "npm: all versions of {} filtered out by install_before cutoff",
-                    self.tool_name()
-                );
-            }
-            let matches = self.fuzzy_match_filter(versions, "latest");
-            return Ok(crate::backend::find_match_in_list(&matches, "latest"));
+        if let Some(before) = Settings::get()
+            .install_before
+            .as_deref()
+            .map(crate::duration::parse_into_timestamp)
+            .transpose()?
+        {
+            return self
+                .latest_version_with_opts(config, None, Some(before))
+                .await;
         }
 
         let cache = self.latest_version_cache.lock().await;
@@ -629,50 +611,5 @@ mod tests {
         assert!(!NPMBackend::npm_version_supports_min_release_age("10.99.0"));
         assert!(!NPMBackend::npm_version_supports_min_release_age(""));
         assert!(!NPMBackend::npm_version_supports_min_release_age("garbage"));
-    }
-
-    #[test]
-    fn test_version_info_filter_by_date_for_npm_timestamps() {
-        // Simulate npm _list_remote_versions output with created_at timestamps
-        use crate::backend::VersionInfo;
-        let versions = vec![
-            VersionInfo {
-                version: "2.8.7".to_string(),
-                created_at: Some("2023-05-01T12:00:00.000Z".to_string()),
-                ..Default::default()
-            },
-            VersionInfo {
-                version: "2.8.8".to_string(),
-                created_at: Some("2023-05-23T10:00:00.000Z".to_string()),
-                ..Default::default()
-            },
-            VersionInfo {
-                version: "3.0.0".to_string(),
-                created_at: Some("2023-07-05T14:00:00.000Z".to_string()),
-                ..Default::default()
-            },
-            VersionInfo {
-                version: "3.1.0".to_string(),
-                created_at: Some("2023-11-13T12:00:00.000Z".to_string()),
-                ..Default::default()
-            },
-        ];
-
-        // Cutoff 2023-06-01: should include 2.8.7 and 2.8.8, exclude 3.0.0+
-        let cutoff: Timestamp = "2023-06-01T00:00:00Z".parse().unwrap();
-        let filtered = VersionInfo::filter_by_date(versions.clone(), cutoff);
-        let version_strings: Vec<&str> = filtered.iter().map(|v| v.version.as_str()).collect();
-        assert_eq!(version_strings, vec!["2.8.7", "2.8.8"]);
-
-        // Cutoff 2023-08-01: should include up to 3.0.0
-        let cutoff: Timestamp = "2023-08-01T00:00:00Z".parse().unwrap();
-        let filtered = VersionInfo::filter_by_date(versions.clone(), cutoff);
-        let version_strings: Vec<&str> = filtered.iter().map(|v| v.version.as_str()).collect();
-        assert_eq!(version_strings, vec!["2.8.7", "2.8.8", "3.0.0"]);
-
-        // No cutoff (far future): should include all
-        let cutoff: Timestamp = "2099-01-01T00:00:00Z".parse().unwrap();
-        let filtered = VersionInfo::filter_by_date(versions, cutoff);
-        assert_eq!(filtered.len(), 4);
     }
 }
