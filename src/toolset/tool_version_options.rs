@@ -287,13 +287,15 @@ fn parse_tool_options_manual(s: &str) -> ToolVersionOptions {
 fn split_tool_option_segments(s: &str) -> Vec<String> {
     let mut segments = Vec::new();
     let mut current = String::new();
-    let mut in_quotes = false;
+    let mut in_double_quotes = false;
+    let mut in_single_quotes = false;
     let mut escaped = false;
 
     for ch in s.chars() {
         match ch {
-            '"' if !escaped => in_quotes = !in_quotes,
-            ',' if !in_quotes => {
+            '"' if !escaped && !in_single_quotes => in_double_quotes = !in_double_quotes,
+            '\'' if !in_double_quotes => in_single_quotes = !in_single_quotes,
+            ',' if !in_double_quotes && !in_single_quotes => {
                 segments.push(current);
                 current = String::new();
                 escaped = false;
@@ -303,7 +305,7 @@ fn split_tool_option_segments(s: &str) -> Vec<String> {
         }
 
         current.push(ch);
-        escaped = in_quotes && ch == '\\' && !escaped;
+        escaped = in_double_quotes && ch == '\\' && !escaped;
     }
 
     segments.push(current);
@@ -313,7 +315,10 @@ fn split_tool_option_segments(s: &str) -> Vec<String> {
 fn parse_tool_option_value(raw: &str) -> toml::Value {
     let trimmed = raw.trim();
 
-    if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
+    if ((trimmed.starts_with('"') && trimmed.ends_with('"'))
+        || (trimmed.starts_with('\'') && trimmed.ends_with('\'')))
+        && trimmed.len() >= 2
+    {
         let toml_str = format!("_x_ = {trimmed}");
         if let Ok(value) = toml::from_str::<toml::Value>(&toml_str)
             && let Some(parsed) = value.get("_x_")
@@ -502,6 +507,14 @@ mod tests {
         let reparsed = parse_tool_options(&serialized);
         assert_eq!(reparsed.get("pattern"), Some(r#"a"b"#));
         assert_eq!(reparsed.get("bin_path"), Some("bin[debug]"));
+    }
+
+    #[test]
+    fn test_parse_tool_options_manual_supports_single_quoted_literals() {
+        let reparsed = parse_tool_options(r#"pattern='a"b',bin_path=bin"#);
+
+        assert_eq!(reparsed.get("pattern"), Some(r#"a"b"#));
+        assert_eq!(reparsed.get("bin_path"), Some("bin"));
     }
 
     #[test]
