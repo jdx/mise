@@ -11,10 +11,12 @@ use demand::{DemandOption, Select};
 use eyre::{Result, bail, ensure, eyre};
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use itertools::Itertools;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::iter::once;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+const MAX_AVAILABLE_TASKS_IN_ERROR: usize = 20;
 
 /// Find non-executable files in task include directories.
 /// These are files that likely should be tasks but are missing the executable bit.
@@ -102,12 +104,100 @@ fn suggest_similar_commands(name: &str) -> Vec<String> {
         .collect()
 }
 
+async fn tasks_for_missing_task_error(
+    config: &Config,
+    name: &str,
+) -> Result<(Arc<BTreeMap<String, Task>>, bool)> {
+    let tasks = config.tasks().await?;
+
+    // In monorepos, users usually need `tasks ls --all` after a miss. Load that
+    // same view for the error so sibling package tasks can be suggested.
+    if (name.starts_with("//") || config.is_monorepo())
+        && let Ok(all_tasks) = config
+            .tasks_with_context(Some(&TaskLoadContext::all()))
+            .await
+        && !all_tasks.is_empty()
+    {
+        return Ok((all_tasks, true));
+    }
+
+    Ok((tasks, false))
+}
+
+fn similar_tasks(name: &str, tasks: &BTreeMap<String, Task>) -> Vec<String> {
+    let candidates = tasks
+        .values()
+        .filter(|t| !t.hide)
+        .map(|t| t.display_name.clone())
+        .unique()
+        .collect_vec();
+    xx::suggest::similar_n_with_threshold(name, &candidates, 5, 0.75)
+}
+
+fn append_available_tasks(
+    err_msg: &mut String,
+    tasks: &BTreeMap<String, Task>,
+    showing_all_tasks: bool,
+) {
+    let visible_tasks = tasks
+        .values()
+        .filter(|t| !t.hide)
+        .sorted_by(|a, b| a.display_name.cmp(&b.display_name))
+        .unique_by(|t| t.display_name.clone())
+        .collect_vec();
+    if visible_tasks.is_empty() {
+        return;
+    }
+
+    let listed_tasks = visible_tasks
+        .iter()
+        .take(MAX_AVAILABLE_TASKS_IN_ERROR)
+        .collect_vec();
+    let name_width = listed_tasks
+        .iter()
+        .map(|t| t.display_name.len())
+        .chain(once("Name".len()))
+        .max()
+        .unwrap_or("Name".len());
+
+    if showing_all_tasks {
+        err_msg.push_str("\n\nAvailable tasks (`mise tasks ls --all`):");
+    } else {
+        err_msg.push_str("\n\nAvailable tasks:");
+    }
+    err_msg.push_str(&format!(
+        "\n  {:name_width$}  Description",
+        "Name",
+        name_width = name_width
+    ));
+    for task in listed_tasks {
+        let desc = task.description.lines().next().unwrap_or_default();
+        err_msg.push_str(&format!(
+            "\n  {:name_width$}  {}",
+            task.display_name,
+            desc,
+            name_width = name_width
+        ));
+    }
+
+    let remaining = visible_tasks
+        .len()
+        .saturating_sub(MAX_AVAILABLE_TASKS_IN_ERROR);
+    if remaining > 0 {
+        let noun = if remaining == 1 { "task" } else { "tasks" };
+        err_msg.push_str(&format!(
+            "\n  ... and {remaining} more {noun}. Run `mise tasks ls --all` to list all tasks."
+        ));
+    }
+}
+
 /// Show an error when a task is not found, with helpful suggestions
 async fn err_no_task(config: &Config, name: &str) -> Result<()> {
     // Check early if the name looks like a mistyped CLI subcommand
     let similar_cmds = suggest_similar_commands(name);
+    let (tasks_for_error, showing_all_tasks) = tasks_for_missing_task_error(config, name).await?;
 
-    if config.tasks().await.is_ok_and(|t| t.is_empty()) {
+    if tasks_for_error.is_empty() {
         // If the name matches a CLI subcommand closely, suggest that instead of
         // the confusing "no tasks defined" message
         if !similar_cmds.is_empty() {
@@ -208,32 +298,12 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
 
     // Suggest similar tasks using fuzzy matching for monorepo tasks
     let mut err_msg = format!("no task {} found", style::ered(name));
-    if name.starts_with("//") {
-        // Load ALL monorepo tasks for suggestions
-        if let Ok(tasks) = config
-            .tasks_with_context(Some(&TaskLoadContext::all()))
-            .await
-        {
-            let matcher = SkimMatcherV2::default().use_cache(true).smart_case();
-            let similar: Vec<String> = tasks
-                .keys()
-                .filter(|k| k.starts_with("//"))
-                .filter_map(|k| {
-                    matcher
-                        .fuzzy_match(&k.to_lowercase(), &name.to_lowercase())
-                        .map(|score| (score, k.clone()))
-                })
-                .sorted_by_key(|(score, _)| -1 * *score)
-                .take(5)
-                .map(|(_, k)| k)
-                .collect();
 
-            if !similar.is_empty() {
-                err_msg.push_str("\n\nDid you mean one of these?");
-                for task_name in similar {
-                    err_msg.push_str(&format!("\n  - {}", task_name));
-                }
-            }
+    let similar = similar_tasks(name, &tasks_for_error);
+    if !similar.is_empty() {
+        err_msg.push_str("\n\nDid you mean one of these?");
+        for task_name in similar {
+            err_msg.push_str(&format!("\n  - {}", task_name));
         }
     }
 
@@ -243,6 +313,8 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
             err_msg.push_str(&format!("\n  mise {cmd_name}"));
         }
     }
+
+    append_available_tasks(&mut err_msg, &tasks_for_error, showing_all_tasks);
 
     bail!(err_msg);
 }
