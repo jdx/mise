@@ -238,6 +238,7 @@ impl Run {
 
         // Unescape task args early so we can check for help flags
         self.args = unescape_task_args(&self.args);
+        self.args_last = unescape_task_args(&self.args_last);
 
         // Temporarily unset cache key to force fresh env computation
         if self.fresh_env {
