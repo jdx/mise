@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::env;
 
-#[derive(Debug, clap::Parser)]
+#[derive(Debug, Default, clap::Args)]
 pub struct SelfUpdate {}
 
 impl SelfUpdate {
