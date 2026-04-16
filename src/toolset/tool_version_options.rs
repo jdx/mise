@@ -215,14 +215,20 @@ where
 fn serialize_tool_option(key: &str, value: &toml::Value) -> Option<String> {
     match value {
         toml::Value::Table(_) | toml::Value::Array(_) => None,
-        // Comma-containing strings must be TOML-quoted so they round-trip
-        // through `parse_tool_options()` without being split into fake keys.
-        toml::Value::String(s) if s.contains(',') => {
+        // Strings that contain delimiters or quotes must be TOML-quoted so they
+        // round-trip through both the TOML parser and the legacy manual parser.
+        // Brackets also need quoting because `split_bracketed_opts()` uses a
+        // regex to peel off the outer `[...]` payload from backend args.
+        toml::Value::String(s) if string_requires_tool_option_quotes(s) => {
             Some(format!("{key}={}", toml::Value::String(s.clone())))
         }
         toml::Value::String(s) => Some(format!("{key}={s}")),
         _ => Some(format!("{key}={value}")),
     }
+}
+
+fn string_requires_tool_option_quotes(s: &str) -> bool {
+    s.contains(',') || s.contains('"') || s.contains('[') || s.contains(']')
 }
 
 /// Try parsing an options string as a TOML inline table.
@@ -298,9 +304,6 @@ fn split_tool_option_segments(s: &str) -> Vec<String> {
 
         current.push(ch);
         escaped = in_quotes && ch == '\\' && !escaped;
-        if ch != '\\' {
-            escaped = false;
-        }
     }
 
     segments.push(current);
@@ -476,6 +479,29 @@ mod tests {
             parse_tool_options(serialize_tool_options(opts.iter()).unwrap().as_str()).get("query"),
             Some("first,second=value")
         );
+    }
+
+    #[test]
+    fn test_serialize_tool_options_quotes_strings_with_quotes_or_brackets() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "pattern".to_string(),
+            toml::Value::String(r#"a"b"#.to_string()),
+        );
+        opts.insert(
+            "bin_path".to_string(),
+            toml::Value::String("bin[debug]".to_string()),
+        );
+
+        let serialized = serialize_tool_options(opts.iter()).unwrap();
+        assert_eq!(
+            serialized,
+            r#"pattern='a"b',bin_path="bin[debug]""#.to_string()
+        );
+
+        let reparsed = parse_tool_options(&serialized);
+        assert_eq!(reparsed.get("pattern"), Some(r#"a"b"#));
+        assert_eq!(reparsed.get("bin_path"), Some("bin[debug]"));
     }
 
     #[test]

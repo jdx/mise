@@ -2841,6 +2841,44 @@ echo "test"
         assert!(!parsed_opts.contains_key("second"));
     }
 
+    #[tokio::test]
+    async fn test_to_tool_spec_round_trips_quoted_string_opts() {
+        use indexmap::IndexMap;
+
+        use crate::cli::args::ToolArg;
+        use crate::config::Config;
+
+        use super::{TaskToolValue, TaskToolValueMap};
+
+        let _config = Config::get().await.unwrap();
+
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "pattern".to_string(),
+            toml::Value::String(r#"a"b"#.to_string()),
+        );
+        opts.insert(
+            "bin_path".to_string(),
+            toml::Value::String("bin[debug]".to_string()),
+        );
+
+        let tool = TaskToolValue::Map(TaskToolValueMap {
+            version: "1.0.0".to_string(),
+            opts,
+        });
+
+        let spec = tool.to_tool_spec("http:hello");
+        assert_eq!(
+            spec,
+            r#"http:hello[pattern='a"b',bin_path="bin[debug]"]@1.0.0"#
+        );
+
+        let parsed: ToolArg = spec.parse().unwrap();
+        let parsed_opts = parsed.ba.opts();
+        assert_eq!(parsed_opts.get("pattern"), Some(r#"a"b"#));
+        assert_eq!(parsed_opts.get("bin_path"), Some("bin[debug]"));
+    }
+
     #[test]
     fn test_to_tool_spec_omits_empty_brackets_for_complex_opts() {
         use indexmap::IndexMap;
