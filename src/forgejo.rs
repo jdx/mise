@@ -1,7 +1,7 @@
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::config::Settings;
 use crate::tokens;
-use crate::{dirs, duration, env};
+use crate::{dirs, env};
 use eyre::Result;
 use heck::ToKebabCase;
 use reqwest::IntoUrl;
@@ -47,7 +47,7 @@ async fn get_releases_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<For
         .entry(key.to_string())
         .or_insert_with(|| {
             CacheManagerBuilder::new(cache_dir().join(format!("{key}-releases.msgpack.z")))
-                .with_fresh_duration(Some(duration::DAILY))
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .build()
         });
     RELEASES_CACHE.read().await
@@ -60,7 +60,7 @@ async fn get_release_cache<'a>(key: &str) -> RwLockReadGuard<'a, CacheGroup<Forg
         .entry(key.to_string())
         .or_insert_with(|| {
             CacheManagerBuilder::new(cache_dir().join(format!("{key}.msgpack.z")))
-                .with_fresh_duration(Some(duration::DAILY))
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .build()
         });
     RELEASE_CACHE.read().await
