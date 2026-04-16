@@ -226,7 +226,11 @@ impl TaskContextBuilder {
         let config_path = canonicalize_path(task_cf.get_path());
 
         // Check cache first if task has no task-specific env directives or tools
-        if task.env.0.is_empty() && task.inherited_env.0.is_empty() && task.tools.is_empty() {
+        if task.env.0.is_empty()
+            && task.inherited_env.0.is_empty()
+            && task.overlay_env.is_empty()
+            && task.tools.is_empty()
+        {
             let cache = self
                 .env_resolution_cache
                 .read()
@@ -275,7 +279,11 @@ impl TaskContextBuilder {
         config.add_redactions(task_redact_keys, &env);
 
         // Cache the result if no task-specific env directives or tools
-        if task.env.0.is_empty() && task.inherited_env.0.is_empty() && task.tools.is_empty() {
+        if task.env.0.is_empty()
+            && task.inherited_env.0.is_empty()
+            && task.overlay_env.is_empty()
+            && task.tools.is_empty()
+        {
             let mut cache = self
                 .env_resolution_cache
                 .write()
