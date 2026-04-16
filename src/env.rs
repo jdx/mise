@@ -264,12 +264,10 @@ pub static MISE_GLOBAL_CONFIG_ROOT: Lazy<PathBuf> =
 pub static MISE_SYSTEM_CONFIG_FILE: Lazy<Option<PathBuf>> =
     Lazy::new(|| var_path("MISE_SYSTEM_CONFIG_FILE"));
 pub static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
-    var("MISE_IGNORED_CONFIG_PATHS")
-        .ok()
+    var_os("MISE_IGNORED_CONFIG_PATHS")
         .map(|v| {
-            v.split(':')
-                .filter(|p| !p.is_empty())
-                .map(PathBuf::from)
+            split_paths(&v)
+                .filter(|p| !p.as_os_str().is_empty())
                 .map(replace_path)
                 .collect()
         })
@@ -280,8 +278,7 @@ pub static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
         .unwrap_or_default()
 });
 pub static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {
-    var("MISE_CEILING_PATHS")
-        .ok()
+    var_os("MISE_CEILING_PATHS")
         .map(|v| {
             split_paths(&v)
                 .filter(|p| !p.as_os_str().is_empty())
