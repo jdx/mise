@@ -109,11 +109,12 @@ impl TasksInfo {
         if !run.is_empty() {
             info::section("Run", run.iter().map(|e| e.to_string()).join("\n"))?;
         }
-        if !task.env.is_empty() {
+        if !task.env.is_empty() || !task.overlay_env.is_empty() {
             let env_display = task
                 .env
                 .0
                 .iter()
+                .chain(task.overlay_env.iter().map(|(d, _)| d))
                 .map(|directive| directive.to_string())
                 .collect::<Vec<_>>()
                 .join("\n");
@@ -140,7 +141,13 @@ impl TasksInfo {
             "depends": task.depends,
             "depends_post": task.depends_post,
             "wait_for": task.wait_for,
-            "env": task.env.0.iter().map(|d| d.to_string()).collect::<Vec<_>>(),
+            "env": task
+                .env
+                .0
+                .iter()
+                .chain(task.overlay_env.iter().map(|(d, _)| d))
+                .map(|d| d.to_string())
+                .collect::<Vec<_>>(),
             "dir": resolved_dir,
             "hide": task.hide,
             "raw": task.raw,

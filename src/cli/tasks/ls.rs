@@ -217,6 +217,13 @@ impl TasksLs {
                 .dir(config)
                 .await?
                 .map(|p| p.to_string_lossy().to_string());
+            let env_strs: Vec<String> = task
+                .env
+                .0
+                .iter()
+                .chain(task.overlay_env.iter().map(|(d, _)| d))
+                .map(|d| d.to_string())
+                .collect();
             array_items.push(json!({
                 "name": task.display_name,
                 "aliases": task.aliases,
@@ -225,7 +232,7 @@ impl TasksLs {
                 "depends": task.depends,
                 "depends_post": task.depends_post,
                 "wait_for": task.wait_for,
-                "env": task.env.0.iter().map(|d| d.to_string()).collect::<Vec<_>>(),
+                "env": env_strs,
                 "dir": resolved_dir,
                 "hide": task.hide,
                 "global": task.global,

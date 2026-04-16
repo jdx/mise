@@ -362,6 +362,17 @@ pub struct Task {
     /// Env vars inherited from parent tasks at runtime (not used for task identity/deduplication)
     #[serde(skip)]
     pub inherited_env: EnvList,
+    /// Env directives contributed by a `[tasks.<name>]` TOML block that overlays
+    /// this (file) task. Each entry keeps the config path of the overlay source
+    /// so path-based directives like `_.file = ".env"` resolve relative to the
+    /// TOML file, not the file task's script path. Populated by
+    /// [`Task::merge_toml_overlay`]; empty otherwise.
+    #[serde(skip)]
+    pub overlay_env: Vec<(EnvDirective, PathBuf)>,
+    /// Vars contributed by a `[tasks.<name>]` TOML overlay; same path-preservation
+    /// as `overlay_env`.
+    #[serde(skip)]
+    pub overlay_vars: Vec<(EnvDirective, PathBuf)>,
     #[serde(default)]
     pub dir: Option<String>,
     #[serde(default)]
@@ -1151,21 +1162,24 @@ impl Task {
         ts: &Toolset,
         tera_ctx: &tera::Context,
     ) -> Result<IndexMap<String, String>> {
-        if self.vars.0.is_empty() {
+        if self.vars.0.is_empty() && self.overlay_vars.is_empty() {
             return Ok(IndexMap::new());
         }
 
         let env_map = ts.full_env(config).await?;
+        let mut directives: Vec<(EnvDirective, PathBuf)> = self
+            .vars
+            .0
+            .iter()
+            .cloned()
+            .map(|directive| (directive, self.config_source.clone()))
+            .collect();
+        directives.extend(self.overlay_vars.iter().cloned());
         let results = EnvResults::resolve(
             config,
             tera_ctx.clone(),
             &env_map,
-            self.vars
-                .0
-                .iter()
-                .cloned()
-                .map(|directive| (directive, self.config_source.clone()))
-                .collect(),
+            directives,
             EnvResolveOptions {
                 vars: true,
                 tools: ToolsFilter::NonToolsOnly,
@@ -1228,6 +1242,11 @@ impl Task {
     ///
     /// `self` is the file-task base (keeps its `run`/`file`/`config_source`);
     /// `other` contributes its non-default fields.
+    ///
+    /// Env/vars directives from `other` are stored in [`overlay_env`] /
+    /// [`overlay_vars`] alongside the overlay's own config path, so path-based
+    /// directives (e.g. `_.file = ".env"`) keep resolving relative to the
+    /// TOML file they were written in rather than the file task's script path.
     pub fn merge_toml_overlay(&mut self, other: Task) {
         if !other.description.is_empty() {
             self.description = other.description;
@@ -1237,13 +1256,27 @@ impl Task {
                 self.aliases.push(alias);
             }
         }
-        // env/vars: append so the TOML block's entries resolve after the
-        // file task's and take precedence on key collisions.
-        self.env.0.extend(other.env.0);
-        self.vars.0.extend(other.vars.0);
-        self.depends.extend(other.depends);
-        self.depends_post.extend(other.depends_post);
-        self.wait_for.extend(other.wait_for);
+        // Preserve each env/var directive's origin so relative paths resolve
+        // correctly against the config file they were declared in.
+        let overlay_src = other.config_source.clone();
+        self.overlay_env
+            .extend(other.env.0.into_iter().map(|d| (d, overlay_src.clone())));
+        self.overlay_vars
+            .extend(other.vars.0.into_iter().map(|d| (d, overlay_src.clone())));
+        self.depends.extend(other.depends.clone());
+        self.depends_post.extend(other.depends_post.clone());
+        self.wait_for.extend(other.wait_for.clone());
+        // Keep the *_raw snapshots in sync so `render_depends_with_usage`
+        // re-renders the merged set rather than silently dropping overlay deps.
+        if let Some(raw) = self.depends_raw.as_mut() {
+            raw.extend(other.depends);
+        }
+        if let Some(raw) = self.depends_post_raw.as_mut() {
+            raw.extend(other.depends_post);
+        }
+        if let Some(raw) = self.wait_for_raw.as_mut() {
+            raw.extend(other.wait_for);
+        }
         if other.dir.is_some() {
             self.dir = other.dir;
         }
@@ -1266,6 +1299,12 @@ impl Task {
             self.silent = other.silent;
         }
         self.sources.extend(other.sources);
+        if !other.outputs.is_empty() {
+            self.outputs = other.outputs;
+        }
+        if other.raw_outputs.templates.is_some() {
+            self.raw_outputs = other.raw_outputs;
+        }
         if other.shell.is_some() {
             self.shell = other.shell;
         }
@@ -1281,6 +1320,16 @@ impl Task {
         if !other.usage.is_empty() {
             self.usage = other.usage;
         }
+        // Sandbox fields — deny is OR (any deny wins), allow lists extend.
+        self.deny_all |= other.deny_all;
+        self.deny_read |= other.deny_read;
+        self.deny_write |= other.deny_write;
+        self.deny_net |= other.deny_net;
+        self.deny_env |= other.deny_env;
+        self.allow_read.extend(other.allow_read);
+        self.allow_write.extend(other.allow_write);
+        self.allow_net.extend(other.allow_net);
+        self.allow_env.extend(other.allow_env);
     }
 
     pub async fn render(&mut self, config: &Arc<Config>, config_root: &Path) -> Result<()> {
@@ -1411,13 +1460,17 @@ impl Task {
         // Convert task env directives to (EnvDirective, PathBuf) pairs
         // Use the config file path as source for proper path resolution
         // Include inherited_env first (so task's own env can override it)
-        let env_directives: Vec<_> = self
+        let mut env_directives: Vec<_> = self
             .inherited_env
             .0
             .iter()
             .chain(self.env.0.iter())
             .map(|directive| (directive.clone(), self.config_source.clone()))
             .collect();
+        // Append overlay entries last so TOML-block env overrides file task env
+        // on key collision; each carries its own source path so directives like
+        // `_.file = ".env"` resolve relative to the overlay's config file.
+        env_directives.extend(self.overlay_env.iter().cloned());
 
         // Resolve environment directives using the same system as global env
         let env_results = EnvResults::resolve(
@@ -1645,6 +1698,8 @@ impl Default for Task {
             env: Default::default(),
             vars: Default::default(),
             inherited_env: Default::default(),
+            overlay_env: vec![],
+            overlay_vars: vec![],
             dir: None,
             hide: false,
             global: false,

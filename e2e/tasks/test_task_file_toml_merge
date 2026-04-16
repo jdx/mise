@@ -10,18 +10,26 @@ mkdir -p .mise/tasks
 cat <<'SCRIPT' >.mise/tasks/echo-env
 #!/usr/bin/env bash
 echo "TASK_VAR=${TASK_VAR:-<unset>}"
-echo "DESC:${MISE_TASK_DESCRIPTION:-<none>}"
+echo "FROM_DOTENV=${FROM_DOTENV:-<unset>}"
 SCRIPT
 chmod +x .mise/tasks/echo-env
+
+cat <<'EOF' >.env
+FROM_DOTENV=hello-from-dotenv
+EOF
 
 cat <<'EOF' >mise.toml
 [tasks.echo-env]
 description = "Echo the configured TASK_VAR"
-env = { TASK_VAR = "from-toml" }
+env = { TASK_VAR = "from-toml", _.file = ".env" }
 EOF
 
 # TOML env merges into the file task.
 assert_contains "mise run echo-env" "TASK_VAR=from-toml"
+
+# Path-based directives (like `_.file`) from the overlay must resolve
+# relative to the TOML file, not the file task's script path.
+assert_contains "mise run echo-env" "FROM_DOTENV=hello-from-dotenv"
 
 # TOML description merges in and is surfaced through `tasks ls`.
 assert_contains "mise tasks ls" "Echo the configured TASK_VAR"
