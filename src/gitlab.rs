@@ -5,6 +5,7 @@ use heck::ToKebabCase;
 use reqwest::IntoUrl;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde_derive::{Deserialize, Serialize};
+use serde_yaml::Value;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
@@ -414,35 +415,27 @@ fn warn_glab_expired_tokens(contents: &str) {
 
 /// Returns `(host, expiry_str)` pairs for every glab host whose OAuth2 token is expired.
 fn find_expired_glab_tokens(contents: &str) -> Vec<(String, String)> {
-    use serde_yaml::Value;
-
     let Ok(yaml) = serde_yaml::from_str::<Value>(contents) else {
         return vec![];
     };
-    let Some(map) = yaml.as_mapping() else {
-        return vec![];
-    };
-    let Some(hosts) = map
-        .get(Value::String("hosts".to_string()))
-        .and_then(Value::as_mapping)
-    else {
+    let Some(hosts) = yaml.get("hosts").and_then(Value::as_mapping) else {
         return vec![];
     };
 
     let mut expired = vec![];
-    for (k, v) in hosts {
+    let now = chrono::Utc::now();
+    for (k, entry) in hosts {
         let Some(host) = k.as_str() else { continue };
-        let Some(entry) = v.as_mapping() else { continue };
-        let Some(expiry_str) = entry
-            .get(Value::String("oauth2_expiry_date".to_string()))
-            .and_then(Value::as_str)
-        else {
+        if entry.get("oauth2_refresh_token").is_none() {
+            continue;
+        }
+        let Some(expiry_str) = entry.get("oauth2_expiry_date").and_then(Value::as_str) else {
             continue;
         };
         let Ok(expiry_date) = chrono::DateTime::parse_from_rfc3339(expiry_str) else {
             continue;
         };
-        if expiry_date < chrono::Utc::now() {
+        if expiry_date < now {
             expired.push((host.to_string(), expiry_str.to_string()));
         }
     }
@@ -567,6 +560,19 @@ hosts:
   gitlab.com:
     oauth_token: gloas-abc123
     oauth2_expiry_date: "not-a-date"
+"#;
+        let expired = find_expired_glab_tokens(yaml);
+        assert!(expired.is_empty());
+    }
+
+    #[test]
+    fn test_find_expired_glab_tokens_no_refresh_token_skipped() {
+        // No oauth2_refresh_token means reauthentication is needed, not a refresh—don't warn.
+        let yaml = r#"
+hosts:
+  gitlab.com:
+    oauth_token: gloas-abc123
+    oauth2_expiry_date: "2023-03-13T15:47:00Z"
 "#;
         let expired = find_expired_glab_tokens(yaml);
         assert!(expired.is_empty());
