@@ -286,6 +286,16 @@ impl Use {
         versions: &[ToolVersion],
         remove: &[BackendArg],
     ) -> Result<()> {
+        if Settings::get().quiet {
+            if self.dry_run_code
+                && self.is_dry_run()
+                && (!versions.is_empty() || !remove.is_empty())
+            {
+                exit::exit(1);
+            }
+            return Ok(());
+        }
+
         let path = display_path(cf.get_path());
 
         if self.is_dry_run() {
@@ -368,6 +378,106 @@ impl Use {
             return Ok(Some(parse_into_timestamp(before)?));
         }
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::args::BackendResolution;
+    use crate::config::config_file::{ConfigFile, ConfigFileType};
+    use crate::config::settings::SettingsPartial;
+    use crate::output::tests::STDOUT;
+    use crate::toolset::ToolRequestSet;
+    use confique::Layer;
+    use std::sync::Arc;
+
+    #[derive(Debug)]
+    struct TestConfigFile(PathBuf);
+
+    impl ConfigFile for TestConfigFile {
+        fn get_path(&self) -> &Path {
+            &self.0
+        }
+
+        fn config_type(&self) -> ConfigFileType {
+            ConfigFileType::MiseToml
+        }
+
+        fn remove_tool(&self, _ba: &BackendArg) -> Result<()> {
+            unreachable!("not used in this test");
+        }
+
+        fn replace_versions(&self, _ba: &BackendArg, _versions: Vec<ToolRequest>) -> Result<()> {
+            unreachable!("not used in this test");
+        }
+
+        fn save(&self) -> Result<()> {
+            unreachable!("not used in this test");
+        }
+
+        fn dump(&self) -> Result<String> {
+            Ok(String::new())
+        }
+
+        fn source(&self) -> ToolSource {
+            ToolSource::Argument
+        }
+
+        fn to_tool_request_set(&self) -> Result<ToolRequestSet> {
+            Ok(Default::default())
+        }
+    }
+
+    fn test_use() -> Use {
+        Use {
+            tool: vec![],
+            env: None,
+            force: false,
+            global: false,
+            jobs: None,
+            dry_run: false,
+            path: None,
+            before: None,
+            dry_run_code: false,
+            fuzzy: false,
+            pin: false,
+            raw: false,
+            remove: vec![],
+        }
+    }
+
+    fn dummy_version() -> ToolVersion {
+        let backend = Arc::new(BackendArg::new_raw(
+            "core:dummy".to_string(),
+            Some("core:dummy".to_string()),
+            "dummy".to_string(),
+            None,
+            BackendResolution::new(true),
+        ));
+        let request = ToolRequest::new(backend, "system", ToolSource::Argument).unwrap();
+        ToolVersion::new(request, "system".to_string())
+    }
+
+    #[test]
+    fn render_success_message_respects_quiet() -> Result<()> {
+        STDOUT.lock().unwrap().clear();
+
+        let mut partial = SettingsPartial::empty();
+        partial.quiet = Some(true);
+        Settings::reset(Some(partial));
+
+        let use_cmd = test_use();
+        let config_file = TestConfigFile(PathBuf::from("/tmp/mise.toml"));
+        let versions = vec![dummy_version()];
+
+        let result = use_cmd.render_success_message(&config_file, &versions, &[]);
+
+        Settings::reset(None);
+
+        result?;
+        assert!(STDOUT.lock().unwrap().is_empty());
+        Ok(())
     }
 }
 
