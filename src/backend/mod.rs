@@ -832,16 +832,6 @@ pub trait Backend: Debug + Send + Sync {
         }
     }
 
-    /// Check if a version is a rolling release (like "nightly") that should
-    /// always be considered potentially outdated for `mise up` purposes
-    async fn is_version_rolling(&self, config: &Arc<Config>, version: &str) -> bool {
-        let versions = match self.list_remote_versions_with_info(config).await {
-            Ok(v) => v,
-            Err(_) => return false,
-        };
-        versions.iter().any(|v| v.version == version && v.rolling)
-    }
-
     /// Get version info for a specific version (including checksum for rolling releases)
     async fn get_version_info(&self, config: &Arc<Config>, version: &str) -> Option<VersionInfo> {
         let versions = match self.list_remote_versions_with_info(config).await {
