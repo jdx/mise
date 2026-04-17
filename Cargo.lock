@@ -5832,7 +5832,7 @@ dependencies = [
  "shell-escape",
  "shell-words",
  "shellexpand",
- "signal-hook 0.3.18",
+ "signal-hook 0.4.4",
  "sigstore-verification",
  "siphasher",
  "strum 0.27.2",
