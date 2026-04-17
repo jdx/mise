@@ -5816,7 +5816,7 @@ dependencies = [
  "regex",
  "reqwest 0.12.28",
  "rmcp",
- "rmcp-macros",
+ "rmcp-macros 0.17.0",
  "rmp-serde",
  "rops",
  "seccompiler",
@@ -7957,7 +7957,7 @@ dependencies = [
  "futures",
  "paste",
  "pin-project-lite",
- "rmcp-macros",
+ "rmcp-macros 0.3.2",
  "schemars 1.2.1",
  "serde",
  "serde_json",
@@ -7974,6 +7974,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4aebc912b8fa7d54999adc4e45601d1d95fe458f97eb0a1277eddcd6382cf4b1"
 dependencies = [
  "darling 0.21.3",
+ "proc-macro2",
+ "quote",
+ "serde_json",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "rmcp-macros"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abad6f5f46e220e3bda2fc90fd1ad64c1c2a2bd716d52c845eb5c9c64cda7542"
+dependencies = [
+ "darling 0.23.0",
  "proc-macro2",
  "quote",
  "serde_json",
