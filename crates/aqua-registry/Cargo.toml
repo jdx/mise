@@ -1,6 +1,6 @@
 [package]
 name = "aqua-registry"
-version = "2026.4.3"
+version = "2026.4.5"
 edition = "2024"
 description = "Aqua registry backend for mise"
 authors = ["Jeff Dickey (@jdx)"]
@@ -33,7 +33,7 @@ thiserror = "2"
 eyre = "0.6"
 indexmap = { version = "2", features = ["serde"] }
 itertools = "0.14"
-strum = { version = "0.27", features = ["derive"] }
+strum = { version = "0.28", features = ["derive"] }
 
 # Template parsing and evaluation
 expr-lang = "1"

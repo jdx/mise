@@ -13,6 +13,7 @@ use crate::env;
 use crate::file;
 use crate::hash::hash_to_str;
 use crate::lockfile::{CondaPackageInfo, LockfileTool, PlatformInfo};
+use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, tool_request};
 use console::style;
 use dashmap::DashMap;
@@ -34,6 +35,7 @@ pub fn reset_install_path_cache() {
 pub struct ToolVersion {
     pub request: ToolRequest,
     pub version: String,
+    locked: bool,
     pub lock_platforms: BTreeMap<String, PlatformInfo>,
     pub install_path: Option<PathBuf>,
     /// Conda packages resolved during installation: (platform, basename) -> CondaPackageInfo
@@ -45,6 +47,7 @@ impl ToolVersion {
         ToolVersion {
             request,
             version,
+            locked: false,
             lock_platforms: Default::default(),
             install_path: None,
             conda_packages: Default::default(),
@@ -91,6 +94,7 @@ impl ToolVersion {
 
     fn from_lockfile(request: ToolRequest, lt: LockfileTool) -> Self {
         let mut tv = Self::new(request, lt.version);
+        tv.locked = true;
         tv.lock_platforms = lt.platforms;
         tv
     }
@@ -144,6 +148,36 @@ impl ToolVersion {
 
         INSTALL_PATH_CACHE.insert(self.clone(), path.clone());
         path
+    }
+    pub fn runtime_path(&self) -> PathBuf {
+        if self.locked {
+            return self.install_path();
+        }
+        let Some(pathname) = self.runtime_pathname() else {
+            return self.install_path();
+        };
+        let path = self.ba().installs_path.join(&pathname);
+        let path = env::find_in_shared_installs(path, &self.ba().tool_dir_name(), &pathname);
+        if path.is_dir() && is_runtime_symlink(&path) {
+            return path;
+        }
+
+        #[cfg(windows)]
+        if path.is_file()
+            && is_runtime_symlink(&path)
+            && let Ok(Some(target)) = file::resolve_symlink(&path)
+            && let Some(parent) = path.parent()
+        {
+            let target = parent.join(target);
+            if target.is_dir() {
+                return target
+                    .absolutize()
+                    .expect("failed to absolutize path")
+                    .to_path_buf();
+            }
+        }
+
+        self.install_path()
     }
     pub fn cache_path(&self) -> PathBuf {
         self.ba().cache_path.join(self.tv_pathname())
@@ -207,6 +241,14 @@ impl ToolVersion {
             }
         }
         .replace([':', '/'], "-")
+    }
+    fn runtime_pathname(&self) -> Option<String> {
+        let pathname = match &self.request {
+            ToolRequest::Version { version, .. } if version != &self.version => version,
+            ToolRequest::Prefix { prefix, .. } => prefix,
+            _ => return None,
+        };
+        Some(pathname.replace([':', '/'], "-"))
     }
     async fn resolve_version(
         config: &Arc<Config>,
@@ -531,5 +573,52 @@ impl Display for ResolveOptions {
             opts.push(format!("before_date={ts}"));
         }
         write!(f, "({})", opts.join(", "))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::args::BackendResolution;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn runtime_path_does_not_return_file_based_runtime_symlink() -> Result<()> {
+        reset_install_path_cache();
+
+        let temp_dir = tempfile::tempdir()?;
+        let short = format!(
+            "dummy-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut backend = BackendArg::new_raw(
+            short.clone(),
+            None,
+            short,
+            None,
+            BackendResolution::new(false),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join("dummy");
+
+        let install_path = backend.installs_path.join("1.0.1");
+        fs::create_dir_all(install_path.join("bin"))?;
+        fs::write(backend.installs_path.join("1.0"), "./1.0.1")?;
+
+        let request = ToolRequest::Version {
+            backend: Arc::new(backend),
+            version: "1.0".into(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "1.0.1".into());
+
+        let runtime_path = tv.runtime_path();
+        assert_eq!(runtime_path, install_path);
+        assert!(runtime_path.is_dir());
+
+        Ok(())
     }
 }

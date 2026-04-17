@@ -53,7 +53,7 @@ mise exec -- echo $MY_VAR
 You can of course combine them with [tools](/dev-tools/):
 
 ```sh
-mise use node@24
+mise use node@26
 mise set MY_VAR=123
 cat mise.toml
 # [tools]
@@ -81,7 +81,7 @@ If you are using [`shims`](/dev-tools/shims.html), the environment variables wil
 
 ```shell
 mise set NODE_ENV=production
-mise use node@24
+mise use node@26
 # using the absolute path for the example
 ~/.local/share/mise/shims/node --eval 'console.log(process.env.NODE_ENV)'
 ```

@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.compile]
+description = "compile project"
+run = 'echo "compile"'
+
+[tasks.clean]
+description = "clean compile dir"
+run = 'echo "clean"'
+EOF
+
+assert_fail_contains "mise run complie" "no task complie found"
+assert_fail_contains "mise run complie" "Did you mean one of these?"
+assert_fail_contains "mise run complie" "compile"
+assert_fail_contains "mise run build" "Available tasks:"
+assert_fail_contains "mise run build" "clean    clean compile dir"
+
+rm mise.toml
+export MISE_EXPERIMENTAL=1
+
+cat <<EOF >mise.toml
+experimental_monorepo_root = true
+
+[monorepo]
+config_roots = ["projects/*"]
+EOF
+
+mkdir -p projects/app
+cat <<EOF >projects/app/mise.toml
+[tasks.compile]
+description = "compile app"
+run = 'echo "compile app"'
+EOF
+
+assert_fail_contains "mise run build" "no task //:build found"
+assert_fail_contains "mise run build" "mise tasks ls --all"
+assert_fail_contains "mise run build" "//projects/app:compile"

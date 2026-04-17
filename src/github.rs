@@ -1,7 +1,7 @@
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::config::Settings;
 use crate::tokens;
-use crate::{dirs, duration, env};
+use crate::{dirs, env};
 use eyre::Result;
 use heck::ToKebabCase;
 use reqwest::IntoUrl;
@@ -92,7 +92,7 @@ async fn get_tags_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<String>
         .entry(key.to_string())
         .or_insert_with(|| {
             CacheManagerBuilder::new(cache_dir().join(format!("{key}-tags.msgpack.z")))
-                .with_fresh_duration(Some(duration::DAILY))
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .build()
         });
     TAGS_CACHE.read().await
@@ -105,7 +105,7 @@ async fn get_releases_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<Git
         .entry(key.to_string())
         .or_insert_with(|| {
             CacheManagerBuilder::new(cache_dir().join(format!("{key}-releases.msgpack.z")))
-                .with_fresh_duration(Some(duration::DAILY))
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .build()
         });
     RELEASES_CACHE.read().await
@@ -118,7 +118,7 @@ async fn get_release_cache<'a>(key: &str) -> RwLockReadGuard<'a, CacheGroup<Gith
         .entry(key.to_string())
         .or_insert_with(|| {
             CacheManagerBuilder::new(cache_dir().join(format!("{key}.msgpack.z")))
-                .with_fresh_duration(Some(duration::DAILY))
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .build()
         });
     RELEASE_CACHE.read().await
@@ -447,6 +447,17 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     }
 
     None
+}
+
+/// Resolve the GitHub token from a full API base URL (e.g., "https://api.github.com").
+/// Extracts the hostname and delegates to [`resolve_token`].
+pub fn resolve_token_for_api_url(api_url: &str) -> Option<String> {
+    let parsed = url::Url::parse(api_url).ok();
+    let host = parsed
+        .as_ref()
+        .and_then(|u| u.host_str())
+        .unwrap_or("api.github.com");
+    resolve_token(host).map(|(t, _)| t)
 }
 
 pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
