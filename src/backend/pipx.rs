@@ -442,9 +442,9 @@ impl PIPXBackend {
         cmd.with_pr(pr)
             .env("PIP_INDEX_URL", Self::get_index_url()?)
             .envs(ts.env_with_path_without_tools(config).await?)
+            .env_remove("PIPX_SHARED_LIBS")
             .env("PIPX_HOME", tv.install_path())
             .env("PIPX_BIN_DIR", tv.install_path().join("bin"))
-            .env("PIPX_SHARED_LIBS", tv.install_path().join("shared"))
             .prepend_path(ts.list_paths(config).await)?
             .prepend_path(vec![tv.install_path().join("bin")])?
             .prepend_path(b.dependency_toolset(config).await?.list_paths(config).await)
