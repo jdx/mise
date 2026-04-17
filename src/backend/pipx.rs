@@ -21,6 +21,7 @@ use itertools::Itertools;
 use jiff::Timestamp;
 use regex::Regex;
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{fmt::Debug, sync::Arc};
@@ -230,7 +231,7 @@ impl Backend for PIPXBackend {
                 ctx.pr.as_ref(),
             )
             .await?;
-            cmd = Self::apply_uv_exclude_newer(cmd, ctx.before_date);
+            cmd = cmd.args(Self::uv_exclude_newer_args(ctx.before_date));
             if let Some(args) = tv.request.options().get("uvx_args") {
                 cmd = cmd.args(shell_words::split(args)?);
             }
@@ -290,18 +291,10 @@ pub fn install_time_option_keys() -> Vec<String> {
 }
 
 impl PIPXBackend {
-    fn uv_exclude_newer_env(before_date: Option<Timestamp>) -> Option<(&'static str, String)> {
-        before_date.map(|before_date| ("UV_EXCLUDE_NEWER", before_date.to_string()))
-    }
-
-    fn apply_uv_exclude_newer<'a>(
-        cmd: CmdLineRunner<'a>,
-        before_date: Option<Timestamp>,
-    ) -> CmdLineRunner<'a> {
-        if let Some((key, value)) = Self::uv_exclude_newer_env(before_date) {
-            cmd.env(key, value)
-        } else {
-            cmd
+    fn uv_exclude_newer_args(before_date: Option<Timestamp>) -> Vec<OsString> {
+        match before_date {
+            Some(before_date) => vec!["--exclude-newer".into(), before_date.to_string().into()],
+            None => vec![],
         }
     }
 
@@ -662,20 +655,27 @@ fn fix_venv_python_symlink(_install_path: &Path, _pkg_name: &str) -> Result<()> 
 mod tests {
     use super::PIPXBackend;
     use pretty_assertions::assert_eq;
+    use std::ffi::OsString;
 
     #[test]
-    fn test_uv_exclude_newer_env_with_cutoff() {
+    fn test_uv_exclude_newer_args_with_cutoff() {
         let before_date = "2024-01-02T03:04:05Z".parse().unwrap();
-        let env = PIPXBackend::uv_exclude_newer_env(Some(before_date));
+        let args = PIPXBackend::uv_exclude_newer_args(Some(before_date));
 
         assert_eq!(
-            env,
-            Some(("UV_EXCLUDE_NEWER", "2024-01-02T03:04:05Z".to_string()))
+            args,
+            vec![
+                OsString::from("--exclude-newer"),
+                OsString::from("2024-01-02T03:04:05Z"),
+            ]
         );
     }
 
     #[test]
-    fn test_uv_exclude_newer_env_without_cutoff() {
-        assert_eq!(PIPXBackend::uv_exclude_newer_env(None), None);
+    fn test_uv_exclude_newer_args_without_cutoff() {
+        assert_eq!(
+            PIPXBackend::uv_exclude_newer_args(None),
+            Vec::<OsString>::new()
+        );
     }
 }

@@ -28,9 +28,9 @@ This relies on having `uv` (recommended) or `pipx` installed.
 If you have `uv` installed, mise will use `uv tool install` under the hood and you don't need to install `pipx` to run the commands containing "pipx:".
 
 When [`install_before`](/configuration/settings.html#install_before) is set and mise installs a
-`pipx:` tool through uv, mise forwards the cutoff to uv as `UV_EXCLUDE_NEWER` so transitive Python
-dependencies are resolved only from releases uploaded before that timestamp. This only applies to
-the uv install path; the `pipx` fallback does not receive a transitive release-age cutoff.
+`pipx:` tool through uv, mise passes uv's `--exclude-newer` flag so transitive Python dependencies
+are resolved only from releases uploaded before that timestamp. This only applies to the uv install
+path; the `pipx` fallback does not receive a transitive release-age cutoff.
 
 In case you need `pipx` for other reasons, you can install it with or without mise.
 Here is how to install `pipx` with mise:
