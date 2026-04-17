@@ -217,9 +217,12 @@ impl Backend for VfoxBackend {
             .await?
             .iter()
             .find(|(k, _)| k.to_uppercase() == "PATH")
-            .map(|(_, v)| v.to_string())
-            .unwrap_or("bin".to_string());
-        Ok(env::split_paths(&path).collect())
+            .map(|(_, v)| v.to_string());
+        if let Some(path) = path {
+            Ok(env::split_paths(&path).collect())
+        } else {
+            Ok(vec![tv.install_path().join("bin")])
+        }
     }
 
     async fn exec_env(

@@ -8,3 +8,6 @@ assert "ls -l $MISE_DATA_DIR/installs/dummy | grep '\->' | awk '{print \$(NF-2),
 2.0 ./2.0.0
 2.1 ./2.1.0
 latest ./2.1.0"
+
+assert "mise bin-paths dummy@1.0" "$MISE_DATA_DIR/installs/dummy/1.0/bin"
+assert "mise bin-paths dummy@prefix:1" "$MISE_DATA_DIR/installs/dummy/1/bin"

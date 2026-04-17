@@ -8,7 +8,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.4.13"
+version = "2026.4.16"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -151,7 +151,7 @@ reqwest = { version = "0.12", default-features = false, features = [
   "macos-system-configuration",
 ] }
 rmcp = { version = "0.3", features = ["server", "transport-io", "schemars"] }
-rmcp-macros = "0.3"
+rmcp-macros = "0.17"
 rmp-serde = "1"
 rops = { version = "0.1", default-features = false, features = [
   "aes-gcm",
@@ -172,9 +172,9 @@ chacha20poly1305 = "0.10"
 shell-escape = "0.1"
 shell-words = "1"
 shellexpand = "3"
-signal-hook = "0.3"
+signal-hook = "0.4"
 siphasher = "1"
-strum = { version = "0.27", features = ["derive"] }
+strum = { version = "0.28", features = ["derive"] }
 sys-info = "0.9"
 tabled = { version = "0.20", features = ["ansi"] }
 taplo = "0.14"
@@ -186,7 +186,7 @@ thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 tokio-retry = "0.3"
 toml = { version = "0.9", features = ["parse", "preserve_order"] }
-toml_edit = { version = "0.24", features = ["parse"] }
+toml_edit = { version = "0.25", features = ["parse"] }
 ubi = { version = "0.9", default-features = false }
 url = "2"
 urlencoding = "2"
@@ -223,7 +223,7 @@ self_update = { version = "0.42", optional = true, default-features = false, fea
   "signatures",
   "rustls",
 ] }
-zipsign-api = "0.1"
+zipsign-api = "0.2"
 sevenz-rust = "0.6"
 winapi = { version = "0.3.9", features = ["consoleapi", "minwindef"] }
 
@@ -237,7 +237,7 @@ serde_yaml = "0.9"
 
 [dev-dependencies]
 clap-sort = "1"
-ctor = "0.9"
+ctor = "0.10"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1"
 pretty_assertions = "1"

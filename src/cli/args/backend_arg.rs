@@ -4,7 +4,10 @@ use crate::config::Config;
 use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state::InstallStateTool;
-use crate::toolset::{EPHEMERAL_OPT_KEYS, ToolVersionOptions, install_state, parse_tool_options};
+use crate::toolset::{
+    EPHEMERAL_OPT_KEYS, ToolVersionOptions, install_state, parse_tool_options,
+    serialize_tool_options,
+};
 use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
 use eyre::{Result, bail};
@@ -14,7 +17,6 @@ use std::env;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::PathBuf;
-use xx::regex;
 
 /// Metadata about how a backend was resolved.
 /// This struct is designed for extensibility - additional fields can be added
@@ -103,14 +105,42 @@ impl From<InstallStateTool> for BackendArg {
 /// Split a string like `"http:hello[url=...,bin=bin]"` into `("http:hello", "url=...,bin=bin")`.
 /// Returns `None` if no bracketed opts are present.
 pub fn split_bracketed_opts(s: &str) -> Option<(&str, &str)> {
-    regex!(r"^(.+)\[(.+)\]$")
-        .captures(s)
-        .map(|c| (c.get(1).unwrap().as_str(), c.get(2).unwrap().as_str()))
+    if !s.ends_with(']') {
+        return None;
+    }
+
+    let mut bracket_start = None;
+    let mut in_single_quotes = false;
+    let mut in_double_quotes = false;
+    let mut escaped = false;
+
+    for (index, ch) in s.char_indices() {
+        match ch {
+            '\'' if !in_double_quotes => in_single_quotes = !in_single_quotes,
+            '"' if !in_single_quotes && !escaped => in_double_quotes = !in_double_quotes,
+            '[' if !in_single_quotes && !in_double_quotes && bracket_start.is_none() => {
+                bracket_start = Some(index);
+            }
+            ']' if !in_single_quotes && !in_double_quotes && index == s.len() - 1 => {
+                if let Some(start) = bracket_start {
+                    return Some((&s[..start], &s[start + 1..index]));
+                }
+                return None;
+            }
+            _ => {}
+        }
+
+        escaped = in_double_quotes && ch == '\\' && !escaped;
+    }
+
+    None
 }
 
 /// Strip trailing `[...]` opts from a string, e.g. `"foo[a=1]"` → `"foo"`.
 pub(crate) fn strip_opts(s: &str) -> String {
-    regex!(r#"\[.+\]$"#).replace_all(s, "").to_string()
+    split_bracketed_opts(s)
+        .map(|(name, _)| name.to_string())
+        .unwrap_or_else(|| s.to_string())
 }
 
 fn parse_backend_components(
@@ -396,21 +426,14 @@ impl BackendArg {
         if split_bracketed_opts(&full).is_some() {
             return full;
         }
-        if let Some(opts) = &self.opts {
-            let opts_str = opts
-                .opts
-                .iter()
-                .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str()))
-                .filter_map(|(k, v)| match v {
-                    toml::Value::String(s) => Some(format!("{k}={s}")),
-                    toml::Value::Table(_) | toml::Value::Array(_) => None,
-                    _ => Some(format!("{k}={v}")),
-                })
-                .collect::<Vec<_>>()
-                .join(",");
-            if !full.contains(['[', ']']) && !opts_str.is_empty() {
-                return format!("{full}[{opts_str}]");
-            }
+        if let Some(opts) = &self.opts
+            && let Some(opts_str) = serialize_tool_options(
+                opts.opts
+                    .iter()
+                    .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str())),
+            )
+        {
+            return format!("{full}[{opts_str}]");
         }
         full
     }
@@ -697,6 +720,87 @@ mod tests {
             "http:hello-lock[url=https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]",
             fa.full_with_opts()
         );
+    }
+
+    #[tokio::test]
+    async fn test_full_with_opts_round_trips_comma_strings() {
+        let _config = Config::get().await.unwrap();
+
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "query".to_string(),
+            toml::Value::String("first,second=value".to_string()),
+        );
+
+        let mut fa: BackendArg = "http:hello-lock".into();
+        fa.set_opts(Some(opts));
+
+        let serialized = fa.full_with_opts();
+        assert_str_eq!(r#"http:hello-lock[query="first,second=value"]"#, serialized);
+
+        let reparsed: BackendArg = serialized.as_str().into();
+        let reparsed_opts = reparsed.opts();
+        assert_eq!(reparsed_opts.get("query"), Some("first,second=value"));
+        assert!(!reparsed_opts.contains_key("second"));
+    }
+
+    #[tokio::test]
+    async fn test_full_with_opts_round_trips_strings_with_quotes_and_brackets() {
+        let _config = Config::get().await.unwrap();
+
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "pattern".to_string(),
+            toml::Value::String(r#"a"b"#.to_string()),
+        );
+        opts.opts.insert(
+            "bin_path".to_string(),
+            toml::Value::String("bin[debug]".to_string()),
+        );
+
+        let mut fa: BackendArg = "http:hello-lock".into();
+        fa.set_opts(Some(opts));
+
+        let serialized = fa.full_with_opts();
+        assert_str_eq!(
+            r#"http:hello-lock[pattern='a"b',bin_path="bin[debug]"]"#,
+            serialized
+        );
+
+        let reparsed: BackendArg = serialized.as_str().into();
+        let reparsed_opts = reparsed.opts();
+        assert_eq!(reparsed_opts.get("pattern"), Some(r#"a"b"#));
+        assert_eq!(reparsed_opts.get("bin_path"), Some("bin[debug]"));
+    }
+
+    #[tokio::test]
+    async fn test_split_bracketed_opts_ignores_quoted_brackets() {
+        let _config = Config::get().await.unwrap();
+
+        assert_eq!(
+            split_bracketed_opts(r#"http:hello-lock[pattern='a"b',bin_path="bin[debug]"]"#),
+            Some(("http:hello-lock", r#"pattern='a"b',bin_path="bin[debug]""#))
+        );
+        assert_str_eq!(
+            "http:hello-lock",
+            strip_opts(r#"http:hello-lock[pattern='a"b',bin_path="bin[debug]"]"#)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_full_with_opts_omits_empty_brackets_for_complex_opts() {
+        let _config = Config::get().await.unwrap();
+
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "targets".to_string(),
+            toml::Value::Array(vec![toml::Value::String("x86_64".to_string())]),
+        );
+
+        let mut fa: BackendArg = "npm:prettier".into();
+        fa.set_opts(Some(opts));
+
+        assert_str_eq!("npm:prettier", fa.full_with_opts());
     }
 
     #[tokio::test]
