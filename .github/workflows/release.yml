@@ -51,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Install cross
-        uses: taiki-e/install-action@a2352fc6ce487f030a3aa709482d57823eadfb37 # v2
+        uses: taiki-e/install-action@58e862542551f667fa44c8a2a4a1d64ad477c96a # v2
         with:
           tool: cross
       - name: cache crates
@@ -75,7 +75,7 @@ jobs:
             dist/mise-*.tar.gz
             dist/mise-*.tar.zst
           if-no-files-found: error
-      - uses: taiki-e/install-action@a2352fc6ce487f030a3aa709482d57823eadfb37 # v2
+      - uses: taiki-e/install-action@58e862542551f667fa44c8a2a4a1d64ad477c96a # v2
         with: { tool: cargo-cache }
       - if: steps.cache-crates.outputs.cache-hit != 'true'
         run: cargo cache --autoclean
@@ -124,7 +124,7 @@ jobs:
             dist/mise-*.tar.gz
             dist/mise-*.tar.zst
           if-no-files-found: error
-      - uses: taiki-e/install-action@a2352fc6ce487f030a3aa709482d57823eadfb37 # v2
+      - uses: taiki-e/install-action@58e862542551f667fa44c8a2a4a1d64ad477c96a # v2
         with: { tool: cargo-cache }
       - if: steps.cache-crates.outputs.cache-hit != 'true'
         run: cargo cache --autoclean
@@ -180,7 +180,7 @@ jobs:
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - uses: taiki-e/install-action@a2352fc6ce487f030a3aa709482d57823eadfb37 # v2
+      - uses: taiki-e/install-action@58e862542551f667fa44c8a2a4a1d64ad477c96a # v2
         with:
           tool: usage-cli
       - run: tar -C "$HOME" -xvf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.zst"
