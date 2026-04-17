@@ -558,9 +558,8 @@ mod tests {
 
     #[test]
     fn test_effective_before_date_stable_within_process() {
-        // Resolving the same relative duration twice within the same process
-        // must produce the exact same absolute Timestamp so that version
-        // resolution and CLI-flag emission agree.
+        // Covers the invariant behind #9156: relative durations resolve
+        // identically across calls within one invocation.
         Settings::reset(None);
         let mut partial = SettingsPartial::empty();
         partial.install_before = Some("3d".to_string());

@@ -74,9 +74,8 @@ pub fn parse_into_timestamp(s: &str) -> Result<Timestamp> {
         return Ok(ts);
     }
 
-    // Try parsing as duration and subtract from the process-local "now".
-    // Using a stable "now" ensures a relative duration like "3d" resolves to
-    // the exact same absolute Timestamp every time within this command.
+    // Subtract the duration from `process_now` so the same relative
+    // duration resolves to the same absolute Timestamp every time.
     if let Ok(span) = s.parse::<Span>() {
         // Validate that duration is positive (negative would result in future date)
         let duration = span.to_duration(date(2025, 1, 1))?;
@@ -99,8 +98,6 @@ mod tests {
 
     #[test]
     fn test_process_now_is_stable() {
-        // process_now must return the same value across calls so that relative
-        // durations resolve identically every time they are evaluated.
         let a = process_now();
         std::thread::sleep(std::time::Duration::from_millis(5));
         let b = process_now();
@@ -109,10 +106,8 @@ mod tests {
 
     #[test]
     fn test_parse_into_timestamp_relative_is_stable() {
-        // Two resolutions of the same relative duration must produce identical
-        // timestamps within a single process invocation. This is the invariant
-        // that keeps version resolution consistent with the CLI flags passed
-        // to the underlying package manager (see #9156).
+        // Anchored to process_now so version resolution and CLI-flag emission
+        // can't disagree (see #9156).
         let a = parse_into_timestamp("3d").unwrap();
         std::thread::sleep(std::time::Duration::from_millis(5));
         let b = parse_into_timestamp("3d").unwrap();
@@ -152,7 +147,6 @@ mod tests {
 
     #[test]
     fn test_elapsed_seconds_ceil_rounds_up_fractional_second() {
-        // 1.1 s -> 2 s
         let a: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
         let b: Timestamp = "2024-01-01T00:00:01.100Z".parse().unwrap();
         assert_eq!(elapsed_seconds_ceil(a, b), 2);
@@ -160,7 +154,6 @@ mod tests {
 
     #[test]
     fn test_elapsed_seconds_ceil_zero_when_not_elapsed() {
-        // from == to and from > to both clamp to 0
         let t: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
         assert_eq!(elapsed_seconds_ceil(t, t), 0);
         let later: Timestamp = "2024-01-02T00:00:00Z".parse().unwrap();

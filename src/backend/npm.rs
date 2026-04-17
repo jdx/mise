@@ -325,17 +325,13 @@ impl NPMBackend {
         seconds: u64,
         supports_min_release_age: bool,
     ) -> Vec<OsString> {
-        // Either branch emits the same `--before` fallback, so merge them:
-        //   * older npm without --min-release-age
-        //   * sub-day windows (--min-release-age is day-granular)
+        // Both older npm (no --min-release-age) and sub-day windows
+        // (--min-release-age is day-granular) fall back to --before.
         if !supports_min_release_age || seconds < 86400 {
             return vec!["--before".into(), before_date.to_string().into()];
         }
-        // Tolerate a small amount of elapsed time between resolving
-        // `install_before` and converting it back to a day count so that e.g.
-        // "3d" doesn't get rounded up to "4d" just because a few seconds have
-        // passed (see #9156). The tolerance only applies here because bun/pnpm
-        // emit the cutoff in units (seconds / minutes) finer than typical drift.
+        // Apply the drift tolerance only for the day-based conversion;
+        // bun/pnpm emit the cutoff in finer units so drift is harmless there.
         let days = seconds
             .saturating_sub(BEFORE_DATE_TOLERANCE_SECS)
             .div_ceil(86400)
@@ -516,8 +512,6 @@ mod tests {
 
     #[test]
     fn test_build_npm_release_age_args_legacy() {
-        // Older npm without --min-release-age always falls back to --before,
-        // regardless of the cutoff window.
         let before_date: Timestamp = "2024-01-02T03:04:05Z".parse().unwrap();
         let args = NPMBackend::build_npm_release_age_args(before_date, 86400, false);
         assert_eq!(
@@ -531,8 +525,6 @@ mod tests {
 
     #[test]
     fn test_build_npm_release_age_args_sub_day_uses_before() {
-        // Sub-day windows fall back to --before even when npm supports
-        // --min-release-age, because that flag is day-granular.
         let before_date: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
         let args = NPMBackend::build_npm_release_age_args(before_date, 1, true);
         assert_eq!(
@@ -546,7 +538,6 @@ mod tests {
 
     #[test]
     fn test_build_npm_release_age_args_full_days() {
-        // Exactly 3 full days → --min-release-age=3
         let before_date: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
         let args = NPMBackend::build_npm_release_age_args(before_date, 86400 * 3, true);
         assert_eq!(args, vec![OsString::from("--min-release-age=3")]);
@@ -554,8 +545,8 @@ mod tests {
 
     #[test]
     fn test_build_npm_release_age_args_tolerates_drift() {
-        // Regression test for #9156: `install_before = "3d"` re-converted after
-        // ~30s of drift must not round up to 4 days.
+        // Regression test for #9156: "3d" re-converted after ~30s of drift
+        // must not round up to 4 days.
         let before_date: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
         let args = NPMBackend::build_npm_release_age_args(before_date, 86400 * 3 + 30, true);
         assert_eq!(args, vec![OsString::from("--min-release-age=3")]);
@@ -563,8 +554,8 @@ mod tests {
 
     #[test]
     fn test_build_npm_release_age_args_past_tolerance_rounds_up() {
-        // Drift larger than the tolerance (60s) should still round up to the
-        // next day so cutoffs remain at least as strict as requested.
+        // Drift larger than BEFORE_DATE_TOLERANCE_SECS still rounds up so
+        // cutoffs remain at least as strict as requested.
         let before_date: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
         let args = NPMBackend::build_npm_release_age_args(before_date, 86400 * 3 + 120, true);
         assert_eq!(args, vec![OsString::from("--min-release-age=4")]);
@@ -572,8 +563,8 @@ mod tests {
 
     #[test]
     fn test_build_npm_release_age_args_one_day_boundary() {
-        // `install_before = "1d"` with a few seconds of drift should still
-        // emit --min-release-age=1 rather than falling back to --before.
+        // Small drift at the 1-day boundary must stay at --min-release-age=1
+        // instead of falling through to --before.
         let before_date: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
         let args = NPMBackend::build_npm_release_age_args(before_date, 86400 + 5, true);
         assert_eq!(args, vec![OsString::from("--min-release-age=1")]);
@@ -590,8 +581,6 @@ mod tests {
 
     #[test]
     fn test_build_pnpm_release_age_args_rounds_up_to_minutes() {
-        // pnpm's --config.minimumReleaseAge is minute-granular; a 1s delta
-        // should be rounded up to 1 minute.
         let args = NPMBackend::build_pnpm_release_age_args(1);
         assert_eq!(args, vec![OsString::from("--config.minimumReleaseAge=1")]);
     }
