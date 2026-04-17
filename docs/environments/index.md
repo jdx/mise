@@ -315,6 +315,11 @@ TOML table for the configuration of these directives.
 
 In `mise.toml`: `env._.file` can be used to specify a [dotenv](https://dotenv.org) file to load.
 
+::: warning
+Top-level `env_file`, `dotenv`, and `env_path` are deprecated. Use `env._.file` and
+`env._.path` instead. These keys will be removed in mise 2027.4.0.
+:::
+
 ```toml
 [env]
 _.file = '.env'
