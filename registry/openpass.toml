@@ -1,0 +1,3 @@
+backends = ["github:ProfDrJu/OpenPass"]
+description = "CLI password manager with age encryption"
+test = { cmd = "openpass --version", expected = "{{version}}" }
