@@ -269,7 +269,7 @@ impl Backend for AsdfBackend {
         timeout::run_with_timeout_async(
             || async {
                 if !self.plugin.has_latest_stable_script() {
-                    return self.latest_version(config, Some("latest".into())).await;
+                    return self.latest_version_for_query(config, "latest", None).await;
                 }
                 self.latest_stable_cache
                     .get_or_try_init(|| self.plugin.fetch_latest_stable())

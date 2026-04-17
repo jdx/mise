@@ -56,7 +56,7 @@ impl VersionProvider for MiseVersionProvider {
         let config = Config::get().await.ok()?;
 
         // Get the latest version
-        backend.latest_version(&config, None).await.ok()?
+        backend.latest_version(&config, None, None).await.ok()?
     }
 }
 

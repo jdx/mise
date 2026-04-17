@@ -183,7 +183,7 @@ impl Backend for PIPXBackend {
                                 Ok(version)
                             }
                         }
-                        _ => this.latest_version(config, Some("latest".into())).await,
+                        _ => this.latest_version_for_query(config, "latest", None).await,
                     })
                     .await
             },

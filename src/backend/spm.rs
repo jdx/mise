@@ -96,7 +96,7 @@ impl Backend for SPMBackend {
         let provider = GitProvider::from_ba(&self.ba);
         let repo = SwiftPackageRepo::new(&self.tool_name(), &provider)?;
         let revision = if tv.version == "latest" {
-            self.latest_stable_version(&ctx.config)
+            self.latest_version(&ctx.config, None, ctx.before_date)
                 .await?
                 .ok_or_else(|| eyre::eyre!("No stable versions found"))?
         } else {
