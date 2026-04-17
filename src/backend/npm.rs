@@ -7,6 +7,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::settings::NpmPackageManager;
 use crate::config::{Config, Settings};
+use crate::duration::process_now;
 use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
@@ -16,6 +17,13 @@ use serde_json::Value;
 use std::ffi::OsString;
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
+
+/// Tolerance applied when converting an absolute `before_date` back to a
+/// relative duration for CLI flags. This ensures that a user-supplied
+/// `install_before = "3d"` never gets rounded up to `4d` due to small amounts
+/// of elapsed time between when mise resolved the cutoff and when it invoked
+/// the package manager.
+const BEFORE_DATE_TOLERANCE_SECS: u64 = 60;
 
 #[derive(Debug)]
 pub struct NPMBackend {
@@ -186,7 +194,7 @@ impl Backend for NPMBackend {
                     Self::build_transitive_release_age_args(
                         NpmPackageManager::Bun,
                         before_date,
-                        Timestamp::now(),
+                        process_now(),
                         false,
                     )
                 });
@@ -221,7 +229,7 @@ impl Backend for NPMBackend {
                     Self::build_transitive_release_age_args(
                         NpmPackageManager::Pnpm,
                         before_date,
-                        Timestamp::now(),
+                        process_now(),
                         false,
                     )
                 });
@@ -254,7 +262,7 @@ impl Backend for NPMBackend {
                     Self::build_transitive_release_age_args(
                         NpmPackageManager::Npm,
                         before_date,
-                        Timestamp::now(),
+                        process_now(),
                         supports,
                     )
                 } else {
@@ -315,28 +323,35 @@ impl NPMBackend {
         now: Timestamp,
         npm_supports_min_release_age: bool,
     ) -> Vec<OsString> {
+        let seconds = Self::elapsed_seconds_ceil(before_date, now);
         match package_manager {
             NpmPackageManager::Npm => {
                 if npm_supports_min_release_age {
-                    let seconds = Self::elapsed_seconds_ceil(before_date, now);
                     // --min-release-age (npm/cli#8965) is day-granular; for sub-day
                     // windows (e.g. install_before = "1h") fall back to --before to
                     // preserve the exact cutoff.
                     if seconds < 86400 {
                         return vec!["--before".into(), before_date.to_string().into()];
                     }
-                    let days = seconds.div_ceil(86400);
+                    // Tolerate a small amount of elapsed time between resolving
+                    // `install_before` and converting it back to a day count so
+                    // that e.g. "3d" doesn't get rounded up to "4d" just because
+                    // a few seconds have passed (see #9156). The tolerance is
+                    // only applied here because bun/pnpm emit the cutoff in
+                    // units (seconds / minutes) finer than the typical drift.
+                    let days = seconds
+                        .saturating_sub(BEFORE_DATE_TOLERANCE_SECS)
+                        .div_ceil(86400)
+                        .max(1);
                     vec![format!("--min-release-age={days}").into()]
                 } else {
                     vec!["--before".into(), before_date.to_string().into()]
                 }
             }
             NpmPackageManager::Bun => {
-                let seconds = Self::elapsed_seconds_ceil(before_date, now);
                 vec!["--minimum-release-age".into(), seconds.to_string().into()]
             }
             NpmPackageManager::Pnpm => {
-                let seconds = Self::elapsed_seconds_ceil(before_date, now);
                 let minutes = seconds.div_ceil(60);
                 vec![format!("--config.minimumReleaseAge={minutes}").into()]
             }
@@ -565,6 +580,52 @@ mod tests {
                 OsString::from("2024-01-01T00:00:00Z")
             ]
         );
+    }
+
+    #[test]
+    fn test_build_transitive_release_age_args_tolerates_drift() {
+        // Regression test for #9156: `install_before = "3d"` resolved to an
+        // absolute date and then re-converted after ~30s of drift must not
+        // round up to 4 days.
+        let before_date: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
+        let now: Timestamp = "2024-01-04T00:00:30Z".parse().unwrap();
+        let args = NPMBackend::build_transitive_release_age_args(
+            NpmPackageManager::Npm,
+            before_date,
+            now,
+            true,
+        );
+        assert_eq!(args, vec![OsString::from("--min-release-age=3")]);
+    }
+
+    #[test]
+    fn test_build_transitive_release_age_args_past_tolerance_rounds_up() {
+        // Drift larger than the tolerance (60s) should still round up to the
+        // next day so cutoffs remain at least as strict as requested.
+        let before_date: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
+        let now: Timestamp = "2024-01-04T00:02:00Z".parse().unwrap();
+        let args = NPMBackend::build_transitive_release_age_args(
+            NpmPackageManager::Npm,
+            before_date,
+            now,
+            true,
+        );
+        assert_eq!(args, vec![OsString::from("--min-release-age=4")]);
+    }
+
+    #[test]
+    fn test_build_transitive_release_age_args_one_day_boundary() {
+        // `install_before = "1d"` with a few seconds of drift should still
+        // emit --min-release-age=1 rather than falling back to --before.
+        let before_date: Timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
+        let now: Timestamp = "2024-01-02T00:00:05Z".parse().unwrap();
+        let args = NPMBackend::build_transitive_release_age_args(
+            NpmPackageManager::Npm,
+            before_date,
+            now,
+            true,
+        );
+        assert_eq!(args, vec![OsString::from("--min-release-age=1")]);
     }
 
     #[test]
