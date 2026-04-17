@@ -29,7 +29,7 @@
     "eslint": "^8.57.1",
     "js-toml": "^1.0.2",
     "markdown-it": "^14.1.0",
-    "toml": "^3.0.0",
+    "toml": "^4.0.0",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vitepress": "1.6.4",
